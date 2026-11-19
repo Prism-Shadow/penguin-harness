@@ -486,8 +486,8 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
     // nine glyph hues and Console's one-tag badge trio (ring, weight, md padding; 2026-10-01),
     // plus the badge's size and line-height (2026-10-02), less the field's two washes
     // (2026-10-11), plus the accent's tint under the person's own words (2026-10-19), plus a
-    // link-style control's line at rest (2026-10-26).
-    expect(TOKEN_NAMES.length).toBe(252);
+    // link-style control's line at rest (2026-10-26) and the page's enter and exit motion (2026-11-19).
+    expect(TOKEN_NAMES.length).toBe(253);
   });
 
   it("adds the structure group behind the tree and field hooks (round 2)", () => {

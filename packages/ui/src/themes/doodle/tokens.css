@@ -230,10 +230,11 @@
   --ui-tracking-body: normal;
   --ui-tracking-mono: normal;
   --ui-tracking-label: normal;
-  --ui-page-offset: -3px 2px;
 
   /* ---- Motion: bouncy cartoon spatial spring without blur ---- */
   --ui-dur-enter: 320ms;
+  --ui-page-enter: none;
+  --ui-page-exit: ui-page-peel var(--ui-dur-enter) ease-in-out;
   --ui-ease-enter: linear(0, 0.276, 0.707, 0.989, 1.09, 1.082, 1.041, 1.008, 0.993, 0.991, 1);
   --ui-enter-shift: 10px;
   --ui-enter-scale: 0.92;

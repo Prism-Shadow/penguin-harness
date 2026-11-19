@@ -431,26 +431,111 @@
     pointer-events: none;
   }
   ::view-transition-group(penguin-page) {
+    overflow: clip;
     animation-duration: var(--ui-dur-enter);
-    animation-timing-function: var(--ui-ease-out);
   }
-  ::view-transition-old(penguin-page) {
-    animation: ui-page-out var(--ui-dur-enter) var(--ui-ease-out) both;
-    mix-blend-mode: plus-lighter;
-  }
-  ::view-transition-new(penguin-page) {
-    animation: ui-page-in var(--ui-dur-enter) var(--ui-ease-out) both;
-    mix-blend-mode: plus-lighter;
-  }
-  @keyframes ui-page-out {
-    to {
-      opacity: 0;
+  /* A snapshot moves in the top layer, outside the shell's usual overflow clip. When the
+     desktop viewport begins at the edge of the sheet, keep its rounded frame in front. */
+  @media (min-width: 48rem) {
+    :root:not(:has(.ui-shell > [data-slot="main"] > [data-banner]))::view-transition-group(
+        penguin-page
+      ) {
+      border-radius: var(--ui-shell-radius);
     }
   }
-  @keyframes ui-page-in {
+  ::view-transition-old(penguin-page),
+  ::view-transition-new(penguin-page) {
+    mix-blend-mode: normal;
+  }
+  ::view-transition-old(penguin-page) {
+    animation: var(--ui-page-exit) both;
+  }
+  ::view-transition-new(penguin-page) {
+    animation: var(--ui-page-enter) both;
+  }
+
+  /* Frost brings the next surface up from underneath. Additive blending keeps the two
+     snapshots at a combined opacity of one, including on translucent shell backgrounds. */
+  @keyframes ui-page-rise {
     from {
       opacity: 0;
-      translate: var(--ui-page-offset, 0 0);
+      transform: translateY(18px) scale(0.985);
+      mix-blend-mode: plus-lighter;
+    }
+    to {
+      opacity: 1;
+      mix-blend-mode: plus-lighter;
+    }
+  }
+  @keyframes ui-page-recede {
+    from {
+      opacity: 1;
+      mix-blend-mode: plus-lighter;
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-8px);
+      mix-blend-mode: plus-lighter;
+    }
+  }
+
+  /* Primer's panels share an edge throughout the slide. Only the page viewport moves. */
+  @keyframes ui-page-slide-in {
+    from {
+      translate: 100% 0;
+    }
+    to {
+      translate: 0 0;
+    }
+  }
+  @keyframes ui-page-slide-out {
+    from {
+      translate: 0 0;
+    }
+    to {
+      translate: -100% 0;
+    }
+  }
+
+  /* Console replaces horizontal bands from the top down. The complementary clips leave
+     each band in place until the next page reaches it. */
+  @keyframes ui-page-scan-in {
+    from {
+      clip-path: inset(0 0 100%);
+    }
+    to {
+      clip-path: inset(0);
+    }
+  }
+  @keyframes ui-page-scan-out {
+    from {
+      clip-path: inset(0);
+    }
+    to {
+      clip-path: inset(100% 0 0);
+    }
+  }
+
+  /* Doodle turns the old sheet from its lower right corner. The new sheet lies flat
+     underneath; the corner travels diagonally towards the binding at the upper left. */
+  @keyframes ui-page-peel {
+    from,
+    to {
+      z-index: var(--layer-raised);
+      transform-origin: top left;
+      background-color: var(--ui-canvas);
+    }
+    from {
+      clip-path: polygon(0 0, 100% 0, 100% 100%, 100% 100%, 0 100%);
+      transform: perspective(1200px) rotateY(0deg) rotateZ(0deg);
+    }
+    50% {
+      clip-path: polygon(0 0, 100% 0, 100% 10%, 10% 100%, 0 100%);
+      transform: perspective(1200px) rotateY(-4deg) rotateZ(-0.8deg);
+    }
+    to {
+      clip-path: polygon(0 0, 0 0, 0 0, 0 0, 0 0);
+      transform: perspective(1200px) rotateY(-14deg) rotateZ(-2deg);
     }
   }
 

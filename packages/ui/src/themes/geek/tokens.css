@@ -365,7 +365,8 @@
   --ui-ease-overlay-in: steps(3, jump-none);
   --ui-ease-overlay-out: steps(2, jump-none);
   --ui-live-timing: steps(2, end);
-  --ui-page-offset: 0 0;
+  --ui-page-enter: ui-page-scan-in var(--ui-dur-slow) steps(8, end);
+  --ui-page-exit: ui-page-scan-out var(--ui-dur-slow) steps(8, end);
   --ui-dur-enter: 120ms;
   --ui-dur-exit: 60ms;
   --ui-ease-enter: steps(3, jump-none);

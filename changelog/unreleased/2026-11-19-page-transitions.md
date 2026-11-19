@@ -7,4 +7,4 @@
 
 [中文版](2026-11-19-page-transitions.zh.md)
 
-Switching between a conversation, Agents and the model library now blends the outgoing and incoming page. Frost lifts the new page slightly, Primer shifts it sideways, Console uses a short fade and Doodle settles like a sheet of paper. The sidebar stays in place, so you can choose another destination while the page changes. The system’s Reduce Motion setting shows the destination immediately.
+Frost lifts the next page into view as the previous page recedes. Primer slides two panels along a shared edge. Console replaces the page in bands from top to bottom. Doodle turns the old sheet from its lower right corner. The sidebar stays available during all four transitions, and Reduce Motion shows the destination immediately.
