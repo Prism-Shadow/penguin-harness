@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** refactor
 - **Scope:** `server`
+- **PR:** [#1644](https://github.com/Prism-Shadow/penguin-harness/pull/1644)
 
 [English](2026-11-19-plugin-server-seams.md)
 
