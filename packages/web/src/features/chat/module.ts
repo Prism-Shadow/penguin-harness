@@ -21,7 +21,7 @@ import type { LinkAction, Ordered, SessionHandover } from "@prismshadow/penguin-
 import { ChatPage } from "./chat-page";
 import { chatDrafts } from "./chat-drafts";
 import type { Chat, ChatDrafts } from "./iface";
-import { chatDeps, fileRenderersOf, sessionTabsOf } from "./deps";
+import { chatDeps, fileRenderersOf, gatedChatContributions, sessionTabsOf } from "./deps";
 import { setLinkActions } from "./link-actions";
 import { setSessionHandovers } from "./session-handover";
 
@@ -83,8 +83,8 @@ export class ChatModule {
     );
     this.page = chatDeps.provide(
       {
-        sessionTabs: sessionTabsOf(contributions.sessionTabs ?? []),
-        fileRenderers: fileRenderersOf(contributions.fileRenderers ?? []),
+        sessionTabs: sessionTabsOf(gatedChatContributions(contributions.sessionTabs ?? [])),
+        fileRenderers: fileRenderersOf(gatedChatContributions(contributions.fileRenderers ?? [])),
       },
       ChatPage,
     );

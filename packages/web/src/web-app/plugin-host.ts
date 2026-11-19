@@ -14,7 +14,7 @@ import { ApiError, apiFetch } from "../api/client";
 import { apiErrorText } from "../lib/api-error";
 import { failureNode, failureOf } from "../lib/failure";
 import { formatDateTime } from "../lib/format";
-import { requestSettings } from "../lib/settings-request";
+import { requestSettingsPage } from "../lib/settings-request";
 import { toastApiError } from "../lib/toast-api-error";
 import { toneDot, toneInk, toneSurface } from "../lib/tone";
 import { currentDockScope, isTabShown, openPanel } from "../features/dock";
@@ -26,7 +26,7 @@ provideWebHost({
   failureOf,
   failureNode,
   toastApiError,
-  requestSettings,
+  requestSettings: requestSettingsPage,
   openPanel,
   isTabShown,
   currentDockScope,

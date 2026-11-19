@@ -23,9 +23,10 @@
  * moment of registration, not from the first subscriber: the built-ins register at module load,
  * before any component is mounted to listen, and their later `offered` flips must still reach it.
  */
-import { useMemo, useSyncExternalStore, type ComponentType } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import { ICONS } from "@prismshadow/penguin-ui";
+import type { DockPanelDefinition as PanelDefinition } from "@prismshadow/penguin-web-plugin";
 import { contributionShown, subscribeModuleGates } from "../../lib/module-gate";
 import type { CommandId } from "../../lib/shortcuts/types";
 import type { DockPosition } from "./dock-state";
@@ -38,29 +39,16 @@ export interface DockPanelBodyProps {
   active: boolean;
 }
 
-export interface DockPanelDefinition {
-  id: PanelId;
-  /** Display name, read at call time (the locale binding `S` is live). */
-  label: () => string;
-  /** Icon path (ICONS / NAV_ICONS) — drawn with GlyphIcon by every surface. */
-  glyph: string;
-  /** Sort key for the add menu, the picker's tail and the launcher fan. Built-ins: 10, 20, … */
-  order: number;
-  /** Listed first in an empty dock's picker, before every other offered panel (both by `order`). */
-  lead?: boolean;
-  /** Whether surfaces offer it here (the built-in browser: desktop shell only). Default: always. */
-  offered?: () => boolean;
-  /**
-   * Change feed for `offered`. Followed from registration for good, so it must only listen — a
-   * feed that starts work for its first subscriber (a poll) would run it everywhere, forever.
-   */
-  subscribeOffered?: (listener: () => void) => () => void;
+/**
+ * A panel kind as the registry holds it: the plugin face's definition (its id, name, glyph,
+ * place, picker lead, offering and body — declared once there, for the app's panels and a
+ * plugin's alike) plus what only the app's own panels set.
+ */
+export interface DockPanelDefinition extends PanelDefinition {
   /** The dock its tab lands in when it has none yet and nothing asked for one. Default: right. */
   defaultPosition?: DockPosition;
   /** A command that opens or toggles it; the empty dock's picker shows its keys on the row. */
   shortcut?: CommandId;
-  /** The tab's body. */
-  Body: ComponentType<DockPanelBodyProps>;
 }
 
 interface Entry {

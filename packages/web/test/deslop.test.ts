@@ -32,10 +32,11 @@ import {
   type DeslopPolicy,
 } from "../../ui/src/testing/deslop";
 
-import { expectEveryRootScanned, scanSources } from "./helpers/roots";
+import { appKeyOf, expectEveryRootScanned, isAppFile, scanSources } from "./helpers/roots";
 
 const SCAN = scanSources();
-const WEB = SCAN.files.filter((file) => file.root === "web");
+/** The app's files: its own, and every plugin web half it compiles in (allowlisted nowhere). */
+const WEB = SCAN.files.filter(isAppFile);
 
 /**
  * The homes §3 names, as the web app spells them today. It has no Spinner of its own (the
@@ -127,7 +128,7 @@ const TOKENS_ONLY: readonly string[] = [
 ];
 
 const WAVES = /^W(?:1a?|1b|10|[2-9])(?:\+W(?:1a?|1b|10|[2-9]))*$/;
-const relOf = (id: string) => id.slice("packages/web/src/".length);
+const relOf = appKeyOf;
 
 describe("de-slop rules over packages/web/src", () => {
   it("scans every source root, and every listed file is still in the web app", () => {
@@ -155,7 +156,7 @@ describe("de-slop rules over packages/web/src", () => {
     const title = `rule ${rule}: ${DESLOP_RULES[rule]}`;
     if (rule === 20) {
       it(`${title} — over the tokens-only files`, () => {
-        const files = WEB.filter((file) => TOKENS_ONLY.includes(file.rel));
+        const files = WEB.filter((file) => TOKENS_ONLY.includes(relOf(file.id)));
         expect(
           deslopHits(files, rule, { ...POLICY, tokensOnly: true }).map(
             (hit) => `${relOf(hit.file)}:${hit.line}  ${hit.found}`,

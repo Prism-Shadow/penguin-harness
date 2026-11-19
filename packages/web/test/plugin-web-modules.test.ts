@@ -5,8 +5,9 @@
  * to every slot a web half reaches, needing the server module `FixtureServerModule`.
  *
  * - Given the Web App depends on a package whose package.json exports `./web` and on one that
- *   does not, the generated list names the first alone; a `./web` entry outside `src/web/` is
- *   refused, naming the package.
+ *   does not, the generated list names the first alone, reading the entry through nested export
+ *   conditions; a `./web` entry outside `src/web/`, or a listed dependency that is not
+ *   installed, is refused, naming the package.
  * - The generated list boots: the plugin's module joins the app's tree beside the app's own, its
  *   contributions checked against the same table.
  * - Until the server says its module runs, none of the plugin's contributions is drawn — no dock
@@ -18,34 +19,62 @@
  *   the rail at its order. When the server stops listing it, it goes again.
  * - What only keeps the plugin's own state in step — the conversation on screen, a full-screen
  *   step, a conversation's new id — reaches it whether or not its server module runs.
+ * - Every other drawn slot waits too: the shell's pages leave the table, page renderers, Session
+ *   tabs, file renderers, sidebar blocks, rail entries and marks draw nothing, a mode is not
+ *   offered and a badge's note falls silent, session-row entries leave the menus and their marks
+ *   go quiet — while a module that declares nothing is drawn as before. A gated module's session
+ *   provider and sidebar scope, which wrap everything below them, are never mounted.
+ * - Two contributors naming one Settings key, or offering a link row with one label: the first
+ *   keeps it, the later one is dropped.
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createElement, type ComponentType } from "react";
+import { createElement, type ComponentType, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   bootModules,
   type ClassCtx,
   type Contributed,
   type IfaceTable,
+  type ManifestTable,
   type ModuleClass,
 } from "@prismshadow/penguin-core/kernel";
 
 import { pluginWebEntries, writePluginWebModules } from "../scripts/gen-web-table.mjs";
-import table from "../src/ifaces.json";
+// The suite's own table: the app, its tests (the fixture plugin's module among them) and the
+// shipped web halves. The app's table (src/ifaces.json) carries no test module.
+import table from "./ifaces.json";
 import type { PluginWebEntry } from "../src/plugin-web.gen";
 import { webRootDef } from "../src/web-root";
 import { WebAppModule } from "../src/web-app/module";
-import { gatesOf, layersOf } from "../src/web-app/gated-layers";
+import {
+  gatedPagesOf,
+  gatesOf,
+  layersOf,
+  pageRenderersOf,
+  sessionProvidersOf,
+} from "../src/web-app/gated-slots";
+import { gatedChatContributions } from "../src/features/chat/deps";
+import { gatedBadges, gatedModes, gatedSections } from "../src/web-app/sidebar/gated";
+import {
+  gatedRowActions,
+  rowExtensionsOf,
+  shownRows,
+} from "../src/features/session-list/row-actions";
+import { pageTableOf } from "../src/web-app/page-table";
 import { setRunningServerModules } from "../src/lib/module-gate";
 import { visibleSettingsSections } from "../src/lib/settings-sections";
 import { dockPanelDefinition, dockPanels } from "../src/features/dock/panel-registry";
 import { announceDockLayout, announceDockScope } from "../src/features/dock/dock-listeners";
-import { contributedSections, shownSections } from "../src/features/settings/contributed-sections";
-import { linkActionRows } from "../src/features/chat/link-actions";
+import {
+  contributedSections,
+  setContributedSections,
+  shownSections,
+} from "../src/features/settings/contributed-sections";
+import { linkActionRows, setLinkActions } from "../src/features/chat/link-actions";
 import { handOverSession } from "../src/features/chat/session-handover";
 import { seen } from "./fixtures/web-plugin/src/web/module";
 
@@ -87,6 +116,29 @@ describe("the generated list of plugin web halves", () => {
     expect(pluginWebEntries(webDirWith()).map((e) => [e.name, e.specifier])).toEqual([
       ["@penguinharness/web-fixture", "@penguinharness/web-fixture/web"],
     ]);
+  });
+
+  it("reads the entry through nested export conditions", () => {
+    const dir = webDirWith({ nested: "1.0.0" });
+    mkdirSync(join(dir, "node_modules", "nested"));
+    writeFileSync(join(dir, "node_modules", "nested", "tsconfig.web.json"), "{}");
+    writeFileSync(
+      join(dir, "node_modules", "nested", "package.json"),
+      JSON.stringify({
+        name: "nested",
+        exports: { "./web": { types: "./web.d.ts", import: { default: "./src/web/index.ts" } } },
+      }),
+    );
+    expect(pluginWebEntries(dir).map((e) => e.name)).toEqual([
+      "@penguinharness/web-fixture",
+      "nested",
+    ]);
+  });
+
+  it("refuses a listed dependency that is not installed, naming it", () => {
+    expect(() => pluginWebEntries(webDirWith({ missing: "1.0.0" }))).toThrow(
+      /^missing: .*not installed/,
+    );
   });
 
   it("refuses a web half outside src/web/, naming the package", () => {
@@ -138,10 +190,10 @@ describe("a plugin's web half in the booted tree", () => {
       },
     });
     await bootModules(
-      webRootDef(
-        generated.pluginWebModules,
-        new Map<ModuleClass, object>([[WebAppModule, webApp]]),
-      ),
+      webRootDef(generated.pluginWebModules, {
+        instances: new Map<ModuleClass, object>([[WebAppModule, webApp]]),
+        manifests: table.modules as unknown as ManifestTable,
+      }),
       {
         ifaces: table as unknown as IfaceTable,
         resources: { register: () => () => {}, claim: () => undefined },
@@ -203,5 +255,176 @@ describe("a plugin's web half in the booted tree", () => {
     expect(seen.scopes).toEqual([{ scope: "s-1", projectId: "p" }]);
     expect(seen.layouts).toBe(1);
     expect(seen.handovers).toEqual([["p:new", "s-2"]]);
+  });
+});
+
+describe("every drawn slot of a gated module", () => {
+  const GATED = "FixtureWebModule";
+  const PLAIN = "PlainModule";
+  const Part = () => createElement("p", null, "part");
+  const contributed = (from: string, id: string, data: Record<string, unknown>, code: unknown) =>
+    ({ id, from, data, code }) as unknown as Contributed;
+  const draw = (Component: ComponentType<object>, props: object = {}) =>
+    renderToStaticMarkup(createElement(Component, props));
+
+  it("leaves the shell's page out of the table, and blanks its page renderer", () => {
+    const pages = [
+      contributed(GATED, "board.page", { key: "board", path: "/board", order: 1 }, Part),
+      contributed(PLAIN, "plain.page", { key: "plain", path: "/plain", order: 2 }, Part),
+    ];
+    const gates = gatesOf(serverModules);
+    const marked = gatedPagesOf(pageTableOf(pages), pages, gates);
+    expect(marked.map((p) => [p.key, p.gatedBy])).toEqual([
+      ["board", GATED],
+      ["plain", undefined],
+    ]);
+    const renderers = pageRenderersOf(
+      [contributed(GATED, "board.renderer", { name: "Board" }, Part)],
+      gates,
+    );
+    setRunningServerModules(null);
+    expect(draw(renderers.get("Board")!)).toBe("");
+    setRunningServerModules(["FixtureServerModule"]);
+    expect(draw(renderers.get("Board")!)).toBe("<p>part</p>");
+  });
+
+  it("never mounts a gated module's session provider", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const providers = sessionProvidersOf(
+      [
+        { id: "board.provider", from: GATED, Component: Part },
+        { id: "plain.provider", from: PLAIN, Component: Part },
+      ],
+      gatesOf(serverModules),
+    );
+    expect(providers.map((p) => p.id)).toEqual(["plain.provider"]);
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
+
+  it("blanks Session tabs and file renderers, sidebar blocks and marks, and leaves others drawn", () => {
+    const [tab, plainTab] = gatedChatContributions([
+      contributed(GATED, "board.tab", { order: 1 }, Part),
+      contributed(PLAIN, "plain.tab", { order: 2 }, Part),
+    ]);
+    const [section] = gatedSections([
+      contributed(GATED, "board.section", {}, { Full: Part, Rail: Part, Scope: Part }),
+    ]);
+    const [badge] = gatedBadges([
+      contributed(GATED, "board.badge", {}, { Mark: Part, useNote: () => "new" }),
+    ]);
+    const full = (section!.code as { Full: ComponentType<object> }).Full;
+    const mark = (badge!.code as { Mark: ComponentType<object> }).Mark;
+    setRunningServerModules(null);
+    expect([draw(tab!.code as ComponentType<object>), draw(full), draw(mark)]).toEqual([
+      "",
+      "",
+      "",
+    ]);
+    expect(draw(plainTab!.code as ComponentType<object>)).toBe("<p>part</p>");
+    setRunningServerModules(["FixtureServerModule"]);
+    expect([draw(tab!.code as ComponentType<object>), draw(full), draw(mark)]).toEqual([
+      "<p>part</p>",
+      "<p>part</p>",
+      "<p>part</p>",
+    ]);
+  });
+
+  it("renders a gated section's children without its scope, whatever runs", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const Scope = ({ children }: { children?: ReactNode }) =>
+      createElement("section", null, children);
+    const [section] = gatedSections([
+      contributed(GATED, "board.section", {}, { Full: Part, Scope }),
+    ]);
+    const gatedScope = (section!.code as { Scope: ComponentType<{ children: ReactNode }> }).Scope;
+    setRunningServerModules(["FixtureServerModule"]);
+    expect(renderToStaticMarkup(createElement(gatedScope, null, "column"))).toBe("column");
+    warn.mockRestore();
+  });
+
+  it("stops offering a mode, silences a badge's note and a row's mark, and drops its entries", () => {
+    const state = { available: true, current: false, select: () => null, navItems: [] };
+    const [mode] = gatedModes([
+      contributed(GATED, "board.mode", {}, { useMode: () => state, listName: () => "Board" }),
+    ]);
+    const [badge] = gatedBadges([contributed(GATED, "board.badge", {}, { useNote: () => "new" })]);
+    const rows = rowExtensionsOf(
+      gatedRowActions([
+        contributed(
+          GATED,
+          "board.row",
+          { order: 1 },
+          {
+            sessionEntry: { id: "pin", label: () => "Pin", icon: "pin", Dialog: Part },
+            workspaceEntry: { id: "board", label: () => "Board", icon: "pin", run: () => {} },
+            sessionMark: { kind: "relay", useLabel: () => () => "on the board" },
+          },
+        ),
+        contributed(
+          PLAIN,
+          "plain.row",
+          { order: 2 },
+          {
+            sessionEntry: { id: "plain", label: () => "Plain", icon: "pin", Dialog: Part },
+          },
+        ),
+      ]),
+    );
+    /** What the hooks answer, read inside a render. */
+    const read = () => {
+      let out: unknown[] = [];
+      const Probe = () => {
+        out = [
+          (mode!.code as { useMode(): { available: boolean } }).useMode().available,
+          (badge!.code as { useNote(): string | null }).useNote(),
+          rows.marks[0]!.useLabel()({} as never),
+        ];
+        return null;
+      };
+      renderToStaticMarkup(createElement(Probe));
+      return out;
+    };
+    setRunningServerModules(null);
+    expect(read()).toEqual([false, null, null]);
+    expect(shownRows(rows).sessionEntries.map((e) => e.id)).toEqual(["plain"]);
+    expect(shownRows(rows).workspaceEntries).toEqual([]);
+    setRunningServerModules(["FixtureServerModule"]);
+    expect(read()).toEqual([true, "new", "on the board"]);
+    expect(shownRows(rows).sessionEntries.map((e) => e.id)).toEqual(["pin", "plain"]);
+  });
+});
+
+describe("contributions that collide", () => {
+  it("keeps the first Settings page of a key and the first link row of a label", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const page = (from: string) => ({
+      from,
+      data: {
+        key: "board",
+        group: "personal",
+        visibility: "everyone",
+        icon: "puzzle",
+        order: 1,
+      } as const,
+      code: { label: () => from, Body: () => null },
+    });
+    setContributedSections([page("FirstModule"), page("SecondModule")]);
+    expect(contributedSections().map((c) => c.from)).toEqual(["FirstModule"]);
+    const link = (label: string, onSelect: () => void) => ({
+      row: () => ({ glyph: "", label, onSelect }),
+      subscribe: () => () => {},
+    });
+    const first = vi.fn();
+    setLinkActions([
+      { action: link("Pin", first), from: "FirstModule" },
+      { action: link("Pin", vi.fn()), from: "SecondModule" },
+    ]);
+    const rows = linkActionRows(HREF);
+    expect(rows).toHaveLength(1);
+    rows[0]!.onSelect();
+    expect(first).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
   });
 });

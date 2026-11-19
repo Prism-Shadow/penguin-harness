@@ -27,8 +27,15 @@
 import type { SettingsSectionData } from "@prismshadow/penguin-web-plugin";
 import { offersChangePassword, type AccountMenuSession } from "./account-menu";
 
+/**
+ * A contributed page's key. Branded, so the app's own code still names only its own pages and a
+ * mistyped one is a type error; a contributed key enters through the contribution's data or the
+ * plugin face's `requestSettings` (lib/settings-request.ts).
+ */
+export type ContributedSettingsKey = string & { readonly __contributedSettingsKey: true };
+
 /** A page of the Settings dialog: one of the app's own, or one another module contributed. */
-export type SettingsSectionKey = string;
+export type SettingsSectionKey = HostSettingsSectionKey | ContributedSettingsKey;
 
 /** The app's own pages. */
 export type HostSettingsSectionKey =
@@ -97,7 +104,7 @@ const SECTION_RULES: readonly SectionRule[] = [
 /** A contributed page as the rule judges it: everyone sees it, or admins alone. */
 function ruleOf(section: SettingsSectionData): SectionRule {
   return {
-    key: section.key,
+    key: section.key as ContributedSettingsKey,
     group: section.group,
     order: section.order,
     visible: section.visibility === "admin" ? (v) => v.isAdmin : () => true,
@@ -114,7 +121,7 @@ export function visibleSettingsSections(
   viewer: SettingsViewer,
   contributed: readonly SettingsSectionData[] = [],
 ): readonly SettingsSection[] {
-  const own = new Set(SECTION_RULES.map((rule) => rule.key));
+  const own = new Set<string>(SECTION_RULES.map((rule) => rule.key));
   return [...SECTION_RULES, ...contributed.filter((c) => !own.has(c.key)).map(ruleOf)]
     .filter((section) => section.visible(viewer))
     .sort((a, b) => GROUP_ORDER[a.group] - GROUP_ORDER[b.group] || a.order - b.order)

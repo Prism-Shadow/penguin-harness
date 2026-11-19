@@ -6,8 +6,14 @@
  * - Given a plugin that runs, its modules are listed — also when this build dropped one of its
  *   contributions and runs the rest of it.
  * - Given a plugin this build left out of the generation, none of its modules is listed.
+ * - When an admin lists a shipped plugin for a Project and the App re-assembles on it, every
+ *   signed-in user's channel is told `contributions_changed` once the new App answers, and the
+ *   list then names the plugin's module.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { writeClassPackage } from "./plugin-fixtures.js";
 import { parseManifest, type ModuleDef } from "@prismshadow/penguin-core/kernel";
 import type { ContributionsResponse } from "../src/api/types.js";
 import { PluginHost } from "../src/plugin/host.js";
@@ -76,5 +82,39 @@ describe("the server modules /api/contributions names", () => {
     host.use({ specifier: "@acme/unmet", modules: [], replaces: [unmet] });
     t = await createTestApp({ plugins: host });
     expect(await modulesOf(t)).toEqual(["BoardModule", "PartialModule"]);
+  });
+
+  it("tells every signed-in tab to re-read once a plugin change re-assembled the App", async () => {
+    const programEntry = process.argv[1];
+    try {
+      t = await createTestApp();
+      const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+      // Shipped as the build ships it: under the installation's plugin prefix, which the
+      // program entry points into (plugin/loader.ts pluginBases).
+      const prefix = path.join(t.root, "install", "plugins");
+      process.argv[1] = path.join(t.root, "install", "bin", "server.js");
+      await fs.mkdir(prefix, { recursive: true });
+      await fs.writeFile(
+        path.join(prefix, "package.json"),
+        JSON.stringify({ name: "prefix", private: true, dependencies: { "@acme/board": "0.0.0" } }),
+      );
+      await writeClassPackage(path.join(prefix, "node_modules", "@acme", "board"), {
+        name: "@acme/board",
+        module: "AcmeBoard",
+      });
+      const told: unknown[] = [];
+      t.deps.channels.get("user:admin").subscribe((event) => told.push(JSON.parse(event.data)));
+
+      const saved = await admin.put("/api/projects/default_project/plugins/installed", {
+        plugins: ["@acme/board"],
+      });
+      expect(saved.status).toBe(200);
+      expect(told.filter((e) => (e as { type?: string }).type === "contributions_changed")).toEqual(
+        [{ type: "contributions_changed" }],
+      );
+      expect(await modulesOf(t)).toEqual(["AcmeBoard"]);
+    } finally {
+      if (programEntry !== undefined) process.argv[1] = programEntry;
+    }
   });
 });

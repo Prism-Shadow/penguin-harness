@@ -12,8 +12,9 @@
  *
  * `ApiError` and the three tone maps are live bindings, reassigned when the host is provided:
  * read them where they are used (`err instanceof ApiError`, `toneInk.busy`), never copy them
- * into a constant at load time. Calling a forwarding function before the host is provided
- * throws, naming what is missing.
+ * into a constant at load time. Calling a forwarding function, or reading a tone, before the host
+ * is provided throws, naming what is missing; before then nothing is an `ApiError`. A plugin's
+ * own tests hand over a stand-in from `@prismshadow/penguin-web-plugin/testing`.
  */
 import type { ReactNode } from "react";
 import type { Failure, ReportMask } from "@prismshadow/penguin-ui";
@@ -90,12 +91,13 @@ export interface WebHost {
 
 let host: WebHost | null = null;
 
+const unprovided = (name: string): Error =>
+  new Error(
+    `@prismshadow/penguin-web-plugin: ${name} was used before the Web App provided its host (packages/web/src/web-app/plugin-host.ts)`,
+  );
+
 function need<K extends keyof WebHost>(name: K): WebHost[K] {
-  if (host === null) {
-    throw new Error(
-      `@prismshadow/penguin-web-plugin: ${name} was called before the Web App provided its host (packages/web/src/web-app/plugin-host.ts)`,
-    );
-  }
+  if (host === null) throw unprovided(name);
   return host[name];
 }
 
@@ -110,20 +112,21 @@ class UnprovidedApiError extends Error implements ApiErrorShape {
   }
 }
 
-const NO_TONES: Readonly<Record<Tone, string>> = {
-  busy: "",
-  attention: "",
-  success: "",
-  link: "",
-  danger: "",
-  muted: "",
-};
+/** A tone map that throws on every read until the host's replaces it. */
+function unprovidedTones(name: string): Readonly<Record<Tone, string>> {
+  return new Proxy({} as Record<Tone, string>, {
+    get: (_target, key) => {
+      if (typeof key === "symbol") return undefined;
+      throw unprovided(name);
+    },
+  });
+}
 
 export type ApiError = ApiErrorShape;
 export let ApiError: ApiErrorClass = UnprovidedApiError;
-export let toneInk: Readonly<Record<Tone, string>> = NO_TONES;
-export let toneSurface: Readonly<Record<Tone, string>> = NO_TONES;
-export let toneDot: Readonly<Record<Tone, string>> = NO_TONES;
+export let toneInk: Readonly<Record<Tone, string>> = unprovidedTones("toneInk");
+export let toneSurface: Readonly<Record<Tone, string>> = unprovidedTones("toneSurface");
+export let toneDot: Readonly<Record<Tone, string>> = unprovidedTones("toneDot");
 
 /** The Web App's side: hands its implementations over. Called once, before the module tree boots. */
 export function provideWebHost(next: WebHost): void {

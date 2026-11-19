@@ -94,17 +94,18 @@ const NO_RESOURCES: Resources = {
 
 /**
  * The tree `bootWeb()` boots: the app's own modules and, as further children of the root, every
- * module of every listed plugin web half, each checked against the one generated table.
- * `instances` stands pre-built nodes in for their classes (a suite's doubles).
+ * module of every listed plugin web half, each checked against the one generated table. A suite
+ * passes `instances`, pre-built nodes standing in for their classes (its doubles), and `manifests`,
+ * the test table (test/ifaces.json) when it boots a module of its own.
  */
 export function webRootDef(
   plugins: readonly PluginWebEntry[] = pluginWebModules,
-  instances?: ReadonlyMap<ModuleClass, object>,
+  options: { instances?: ReadonlyMap<ModuleClass, object>; manifests?: ManifestTable } = {},
 ): ModuleDef {
-  const manifests = table.modules as unknown as ManifestTable;
+  const manifests = options.manifests ?? (table.modules as unknown as ManifestTable);
   return moduleDefOf(WebRoot, {
     manifests,
-    ...(instances !== undefined ? { instances } : {}),
+    ...(options.instances !== undefined ? { instances: options.instances } : {}),
     extra: plugins.flatMap((entry) =>
       entry.plugin.modules.map((cls) => moduleDefOf(cls, { manifests })),
     ),

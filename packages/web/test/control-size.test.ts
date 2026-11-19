@@ -27,7 +27,9 @@ import { describe, expect, it } from "vitest";
 import ts from "typescript";
 import {
   expectEveryRootScanned,
+  appKeyOf,
   expectSingleHome,
+  isAppFile,
   scanSources,
   sourceFile,
   type SourceFile,
@@ -172,7 +174,8 @@ function findLooseFooterButtons(files: readonly JsxSource[] = tsxFiles()): strin
  * folds open (release notes, credits) are the rest — so every Button in them belongs with the
  * fields beside it on the `sm` rung, exactly as a footer button does. A parser cannot infer that
  * from the file alone (nothing in a section module says it renders in a dialog), so the fact is
- * declared here. Add a module when it becomes dialog content; drop one when it stops.
+ * declared here. Add a module when it becomes dialog content; drop one when it stops. A plugin web
+ * half's page (`SettingsModule.sections`) is named by its repo path, `plugins/<name>/src/web/…`.
  */
 const DIALOG_BODY_MODULES = new Set([
   "components/account/app-info-dialog.tsx",
@@ -204,7 +207,7 @@ const DIALOG_BODY_MODULES = new Set([
 function findLooseDialogBodyButtons(): string[] {
   const loose: string[] = [];
   for (const file of tsxFiles()) {
-    if (file.root !== "web" || !DIALOG_BODY_MODULES.has(file.rel)) continue;
+    if (!isAppFile(file) || !DIALOG_BODY_MODULES.has(appKeyOf(file.id))) continue;
     const source = parse(file);
     const visit = (node: ts.Node): void => {
       if (jsxTag(node) === "Button") {
@@ -219,7 +222,7 @@ function findLooseDialogBodyButtons(): string[] {
             : "<none>";
         if (rung !== '"sm"' && rung !== '"icon"') {
           const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
-          loose.push(`${file.rel}:${line} ${rung}`);
+          loose.push(`${appKeyOf(file.id)}:${line} ${rung}`);
         }
       }
       ts.forEachChild(node, visit);

@@ -2,16 +2,29 @@
  * The face a plugin's web half calls (src/index.ts), with the Web App's side (src/host.ts) played
  * by a stand-in host.
  *
- * - Before the Web App hands its host over, a host ability throws, naming the one that was
- *   called, and nothing is an `ApiError`.
+ * - Before the Web App hands its host over, a host ability or a tone read throws, naming what was
+ *   used, and nothing is an `ApiError`.
  * - Once handed over, every call reaches the host's own function with its arguments, and
  *   `ApiError` and the tone maps are the host's own.
  * - A plugin's table answers in the language on screen, and switches with it.
  * - A plugin's error codes are found in the language on screen; a code no table carries is not.
+ * - The testing stand-in sends a plugin's request through the global fetch as JSON, throws the
+ *   API error the server named and words it with the plugin's own text for that code, and
+ *   records the toast, the Settings request and the dock opening it cannot show.
  */
-import { describe, expect, it } from "vitest";
-import { ApiError, apiFetch, defineStrings, openPanel, toneInk, webLocale } from "../src/index";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  ApiError,
+  apiFetch,
+  defineStrings,
+  openPanel,
+  requestSettings,
+  toastApiError,
+  toneInk,
+  webLocale,
+} from "../src/index";
 import { contributedErrorText, provideWebHost, setWebLocale, type WebHost } from "../src/host";
+import { provideTestHost } from "../src/testing";
 
 class HostApiError extends Error {
   constructor(
@@ -53,8 +66,9 @@ function standInHost(calls: unknown[][]): WebHost {
 }
 
 describe("the face's host abilities", () => {
-  it("says which ability was called before the host was handed over", () => {
-    expect(() => openPanel("board")).toThrow(/openPanel was called before the Web App provided/);
+  it("says which ability was used before the host was handed over", () => {
+    expect(() => openPanel("board")).toThrow(/openPanel was used before the Web App provided/);
+    expect(() => toneInk.danger).toThrow(/toneInk was used before/);
     expect(new HostApiError(500, "internal", "x") instanceof ApiError).toBe(false);
   });
 
@@ -99,5 +113,52 @@ describe("a plugin's string tables", () => {
     setWebLocale("en");
     expect(contributedErrorText("board_full")).toBe("The board is full.");
     expect(contributedErrorText("no_such_code")).toBeUndefined();
+  });
+});
+
+describe("the testing stand-in host", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("sends a plugin's request through fetch, and words the failure the server named", async () => {
+    defineStrings({
+      zh: { apiErrors: { board_locked: "看板已锁定。" } },
+      en: { apiErrors: { board_locked: "The board is locked." } },
+    });
+    setWebLocale("en");
+    const sent: Array<[string, RequestInit | undefined]> = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      sent.push([url, init]);
+      return url.startsWith("/api/board/cards")
+        ? new Response(JSON.stringify({ cards: 2 }), { status: 200 })
+        : new Response(JSON.stringify({ error: { code: "board_locked", message: "locked" } }), {
+            status: 409,
+          });
+    });
+    const record = provideTestHost();
+
+    expect(await apiFetch("/api/board/cards", { query: { limit: 5, skip: undefined } })).toEqual({
+      cards: 2,
+    });
+    const failed = await apiFetch("/api/board", { method: "POST", body: { a: 1 } }).catch(
+      (err: unknown) => err,
+    );
+    expect(failed instanceof ApiError).toBe(true);
+    expect(failed).toMatchObject({ status: 409, code: "board_locked" });
+    expect(sent.map(([url, init]) => [url, init?.method, init?.body])).toEqual([
+      ["/api/board/cards?limit=5", "GET", undefined],
+      ["/api/board", "POST", JSON.stringify({ a: 1 })],
+    ]);
+
+    toastApiError(failed);
+    requestSettings({ section: "board" });
+    openPanel("board");
+    expect(record).toEqual({
+      toasts: ["The board is locked."],
+      settings: ["board"],
+      panels: ["board"],
+    });
+    expect(toneInk.danger).toBe("tone-danger");
   });
 });
