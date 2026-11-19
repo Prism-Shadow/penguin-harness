@@ -3,7 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `core`, `server`, `cli`, `docs`
-- **PR:** PR_W_LINK
+- **PR:** [#1653](https://github.com/Prism-Shadow/penguin-harness/pull/1653)
 - **Breaking:** yes — a switch's stream ends with `session_update`, not the new context's `session_meta`
 
 [中文版](2026-11-19-model-switch-lazy.zh.md)
