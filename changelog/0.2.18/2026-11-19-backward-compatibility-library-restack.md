@@ -17,4 +17,4 @@ If you import these modules from the server package, import them from the librar
 
 ### Lifetime
 
-These re-export entries will be deleted in penguin v0.2.18. After that, importing a moved module from `@prismshadow/penguin-server` fails; import it from its library package.
+These re-export entries will be deleted in penguin v0.3. After that, importing a moved module from `@prismshadow/penguin-server` fails; import it from its library package.

@@ -17,4 +17,4 @@
 
 ### 期限
 
-这些 re-export 条目会在 penguin v0.2.18 删除。之后，再从 `@prismshadow/penguin-server` 导入被搬走的模块会直接失败；请从它的 library 包导入。
+这些 re-export 条目会在 penguin v0.3 删除。之后，再从 `@prismshadow/penguin-server` 导入被搬走的模块会直接失败；请从它的 library 包导入。
