@@ -52,7 +52,7 @@ import {
   ModelOAuthService,
   openedMode,
 } from "../src/services/model-oauth-service.js";
-import { publicOrigin } from "../src/http/public-origin.js";
+import { publicOrigin } from "@prismshadow/penguin-library-http/public-origin";
 import { fakeFetch, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import type { FetchFake } from "./fixtures/fetch.js";
 import { sessionRow } from "./fixtures/session.js";

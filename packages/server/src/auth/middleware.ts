@@ -20,15 +20,15 @@ import { getCookie, setCookie } from "hono/cookie";
 import { parse } from "hono/utils/cookie";
 import { AMSP_PREFIX } from "../amsp/cors.js";
 import { HttpError } from "../http/errors.js";
-import { mediaType } from "../http/media-type.js";
+import { mediaType } from "@prismshadow/penguin-library-http/media-type";
 import {
   NO_PROXY_RULE,
   acceptsOrigin,
   forwardedHeaders,
   publicOriginOf,
   sameOriginSite,
-} from "../http/public-origin.js";
-import type { OriginRule } from "../http/public-origin.js";
+} from "@prismshadow/penguin-library-http/public-origin";
+import type { OriginRule } from "@prismshadow/penguin-library-http/public-origin";
 import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
 import { SESSION_COOKIE } from "../api/types.js";
 import type { AppEnv } from "@prismshadow/penguin-library-http/app-env";
@@ -62,7 +62,7 @@ export function parseCookieHeader(header: string | null | undefined): Record<str
 
 // The origin comparison lives with the public-origin rule (http/public-origin.ts); re-exported
 // for the callers that reach it here.
-export { isOwnOrigin } from "../http/public-origin.js";
+export { isOwnOrigin } from "@prismshadow/penguin-library-http/public-origin";
 
 /**
  * Session cookie attributes, shared by every path that sets one. `maxAge` comes from the

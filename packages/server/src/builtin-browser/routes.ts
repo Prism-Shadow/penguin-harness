@@ -56,7 +56,7 @@ import type {
 import { requireHuman } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
 import { HttpError, errorBody } from "../http/errors.js";
-import { publicOriginOf } from "../http/public-origin.js";
+import { publicOriginOf } from "@prismshadow/penguin-library-http/public-origin";
 import { badRequest } from "../http/validate.js";
 import { isPenguinExtensionOrigin } from "./extension-origin.js";
 import type { ExtensionPairing } from "./extension-pairing.js";
