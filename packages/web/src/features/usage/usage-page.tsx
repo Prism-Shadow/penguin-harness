@@ -452,6 +452,7 @@ export function UsagePage() {
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <ChartCard title={S.usage.chartRequestsByAgent}>
             <RequestsChart
+              label={S.usage.chartRequestsByAgent}
               series={plotted.points}
               entities={agentEntities}
               granularity={data.granularity}
@@ -460,6 +461,7 @@ export function UsagePage() {
           </ChartCard>
           <ChartCard title={S.usage.chartRequestsByModel}>
             <RequestsChart
+              label={S.usage.chartRequestsByModel}
               series={plotted.points}
               entities={modelEntities}
               granularity={data.granularity}
@@ -472,6 +474,7 @@ export function UsagePage() {
             extra={<TokenLegend active={tokenBucket} onHover={setTokenBucket} />}
           >
             <TokenBarChart
+              label={S.usage.chartTokenTrend}
               series={plotted.points}
               granularity={data.granularity}
               legend={tokenBucket}
@@ -480,6 +483,7 @@ export function UsagePage() {
           </ChartCard>
           <ChartCard title={S.usage.chartCostTrend}>
             <TrendChart
+              label={S.usage.chartCostTrend}
               series={plotted.points}
               granularity={data.granularity}
               currency={currency}

@@ -523,6 +523,7 @@ export function FinancePage() {
               </p>
             ) : (
               <TrendChart
+                label={S.company.finance.trend}
                 series={series}
                 granularity="day"
                 currency={currency}
