@@ -4551,7 +4551,7 @@ Scenarios:
       reason: (said: boolean): string =>
         said ? "The provider refused the last request:" : "The provider refused the last request.",
       advice:
-        "Most likely too little room was left for compaction, so this conversation continued from a Trace hand-off note. Correct this model's context window in the model settings, or lower this agent's compaction threshold (drag the dashed mark in the context panel).",
+        "This conversation continued from a Trace hand-off note. Most likely too little room was left for compaction: correct this model's context window in the model settings, or lower this agent's compaction threshold (drag the dashed mark in the context panel).",
     },
     slashHint: "Type / for commands",
     switchAgent: "Hand off to another agent — opens a new session on send",
@@ -4652,7 +4652,7 @@ Scenarios:
           : (cause ?? errorMessage),
         "No full summary could be written; the next context opens with a Trace hand-off note.",
         room
-          ? "Too little room was left for compaction: correct this model's context window, or lower the compaction threshold."
+          ? "Most likely too little room was left for compaction: correct this model's context window, or lower the compaction threshold."
           : undefined,
       ]
         .filter((line) => line !== undefined)

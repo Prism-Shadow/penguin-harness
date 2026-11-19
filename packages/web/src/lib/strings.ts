@@ -4789,13 +4789,14 @@ Benchmark：
     /**
      * Composer notice in the same slot, with the same two buttons: the Session's latest compaction
      * was a refusal hand-off (see composerNotice). Why first: the lead, then the provider's own
-     * words after its colon when it sent any; then what was done and what to correct.
+     * words after its colon when it sent any; then what was done, the likely cause and what to
+     * correct.
      */
     contextRefusedHandoff: {
       reason: (said: boolean): string =>
         said ? "服务商拒绝了上一次请求：" : "服务商拒绝了上一次请求。",
       advice:
-        "多半是留给压缩的空间不足，本对话已改由 Trace 交接说明接续。请在模型配置中更正该模型的上下文窗口，或调低本 Agent 的压缩阈值（可拖动上下文面板里的虚线）。",
+        "本对话已改由 Trace 交接说明接续。多半是因为留给压缩的空间不足：请在模型配置中更正该模型的上下文窗口，或调低本 Agent 的压缩阈值（可拖动上下文面板里的虚线）。",
     },
     slashHint: "输入 / 使用命令",
     /** `/agent` handoff: command description, picker title, search box, no-match hint, and the staged target's description and remove button. */
@@ -4900,7 +4901,7 @@ Benchmark：
      * The settled row's status-mark tooltip and accessible name when the compaction completed without
      * a full summary: the title stays 压缩完毕, only the mark says it. Why first — the cause in words
      * (the retry line's, with the HTTP status) and the error's own words — then what was done, then,
-     * short of room (compactionShortOfRoom), what to correct. One line each.
+     * short of room (compactionShortOfRoom), the likely cause and what to correct. One line each.
      */
     compactionDegradedHint: (
       why: string | null,
@@ -4912,7 +4913,9 @@ Benchmark：
           ? `${why}：${errorMessage}`
           : (why ?? errorMessage),
         "未能生成完整摘要，新上下文改以 Trace 交接说明开头。",
-        room ? "留给压缩的空间不足：请更正该模型的上下文窗口，或调低压缩阈值。" : undefined,
+        room
+          ? "多半是因为留给压缩的空间不足：请更正该模型的上下文窗口，或调低压缩阈值。"
+          : undefined,
       ]
         .filter((line) => line !== undefined)
         .join("\n"),

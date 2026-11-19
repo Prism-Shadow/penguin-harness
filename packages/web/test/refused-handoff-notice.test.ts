@@ -5,6 +5,8 @@
  *
  * - Given the provider's words, the first line holds them, the advice comes on the line after and
  *   does not repeat them, and pressing Details opens the failure's details once.
+ * - Given words that are a JSON body, the first line holds only the sentence it carries for a
+ *   person, none of the raw body (which stays behind Details).
  * - Given no words (none sent, or blank ones), the lead stands alone as a sentence of its own,
  *   with nothing but Details after it, and the advice follows.
  * - Given no details handler (a host without the failure dialog), there is no Details press: the
@@ -53,6 +55,18 @@ describe.each([
     expect(notice.details).not.toBeNull();
     await click(notice.details!);
     expect(onDetails).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows only the sentence a JSON body holds for a person, none of the raw body", async () => {
+    setActiveStrings(dict);
+    const sentence = "prompt is too long: 140211 tokens > 131072 maximum";
+    const body = `400 {"type":"error","error":{"type":"invalid_request_error","message":"${sentence}"},"request_id":"req_011CUz3tF8eJ2dQx6Q9pY7Ln"}`;
+    const notice = await noticeOf(body, () => {});
+    expect(notice.first.textContent).toContain(sentence);
+    for (const raw of ["{", "invalid_request_error", "req_011CUz3tF8eJ2dQx6Q9pY7Ln"]) {
+      expect(notice.first.textContent).not.toContain(raw);
+    }
+    expect(notice.details).not.toBeNull();
   });
 
   it("with no words, says the refusal alone", async () => {
