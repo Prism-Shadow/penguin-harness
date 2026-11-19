@@ -59,9 +59,8 @@ import {
 // The clean baseline's rule table, the one the UI package's de-slop suite runs over the built-in
 // packs: an import is held to it with no hit allowed. Inlined by the build (tsup.config.ts).
 import { PACK_RULES, packRuleHits } from "@prismshadow/penguin-ui/pack-rules";
-import type { ThemePackDto } from "../api/types.js";
-import { HttpError } from "../http/errors.js";
-import type { WebFiles } from "../workbenches/ui-runtime.js";
+import { HttpError } from "@prismshadow/penguin-library-http";
+import type { ThemePackDto, WebFiles } from "./types.js";
 
 /** Where the packs live under the data root. */
 export const THEMES_DIR = "themes";

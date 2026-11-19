@@ -41,7 +41,10 @@ import { attachExtensionWebSocket } from "./builtin-browser/extension-ws.js";
 import type { ExtensionGate } from "./builtin-browser/extension-ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
-import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
+import {
+  shellPortOf,
+  wireShellUpdatePort,
+} from "@prismshadow/penguin-library-setting/desktop-update-port";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { Errors } from "@prismshadow/penguin-library-observability";
 import type { Auth } from "@prismshadow/penguin-library-auth";

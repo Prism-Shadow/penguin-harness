@@ -13,7 +13,7 @@
  * The same port carries the host commands the page's command palette offers: one
  * `host-commands` push saying what this host can do, and `host-command` frames back.
  *
- * Wire shapes live in api/types.ts (the updater, tray and folder-access messages, and
+ * Wire shapes live in ./types.ts (the updater, tray and folder-access messages, and
  * HostCommandsMessage / HostCommandMessage) so the shell imports the same contract.
  */
 import { randomUUID } from "node:crypto";
@@ -32,9 +32,8 @@ import type {
   HostCommandMessage,
   HostCommandOffer,
   HostCommandsMessage,
-} from "../api/types.js";
+} from "./types.js";
 import type { DesktopService } from "./desktop-service.js";
-import type { ShellFrames } from "../hmr/capabilities.js";
 
 /**
  * How long the shell may take to answer a folder-access request. Generous: its read holds
@@ -46,6 +45,18 @@ export const FOLDER_ACCESS_TIMEOUT_MS = 120_000;
 export interface ShellPort {
   on(event: "message", listener: (e: { data: unknown }) => void): void;
   postMessage(message: unknown): void;
+}
+
+/**
+ * Where the server keeps the shell's raw frames while its platform decides what they mean
+ * (the server's hmr/capabilities.ts holds the real one — the same shape, declared here so
+ * the relay needs no import from the server).
+ */
+export interface ShellFrames {
+  /** The last `host-commands` frame, exactly as the shell sent it. Unparsed on purpose. */
+  hostCommands: unknown;
+  /** Sends one frame to the shell; null when this process has no shell port. */
+  post: ((frame: unknown) => void) | null;
 }
 
 const UPDATE_STATES: ReadonlySet<string> = new Set([

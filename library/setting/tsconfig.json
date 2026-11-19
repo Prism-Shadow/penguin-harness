@@ -2,11 +2,16 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
+      "@prismshadow/penguin-library-auth": ["../auth/src/index.ts"],
+      "@prismshadow/penguin-library-auth/repos/users": ["../auth/src/repos/users.ts"],
       "@prismshadow/penguin-library-db": ["../db/src/index.ts"],
       "@prismshadow/penguin-library-db/database": ["../db/src/database.ts"],
       "@prismshadow/penguin-library-db/schema": ["../db/src/schema.ts"],
       "@prismshadow/penguin-library-db/migrations": ["../db/src/migrations/index.ts"],
-      "@prismshadow/penguin-library-db/migrations/runner": ["../db/src/migrations/runner.ts"]
+      "@prismshadow/penguin-library-db/migrations/runner": ["../db/src/migrations/runner.ts"],
+      "@prismshadow/penguin-library-http": ["../http/src/index.ts"],
+      "@prismshadow/penguin-theme-pack": ["../../packages/theme-pack/src/index.ts"],
+      "@prismshadow/penguin-ui/pack-rules": ["../../packages/ui/src/testing/pack-rules.ts"]
     }
   },
   "include": ["src"]
