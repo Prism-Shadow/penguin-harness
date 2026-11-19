@@ -57,10 +57,9 @@ import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Traces } from "@prismshadow/penguin-library-trace";
 import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
-import type { Workbenches } from "../mechanisms/workbenches.js";
+import type { WorkbenchApprovalMode, Workbenches } from "../mechanisms/workbenches.js";
 import type {
   AppCenterShortcut,
-  WorkbenchApprovalMode,
   WorkbenchTabIcon,
   WorkbenchInfo,
   WorkbenchInput,
