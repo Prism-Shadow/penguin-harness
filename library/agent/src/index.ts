@@ -6,7 +6,7 @@
  * server.
  */
 export { AgentConfig, Memory } from "./contract.js";
-export { AgentPaths } from "./ports.js";
+export type { AgentPaths } from "./ports.js";
 export {
   STATE_FILE,
   TMP_SUFFIX,
@@ -52,8 +52,8 @@ export {
   parseAvatarDataUrl,
 } from "./avatar-file.js";
 export type { AvatarImage, StoredAvatar } from "./avatar-file.js";
-export {
-  AVATAR_MAX_CHARS,
+export { AVATAR_MAX_CHARS } from "./types.js";
+export type {
   VaultEntryInfo,
   VaultResponse,
   VaultEntryUpdate,
