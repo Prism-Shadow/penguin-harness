@@ -10,8 +10,20 @@ interface Item {
 interface Fridge {
   items: Item[];
   nextId: number;
+  lastUsed?: Item;
 }
 export default workbench<Fridge>({ items: [], nextId: 1 }, (fridge, a) => {
+  if (a.type === "undo-use") {
+    const item = fridge.lastUsed;
+    requireValue(item && item.id === a.id);
+    const current = fridge.items.find((i) => i.id === item.id);
+    if (current) current.count = item.count;
+    else fridge.items.push(item);
+    delete fridge.lastUsed;
+    return;
+  }
+  // A restore applies only to the latest inventory change.
+  delete fridge.lastUsed;
   if (a.type === "add" || a.type === "edit") {
     const fields = {
       name: text(a.name),
@@ -34,6 +46,7 @@ export default workbench<Fridge>({ items: [], nextId: 1 }, (fridge, a) => {
   const at = fridge.items.findIndex((i) => i.id === a.id);
   requireValue(at >= 0);
   if (a.type === "use") {
+    fridge.lastUsed = { ...fridge.items[at]! };
     if (--fridge.items[at]!.count === 0) fridge.items.splice(at, 1);
   } else if (a.type === "remove") fridge.items.splice(at, 1);
   else requireValue(false);

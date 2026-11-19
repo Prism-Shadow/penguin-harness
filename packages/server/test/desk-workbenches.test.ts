@@ -2,6 +2,7 @@
  * Workbench actions through the same request handler the installed page calls.
  *
  * - A stale window cannot spend the last portion of an ingredient twice. Invalid edits leave the item intact.
+ * - Undo restores the last used portion even after reopening. A later inventory edit invalidates that restore.
  * - A table keeps its active seat across arrivals and starts a new round on wrap. A roll records its dice and modifier.
  * - A late guess cannot change a team's score. Ending the turn banks its points and hands the screen to the other team.
  * - A second draw for one day keeps the slip and its note, including after the workbench is reopened.
@@ -55,6 +56,25 @@ describe("the desk workbenches", () => {
     expect(results.map((r) => r.status ?? 200).sort()).toEqual([200, 409]);
     expect((await f.send({ type: "edit", id: 1, ...item, day: "2026-02-31" })).status).toBe(400);
     expect(await f.state()).toMatchObject({ items: [{ ...item, count: 1 }] });
+  });
+  it("restores the last portion on reopen and never overwrites a later inventory edit", async () => {
+    const f = await open("fridge-keeper");
+    const milk = { name: "Milk", count: 1, unit: "carton", zone: "chilled", day: "" };
+    await f.send({ type: "add", ...milk });
+    await f.send({ type: "use", id: 1 });
+    f.reopen();
+    expect(await f.state()).toMatchObject({ items: [], lastUsed: { name: "Milk" } });
+    await f.send({ type: "undo-use", id: 1 });
+    expect(await f.state()).toMatchObject({ items: [{ id: 1, ...milk }] });
+    expect((await f.send({ type: "undo-use", id: 1 })).status).toBe(400);
+    await f.send({ type: "edit", id: 1, ...milk, count: 3 });
+    await f.send({ type: "use", id: 1 });
+    await f.send({ type: "undo-use", id: 1 });
+    expect(await f.state()).toMatchObject({ items: [{ count: 3 }] });
+    await f.send({ type: "use", id: 1 });
+    await f.send({ type: "edit", id: 1, ...milk, count: 4 });
+    expect((await f.send({ type: "undo-use", id: 1 })).status).toBe(400);
+    expect(await f.state()).toMatchObject({ items: [{ count: 4 }] });
   });
   it("preserves the active seat, wraps the round and logs a bounded roll", async () => {
     const f = await open("tabletop-desk");

@@ -4,7 +4,6 @@ import {
   node,
   row,
   section,
-  heading,
   hint,
   input,
   select,
@@ -17,6 +16,8 @@ import {
   today,
   displayDay,
 } from "./desk-kit.js";
+import { followUp } from "./follow-up.js";
+let view = "follow";
 let selected = null,
   adding = false;
 desk(t("Action Minutes", "会议行动簿"), (minutes, { send, draw }) => {
@@ -25,9 +26,10 @@ desk(t("Action Minutes", "会议行动簿"), (minutes, { send, draw }) => {
     "meeting",
     t("Create meeting", "创建会议"),
     async (v, id) => {
-      selected = null;
       if (await send({ type: "meeting", ...v }, id)) {
+        selected = null;
         adding = false;
+        view = "meeting";
         draw(id);
       }
     },
@@ -35,6 +37,41 @@ desk(t("Action Minutes", "会议行动簿"), (minutes, { send, draw }) => {
     field(t("Date", "会议日期"), input("day", { type: "date", required: true, value: today() })),
   );
   if (!meeting) return [section(t("New meeting", "新建会议"), add)];
+  const openMeeting = (id) => {
+    selected = id;
+    view = "meeting";
+    adding = false;
+    draw();
+  };
+  function switcher(key, label) {
+    const b = button(label, () => {
+      view = key;
+      adding = false;
+      draw();
+    });
+    b.setAttribute("aria-current", view === key && !adding ? "page" : "false");
+    return b;
+  }
+  const navigation = node(
+    "nav",
+    { className: "work-views" },
+    row(
+      switcher("follow", t("Follow-up", "跟进")),
+      switcher("meeting", t("Meeting notes", "会议纪要")),
+    ),
+    button(
+      adding ? t("Cancel", "取消") : t("New meeting", "新建会议"),
+      () => {
+        adding = !adding;
+        draw();
+        if (adding) document.querySelector('input[name="title"]')?.focus();
+      },
+      !adding,
+    ),
+  );
+  if (adding) return [navigation, section(t("New meeting", "新建会议"), add)];
+  if (view === "follow")
+    return [navigation, ...followUp(minutes.meetings, { send, draw }, openMeeting)];
   const picker = select(
     "picked",
     minutes.meetings.map((m) => [m.id, m.title + " / " + displayDay(m.day)]),
@@ -77,10 +114,6 @@ desk(t("Action Minutes", "会议行动簿"), (minutes, { send, draw }) => {
   };
   const controls = row(
     field(t("Meeting", "会议"), picker),
-    button(adding ? t("Cancel", "取消") : t("New meeting", "新建会议"), () => {
-      adding = !adding;
-      draw();
-    }),
     button(t("Export minutes", "导出纪要"), exportText),
   );
   const tasks = section(
@@ -131,8 +164,8 @@ desk(t("Action Minutes", "会议行动簿"), (minutes, { send, draw }) => {
     ),
   );
   return [
+    navigation,
     controls,
-    ...(adding ? [add] : []),
     section(meeting.title, hint(displayDay(meeting.day))),
     node("div", { className: "columns" }, tasks, decisions),
     row(

@@ -12,8 +12,8 @@ The built-in library added five workbenches. Install each one separately on an A
 
 ## Utilities
 
-- Fridge Keeper tracks ingredient quantities, storage locations and best-before dates.
-- Action Minutes keeps decisions and assigned tasks for each meeting and exports the minutes as a text file.
+- Fridge Keeper groups ingredients by best-before date and filters them by storage location. You can undo the latest use, even after consuming the last portion.
+- Action Minutes brings open tasks from every meeting into a follow-up view. Filter by owner, complete a task, or open its original meeting notes.
 
 ## Entertainment
 
