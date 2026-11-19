@@ -10,11 +10,13 @@ import { describe, it } from "vitest";
  * - the low-level tier — one instance, install / assert / remove held by the caller, the
  *   exploratory round a plugin author actually runs.
  *
- * Skips itself when no display is available (Linux CI runs it under Xvfb) — it never
- * fails red for lack of a head.
+ * Skips itself outside its platform: the driver's port discovery reads the Linux userData
+ * path and the case runs headless under Xvfb — on Linux it skips without a display (CI runs
+ * it under Xvfb), on macOS and Windows CI runners it never runs at all. It never fails red
+ * for lack of a head or the wrong platform.
  */
-const display = process.env.DISPLAY ?? process.env.WAYLAND_DISPLAY;
-const available = process.platform !== "linux" || display !== undefined;
+const linux = process.platform === "linux";
+const available = linux && (process.env.DISPLAY ?? process.env.WAYLAND_DISPLAY) !== undefined;
 
 describe.skipIf(!available)("penguin-testing-electron e2e", () => {
   it("tests the sample plugin end to end, from the units as modules", async () => {

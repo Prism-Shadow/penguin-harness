@@ -582,6 +582,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/penguin-testing-electron':
+        specifier: workspace:*
+        version: link:../../plugins/penguin-testing-electron
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/rrsi-rsi-toolkit
