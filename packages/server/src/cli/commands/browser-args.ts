@@ -8,6 +8,7 @@ import path from "node:path";
 import type { BuiltinBrowserImportSourcesResponse } from "../../api/types.js";
 import { ApiError, ServerClient } from "../client.js";
 import { resolveConnection } from "../connection.js";
+import { terminalInput } from "../console-input.js";
 import type { Messages } from "../i18n.js";
 
 export const BASE = "/api/builtin-browser";
@@ -164,7 +165,8 @@ export function printJson(value: unknown): void {
  * The script, from exactly one source: the argument, `--file`, or stdin — read when the argument
  * is `-`, or when there is no argument and stdin is not a terminal (a heredoc or a pipe, which
  * spares a model all escaping). An implicit stdin that stays silent is "no script": a caller
- * whose stdin is an idle pipe gets the error instead of a hang.
+ * whose stdin is an idle pipe gets the error instead of a hang. "stdin" is the terminal input
+ * (console-input.ts): where the runtime was given none, the console it runs in.
  */
 export async function resolveScript(
   arg: string | undefined,
@@ -180,22 +182,33 @@ export async function resolveScript(
       throw new BrowserCliError("io_error", t.browser.fileUnreadable(file, errorText(err)));
     }
   } else if (arg === "-") {
-    script = await readStdin();
+    const input = terminalInput();
+    try {
+      script = await readStdin(undefined, input.stream);
+    } finally {
+      input.release();
+    }
   } else if (arg !== undefined) {
     script = arg;
-  } else if (process.stdin.isTTY !== true) {
-    script = await readStdin(STDIN_GRACE_MS);
-    if (script === null || script.trim() === "") throw invalid(t.browser.scriptMissing());
   } else {
-    throw invalid(t.browser.scriptMissing());
+    const input = terminalInput();
+    try {
+      if (input.stream.isTTY === true) throw invalid(t.browser.scriptMissing());
+      script = await readStdin(STDIN_GRACE_MS, input.stream);
+    } finally {
+      input.release();
+    }
+    if (script === null || script.trim() === "") throw invalid(t.browser.scriptMissing());
   }
   if (script === null || script.trim() === "") throw invalid(t.browser.scriptEmpty());
   return script;
 }
 
-/** All of stdin; null when `graceMs` passes before its first byte (or its end). */
-export function readStdin(graceMs?: number): Promise<string | null> {
-  const stdin = process.stdin;
+/** All of `stdin`; null when `graceMs` passes before its first byte (or its end). */
+export function readStdin(
+  graceMs?: number,
+  stdin: NodeJS.ReadStream = process.stdin,
+): Promise<string | null> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let timer: NodeJS.Timeout | undefined;

@@ -61,6 +61,7 @@ import {
   resolveSessionRef,
   ServerClient,
   listAgentSessions,
+  terminalInput,
 } from "@prismshadow/penguin-server/cli";
 import type { TaskCreateResponse } from "@prismshadow/penguin-server/api";
 import { StreamRenderer, dim, renderHistory } from "../render.js";
@@ -74,7 +75,6 @@ import {
 } from "../switch-model-command.js";
 
 import { LineComposer, PasteFilter } from "../input.js";
-import { terminalInput } from "../console-input.js";
 
 import {
   callerSessionContext,
@@ -319,7 +319,7 @@ export function registerChatCommand(chat: Command, t: Messages): void {
 
       // TTY: raw mode + bracketed paste + PasteFilter; non-TTY (pipe/test): read stdin directly.
       // The keys come from stdin, or from the console itself where the runtime was given no
-      // stdin (the desktop app's launchers on Windows, console-input.ts).
+      // stdin (the desktop app's launchers on Windows, the server CLI's console-input.ts).
       const input = terminalInput();
       const stdin = input.stream;
       const isTTY = Boolean(stdin.isTTY);
