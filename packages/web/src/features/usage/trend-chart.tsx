@@ -24,7 +24,8 @@ import {
   ChartFrame,
   ChartLine,
   ChartPoint,
-  makeGeom,
+  makeRangeGeom,
+  plotPadLeft,
   useChartWidth,
   type ChartPaint,
 } from "@prismshadow/penguin-ui";
@@ -64,7 +65,11 @@ export function TrendChart({
 
   const cost = series.map((p) => p.cost ?? 0);
   const max = Math.max(1e-9, ...series.map((p) => p.costMax ?? p.cost ?? 0));
-  const geom = makeGeom(series.length, max, width);
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((fraction) => fraction * max);
+  const tickLabel = (value: number) => formatMoney(value, currency);
+  const geom = makeRangeGeom(series.length, 0, max, width, undefined, {
+    padL: plotPadLeft(ticks.map(tickLabel)),
+  });
   const buckets = series.map((p) => p.bucket);
   // Dots are drawn only where the cells are wide enough to hold them apart: a
   // 2.5px-radius dot needs roughly this much room or the row fuses into a rope
@@ -83,7 +88,8 @@ export function TrendChart({
       {width > 0 && (
         <ChartFrame
           geom={geom}
-          fmtY={(v) => formatMoney(v, currency)}
+          fmtY={tickLabel}
+          yTicks={ticks}
           dates={buckets}
           fmtX={(b) => bucketAxisLabel(granularity, b)}
           hover={hover}

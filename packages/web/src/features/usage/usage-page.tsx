@@ -368,7 +368,7 @@ export function UsagePage() {
                 ))}
               </Select>
             </div>
-            <div className="w-32">
+            <div className={modelFilter ? "w-48 max-w-full" : "w-32"}>
               <Select
                 size="sm"
                 value={modelFilterIndex}
