@@ -156,19 +156,23 @@ for (const lang of ["zh", "en"]) {
     await page.goto(base + "/models");
     await btn(0).click();
     const field = page.getByRole("button", { name: new RegExp("^" + labels[1]) });
-    const select = async (label) => {
+    const select = async (provider) => {
       await field.click();
-      await page
-        .getByRole("dialog")
-        .last()
-        .getByRole("button", { name: label, exact: true })
-        .click();
+      const picker = page.getByRole("dialog").last();
+      if (!provider) {
+        await picker
+          .getByRole("button", { name: lang === "zh" ? "取消指定" : "Clear assignment" })
+          .click();
+        return;
+      }
+      await picker.getByRole("combobox").fill(first.modelId);
+      await picker.getByRole("group", { name: provider, exact: true }).getByRole("option").click();
     };
-    await select("deepseek-asr (deepseek)");
+    await select("DeepSeek");
     await expect.poll(selected).toBe("deepseek");
-    await select(lang === "zh" ? "未指定" : "Not assigned");
+    await select(null);
     await expect.poll(selected).toBeUndefined();
-    await select("deepseek-asr (custom)");
+    await select("Custom");
     await expect.poll(selected).toBe("custom");
     if (process.env.VOICE_EVIDENCE)
       await page.screenshot({ path: process.env.VOICE_EVIDENCE + "/" + lang + "-models.png" });
@@ -325,11 +329,9 @@ test("speech uses the project's real MMSP routes and records each selected model
     await page.getByRole("button", { name: "Default multimodal models", exact: true }).click();
     for (const [, label, model] of tools) {
       await page.getByRole("button", { name: new RegExp("^" + label) }).click();
-      await page
-        .getByRole("dialog")
-        .last()
-        .getByRole("button", { name: model + " (custom)", exact: true })
-        .click();
+      const input = page.getByRole("dialog").last().getByRole("combobox");
+      await input.fill(model);
+      await input.press("Enter");
     }
     const expectedBindings = Object.fromEntries(
       tools.map(([capability, , model]) => [capability, ref(model)]),

@@ -918,7 +918,9 @@ export function ModelsPage() {
   const pinnedBalance = usePinnedBalance();
 
   const [rows, setRows] = useState<RowState[] | null>(null);
-  const capabilitySelection = useProjectCapabilities(rows ? projectId : null, null, rows);
+  const capabilitySelection = useProjectCapabilities(rows ? projectId : null, null, {
+    catalogRevision: rows,
+  });
   /** Every group's stored connection (`[providers.<id>]`), off the same responses as `rows`. */
   const [providers, setProviders] = useState<ProviderConnections>({});
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);

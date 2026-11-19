@@ -127,13 +127,16 @@ export function initialGroupId<T extends ModelCredentialRowLike>(
  * chat with.
  */
 export function pickerRowTags(
-  m: Pick<ModelInfo, "provider" | "modelId" | "vision" | "fastMode" | "pricing" | "discount">,
+  m: Pick<
+    ModelInfo,
+    "provider" | "modelId" | "vision" | "fastMode" | "pricing" | "discount" | "chatEligible"
+  >,
   defaultModel: ModelRefValue | null | undefined,
   now: Date = new Date(),
 ): ModelTag[] {
   return modelTags({
     isDefault: sameModelRef(m, defaultModel),
-    vision: m.vision !== false,
+    vision: m.vision !== false && m.chatEligible !== false,
     fastMode: m.fastMode === true,
     free: isFreeModel(m.pricing),
     discount: discountedPrice(

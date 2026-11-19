@@ -45,6 +45,7 @@ import {
 
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
 import {
+  Button,
   Pill,
   ChoiceCheck,
   CloseButton,
@@ -95,6 +96,8 @@ export interface ModelPickerModalProps {
   /** Names the dialog for assistive tech ("Choose model", "Switch model"). */
   title: string;
   models: ModelInfo[];
+  purpose?: "chat" | "tool";
+  onClear?: () => void;
   /** Currently selected (provider, modelId) pair; null = not yet chosen. */
   value: ModelRefDto | null;
   defaultModel?: ModelRefDto;
@@ -122,7 +125,9 @@ export function ModelPickerModal({ open, onClose, title, ...body }: ModelPickerM
 }
 
 function ModelPickerBody({
-  models,
+  models: catalog,
+  purpose = "chat",
+  onClear,
   value,
   defaultModel,
   onPick,
@@ -143,6 +148,10 @@ function ModelPickerBody({
     defaultModel: defaultModel ?? null,
     groupOrder,
   };
+  const models = useMemo(
+    () => (purpose === "tool" ? catalog : catalog.filter((m) => m.chatEligible !== false)),
+    [purpose, catalog],
+  );
   const groups = pickerGroups(models, visibility);
   const results = searching ? searchPickerGroups(models, { ...visibility, query }) : [];
   const hidden = hiddenModelCount(models, { ...visibility, query });
@@ -439,14 +448,19 @@ function ModelPickerBody({
         </div>
       </div>
 
-      {/* On a phone the bar exists only for the toggle: the keyboard legend is desktop-only. */}
+      {/* On a phone the bar appears only when it holds an action. */}
       <div
         data-slot="foot"
         {...band}
-        className={`${showToggle ? "flex" : "hidden sm:flex"} shrink-0 items-center gap-3 border-t border-line px-4 py-2 text-xs text-fg-subtle`}
+        className={`${showToggle || onClear ? "flex" : "hidden sm:flex"} shrink-0 items-center gap-3 border-t border-line px-4 py-2 text-xs text-fg-subtle`}
       >
         {/* Models without a key: listed on request, as the dropdown's bottom row did. It turns
             back off too, since the rail grows by every key-less group while it is on. */}
+        {onClear && (
+          <Button size="xs" variant="ghost" onClick={onClear}>
+            {S.modelPicker.clearAssignment}
+          </Button>
+        )}
         {showToggle && (
           <button
             type="button"

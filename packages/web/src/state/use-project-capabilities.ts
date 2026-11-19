@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ToolModelSettings, ToolModelSettingsPatch } from "@prismshadow/penguin-server/api";
+import type {
+  ModelInfo,
+  ToolModelSettings,
+  ToolModelSettingsPatch,
+} from "@prismshadow/penguin-server/api";
 import { toastError } from "@prismshadow/penguin-ui";
+import { getModels } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { getCapabilities, updateCapabilities } from "../api/project-capabilities";
 import {
@@ -15,12 +20,16 @@ import { sameModelRef } from "../lib/model-grouping";
 export function useProjectCapabilities(
   projectId: string | null,
   server: string | null,
-  catalogRevision?: unknown,
+  {
+    catalogRevision,
+    includeModels = false,
+  }: { catalogRevision?: unknown; includeModels?: boolean } = {},
 ) {
   const key = JSON.stringify([server, projectId]);
   const [snapshot, setSnapshot] = useState<{ key: string; settings: ToolModelSettings } | null>(
     null,
   );
+  const [catalog, setCatalog] = useState<{ key: string; models: ModelInfo[] } | null>(null);
   const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
@@ -32,8 +41,12 @@ export function useProjectCapabilities(
     async (signal: AbortSignal) => {
       if (!projectId || active.current !== key) return null;
       try {
-        const next = await getCapabilities(projectId, server, signal);
+        const [next, modelCatalog] = await Promise.all([
+          getCapabilities(projectId, server, signal),
+          includeModels ? getModels(projectId, server) : null,
+        ]);
         if (signal.aborted || active.current !== key) return null;
+        if (modelCatalog) setCatalog({ key, models: modelCatalog.models });
         setFailure(null);
         setSnapshot({ key, settings: next });
         return next;
@@ -48,7 +61,7 @@ export function useProjectCapabilities(
         return null;
       }
     },
-    [key, projectId, server],
+    [key, projectId, server, includeModels],
   );
   const reload = useCallback(() => {
     if (!projectId || writing.current === key) return;
@@ -130,6 +143,7 @@ export function useProjectCapabilities(
   }
   return {
     settings,
+    models: catalog?.key === key ? catalog.models : [],
     error: failure?.key === key ? failure.message : "",
     busy: pendingKey !== null,
     reload,

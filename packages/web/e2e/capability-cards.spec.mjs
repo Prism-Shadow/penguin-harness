@@ -64,7 +64,7 @@ test("Models opens the project’s multimodal defaults, which persist across rel
       apiKey: "local-test",
     });
     const put = await page.request.put(base + "/api/projects/" + project + "/models", {
-      data: { models },
+      data: { models, defaultModel: { provider: "custom", modelId: "note-editor" } },
     });
     expect(put.ok(), await put.text()).toBeTruthy();
   }
@@ -90,11 +90,15 @@ test("Models opens the project’s multimodal defaults, which persist across rel
     target.getByRole("dialog").first().getByRole("button", { name: label, exact: true });
   const choose = async (target, label, option) => {
     await field(target, label).click();
-    await target
-      .getByRole("dialog")
-      .last()
-      .getByRole("button", { name: option, exact: true })
-      .click();
+    const picker = target.getByRole("dialog").last();
+    if (!option) {
+      await picker.getByRole("button", { name: "Clear assignment" }).click();
+      return;
+    }
+    const input = picker.getByRole("combobox");
+    await input.fill(option);
+    await expect(picker.getByRole("option")).toHaveCount(1);
+    await input.press("Enter");
   };
   const polish = async (project) =>
     (
@@ -104,24 +108,38 @@ test("Models opens the project’s multimodal defaults, which persist across rel
     ).voicePolish;
   await page.goto(base + "/models");
   await search(page, recognition);
-  await expect(card(page, "River recognition").getByRole("button")).toHaveCount(1);
+  await expect(card(page, "River recognition")).toBeVisible();
   await open(page);
   await expect(page).toHaveURL(/projectSettings=multimodal/);
   await expect(field(page, "Image generation")).toBeDisabled();
   await expect(field(page, "Speech recognition")).toContainText("Not assigned");
+  await field(page, "Speech recognition").click();
+  const picker = page.getByRole("dialog").last();
+  await expect(picker.getByRole("navigation", { name: "Model groups" })).toBeVisible();
+  await picker.getByRole("combobox").fill("synthesis");
+  await expect(picker.getByRole("option")).toHaveCount(0);
+  await picker.getByRole("combobox").fill("recognition");
+  await expect(picker.getByRole("option")).toHaveCount(2);
+  if (process.env.VOICE_EVIDENCE)
+    await page.screenshot({
+      animations: "disabled",
+      path: process.env.VOICE_EVIDENCE + "/grouped-picker-en.png",
+    });
+  await picker.getByRole("combobox").press("Escape");
+  await page.keyboard.press("Escape");
   const other = await context.newPage();
   await other.goto(page.url());
-  await choose(page, "Speech recognition", recognition + " (custom)");
-  await expect(field(other, "Speech recognition")).toContainText(recognition + " (custom)");
-  await choose(page, "Speech recognition", recognition + " (deepseek)");
-  await expect(field(other, "Speech recognition")).toContainText(recognition + " (deepseek)");
+  await choose(page, "Speech recognition", "River recognition");
+  await expect(field(other, "Speech recognition")).toContainText("River recognition");
+  await choose(page, "Speech recognition", "Lake recognition");
+  await expect(field(other, "Speech recognition")).toContainText("Lake recognition");
   await expect
     .poll(() => settings(a))
     .toEqual({ s2t: { provider: "deepseek", modelId: recognition } });
   expect(await settings(b)).toEqual({});
-  await choose(page, "Speech synthesis", synthesis + " (custom)");
-  await choose(page, "Text generation", "note-editor (custom)");
-  await choose(page, "Image understanding", "note-editor (custom)");
+  await choose(page, "Speech synthesis", "River synthesis");
+  await choose(page, "Text generation", "Project writer");
+  await choose(page, "Image understanding", "Project writer");
   const originalPrompt = (await polish(a)).defaultPrompt;
   const prompt = page.getByRole("textbox", { name: "Editing instructions" });
   await field(page, "Polish dictation").click();
@@ -151,7 +169,7 @@ test("Models opens the project’s multimodal defaults, which persist across rel
     .toMatchObject({ enabled: true, prompt: "Keep project names. Preserve all line breaks." });
   expect((await polish(b)).prompt).toBe(originalPrompt);
   await page.reload();
-  await expect(field(page, "Speech recognition")).toContainText(recognition + " (deepseek)");
+  await expect(field(page, "Speech recognition")).toContainText("Lake recognition");
   if (process.env.VOICE_EVIDENCE)
     await page.screenshot({
       animations: "disabled",
@@ -166,7 +184,7 @@ test("Models opens the project’s multimodal defaults, which persist across rel
   await page.goBack();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.goForward();
-  await expect(field(page, "Image understanding")).toContainText("note-editor (custom)");
+  await expect(field(page, "Image understanding")).toContainText("Project writer");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await switchProject(page, "Cards Alpha", "Cards Beta");
@@ -177,11 +195,11 @@ test("Models opens the project’s multimodal defaults, which persist across rel
   await expect(page).toHaveURL(/projectSettings=multimodal/);
   await page.reload();
   await expect(field(page, "Speech recognition")).toContainText("Not assigned");
-  await choose(page, "Speech recognition", recognition + " (custom)");
+  await choose(page, "Speech recognition", "River recognition");
   await expect
     .poll(() => settings(b))
     .toEqual({ s2t: { provider: "custom", modelId: recognition } });
-  await choose(page, "Speech recognition", "Not assigned");
+  await choose(page, "Speech recognition", null);
   await expect.poll(() => settings(b)).toEqual({});
   await page.keyboard.press("Escape");
   await switchProject(page, "Cards Beta", "Cards Alpha");
@@ -189,7 +207,7 @@ test("Models opens the project’s multimodal defaults, which persist across rel
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
   await open(page);
-  await expect(field(page, "语音识别")).toContainText(recognition + " (deepseek)");
+  await expect(field(page, "语音识别")).toContainText("Lake recognition");
   const activeTab = page
     .getByRole("dialog")
     .getByRole("navigation")
@@ -212,6 +230,18 @@ test("Models opens the project’s multimodal defaults, which persist across rel
   await expect.poll(tabIsVisible).toBe(true);
   await page.setViewportSize({ width: 320, height: 780 });
   await expect.poll(tabIsVisible).toBe(true);
+  await field(page, "语音识别").click();
+  const mobilePicker = page.getByRole("dialog").last();
+  await mobilePicker.getByRole("combobox").fill(recognition);
+  await expect(mobilePicker.getByRole("option")).toHaveCount(2);
+  await expect(mobilePicker.getByRole("option").last()).toBeInViewport();
+  if (process.env.VOICE_EVIDENCE)
+    await page.screenshot({
+      animations: "disabled",
+      path: process.env.VOICE_EVIDENCE + "/grouped-picker-zh-320.png",
+    });
+  await mobilePicker.getByRole("combobox").press("Escape");
+  await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(tabIsVisible).toBe(true);
   if (process.env.VOICE_EVIDENCE)
@@ -247,9 +277,7 @@ test("Models opens the project’s multimodal defaults, which persist across rel
     );
     await memberPage.goto(base + "/models");
     await open(memberPage);
-    await expect(field(memberPage, "Speech recognition")).toContainText(
-      recognition + " (deepseek)",
-    );
+    await expect(field(memberPage, "Speech recognition")).toContainText("Lake recognition");
     await expect(field(memberPage, "Speech recognition")).toBeDisabled();
     expect(
       (

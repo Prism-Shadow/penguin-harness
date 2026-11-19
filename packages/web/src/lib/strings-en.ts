@@ -17,10 +17,10 @@ export const en: Strings = {
 
   voice: {
     models: "Default multimodal models",
-    modelHelp: (project: string) => `Chat and the CLI in ${project} use these models.`,
+    modelHelp: (project: string) =>
+      `The penguin tools CLI uses these default models in ${project}. Dictation and read-aloud use the same voice models.`,
     unbound: "Not assigned",
     noModels: "No compatible models",
-    searchModels: "Search by model ID or provider",
     noTools: "Multimodal tools are disabled on this server.",
     polish: "Polish dictation",
     enableIn: (project: string) => `Enable in ${project}`,
@@ -1127,6 +1127,7 @@ export const en: Strings = {
     leaveAction: "Leave safe mode (load server contributions)",
   },
   modelPicker: {
+    clearAssignment: "Clear assignment",
     groups: "Model groups",
     hideModelsWithoutKey: "Hide models without a key",
     hint: (mod: string): string => `←→ groups / models · ${mod}1–9 jump to a group`,

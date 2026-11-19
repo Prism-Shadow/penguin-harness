@@ -25,10 +25,10 @@ export const zh = {
 
   voice: {
     models: "默认多模态模型",
-    modelHelp: (project: string) => `「${project}」中的聊天和 CLI 共用这些模型。`,
+    modelHelp: (project: string) =>
+      `penguin tools 命令在「${project}」中使用以下默认模型。聊天中的语音输入和朗读也使用这里的语音模型。`,
     unbound: "未指定",
     noModels: "没有兼容的模型",
-    searchModels: "按模型 ID 或厂商搜索",
     noTools: "当前服务未启用多模态工具。",
     polish: "润色语音输入",
     enableIn: (project: string) => `在「${project}」中启用`,
@@ -1259,6 +1259,7 @@ export const zh = {
     leaveAction: "离开安全模式（重新加载服务端贡献）",
   },
   modelPicker: {
+    clearAssignment: "取消指定",
     /** Accessible name of the dialog's provider-group rail. */
     groups: "模型分组",
     /** Footer toggle while models without a key are listed: turns the listing back off. */

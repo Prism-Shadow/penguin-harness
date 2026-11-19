@@ -31,11 +31,8 @@ export { modelLabel };
  *   host. The picker opened from inside a dialog stacks above it as a second Modal, and Escape
  *   closes only the picker.
  *
- * `emptyLabel` is for the one kind of host where an unpicked model is a decision and not a
- * gap — the organization dialogs, where an empty model means "follow the Project's default".
- * The picker still offers models only, so such a host carries its own way back to the empty
- * value; here the label is grayed as a placeholder and the provider logo is dropped, since no
- * provider is being named.
+ * An optional assignment shows its emptyLabel without a provider logo. A host can supply
+ * onClear to let the user remove the assignment from the same picker.
  */
 export function ModelCatalogSelect({
   models,
@@ -45,6 +42,9 @@ export function ModelCatalogSelect({
   disabled,
   variant = "pill",
   emptyLabel,
+  title = S.chat.chooseModel,
+  purpose = "chat",
+  onClear,
 }: {
   models: ModelInfo[];
   /** Currently selected (provider, modelId) pair; null = not yet chosen. */
@@ -56,8 +56,14 @@ export function ModelCatalogSelect({
   variant?: "pill" | "form";
   /** What the trigger reads while nothing is picked, where "nothing" is itself a choice. */
   emptyLabel?: string;
+  title?: string;
+  /** Tool callers supply the candidates for one specific operation. */
+  purpose?: "chat" | "tool";
+  onClear?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const canOpen =
+    Boolean(onClear) || models.some((m) => purpose === "tool" || m.chatEligible !== false);
   const current = models.find((m) => sameModelRef(m, value));
   const unset = value === null && emptyLabel !== undefined;
   // Display rule matches the model page's card: display name, or falls back to the upstream id
@@ -69,9 +75,9 @@ export function ModelCatalogSelect({
         label={label}
         provider={unset ? null : (current?.provider ?? value?.provider ?? "custom")}
         muted={unset}
-        ariaLabel={S.chat.chooseModel}
-        tooltip={`${S.chat.chooseModel}：${label}`}
-        disabled={disabled || models.length === 0}
+        ariaLabel={title}
+        tooltip={`${title} · ${label}`}
+        disabled={disabled || !canOpen}
         variant={variant}
         expanded={open}
         onClick={() => setOpen(true)}
@@ -79,7 +85,16 @@ export function ModelCatalogSelect({
       <ModelPickerModal
         open={open}
         onClose={() => setOpen(false)}
-        title={S.chat.chooseModel}
+        title={title}
+        purpose={purpose}
+        {...(onClear
+          ? {
+              onClear: () => {
+                onClear();
+                setOpen(false);
+              },
+            }
+          : {})}
         models={models}
         value={value}
         {...(defaultModel !== undefined ? { defaultModel } : {})}
