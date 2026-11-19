@@ -182,7 +182,7 @@ describe("models preset & catalog enrichment", () => {
     expect(firstTable.models.every((m) => m.chatEligible === false)).toBe(true);
     // The vision-capable general chat model remains available.
     const added = await api.put(url(), { models: [speech, image, chat], initialChatModel: chat });
-    expect((await added.json()).defaultModel).toEqual(chat);
+    expect(((await added.json()) as ModelsResponse).defaultModel).toEqual(chat);
     expect((await api.put(url() + "/default", speech)).status).toBe(400);
     expect(
       (await api.put(url(), { models: [speech, image, chat], defaultModel: image })).status,
