@@ -1,8 +1,13 @@
 /**
- * The messages of browser command moved with its code into the server package, split out of the CLI's message table (hosted whole by the server
-package). Field names and shapes are unchanged; the host's table spreads this file in.
+ * The messages of the browser command, its CLI module's own group: the module hands both
+ * languages to the CLI (browser.ts's `browserCliModule`), which adds the invocation's to the
+ * bundle the command receives. The host's table does not carry them.
  */
+import type { CliHostMessages } from "@prismshadow/penguin-library-cli/messages";
 import type { BuiltinBrowserCookieSkip, BuiltinBrowserImportNote } from "../../api/types.js";
+
+/** The bundle the browser's commands read: the CLI host's, with the browser's own group. */
+export type BrowserMessages = CliHostMessages & BrowserText;
 
 export interface BrowserText {
   /** `penguin browser`: the desktop app's built-in browser (commands/browser.ts, browser-output.ts). */

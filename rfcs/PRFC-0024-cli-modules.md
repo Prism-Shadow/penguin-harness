@@ -12,6 +12,8 @@
 
 The `penguin` command line becomes a set of command contributions under the module mechanism ([PRFC-0001](./PRFC-0001-module.md#the-three-primitives)). A command is one contribution of a `@Component` class: its static half sits in the manifest — a **command key**, the argv path the command answers, plus a one-line summary in each language — and its code half is the class's `@Bind` field, the same class shape a sandbox backend is written with (a [slot](./PRFC-0001-module.md#slots-and-contributions) is written `Slot<Data, Code>` — the data carried in the manifest and the bound implementation are exactly the two halves of one contribution). Two hosts collect such contributions, each in its own process. The CLI's own commands are contributions to the CLI's `CliCommandsModule.commands` slot, booted statically and fixed by the build. A plugin's commands are contributions to the server's `PluginCliCommandsProvider.commands` slot: the server is the one that knows them and the one that runs them, through two routes the CLI reads the way the web app reads its contributions. Ownership follows the process — a command belongs to the process that can run it, and the CLI never loads plugin code to dispatch one.
 
+A plugin the CLI ships with — one of the CLI package's own dependencies — can also carry commands that run in the CLI's process: its `./cli` export is a **CLI module** the CLI's build lists and compiles in, so the CLI still never loads plugin code at runtime ([v1.1.0](#v110)).
+
 ## Motivation
 [motivation]: #motivation
 
@@ -74,6 +76,39 @@ When the first word of the command line names one of the CLI's own commands, the
 
 `penguin exec <id> [args…]` names a plugin command directly by its dotted id — `sandbox.wsl.restart`, two segments or more — and every option after the id, `--help` included, belongs to that command. When two plugins contribute the same id, the full npm package names it: `penguin exec <package>:<id>`, scope included. `penguin exec ls [package]` lists the ids the plugins contribute, summaries beside them. Like every command that needs a server, it starts one when none is running.
 
+### A shipped plugin's commands: a CLI module the build fixes
+
+Some commands act on the terminal that runs them: `penguin browser` reads an exec script from stdin, saves screenshots and values where it was asked to, and tells the server which Session it acts for from the caller's environment. A server run has none of that — no stdin, no current directory, no caller's environment, output buffered into a reply. So a plugin the CLI ships with can carry commands that run in the CLI's own process, the way the CLI's own do.
+
+Its package exports a `./cli` subpath, a **CLI module**: the command classes, the table its build generated over its CLI sources (not the server table its `.` entry ships), and the message groups the commands read. The classes are written like any other command, contributing to the CLI's `ShippedCommandsModule.commands`:
+
+```ts
+// plugins/<name>/src/cli/index.ts — the package's "./cli" export
+@Component({
+  contributes: {
+    "ShippedCommandsModule.commands": [
+      { id: "demo.cli", key: "demo", summary: { en: "Say hello", zh: "打招呼" } },
+    ],
+  },
+})
+export class DemoCommand {
+  @Bind("demo.cli") command!: CliCommandCode<DemoMessages>;
+  setup() {
+    this.command = { register: (command, ctx) => registerDemo(node(command), ctx.messages) };
+  }
+}
+
+export default {
+  modules: [DemoCommand],
+  ifaces: table, // this package's own gen-ifaces output over src/cli
+  messages: { en: demoEn, zh: demoZh },
+} satisfies CliModule;
+```
+
+The CLI's build lists every plugin among the CLI package's dependencies — the `@penguinharness/*` packages, as the plugin library host reads them — that exports `./cli`, and compiles those modules into the CLI; at startup the CLI boots each one and adds its commands after its own. They appear in `penguin --help`, parse their own arguments, and read and write the caller's terminal. A plugin installed on a server later never reaches this list: its commands are the server's, as above.
+
+A CLI module's code uses the host through one library package, `@prismshadow/penguin-library-cli` — the connection resolution, the server client and its error, terminal input, the text helpers, and the host message groups their words come from. It never imports the server package or the CLI package: both depend on the plugins they ship, so an import back would close a cycle.
+
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
@@ -119,6 +154,16 @@ The ambiguity report prints one line per package — `penguin exec <package>:<id
 
 One degradation is stated openly: when the listing cannot be fetched — no server running, or the query fails — the CLI cannot know whether a plugin would have answered, and it falls back to its own parse, which reports the unknown command. Implicit dispatch treats "cannot ask" the same as "no answer"; `penguin exec` exists precisely so a caller who needs the command does not depend on that fallback.
 
+### Shipped plugins' CLI modules
+
+- **The contract.** `CliModule` in `@prismshadow/penguin-core/cli`: `{ modules, ifaces, messages? }` — the command classes, the package's own generated table for them, and optional message groups `{ en, zh }`. The classes contribute to `ShippedCommandsModule.commands`, whose data half is `CliCommandData` and whose code half is `CliCommandCode`, as in the CLI's own slot. A shipped command contributes to this slot rather than to `CliCommandsModule.commands`, so the CLI's generated table of its own commands never lists one.
+- **The list.** The CLI package's `gen:ifaces` also writes `cli-modules.gen.ts`: every `@penguinharness/*` entry of the package's `dependencies` whose `package.json` `exports` names `./cli`, in package-name order, each imported statically. A plugin that adds `exports` keeps `./package.json` among them, since the library host resolves it. A dependency that is not installed is an error, not a module left out. The CLI's tsup build bundles the `./cli` modules it lists, and the push's compile inlines everything, so the artifact carries the code it runs.
+- **The boot.** Once per invocation and per module, a tree rooted at the CLI's `ShippedCommandsModule`, the module's classes its extra children, each paired with its manifest from the module's own table. The tree is checked against the CLI's table with the module's folded in, the CLI's entry standing on a key both carry — the fold the server applies to a plugin's table. A module that does not boot (a class missing from its table, a failed check) contributes nothing, and the CLI writes one warning naming its package to stderr; the rest of the CLI runs.
+- **The commands.** Registered after the CLI's own and the server package's, in list order, each on the node its key locates. A command whose key fails `cliCommandKeyFault`, whose first segment names a command already on the program, or whose key its module already contributed, is dropped with a warning: a shipped module adds commands, and never extends or replaces one the CLI has.
+- **The messages.** The register receives the host's bundle with the module's groups for the invocation's locale added; a group the host's bundle already has stays the host's. The CLI resolves the locale; the module never does.
+- **The face.** `@prismshadow/penguin-library-cli` is a private library package below the server, the CLI and the plugins: the server's `cli` subpath re-exports it for the server package's own commands, and a plugin's CLI module bundles it.
+- **In place.** `penguin browser` is such a module before it moves into its plugin: it still lives in the server package, booted against the server's table, and the CLI lists it by hand after the generated list.
+
 ## Invariants
 [invariants]: #invariants
 
@@ -128,11 +173,11 @@ One degradation is stated openly: when the listing cannot be fetched — no serv
 
 The key in the manifest is the single source of a command's path; the summary the help prints sits beside it in the same entry. The alternative — a register that calls `program.command("…")` itself — puts the path in two places, and the two disagree the first time someone edits one of them: help says one thing, dispatch answers another. Break this and the static half stops being data: nothing can be listed, checked, or projected without running the code.
 
-### A plugin's commands belong to the server
+### The CLI never loads plugin code at runtime
 
-> However the CLI dispatches, a plugin's commands are still discovered and run by the server, and the CLI still reaches them only through the [server's command API](./PRFC-0024-cli-modules.md#guide-level-explanation) — it never loads plugin code to dispatch one.
+> However a plugin's commands reach a command line, the CLI still runs only the plugin code its build compiled in — the [CLI modules](./PRFC-0024-cli-modules.md#shipped-plugins-cli-modules) of the plugins it ships with — and still reaches every other plugin's commands only through the [server's command API](./PRFC-0024-cli-modules.md#guide-level-explanation): it never discovers, resolves or imports a plugin while it runs.
 
-This is the ownership decision the RFC exists to record. The CLI is the client; discovery and execution live in the process whose tree the contributions are on, and the trust model is the plugin platform's own ([PRFC-0003](./PRFC-0003-plugin.md#principles)) — one process, one trust decision — instead of a second, weaker one growing inside the CLI. Break this and every future plugin surface (skills, tools, hooks) has to re-answer "which process runs plugin code", and the CLI becomes a plugin host that must be pushed to be right.
+This is the ownership decision the RFC exists to record. A shipped CLI module is code of the same standing as the CLI's own commands — reviewed, versioned and released in one artifact — so running it in the CLI's process adds no trust decision. What the CLI never becomes is a plugin host at runtime: discovery and execution of what an admin installed live in the process whose tree the contributions are on, and the trust model is the plugin platform's own ([PRFC-0003](./PRFC-0003-plugin.md#principles)) — one process, one trust decision — instead of a second, weaker one growing inside the CLI. Break this and every future plugin surface (skills, tools, hooks) has to re-answer "which process runs plugin code", and the CLI becomes a plugin host that must be pushed to be right.
 
 ### Implicit dispatch never guesses
 
@@ -145,6 +190,8 @@ The convenience form must never resolve an ambiguity silently. Running the first
 
 Twenty command components boot statically, which the one-file assembly did not: `penguin version` measured about 60 ms slower, the price of the entry's boot. One command is now a class plus a manifest entry — more ceremony for a contributor than a function call, bought for a table that can be listed, checked and served. Implicit dispatch requires a running server to see plugin commands at all; offline, the CLI knows only its own. Buffered output holds a run's stdout and stderr in memory, unbounded; and while a run is in flight the server's own stdout and stderr are redirected into that response, so anything else the server prints in the window is captured with it. The fallback conflates "cannot ask the server" with "no plugin answers" — a failed listing reports an unknown command where naming the degradation would be kinder. And exit code 2 becomes part of the CLI's public contract, which scripts may now observe.
 
+Each shipped CLI module boots a tree of its own on every invocation, so each adds to the startup cost the CLI's own table already pays. And a shipped module's commands change only with a CLI build: a plugin update that arrives through the server does not reach them.
+
 ## Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
@@ -153,6 +200,8 @@ Twenty command components boot statically, which the one-file assembly did not: 
 **The server collects the builtin commands too** — one host for everything — was rejected because the builtin table is fixed by the build, and the build that starts the server is the CLI's; collecting builtins in the server's tree would make `penguin --help` depend on a server being reachable, or on shipping the table twice.
 
 **Keeping the hand-written registration** costs nothing today and every command later: the host keeps growing, help and dispatch and (someday) completion each re-read the registration by hand, and plugins remain shut out of the terminal entirely.
+
+**Running a shipped plugin's commands through the server** too — one path for every plugin — was rejected for commands that act on the caller's terminal: a server run has no stdin and no caller's directory or environment, and buffers its output. **Letting the CLI import a shipped plugin's CLI half from the server package**, where the browser's lived, keeps the code where it is but closes a dependency cycle — the server and the CLI depend on the plugin for its library content — so the face moved into a library package below all three. **One tree for all shipped modules** was rejected because one module that fails to boot would take the others with it; a tree per module keeps the failure that module's.
 
 ## Prior art
 [prior-art]: #prior-art
@@ -177,6 +226,13 @@ Completion and help can be served from the static half alone, for builtins and p
 ---
 
 ## Changes
+
+### v1.1.0
+
+- Added: a plugin the CLI ships with can carry commands that run in the CLI's process — its `./cli` export is a CLI module (`CliModule`) whose classes contribute to the CLI's `ShippedCommandsModule.commands`, listed from the CLI package's dependencies at build time and booted against the module's own table, with its own message groups (§ Guide-level "A shipped plugin's commands: a CLI module the build fixes", § Reference-level "Shipped plugins' CLI modules", a paragraph in § Summary).
+- Added: the library package `@prismshadow/penguin-library-cli`, the face a CLI module's code uses instead of the server package.
+- Retired: the invariant "A plugin's commands belong to the server". Added: the invariant "The CLI never loads plugin code at runtime".
+- Added: the startup and update costs under § Drawbacks, and the rejected alternatives under § Rationale and alternatives.
 
 ### v1.0.0
 
