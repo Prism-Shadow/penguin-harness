@@ -77,6 +77,8 @@ export interface CapabilityResult {
   usage: CapabilityUsage | null;
   /** Absent for historical runs and when the adapter does not identify its input unit. */
   inputMeter?: CapabilityInputMeter;
+  /** The actual connection matched this model's MMSP registry route at execution time. */
+  registryRouteMatched?: true;
   measurements: { unit: string; quantity: number }[];
   /** Whether this run reached the provider transport. Older runs may have no observation. */
   providerAttempted?: boolean;

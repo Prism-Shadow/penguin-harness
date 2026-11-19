@@ -67,6 +67,7 @@ import { sessionsKeptAt } from "./steps/2026-10-12-sessions-kept-at.js";
 import { agentApiConcurrency } from "./steps/2026-10-14-agent-api-concurrency.js";
 import { agentApiSessionSettings } from "./steps/2026-10-14-agent-api-session-settings.js";
 import { machinesAdoptedAt } from "./steps/2026-10-16-machines-adopted-at.js";
+import { toolRegistryRoute } from "./steps/2026-11-19-tool-registry-route.js";
 import { toolMeterQuantities } from "./steps/2026-11-19-tool-meter-quantities.js";
 import { toolRequestUsage } from "./steps/2026-11-19-tool-request-usage.js";
 import { capabilityRuns } from "./steps/2026-11-18-capability-runs.js";
@@ -107,6 +108,7 @@ export const MIGRATIONS: readonly Migration[] = [
   capabilityRuns,
   toolRequestUsage,
   toolMeterQuantities,
+  toolRegistryRoute,
 ];
 
 /**

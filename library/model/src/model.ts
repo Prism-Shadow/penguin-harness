@@ -78,6 +78,8 @@ export interface PlatformModelApplyResult {
 export interface ModelInfo {
   /** False for models dedicated to tools rather than chat. */
   chatEligible?: boolean;
+  /** False when the effective project or environment connection differs from the registry's quoted upstream. */
+  referencePriceEligible?: false;
   /** Provider group id (anthropic / openai / …, see core's MODEL_PROVIDERS; custom models use `custom`). */
   provider: string;
   /** Upstream model id (the request id actually sent to MMSP); paired with `provider` forms the entry's unique key. */

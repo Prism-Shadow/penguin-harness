@@ -12,3 +12,5 @@
 DeepSeek speech recognition uses billed seconds, speech generation uses billable characters, and search and fetch use successful requests. Jina uses input tokens and Fish Audio speech generation uses UTF-8 bytes. The estimate uses the selected seller’s rate and the promotion in effect when the request ran. Project token prices apply to token-billed output.
 
 Mixed image and text output uses the image rate. Services that bill per image use the returned image count. When the service publishes two possible rates, the estimate shows both bounds. An estimate with a missing price or measurement stays unavailable.
+
+Jina’s MMSP reference price applies to calls made to its listed endpoint. A project or environment proxy needs a project price.

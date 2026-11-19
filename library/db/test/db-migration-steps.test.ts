@@ -313,6 +313,7 @@ describe("2026-09-23-machines-columns → current: 2026-10-04-browser-extensions
         "2026-11-18-capability-runs",
         "2026-11-19-tool-request-usage",
         "2026-11-19-tool-meter-quantities",
+        "2026-11-19-tool-registry-route",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -380,6 +381,7 @@ describe("a sessions table from before the sidebar mark: 2026-10-12-sessions-kep
         "2026-11-18-capability-runs",
         "2026-11-19-tool-request-usage",
         "2026-11-19-tool-meter-quantities",
+        "2026-11-19-tool-registry-route",
       ]);
       expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
         { session_id: "s1", kept_at: null },
@@ -441,6 +443,7 @@ describe("an agent_api table from before the session settings: 2026-10-14-agent-
         "2026-11-18-capability-runs",
         "2026-11-19-tool-request-usage",
         "2026-11-19-tool-meter-quantities",
+        "2026-11-19-tool-registry-route",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -505,6 +508,7 @@ describe("an agent_api table from before the concurrency limit: 2026-10-14-agent
         "2026-11-18-capability-runs",
         "2026-11-19-tool-request-usage",
         "2026-11-19-tool-meter-quantities",
+        "2026-11-19-tool-registry-route",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -557,6 +561,7 @@ describe("a machines table from before the adoption times: 2026-10-16-machines-a
         "2026-11-18-capability-runs",
         "2026-11-19-tool-request-usage",
         "2026-11-19-tool-meter-quantities",
+        "2026-11-19-tool-registry-route",
       ]);
       expect(db.prepare("SELECT address, adopted_at FROM machines").all()).toEqual([
         { address: "ssh:nas", adopted_at: null },
@@ -606,6 +611,7 @@ describe("a database from before the account's drafts: 2026-10-26-user-drafts", 
         "2026-11-18-capability-runs",
         "2026-11-19-tool-request-usage",
         "2026-11-19-tool-meter-quantities",
+        "2026-11-19-tool-registry-route",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -665,7 +671,9 @@ describe("project capability runs", () => {
   it("adds the project-owned ledger on a hot update and can roll it back", () => {
     const db = openFresh();
     try {
-      db.exec("DROP TABLE tool_request_usage; DROP TABLE capability_runs");
+      db.exec(
+        "DROP TABLE tool_registry_routes; DROP TABLE tool_request_usage; DROP TABLE capability_runs",
+      );
       stampThrough(db, "2026-10-26-user-drafts");
       const before = shape(db);
       expect(migrate(db, { swapPath: true }).applied).toEqual(namesAfter("2026-10-26-user-drafts"));
@@ -709,12 +717,19 @@ describe("tool request history", () => {
         "p",
         "2026-11-19T02:00:00Z",
         "completed",
-        JSON.stringify({ ...data, measurements: [{ unit: "request", quantity: 1 }] }),
+        JSON.stringify({
+          ...data,
+          registryRouteMatched: true,
+          measurements: [{ unit: "request", quantity: 1 }],
+        }),
       );
       insert.run("error", "p", "2026-11-19T02:00:01Z", "failed", JSON.stringify(data));
       expect(db.prepare("SELECT count(*) AS n FROM tool_request_usage").get()?.n).toBe(1);
       migrate(db);
       migrate(db);
+      expect(db.prepare("SELECT run_id FROM tool_registry_routes").all()).toEqual([
+        { run_id: "asr" },
+      ]);
       const rows = db
         .prepare(
           "SELECT id, input_unit, input_quantity, completed_requests, cached, prompt, thoughts, response FROM tool_request_usage ORDER BY id",

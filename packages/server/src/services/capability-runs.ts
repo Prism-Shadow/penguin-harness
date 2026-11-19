@@ -194,8 +194,9 @@ export class CapabilityRuns {
       signal,
       sessionId: task.sessionId,
       capability: task.capability,
-      onUsage: (usage, inputMeter) => {
+      onUsage: (usage, inputMeter, registryRouteMatched) => {
         attempt.sent = true;
+        if (registryRouteMatched) row.registryRouteMatched = true;
         row.usage = usage;
         if (inputMeter) row.inputMeter = inputMeter;
       },

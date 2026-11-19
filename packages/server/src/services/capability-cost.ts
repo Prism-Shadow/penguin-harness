@@ -1,7 +1,10 @@
-import { listSupportedModels, type ModelPricing as MmspPricing } from "@prismshadow/mmsp";
-import { CLIENT_CREDENTIALS, clientTypeForModel } from "@prismshadow/mmsp/credentials";
+import { listSupportedModels, type SupportedModel } from "@prismshadow/mmsp";
+import {
+  CLIENT_CREDENTIALS,
+  clientTypeForModel,
+  routedClientType,
+} from "@prismshadow/mmsp/credentials";
 import type { ModelPricing } from "@prismshadow/penguin-core";
-import { sameEndpoint } from "@prismshadow/penguin-core/model-connection";
 import type {
   CapabilityInputMeter,
   CapabilityResult,
@@ -13,7 +16,11 @@ import {
   providerInfo,
   type ModelCatalogEntry,
 } from "../model-catalog/catalog.js";
-import { toolPricingFor, type ToolPriceUnit } from "../model-catalog/tool-pricing.js";
+import {
+  sameRegistryEndpoint,
+  toolPricingFor,
+  type ToolPriceUnit,
+} from "../model-catalog/tool-pricing.js";
 
 /** Estimation is a read-time operation. A tool run stores quantities, never money. */
 export interface ToolCostEstimate {
@@ -22,13 +29,19 @@ export interface ToolCostEstimate {
 }
 type MeteredRun = Pick<
   CapabilityResult,
-  "capability" | "model" | "createdAt" | "inputMeter" | "usage" | "measurements"
+  | "capability"
+  | "model"
+  | "createdAt"
+  | "inputMeter"
+  | "registryRouteMatched"
+  | "usage"
+  | "measurements"
 >;
 type BucketRates = Partial<Record<keyof CapabilityUsage, number>>;
 const supportedModels = listSupportedModels("USD");
 
 /** Match the seller as well as the model. An identically named model on another gateway may have a different price. */
-function registryPrice(entry: ModelCatalogEntry): MmspPricing | undefined {
+function registryModel(entry: ModelCatalogEntry): SupportedModel | undefined {
   const provider = providerInfo(entry.provider);
   const client = entry.clientType ?? provider?.clientType ?? clientTypeForModel(entry.modelId);
   if (!client) return;
@@ -43,9 +56,31 @@ function registryPrice(entry: ModelCatalogEntry): MmspPricing | undefined {
     (m) =>
       m.model === entry.modelId &&
       m.client === client &&
-      endpoints.some((url) => sameEndpoint(url, m.base_url)),
+      endpoints.some((url) => sameRegistryEndpoint(url, m.base_url)),
   );
-  if (matches.length === 1) return matches[0]?.pricing;
+  if (matches.length === 1) return matches[0];
+}
+
+/** Compare the connection used for this request before discarding its potentially sensitive URL. */
+export function matchesRegistryRoute(
+  entry: ModelCatalogEntry | undefined,
+  route: { clientType?: string; baseUrl?: string },
+): boolean {
+  if (!entry) return false;
+  const adapter = routedClientType(entry.modelId, route.clientType);
+  const credentials = adapter && CLIENT_CREDENTIALS[adapter];
+  if (!credentials) return false;
+  const baseUrl = route.baseUrl || process.env[credentials.baseUrlEnv];
+  if (entry.toolPricing?.source === "mmsp") {
+    // Jina uses two default hosts. Its shared catalog rule checks the specific SKU.
+    return !!toolPricingFor(entry, { clientType: route.clientType, baseUrl });
+  }
+  const listed = registryModel(entry);
+  return (
+    !!listed?.pricing &&
+    routedClientType(listed.model, listed.client) === adapter &&
+    sameRegistryEndpoint(baseUrl || credentials.defaultBaseUrl, listed.base_url)
+  );
 }
 
 function priceBuckets(usage: CapabilityUsage | null, rates: BucketRates): ToolCostEstimate | null {
@@ -83,7 +118,10 @@ export function estimateToolCost(
   const entry = catalogEntryFor(run.model.provider, run.model.modelId);
   const now = new Date(run.createdAt);
   if (entry?.capability && entry.capability !== run.capability) return null;
-  const tariff = toolPricingFor(entry);
+  const tariff =
+    entry?.toolPricing?.source === "mmsp" && !run.registryRouteMatched
+      ? undefined
+      : toolPricingFor(entry);
   const primary = tariff?.rates[0];
   if (tariff && primary) {
     const discount =
@@ -113,7 +151,7 @@ export function estimateToolCost(
         const value = tariff.rates.find((r) => r.unit === unit);
         return value && usd(value.amount);
       };
-      const sdk = registryPrice(entry);
+      const sdk = run.registryRouteMatched ? registryModel(entry)?.pricing : undefined;
       // The protocol puts thinking in its own bucket. For Gemini Omni the seller
       // bills it as text and the response as video. Never count it twice as output.
       return priceBuckets(run.usage, {
@@ -142,6 +180,6 @@ export function estimateToolCost(
       thoughts_tokens: pricing.output,
       response_tokens: pricing.output,
     });
-  const sdk = entry && registryPrice(entry);
+  const sdk = entry && run.registryRouteMatched ? registryModel(entry)?.pricing : undefined;
   return sdk ? priceBuckets(run.usage, sdk) : null;
 }

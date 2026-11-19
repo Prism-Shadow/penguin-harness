@@ -1,3 +1,4 @@
+import { TOOL_REGISTRY_ROUTE } from "./migrations/steps/2026-11-19-tool-registry-route.js";
 import { TOOL_REQUEST_USAGE_V2 } from "./migrations/steps/2026-11-19-tool-meter-quantities.js";
 /**
  * SQLite table-creation SQL.
@@ -109,6 +110,7 @@ CREATE INDEX IF NOT EXISTS capability_runs_project_time ON capability_runs(proje
 CREATE INDEX IF NOT EXISTS capability_runs_session_time ON capability_runs(project_id, session_id, created_at DESC);
 
 ${TOOL_REQUEST_USAGE_V2}
+${TOOL_REGISTRY_ROUTE}
 
 CREATE TABLE IF NOT EXISTS usage_records (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,

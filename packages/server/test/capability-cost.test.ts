@@ -141,13 +141,25 @@ describe("read-time MMSP tool prices", () => {
       const jina = {
         ...request(op, "jina", "jina-" + op),
         usage: {
-          prompt_tokens: 2000,
+          prompt_tokens: 1000000,
           thoughts_tokens: null,
           response_tokens: null,
           cached_tokens: null,
         },
       };
-      expect(estimateToolCost(jina)?.minimumUsd).toBeCloseTo(0.0001, 14);
+      expect(estimateToolCost({ ...jina, registryRouteMatched: true })?.minimumUsd).toBeCloseTo(
+        0.05,
+        14,
+      );
+      expect(estimateToolCost(jina)).toBeNull();
+      expect(
+        estimateToolCost(jina, {
+          unit: "usd_per_mtok",
+          cache_read: 0,
+          cache_write: 0.12,
+          output: 0,
+        })?.minimumUsd,
+      ).toBe(0.12);
       expect(
         estimateToolCost({ ...jina, model: { ...jina.model, provider: "custom" } }),
       ).toBeNull();

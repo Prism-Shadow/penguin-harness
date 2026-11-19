@@ -56,6 +56,7 @@ export interface UsageModelSums {
   tool?: {
     capability: ModelOperation | "voice-polish";
     createdAt: string;
+    registryRouteMatched?: true;
     usage: {
       cached_tokens: number | null;
       prompt_tokens: number | null;
@@ -204,7 +205,7 @@ const SUM_COLUMNS = `COALESCE(SUM(cache_read), 0) AS cache_read,
                 COALESCE(SUM(cache_write), 0) AS cache_write,
                 COALESCE(SUM(output), 0) AS output,
                 COALESCE(SUM(total), 0) AS total,
-                COUNT(*) AS requests, operation, input_unit, MIN(ts) AS first_ts,
+                COUNT(*) AS requests, operation, registry_route_matched, input_unit, MIN(ts) AS first_ts,
                 SUM(input_quantity) AS input_quantity, SUM(completed_requests) AS completed_requests,
                 SUM(raw_cached) AS raw_cached, SUM(raw_prompt) AS raw_prompt,
                 SUM(raw_thoughts) AS raw_thoughts, SUM(raw_response) AS raw_response,
@@ -219,6 +220,7 @@ function toSums(r: Record<string, unknown>): UsageModelSums {
       tool: {
         capability: r.operation as ModelOperation | "voice-polish",
         createdAt: r.first_ts as string,
+        ...(r.registry_route_matched === 1 && { registryRouteMatched: true as const }),
         usage: {
           cached_tokens: r.raw_cached as number | null,
           prompt_tokens: r.raw_prompt as number | null,
