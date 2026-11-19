@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#1637](https://github.com/Prism-Shadow/penguin-harness/pull/1637)
 
 [中文版](2026-11-19-app-center-machines.zh.md)
 
