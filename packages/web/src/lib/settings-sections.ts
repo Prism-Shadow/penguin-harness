@@ -29,6 +29,7 @@ export type SettingsSectionKey =
   | "appearance"
   | "shortcuts"
   | "archived"
+  | "storage"
   | "account"
   | "browser"
   | "proxy"
@@ -69,6 +70,9 @@ const SECTION_RULES: ReadonlyArray<SettingsSection & { visible(viewer: SettingsV
     // The conversations not in the sidebar — archived by hand, or opened by a program and not
     // kept — across every Project the user can open: theirs in every session.
     { key: "archived", group: "personal", visible: () => true },
+    // What the data root holds and the cleanup of what can be regenerated: a member sees the
+    // Projects they can open, an admin the whole root. Every session has it.
+    { key: "storage", group: "personal", visible: () => true },
     // The desktop shell's own window has no password to change; a password-established
     // session against the same server still does. Same predicate as the old menu row.
     { key: "account", group: "personal", visible: (v) => offersChangePassword(v) },

@@ -35,6 +35,7 @@ const SETTINGS_PAGES = [
   "profile",
   "general",
   "appearance",
+  "storage",
   "account",
   "proxy",
   "uploads",

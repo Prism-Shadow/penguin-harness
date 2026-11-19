@@ -31,6 +31,7 @@ const EVERY_PAGE: Record<SettingsSectionKey, true> = {
   appearance: true,
   shortcuts: true,
   archived: true,
+  storage: true,
   account: true,
   browser: true,
   proxy: true,

@@ -39,6 +39,7 @@ import { GeneralSection } from "./general-section";
 import { AppearanceSection } from "./appearance-section";
 import { ShortcutsSection } from "./shortcuts-section";
 import { ArchivedSessionsSection } from "./archived-sessions-section";
+import { StorageSection } from "./storage-section";
 import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
 import { UploadsSection } from "./uploads-section";
@@ -60,6 +61,8 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   shortcuts: ICONS.keyboard,
   /** The archive box the sidebar row's archive action wears: archived chats. */
   archived: ICONS.archive,
+  /** A drive: what the data root holds. */
+  storage: ICONS.hardDrive,
   /** Single person: the signed-in account. */
   account: ICONS.user,
   /** A browser window: the agent browser. */
@@ -121,6 +124,7 @@ export function SettingsDialog({
     appearance: S.settings.appearanceTitle,
     shortcuts: S.settings.shortcutsTitle,
     archived: S.settings.archivedTitle,
+    storage: S.settings.storageTitle,
     account: S.settings.accountTitle,
     browser: S.settings.browserTitle,
     proxy: S.settings.proxyTitle,
@@ -140,12 +144,19 @@ export function SettingsDialog({
   const sectionInfo: Partial<Record<SettingsSectionKey, string>> = {
     shortcuts: S.settings.shortcutsInfo,
     archived: S.settings.archivedInfo,
+    storage: S.settings.storageInfo,
     proxy: S.settings.proxyInfo,
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
     company: S.settings.companyModeServerInfo,
     chromeExtension: S.settings.chromeExtensionInfo,
     agentApi: S.settings.agentApiHint,
     plugins: S.settings.pluginsInfo,
+  };
+
+  // Every way to another page goes through the same guard: the rail, and a page's own link to
+  // another (the Storage page's Archived chats row).
+  const select = (key: SettingsSectionKey) => {
+    if (key !== current) void guardLeave(() => setActive(key), SETTINGS_SCOPE);
   };
 
   const groups: Array<PagedDialogGroup<SettingsSectionKey>> = settingsGroups(sections).map(
@@ -170,15 +181,14 @@ export function SettingsDialog({
       title={S.settings.title}
       groups={groups}
       active={current}
-      onSelect={(key) => {
-        if (key !== current) void guardLeave(() => setActive(key), SETTINGS_SCOPE);
-      }}
+      onSelect={select}
     >
       {current === "profile" && <ProfileSection />}
       {current === "general" && <GeneralSection />}
       {current === "appearance" && <AppearanceSection />}
       {current === "shortcuts" && <ShortcutsSection />}
       {current === "archived" && <ArchivedSessionsSection />}
+      {current === "storage" && <StorageSection onOpenArchived={() => select("archived")} />}
       {current === "account" && <AccountSection />}
       {current === "browser" && <BrowserSection />}
       {current === "proxy" && <ProxySection />}

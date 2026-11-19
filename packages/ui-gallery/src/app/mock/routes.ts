@@ -118,6 +118,10 @@ import type {
   SessionProcessesResponse,
   SessionResponse,
   SessionsArchiveResponse,
+  StorageCleanupResult,
+  StorageCleanupReview,
+  StorageSessionsResponse,
+  StorageUsage,
   SessionsBatchResponse,
   SessionsResponse,
   SessionTracesResponse,
@@ -159,6 +163,14 @@ import { IDS } from "./ids";
 import { empty, fail, json, raw, Router } from "./router";
 import type { RequestContext } from "./router";
 import type { DemoStore } from "./store";
+import {
+  cleanupReview,
+  forgetStorageSession,
+  refreshStorage,
+  runCleanup,
+  storageSessions,
+  storageUsage,
+} from "./storage-demo";
 import { payloadOf } from "./types";
 import type { AmspRecord } from "./types";
 
@@ -1324,9 +1336,38 @@ router
   })
   .post("/api/me/archived-sessions/delete", ({ store, body }): ArchivedSessionsBatchResponse => {
     let done = 0;
-    for (const id of batchIds(store, body)) if (store.deleteSession(id)) done += 1;
+    for (const id of batchIds(store, body)) {
+      // The Storage page lists conversations of Projects the demo store does not hold.
+      if (store.deleteSession(id) || forgetStorageSession(store, id)) done += 1;
+    }
     return { done, missing: [] };
   });
+
+// ---------------------------------------------------------------------------------------------
+// Storage (Settings › Storage): the demo's data root, its cleanup and its conversations by size
+// ---------------------------------------------------------------------------------------------
+
+router
+  .get("/api/me/storage", ({ store }): StorageUsage => storageUsage(store))
+  .post("/api/me/storage/refresh", ({ store }): StorageUsage => refreshStorage(store))
+  .get("/api/me/storage/cleanup", ({ store, query }): StorageCleanupReview => {
+    const days = Number(query.get("olderThanDays") ?? 7);
+    return cleanupReview(store, Number.isInteger(days) && days >= 1 && days <= 3650 ? days : 7);
+  })
+  .post("/api/me/storage/cleanup", ({ store, body }): StorageCleanupResult => {
+    const items = record(body).items;
+    return runCleanup(
+      store,
+      Array.isArray(items) ? items.filter((id) => typeof id === "string") : [],
+    );
+  })
+  .get("/api/me/storage/sessions", ({ store, query }): StorageSessionsResponse =>
+    storageSessions(store, query),
+  )
+  // The demo is not the desktop shell: there is no file manager to show a folder in.
+  .post("/api/me/storage/reveal", () =>
+    fail(404, "not_desktop", "Only the desktop shell can show a folder."),
+  );
 
 // ---------------------------------------------------------------------------------------------
 // Messaging bindings: nothing bound in the demo; every write needs a platform behind it
