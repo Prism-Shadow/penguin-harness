@@ -400,8 +400,12 @@ describe("project model capabilities", () => {
     );
     const edited = await api.post(base + "/voice-polish", { text: "raw transcript" });
     expect(edited.status, await edited.clone().text()).toBe(200);
-    expect(received.at(-1)?.config.system_prompt).toBe(custom);
+    expect(received.at(-1)?.config).toMatchObject({
+      system_prompt: custom,
+      thinking_level: "none",
+    });
     await api.post(tools + "/t2t/run", { text: "ordinary text" });
+    expect(received.at(-1)?.config).not.toHaveProperty("thinking_level");
     expect(received.at(-1)?.config.system_prompt).toBeUndefined();
     expect(
       (await api.patch(tools + "/tools", { voicePolish: { prompt: "x".repeat(8001) } })).status,
