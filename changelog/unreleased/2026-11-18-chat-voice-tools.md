@@ -20,3 +20,5 @@ Browser dictation converts the microphone recording to 16 kHz mono PCM WAV when 
 Reading a reply again uses its saved audio for that listener, Session, text and voice model. A reload also reuses it. The playback control sits alongside Copy and Fork.
 
 On a dedicated model’s card, select it as the Project default for that operation. Choosing another speech recognition model replaces the previous one and keeps the chat model.
+
+The model library and the tool picker show the provider’s price in its original currency and billing unit, including any current offer. Open a model to see the input and output rates separately.

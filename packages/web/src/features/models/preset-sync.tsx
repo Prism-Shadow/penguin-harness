@@ -13,6 +13,7 @@
 import type { ModelsResponse, PresetSyncMode } from "@prismshadow/penguin-server/api";
 import { Button, ConfirmModal, toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { toolModelQuote } from "../../lib/tool-model-price";
 import { S } from "../../lib/strings";
 import { toastApiError } from "../../lib/toast-api-error";
 
@@ -123,11 +124,19 @@ export function AddNewModelsConfirm({
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.models.syncNewPresetsHint}</p>
         <p className="text-xs text-gray-500 dark:text-gray-400">{S.todo.willTouch}</p>
         <ul className="max-h-60 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-          {items.map((ref) => (
-            <li key={ref} className="px-3 py-1.5 font-mono text-xs">
-              {ref}
-            </li>
-          ))}
+          {items.map((ref) => {
+            const separator = ref.indexOf("/");
+            const quote = toolModelQuote({
+              provider: ref.slice(0, separator),
+              modelId: ref.slice(separator + 1),
+            });
+            return (
+              <li key={ref} className="flex flex-wrap justify-between gap-x-2 px-3 py-1.5 text-xs">
+                <span className="break-all font-mono">{ref}</span>
+                {quote && <span className="tabular-nums text-fg-muted">{quote.primary}</span>}
+              </li>
+            );
+          })}
         </ul>
       </div>
     </ConfirmModal>

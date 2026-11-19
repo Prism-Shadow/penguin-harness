@@ -33,6 +33,7 @@
  * the rail and list, the foot — laid straight into the dialog, so a theme's dialog recipe finds
  * its head and foot the way it finds Modal's own.
  */
+import { toolModelQuote } from "../../lib/tool-model-price";
 import {
   useEffect,
   useId,
@@ -272,6 +273,7 @@ function ModelPickerBody({
   const renderRow = (m: ModelInfo, isHighlighted: boolean, onHover: () => void) => {
     const current = sameModelRef(m, value);
     const label = modelLabel(m);
+    const quote = purpose === "tool" ? toolModelQuote(m, now) : undefined;
     return (
       <li
         key={`${m.provider}:${m.modelId}`}
@@ -299,15 +301,25 @@ function ModelPickerBody({
           <ProviderLogo provider={m.provider} className="h-4 w-4 shrink-0" />
           {/* The marks follow the name rather than the row's far edge, so each reads as part of
               the model it describes; a long name truncates before they give way. */}
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className={`min-w-0 truncate text-sm${current ? " font-medium" : ""}`}>
-              {label}
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-1.5">
+              <span className={`min-w-0 truncate text-sm${current ? " font-medium" : ""}`}>
+                {label}
+              </span>
+              {pickerRowTags(m, defaultModel, now).map((tag) => (
+                <Pill key={tag.key} tone={tag.tone} tooltip={tag.title}>
+                  {tag.label}
+                </Pill>
+              ))}
             </span>
-            {pickerRowTags(m, defaultModel, now).map((tag) => (
-              <Pill key={tag.key} tone={tag.tone} tooltip={tag.title}>
-                {tag.label}
-              </Pill>
-            ))}
+            {quote && (
+              <span
+                className="block text-xs tabular-nums text-fg-muted"
+                data-tooltip={quote.details.join(" · ")}
+              >
+                {quote.primary}
+              </span>
+            )}
           </span>
           {!hasConfiguredKey(m) && (
             <span

@@ -225,6 +225,7 @@ import {
 
 import { tpsTone, ttftTone, type SpeedResult, type SpeedTone } from "./speed-test";
 
+import { toolModelQuote } from "../../lib/tool-model-price";
 import { toneInk } from "../../lib/tone";
 import { KeyAuthDialog, type KeyAuthTexts } from "./key-auth-dialog";
 
@@ -2626,6 +2627,7 @@ export function ModelCard({
   );
   /** Where an inherited key comes from (the group, or the environment), as the key's hover note. */
   const keyNote = keyStatusNote(row, group);
+  const quote = toolModelQuote(row);
   const priced = row.cacheRead || row.cacheWrite || row.output;
   /**
    * What is taken off this row's list price right now: its running promotion, its live
@@ -2660,7 +2662,7 @@ export function ModelCard({
     vision: row.vision && row.chatEligible !== false,
     isVisionModel,
     fastMode: row.fastMode,
-    free: isFreeModel(row),
+    free: !quote && isFreeModel(row),
     discount,
   });
 
@@ -2672,8 +2674,8 @@ export function ModelCard({
     // One price, the one being billed right now. What the row would cost without the promotion
     // answers no question a reader of this list is asking, and spending the meta line's width
     // on it pushes out the figures that do.
-    priced ? (
-      <span data-slot="price">
+    priced && (!quote || !isFreeModel(row)) ? (
+      <span data-slot="price" data-tooltip={quote ? S.models.configuredTokenPrices : undefined}>
         {priceLine(shownPrice.cacheRead, shownPrice.cacheWrite, shownPrice.output)}
       </span>
     ) : null,
@@ -2776,7 +2778,16 @@ export function ModelCard({
               {tag.label}
             </Pill>
           ))}
-          {tags.length === 0 && (
+          {quote && (
+            <span
+              data-slot="tool-price"
+              className="text-xs tabular-nums text-fg-muted"
+              data-tooltip={quote.details.join(" · ")}
+            >
+              {quote.primary}
+            </span>
+          )}
+          {tags.length === 0 && !quote && (
             <span aria-hidden className="invisible flex">
               <Pill>&nbsp;</Pill>
             </span>
@@ -2990,6 +3001,17 @@ function ModelDialog({
   const visionInFlight = useRef<Promise<void> | null>(null);
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
+  const modelId = form.modelId.trim();
+  const sellerQuote = toolModelQuote({
+    provider: form.provider,
+    modelId,
+    chatEligible:
+      row?.provider === form.provider && row.modelId === modelId ? row.chatEligible : undefined,
+  });
+  const pricedByToken =
+    !sellerQuote?.published || !!catalogEntryFor(form.provider, modelId)?.imagePricing;
+  const showTokenPriceInputs =
+    pricedByToken || !!(form.cacheRead || form.cacheWrite || form.output);
   /** The loaded row's running promotion, explained under the price fields. */
   const promotion = fractionOff(row?.discount);
   /**
@@ -3912,30 +3934,52 @@ function ModelDialog({
     // card prints: the promotion is stored apart and taken off when usage is priced, which the
     // line under them says, since typing a different price cancels it.
     pricing: (
-      <div className="space-y-1">
-        <div className="grid grid-cols-3 items-start gap-2">
-          {(
-            [
-              ["cacheRead", S.models.priceCacheRead, form.cacheRead],
-              ["cacheWrite", S.models.priceCacheWrite, form.cacheWrite],
-              ["output", S.models.priceOutput, form.output],
-            ] as Array<[keyof FieldErrors & keyof RowState, string, string]>
-          ).map(([key, label, value]) => (
-            <Input
-              key={key}
-              label={label}
-              size="sm"
-              value={value}
-              inputMode="decimal"
-              disabled={!canEdit}
-              error={shownErrors[key]}
-              onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
-              className="text-right font-mono"
-              affix={{ leading: CURRENCY_SYMBOL[currency], trailing: S.models.priceUnitShort }}
-              placeholder={S.models.priceBlankHint}
-            />
-          ))}
-        </div>
+      <div className="space-y-2">
+        {sellerQuote && (
+          <div className="text-xs text-fg-muted">
+            {sellerQuote.published && (
+              <p className="font-medium text-fg">{S.models.publishedPrices}</p>
+            )}
+            {sellerQuote.details.map((rate) => (
+              <p key={rate}>{rate}</p>
+            ))}
+            {!sellerQuote.published && form.provider === "jina" && (
+              <a
+                className="underline"
+                target="_blank"
+                rel="noreferrer"
+                href="https://jina.ai/api-dashboard/pricing/"
+              >
+                {S.models.providerPlans}
+              </a>
+            )}
+          </div>
+        )}
+        {showTokenPriceInputs && (
+          <div className="grid grid-cols-3 items-start gap-2">
+            {(
+              [
+                ["cacheRead", S.models.priceCacheRead, form.cacheRead],
+                ["cacheWrite", S.models.priceCacheWrite, form.cacheWrite],
+                ["output", S.models.priceOutput, form.output],
+              ] as Array<[keyof FieldErrors & keyof RowState, string, string]>
+            ).map(([key, label, value]) => (
+              <Input
+                key={key}
+                label={label}
+                size="sm"
+                value={value}
+                inputMode="decimal"
+                disabled={!canEdit}
+                error={shownErrors[key]}
+                onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
+                className="text-right font-mono"
+                affix={{ leading: CURRENCY_SYMBOL[currency], trailing: S.models.priceUnitShort }}
+                placeholder={S.models.priceBlankHint}
+              />
+            ))}
+          </div>
+        )}
         {promotion !== undefined && (
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {S.models.promotionPriceHint(Math.round(promotion * 100))}

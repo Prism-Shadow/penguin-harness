@@ -13,7 +13,7 @@
  * `modelLabel` lives here too (model-select.tsx re-exports it for its existing importers), so
  * the modal and the triggers share it without importing each other.
  */
-import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
+import { catalogEntryFor, type ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
 import type { ModelInfo } from "@prismshadow/penguin-server/api";
 import {
   discountedPrice,
@@ -138,7 +138,10 @@ export function pickerRowTags(
     isDefault: sameModelRef(m, defaultModel),
     vision: m.vision !== false && m.chatEligible !== false,
     fastMode: m.fastMode === true,
-    free: isFreeModel(m.pricing),
+    free:
+      isFreeModel(m.pricing) &&
+      m.chatEligible !== false &&
+      !catalogEntryFor(m.provider, m.modelId)?.capability,
     discount: discountedPrice(
       {
         provider: m.provider,
