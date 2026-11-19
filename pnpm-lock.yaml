@@ -1065,9 +1065,6 @@ importers:
       dotenv:
         specifier: ^17.0.0
         version: 17.4.2
-      env-paths:
-        specifier: ^3.0.0
-        version: 3.0.0
       fflate:
         specifier: ^0.8.3
         version: 0.8.3

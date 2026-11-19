@@ -34,9 +34,10 @@ import type { ProjectRow } from "@prismshadow/penguin-library-project/repos/proj
 import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
 import type { SessionManager } from "../runtime/session-manager.js";
 import {
+  isNewSemanticId,
+  NEW_ID_RULE,
   PROJECT_ID_MAX_LENGTH,
   PROJECT_SUFFIX_PATTERN,
-  SEMANTIC_ID_PATTERN,
   SEMANTIC_ID_RULE,
 } from "./ids.js";
 import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
@@ -122,11 +123,11 @@ export class ProjectService implements ProjectLifecycle {
    */
   async createProject(owner: UserRow, projectId: string, name?: string): Promise<ProjectSummary> {
     if (owner.isAdmin) {
-      if (!SEMANTIC_ID_PATTERN.test(projectId)) {
+      if (!isNewSemanticId(projectId)) {
         throw new HttpError(
           400,
           "invalid_project_id",
-          `Project id must be 2–64 characters: ${SEMANTIC_ID_RULE} (the hyphen is reserved as the user namespace separator).`,
+          `Project id must be 2–64 characters: ${SEMANTIC_ID_RULE}; ${NEW_ID_RULE} (the hyphen is reserved as the user namespace separator).`,
         );
       }
     } else {

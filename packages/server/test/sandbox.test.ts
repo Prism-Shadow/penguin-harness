@@ -6,7 +6,6 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import envPaths from "env-paths";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { boot, initialDoc, parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { Json } from "@prismshadow/penguin-core/kernel";
@@ -14,7 +13,7 @@ import { HotResources } from "@prismshadow/penguin-hmr";
 import { PENGUIN_FAMILY, HMR_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
 import { PluginHost, PLUGINS_RESOURCE_ID } from "../src/plugin/host.js";
-import { appStorageRoots, isValidAppId, SandboxService } from "../src/sandbox/index.js";
+import { SandboxService } from "../src/sandbox/index.js";
 import type {
   SandboxDimension,
   SandboxPolicy,
@@ -244,54 +243,37 @@ describe("sandbox service — the built-in interface and its optional dimensions
     expect(fs.existsSync(scratchpad)).toBe(false);
   });
 
-  it("defaults appStorageRoots to the agent scope and binds it writable in workspace-write", async () => {
-    const root = path.join(tmp(), "data");
-    const scratchpad = path.join(root, "proj", "agents", "ag", "scratchpad", "session-1");
-    const defaultRoots = appStorageRoots(root, "proj", "ag");
-    expect(defaultRoots).toEqual([path.join(root, "proj", "agents", "ag", "app")]);
-
-    const allRoots = appStorageRoots(root, "proj", "ag", ["agent", "project", "server", "machine"]);
-    expect(allRoots).toEqual([
-      path.join(root, "proj", "agents", "ag", "app"),
-      path.join(root, "proj", "app"),
-      path.join(root, "app"),
-      path.join(envPaths("penguin", { suffix: "" }).data, "app"),
-    ]);
-
+  it("under workspace-write the Agent's app data is bound once it exists as a real directory, and a spawn never creates it", async () => {
+    const agent = path.join(tmp(), "agents", "ag");
+    const app = path.join(agent, "app");
+    const scratchpad = path.join(agent, "scratchpad", "session-1");
     const bwrap = fake("bwrap", ["fs-write", "network"]);
     const svc = await service([["penguin-bwrap", bwrap.provider]]);
-    svc.confinerFor(() => ({ mode: "read-only" }), defaultRoots)([...ARGV], {
-      ...OPTS,
-      scratchpadDir: scratchpad,
-    });
-    expect(bwrap.calls[0]).not.toHaveProperty("writableRoots");
-    for (const dir of defaultRoots) expect(fs.existsSync(dir)).toBe(false);
+    const confine = (mode: "workspace-write" | "read-only") =>
+      svc.confinerFor(() => ({ mode }), [app])([...ARGV], { ...OPTS, scratchpadDir: scratchpad });
 
-    svc.confinerFor(() => ({ mode: "workspace-write" }), defaultRoots)([...ARGV], OPTS);
-    expect(bwrap.calls[1]).toMatchObject({
-      workspaceRoot: "/work/project",
-      writableRoots: [...defaultRoots],
-    });
-    expect(fs.existsSync(defaultRoots[0]!)).toBe(true);
-    expect(fs.existsSync(allRoots[1]!)).toBe(false);
+    // An Agent no workbench has written data for: nothing to bind, and nothing made.
+    confine("workspace-write");
+    expect(bwrap.calls[0]!.writableRoots).toEqual([scratchpad]);
+    expect(fs.existsSync(app)).toBe(false);
 
-    svc.confinerFor(() => ({ mode: "workspace-write" }), defaultRoots)([...ARGV], {
-      ...OPTS,
-      scratchpadDir: scratchpad,
-    });
-    expect(bwrap.calls[2]).toMatchObject({
-      workspaceRoot: "/work/project",
-      writableRoots: [scratchpad, ...defaultRoots],
-    });
-  });
+    // A workbench made its data folder: the Agent's commands may write there too.
+    fs.mkdirSync(path.join(app, "data", "slides"), { recursive: true });
+    confine("workspace-write");
+    expect(bwrap.calls[1]!.writableRoots).toEqual([scratchpad, app]);
 
-  it("validates appId boundaries", () => {
-    expect(isValidAppId(`${"a".repeat(64)}.${"b".repeat(64)}`)).toBe(true);
-    expect(isValidAppId("a".repeat(200))).toBe(true);
-    expect(isValidAppId("a".repeat(201))).toBe(false);
-    expect(isValidAppId("report_")).toBe(true);
-    expect(isValidAppId("report-")).toBe(true);
-    expect(isValidAppId("trailing.")).toBe(false);
+    // Read-only binds nothing writable, whatever exists.
+    confine("read-only");
+    expect(bwrap.calls[2]).not.toHaveProperty("writableRoots");
+
+    // A link left where the folder belongs (by a Session that ran unconfined) is never bound:
+    // binding it would hand its target to the next confined Session.
+    fs.rmSync(app, { recursive: true });
+    const elsewhere = path.join(tmp(), "elsewhere");
+    fs.mkdirSync(elsewhere);
+    fs.symlinkSync(elsewhere, app, "dir");
+    confine("workspace-write");
+    expect(bwrap.calls[3]!.writableRoots).toEqual([scratchpad]);
   });
 
   it("requiring a dimension nothing implements is refused, naming what each backend does", async () => {

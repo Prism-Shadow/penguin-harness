@@ -6,7 +6,8 @@
  *
  * - `WorkbenchHost` is what the server PUBLISHES into every workbench tree (the workbench's
  *   manifest requires it `from: "Host"`): Sessions of the Project's Agents, opened and run
- *   the way the SDK does it and followed live, a small state document, a log line.
+ *   the way the SDK does it and followed live, a small state document, a data folder it
+ *   shares with its Agent, a log line.
  * - `WorkbenchMain` is what a workbench PROVIDES: a JSON request handler the server mounts
  *   under `/api/projects/:p/agents/:a/workbenches/:id/api/*`, which the workbench's own UI
  *   (served from its `ui/` folder) calls.
@@ -44,19 +45,28 @@ import type {
  */
 export type WorkbenchApprovalMode = "allow-all" | "deny-all";
 
-/** Scope level of persistent app storage (`machine`, `server`, `project` or `agent`). */
-export type WorkbenchAppLevel = "agent" | "project" | "server" | "machine";
-
 /**
- * One persistent app storage entry a workbench or its Agent may access: its `appId`, scope `level`,
- * and resolved `dataDir`, `cacheDir` and `stateDir` paths on this machine.
+ * Where a workbench's own folders are on the server's machine, beside the Agent State rather
+ * than in it (`<agentDir>/app/…/<workbenchId>`).
  */
-export interface WorkbenchAppStorage {
-  appId: string;
-  level: WorkbenchAppLevel;
+export interface WorkbenchDataPaths {
+  /**
+   * The data folder (`app/data/<id>`): what the file members read and write, and what the
+   * Agent edits with its own file tools. It travels in the Agent export with the workbench's
+   * data and is removed with the workbench.
+   */
   dataDir: string;
+  /** Disposable files (`app/cache/<id>`): never exported, removed with the workbench. */
   cacheDir: string;
-  stateDir: string;
+}
+
+/** A file of the workbench's data folder, as `listFiles` and `writeFile` report it. */
+export interface WorkbenchFile {
+  /** Its path below the data folder, `/`-separated. */
+  path: string;
+  size: number;
+  /** When it was last written, in ms since the epoch: by the workbench, or by its Agent's file tools. */
+  mtimeMs: number;
 }
 
 /** What a workbench provides (its manifest: `provides: { main: "@prismshadow/penguin-server#WorkbenchMain" }`). */
@@ -114,11 +124,36 @@ export abstract class WorkbenchHost {
    */
   abstract subscribe(sessionId: string, listener: (record: WorkbenchRecord) => void): () => void;
   /**
-   * The persistent app storage directories for this workbench (`{ appId, level, dataDir, cacheDir,
-   * stateDir }`), defaulting to `<agentId>.<workbenchId>` at `agent` level (`opts` may override
-   * `level` — `"agent" | "project" | "server" | "machine"` — and `appId`).
+   * Where this workbench's data and cache folders are. The data folder exists once this
+   * returns, so a path in it can be handed to the Agent, whose commands may write it even in a
+   * `workspace-write` sandbox.
    */
-  abstract dataPaths(opts?: { level?: WorkbenchAppLevel; appId?: string }): WorkbenchAppStorage;
+  abstract dataPaths(): WorkbenchDataPaths;
+  /**
+   * Every regular file of the data folder, sorted by path; none before the first write. A
+   * listing is how the handler notices what the Agent wrote: compare `mtimeMs` and `size` on a
+   * timer while a page is open. Links are left out, and at most 5,000 files are listed (past
+   * that it throws rather than answer a part).
+   */
+  abstract listFiles(): Promise<WorkbenchFile[]>;
+  /**
+   * A file's bytes; null when there is none at `path` (`/`-separated, below the data folder).
+   * At most 50 MB. A path that leaves the folder or passes through a link is refused.
+   */
+  abstract readFile(path: string): Promise<Uint8Array | null>;
+  /**
+   * Writes a file whole, staged beside it and renamed in, creating its directories; at most
+   * 50 MB. A path that leaves the folder or passes through a link is refused.
+   */
+  abstract writeFile(path: string, data: Uint8Array | string): Promise<WorkbenchFile>;
+  /** Removes a file; nothing happens when it is not there. A link is removed, never followed. */
+  abstract removeFile(path: string): Promise<void>;
+  /**
+   * Where a file (the data folder itself, without `path`) is on the server's machine: the path
+   * a handler names when it asks the Agent to edit the file. It says nothing of whether the file
+   * exists; the folder does once this returns.
+   */
+  abstract filePath(path?: string): string;
   /** The workbench's own document (`state.json`, kept by the server across reloads and rollbacks). */
   abstract getState(): unknown;
   abstract setState(state: unknown): Promise<void>;

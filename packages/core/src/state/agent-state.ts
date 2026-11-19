@@ -37,6 +37,7 @@ import {
   installPluginWorkbenches,
 } from "./plugin-workbenches.js";
 import { loadAgentVault } from "./agent-vault.js";
+import { isWindowsReservedName, WINDOWS_RESERVED_RULE } from "./reserved-names.js";
 import {
   AGENT_ID_PLACEHOLDER,
   AGENTS_MD_PLACEHOLDER,
@@ -95,8 +96,8 @@ import {
   toolsDir,
 } from "./paths.js";
 
-/** project_id / agent_id / skill_name only allow letters, digits, underscore `_`, and hyphen `-` (prevents path traversal and Windows reserved device names). */
-const ID_PATTERN = /^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$)[A-Za-z0-9_-]+$/i;
+/** project_id / agent_id / skill_name only allow letters, digits, underscore `_`, and hyphen `-` (prevents path traversal). */
+const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 export type IdKind = "project_id" | "agent_id" | "skill_name";
 
 export function isValidId(id: string): boolean {
@@ -555,6 +556,11 @@ export async function replaceSkillDirectory(
   dir: string,
   files: Iterable<[string, string | Uint8Array]>,
 ): Promise<void> {
+  // A new directory takes no name Windows refuses; one already on disk is replaced as it is.
+  const name = path.basename(dir);
+  if (isWindowsReservedName(name) && (await fs.lstat(dir).catch(() => null)) === null) {
+    throw new Error(`Invalid name ${JSON.stringify(name)}: ${WINDOWS_RESERVED_RULE}.`);
+  }
   const staging = `${path.join(path.dirname(dir), `.${path.basename(dir)}`)}.incoming`;
   await fs.rm(staging, { recursive: true, force: true });
   await fs.mkdir(staging, { recursive: true });

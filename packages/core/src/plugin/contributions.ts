@@ -383,8 +383,7 @@ function readSetupKeys(value: unknown, at: string, warnings: string[]): PluginSe
 }
 
 /** The workbench app id rule (the Agent's `workbenches/<id>/` directory). */
-const WORKBENCH_NAME_PATTERN =
-  /^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$)[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/i;
+const WORKBENCH_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 /** What a package's table contributes to the library, every entry checked (see the module header). */
 export function libraryContributions(table: PluginTable, warnings: string[]): LibraryContributions {

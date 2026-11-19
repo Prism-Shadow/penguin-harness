@@ -147,6 +147,42 @@ export function workbenchesDir(root: string, projectId: string, agentId: string)
   return path.join(agentStateDir(root, projectId, agentId), "workbenches");
 }
 
+/**
+ * `<agentDir>/app`: the data the Agent's workbenches keep, beside its Agent State rather than in
+ * it, so a snapshot stays small and one root can be bound writable for the Agent's commands under
+ * a `workspace-write` sandbox. Created on first use; doesn't exist until then.
+ */
+export function agentAppDir(root: string, projectId: string, agentId: string): string {
+  return path.join(agentDir(root, projectId, agentId), "app");
+}
+
+/**
+ * `<agentDir>/app/data/<workbenchId>`: one workbench's data folder, which its handler reads and
+ * writes through the host and the Agent with its file tools. It travels in the Agent export with
+ * the workbench's data and is removed with the workbench.
+ */
+export function workbenchDataDir(
+  root: string,
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+): string {
+  return path.join(agentAppDir(root, projectId, agentId), "data", workbenchId);
+}
+
+/**
+ * `<agentDir>/app/cache/<workbenchId>`: one workbench's disposable files, anything that can be
+ * made again. Never exported; removed with the workbench.
+ */
+export function workbenchCacheDir(
+  root: string,
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+): string {
+  return path.join(agentAppDir(root, projectId, agentId), "cache", workbenchId);
+}
+
 /** `<agentStateDir>/schedule`, the scheduled-task directory (doesn't exist when unconfigured). */
 export function scheduleDir(root: string, projectId: string, agentId: string): string {
   return path.join(agentStateDir(root, projectId, agentId), "schedule");

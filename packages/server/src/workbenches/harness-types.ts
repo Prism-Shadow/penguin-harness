@@ -129,16 +129,24 @@ check: \`const sdk = "../sdk/workbench.js"; await import(sdk)\`.
 snapshot: \`running\`, \`completed\` with the final \`text\`, or \`failed\` with an \`error\`.
 Persist the Session id with \`host.setState\`, then poll from GET requests until terminal. Do not
 mark a running snapshot failed because its text is empty. Store small reports in host state;
-keep uploaded files and persistent blobs in \`host.dataPaths().dataDir\` (outside this watched source
-directory). Never edit state.json by hand.
+keep uploaded files in the data folder (below), never among the source. Never edit state.json by
+hand.
 
-## Data and storage
+## Files shared with the Agent
 
-\`host.dataPaths(opts?)\` returns the persistent app storage directories (\`{ appId, level, dataDir,
-cacheDir, stateDir }\`) for this workbench — by default its \`<agentId>.<workbenchId>\` entry at
-\`agent\` level, or pass \`{ level, appId }\` for \`project\`, \`server\` or \`machine\` level. Put user
-files, media, documents and build artifacts in \`dataDir\`, disposable caches in \`cacheDir\`, and
-Unix sockets or port files in \`stateDir\`; never put code in \`dataDir\`.
+\`host.listFiles()\`, \`readFile(path)\`, \`writeFile(path, data)\` and \`removeFile(path)\` work on
+this workbench's data folder, outside this source folder: documents BOTH the handler and the Agent
+write, the Agent with its own file tools. Use it for what the user edits in the page and asks the
+Agent to change, and for uploads and exports: one file on disk, each side reading what the other
+wrote last. A write reloads nothing and enters no version; a rollback or a plugin update leaves it
+alone; the Agent export carries it with the workbench's data, and removing the workbench removes
+it. \`host.filePath(path)\` is the file's path on this machine: name it when a run asks the Agent
+to edit the file, rather than building a path yourself. To notice the Agent's writes, call
+\`listFiles()\` on a timer while a page is connected and compare \`mtimeMs\` and \`size\`. Paths
+are \`/\`-separated and stay inside the folder; links are never followed; a file is at most 50 MB.
+\`host.dataPaths()\` gives \`{ dataDir, cacheDir }\`: the data folder, and a cache folder for what
+the Agent's commands can make again (never exported). Never put code in either. A
+\`plugin.d.ts\` here without \`listFiles\` predates them; delete \`.harness/\` to take them.
 
 ## A Session that only talks
 

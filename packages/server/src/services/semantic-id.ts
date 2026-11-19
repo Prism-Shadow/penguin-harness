@@ -31,7 +31,7 @@
  */
 import { isValidId } from "@prismshadow/penguin-core";
 import type { SemanticIdKind } from "../api/types.js";
-import { PROJECT_ID_MAX_LENGTH, PROJECT_SUFFIX_PATTERN, SEMANTIC_ID_PATTERN } from "./ids.js";
+import { isNewSemanticId, PROJECT_ID_MAX_LENGTH, PROJECT_SUFFIX_PATTERN } from "./ids.js";
 
 /** What a kind's id looks like: everything the generator, the sanitizer and the prompt need. */
 export interface SemanticIdRule {
@@ -49,7 +49,7 @@ export interface SemanticIdRule {
   examples: string;
 }
 
-const snakeCaseId = (id: string): boolean => SEMANTIC_ID_PATTERN.test(id);
+const snakeCaseId = (id: string): boolean => isNewSemanticId(id);
 
 const SNAKE_EXAMPLES =
   "Plugin Marketplace → plugin_marketplace; 科研论文公司 → research_paper_lab; 市场推广 → marketing; Site → site.";
