@@ -1,18 +1,27 @@
 /**
- * 报告问题: the problem report kit — the notice a crashed part of the page shows, an error toast
- * that offers 「[报告问题]」 beside one that does not (an expected error), the could-not-load notice
- * with the entry, and the report dialog itself, opened in a demo environment.
+ * 报告问题: the problem report kit — the notice a crashed part of the page shows, a failure's
+ * toast that offers 「[报告问题]」 beside a refusal's that does not, inline failures (a danger
+ * line, a notice's body, a field's error, a failure the app was told about with its words left
+ * out) beside an input error, the could-not-load notice with the entry, and the report dialog
+ * itself, opened in a demo environment.
  */
 import { useEffect } from "react";
+import type { Failure } from "@prismshadow/penguin-ui";
 import {
   Button,
   CrashNotice,
+  FailureText,
+  Field,
+  Input,
   LoadFailed,
+  Notice,
   exceptionReport,
   openReport,
+  reportFor,
   setReportEnvironment,
   setReportRoute,
   toastError,
+  toldReport,
 } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
@@ -33,6 +42,14 @@ function demoInternal(): Error & { status: number; code: string } {
   return Object.assign(new Error("Internal server error."), { status: 500, code: "internal" });
 }
 
+/** A 502 the server named: a machine that did not answer. A failure, though the server expected it. */
+function demoUnanswered(): Error & { status: number; code: string } {
+  return Object.assign(new Error("The machine did not answer."), {
+    status: 502,
+    code: "machine_unanswered",
+  });
+}
+
 const COMPONENT_STACK = "\n    at SessionTitle\n    at ChatHeader\n    at ChatPage";
 
 export function ReportBoard() {
@@ -44,8 +61,21 @@ export function ReportBoard() {
     setReportRoute(() => "/chat/:sessionId");
     return () => setReportRoute(null);
   }, []);
-  const internalReport = () =>
-    exceptionReport(demoInternal(), { what: "an action failed with an unexpected error" });
+  const internalReport = () => exceptionReport(demoInternal(), { what: "an action failed" });
+  const failed = (text: string, error: unknown): Failure => ({
+    text,
+    report: reportFor(error, { what: "an action failed" }),
+  });
+  // A machine job told the page it failed: the report names the step and the reason code, and
+  // leaves ssh's words out, since they name the host, the account and the key it tried.
+  const told: Failure = {
+    text: t.inlineTold,
+    report: toldReport({
+      what: "a machine job failed",
+      code: "auth",
+      facts: [["Step", "connect"]],
+    }),
+  };
   return (
     <div className="gf-board">
       <BoardGroup title={t.crash} aside={t.crashHint}>
@@ -62,6 +92,26 @@ export function ReportBoard() {
             {t.fireSerious}
           </Button>
           <Button onClick={() => toastError(t.expectedText)}>{t.fireExpected}</Button>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.inline} aside={t.inlineHint}>
+        <div className="lib-stack" style={{ maxWidth: "46rem" }}>
+          <p className="text-sm text-tone-danger-fg">
+            <FailureText failure={failed(t.inlineLine, demoUnanswered())} />
+          </p>
+          <Notice tone="danger" role="alert">
+            <FailureText failure={failed(t.inlineNotice, demoInternal())} />
+          </Notice>
+          <Field
+            label={t.inlineName}
+            error={<FailureText failure={failed(t.inlineSaveFailed, demoInternal())} />}
+          >
+            <Input size="sm" invalid defaultValue="Research" />
+          </Field>
+          <Input size="sm" label={t.inlineName} error={t.inlineRefused} defaultValue="Research" />
+          <p className="text-sm text-tone-danger-fg">
+            <FailureText failure={told} />
+          </p>
         </div>
       </BoardGroup>
       <BoardGroup title={t.loadFailed} aside={t.loadFailedHint}>

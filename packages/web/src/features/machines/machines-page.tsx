@@ -27,7 +27,7 @@
  * The servers are re-probed on a widening schedule (probe-schedule.ts) so a machine that went
  * quiet is noticed without a tap.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import type {
   MachineInfo,
@@ -55,7 +55,6 @@ import { useProject } from "../../state/project";
 import { useLocale } from "../../state/locale";
 import { useMachines } from "../../state/machines";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
   anyJobPending,
@@ -74,6 +73,7 @@ import { MachineDetailDialog, type MachineVerb } from "./machine-detail-dialog";
 
 import { programDirOf } from "./machine-detail-view";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode, toldNode } from "../../lib/failure";
 
 /** While a job is on its way, the page reads the list this often too: a net under the server's word. */
 const FALLBACK_POLL_MS = 5_000;
@@ -105,7 +105,7 @@ export function MachinesPage() {
   const state = account.state;
   const { accept, refresh } = account;
   /** What the last request from this page answered with when it failed; the list's own read error otherwise. */
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const shownError = error ?? account.error;
   /** True while a POST has not come back yet. */
   const [posting, setPosting] = useState(false);
@@ -173,7 +173,7 @@ export function MachinesPage() {
       accept(next);
       setError(null);
     } catch (err) {
-      setError(apiErrorText(err));
+      setError(failureNode(err, { what: "the machines could not be probed" }));
     }
   }, [projectId, accept]);
 
@@ -209,7 +209,7 @@ export function MachinesPage() {
       setError(null);
       return true;
     } catch (err) {
-      setError(apiErrorText(err));
+      setError(failureNode(err));
       return false;
     } finally {
       setPosting(false);
@@ -432,7 +432,12 @@ export function MachinesPage() {
         )}
         {image?.kind === "buildFailed" && shownError === null && (
           <NoticeStrip tone="attention" className="mt-4 rounded-md border px-3 py-2 text-sm">
-            <p>{S.machines.checkoutImageFailed}</p>
+            <p>
+              {toldNode(S.machines.checkoutImageFailed, {
+                what: "the image build for a checkout failed",
+                detail: image.detail,
+              })}
+            </p>
             {/* The build's own last lines: where pnpm, vite or the packer said what went wrong. */}
             <pre className={`mt-1 break-words whitespace-pre-wrap ${MONO}`}>{image.detail}</pre>
           </NoticeStrip>

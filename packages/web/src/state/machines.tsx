@@ -33,9 +33,9 @@ import {
 
 import type { MachinesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
-import { apiErrorText } from "../lib/api-error";
 import { useAuth } from "./auth";
 import { useProject } from "./project";
+import { failureNode } from "../lib/failure";
 
 const changeListeners = new Set<() => void>();
 
@@ -57,8 +57,8 @@ export interface MachinesAccount {
   state: MachinesResponse | null;
   /** The first read has answered — or there is none to make for this user. */
   settled: boolean;
-  /** The last read's failure, in words; null when it answered. */
-  error: string | null;
+  /** The last read's failure, in words and with its report for a failure; null when it answered. */
+  error: ReactNode;
   /** Reads the list again now. */
   refresh: () => Promise<void>;
   /** Takes an answer a request already brought: every machines POST answers with the list. */
@@ -81,7 +81,7 @@ export function MachinesProvider({ children }: { children: ReactNode }) {
   const admin = useAuth().user?.isAdmin === true;
   const [state, setState] = useState<MachinesResponse | null>(null);
   const [settled, setSettled] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   /** The Project the current answers are about: a late one about another is dropped. */
   const current = useRef<string | null>(null);
   /** The read in flight and the Project it asks about, and whether another is owed after it. */
@@ -105,7 +105,7 @@ export function MachinesProvider({ children }: { children: ReactNode }) {
           setError(null);
         } catch (err) {
           if (current.current !== projectId) return;
-          setError(apiErrorText(err));
+          setError(failureNode(err, { what: "the machines could not be read" }));
         } finally {
           if (current.current === projectId) setSettled(true);
         }

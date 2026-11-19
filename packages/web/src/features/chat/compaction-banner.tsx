@@ -53,8 +53,10 @@ import {
   ICONS,
   ICON_SIZE,
   LiveDuration,
+  ReportIssueAction,
   StatusIcon,
   StreamText,
+  toldReport,
   type ActivityGroupRow,
 } from "@prismshadow/penguin-ui";
 
@@ -278,6 +280,29 @@ export function CompactionBanner({
         : {})}
       {...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {})}
       {...(expandable ? { rows } : {})}
+      {...(!ok && item.status !== "aborted"
+        ? { actions: <ReportIssueAction report={compactionFailureReport(item)} /> }
+        : {})}
     />
   );
+}
+
+/**
+ * What a failed compaction's report holds: what happened, the error's code and its own words
+ * (the provider's, or the server's). A stop the person made (`aborted`) is not a failure and
+ * offers none.
+ */
+function compactionFailureReport(item: CompactionItem) {
+  return toldReport({
+    what:
+      item.status === "fatal"
+        ? "a compaction could not open the next context, and the run ended"
+        : "a compaction was given up",
+    ...(item.errorCode !== undefined ? { code: item.errorCode } : {}),
+    facts: [
+      ["Mode", item.mode],
+      ["Status", item.status ?? "failed"],
+    ],
+    detail: item.errorMessage ?? null,
+  });
 }

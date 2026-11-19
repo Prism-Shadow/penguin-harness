@@ -249,7 +249,9 @@ import {
 import { isPinned, usePinnedBalance } from "./balance";
 import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
 import { ConnectDefaultOfferConfirm } from "./connect-default-offer";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError, toastFailure } from "../../lib/toast-api-error";
+import { toastDetectFailed, type DetectMiss } from "./detect-failure";
+import { toldFailure } from "../../lib/failure";
 
 /**
  * The authorization flows a group's Connect dialog can run, keyed by the flow named in that
@@ -3029,13 +3031,24 @@ function ModelDialog({
    * endpoint diagnosable. The relayed sentence is not lost either way: it goes to the console,
    * where a developer looking into a report can still read it.
    */
-  const reportTestFailure = (message: string) => {
-    if (unroutableFix(form.provider, form.modelId, effectiveClientType) === null) {
-      toastError(S.models.testFailed(message));
-      return;
+  const reportTestFailure = (message: string, error?: unknown) => {
+    let text = S.models.testFailed(message);
+    if (unroutableFix(form.provider, form.modelId, effectiveClientType) !== null) {
+      console.warn(`[models] ${form.provider}/${form.modelId.trim()}: ${message}`);
+      text = S.models.testNotRoutable;
     }
-    console.warn(`[models] ${form.provider}/${form.modelId.trim()}: ${message}`);
-    toastError(S.models.testNotRoutable);
+    // A request that failed goes by the rule; an answer that says the test failed carries the
+    // provider's own words in its report.
+    if (error !== undefined) toastApiError(error, { text, what: "a model test failed" });
+    else {
+      toastFailure(
+        toldFailure(text, {
+          what: "a model test failed",
+          facts: [["Model", `${form.provider}/${form.modelId.trim()}`]],
+          detail: message === "" ? null : message,
+        }),
+      );
+    }
   };
 
   /**
@@ -3073,7 +3086,7 @@ function ModelDialog({
       if (res.ok) toastSuccess(S.models.testOk(res.latencyMs ?? 0));
       else reportTestFailure(res.message ?? "");
     } catch (e) {
-      reportTestFailure(apiErrorText(e));
+      reportTestFailure(apiErrorText(e), e);
     } finally {
       setTesting(false);
     }
@@ -3111,10 +3124,10 @@ function ModelDialog({
     // What an empty result means depends on who asked. A manual run simply failed; a save
     // run silently resolves to the compatible client and says so, because the save it was
     // serving is still going through.
-    const failed = () => {
+    const failed = (miss: DetectMiss) => {
       setDetectFailed(true);
       if (mode === "save") toastInfo(S.models.detectFellBack);
-      else toastError(S.models.detectFailedBody);
+      else toastDetectFailed(miss);
     };
     // The model's own base URL, or — left blank — the one it follows, so a model in a group
     // whose settings name the endpoint can be probed without retyping it.
@@ -3122,7 +3135,7 @@ function ModelDialog({
     // An unusable URL is just another failure: the server would 400 it, and the user gets
     // the same message either way rather than a distinct piece of API error text.
     if (!detectableBaseUrl(baseUrl)) {
-      failed();
+      failed("check");
       return null;
     }
     const seq = ++detectSeq.current;
@@ -3150,10 +3163,10 @@ function ModelDialog({
         set({ clientType: res.detected, ...patch });
         return { clientType: res.detected, ...patch };
       }
-      failed();
+      failed("none");
       return null;
-    } catch {
-      if (seq === detectSeq.current) failed();
+    } catch (error) {
+      if (seq === detectSeq.current) failed({ error });
       return null;
     } finally {
       if (seq === detectSeq.current) setDetecting(false);
@@ -3224,10 +3237,19 @@ function ModelDialog({
           set({ vision: false });
           toastInfo(S.models.detectVisionNo);
         } else {
-          toastError(S.models.detectVisionFailed);
+          toastFailure(
+            toldFailure(S.models.detectVisionFailed, {
+              what: "vision detection failed",
+              facts: [["Model", `${form.provider}/${form.modelId.trim()}`]],
+              detail: res.message ?? null,
+            }),
+          );
         }
-      } catch {
-        toastError(S.models.detectVisionFailed);
+      } catch (error) {
+        toastApiError(error, {
+          text: S.models.detectVisionFailed,
+          what: "vision detection failed",
+        });
       } finally {
         setVisionDetecting(false);
       }

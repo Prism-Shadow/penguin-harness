@@ -20,7 +20,7 @@
  * it may carry options this form does not know, and rewriting it would drop them. The dialog says
  * so and points at the file; how such a host signs in can still be set, since that is not in it.
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type {
   MachinesResponse,
   SshHostRequest,
@@ -42,12 +42,14 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { failureNode } from "../../lib/failure";
 
 export type HostField = "alias" | "hostName" | "user" | "port" | "identityFile" | "password";
 /** How the machine signs in: a key, or a password the server stores for it. */
 export type SignIn = "key" | "password";
 export type HostForm = Record<HostField, string> & { signIn: SignIn };
-export type HostErrors = Partial<Record<HostField, string>>;
+/** Each field's error: a rule's words, or the server's answer (a failure's with its report). */
+export type HostErrors = Partial<Record<HostField, ReactNode>>;
 
 /** A new host's form: the port filled in with ssh's own default, so the default is said. */
 export const NEW_HOST_FORM: HostForm = {
@@ -133,7 +135,7 @@ export const hasErrors = (errors: HostErrors) =>
  */
 export function shownErrors(found: HostErrors): HostErrors {
   const shown: HostErrors = {};
-  for (const [field, error] of Object.entries(found) as Array<[HostField, string | undefined]>) {
+  for (const [field, error] of Object.entries(found) as Array<[HostField, ReactNode]>) {
     if (error !== undefined && error !== S.common.requiredField) shown[field] = error;
   }
   return shown;
@@ -309,7 +311,9 @@ export function SshHostDialog({
    * What the server refused, under the field it concerns — the password's own refusals under the
    * password, the rest under the host (the name is fixed); cleared by the next keystroke.
    */
-  const [refused, setRefused] = useState<{ field: HostField; text: string } | undefined>(undefined);
+  const [refused, setRefused] = useState<{ field: HostField; text: ReactNode } | undefined>(
+    undefined,
+  );
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, draft.scope, { locked: busy });
   const found = validateHostForm(form, saved);
@@ -343,7 +347,10 @@ export function SshHostDialog({
       const password =
         err instanceof ApiError &&
         (err.code === "ssh_password_invalid" || err.code === "ssh_password_unsupported");
-      setRefused({ field: password ? "password" : "hostName", text: hostErrorText(err) });
+      setRefused({
+        field: password ? "password" : "hostName",
+        text: password ? hostErrorText(err) : failureNode(err),
+      });
     } finally {
       setBusy(false);
     }

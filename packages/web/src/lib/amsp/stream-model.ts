@@ -206,6 +206,8 @@ export interface BodyLoad {
   doneBytes: number;
   totalBytes: number;
   error: string | null;
+  /** The failed read's error, kept beside its words so the note offers its report. */
+  cause?: unknown;
 }
 
 export interface ThinkingItem {

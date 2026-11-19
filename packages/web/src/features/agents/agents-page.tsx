@@ -69,7 +69,6 @@ import {
   Sparkline,
   TodoNotice,
   UpdatePill,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -465,9 +464,10 @@ export function AgentsPage() {
     const outcome = bulkOutcome(labels, results);
     if (outcome.allOk) toastSuccess(S.todo.bulkDone(outcome.ok));
     else {
-      toastError(
-        `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(firstFailure(results))}`,
-      );
+      const failure = firstFailure(results);
+      toastApiError(failure, {
+        text: `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(failure)}`,
+      });
     }
     // The gate reads `AgentSummary.kernelOutdated` off the Project's Agent list, so the dot only
     // goes down once that list is re-read. Runs after a partial failure too — some Agent moved.

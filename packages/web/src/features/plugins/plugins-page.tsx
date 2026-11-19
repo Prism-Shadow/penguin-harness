@@ -54,7 +54,6 @@ import {
   Skeleton,
   SkeletonCard,
   TodoNotice,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -134,7 +133,8 @@ import {
   type LibraryUsage,
   type PluginStatus,
 } from "./plugin-status";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError, toastFailure } from "../../lib/toast-api-error";
+import { toldFailure } from "../../lib/failure";
 
 const NO_INSTALLS: AgentInstalls = { skills: new Map(), hooks: new Map(), mcp: new Map() };
 
@@ -423,7 +423,13 @@ export function PluginsPage() {
       installedPlugins.accept(installedPluginsKey(target.projectId, null), next);
       const row = next.plugins.find((p) => p.specifier === specifier);
       if (install && row?.error !== undefined) {
-        toastError(S.plugins.deploymentFailedToast(specifier, row.error));
+        toastFailure(
+          toldFailure(S.plugins.deploymentFailedToast(specifier, row.error), {
+            what: "a plugin failed to load after it was installed",
+            facts: [["Plugin", specifier]],
+            detail: row.error,
+          }),
+        );
       } else {
         toastSuccess(install ? S.plugins.deploymentInstalledToast(specifier) : S.common.saved);
       }
@@ -620,7 +626,16 @@ export function PluginsPage() {
         const failed = outcome.kind === "removed" ? outcome.failed : [];
         if (failed.length > 0) {
           const named = failed.map((f) => S.agentPlugins.failedPart(f.name, f.error));
-          toastError(S.agentPlugins.uninstallPartly(plugin.name, named.join(S.todo.listSeparator)));
+          toastFailure(
+            toldFailure(
+              S.agentPlugins.uninstallPartly(plugin.name, named.join(S.todo.listSeparator)),
+              {
+                what: "a plugin's parts could not all be removed",
+                facts: [["Plugin", plugin.name]],
+                detail: failed.map((f) => `${f.name}: ${f.error}`).join("\n"),
+              },
+            ),
+          );
         } else {
           toastSuccess(
             `${S.plugins.uninstalledToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
@@ -693,9 +708,10 @@ export function PluginsPage() {
     const outcome = bulkOutcome(labels, results);
     if (outcome.allOk) toastSuccess(S.todo.bulkDone(outcome.ok));
     else {
-      toastError(
-        `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(firstFailure(results))}`,
-      );
+      const failure = firstFailure(results);
+      toastApiError(failure, {
+        text: `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(failure)}`,
+      });
     }
     // Runs after a partial failure too — some Agent moved, and the gate has to see it. Guarded,
     // because `reloadAgents` rejects on a failed list read and the busy flag disables every

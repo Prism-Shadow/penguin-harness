@@ -30,7 +30,6 @@ import {
   OptionMenu,
   Segmented,
   Textarea,
-  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -53,6 +52,8 @@ import {
   type McpServerFormState,
   type McpTransportKind,
 } from "./mcp-servers-form";
+import { toastApiError, toastFailure } from "../../lib/toast-api-error";
+import { toldFailure } from "../../lib/failure";
 
 /** Maps a validation error code to its localized message. */
 function errorText(err: McpFormError | undefined): string | undefined {
@@ -214,9 +215,16 @@ export function McpServerDialog({
       const res = await api.testAgentMcpServer(projectId, agentId, tested.server, machineId);
       if (res.ok) toastSuccess(S.agent.mcpTestOk(res.tools?.length ?? 0, res.latencyMs));
       else if (res.saveFirst === true) setSaveFirst(true);
-      else toastError(S.agent.mcpTestFail(res.error ?? S.common.unknownError));
+      // The server's own words stay on screen and out of the report: a stdio child can print
+      // its command line, a URL or an environment value.
+      else
+        toastFailure(
+          toldFailure(S.agent.mcpTestFail(res.error ?? S.common.unknownError), {
+            what: "an MCP server could not be connected",
+          }),
+        );
     } catch (e) {
-      toastError(S.agent.mcpTestFail(apiErrorText(e)));
+      toastApiError(e, { text: S.agent.mcpTestFail(apiErrorText(e)) });
     } finally {
       setTesting(false);
     }

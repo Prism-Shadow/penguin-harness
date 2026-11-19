@@ -12,16 +12,16 @@
  * An arrangement the viewer makes is shown at once and then written; a write that fails is said
  * in a toast and the list is read back, so the grid returns to what is stored.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { AppCenterLayout, AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { toastApiError } from "../../lib/toast-api-error";
 import {
   WORKBENCH_BUILDING_EVENT,
   WORKBENCH_UPDATED_EVENT,
   type WorkbenchUpdatedDetail,
 } from "../../lib/workbench-tabs";
+import { failureNode } from "../../lib/failure";
 
 /** How long a burst of workbench news is gathered into one read (ms). */
 const NEWS_SETTLE_MS = 120;
@@ -31,8 +31,8 @@ export interface AppCenterData {
   shortcuts: AppCenterShortcut[] | null;
   /** The viewer's arrangement; null for the server's order. */
   layout: AppCenterLayout | null;
-  /** Why the newest read failed; null once one succeeds. */
-  error: string | null;
+  /** Why the newest read failed, with 「[报告问题]」 for a failure; null once one succeeds. */
+  error: ReactNode;
   reload: () => void;
   /** Shows and stores an arrangement; null restores the server's order. */
   saveLayout: (layout: AppCenterLayout | null) => void;
@@ -45,7 +45,7 @@ export function useAppCenter(projectId: string | null, agentIds: string): AppCen
     shortcuts: AppCenterShortcut[];
     layout: AppCenterLayout | null;
   } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   /** Reads and writes so far: a read's answer applies only while nothing newer was asked. */
   const asked = useRef(0);
 
@@ -58,7 +58,9 @@ export function useAppCenter(projectId: string | null, agentIds: string): AppCen
       setLoaded({ projectId, shortcuts, layout });
       setError(null);
     } catch (err) {
-      if (ask === asked.current) setError(apiErrorText(err));
+      if (ask === asked.current) {
+        setError(failureNode(err, { what: "the App Center could not be read" }));
+      }
     }
   }, [projectId]);
 

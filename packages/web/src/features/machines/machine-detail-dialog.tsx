@@ -41,11 +41,13 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 
 import type { MachineInfo, MachineJob, SshHostResponse } from "@prismshadow/penguin-server/api";
+import type { ToldFailure } from "@prismshadow/penguin-ui";
 import {
   Button,
   Chevron,
   CopyButton,
   Dot,
+  FailureText,
   GlyphIcon,
   ICONS,
   ICON_GAP,
@@ -73,6 +75,12 @@ import {
 import { formatDateTime, formatRelativeShort } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
+import { toldFailure } from "../../lib/failure";
+import {
+  machineConfigSyncFailure,
+  machineJobFailure,
+  machineReconnectFailure,
+} from "./machine-failure-report";
 import {
   configSyncView,
   envOnlyItems,
@@ -126,7 +134,7 @@ export interface MachineDetailBodyProps {
   /** The host block the alias names; null until read, or when the config has none this app can read. */
   host: SshHostResponse | null;
   /** The page's last error, repeated here because the dialog covers the notice that says it. */
-  error: string | null;
+  error: ReactNode;
   /** A request from this page is in flight: every verb waits for it. */
   busy: boolean;
   /** This server has no build to push, so an install has nothing to send. */
@@ -432,6 +440,18 @@ export function MachineToolbar({
   );
 }
 
+/** A failed job's line, with the report that names its step and ssh's reason, not ssh's words. */
+function JobFailure({ job, text }: { job: MachineJob; text: string }) {
+  const told = machineJobFailure(job);
+  return told === null ? text : <FailureText failure={toldFailure(text, told)} />;
+}
+
+/** The reconnecting streak's last failure, with the same report. */
+function ReconnectFailure({ machine, text }: { machine: MachineInfo; text: string }) {
+  const told = machineReconnectFailure(machine);
+  return told === null ? text : <FailureText failure={toldFailure(text, told)} />;
+}
+
 /**
  * The last config sync: one quiet line — a check, or the danger cross on a failure, beside the
  * words — and, when the sync left anything behind, attention notices saying what and why, both
@@ -441,12 +461,15 @@ export function MachineToolbar({
  */
 function ConfigSync({
   view,
+  failure = null,
   envOnlyDismissed = false,
   onDismissEnvOnly,
   skippedDismissed = false,
   onDismissSkipped,
 }: {
   view: ConfigSyncView;
+  /** What a failed sync's report holds; null when it went through. */
+  failure?: ToldFailure | null;
   envOnlyDismissed?: boolean | null;
   onDismissEnvOnly?: () => void;
   skippedDismissed?: boolean | null;
@@ -464,7 +487,9 @@ function ConfigSync({
           size={ICON_SIZE.inlineGlyph}
           className={`mt-0.5 shrink-0 ${view.ok ? "text-fg-subtle" : toneInk.danger}`}
         />
-        <span className="min-w-0 break-words whitespace-pre-line">{view.line}</span>
+        <span className="min-w-0 break-words whitespace-pre-line">
+          {failure === null ? view.line : <FailureText failure={toldFailure(view.line, failure)} />}
+        </span>
       </p>
       {view.envOnly && envOnlyDismissed === false && (
         <Notice
@@ -557,6 +582,7 @@ export function MachineDetailBody({
             {configSync !== null && (
               <ConfigSync
                 view={configSync}
+                failure={machineConfigSyncFailure(machine)}
                 envOnlyDismissed={envOnlyDismissed}
                 {...(onDismissEnvOnly !== undefined ? { onDismissEnvOnly } : {})}
                 skippedDismissed={skippedDismissed}
@@ -586,7 +612,9 @@ export function MachineDetailBody({
           {reconnect.lastError !== null && (
             <div className="mt-2">
               <p className="mb-1 text-xs text-fg-muted">{d.reconnect.lastError}</p>
-              <p className="text-sm break-words whitespace-pre-line">{reconnect.lastError}</p>
+              <p className="text-sm break-words whitespace-pre-line">
+                <ReconnectFailure machine={machine} text={reconnect.lastError} />
+              </p>
             </div>
           )}
           {reconnect.detail !== null && (
@@ -625,7 +653,7 @@ export function MachineDetailBody({
           {/* Line by line: an installer's refusal is the program's own error over its own line. */}
           {view.kind === "failed" && (
             <p className="mt-3 text-sm break-words whitespace-pre-line">
-              {d.failedAtStep(view.stepName, view.message)}
+              <JobFailure job={job} text={d.failedAtStep(view.stepName, view.message)} />
             </p>
           )}
           {view.kind === "failed" && view.detail !== null && (
