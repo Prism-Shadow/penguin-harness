@@ -26,8 +26,8 @@ function socketFrame(message) {
  *   call, after registration;
  * - `hold(path, ms)` — hold the first call whose `path` is exactly `path` here for `ms`, then
  *   forward its frame to the server;
- * - `slowDown(fn)` — let every call reach the server `fn()` ms late: each call frame waits
- *   `fn()` ms here before it is forwarded;
+ * - `slowDown(fn)` — forward each call after the milliseconds returned by `fn(call)`.
+ *   The function may also wait for a test-controlled release before returning the delay;
  * - `nextCall(test)` — a promise for the next call frame `test(call)` accepts;
  * - `nextAnswer(test)` — a promise for the next answer frame whose call `test(call)` accepts;
  * - `answer(method, path, { status, body })` — answer every later call to exactly that method
@@ -50,7 +50,7 @@ export async function watchSocket(page) {
     (url) => url.pathname === "/api/socket",
     (ws) => {
       const server = ws.connectToServer();
-      ws.onMessage((message) => {
+      ws.onMessage(async (message) => {
         const frame = socketFrame(message);
         // A cancel (`{ id, cancel: true }`) names no endpoint and is not a call.
         if (frame === null || frame.call === undefined) {
@@ -81,12 +81,12 @@ export async function watchSocket(page) {
           );
           return;
         }
-        let delay = slowdown === null ? 0 : slowdown();
-        const held = holds.findIndex((hold) => hold.path === call.path);
-        if (held !== -1) delay += holds.splice(held, 1)[0].ms;
         for (let i = callWaiters.length - 1; i >= 0; i -= 1) {
           if (callWaiters[i].test(call)) callWaiters.splice(i, 1)[0].resolve(call);
         }
+        const held = holds.findIndex((hold) => hold.path === call.path);
+        const holdMs = held === -1 ? 0 : holds.splice(held, 1)[0].ms;
+        const delay = holdMs + (slowdown === null ? 0 : await slowdown(call));
         if (delay > 0) setTimeout(() => server.send(message), delay);
         else server.send(message);
       });
