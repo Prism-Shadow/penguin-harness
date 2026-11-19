@@ -20,3 +20,5 @@ For DeepSeek ASR, upload a 16-bit PCM WAV or an Ogg Opus recording. Penguin chec
 Project tool models share a single `[tools]` table. The vision proxy uses `i2t`, and enabling transcript editing uses `t2t`. Existing bindings migrate on first read. The default chat model is selected separately. [Project tool model migration](2026-11-19-backward-compatibility.md)
 
 Project owners can edit the instructions for polishing voice transcripts and restore the built-in prompt at any time.
+
+A dedicated image, video, speech or web tool can be assigned to its own operation. New chats use a model that supports conversation.

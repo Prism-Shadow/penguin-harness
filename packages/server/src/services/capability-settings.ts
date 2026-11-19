@@ -21,6 +21,8 @@ import type { ModelRefDto } from "../api/types.js";
 import { DEFAULT_VOICE_POLISH_PROMPT } from "./voice-polish.js";
 import { badRequest } from "../http/errors.js";
 
+import { catalogEntryFor } from "../model-catalog/catalog.js";
+
 const models = listSupportedModels();
 const operations = Object.keys(MODEL_TOOL_KEYS) as ModelOperation[];
 export const dto = (m: ModelRef): ModelRefDto => ({ provider: m.provider, modelId: m.model_id });
@@ -75,8 +77,20 @@ export function modelOperationsForConnection(
   }
   return keys;
 }
+/** A dedicated generator may return a caption alongside its media. That is still a tool response. */
+export function chatEligibleForConnection(provider: string, modelId: string, clientType?: string) {
+  if (catalogEntryFor(provider, modelId)?.capability) return false;
+  // A custom model can be configured before its transport is known.
+  return (
+    !routedClientType(modelId, clientType) ||
+    modelOperationsForConnection(modelId, clientType).includes("t2t")
+  );
+}
+
 function destinations(row: ModelEntry, config: ProjectConfig): Capability[] {
-  return modelOperationsForConnection(row.model_id, entryClientType(row, config), row.vision);
+  const ops = modelOperationsForConnection(row.model_id, entryClientType(row, config), row.vision);
+  const specialty = catalogEntryFor(row.provider, row.model_id)?.capability;
+  return specialty ? ops.filter((op) => op === specialty) : ops;
 }
 export function capabilitySettings(
   config: ProjectConfig,
