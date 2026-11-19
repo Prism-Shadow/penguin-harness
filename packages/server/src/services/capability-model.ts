@@ -33,7 +33,6 @@ export interface ModelOutput {
 
 function inputMeter(
   client: string | null,
-  model: string,
   usage: UsageMetadata | null,
   billableWebRequests: number | undefined,
 ): CapabilityInputMeter | undefined {
@@ -49,16 +48,14 @@ function inputMeter(
         ? undefined
         : { unit: "billable_request", quantity: billableWebRequests };
     case "deepseek-transcription":
-      return { unit: "billed_audio_second", quantity };
     case "openai-transcription":
-      // A compatible endpoint can report tokens instead of the seconds Fish Audio bills.
-      return model === "fish-audio/transcribe-1"
-        ? { unit: "billed_audio_second", quantity }
-        : undefined;
+      // Both adapters report only a duration rounded up to whole seconds.
+      return { unit: "billed_audio_second", quantity };
     case "deepseek-speech":
       return { unit: "billed_character", quantity };
     case "openai-speech":
-      return model === "fish-audio/drama-3" ? { unit: "utf8_byte", quantity } : undefined;
+      // The adapter counts the UTF-8 script bytes even if the endpoint uses a model alias.
+      return { unit: "utf8_byte", quantity };
     default:
       return { unit: "token", quantity };
   }
@@ -139,7 +136,7 @@ export async function runProjectModel(
     const usage = protocolUsage(raw);
     if (!usage) return;
     result.usage = usage;
-    result.inputMeter = inputMeter(meterClient, entry.model_id, usage, webRequests);
+    result.inputMeter = inputMeter(meterClient, usage, webRequests);
     onUsage?.(usage, result.inputMeter);
   };
   const requestConfig = sessionId ? { ...options, session_id: sessionId } : options;
