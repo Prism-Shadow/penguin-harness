@@ -965,6 +965,11 @@ export const zh = {
       "开关下方是各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。顶部的开关只影响本浏览器在插件页列出哪些插件。",
     /** The page's own switch, above the server's cards: a display preference of this browser. */
     pluginsIncompatibleOnly: "只显示不兼容的插件",
+    /** A list field's editor: the row buttons and the add row. */
+    pluginListMoveUp: "上移",
+    pluginListMoveDown: "下移",
+    pluginListRemove: "删除",
+    pluginListAdd: "添加",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "留空保持已保存的值不变",
     pluginSecretClear: "清除已存值",
@@ -3980,8 +3985,6 @@ export const zh = {
       newFolderPlaceholder: "输入名称，按 Enter 新建",
       /** Accessible name of the × that closes the new-folder row. */
       newFolderCancel: "取消新建文件夹",
-      /** The toolbar's New folder while the folder on screen could not be read. */
-      newFolderDenied: "无法读取此文件夹，不能在这里新建",
       /** Under the new-folder field: a character this machine does not allow in a name. */
       newFolderInvalid: (chars: string): string => `名称不能包含 ${chars}`,
       newFolderHidden: "以「.」开头的是隐藏文件夹，这里不会列出，请换个名称",

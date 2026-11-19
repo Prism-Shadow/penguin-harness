@@ -1,20 +1,47 @@
 ---
 name: penguin-plugin
-description: Use for workbenches — the tabs and pages beside the chat, with server code behind them, that an Agent keeps in the `workbenches/` folder of its Agent State inside PenguinHarness — building one, changing it, showing it as the whole app, restoring an earlier version, and removing a tab or a whole workbench when the user wants the custom UI gone.
+description: Use for PenguinHarness plugins and workbenches — what a plugin package is and how to build, test, share and submit one, and the workbenches (the tabs and pages beside the chat, with server code behind them) an Agent keeps in its Agent State — building one, changing it, showing it as the whole app, restoring an earlier version, and removing it when the user wants the custom UI gone.
 version: 2026.11.17.2
 ---
 
-# Agent Workbench with Penguin Plugins
+# Penguin Plugins
 
 Inside PenguinHarness an Agent can hold *workbenches*: small plugin packages in its own Agent State, written in TypeScript, that the server boots as module trees, shows as tabs beside the chat, reloads on every file change, and versions so any edit can be undone. This is the same module mechanism the server itself is built from — manifests as data, everything checked before any code runs — so a workbench that does not type-check, that was written against an interface version this server no longer fits, or whose manifests do not hold together fails to load with the problem named, while the previous version keeps serving.
 
-A workbench is a plugin of the server's own kind, which is where this skill's name comes from. It is not a program that reaches an agent from outside, so it takes neither of the penguin-sdk skill's two ways, and that skill's question does not apply to it.
+A workbench is a plugin of the server's own kind, which is where this skill's name comes from; the same skill covers standalone plugin packages — how to design, test and share one. A workbench is not a program that reaches an agent from outside, so it takes neither of the penguin-sdk skill's two ways, and that skill's question does not apply to it.
+
+## References
+
+- [Before you start](#before-you-start)
+  - [Build a new Agent and its workbench](#build-a-new-agent-and-its-workbench)
+  - [Background jobs: launch, poll, persist](#background-jobs-launch-poll-persist)
+  - [Follow the Agent live (AMSP)](#follow-the-agent-live-amsp)
+- [Design a plugin](#design-a-plugin)
+  - [Layout](#layout)
+  - [The manifest and the handler](#the-manifest-and-the-handler)
+  - [Design the interaction before writing the UI](#design-the-interaction-before-writing-the-ui)
+  - [TypeScript, checked by the server](#typescript-checked-by-the-server)
+  - [Types come from the harness that runs you](#types-come-from-the-harness-that-runs-you)
+  - [Pages in TSX](#pages-in-tsx)
+  - [Theme](#theme)
+  - [Tabs are contributions](#tabs-are-contributions)
+- [Operate with plugin host](#operate-with-plugin-host)
+  - [The host](#the-host)
+  - [HTTP](#http)
+  - [Undoing, reverting, removing](#undoing-reverting-removing)
+  - [Filling the app](#filling-the-app)
+  - [The App Center](#the-app-center)
+- [Test a plugin](#test-a-plugin)
+  - [Unit testing using vitest](#unit-testing-using-vitest)
+  - [E2E testing using electron](#e2e-testing-using-electron)
+  - [Integration testing using a separate penguin instance](#integration-testing-using-a-separate-penguin-instance)
+- [Sharing a plugin](#sharing-a-plugin)
 
 ## Before you start
 
 If the user's message only invokes this skill (e.g. "use penguin-plugin skill") without saying what the workbench is for, ask the user what they want it to do. Once the request is concrete, do **not** ask follow-up questions: build it end to end and list the assumptions you made in your final reply. A request to undo, revert or remove the UI is the exception: work out which of the four in *Undoing, reverting, removing* is meant first.
 
-## Build a new Agent and its workbench
+### Build a new Agent and its workbench
 
 For an app inside PenguinHarness, use this skill with `agent-initialization`. The Plugin host already runs the Agent; do not ask the user to choose SDK/API architecture or enable Agent API keys. If the request says **new Agent**, create that target first and put all workbench files in **its** directory, not the Builder's. Keep the resolved target path for the whole task.
 
@@ -29,7 +56,7 @@ For an app inside PenguinHarness, use this skill with `agent-initialization`. Th
 5. Exercise a real request through your handler, wait for a terminal result, and inspect the returned answer or downloaded report. For HTTP tests use the injected URL with `curl --noproxy '*'`, bearer token only in the header. Check malformed input and empty/loading/failed states too. A compiler pass is not an end-to-end test. If browser automation is unavailable, report that limitation; finish the HTTP and script-syntax checks and state that the visual check remains unverified. Do not launch a separate system browser or install a DOM/browser test environment for a one-off workbench.
 6. Hand off through **Agents → target Agent → New chat → the named workbench tab**. The workbench works in a new conversation before the user sends a chat message. Include the target Agent's link (`/agents/<target_agent_id>`) and tab name. Full-page mode is optional.
 
-## Background jobs: launch, poll, persist
+### Background jobs: launch, poll, persist
 
 `await host.run(...)` resolves when a turn **starts**. `await host.sessionResult(id)` is also a **snapshot**, never a wait. Its `status` is `running`, `completed` or `failed`; `text` is the final assistant answer only on success, and `error` explains failure. `sessionStatus() === "idle"` alone does not prove success.
 
@@ -42,7 +69,7 @@ Use this pattern for uploads, research and support tickets:
 - `host.getState()` is synchronous, `unknown`, initially `null`. Clone before editing; serialize read/modify/write handlers to avoid lost updates. Await `host.setState` before returning success.
 - Store large upload bytes outside the watched source folder, e.g. the target Agent's `scratchpad/<workbench_id>/uploads/`. Keep metadata in host state. Source changes trigger reloads; runtime files in `workbenches/<id>/` trigger needless rebuilds and enter version history. `import.meta.url` points into `.build/<revision>/`, not the source root.
 
-## Follow the Agent live (AMSP)
+### Follow the Agent live (AMSP)
 
 Polling shows a job only once it is done. To show the answer while the Agent writes it, and to learn the moment a turn ends, follow the job's Session over AMSP: the records its Trace holds plus the streamed fragments, the same ones the chat view reads. AMSP carries the Agent's conversation and nothing else. Starting a turn, follow-ups, saving results and every other side effect stay in your handler.
 
@@ -118,7 +145,9 @@ Never reach the Agent from a workbench through the Agent API: not `/api/amsp/v1`
 
 To see what a page will see, start a turn through your handler and run `node "<this skill directory>/scripts/check.mjs" --follow <sessionId>`: it prints the Session's records as they arrive, one JSON line each, until the main conversation's `task_end` or for a minute at most.
 
-## Layout
+## Design a plugin
+
+### Layout
 
 Layout, under `<App Data Dir>/agents/<agent_id>/agent_state/workbenches/<workbench_id>/` (inside the Agent State):
 
@@ -133,7 +162,21 @@ state.json      the workbench's own document, kept by the server across reloads 
 
 The versions are kept beside the Agent State, not in it: `<App Data Dir>/agents/<agent_id>/agent_state.git/` is a bare git repository, the server's record of workbench versions, created at the first successful load; `agent_state/` itself holds no git files. Each successful load that changed a workbench's source commits that folder as `workbenches/<id>/`, and nothing else: not its `state.json`, `.harness/`, `.build/`, `.plugin.json` or `node_modules/`, and none of the rest of the Agent State. A workbench's revision is git's tree id of its folder. Never delete or rewrite `agent_state.git`, and do not commit to it (the server writes it without an index). Use git on it only to read — `log`, `show` — and to write one version's files back into `agent_state/` with a path-limited `checkout` (see *Undoing, reverting, removing*).
 
-## The manifest and the handler
+A **standalone plugin package** (shared through npm, the plugin index or `penguin plugin link`) wraps Skills, a hook package, MCP servers, workbenches or server modules into a normal npm package:
+
+```
+package.json            npm's own fields only ("name", "version", "description", "files", "scripts": { "build": "penguin-gen-ifaces --project tsconfig.json --out ifaces.json", "test": "vitest run" })
+tsconfig.json           what the build compiles (src/)
+src/index.ts            @Component({ contributes: { "PluginLibraryModule.cards": […], "PluginLibraryModule.skills": […], … } }) and export default { modules: […] } satisfies Plugin
+ifaces.json             generated by penguin-gen-ifaces; what the server reads without running the package
+icon.svg                the plugin's icon (plain SVG, ≤ 64 KiB)
+skills/<name>/SKILL.md  contributed Skills, each with its own YYYY.MM.DD.N version
+hooks/*.mjs             optional hook scripts
+workbenches/<id>/       optional workbench directories (same layout as above, with a YYYY.MM.DD.N penguin.version in the workbench's own package.json)
+test/*.test.ts          unit and e2e tests (see Test a plugin)
+```
+
+### The manifest and the handler
 
 The root manifest is named `Workbench`; it requires the host, provides the handler, and contributes its tabs:
 
@@ -190,7 +233,7 @@ export default {
 } satisfies WorkbenchPackage;
 ```
 
-## Design the interaction before writing the UI
+### Design the interaction before writing the UI
 
 Treat the workbench as an application people return to. Before coding, choose its main list,
 its item detail, and how a person creates and revisits an item. Use that structure even when the
@@ -227,15 +270,15 @@ far down the page. Also check a narrow viewport, dark mode, keyboard focus and t
 full-app mode. Use a real browser when available; report any interaction you could not run. A
 successful TypeScript load alone is not UI/UX validation.
 
-## TypeScript, checked by the server
+### TypeScript, checked by the server
 
 There is no build step to run, no `tsconfig.json` to write and nothing to `npm install`: the server builds one program from `index.ts` (and the `.ts` files it imports, with `.js` in the import specifier as NodeNext asks) under options it fixes itself — `strict` among them — refuses the load on any diagnostic, reporting file, line and reason, and otherwise emits into `.build/<revision>/` and imports that. `satisfies WorkbenchPackage` is what types `use.host` and `req`; without it `strict` refuses the untyped parameters. A folder holding `index.js` or `index.mjs` instead is refused outright. When `ui/` holds a `.tsx` file, the pages are a second program, checked and emitted the same way (*Pages in TSX*); a diagnostic in either refuses the whole load. Pages in plain JS are served as written and never checked.
 
-## Types come from the harness that runs you
+### Types come from the harness that runs you
 
 One machine can run several harnesses — a release, a checkout, a platform someone pushed with interfaces of its own — and none of them is a version on npm, so `@prismshadow/penguin-server/plugin` is not a package here: the first time the server loads the folder it writes `.harness/plugin.d.ts`, rendered from ITS OWN interface table, and that is what the import resolves to. Create `package.json` and a minimal `index.ts`, let the server load it once, then read `.harness/plugin.d.ts` for the exact `WorkbenchHost` this harness offers. The server then leaves `.harness/` alone: it is the record of what the workbench was written against, and a later generation of the platform is COMPARED with it, by the TypeScript compiler, both for what the workbench requires and what it provides — a host method you rely on that has since gone is a load error naming it, not a failure on the first call. To move a workbench onto the harness that runs it now, delete `.harness/` and fix what the compiler then reports.
 
-## Pages in TSX
+### Pages in TSX
 
 Write a new page in TSX with the app's own components; plain-JS pages keep working. There is nothing to install and no bundler: when `ui/` holds a `.tsx` file, the server type-checks every `.ts`/`.tsx` under `ui/`, emits them into `.build/<revision>/ui/`, serves React and `@prismshadow/penguin-ui` beside the workbench, and writes their stylesheet link and an import map into the head of every HTML file under `ui/` (so write neither yourself). A page runs against the copy that checked it, offline too; a version in your `package.json` changes nothing.
 
@@ -318,19 +361,33 @@ type PageSdk = { abortSession(sessionId: string): Promise<boolean> /* followSess
 const loadSdk = () => import(SDK_URL).then((m) => m as PageSdk, () => null);
 ```
 
-## Tabs are contributions
+### Theme
+
+A workbench page is a separate document, so it inherits nothing from the app's stylesheet by itself. The Web App stamps the app's look onto the page's root on every load and every appearance change: `light`/`dark`, `data-theme` (`modern`, `geek` or `github`), `data-accent` (only when the theme paints that accent), `data-font-latin` and `data-font-cjk`, the root font size, every `--ui-*` token of the app's token contract resolved as an inline style, and the app's bundled fonts. Take every colour and font from the variables below and the page follows the user through every theme, accent, font and light/dark change; hardcode them and it clashes in one theme or another. Pick a status tone the way the app does: there is no busy tone, so a running item is `success` with the word "Running", waiting or queued is `attention`, failed is `danger`, and finished is `done` or `neutral`.
+
+**A TSX page** (*Pages in TSX*) gets the components' stylesheet from the server, and the Web App leaves `/workbench-ui.css` out of it: no `--wb-*` variables, no `wb-*` classes. The components follow the theme by themselves and take their look from props such as `variant`, `tone` and `size` (`<Badge tone="done">Resolved</Badge>`). Style your own elements in a stylesheet of your own, under class names of your own, reading the tokens the components paint with: `--ui-canvas`, `--ui-surface`, `--ui-fg`, `--ui-fg-muted`, `--ui-line`, `--ui-accent`, `--ui-accent-fg`, `--ui-radius-md`, `--ui-font-mono`, and `--ui-tone-<tone>-fg`, `-bg` and `-line`. No Tailwind classes on your own elements: only the classes the components use are compiled, so some would work by chance and the rest silently do nothing. No rules on bare elements (`button`, `input`, `table`): yours would beat the components' own, which sit in cascade layers, and for the same reason never link `/workbench-ui.css` into a TSX page.
+
+**A plain-JS page** gets `/workbench-ui.css` injected first in the head: a base stylesheet that styles plain HTML (headings, lists, forms, tables, code) to match the app and exposes `--wb-bg`, `--wb-surface`, `--wb-fg`, `--wb-muted`, `--wb-border`, `--wb-hover`, `--wb-accent`, `--wb-accent-fg`, `--wb-radius` (a box radius, not a pill), `--wb-font`, `--wb-mono`, the tone colours `--wb-tone-<tone>-fg`, `-bg` and `-line`, plus the classes `wb-primary` (a button), `wb-card`, `wb-rows`, `wb-row`, `wb-muted` and `wb-badge`, a status pill coloured by `data-tone` (`neutral` without one), e.g. `<span class="wb-badge" data-tone="done">Resolved</span>`. The `--wb-*` names are only ever added to, never renamed. The `--ui-*` tokens underneath are readable too, but they follow the app's token contract and can be renamed with it, and as inline styles on the root no stylesheet of yours overrides them: to restyle, redeclare `--wb-*` on `:root`. The page's own rules always win over `/workbench-ui.css`, and linking `/workbench-ui.css` yourself makes it look right when opened outside the app too.
+
+**The page is see-through.** In the app a page's body paints nothing, so whatever the app shows under the chat — the theme's page colour, the Frost sheet, the user's wallpaper — shows through the page as it does under the conversation. Leave the body without a background to keep that. For a solid sheet (a drawing surface, a page that must not show an image behind it), paint the app's opaque page colour yourself: `body { background: var(--wb-canvas); }` on a plain page, `var(--ui-canvas)` in a TSX page's stylesheet. A background your own rules set always wins. Cards, inputs and buttons keep their own fills.
+
+Keep empty alerts hidden. A component rule such as `.notice { display: flex }` overrides the browser's default `[hidden]` styling; the shared stylesheet preserves `[hidden]`, and standalone custom CSS should do the same. Check both empty and populated states.
+
+### Tabs are contributions
 
 Each entry under `WebModule.sessionTabs` is one tab beside the chat: `key` (unique in the workbench, part of the full-page URL), `title` / `titleZh`, and a `renderer` whose `iframe.src` is a file under `ui/`. Several entries make several tabs; none makes a server-only workbench. It is the same slot, written the same way, a plugin contributes to — the host opens it to workbenches and scopes the tab to this Agent. A slot the host has not opened (`WebModule.pages`, say) is refused by name.
 
-## The host
+## Operate with plugin host
+
+### The host
 
 `WorkbenchHost` (published as module `Host`) speaks the SDK's verbs, scoped to the workbench's Project: `listAgents()` returns the Project's Agents as `{ agentId }[]`; `createSession({ agentId?, approvalMode? })` opens a Session of this Agent — or of another Agent of the same Project — and returns `{ sessionId }`. Every tool call in it runs (`allow-all`) unless `approvalMode` is `"deny-all"`, which denies them all: pass it for a Session that only talks — a character, a game host, anything that hands the model the user's words or a text the user imported — and say in its prompt as well that it has no tools. No other mode is accepted: nobody is there to answer an ask. These Sessions carry source `workbench` and are automatically archived from the main chat sidebar; your list still reads and runs them through the host. `sessionTitle(sessionId)` returns the current generated title (or `null` before one exists); `run(sessionId, [{ text: "…" }])` — the SDK's `session.run`, its input items spelled out because a workbench has no package to import `userText` from — runs one turn in a Session, new or existing, and returns `{ sessionId, queued }` once it has started (a busy Session queues it as a follow-up; the Agent hears it as a message from the server, not from a person); `sessionStatus(sessionId)` says `idle` / `running` / …; `await sessionResult(sessionId)` returns a snapshot of the latest task (see *Background jobs*); `subscribe(sessionId, listener)` hands the listener the Session's AMSP records as they are written, live only, and returns the function that stops it (see *Follow the Agent live*); `getState()` / `setState(doc)` over `state.json` (`getState()` is `unknown`: narrow it); `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workbench`, with their own `requires` between them — the tree is checked as a whole.
 
-## HTTP
+### HTTP
 
 HTTP, all under `/api/projects/:projectId/agents/:agentId/workbenches` (Project members only): `GET /` lists the workbenches with their `revision`, `uiRev`, `tabs` (each page's URL resolved) and current load `error`; `GET /:id/ui/*` serves a file of `ui/` (there is no default document — a tab names its page), or, for a `.js` with no such file, what the server emitted from the `.tsx` of that name; `GET /:id/sdk/ui/*` serves React, the components and their stylesheet to TSX pages, through the import map the server writes into them; any method on `/:id/api/*` reaches `handle` — JSON by default in both directions (`req.body` parsed, `{ status?, body? }` answered as JSON), and anything else when you say so: a non-JSON request body arrives as `req.bytes` (a `Uint8Array`; `req.headers` has its `content-type`, never the app's cookie), and a response that names a `content-type` in `headers` sends `body` as the string you wrote, or `bytes` for binary, or `stream` — an async iterable (an `async function*`) of strings or `Uint8Array`s, each chunk written to the client as you yield it, which is how server-sent events and a model's token-by-token answer get through without waiting for the end (relay an upstream stream by yielding its chunks; a `finally` in the generator runs when the client goes away — though a generator parked inside an `await` only gets there once that await settles, so give a relay its own timeout rather than trusting the disconnect) — with `location` + a 3xx status for a redirect. That is how a handler serves a page it renders, an upload, a download, or the pages of a program it runs on this machine: fetch `http://127.0.0.1:<port>/…` from the HANDLER and return what came back — never put `127.0.0.1` in a page, because the page runs in the user's browser, which may be on another machine than you are; `GET /:id/sdk/workbench.js` and `GET /:id/sdk/amsp.js` serve the page SDK (the `@prismshadow/amsp` browser build of the server answering, see *Follow the Agent live*); `POST /:id/reload`; `GET /:id/history` lists its versions, newest first and at most 50, each `{ revision, commit, savedAt }` — the commits of `agent_state.git` that changed its folder; `POST /:id/rollback { revision }` makes the source exactly that listed version (code only — `state.json` stays) and reloads, which records the restore as the newest version. `DELETE /:id` removes the folder, `state.json` included, and records the removal, so its earlier versions are no longer listed, even if the id comes back. `POST /archive { dataBase64, overwrite? }` imports one workbench's source from a zip and loads it, answering `201 { workbench }` with the load's `error` (an id that exists answers 409 `workbench_exists` unless `overwrite` is true, which replaces the source and keeps `state.json`; a zip holding `state.json`, a dot entry, `node_modules`, a link, or a name git refuses or Windows cannot hold is refused before anything is written), and `GET /:id/archive` downloads the source as a zip that imports back unchanged. From a page directly under `ui/`, call your handler with a relative `fetch("../api/…")` and import the page SDK with `import("../sdk/workbench.js")`; the Web App shows each page in its tab and reloads it when `uiRev` changes.
 
-## Undoing, reverting, removing (撤销 / 还原 / 清掉界面)
+### Undoing, reverting, removing
 
 When the user asks to undo the UI, revert it, clean it up or get the chat page back the way it was, they are asking you to TAKE SOMETHING AWAY — never to build something. Do not answer such a request by adding a feature (a reset button, an undo stack, a new route). Work out which of the four below they mean; if it is not obvious from what they said, ask in one line before touching anything. Everything about a workbench is files in your own Agent State, so each of these is a change to files, made by you or by the user in the app — list `agent_state/workbenches/` first to see what exists. The server notices within a moment and the user's tabs follow without a refresh.
 
@@ -343,23 +400,11 @@ One constraint follows from 4, and it is a constraint on you, not a task to go a
 
 Your handler's responses are served from the app's own origin, so anything you echo back from a request is executed there: escape what you put into HTML, and treat a value that came in over `/api/*` as untrusted even though only Project members can reach it.
 
-## Theme
-
-A workbench page is a separate document, so it inherits nothing from the app's stylesheet by itself. The Web App stamps the app's look onto the page's root on every load and every appearance change: `light`/`dark`, `data-theme` (`modern`, `geek` or `github`), `data-accent` (only when the theme paints that accent), `data-font-latin` and `data-font-cjk`, the root font size, every `--ui-*` token of the app's token contract resolved as an inline style, and the app's bundled fonts. Take every colour and font from the variables below and the page follows the user through every theme, accent, font and light/dark change; hardcode them and it clashes in one theme or another. Pick a status tone the way the app does: there is no busy tone, so a running item is `success` with the word "Running", waiting or queued is `attention`, failed is `danger`, and finished is `done` or `neutral`.
-
-**A TSX page** (*Pages in TSX*) gets the components' stylesheet from the server, and the Web App leaves `/workbench-ui.css` out of it: no `--wb-*` variables, no `wb-*` classes. The components follow the theme by themselves and take their look from props such as `variant`, `tone` and `size` (`<Badge tone="done">Resolved</Badge>`). Style your own elements in a stylesheet of your own, under class names of your own, reading the tokens the components paint with: `--ui-canvas`, `--ui-surface`, `--ui-fg`, `--ui-fg-muted`, `--ui-line`, `--ui-accent`, `--ui-accent-fg`, `--ui-radius-md`, `--ui-font-mono`, and `--ui-tone-<tone>-fg`, `-bg` and `-line`. No Tailwind classes on your own elements: only the classes the components use are compiled, so some would work by chance and the rest silently do nothing. No rules on bare elements (`button`, `input`, `table`): yours would beat the components' own, which sit in cascade layers, and for the same reason never link `/workbench-ui.css` into a TSX page.
-
-**A plain-JS page** gets `/workbench-ui.css` injected first in the head: a base stylesheet that styles plain HTML (headings, lists, forms, tables, code) to match the app and exposes `--wb-bg`, `--wb-surface`, `--wb-fg`, `--wb-muted`, `--wb-border`, `--wb-hover`, `--wb-accent`, `--wb-accent-fg`, `--wb-radius` (a box radius, not a pill), `--wb-font`, `--wb-mono`, the tone colours `--wb-tone-<tone>-fg`, `-bg` and `-line`, plus the classes `wb-primary` (a button), `wb-card`, `wb-rows`, `wb-row`, `wb-muted` and `wb-badge`, a status pill coloured by `data-tone` (`neutral` without one), e.g. `<span class="wb-badge" data-tone="done">Resolved</span>`. The `--wb-*` names are only ever added to, never renamed. The `--ui-*` tokens underneath are readable too, but they follow the app's token contract and can be renamed with it, and as inline styles on the root no stylesheet of yours overrides them: to restyle, redeclare `--wb-*` on `:root`. The page's own rules always win over `/workbench-ui.css`, and linking `/workbench-ui.css` yourself makes it look right when opened outside the app too.
-
-**The page is see-through.** In the app a page's body paints nothing, so whatever the app shows under the chat — the theme's page colour, the Frost sheet, the user's wallpaper — shows through the page as it does under the conversation. Leave the body without a background to keep that. For a solid sheet (a drawing surface, a page that must not show an image behind it), paint the app's opaque page colour yourself: `body { background: var(--wb-canvas); }` on a plain page, `var(--ui-canvas)` in a TSX page's stylesheet. A background your own rules set always wins. Cards, inputs and buttons keep their own fills.
-
-Keep empty alerts hidden. A component rule such as `.notice { display: flex }` overrides the browser's default `[hidden]` styling; the shared stylesheet preserves `[hidden]`, and standalone custom CSS should do the same. Check both empty and populated states.
-
-## Filling the app
+### Filling the app
 
 A page can be shown as the whole app — no sidebar, no chat, no tab strip — at `/app/<project>/<agent>/<workbench>[/<tab key>]` (the workbench's first tab when no key is given): the tab's *Fill the app* button goes there, `penguin web --app <project>/<agent>/<workbench>[/<tab key>]` opens the browser straight onto it, and the page itself can ask with `parent.postMessage({ type: "penguin:fill-app" }, "*")`. The floating *Exit full screen* button returns to the same Agent and workbench tab. The command palette also offers *Exit full page*. Its chord is Ctrl+Alt+P (⌥⌘P on macOS) unless the user rebound it under Settings › Keyboard shortcuts. A key pressed inside the page reaches the app only when the page has not handled it, so a page must not intercept that chord.
 
-## The App Center
+### The App Center
 
 The App Center (`/apps` in the sidebar) is the Project's home screen: a grid of tiles, each a workbench's icon and name, that open the workbench in a window over the grid (or full screen from the tile's menu). The user arranges the tiles and folders themselves. A workbench is on it when its `package.json` says so, beside `penguin.version` and `penguin.modules`:
 
@@ -376,3 +421,60 @@ The App Center (`/apps` in the sidebar) is the Project's home screen: a grid of 
 - `tab` is optional: the key of the tab the shortcut opens; the first tab without it.
 
 When you build a workbench for the user, set `"appCenter": { "show": true }` unless they say otherwise, so they find it again. While the server is loading your files the tile shows a building ring and does not open; a failed load leaves it marked, and its menu shows the error from `.build/status.json`. A declaration that does not hold up does not stop the load: the workbench loads, has no shortcut, and `.build/status.json` lists the fix in `hints`. The user turns the shortcut on or off with the switch on the workbench's row in Agent settings, which rewrites `penguin.appCenter.show` in this file and records a version; read the file before editing it again. The App Center lists the Agents of the server it runs on, so a workbench of an Agent on a connected machine opens from that Agent's settings instead.
+
+## Test a plugin
+
+### Unit testing using vitest
+
+Unit tests live under `test/*.test.ts` in the plugin package and run with `vitest run` (`"test": "vitest run"` in `package.json`), without starting a server or a desktop shell.
+
+- **Declarations and shipped files.** Rebuild `ifaces.json` first (`penguin-gen-ifaces`), then check what the package declares: pass each skill directory under `skills/` to `validateSkillDir(dir)` from `@prismshadow/skills` (it validates `SKILL.md` frontmatter and body and returns `[]` on success), and pass the package directory to `readLibraryPackage(dir)` from `@prismshadow/penguin-core` to run the same checks the plugin library runs on load (version, `ifaces.json`, card fields, icon bytes, hook manifest and MCP declarations).
+- **Module logic.** Import your module functions directly and test command arguments, profile builders, parsers and failure paths with injected probes or mocked child processes so the suite runs deterministically on any host.
+
+### E2E testing using electron
+
+End-to-end tests drive a real PenguinHarness desktop shell over Playwright's Electron channel (`_electron.launch`, wrapped by `@penguinharness/penguin-testing-electron`) so UI contributions and registered capabilities are verified in an actual window instead of a mock:
+
+1. **Prepare an isolated instance.** Point `PENGUIN_HOME` and `PENGUIN_BROWSER_DATA_DIR` at a persistent path under the repository root — `<repo>/.data/penguin-testing-electron/penguin` and `<repo>/.data/penguin-testing-electron/chrome` (add `.data/` to `.gitignore`) — and seed project config and credentials from the current harness so the shell boots without interactive prompts and nothing of the user's own data root is touched.
+2. **Launch the shell and take the window.** Start Electron on the desktop entry with `_electron.launch` (or `launchHarness()` from the testing driver) and await `app.firstWindow()`, which returns a standard Playwright `Page`.
+3. **Install, assert, and clean up.** Link or install the plugin under test into the running instance, assert the rendered UI and behavior with Playwright locators and `expect` (or run the plugin's `@Component()` `TestUnit` declarations in the shell), then remove the plugin and close `app` in `finally` so the instance returns to a clean state. On Linux, run headless under Xvfb and skip cleanly (`describe.skipIf`) when no display is available.
+
+### Integration testing using a separate penguin instance
+
+A workbench is tested against the host it runs in (the check helper above). A plugin package you are building is tested the same way every deployment will see it: loaded by a real server through the plugin prefix. Run that against a **separate instance**, never against the user's own data root:
+
+1. Start an isolated instance with its own data root, on a free port. Pick a path to keep using, not the user's data root and not a temporary directory — a `.data/` directory inside the repository you are building the plugin in, for example `.data/penguin-plugin` (add it to `.gitignore`). The install cache, the linked plugins and the instance's own state are worth keeping across rounds of testing, and a directory the system may clean loses them:
+   ```bash
+   PENGUIN_HOME=<repo>/.data/penguin-plugin penguin server --port 7365
+   ```
+   `PENGUIN_HOME` moves the whole data root (`~/.penguin/data` by default) — a fresh one has no Project, no agents and no server yet, so nothing of the user's is touched. The first boot prints the first-login link; `penguin auth login --server http://127.0.0.1:7365 --user-id admin` signs in and sets a password. Between test rounds, stop the server with `penguin server stop --root <repo>/.data/penguin-plugin` (or Ctrl+C the supervisor) and start it again on the same `PENGUIN_HOME`: the linked plugins and everything the instance recorded are still there.
+2. Link the package into that instance's plugin prefix — no publishing, no copying; the directory stays where you are editing it:
+   ```bash
+   PENGUIN_HOME=<repo>/.data/penguin-plugin penguin plugin link /path/to/your-plugin
+   ```
+   The command reads the directory as a plugin package first (a `package.json`, a buildable `ifaces.json`, contributions that pass the library's checks — the same read an install goes through) and refuses in place with the reason if it is not one. A link is a symlink into `<PENGUIN_HOME>/plugins/node_modules/`; the loader follows it to the real directory, so the loaded plugin is the files you are editing. It does not run the package's install scripts; dependencies you need are yours to install in the package directory.
+3. List the plugin where a Project can load it: on the Web App's **Plugins** page of that instance (install it on an agent from the library, or add it to the Project when the package carries server modules), or through `penguin plugin list --server http://127.0.0.1:7365`. A Project change re-assembles the App without a restart; the **Plugins** page row shows the version read from your directory, and a link row is marked as linked.
+4. Exercise the capability for real, then edit and reload: the Skills and hooks a package contributes install on an agent — start a chat and check the behavior; the server modules it lists load with the next App — check the row's status and the server log. After an edit, rebuild the package's `ifaces.json` if its declaration changed (`penguin-gen-ifaces` as its `build` script does), then reinstall or re-list so the copy is refreshed; the page reads the new version straight from the directory. `penguin plugin remove <name>` removes the link and its record and leaves your directory untouched.
+
+## Sharing a plugin
+
+The package is the same whatever way you share it: an npm package whose `package.json` carries npm's own fields only, whose entry declares its card, Skills, hook package, MCP servers and workbenches, whose default export may list the server modules it adds, and whose build writes that declaration into `ifaces.json` — the table every reader reads instead of running the package. Build and test it (*Test a plugin* above) before sharing.
+
+Where plugins come from — four sources, four rules, which are also the four places a plugin you built can go:
+
+1. **The harness's own modules** are not yours to list or submit: they live in the main packages today and are being regrouped into per-function modules (the open pull request Prism-Shadow/penguin-harness#1550), and they will land in the repository's plugin library directory — they are part of PenguinHarness itself, not someone else's package. Yours is not one of these unless you are building the harness.
+2. **Built-in plugins** ship with the repository under `plugins/` — one npm package per plugin, listed by category in the built-in library. Installing one fetches it from npm or its repository; the desktop app packs its own set of them into the bundle. A plugin built around someone else's product carries a `use-` prefix (`use-firecrawl`), and a self-evolution toolkit's name ends in `-rsi-toolkit`.
+3. **Third-party plugins** are collected into the plugin index — one entry per pull request, under that repository's submission protocol (CONTRIBUTING.md is the authority; the steps are below). The server merges the index with its built-in list on the **Plugins** page; an entry is for discovery only, and the package still installs from the channel the entry names.
+4. **Your own or unlisted plugins** need no index at all: link a local directory into the server's plugin prefix with `penguin plugin link` — the directory stays where it is, referenced in place, loaded through the same path as an installed plugin (see *Integration testing using a separate penguin instance* above for the mechanics); for a published package, install it by npm name.
+
+**Listing in the index** (for anyone besides you) — the protocol's authority is the index repository's [CONTRIBUTING.md](https://github.com/Prism-Shadow/penguin-harness-plugins/blob/main/CONTRIBUTING.md); these steps drive it and do not restate its rules, and when they disagree, it wins:
+
+1. **Check one channel exists.** The entry needs at least one source the harness can fetch the tarball from: npm, or a `[[channels]]` table pointing at a GitHub release (or any tarball URL), per the index repository's `docs/manifest.md`. CI fetches each URL and checks the bytes hash to the entry's `integrity`; publish exactly those bytes. Entry-side facts (ESM, a loadable entry with an `activate` export, a license) are CI's to check — you fix what CI reports.
+2. **Let the tooling write the entry.** In a checkout of the index repository, run `pnpm install && pnpm new-entry <name>@<version>` for an npm channel. For a channels-only entry, write the `manifest.toml` yourself following `docs/manifest.md` (no `package-lock.json`). Never edit `integrity`.
+3. **Fill in `categories`** (1–3, from the index repository's `docs/categories.md`) **and `owners`** — the GitHub handles allowed to change this entry later, including yours. Everything else the tooling wrote; leave it.
+4. **Run `pnpm validate && pnpm check-npm`** and fix what they report. Nothing here executes a submission's code.
+5. **Open one pull request with exactly one entry** and stop there — review is human, CI decides the mechanical questions.
+
+Later: a new version is a new entry beside the old ones; moving is not possible — the path is its name, version and content; yanking and ownership transfers are in CONTRIBUTING.md. Changing this skill's sharing sections means keeping them in step with CONTRIBUTING.md — one change carries both.
+
+**The other three ways** need no pull request: add it to the repository's `plugins/` tree if it should ship with PenguinHarness (a proposal and a review, like any change to the repository); or leave it local and `penguin plugin link` it on the machines that need it; publish to npm (any name, your own scope included) for an installable-by-name release.
