@@ -27,12 +27,12 @@ import type {
   DesktopUpdateStatusResponse,
   ErrorBody,
 } from "../src/api/types.js";
-import { DesktopService } from "../src/services/desktop-service.js";
+import { DesktopService } from "@prismshadow/penguin-library-setting/desktop-service";
 import {
   parseUpdaterStatusMessage,
   shellPortOf,
   wireShellUpdatePort,
-} from "../src/services/desktop-update-port.js";
+} from "@prismshadow/penguin-library-setting/desktop-update-port";
 import { FakePort } from "./helpers/fake-shell-port.js";
 
 const STATUS: DesktopUpdateStatus = {

@@ -1,7 +1,7 @@
 /**
  * The built-in browser's link to the desktop shell: request/reply and events over the
  * utilityProcess port (`process.parentPort`), beside the updater and tray relay the HMR layer
- * wires on the same port (services/desktop-update-port.ts, left untouched).
+ * wires on the same port (the setting domain library's desktop-update-port).
  *
  * A link belongs to one platform generation. It adds its own listener to the port and takes
  * it off again on dispose, so a hot swap never leaves a dead App's listener answering frames.
