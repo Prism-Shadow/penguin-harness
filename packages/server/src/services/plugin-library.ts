@@ -211,5 +211,6 @@ export function toPluginItem(plugin: LibraryPlugin): PluginItem {
       : {}),
     ...(plugin.quickStart !== undefined ? { quickStart: plugin.quickStart } : {}),
     mcpServers: plugin.mcpServers.map(toPluginMcpServerItem),
+    modules: plugin.modules,
   };
 }

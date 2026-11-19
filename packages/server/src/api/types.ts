@@ -4227,6 +4227,12 @@ export interface PluginItem {
   quickStart?: QuickStartItem;
   /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (its mcpServers contributions); `[]` without any. */
   mcpServers: PluginMcpServerItem[];
+  /**
+   * The package also ships server modules (a hybrid plugin): installing it on an Agent also asks
+   * for its modules to run on the Agent's server (PRFC-0031). Absent from a server older than
+   * that, read as false.
+   */
+  modules?: boolean;
 }
 
 /** An MCP transport, as an entry resolves it (`transport`, else inferred from `command` / `url`). */
@@ -4296,6 +4302,12 @@ export interface PluginFilesResponse {
  */
 export interface PluginInstallRequest {
   names: string[];
+  /**
+   * Install the Agent part only and leave every plugin table alone (PRFC-0031): what the Web App
+   * sends to a machine, whose plugin list the hub owns. `modules` still says how each module
+   * stands there. A server older than this ignores the field.
+   */
+  skipModules?: boolean;
 }
 
 export interface AgentPluginsInstallResponse {
@@ -4304,6 +4316,114 @@ export interface AgentPluginsInstallResponse {
   hooks: HookItem[];
   /** The Agent's MCP servers after the install (a plugin's servers join its `tools.mcpServers`). A server name the Agent already has from someone else is 409 `mcp_server_name_taken`, nothing installed. */
   mcpServers: AgentMcpServerItem[];
+  /** Every library plugin that ships server modules, as it stands on this server for this Project (PRFC-0031); absent from a server older than that. */
+  modules?: PluginModuleStatus[];
+  /** POST only: what this install did about each installed plugin's server module; a plugin it left alone is not listed. Absent from a server older than PRFC-0031. */
+  moduleActions?: PluginModuleAction[];
+}
+
+/** How a library plugin's server module stands on this server (PRFC-0031). */
+export type PluginModuleState =
+  /** Loaded in this server's module tree. */
+  | "running"
+  /** Loaded, and this build cannot run it, or runs it without part of itself (`reason`). */
+  | "unsatisfied"
+  /** Some Project lists it for this server and the load failed (`reason`). */
+  | "failed"
+  /** Listed for this server, neither loaded nor failed: waiting for a restart. */
+  | "restart"
+  /** No Project lists it for this server. */
+  | "off";
+
+/** The standing ask to run a module on this server, as a Project member sees it. */
+export interface PluginModuleRequestView {
+  /** `pending`: waiting for the administrator; `declined`: the administrator stopped it, and installs do not bring it back. */
+  status: "pending" | "declined";
+  /** Whether the caller made it. */
+  mine: boolean;
+  requestedAt: string;
+}
+
+/** One library plugin that carries server modules, on this server and for this Project. */
+export interface PluginModuleStatus {
+  /** The library plugin's name: what `names` installs. */
+  plugin: string;
+  /** The npm package name: the specifier a plugin table lists. */
+  package: string;
+  /** Resolves from a prefix this build ships and only adds modules: the automatic path applies. */
+  builtin: boolean;
+  state: PluginModuleState;
+  /** Whether this Project lists it for this server (its shared table, or this server's own). */
+  listed: boolean;
+  /** Why, for `failed` and `unsatisfied`. */
+  reason?: string;
+  request?: PluginModuleRequestView;
+}
+
+/** What one install, or one explicit ask, did about a plugin's server module. */
+export interface PluginModuleAction {
+  plugin: string;
+  /**
+   * `enabled`: listed for this Project on this server, and running (or waiting for a restart);
+   * `requested`: an administrator is asked; `blocked`: the administrator stopped this module;
+   * `failed`: listed, and the module did not start (`reason`) — when the App would not boot with
+   * it, the listing was undone.
+   */
+  action: "enabled" | "requested" | "blocked" | "failed";
+  reason?: string;
+}
+
+/** POST /api/projects/:p/plugins/modules `{ plugin }` (any member): enable a plugin's server module, or ask the administrator to. */
+export interface PluginModuleAskRequest {
+  plugin: string;
+}
+
+/** The answer to an explicit ask: every module's state for this Project, and what the ask did. */
+export interface PluginModuleAskResponse {
+  modules: PluginModuleStatus[];
+  moduleActions: PluginModuleAction[];
+}
+
+/** One row of the ledger of module requests and decisions, for the administrator. */
+export interface PluginModuleRequest {
+  package: string;
+  plugin: string;
+  /** The Project whose table lists it, or will; null when that Project is gone. */
+  projectId: string | null;
+  /** That Project's display name (its id when it has none); null when it is gone. */
+  projectName: string | null;
+  agentId: string | null;
+  /** The user who asked; "" when no person was behind it (company mode's reconcile). */
+  requestedBy: string;
+  /** That user's display name; null when it has none or the user is gone. */
+  requestedByName: string | null;
+  requestedAt: string;
+  /** null = pending. */
+  decision: "enabled" | "declined" | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  /** How it was enabled: `builtin` (automatic), `admin` (the administrator's own act), `approval` (a member's request approved). */
+  via: "builtin" | "admin" | "approval" | null;
+  builtin: boolean;
+  state: PluginModuleState;
+}
+
+/** GET /api/admin/plugin-modules, and the answer to a decision (administrator only). */
+export interface PluginModuleRequestsResponse {
+  requests: PluginModuleRequest[];
+  /** How many rows wait for a decision. */
+  pending: number;
+  /**
+   * After stopping a module: the Projects whose shared table still lists it, so it keeps running
+   * here until it is removed from them on the Plugins page. Absent when nothing else lists it.
+   */
+  stillListedBy?: Array<{ projectId: string; projectName: string }>;
+}
+
+/** POST /api/admin/plugin-modules/decide (administrator only). `decline` on an enabled row stops the module on this server. */
+export interface PluginModuleDecideRequest {
+  package: string;
+  decision: "enable" | "decline";
 }
 
 /**
@@ -6930,6 +7050,8 @@ export interface InstalledPluginsResponse {
   machineId: string;
   /** A listed plugin neither runs, nor failed to load, nor is one this build cannot run: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
   restartPending: boolean;
+  /** Every library plugin that ships server modules, as it stands on this server for this Project (PRFC-0031); absent from a server older than that. */
+  modules?: PluginModuleStatus[];
 }
 
 /**
