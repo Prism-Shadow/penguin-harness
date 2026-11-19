@@ -8,7 +8,8 @@
  * - `status` names the backend the user chose — the built-in browser, or their own Chrome with
  *   its name and the extension's version — and, when it cannot be driven, why and what to tell
  *   the user: Chrome not paired, not connected, or switched off by an admin. A server that names
- *   no backend gets the status alone.
+ *   no backend gets the status alone. A server that runs no browser module at all (its plugin's
+ *   server module stopped) gets one error line saying an administrator turns it on.
  * - Inside a session every call carries PENGUIN_SESSION_ID — in the body, or in the query of a
  *   GET or DELETE — so the server acts for the person driving the session (their Chrome).
  * - What only the built-in browser has (import, history), asked of the user's Chrome, says to
@@ -22,8 +23,14 @@ import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BuiltinBrowserExecResult, BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
 import { cli } from "../src/index.js";
-import { browserEn, browserZh, RETURN_LIMIT, renderExec } from "@penguinharness/browser-automation/cli";
-import { getMessages, localMinute } from "@prismshadow/penguin-server/cli";
+import {
+  browserEn,
+  browserZh,
+  localMinute,
+  RETURN_LIMIT,
+  renderExec,
+} from "@penguinharness/browser-automation/cli";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 import { FakeServer } from "./fake-server.js";
 
 // The bundle the browser's commands receive: the host's, with the browser module's own group.
@@ -250,6 +257,16 @@ describe("status and tabs", () => {
       `status: unavailable (no_window)\nnote: ${t.browser.unavailableHint("no_window")}\n`,
     );
     expect(out()).toContain("desktop app");
+  });
+
+  it("status exits 1 saying the browser is off when the server runs no browser module (its routes answer 404)", async () => {
+    // No route is set: the fake server answers 404 not_found, as a server without the plugin's
+    // server module answers every browser path.
+    expect(await cli(["browser", "status"])).toBe(1);
+    expect(out()).toBe("");
+    const line = stderr.join("");
+    expect(line).toContain("browser_unavailable");
+    expect(line).toContain("Settings › Plugins");
   });
 
   it("tabs prints a table, and --json the response", async () => {

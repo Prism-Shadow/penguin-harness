@@ -61,7 +61,7 @@ const browserCliModule = {
 
 export default browserCliModule;
 
-// What a caller checks the command's output against: the message groups, and the exec renderer
-// with the length it cuts a returned value at.
+// What a caller checks the command's output against: the message groups, the exec renderer with
+// the length it cuts a returned value at, and the local-time format its listings use.
 export { browserEn, browserZh, type BrowserMessages } from "./browser.messages.js";
-export { RETURN_LIMIT, renderExec } from "./browser-output.js";
+export { localMinute, RETURN_LIMIT, renderExec } from "./browser-output.js";

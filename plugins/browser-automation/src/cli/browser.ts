@@ -31,6 +31,7 @@
  */
 
 import type { Command } from "commander";
+import { ApiError } from "@prismshadow/penguin-library-cli";
 import type {
   BuiltinBrowserExecResult,
   BuiltinBrowserHistoryResponse,
@@ -96,10 +97,19 @@ export function registerBrowserCommand(browser: Command, t: BrowserMessages): vo
   leaf(browser.command("status").description(t.browser.statusDesc)).action(
     action(t, async (opts: CommonOpts) => {
       const client = await connect(opts, t);
-      const res = await client.request<BuiltinBrowserStatus>(
-        "GET",
-        `${BASE}/status${sessionQuery()}`,
-      );
+      const res = await client
+        .request<BuiltinBrowserStatus>("GET", `${BASE}/status${sessionQuery()}`)
+        .catch((err: unknown) => {
+          // The browser's routes are its plugin's server module: a server that answers its status
+          // route 404 is not running that module (stopped, or listed in none of its Projects).
+          if (err instanceof ApiError && err.status === 404) {
+            throw new BrowserCliError(
+              "browser_unavailable",
+              t.browser.unavailableHint("module_not_running"),
+            );
+          }
+          throw err;
+        });
       if (opts.json === true) printJson(res);
       else print(renderStatus(res, t));
       if (!res.available) process.exitCode = 1;
