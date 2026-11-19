@@ -32,7 +32,8 @@
 
    The main column is framed as it is in a browser, by the theme's shell tokens: the same
    `--ui-shell-gap` and `--ui-shell-radius` a theme pack would set to float it (every built-in
-   theme keeps both at zero), and no corner of the window's own. So it sits flush against the
+   theme but Doodle keeps both at zero; Doodle sets its sheet a little down on one corner, flush
+   on the right and at the foot), and no corner of the window's own. So it sits flush against the
    window's right and bottom edges like the navigation column against the left, a scroller's
    scrollbar reaches the window's corner whole, and the band is ruled off from it by the line that
    rules it off from the navigation column. Unlayered, like wallpaper.css, so it wins over a

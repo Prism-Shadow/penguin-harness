@@ -29,7 +29,45 @@
  */
 import { projectPluginTables } from "../plugin/project-defaults.js";
 import type { CapabilitySettingsPatch, ModelOperation } from "../api/capabilities.js";
-import { applyCapabilitySettings } from "./capability-settings.js";
+import {
+  applyCapabilitySettings,
+  chatEligibleForConnection,
+  modelOperationsForConnection,
+} from "./capability-settings.js";
+import { TRANSCRIPTION_PROBE_AUDIO } from "./transcription-probe.js";
+import type {
+  ChatDefaultsDto,
+  CommandPolicyDto,
+  ProjectConfigStore,
+} from "@prismshadow/penguin-library-project";
+import type {
+  DefaultModelOffer,
+  ModelEffectiveConnection,
+  ModelInfo,
+  ModelPricingDto,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
+  ModelProtocolDetectRequest,
+  ModelProtocolDetectResponse,
+  ModelTestRequest,
+  ModelTestResponse,
+  ModelVisionDetectRequest,
+  ModelVisionDetectResponse,
+  ModelsResponse,
+  ModelsUpdateRequest,
+  PresetSyncMode,
+  PresetSyncResponse,
+  ProviderConnectionDto,
+  ProviderConnectionResponse,
+  ProviderConnectionUpdate,
+  PricingRates,
+  TieredRates,
+  GroupKeyApplied,
+  ModelPromotion,
+  ModelProviderAuthToken,
+  ModelProviderAuthTokens,
+  ModelPromotions,
+} from "@prismshadow/penguin-library-model";
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -50,6 +88,7 @@ import {
   effectiveConnection,
   groupKeyReaches,
   imageUrlMessage,
+  inlineData,
   metaMaxTokens,
   migrateProjectConfigTable,
   parseProviderTable,
@@ -93,31 +132,8 @@ import type {
   ProviderConnectionShape,
   ProviderTable,
 } from "@prismshadow/penguin-core";
-import type {
-  ChatDefaultsDto,
-  CommandPolicyDto,
-  DefaultModelOffer,
-  CommandPolicyRuleDto,
-  EndpointModelListRequest,
-  EndpointModelListResponse,
-  ModelEffectiveConnection,
-  ModelInfo,
-  ModelPricingDto,
-  ModelProtocolDetectRequest,
-  ModelProtocolDetectResponse,
-  ModelRefDto,
-  ModelsResponse,
-  ModelsUpdateRequest,
-  ModelTestRequest,
-  ModelTestResponse,
-  ModelVisionDetectRequest,
-  ModelVisionDetectResponse,
-  PresetSyncMode,
-  PresetSyncResponse,
-  ProviderConnectionDto,
-  ProviderConnectionResponse,
-  ProviderConnectionUpdate,
-} from "../api/types.js";
+import type { CommandPolicyRuleDto } from "../api/types.js";
+import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import { badRequest } from "../http/validate.js";
 import { HttpError } from "../http/errors.js";
 import { cacheable } from "../internal/mtime-gate.js";
@@ -138,17 +154,8 @@ import {
   classifyVisionProbe,
   classifyVisionProbeError,
 } from "./vision-detect.js";
-import type { PricingRates, TieredRates } from "./usage-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
-import type {
-  GroupKeyApplied,
-  ModelPromotion,
-  ModelProviderAuthToken,
-  ModelProviderAuthTokens,
-  ModelPromotions,
-  ProjectConfigStore,
-} from "../mechanisms/projects.js";
 
 export type RawTable = Record<string, unknown>;
 
@@ -377,6 +384,32 @@ function ownConnection(
   };
 }
 
+/** Resolve the row's actual protocol, including an inherited Project provider connection. */
+function chatRow(raw: RawTable, ref: ModelRefDto) {
+  const row = asArray(raw.models).find((m) => entryMatches(m, ref.provider, ref.modelId));
+  if (!row) return false;
+  const effective = effectiveConnection(
+    ownConnection(row, ref.provider, ref.modelId),
+    providerShapeOf(raw, ref.provider),
+  );
+  return chatEligibleForConnection(ref.provider, ref.modelId, effective.clientType);
+}
+
+function effectiveChatDefault(raw: RawTable): ModelRef | undefined {
+  const ref = optRef(raw.default_model);
+  return ref && chatRow(raw, { provider: ref.provider, modelId: ref.model_id }) ? ref : undefined;
+}
+
+function requireChatRow(raw: RawTable, ref: ModelRefDto) {
+  if (!chatRow(raw, ref)) {
+    throw new HttpError(
+      400,
+      "model_not_chat_eligible",
+      "This model cannot be used as the default chat model.",
+    );
+  }
+}
+
 /**
  * The connection a probe of one row's form draft is built with (the connectivity, speed and
  * vision probes): the draft's own values — the request's, else the stored row's — then the
@@ -438,14 +471,16 @@ function connectOfferOf(
   next: RawTable,
   provider: string,
 ): DefaultModelOffer | undefined {
-  const current = optRef(before.default_model);
+  const current = effectiveChatDefault(before);
   return connectDefaultOffer({
     provider,
     hadKey: providerTableOf(before)[provider]?.api_key !== undefined,
     hasKey: providerTableOf(next)[provider]?.api_key !== undefined,
     current:
       current === undefined ? undefined : { provider: current.provider, modelId: current.model_id },
-    holds: (modelId) => asArray(before.models).some((m) => entryMatches(m, provider, modelId)),
+    holds: (modelId) =>
+      asArray(before.models).some((m) => entryMatches(m, provider, modelId)) &&
+      chatRow(next, { provider, modelId }),
   });
 }
 
@@ -1073,7 +1108,7 @@ export class ProjectConfigService implements ProjectConfigStore {
   /** Paired reference of the default Model; returns undefined if unconfigured (or in the old string format). */
   async getDefaultModelRef(projectId: string): Promise<ModelRef | undefined> {
     const raw = await this.readRaw(projectId);
-    return optRef(raw.default_model);
+    return effectiveChatDefault(raw);
   }
 
   /**
@@ -1093,6 +1128,7 @@ export class ProjectConfigService implements ProjectConfigStore {
         `defaultModel must be included in models: ${showRef(ref.provider, ref.modelId)}.`,
       );
     }
+    requireChatRow(raw, ref);
     await this.writeRaw(projectId, {
       ...raw,
       default_model: { provider: ref.provider, model_id: ref.modelId },
@@ -1466,9 +1502,11 @@ export class ProjectConfigService implements ProjectConfigStore {
         maxTokens: req.speed ? 64 : 16,
         requestTimeoutMs: 20_000,
       });
-      const gen = llm.streamGenerate({
-        newMessages: [userText(req.speed ? SPEED_PROBE_PROMPT : PROBE_PROMPT)],
-      });
+      const transcription = modelOperationsForConnection(req.modelId, clientType).includes("stt");
+      const prompt = transcription
+        ? inlineData("user", TRANSCRIPTION_PROBE_AUDIO, "audio/ogg")
+        : userText(req.speed ? SPEED_PROBE_PROMPT : PROBE_PROMPT);
+      const gen = llm.streamGenerate({ newMessages: [prompt] });
       let sawContent = false;
       let firstContentAt: number | null = null;
       let outputTokens = 0;
@@ -1617,7 +1655,7 @@ export class ProjectConfigService implements ProjectConfigStore {
    */
   async getModels(projectId: string): Promise<ModelsResponse> {
     const raw = await this.readRaw(projectId);
-    const defaultRef = optRef(raw.default_model);
+    const defaultRef = effectiveChatDefault(raw);
     const visionRef = optRef(asTable(raw.tools).i2t);
     const providers = providerTableOf(raw);
     const discounts = new Map(
@@ -1694,6 +1732,9 @@ export class ProjectConfigService implements ProjectConfigStore {
               : {}),
         };
         const info: ModelInfo = {
+          ...(!chatEligibleForConnection(provider, modelId, eff.clientType)
+            ? { chatEligible: false }
+            : {}),
           provider,
           modelId,
           ...(displayName !== undefined ? { displayName } : {}),
@@ -2018,6 +2059,7 @@ export class ProjectConfigService implements ProjectConfigStore {
     }
 
     // default_model: when provided it must be present in models; when omitted the previous value is kept (the pointer follows a key rename; if it was deleted, it's removed).
+    const next: RawTable = { ...raw, providers: providersTable, models: nextModels };
     let defaultModel: ModelRefDto | undefined;
     if (req.defaultModel !== undefined) {
       if (!seen.has(refKey(req.defaultModel.provider, req.defaultModel.modelId))) {
@@ -2025,6 +2067,7 @@ export class ProjectConfigService implements ProjectConfigStore {
           `defaultModel must be included in models: ${showRef(req.defaultModel.provider, req.defaultModel.modelId)}.`,
         );
       }
+      requireChatRow(next, req.defaultModel);
       defaultModel = req.defaultModel;
     } else {
       const prevRef = optRef(raw.default_model);
@@ -2034,7 +2077,10 @@ export class ProjectConfigService implements ProjectConfigStore {
           provider: prevRef.provider,
           modelId: prevRef.model_id,
         };
-        if (seen.has(refKey(followed.provider, followed.modelId))) defaultModel = followed;
+        if (chatRow(next, followed)) defaultModel = followed;
+      }
+      if (!defaultModel && req.initialChatModel && chatRow(next, req.initialChatModel)) {
+        defaultModel = req.initialChatModel;
       }
     }
 
@@ -2073,7 +2119,6 @@ export class ProjectConfigService implements ProjectConfigStore {
       provider: ref.provider,
       model_id: ref.modelId,
     });
-    const next: RawTable = { ...raw, providers: providersTable, models: nextModels };
     if (defaultModel !== undefined) next.default_model = toRaw(defaultModel);
     else delete next.default_model;
     // Capabilities follow a renamed model, and disappear if its row was removed.

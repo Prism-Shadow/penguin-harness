@@ -138,6 +138,14 @@ export function formatMoney(
   if (v === 0) return `${symbol}0`;
   const abs = Math.abs(v);
   if (opts?.compact && abs < 1) return `${symbol}${Number(v.toPrecision(2))}`;
+  if (abs < 0.001)
+    return (
+      symbol +
+      Number(v.toPrecision(4)).toLocaleString("en-US", {
+        maximumSignificantDigits: 4,
+        useGrouping: false,
+      })
+    );
   const digits = abs >= 100 ? 0 : abs >= 1 ? 2 : 4;
   return `${symbol}${v.toFixed(digits)}`;
 }

@@ -17,22 +17,34 @@
  * file header.
  */
 import type {
-  CostParts,
+  UsageGroupBy,
+  UsageQuery,
+  UsageErrorsQuery,
+  UsageErrorsClearQuery,
   UsageAgentSeries,
   UsageBucket,
   UsageErrors,
   UsageErrorsPage,
   UsageGranularity,
-  UsageGroupBy,
   UsageGroupRow,
   UsageModelSeries,
   UsageModelTotals,
   UsageResponse,
   UsageSeriesPoint,
-} from "../api/types.js";
-import { estimateImageToolCost, type ToolCostEstimate } from "./capability-cost.js";
-import type { ErrorFilter } from "../db/repos/errors.js";
-import { catalogEntryFor, offPeakAt, offPeakScheduledRefs } from "../model-catalog/catalog.js";
+  ErrorLog,
+  UsageQueries,
+  UsageStore,
+} from "@prismshadow/penguin-library-observability";
+import type { CostParts } from "@prismshadow/penguin-library-trace";
+import type { ErrorFilter } from "@prismshadow/penguin-library-observability/repos/errors";
+import { estimateToolCost, type ToolCostEstimate } from "./capability-cost.js";
+import {
+  MODEL_CATALOG,
+  catalogEntryFor,
+  offPeakAt,
+  offPeakScheduledRefs,
+} from "../model-catalog/catalog.js";
+import { toolPricingFor } from "../model-catalog/tool-pricing.js";
 import type {
   UsageModelSums,
   UsageGroupModelSums,
@@ -40,7 +52,7 @@ import type {
   UsageAgentBucketCount,
   UsageFilter,
   PeakTier,
-} from "../db/repos/usage.js";
+} from "@prismshadow/penguin-library-observability/repos/usage";
 import {
   enumerateBuckets,
   enumerateTsBuckets,
@@ -50,8 +62,7 @@ import {
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
-import type { ErrorLog, UsageQueries, UsageStore } from "../mechanisms/observability.js";
-import type { ProjectConfigStore } from "../mechanisms/projects.js";
+import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 
 /**
  * Number of most-recent rows kept in the error detail table. Also the page size the whole
@@ -87,52 +98,7 @@ export type PricingLookup = (
   modelId: string,
 ) => Promise<TieredRates | undefined>;
 
-export interface UsageQuery {
-  from?: string;
-  to?: string;
-  groupBy: UsageGroupBy;
-  /** Top-level filter: view by Agent (also used for groupBy=session drill-down). */
-  agentId?: string;
-  /** Top-level filter: view by Model (paired with modelId; the dropdown always sends them as a pair). */
-  provider?: string;
-  modelId?: string;
-  /** Whether to include unattributed errors: admin only (the route passes user.isAdmin), defaults to false. */
-  includeGlobalErrors?: boolean;
-  /** Time-series precision for `series` / `byAgentSeries` / `byModelSeries`; defaults to day. The route validates the value; the bucket count is capped here. */
-  granularity?: UsageGranularity;
-  /**
-   * Timestamp window bounds (ISO UTC), for the trailing "last hour" / "last 24
-   * hours" ranges whose edges are instants rather than calendar dates: they
-   * refine every range-scoped aggregate down to the window, and minute/hour
-   * series buckets are enumerated between them. `minute` requires them.
-   */
-  fromTs?: string;
-  toTs?: string;
-  /**
-   * The viewer's offset east of UTC, in minutes: the calendar day the error table folds a
-   * day's repeats by (see ErrorsRepo.recent). Nothing else in the response reads it; absent,
-   * the day is the server's own.
-   */
-  utcOffsetMinutes?: number;
-}
-
 /** One page of the error detail table (see {@link UsageService.queryErrors}). */
-export interface UsageErrorsQuery {
-  offset: number;
-  limit: number;
-  from?: string;
-  to?: string;
-  /** The trailing window narrowing those dates (see {@link UsageQuery}); both or neither. */
-  fromTs?: string;
-  toTs?: string;
-  agentId?: string;
-  /** Narrow to one category — `unexpected` (500s / runtime exceptions) or `expected`; absent counts both. */
-  kind?: string;
-  /** Admin only: include errors with no Project attribution (see the ErrorsRepo file header). */
-  includeGlobalErrors?: boolean;
-  /** The viewer's offset east of UTC, in minutes (see {@link UsageQuery}). */
-  utcOffsetMinutes?: number;
-}
 
 /**
  * What a clear removes (see {@link UsageService.clearErrors}): the panel's own range — dates,
@@ -140,15 +106,6 @@ export interface UsageErrorsQuery {
  * panel has. No `kind`: the panel offers no such control, so a clear has no narrowing the
  * reader could have seen.
  */
-export interface UsageErrorsClearQuery {
-  from?: string;
-  to?: string;
-  fromTs?: string;
-  toTs?: string;
-  agentId?: string;
-  /** Admin only, the value the caller's reads carry: an admin's clear takes the unattributed rows an admin's panel shows. */
-  includeGlobalErrors?: boolean;
-}
 
 /** The "model price" formula: the three buckets at the given rates (USD per million Tokens), in USD. */
 export function requestCostUsd(
@@ -211,17 +168,20 @@ export function ratesAt(
   return offPeakAt(schedule, at) ? tiered.offPeak : tiered.peak;
 }
 
+const promotionEnds = [
+  ...new Set(
+    MODEL_CATALOG.flatMap((entry) => {
+      const end = toolPricingFor(entry)?.promotionEndsAt;
+      return end ? [end] : [];
+    }),
+  ),
+].sort();
+
 function costOf(sums: UsageModelSums, tiered?: TieredRates): ToolCostEstimate | null {
-  if (sums.billing === "unknown") return null;
   const rates = sums.peak ? tiered?.peak : tiered?.offPeak;
-  if (sums.billing === "image") {
-    return estimateImageToolCost(
-      {
-        capability: "image",
-        model: { provider: sums.provider, modelId: sums.modelId },
-        usage: sums.imageUsage ?? null,
-        measurements: sums.images === undefined ? [] : [{ unit: "image", quantity: sums.images }],
-      },
+  if (sums.tool) {
+    return estimateToolCost(
+      { ...sums.tool, model: { provider: sums.provider, modelId: sums.modelId } },
       rates
         ? {
             unit: "usd_per_mtok",
@@ -294,7 +254,7 @@ export class UsageService implements UsageQueries {
     const rows = this.usage.groupsByModel(
       projectId,
       "session",
-      { sessionIds, fromTs, toTs },
+      { sessionIds, fromTs, toTs, promotionEnds },
       this.tiers(),
     );
     const rates = new Map<string, TieredRates | undefined>();
@@ -326,7 +286,7 @@ export class UsageService implements UsageQueries {
     const rows = this.usage.seriesByModel(
       projectId,
       "day",
-      { sessionIds, fromTs, toTs },
+      { sessionIds, fromTs, toTs, promotionEnds },
       this.tiers(),
     );
     const rates = new Map<string, TieredRates | undefined>();
@@ -347,7 +307,7 @@ export class UsageService implements UsageQueries {
   async query(projectId: string, q: UsageQuery): Promise<UsageResponse> {
     const today = formatLocalDate(this.clock.now());
     // Top-level filter: agent + model (the cost center switches views by agent/model; the model filter is always sent as a pair).
-    const base: UsageFilter = {};
+    const base: UsageFilter = { promotionEnds };
     if (q.agentId !== undefined) base.agentId = q.agentId;
     if (q.provider !== undefined) base.provider = q.provider;
     if (q.modelId !== undefined) base.modelId = q.modelId;
@@ -613,8 +573,8 @@ export class UsageService implements UsageQueries {
       const estimate = costOf(r, rate);
       if (estimate) {
         addEstimate(acc, estimate);
-        if (r.billing === "image") {
-          // A price per image or for separate thinking is not a chat three-bucket split.
+        if (r.tool) {
+          // Native units and separate thinking tariffs do not fit the chat three-bucket split.
           withoutSplit.add(keyOf(r));
           delete acc.costParts;
         } else if (rate && !withoutSplit.has(keyOf(r))) {

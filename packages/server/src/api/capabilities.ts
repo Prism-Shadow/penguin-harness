@@ -30,10 +30,7 @@ export interface CapabilitySettings<Op extends ModelOperation = Capability> {
   dictationFormat?: "audio/wav";
   voicePolish: { enabled: boolean; model: ModelRefDto | null; prompt?: string };
 }
-export interface CapabilitySettingsPatch<Op extends ModelOperation = Capability> {
-  bindings?: Partial<Record<Op, ModelRefDto | null>>;
-  voicePolish?: { enabled?: boolean; model?: ModelRefDto | null; prompt?: string | null };
-}
+export type { CapabilitySettingsPatch } from "@prismshadow/penguin-library-project";
 export interface CapabilityRunRequest {
   text?: string;
   url?: string;

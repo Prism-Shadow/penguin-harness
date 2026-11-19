@@ -1,7 +1,11 @@
 import type { ProjectConfig } from "@prismshadow/penguin-core";
+import { listSupportedModels, ThinkingLevel } from "@prismshadow/mmsp";
 import type { ModelRefDto } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { runProjectModel, type ModelOutput } from "./capability-model.js";
+
+// A custom model ID may use a gateway that rejects reasoning parameters.
+const knownModels = new Set(listSupportedModels().map((entry) => entry.model));
 
 export const DEFAULT_VOICE_POLISH_PROMPT =
   "Edit the user's speech transcript in its original language. Preserve its meaning, facts, proper names, numbers, tone and level of formality. " +
@@ -28,7 +32,10 @@ export async function polishTranscript({
     config,
     model,
     [{ role: "user", content_items: [{ type: "text.done", text }] }],
-    { system_prompt: config.voice_polish_prompt ?? DEFAULT_VOICE_POLISH_PROMPT },
+    {
+      system_prompt: config.voice_polish_prompt ?? DEFAULT_VOICE_POLISH_PROMPT,
+      ...(knownModels.has(model.modelId) ? { thinking_level: ThinkingLevel.NONE } : {}),
+    },
     { signal, sessionId },
   );
   signal.throwIfAborted();

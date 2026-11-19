@@ -1179,6 +1179,7 @@ export const zh = {
       cobalt: "钴蓝",
       orange: "橙红",
       marker: "马克笔橙",
+      ink: "墨水黑",
       ballpoint: "圆珠笔蓝",
       grass: "草绿",
       crayon: "蜡笔红",
