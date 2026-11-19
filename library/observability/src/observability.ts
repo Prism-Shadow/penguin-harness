@@ -95,6 +95,11 @@ export interface UsageContext {
   provider: string;
   /** Upstream model_id of the top-level Session (paired with provider). */
   modelId: string;
+  /**
+   * What a request outside a chat turn is for (`<package>:<operation>`, ProjectModelRequests),
+   * stored on its row; absent for a chat turn's requests and the Session's title.
+   */
+  purpose?: string;
 }
 
 export interface UsageQuery {

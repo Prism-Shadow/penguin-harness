@@ -12,9 +12,9 @@
  * machine's Agent, whose memory is over there (`machineId`; null for this server). An Agent of
  * the same id here is another Agent, and its memory is not this conversation's.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
+import { failureNode } from "../../lib/failure";
 import type { MemoryChangeRow } from "../../lib/amsp/memory-changes";
 import type { ScopeFiles } from "./memory-nav";
 import { scopeKey } from "../../lib/project-scope";
@@ -25,7 +25,7 @@ export function useMemoryListing(
   machineId: string | null,
   wanted: boolean,
   changes: readonly MemoryChangeRow[],
-): { scopes: ScopeFiles[] | null; error: string | null } {
+): { scopes: ScopeFiles[] | null; error: ReactNode } {
   /**
    * The Agent a listing is about: its id in its Project, on the server that holds it. The
    * Project is part of it — every Project has a `default_agent`, and one Project's memory
@@ -35,7 +35,8 @@ export function useMemoryListing(
   const [state, setState] = useState<{
     forAgent: string | null;
     scopes: ScopeFiles[] | null;
-    error: string | null;
+    /** Why the listing could not be read, with 「[报告问题]」 for a failure; null once it was. */
+    error: ReactNode;
   }>({ forAgent: null, scopes: null, error: null });
 
   useEffect(() => {
@@ -52,7 +53,13 @@ export function useMemoryListing(
         );
         if (!cancelled) setState({ forAgent: agentKey, scopes, error: null });
       } catch (err) {
-        if (!cancelled) setState({ forAgent: agentKey, scopes: null, error: apiErrorText(err) });
+        if (!cancelled) {
+          setState({
+            forAgent: agentKey,
+            scopes: null,
+            error: failureNode(err, { what: "an Agent's memory could not be listed" }),
+          });
+        }
       }
     })();
     return () => {

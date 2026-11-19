@@ -69,8 +69,17 @@ export async function cli(argv: string[]): Promise<number> {
     // CliCommandProgram is opaque in the contract; the host knows what it built. The locale
     // is resolved once, here, and every register consumes the bundle — no command resolves
     // a locale itself. The commands write to this process's own streams; this invocation
-    // IS the process.
-    command.code.register(node as unknown as CliCommandProgram, { messages: t });
+    // IS the process. The writers reach the streams only when a command writes through them:
+    // reading `process.stdout` / `process.stderr` creates the stream, and registering a command
+    // must not create any.
+    command.code.register(node as unknown as CliCommandProgram, {
+      messages: t,
+      stdout: { write: (text) => void process.stdout.write(text) },
+      stderr: { write: (text) => void process.stderr.write(text) },
+      exit: (code) => {
+        process.exitCode = code;
+      },
+    });
   }
 
   // Show help only when no subcommand is given (empty input); do not error.

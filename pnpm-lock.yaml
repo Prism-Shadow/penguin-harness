@@ -477,6 +477,9 @@ importers:
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
@@ -556,6 +559,12 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      electron:
+        specifier: ^43.7.6
+        version: 43.8.3(supports-color@10.2.2)
+      node-pty:
+        specifier: ^1.1.0
+        version: 1.1.0
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -659,6 +668,9 @@ importers:
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
@@ -858,6 +870,9 @@ importers:
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
@@ -876,6 +891,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/penguin-testing-electron':
+        specifier: workspace:*
+        version: link:../../plugins/penguin-testing-electron
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/rrsi-rsi-toolkit
@@ -999,6 +1017,9 @@ importers:
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
@@ -1603,6 +1624,12 @@ importers:
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
 
+  plugins/plan:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+
   plugins/humanizer:
     devDependencies:
       '@prismshadow/penguin-core':
@@ -1656,6 +1683,24 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
+
+  plugins/penguin-testing-electron:
+    devDependencies:
+      '@playwright/test':
+        specifier: ^1.61.1
+        version: 1.61.1
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   plugins/rrsi-rsi-toolkit:
     devDependencies:
@@ -2790,6 +2835,8 @@ packages:
 
   '@penguinharness/goal@file:plugins/goal':
     resolution: {directory: plugins/goal, type: directory}
+  '@penguinharness/plan@file:plugins/plan':
+    resolution: {directory: plugins/plan, type: directory}
 
   '@penguinharness/humanizer@file:plugins/humanizer':
     resolution: {directory: plugins/humanizer, type: directory}
@@ -7556,6 +7603,7 @@ snapshots:
   '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit': {}
 
   '@penguinharness/goal@file:plugins/goal': {}
+  '@penguinharness/plan@file:plugins/plan': {}
 
   '@penguinharness/humanizer@file:plugins/humanizer': {}
 
@@ -7689,6 +7737,7 @@ snapshots:
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
@@ -7740,6 +7789,7 @@ snapshots:
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
@@ -8012,6 +8062,7 @@ snapshots:
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
@@ -8077,6 +8128,7 @@ snapshots:
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
@@ -8142,6 +8194,7 @@ snapshots:
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/multimodal-tools': file:plugins/multimodal-tools

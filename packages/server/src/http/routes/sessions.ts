@@ -492,6 +492,20 @@ function parseGoalField(body: Record<string, unknown>): { budget: number } | nul
   return { budget: (budget as number | undefined) ?? -1 };
 }
 
+/** Validate the optional `promptHooks` field of a task request: hook package names, each once; absent or empty = none. */
+function parsePromptHooks(body: Record<string, unknown>): string[] {
+  const names = body.promptHooks;
+  if (names === undefined) return [];
+  if (
+    !Array.isArray(names) ||
+    names.some((name) => typeof name !== "string" || name.trim() === "") ||
+    new Set(names).size !== names.length
+  ) {
+    throw badRequest("promptHooks must be a list of distinct hook package names.");
+  }
+  return names as string[];
+}
+
 /** What deleting a Session reaches, from this route group's deps (shared with the archive page's batch delete). */
 export function sessionDeletionDeps(
   deps: Pick<
@@ -1179,6 +1193,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const body = await readJson(c);
     const goal = parseGoalField(body);
+    const promptHooks = parsePromptHooks(body);
+    // A goal's round 1 is the goal plugin's protocol; a switch's text behind it would contradict
+    // it (and ride none of the later rounds).
+    if (goal && promptHooks.length > 0) {
+      throw badRequest("promptHooks cannot be combined with goal.");
+    }
     // Interrupt-then-send is a way of starting a Task now, so it cannot also wait its turn in
     // the queue or open a goal, which never queues.
     const interrupt = body.interrupt === true;
@@ -1258,6 +1278,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         queueIfBusy,
         interrupt,
         steerIfBusy,
+        promptHooks,
         // Original content, kept while the input waits in the follow-up queue (or as undelivered
         // steering) so a recall (DELETE /follow-ups/:id, DELETE /steer/:id) can hand it back;
         // unused when the task starts directly.

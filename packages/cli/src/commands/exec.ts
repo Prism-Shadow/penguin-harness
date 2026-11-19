@@ -23,7 +23,7 @@ import type { Command } from "commander";
 import type { PluginCliCommandInfo } from "@prismshadow/penguin-server/api";
 import type { Language, Messages } from "@prismshadow/penguin-server/cli";
 import { renderTable } from "@prismshadow/penguin-server/cli";
-import { serverPluginCommands, writeRun } from "../plugin-cli-commands.js";
+import { runPluginCommand, serverPluginCommands } from "../plugin-cli-commands.js";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
@@ -126,13 +126,16 @@ export function registerExecCommand(exec: Command, t: Messages): void {
         return;
       }
       const { pkg, key } = resolution.target;
-      process.exitCode = writeRun(
-        await source.run({
+      process.exitCode = await runPluginCommand(
+        source,
+        {
           package: pkg,
           args: [...key.split("."), ...args.slice(1)],
           language: summaryLanguage(t),
           prog: `penguin exec ${args[0]}`,
-        }),
+        },
+        commands,
+        t,
       );
     });
 

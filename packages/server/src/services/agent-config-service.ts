@@ -13,6 +13,9 @@ import type { Document } from "yaml";
 import {
   AGENT_AUTHORS,
   agentAuthorOf,
+  DEFAULT_COMPACTION_HANDOFF_NOTE,
+  DEFAULT_COMPACTION_MAX_ROUNDS,
+  DEFAULT_COMPACTION_REMINDER,
   DEFAULT_MEMORY_PROMPT,
   DEFAULT_MEMORY_WORKSPACE_PROMPT,
   DEFAULT_SCHEDULES_PROMPT,
@@ -210,6 +213,18 @@ export class AgentConfigService implements AgentConfig {
         ? { mode: compaction.mode }
         : {}),
       ...(typeof compaction.prompt === "string" ? { prompt: compaction.prompt } : {}),
+      // Effective values, not the literal YAML: a file written before these keys existed runs
+      // on the built-in defaults, and an empty box would read as the blank that sends none.
+      maxRounds:
+        typeof compaction.max_rounds === "number"
+          ? compaction.max_rounds
+          : DEFAULT_COMPACTION_MAX_ROUNDS,
+      reminder:
+        typeof compaction.reminder === "string" ? compaction.reminder : DEFAULT_COMPACTION_REMINDER,
+      handoffNote:
+        typeof compaction.handoff_note === "string"
+          ? compaction.handoff_note
+          : DEFAULT_COMPACTION_HANDOFF_NOTE,
     };
     // Memory's effective state, not the literal YAML: core treats anything but an explicit
     // `false` as on and falls back to the built-in prompts, so a config predating the section
@@ -419,6 +434,12 @@ export class AgentConfigService implements AgentConfig {
       );
       setIfProvided(["compaction", "mode"], optionalEnum(compaction, "mode", COMPACTION_MODES));
       setIfProvided(["compaction", "prompt"], optionalString(compaction, "prompt"));
+      setIfProvided(
+        ["compaction", "max_rounds"],
+        optionalNumber(compaction, "maxRounds", { integer: true, nonNegative: true }),
+      );
+      setIfProvided(["compaction", "reminder"], optionalString(compaction, "reminder"));
+      setIfProvided(["compaction", "handoff_note"], optionalString(compaction, "handoffNote"));
     }
     if (cfg.memory !== undefined) {
       // The toggle only decides whether Memory reaches the context and whether Workspace

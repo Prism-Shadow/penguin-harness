@@ -180,6 +180,8 @@ export interface ModelsResponse {
   defaultModel?: ModelRefDto;
   /** Vision model used as a proxy reader for read_file (describes images when the session model has vision=false). */
   visionModel?: ModelRefDto;
+  /** The `[tools]` bindings, by key: only those naming a configured model; absent when none does. */
+  toolModels?: Record<string, ModelRefDto>;
   /**
    * When the Project's model/credential config last changed (ISO; the config file's mtime,
    * so it survives restarts). The web's auth-dead gate compares it against the last auth
@@ -245,9 +247,43 @@ export interface ModelsUpdateRequest {
   defaultModel?: ModelRefDto;
   /** Vision model used as a proxy reader for read_file: must be included in models and not annotated vision=false; omitted keeps the existing value. */
   visionModel?: ModelRefDto;
+  /**
+   * The whole `[tools]` table, by key: present, the table becomes exactly this (each model must be
+   * included in models); omitted, the stored bindings are kept, following a renamed model and
+   * dropped with a removed one. The machine sync sends it; the models page does not.
+   */
+  toolModels?: Record<string, ModelRefDto>;
   /** Group connection changes, merged per provider; a provider absent here keeps its table. */
   providers?: Record<string, ProviderConnectionUpdate>;
   models: ModelUpdateEntry[];
+}
+
+/**
+ * One tool-model binding as `GET …/models/tool-bindings` lists it: a plugin's declaration
+ * (`ToolModelBindingsProvider.bindings`) joined with the Project's `[tools]` entry.
+ */
+export interface ToolModelBindingView {
+  /** The `[tools]` key the plugin declared. */
+  key: string;
+  /** Its name, per language. */
+  title: { en: string; zh: string };
+  /** The plugin package that declares it. */
+  package: string;
+  /** The bound model; absent when none is, or the one bound is no longer configured. */
+  model?: ModelRefDto;
+  /** The configured models the binding accepts, in the models table's order. */
+  candidates: ModelRefDto[];
+}
+
+/** GET / PATCH `…/models/tool-bindings`: every declared binding, in load order. */
+export interface ToolModelBindingsResponse {
+  bindings: ToolModelBindingView[];
+}
+
+/** PATCH `…/models/tool-bindings`: bind one key, or with `model: null` unbind it. */
+export interface ToolModelBindingUpdate {
+  key: string;
+  model: ModelRefDto | null;
 }
 
 export interface ProviderConnectionUpdate {

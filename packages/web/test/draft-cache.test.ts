@@ -5,9 +5,10 @@
  * - A stored draft is validated field by field: bad JSON or a non-object reads as an empty
  *   draft, wrongly typed, unknown or half fields are dropped and the rest kept (the permission
  *   picks, the paired model references, the AI-prefill mark only as true, the approval mode's
- *   four values, the skills list); a legacy string model id is always dropped, and so is the
- *   evaluation mark (`source: "benchmark"`) an earlier release saved with an Evaluation Center
- *   draft, so the conversation such a draft creates is an ordinary one.
+ *   four values, the skills list, the switch names); a legacy string model id is always
+ *   dropped, and so is the evaluation mark (`source: "benchmark"`) an earlier release saved
+ *   with an Evaluation Center draft, so the conversation such a draft creates is an ordinary
+ *   one.
  * - Saved drafts read back equal; Project and Session drafts, and two users' drafts of the
  *   same Project, never read or overwrite each other (#68); a cleared draft reads as empty.
  * - Dropping the model pin keeps everything else; dropping the `[default_chat]`-seeded
@@ -157,6 +158,14 @@ describe("parseDraft (field-by-field validation)", () => {
     // Empty array / empty after filtering -> the whole field is dropped
     expect(parseDraft(JSON.stringify({ skills: [] }))).toEqual({});
     expect(parseDraft(JSON.stringify({ skills: [7, null] }))).toEqual({});
+  });
+
+  it("keeps the names of the switches a draft has on, and nothing that is not a name", () => {
+    expect(parseDraft(JSON.stringify({ promptHooks: ["plan", 3, null] }))).toEqual({
+      promptHooks: ["plan"],
+    });
+    expect(parseDraft(JSON.stringify({ promptHooks: "plan" }))).toEqual({});
+    expect(parseDraft(JSON.stringify({ promptHooks: [] }))).toEqual({});
   });
 });
 

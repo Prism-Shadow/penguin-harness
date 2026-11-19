@@ -32,6 +32,7 @@ import type { SessionManager } from "../../runtime/session-manager.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { Machines } from "../../machines/service.js";
 import { ModelBalances } from "../../services/model-balance.js";
+import { toolBindingKeyFault } from "../../services/tool-binding-key.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface ModelsRouteDeps {
@@ -276,6 +277,19 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
   }
   if (body.visionModel !== undefined) {
     req.visionModel = parseRef(body.visionModel, "visionModel");
+  }
+  if (body.toolModels !== undefined) {
+    const table = body.toolModels;
+    if (table === null || typeof table !== "object" || Array.isArray(table)) {
+      throw badRequest("toolModels must be an object keyed by binding.");
+    }
+    req.toolModels = Object.fromEntries(
+      Object.entries(table as Record<string, unknown>).map(([key, ref]) => {
+        const fault = toolBindingKeyFault(key);
+        if (fault !== null) throw badRequest(`toolModels: ${fault}.`);
+        return [key, parseRef(ref, `toolModels.${key}`)];
+      }),
+    );
   }
   if (body.providers !== undefined) {
     const providers = body.providers;
