@@ -201,7 +201,12 @@ describe("Agent zip export and import", () => {
     expect(
       names(pkg).filter((e) => !e.startsWith("source/agent_state/") && !app.includes(e)),
     ).toEqual([]);
-    expect(await fs.readFile(path.join(workbenchStateDir(t.root, P, "source", "desk"), "dev.lock"), "utf8")).toBe("runtime");
+    expect(
+      await fs.readFile(
+        path.join(workbenchStateDir(t.root, P, "source", "desk"), "dev.lock"),
+        "utf8",
+      ),
+    ).toBe("runtime");
     expect(
       names(await exportOf("source", "?workbenchData=0")).filter((e) => e.includes("/app/")),
     ).toEqual([]);
@@ -260,7 +265,10 @@ describe("Agent zip export and import", () => {
       }
       // A workbench the package still has keeps its runtime files.
       await expect(
-        fs.readFile(path.join(workbenchStateDir(t.root, P, "data_target", "desk"), "dev.lock"), "utf8"),
+        fs.readFile(
+          path.join(workbenchStateDir(t.root, P, "data_target", "desk"), "dev.lock"),
+          "utf8",
+        ),
       ).resolves.toBe("desk");
       const { backup } = (await res.json()) as AgentArchiveImportResponse;
       expect(await backedUp(backup!)).toContain("app/data/gone/notes.md");
