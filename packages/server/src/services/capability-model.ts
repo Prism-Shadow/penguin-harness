@@ -1,5 +1,10 @@
 import { routedClientType } from "@prismshadow/mmsp/credentials";
-import { AutoLLMClient } from "@prismshadow/mmsp";
+import {
+  AutoLLMClient,
+  EmptyResponseError,
+  IncompleteStreamError,
+  UpstreamError,
+} from "@prismshadow/mmsp";
 import type { UniConfig, UniMessage, UsageMetadata, WebData } from "@prismshadow/mmsp";
 import {
   getModel,
@@ -7,8 +12,9 @@ import {
   resolveEntryCredential,
   type ProjectConfig,
 } from "@prismshadow/penguin-core";
-import type { CapabilityInputMeter } from "../api/capabilities.js";
+import type { CapabilityInputMeter, CapabilityResult } from "../api/capabilities.js";
 import type { ModelRefDto } from "../api/types.js";
+import { catalogEntryFor } from "../model-catalog/catalog.js";
 import { HttpError } from "../http/errors.js";
 
 export interface ModelMedia {
@@ -29,7 +35,7 @@ function inputMeter(
   client: string | null,
   model: string,
   usage: UsageMetadata | null,
-  billableWebRequests: number,
+  billableWebRequests: number | undefined,
 ): CapabilityInputMeter | undefined {
   const quantity = usage?.prompt_tokens;
   if (quantity == null || !Number.isFinite(quantity) || quantity < 0) return;
@@ -39,7 +45,9 @@ function inputMeter(
       // The remote MMSP server chooses its own upstream adapter.
       return;
     case "deepseek-webtool":
-      return { unit: "billable_request", quantity: billableWebRequests };
+      return billableWebRequests === undefined
+        ? undefined
+        : { unit: "billable_request", quantity: billableWebRequests };
     case "deepseek-transcription":
       return { unit: "billed_audio_second", quantity };
     case "openai-transcription":
@@ -56,12 +64,46 @@ function inputMeter(
   }
 }
 
+function protocolUsage(value: unknown): UsageMetadata | null {
+  if (!value || typeof value !== "object") return null;
+  const fields = value as Partial<UsageMetadata>;
+  const usage: UsageMetadata = {
+    cached_tokens: fields.cached_tokens ?? null,
+    prompt_tokens: fields.prompt_tokens ?? null,
+    thoughts_tokens: fields.thoughts_tokens ?? null,
+    response_tokens: fields.response_tokens ?? null,
+  };
+  return Object.values(usage).every((n) => n === null || (Number.isSafeInteger(n) && n >= 0))
+    ? usage
+    : null;
+}
+
+function errorUsage(error: unknown): unknown {
+  if (error instanceof EmptyResponseError || error instanceof IncompleteStreamError)
+    return error.usageMetadata;
+  // A remote MMSP server wraps the same typed errors in an SSE error envelope.
+  if (
+    error instanceof UpstreamError &&
+    error.client === "MmspClient" &&
+    (error.errorType === "EmptyResponseError" || error.errorType === "IncompleteStreamError")
+  )
+    return error.error.usage_metadata;
+  return null;
+}
+
+export interface ModelRunContext {
+  signal: AbortSignal;
+  sessionId?: string;
+  capability?: CapabilityResult["capability"];
+  onUsage?: (usage: UsageMetadata, input?: CapabilityInputMeter) => void;
+}
+
 export async function runProjectModel(
   config: ProjectConfig,
   ref: ModelRefDto,
   messages: UniMessage[],
   options: UniConfig,
-  { signal, sessionId }: { signal: AbortSignal; sessionId?: string },
+  { signal, sessionId, capability, onUsage }: ModelRunContext,
 ): Promise<ModelOutput> {
   signal.throwIfAborted();
   const entry = getModel(config, { provider: ref.provider, model_id: ref.modelId });
@@ -80,40 +122,64 @@ export async function runProjectModel(
   const chunks: string[] = [];
   let size = 0;
   let billableWebRequests = 0;
-  const adapter = routedClientType(entry.model_id, connection.clientType);
+  const clientType = routedClientType(entry.model_id, connection.clientType);
+  const preset = catalogEntryFor(ref.provider, ref.modelId);
+  // A remote MMSP server selects its own adapter. A cataloged tool still has a
+  // known input unit; generic text operations use tokens even on a custom server.
+  const meterClient =
+    clientType === "mmsp"
+      ? preset?.capability && preset.capability === capability
+        ? routedClientType(ref.modelId, preset.clientType)
+        : capability === "t2t" || capability === "i2t" || capability === "voice-polish"
+          ? "text"
+          : null
+      : clientType;
+  const captureUsage = (raw: unknown, webRequests: number | undefined) => {
+    if (result.usage) return;
+    const usage = protocolUsage(raw);
+    if (!usage) return;
+    result.usage = usage;
+    result.inputMeter = inputMeter(meterClient, entry.model_id, usage, webRequests);
+    onUsage?.(usage, result.inputMeter);
+  };
   const requestConfig = sessionId ? { ...options, session_id: sessionId } : options;
-  for await (const event of client.streamingResponse({ messages, config: requestConfig, signal })) {
-    signal.throwIfAborted();
-    for (const item of event.content_items) {
-      if (item.type === "text.done") chunks.push(item.text);
-      if (item.type === "webtool.done") {
-        result.sources.push(...item.webdata);
-        // DeepSeek charges separately for each answer that contains a search result or page content.
-        if (
-          adapter === "deepseek-webtool" &&
-          item.webdata.some(
-            (source) =>
-              !entry.model_id.toLowerCase().includes("-fetch") || source.content.trim().length > 0,
+  try {
+    for await (const event of client.streamingResponse({
+      messages,
+      config: requestConfig,
+      signal,
+    })) {
+      if (event.event_type === "stop" && event.usage_metadata)
+        captureUsage(event.usage_metadata, billableWebRequests);
+      signal.throwIfAborted();
+      for (const item of event.content_items) {
+        if (item.type === "text.done") chunks.push(item.text);
+        if (item.type === "webtool.done") {
+          result.sources.push(...item.webdata);
+          // DeepSeek charges separately for each answer that contains a search result or page content.
+          if (
+            meterClient === "deepseek-webtool" &&
+            item.webdata.some(
+              (source) =>
+                !entry.model_id.toLowerCase().includes("-fetch") ||
+                source.content.trim().length > 0,
+            )
           )
-        )
-          billableWebRequests++;
-      }
-      if (item.type === "inline_data.done") {
-        size += item.data.byteLength;
-        if (size > 256 * 1024 * 1024)
-          throw new HttpError(502, "result_too_large", "The generated files exceed 256 MiB.");
-        result.media.push({ mimeType: item.mime_type, data: Buffer.from(item.data) });
+            billableWebRequests++;
+        }
+        if (item.type === "inline_data.done") {
+          size += item.data.byteLength;
+          if (size > 256 * 1024 * 1024)
+            throw new HttpError(502, "result_too_large", "The generated files exceed 256 MiB.");
+          result.media.push({ mimeType: item.mime_type, data: Buffer.from(item.data) });
+        }
       }
     }
-    if (event.event_type === "stop" && event.usage_metadata) {
-      const { cached_tokens, prompt_tokens, thoughts_tokens, response_tokens } =
-        event.usage_metadata;
-      result.usage = { cached_tokens, prompt_tokens, thoughts_tokens, response_tokens };
-    }
+  } catch (error) {
+    captureUsage(errorUsage(error), undefined);
+    throw error;
   }
   result.text = chunks.join("");
-  const meter = inputMeter(adapter, entry.model_id, result.usage, billableWebRequests);
-  if (meter) result.inputMeter = meter;
   return result;
 }
 

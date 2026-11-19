@@ -6,11 +6,16 @@
 import type { ProjectConfig } from "@prismshadow/penguin-core";
 import type { ContentItem } from "@prismshadow/mmsp";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runProjectModel } from "../src/services/capability-model.js";
+import { runProjectModel, type ModelRunContext } from "../src/services/capability-model.js";
 import { stubFetch } from "./fixtures/fetch.js";
 
 afterEach(() => vi.unstubAllGlobals());
-function run(modelId: string, clientType: string, item: ContentItem) {
+function run(
+  modelId: string,
+  clientType: string,
+  item: ContentItem,
+  context: Partial<ModelRunContext> = {},
+) {
   const config = {
     models: [{ provider: "fixture", model_id: modelId }],
     providers: {
@@ -22,7 +27,7 @@ function run(modelId: string, clientType: string, item: ContentItem) {
     { provider: "fixture", modelId },
     [{ role: "user", content_items: [item] }],
     {},
-    { signal: new AbortController().signal },
+    { signal: new AbortController().signal, ...context },
   );
 }
 
@@ -56,6 +61,40 @@ describe("tool input meters", () => {
     expect(measured.inputMeter).toEqual({ unit: "billed_audio_second", quantity: 4 });
     expect((await run("deepseek-asr", "deepseek-transcription", audio)).inputMeter).toBeUndefined();
   });
+  it.each(["EmptyResponseError", "IncompleteStreamError"] as const)(
+    "retains billed usage in a native %s once",
+    async (type) => {
+      const wire = stubFetch(() => {
+        const chunk = {
+          id: "meter",
+          object: "chat.completion.chunk",
+          created: 0,
+          model: "model",
+          choices: [
+            { index: 0, delta: {}, finish_reason: type === "EmptyResponseError" ? "stop" : null },
+          ],
+          usage: {
+            prompt_tokens: 9,
+            prompt_tokens_details: { cached_tokens: 2 },
+            completion_tokens: 8,
+            completion_tokens_details: { reasoning_tokens: 5 },
+          },
+        };
+        return new Response("data: " + JSON.stringify(chunk) + "\n\ndata: [DONE]\n\n", {
+          headers: { "content-type": "text/event-stream" },
+        });
+      });
+      const onUsage = vi.fn();
+      await expect(
+        run("model", "openai-chat", { type: "text.done", text: "hello" }, { onUsage }),
+      ).rejects.toMatchObject({ name: type });
+      expect(onUsage).toHaveBeenCalledExactlyOnceWith(
+        { cached_tokens: 2, prompt_tokens: 7, thoughts_tokens: 5, response_tokens: 3 },
+        { unit: "token", quantity: 7 },
+      );
+      expect(wire.calls).toHaveLength(1);
+    },
+  );
   it("keeps Fish speech bytes and DeepSeek speech characters distinct for the same non-ASCII input", async () => {
     stubFetch(
       () => new Response(new Uint8Array([0, 0]), { headers: { "content-type": "audio/pcm" } }),

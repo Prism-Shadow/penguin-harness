@@ -95,7 +95,7 @@ export function estimateToolCost(
     const physical = physicalUnits[primary.unit];
     // A seller bills in one unit. Counts that MMSP encodes into prompt_tokens and
     // the same number of seconds/characters/requests must never both incur a charge.
-    if (physical || primary.unit === "image" || primary.unit === "request") {
+    if (physical || (primary.unit === "image" && !projectPricing) || primary.unit === "request") {
       const [unit, divisor] = physical ?? [primary.unit, 1];
       const quantity = physical
         ? run.inputMeter?.unit === unit

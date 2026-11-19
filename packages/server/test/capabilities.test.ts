@@ -47,7 +47,7 @@ function addFixture(host: PluginHost, specifier: string, name: string, keys: str
 const bindings = Object.fromEntries(
   Object.entries(ids).map(([key, modelId]) => [key, { provider: "custom", modelId }]),
 );
-const usage = { cached_tokens: 0, prompt_tokens: 7, thoughts_tokens: null, response_tokens: 3 };
+const usage = { cached_tokens: 2, prompt_tokens: 7, thoughts_tokens: 5, response_tokens: 3 };
 const base = "/api/projects/default_project";
 const tools = base + "/capabilities";
 
@@ -76,6 +76,21 @@ describe("project model capabilities", () => {
         return;
       }
       const input = wire.messages[0].content_items[0].text;
+      if (
+        input === "EmptyResponseError" ||
+        input === "IncompleteStreamError" ||
+        input === "missing usage error"
+      ) {
+        const error = {
+          type: input === "missing usage error" ? "IncompleteStreamError" : input,
+          message: "The upstream response ended",
+          client: "OpenAIChatClient",
+          usage_metadata: input === "missing usage error" ? null : { ...usage, amount: 0.05 },
+        };
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.end("data: " + JSON.stringify({ error }) + "\n\ndata: [DONE]\n\n");
+        return;
+      }
       const key =
         wire.model === "gemini-3.1-flash-image"
           ? "image"
@@ -112,7 +127,7 @@ describe("project model capabilities", () => {
           role: "assistant",
           event_type: "stop",
           content_items: [],
-          usage_metadata: input === "no meter" ? null : usage,
+          usage_metadata: input === "no meter" ? null : { ...usage, amount: 0.02 },
           finish_reason: "stop",
         },
       ];
@@ -141,6 +156,9 @@ describe("project model capabilities", () => {
       models: ["gpt-6.2-sol", ...Object.values(ids)].map((modelId) => ({
         modelId,
         provider: "custom",
+        ...(modelId === "gpt-6.2-sol"
+          ? { pricing: { cacheRead: 1, cacheWrite: 2, output: 3 } }
+          : {}),
       })),
     });
     expect(configured.status).toBe(200);
@@ -201,12 +219,22 @@ describe("project model capabilities", () => {
     const audio = { data: wavBase64, mimeType: "audio/wav" };
     const upstream = stubFetch((call) =>
       call.headers.get("authorization") === "Bearer tokendance-test-key"
-        ? jsonResponse({ text: "Transcribed", duration_ms: 1 })
+        ? jsonResponse({ text: "Transcribed", duration_ms: 3200 })
         : jsonResponse({ error: { message: "Invalid TokenDance key" } }, 401),
     );
     try {
       const reply = await api.post(capabilities + "/stt/run", { audio });
-      expect(await reply.json()).toMatchObject({ model, text: "Transcribed" });
+      expect(await reply.json()).toMatchObject({
+        model,
+        text: "Transcribed",
+        usage: { prompt_tokens: 4 },
+        inputMeter: { unit: "billed_audio_second", quantity: 4 },
+      });
+      const usageReply = await api.get(capabilities + "/usage");
+      const [asr] = (
+        (await usageReply.json()) as { runs: { estimatedCost: { minimumUsd: number } }[] }
+      ).runs;
+      expect(asr!.estimatedCost.minimumUsd).toBeCloseTo(0.0004 / 7, 14);
       const cli = await api.post(capabilities + "/cli", { args: ["stt", "sample.wav"], audio });
       const started = (await cli.json()) as { result: { id: string } };
       expect(started).toMatchObject({ kind: "run", detached: false, result: { model } });
@@ -302,6 +330,13 @@ describe("project model capabilities", () => {
       runs: CapabilityResult[];
     };
     expect(history.runs).toHaveLength(7);
+    expect(history.runs[0]).toMatchObject({
+      capability: "voice-polish",
+      usage,
+      inputMeter: { unit: "token", quantity: 7 },
+      estimatedCost: { minimumUsd: 0.00004, maximumUsd: 0.00004 },
+    });
+    expect(history.runs[0]?.usage).toEqual(usage);
     expect(JSON.stringify(history)).not.toMatch(/local-test|Edited words|\bcost\b/);
   });
   it("sends no MMSP Session ID for standalone tools or transcript editing", async () => {
@@ -331,6 +366,28 @@ describe("project model capabilities", () => {
       usage: null,
       measurements: [{ unit: "request", quantity: 1 }],
     });
+  });
+  it("keeps four buckets on failed remote MMSP requests, including failed voice polishing", async () => {
+    const meter = { unit: "token", quantity: usage.prompt_tokens };
+    for (const error of ["EmptyResponseError", "IncompleteStreamError", "missing usage error"]) {
+      const reply = await api.post(base + "/voice-polish", { text: error, sessionId });
+      expect(reply.status).toBe(502);
+      const rows = (await (await api.get(tools + "/usage?sessionId=" + sessionId)).json()) as {
+        runs: CapabilityResult[];
+      };
+      expect(rows.runs[0]).toMatchObject({
+        status: "failed",
+        capability: "voice-polish",
+        measurements: [],
+        usage: error === "missing usage error" ? null : usage,
+      });
+      expect(rows.runs[0]?.inputMeter).toEqual(error === "missing usage error" ? undefined : meter);
+      expect(rows.runs[0]?.usage).toEqual(error === "missing usage error" ? null : usage);
+      expect(rows.runs[0]).toMatchObject({
+        estimatedCost:
+          error === "missing usage error" ? null : { minimumUsd: 0.00004, maximumUsd: 0.00004 },
+      });
+    }
   });
   it("cancels a background video and keeps the terminal result", async () => {
     const queued = await api.post(tools + "/video/run", { text: "wait", async: true, sessionId });
