@@ -129,6 +129,12 @@ export interface ActivityGroupProps {
   stateLabel?: string;
   /** A mark naming the activity in place of the status icon (an injected message's hook); a registry glyph's path or a node. */
   mark?: ReactNode;
+  /**
+   * A settled activity that needs the reader's attention, said by its `mark` (an attention-ink
+   * glyph whose tooltip and accessible name say why: a compaction that wrote no full summary). The
+   * head carries `data-attention`, so a theme that draws no status marks keeps this one.
+   */
+  attention?: boolean;
   /** A count as words ("3 steps"), mono after the title. Hidden below `sm`: the head must stay one uncut line on a phone. */
   count?: string;
   /** One line of status or result, where names go (servers, a failure's reason); mono, truncating, with the full text as its tooltip. */
@@ -163,6 +169,7 @@ export function ActivityGroup({
   title,
   stateLabel,
   mark,
+  attention = false,
   count,
   detail,
   startMs,
@@ -269,6 +276,7 @@ export function ActivityGroup({
           data-slot="head"
           data-kind={kind}
           data-state={hookState}
+          data-attention={attention ? "" : undefined}
         >
           <WallpaperBackdrop />
           {parts}
@@ -279,6 +287,7 @@ export function ActivityGroup({
           data-slot="head"
           data-kind={kind}
           data-state={hookState}
+          data-attention={attention ? "" : undefined}
         >
           {parts}
         </div>
