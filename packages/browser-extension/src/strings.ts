@@ -108,6 +108,19 @@ const en = {
   popupPaused: "Paused: agents cannot act in any tab until you resume.",
   popupSettings: "Settings",
   popupNotPaired: "No server is paired. Open Settings to pair one.",
+
+  /** The consent page a server's cookie import opens: who asks, what it means, Allow or Deny. */
+  consentTitle: "Copy this Chrome profile's cookies?",
+  consentBody: (origin: string) =>
+    `${origin} asks for the cookies of this Chrome profile, to sign its built-in browser in to the same sites. They go to that server only; Chrome keeps its own.`,
+  consentCaution:
+    "Cookies hold your sign-ins: whoever has them can act as you on those sites. Allow only if you just started an import in PenguinHarness.",
+  consentAllow: "Allow",
+  consentDeny: "Deny",
+  consentAllowed: "Allowed. The cookies are on their way; you can close this tab.",
+  consentDenied: "Denied. Nothing was sent.",
+  consentGone:
+    "This request is no longer open. Start the import again in PenguinHarness if you still want it.",
 };
 
 export type Strings = typeof en;
@@ -180,6 +193,17 @@ const zh: Strings = {
   popupPaused: "已暂停：恢复之前，Agent 无法在任何标签页中操作。",
   popupSettings: "设置",
   popupNotPaired: "还没有配对服务器。打开「设置」进行配对。",
+
+  consentTitle: "复制这个 Chrome 个人资料的 Cookie？",
+  consentBody: (origin) =>
+    `${origin} 请求读取这个 Chrome 个人资料的 Cookie，让它的内置浏览器登录同样的网站。Cookie 只发给这台服务器，Chrome 中的数据不变。`,
+  consentCaution:
+    "Cookie 保存着你的登录状态，拿到它的人可以在这些网站上以你的身份操作。只有在你刚刚从 PenguinHarness 发起导入时才选择允许。",
+  consentAllow: "允许",
+  consentDeny: "拒绝",
+  consentAllowed: "已允许，Cookie 正在发送，可以关闭此标签页。",
+  consentDenied: "已拒绝，没有发送任何内容。",
+  consentGone: "这次请求已经结束。如果仍要导入，请在 PenguinHarness 中重新发起。",
 };
 
 export function stringsFor(language: UiLanguage): Strings {

@@ -131,6 +131,7 @@ import type {
   Place,
 } from "./workspace-finder-model";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /**
  * The registry has one storage drawing, the drive, so a fixed disk, a volume and a Linux root
@@ -656,12 +657,14 @@ export function WorkspaceFinder({
           (err.code === "shell_unreachable" || err.code === "desktop_shell_only")
         )
           setShellUnreachable(true);
-        else toastApiError(err);
+        else toastApiError(err, { privatePaths: [target] });
       });
   };
 
   const openSystemSettings = (pane: DesktopPrivacyPane) => {
-    void api.openPrivacySettings(pane).catch((err: unknown) => toastApiError(err));
+    void api
+      .openPrivacySettings(pane)
+      .catch((err: unknown) => toastApiError(err, { privatePaths: [view.path] }));
   };
 
   /** The address bar becomes a path field holding the folder on screen, ready to be typed over. */
@@ -1564,7 +1567,12 @@ export function WorkspaceFinder({
           </p>
           <div data-slot="body">
             <p className="mt-1 text-xs leading-5">
-              {denied !== null ? f[denied.text] : apiErrorText(view.error)}
+              {denied !== null
+                ? f[denied.text]
+                : failureNode(view.error, {
+                    what: "a folder could not be listed",
+                    privatePaths: [view.path],
+                  })}
             </p>
             <p className="mt-1 break-all font-mono text-xs opacity-80">{view.path}</p>
           </div>

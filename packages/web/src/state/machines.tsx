@@ -40,9 +40,9 @@ import {
   forgetCatalogs,
   inCatalogScope,
 } from "../lib/catalog-storage";
-import { apiErrorText } from "../lib/api-error";
 import { useAuth } from "./auth";
 import { useProject } from "./project";
+import { failureNode } from "../lib/failure";
 
 const changeListeners = new Set<() => void>();
 
@@ -64,8 +64,8 @@ export interface MachinesAccount {
   state: MachinesResponse | null;
   /** The first read has answered — or there is none to make for this user. */
   settled: boolean;
-  /** The last read's failure, in words; null when it answered. */
-  error: string | null;
+  /** The last read's failure, in words and with its report for a failure; null when it answered. */
+  error: ReactNode;
   /** Reads the list again now. */
   refresh: () => Promise<void>;
   /** Takes an answer a request already brought: every machines POST answers with the list. */
@@ -91,7 +91,7 @@ export function MachinesProvider({ children }: { children: ReactNode }) {
   const scope = admin && projectId !== null ? catalogScope(projectId, user.userId) : null;
   const [state, setState] = useState<MachinesResponse | null>(null);
   const [settled, setSettled] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   /** The scope the current answers are about: a late one about another is dropped. */
   const current = useRef<string | null>(null);
   /** The read in flight and the scope it asks about, and whether another is owed after it. */
@@ -131,7 +131,9 @@ export function MachinesProvider({ children }: { children: ReactNode }) {
         } catch (err) {
           if (current.current !== scope) return;
           if (catalogAccessDenied(err)) adopt(null);
-          setError(apiErrorText(err));
+          setError(
+            failureNode(err, { what: "the machines could not be read", mask: { hosts: true } }),
+          );
         } finally {
           if (current.current === scope) setSettled(true);
         }

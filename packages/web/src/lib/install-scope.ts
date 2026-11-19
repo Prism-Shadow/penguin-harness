@@ -446,6 +446,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     why: "A reply's A2UI form or multi-select answers in progress, keyed by Session id: a new root has no such Session.",
   },
   {
+    kind: "family",
+    key: "penguin.promptModes.",
+    scope: "install",
+    why: "The composer switches a Session has on (hook package names), keyed by user and Session id: a new root has no such Session.",
+  },
+  {
     kind: "exact",
     key: "penguin.prefsImported",
     scope: "install",

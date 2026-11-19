@@ -2,15 +2,17 @@
  * Test double for the chrome backend's far side: the PenguinHarness Browser extension, as the
  * socket the server's ExtensionLink holds (ExtensionSocket). It speaks the extension's side of
  * the protocol the way the real one does — answers hello, tabs, ping, open-tab, close-tab,
- * activate-tab and cdp, pushes tab events, and fails a released tab's commands with
+ * activate-tab, cdp and read-cookies, pushes tab events, and fails a released tab's commands with
  * `tab_released` — over JSON text frames, so the link's own parsing runs. Its CDP answers come
- * from a handler each test supplies.
+ * from a handler each test supplies; `read-cookies` hands over `cookieJar` when the user allows
+ * it on the consent page (`consent`).
  *
  * extension-link.test.ts drives the real `ws` socket instead; this one is for the scenarios
  * above the wire (the runtime, the routes).
  */
 import type {
   BuiltinBrowserTab,
+  ChromeExtensionCookie,
   DesktopBrowserCommand,
   DesktopBrowserCommandMessage,
   DesktopBrowserEvent,
@@ -29,6 +31,12 @@ export class FakeChrome implements ExtensionSocket {
   cdp: CdpHandler = () => ({});
   /** False plays an extension that stopped answering pings. */
   answersPings = true;
+  /** This Chrome profile's cookies, as chrome.cookies reads them. */
+  cookieJar: ChromeExtensionCookie[] = [];
+  /** What the user answers on the consent page `read-cookies` opens. */
+  consent: "allow" | "deny" = "allow";
+  /** False plays an extension from before `read-cookies`. */
+  readsCookies = true;
   /** `tabs` answers held back by {@link holdTabs}, sent when it is released. */
   private heldTabs: Array<() => void> | null = null;
   private nextTabId = 100;
@@ -140,6 +148,12 @@ export class FakeChrome implements ExtensionSocket {
         return;
       case "activate-tab":
         this.reply(msg.id, { ok: true, result: {} });
+        return;
+      case "read-cookies":
+        if (!this.readsCookies) this.reply(msg.id, { ok: false, error: "unknown_op" });
+        else if (this.consent === "deny")
+          this.reply(msg.id, { ok: false, error: "import_declined" });
+        else this.reply(msg.id, { ok: true, result: { cookies: this.cookieJar } });
         return;
       case "cdp": {
         if (this.released.has(command.tabId)) {
