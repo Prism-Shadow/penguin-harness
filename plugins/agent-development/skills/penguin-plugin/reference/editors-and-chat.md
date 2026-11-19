@@ -18,6 +18,7 @@ Put a single activity row directly below the user message that started the turn.
 
 ## Try it in the app
 
-- Open a recent file, edit inside the embedded editor, press the platform save shortcut and immediately reopen it. Check the exact last edit. Interrupt a save and retry. Import a supported file and open each exported format in its intended reader.
+- Try the task you used for comparison with a saved item, then repeat it at phone width. For a presentation app inspired by PowerPoint, preview the slides in a template, create a deck, change a slide and its speaker notes, save and reopen to check both changes. For a reading app, find a book on the shelf, read to a particular paragraph, then reopen it to check the resume position.
+- Edit inside the embedded editor, press the platform save shortcut and immediately reopen the file. Check the exact last edit. Interrupt a save and retry. Import a supported file and open each exported format in its intended reader.
 - With two documents and two configured chat models, send a first message, switch models in one document and send a follow-up. Verify the provider and model on the actual request. Reopen both documents and check the first conversation's history and the second document's model.
 - Switch the app between English and Chinese with a menu or chat pane open. Check labels, errors and save status in both languages. At phone width, open the file menu, use the picker and expand a tool step with a long path. Check that each action remains reachable by touch and keyboard and the active theme keeps text and focus visible.
