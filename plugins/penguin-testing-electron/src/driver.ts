@@ -380,7 +380,9 @@ export async function openSettings(
   options: { section?: "plugins" } = {},
 ): Promise<void> {
   const window = instance.window;
-  const accountButton = window.locator("button[aria-haspopup='menu']").filter({ hasText: "admin" });
+  // The sidebar's account row is the only button on the page that opens a menu; its
+  // accessible name is the account's ("admin" — the seeded admin this instance runs).
+  const accountButton = window.getByRole("button", { name: "admin" });
   if ((await accountButton.count()) === 0) {
     throw new Error("openSettings: the sidebar's account button was not found");
   }
@@ -390,8 +392,8 @@ export async function openSettings(
   const dialog = window.getByRole("dialog", { name: "Settings" });
   await dialog.waitFor({ state: "visible" });
   if (options.section === undefined) return;
-  // The rail row is a nav link named by its section; the pane heading follows it.
-  const row = dialog.getByRole("link", { name: SECTION_TITLES[options.section] }).first();
+  // The rail row is a nav button named by its section; the pane heading follows it.
+  const row = dialog.getByRole("button", { name: SECTION_TITLES[options.section] }).first();
   await row.click();
   await dialog.getByRole("heading", { name: SECTION_TITLES[options.section] }).waitFor({
     state: "visible",
