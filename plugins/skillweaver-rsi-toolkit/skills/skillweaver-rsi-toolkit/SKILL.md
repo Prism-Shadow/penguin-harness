@@ -1,7 +1,7 @@
 ---
 name: skillweaver-rsi-toolkit
 description: Run SkillWeaver (Zheng et al. 2025) on an agent - let it explore a website on its own, propose skills worth having, practise them, and hone the successful ones into tested, reusable API scripts in a skill library, then freeze the library and measure it on a published Benchmark of tasks on that site. Use when asked to make an agent better at a website by learning skills or APIs from self-directed practice.
-version: 2026.11.20.5
+version: 2026.11.20.6
 ---
 
 # SkillWeaver
@@ -80,7 +80,7 @@ Follow `references/initialization.md`. It creates the empty skill library Skill 
 
 ## Measure
 
-With a `benchmark_id`, every measurement is a full case × `runs` matrix through `references/evaluation.md`, following its controller section, and lands in that Benchmark's `scoreboard.yaml`. Measure H1 before the first practice cell. A prior record is reusable only when its State version, case set, runtime and runs all match. Practice cells are never scored and never enter a scoreboard. Before and after each measurement matrix, record `TOOL fingerprint STATE`. The Target must keep its State read-only, including memory, throughout measurement. If the fingerprint changes, retain the records, mark the matrix invalid, and stop. Review the Target Traces for direct access to the website outside `penguin browser` or its registered API scripts. Preserve any affected cells and invalidate the matrix if that access occurred.
+With a `benchmark_id`, every measurement is a full case × `runs` matrix through `references/evaluation.md`, following its controller section, and lands in that Benchmark's `scoreboard.yaml`. Launch the evaluation worker with `run_in_background: true` and retain its `subagent_id` so the same worker can resend a malformed result. Wait for it to finish before launching the next cell. Measure H1 before the first practice cell. A prior record is reusable only when its State version, case set, runtime and runs all match. Practice cells are never scored and never enter a scoreboard. Before and after each measurement matrix, record `TOOL fingerprint STATE`. The Target must keep its State read-only, including memory, throughout measurement. If the fingerprint changes, retain the records, mark the matrix invalid, and stop. Review the Target Traces for direct access to the website outside `penguin browser` or its registered API scripts. Preserve any affected cells and invalidate the matrix if that access occurred.
 
 ### The same site for both measurements
 
