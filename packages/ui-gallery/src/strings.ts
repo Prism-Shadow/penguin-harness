@@ -511,7 +511,7 @@ export const zh = {
       buttons: {
         title: "按钮",
         description:
-          "五种变体、五档尺寸与图标按钮，禁用与加载中，链接、行内图形操作与键盘提示，以及可拖到边缘、可收起的悬浮球。",
+          "五种变体、五档尺寸与图标按钮，禁用与加载中，链接、行内图形操作、行内图标按钮与键盘提示，语音输入按钮与麦克风音量，以及可拖到边缘、可收起的悬浮球。",
       },
       inputs: {
         title: "输入与表单",
@@ -666,6 +666,29 @@ export const zh = {
       ballShow: "显示退出按钮",
       ballReadout: (side: "left" | "right", percent: number, tucked: boolean, presses: number) =>
         `${side === "left" ? "左缘" : "右缘"}，高度 ${percent}%${tucked ? "，已收起" : ""} · 点击 ${presses} 次`,
+      inlineIcon: "行内图标按钮",
+      inlineIconHint:
+        "文字行里的小图标操作：静止时是淡色图形，悬停时填底。名称即无障碍名称与悬停提示；忙碌时禁用。",
+      inlineReplyStats: "1.2k Token · 4.8 秒",
+      inlineRead: "朗读回复",
+      inlineFork: "从这里分叉",
+      inlineBusy: "正在准备",
+      record: "语音输入按钮",
+      recordHint:
+        "排在发送按钮左侧，整个录音过程都不挪位：空闲是麦克风，录音中按一下完成，转写时转圈等待。",
+      recordIdle: "语音输入",
+      recordRecording: "完成录音",
+      recordWaiting: "正在转写",
+      meter: "麦克风音量",
+      meterHint:
+        "录音时的读数：时长与最近的音量，一次读数一根条。减少动态效果时以文字代替跳动的条；读不到音量时只说明正在录音。",
+      meterLevel: "麦克风音量",
+      meterQuiet: "安静",
+      meterSound: "收到声音",
+      meterRecording: "正在录音",
+      meterLive: "说话中",
+      meterReduced: "减少动态效果",
+      meterUnavailable: "读不到音量",
     },
     inputs: {
       basics: "文本框",

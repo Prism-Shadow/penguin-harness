@@ -267,9 +267,13 @@ export * from "./components/chat/transcript-note/transcript-note";
 export * from "./components/chat/subagent-chip/subagent-chip";
 
 // W6-B — the composer: its card, chip row, toolbar triggers, action button and slash list, the
-// toolbar select, the context ring, the model picker, and the chips with remove buttons.
+// dictation button and its level meter, the toolbar select, the context ring, the model picker,
+// and the chips with remove buttons.
 export * from "./components/chat/composer/composer";
 export * from "./components/chat/composer/toolbar-trigger";
+export * from "./components/chat/composer/record-button";
+export * from "./components/chat/composer/microphone-meter";
+export * from "./components/chat/composer/microphone-levels";
 export * from "./components/chat/menu-select/menu-select";
 export * from "./components/chat/context-ring/context-ring";
 export * from "./components/chat/model-select/model-select";
