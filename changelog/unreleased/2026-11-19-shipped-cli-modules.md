@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** refactor
 - **Scope:** `cli`, `server`, `core`, `library`
+- **PR:** [#1645](https://github.com/Prism-Shadow/penguin-harness/pull/1645)
 
 [中文版](2026-11-19-shipped-cli-modules.zh.md)
 
