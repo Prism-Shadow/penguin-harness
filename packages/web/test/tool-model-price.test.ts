@@ -46,6 +46,17 @@ describe("provider-native tool prices", () => {
     expect(toolModelQuote({ provider: "google", modelId: "gemini-omni-1.2-flash" })?.primary).toBe(
       "US$12/百万视频输出 Token",
     );
-    expect(toolModelQuote({ provider: "jina", modelId: "jina-fetch" })?.published).toBe(false);
+    const jina = { provider: "jina", modelId: "jina-fetch" };
+    expect(toolModelQuote(jina)?.primary).toBe("MMSP 参考价 US$0.05/百万输入 Token");
+    expect(
+      toolModelQuote({
+        ...jina,
+        effective: { baseUrl: "https://s.jina.ai", clientType: "jina-webtool" },
+      })?.published,
+    ).toBe(false);
+    expect(toolModelQuote({ ...jina, referencePriceEligible: false })?.published).toBe(false);
+    expect(toolModelQuote({ ...jina, provider: "custom", chatEligible: false })?.published).toBe(
+      false,
+    );
   });
 });

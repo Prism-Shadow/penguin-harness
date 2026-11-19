@@ -9,14 +9,26 @@ interface ModelRef {
   provider: string;
   modelId: string;
   chatEligible?: boolean | undefined;
+  referencePriceEligible?: false | undefined;
+  baseUrl?: string | undefined;
+  clientType?: string | undefined;
+  effective?: { baseUrl?: string | undefined; clientType?: string | undefined } | undefined;
 }
 
 export function toolModelQuote(model: ModelRef, now = new Date()) {
   const entry = catalogEntryFor(model.provider, model.modelId);
-  const pricing = toolPricingFor(entry);
+  const pricing =
+    entry?.toolPricing?.source === "mmsp" && model.referencePriceEligible === false
+      ? undefined
+      : toolPricingFor(entry, model.effective ?? model);
   if (!pricing) {
     if (!entry?.capability && model.chatEligible !== false) return undefined;
-    return { primary: S.models.sellerPricing, details: [S.models.sellerPricing], published: false };
+    return {
+      primary: S.models.sellerPricing,
+      details: [S.models.sellerPricing],
+      published: false,
+      reference: false,
+    };
   }
   const discount =
     pricing.discount &&
@@ -36,5 +48,7 @@ export function toolModelQuote(model: ModelRef, now = new Date()) {
     return `${amount}/${unit}`;
   };
   const details = pricing.rates.map(label);
-  return { primary: details[0]!, details, published: true };
+  const reference = pricing.source === "mmsp";
+  const primary = reference ? S.models.mmspReferenceAmount(details[0]!) : details[0]!;
+  return { primary, details, published: true, reference };
 }

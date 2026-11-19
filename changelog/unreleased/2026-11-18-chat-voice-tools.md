@@ -22,3 +22,5 @@ Reading a reply again uses its saved audio for that listener, Session, text and 
 On a dedicated model’s card, select it as the Project default for that operation. Choosing another speech recognition model replaces the previous one and keeps the chat model. If an older draft names a tool model, it opens with the project’s chat model or the first available chat model. When none is available, the draft offers a link to Models and keeps your message.
 
 The model library and the tool picker show the provider’s price in its original currency and billing unit, including any current offer. Open a model to see the input and output rates separately.
+
+Jina Search and Reader show the MMSP reference rate on their official endpoints, with a link to the provider’s account plans.

@@ -2805,6 +2805,8 @@ export const zh = {
     /** Card's right-edge figure: what this model has spent over its whole life. The unit stays English and is abbreviated the way the rest of the page abbreviates it — `tok/s`, `/M tok`. */
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "该模型累计消耗的 Token（不限时间范围）",
+    mmspReference: "MMSP 参考价",
+    mmspReferenceAmount: (rate: string) => `MMSP 参考价 ${rate}`,
     publishedPrices: "供应商报价",
     configuredTokenPrices: "已配置的缓存命中、缓存未命中和输出价格（每百万 Token）",
     providerPlans: "查看供应商套餐",

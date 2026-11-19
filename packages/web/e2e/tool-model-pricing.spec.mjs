@@ -4,6 +4,16 @@ import { setAccountPrefs } from "./account-prefs.mjs";
 
 const base = process.env.BASE_URL;
 const models = [
+  { provider: "jina", modelId: "jina-search", displayName: "Jina Search" },
+  { provider: "jina", modelId: "jina-fetch", displayName: "Jina Reader" },
+  {
+    provider: "custom",
+    modelId: "jina-search",
+    displayName: "Private Search",
+    clientType: "jina-webtool",
+    baseUrl: "https://proxy.example",
+    apiKey: "local-browser-test",
+  },
   { provider: "deepseek", modelId: "deepseek-asr", displayName: "DeepSeek ASR" },
   {
     provider: "tokendance",
@@ -17,7 +27,7 @@ const models = [
 ];
 
 for (const lang of ["zh", "en"]) {
-  test(`model cards and the shared tool picker show provider-specific ASR rates in ${lang}`, async ({
+  test(`model cards and the shared tool picker show native ASR tariffs and route-specific Jina estimates in ${lang}`, async ({
     page,
   }) => {
     const user = "toolprices" + lang;
@@ -29,7 +39,7 @@ for (const lang of ["zh", "en"]) {
       data: { models, defaultModel: { provider: "google", modelId: "gemini-4-carbon" } },
     });
     expect(put.ok(), await put.text()).toBeTruthy();
-    for (const provider of ["deepseek", "tokendance"]) {
+    for (const provider of ["deepseek", "tokendance", "jina"]) {
       const key = await page.request.put(
         base + "/api/projects/" + project + "/models/providers/" + provider,
         { data: { apiKey: "local-browser-test" } },
@@ -81,6 +91,48 @@ for (const lang of ["zh", "en"]) {
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
     await snapshot("shared-picker");
+    await page.goto(base + "/models");
+    const lookup = page.getByPlaceholder(/搜索模型|Search models/);
+    await lookup.fill("jina");
+    const reference =
+      lang === "zh"
+        ? "MMSP 参考价 US$0.05/百万输入 Token"
+        : "MMSP reference · US$0.05/1M input tokens";
+    const missing = lang === "zh" ? "价格以供应商为准" : "See provider pricing";
+    const card = (label) =>
+      page
+        .locator('[data-slot="card"]')
+        .filter({ has: page.locator('[data-slot="name"]').filter({ hasText: label }) });
+    await expect(card("Jina Search")).toContainText(reference);
+    await expect(card("Jina Reader")).toContainText(reference);
+    await expect(card("Private Search")).toContainText(missing);
+    await card("Jina Search").getByText("Jina Search", { exact: true }).click();
+    const dialog = page.getByRole("dialog").last();
+    await dialog.getByRole("button", { name: /^(详细配置|Details)$/ }).click();
+    await expect(
+      dialog.getByRole("link", { name: /查看供应商套餐|View provider plans/ }),
+    ).toHaveAttribute("href", "https://jina.ai/api-dashboard/pricing/");
+    await page.goto(base + "/models");
+    await lookup.fill("jina");
+    await card("Jina Search").scrollIntoViewIfNeeded();
+    await snapshot("jina-model-cards");
+    await page
+      .getByRole("button", { name: /^(Default multimodal models|默认多模态模型)$/ })
+      .click();
+    await page
+      .getByRole("dialog")
+      .first()
+      .getByRole("button", { name: /^(Web search|网页搜索)$/ })
+      .click();
+    const webTool = page.getByRole("dialog").last();
+    await webTool.getByRole("combobox").fill("jina-search");
+    await expect(webTool.getByRole("option").filter({ hasText: "Jina Search" })).toContainText(
+      reference,
+    );
+    await expect(webTool.getByRole("option").filter({ hasText: "Private Search" })).toContainText(
+      missing,
+    );
+    await snapshot("jina-shared-picker");
     await page.goto(base + "/models");
     await page
       .getByRole("button", { name: /Add new models|同步新增模型/i })

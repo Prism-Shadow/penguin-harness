@@ -2617,6 +2617,8 @@ export const en: Strings = {
     visionModelBadge: "Proxy vision",
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "Tokens this model has used, all time",
+    mmspReference: "MMSP reference rates",
+    mmspReferenceAmount: (rate: string) => `MMSP reference · ${rate}`,
     publishedPrices: "Provider rates",
     configuredTokenPrices:
       "Configured cache read, cache write and output prices per million tokens",

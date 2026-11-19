@@ -406,6 +406,7 @@ interface DetectOutcome {
 /** Local edit state for one model row (string-typed for form use; parsed uniformly on save). */
 export interface RowState {
   chatEligible?: boolean;
+  referencePriceEligible?: false;
   /**
    * Vendor id (entry field, i.e. group membership): a value not in the catalog list is a
    * user-defined group, kept **verbatim** — an operation that only edits the key,
@@ -659,6 +660,7 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
     modelId: m.modelId,
     original: { provider: m.provider, modelId: m.modelId },
     ...(m.chatEligible === false ? { chatEligible: false } : {}),
+    ...(m.referencePriceEligible === false ? { referencePriceEligible: false } : {}),
     vision: m.vision !== false,
     contextWindow: m.contextWindow !== undefined ? String(m.contextWindow) : "",
     maxTokens: m.maxTokens !== undefined ? String(m.maxTokens) : "",
@@ -3002,16 +3004,6 @@ function ModelDialog({
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
   const modelId = form.modelId.trim();
-  const sellerQuote = toolModelQuote({
-    provider: form.provider,
-    modelId,
-    chatEligible:
-      row?.provider === form.provider && row.modelId === modelId ? row.chatEligible : undefined,
-  });
-  const pricedByToken =
-    !sellerQuote?.published || !!catalogEntryFor(form.provider, modelId)?.imagePricing;
-  const showTokenPriceInputs =
-    pricedByToken || !!(form.cacheRead || form.cacheWrite || form.output);
   /** The loaded row's running promotion, explained under the price fields. */
   const promotion = fractionOff(row?.discount);
   /**
@@ -3023,6 +3015,25 @@ function ModelDialog({
   const inherited = inheritedConnection(form.provider, form.modelId, group, form.baseUrl);
   /** The protocol the draft is used with: its own, else the inherited one ("" = routed by id). */
   const effectiveClientType = form.clientType.trim() || inherited.clientType || "";
+
+  const sameRow = row?.provider === form.provider && row.modelId === modelId;
+  const sellerQuote = toolModelQuote({
+    provider: form.provider,
+    modelId,
+    chatEligible: sameRow ? row.chatEligible : undefined,
+    referencePriceEligible:
+      sameRow && row.baseUrl === form.baseUrl && row.clientType === form.clientType
+        ? row.referencePriceEligible
+        : undefined,
+    clientType: effectiveClientType,
+    baseUrl: form.baseUrl.trim() || inherited.baseUrl,
+  });
+  const pricedByToken =
+    !sellerQuote?.published ||
+    sellerQuote.reference ||
+    !!catalogEntryFor(form.provider, modelId)?.imagePricing;
+  const showTokenPriceInputs =
+    pricedByToken || !!(form.cacheRead || form.cacheWrite || form.output);
 
   // Read from the live form, not the saved row, so editing the upstream id, the protocol or
   // the base URL updates the answer as it is typed.
@@ -3938,12 +3949,14 @@ function ModelDialog({
         {sellerQuote && (
           <div className="text-xs text-fg-muted">
             {sellerQuote.published && (
-              <p className="font-medium text-fg">{S.models.publishedPrices}</p>
+              <p className="font-medium text-fg">
+                {sellerQuote.reference ? S.models.mmspReference : S.models.publishedPrices}
+              </p>
             )}
             {sellerQuote.details.map((rate) => (
               <p key={rate}>{rate}</p>
             ))}
-            {!sellerQuote.published && form.provider === "jina" && (
+            {sellerQuote.reference && (
               <a
                 className="underline"
                 target="_blank"
