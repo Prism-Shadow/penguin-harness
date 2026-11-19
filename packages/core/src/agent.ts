@@ -842,11 +842,12 @@ export class Agent {
    *
    * The resume source is the Session's **latest-index** Trace file: the Session-fixed facts
    * are read from its `session_meta` (the Workspace carries over from the original Session and
-   * cannot be changed), the model is the one that file's `session_meta` records — a model switch
-   * opens its new context's file at once, so the latest file always names the model the Session
-   * runs on — and the context is assembled from the current Agent State, keeping the recorded
-   * system prompt when the file's context is still open (see below). A resume never changes the
-   * model on its own; switching goes through `Session.switchModel`. The replayed,
+   * cannot be changed), the model is the one that file's `session_meta` records — or, when the
+   * file ends with a completed switch's `session_update` that no request followed, the model it
+   * names, which the next context opens on — and the context is assembled from the current Agent
+   * State, keeping the recorded system prompt when the file's context is still open (see
+   * below). A resume never changes the model on its own; switching goes through
+   * `Session.switchModel`. The replayed,
    * already-committed history is injected once via MMSP's
    * setHistory (used only on resume); any leftover input is rebuilt as carry-over (paired
    * fallback placeholders are synthesized in memory only, never written to the Trace).
