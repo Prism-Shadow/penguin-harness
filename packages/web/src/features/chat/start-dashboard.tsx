@@ -114,7 +114,7 @@ export function StartDashboard({
           <Card
             data-slot="counts"
             padding="none"
-            className="col-span-2 row-start-3 mt-4 justify-self-start overflow-hidden @2xl:col-span-1 @2xl:col-start-3 @2xl:row-start-1 @2xl:mt-0 @2xl:ml-3"
+            className="col-span-2 row-start-3 mt-4 justify-self-start @2xl:col-span-1 @2xl:col-start-3 @2xl:row-start-1 @2xl:mt-0 @2xl:ml-3"
           >
             {/* The hairlines between the counts are the list's own dividers. Three equal columns,
                 each as wide as the widest count needs, so the panel reads as one even strip. */}
@@ -306,10 +306,10 @@ function StatCount({
   value: number | null;
 }) {
   return (
-    <li data-slot="count" className="min-w-0">
+    <li data-slot="count" data-clip-surface="" className="min-w-0">
       <Link
         to={to}
-        className="flex min-w-0 flex-col px-3 py-1.5 transition-colors duration-150 hover:bg-control-hover focus-visible:-outline-offset-2"
+        className="flex min-w-0 flex-col rounded-[inherit] px-3 py-1.5 transition-colors duration-150 hover:bg-control-hover focus-visible:-outline-offset-2"
       >
         <span
           className={`flex items-center ${ICON_GAP.row} whitespace-nowrap text-xs text-fg-muted`}

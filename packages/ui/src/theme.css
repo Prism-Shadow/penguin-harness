@@ -623,6 +623,12 @@
    layer, or in a later one, and add to these. Nothing in this block names a theme: it is the
    foundation every pack starts from, whatever its base. */
 @layer ui-base {
+  /* The edge and its child paint share one border box. Opt in only for a closed
+     surface. Scroll containers and overhanging handles keep their own positioning and overflow. */
+  [data-clip-surface] {
+    overflow: hidden;
+  }
+
   .ui-eyebrow {
     font-family: var(--ui-h6-font);
     font-size: var(--ui-h6-size);
