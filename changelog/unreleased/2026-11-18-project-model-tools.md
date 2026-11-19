@@ -22,3 +22,5 @@ Project tool models share a single `[tools]` table. The vision proxy uses `i2t`,
 Project owners can edit the instructions for polishing voice transcripts and restore the built-in prompt at any time. For supported models, transcript editing asks the model to skip reasoning or use its lowest supported level.
 
 A dedicated image, video, speech or web tool can be assigned to its own operation. New chats use a model that supports conversation.
+
+The tool catalog also includes seller rates for transcription, speech synthesis, image and video generation, and web requests in their original billing units.
