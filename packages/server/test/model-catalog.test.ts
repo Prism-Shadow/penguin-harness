@@ -290,29 +290,28 @@ describe("model-catalog", () => {
   });
 
   it.each([
-    ["google", "gemini-nano-banana-2.1"],
-    ["openrouter", "google/gemini-nano-banana-2.1"],
-  ])("the %s Nano Banana preset returns the requested image", async (provider, model) => {
+    [
+      "google",
+      "gemini-nano-banana-2.1",
+      /^https:\/\/generativelanguage\.googleapis\.com\/.*\/interactions$/,
+    ],
+    [
+      "openrouter",
+      "google/gemini-nano-banana-2.1",
+      /^https:\/\/openrouter\.ai\/api\/v1\/images\/generations$/,
+    ],
+  ])("the %s Nano Banana preset returns the requested image", async (provider, model, endpoint) => {
     const png = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN4sAAAAASUVORK5CYII=",
       "base64",
     );
-    const fake = stubFetch((call) => {
-      const req = JSON.parse(call.body);
-      expect(req.model).toBe(model);
+    // The provider's answer only; what MMSP puts in the request body is MMSP's to test.
+    const fake = stubFetch(() => {
       if (provider === "openrouter") {
-        expect(call.url).toBe("https://openrouter.ai/api/v1/images/generations");
-        expect(req).toMatchObject({ prompt: "Draw a dot", size: "1024x1024" });
         return Response.json({
           data: [{ b64_json: png.toString("base64"), media_type: "image/png" }],
         });
       }
-      expect(new URL(call.url).pathname).toMatch(/\/interactions$/);
-      expect(req.response_format).toContainEqual({
-        type: "image",
-        image_size: "1K",
-        aspect_ratio: "1:1",
-      });
       const events = [
         { event_type: "step.start", index: 0, step: { type: "model_output" } },
         {
@@ -345,6 +344,8 @@ describe("model-catalog", () => {
           if (item.type === "inline_data.done") images.push(item.data);
       }
       expect(fake.calls).toHaveLength(1);
+      const url = new URL(fake.calls[0]!.url);
+      expect(url.origin + url.pathname).toMatch(endpoint);
       expect(images.map((bytes) => Buffer.from(bytes))).toEqual([png]);
     } finally {
       vi.unstubAllGlobals();
@@ -370,11 +371,9 @@ describe("model-catalog", () => {
       "Qwen/Qwen3.8-Flash-Next",
     ]);
     for (const m of MODEL_CATALOG) {
-      if (m.capability) {
-        // Media and web tools do not have a conversational context limit or a chat tariff.
-        expect(m.pricing).toBeUndefined();
-        continue;
-      }
+      // A tool model (image generation) is priced and sized by the model-tool work, not by
+      // these chat-row rules.
+      if (m.capability) continue;
       if (m.pricing === undefined) {
         expect(UNPRICED.has(m.modelId), m.modelId).toBe(true);
       } else if (
