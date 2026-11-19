@@ -384,13 +384,31 @@ export function AgentsPage() {
     [agents, machineLists, matches],
   );
   /**
+   * The system Agent, pinned above the list whichever way it is grouped: no author made it and no
+   * organization employs it, so it is in no group and no group's count. The rest is the list.
+   */
+  const systemRows = useMemo(
+    () => shownAgents.filter((row) => isSystemAgent(row.agent)),
+    [shownAgents],
+  );
+  const listedAgents = useMemo(
+    () => shownAgents.filter((row) => !isSystemAgent(row.agent)),
+    [shownAgents],
+  );
+  /**
    * The list in two sections: the Agents the user works with directly, then the employees of
    * the Project's organizations (agent-employment.ts), a machine's among them. The search box
    * filters both.
    */
-  const sections = useMemo(() => splitByEmployment(shownAgents, (row) => row.agent), [shownAgents]);
+  const sections = useMemo(
+    () => splitByEmployment(listedAgents, (row) => row.agent),
+    [listedAgents],
+  );
   /** The same Agents by who made them, for the grouping by author: employees go with their author. */
-  const authorGroups = useMemo(() => groupByAuthor(shownAgents, (row) => row.agent), [shownAgents]);
+  const authorGroups = useMemo(
+    () => groupByAuthor(listedAgents, (row) => row.agent),
+    [listedAgents],
+  );
 
   /**
    * Stat icon click: same navigation as the "Settings" button plus `?tab=` so the settings
@@ -619,63 +637,66 @@ export function AgentsPage() {
                       cut in half) and the row has no scroll box, so with nowrap the seven
                       items simply spill past the card's padding once the info column is
                       narrower than they are — a phone. Wrapping spends a second line instead,
-                      and never triggers where the row already fits. */}
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-            <span
-              className="inline-flex shrink-0 items-center gap-1 tabular-nums"
-              data-tooltip={S.agent.sessionCount(a.sessionCount)}
-            >
-              <GlyphIcon d={CARD_ICONS.sessions} size={ICON_SIZE.inlineGlyph} />
-              {a.sessionCount}
-            </span>
-            {(
-              [
-                ["tools", STAT_ICONS.toolCalls, a.toolCount, S.agent.toolCount(a.toolCount)],
-                ["skills", CARD_ICONS.skills, a.skillCount, S.skills.skillCount(a.skillCount)],
-                ["hooks", ICONS.fishHook, a.hookCount, S.hooks.hookCount(a.hookCount)],
-                [
-                  "workbenches",
-                  ICONS.anvil,
-                  a.workbenchCount ?? 0,
-                  S.workbenches.count(a.workbenchCount ?? 0),
-                ],
-                ["memory", CARD_ICONS.memory, a.memoryCount, S.agent.memoryCount(a.memoryCount)],
-                [
-                  "vault",
-                  CARD_ICONS.vaultKeys,
-                  a.vaultKeyCount,
-                  S.agent.vaultKeyCount(a.vaultKeyCount),
-                ],
-                [
-                  "schedules",
-                  CARD_ICONS.schedules,
-                  a.scheduleCount,
-                  S.agent.scheduleCount(a.scheduleCount),
-                ],
-              ] as const
-            ).map(([tab, glyph, count, label]) => (
-              <button
-                key={tab}
-                type="button"
-                className={STAT_LINK_CLASS}
-                disabled={!reachable}
-                data-tooltip={label}
-                aria-label={label}
-                onClick={() => openSettingsTab(a.agentId, tab, machineId)}
+                      and never triggers where the row already fits. None on the system
+                      Agent's card: every count there describes a runtime it never runs. */}
+          {!system && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+              <span
+                className="inline-flex shrink-0 items-center gap-1 tabular-nums"
+                data-tooltip={S.agent.sessionCount(a.sessionCount)}
               >
-                <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
-                {count}
-              </button>
-            ))}
-            <span
-              className="inline-flex shrink-0 items-center gap-1"
-              data-tooltip={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}
-              data-tooltip-extra={Boolean(a.updatedAt)}
-            >
-              <GlyphIcon d={STAT_ICONS.elapsed} size={ICON_SIZE.inlineGlyph} />
-              {a.updatedAt ? formatRelativeDays(a.updatedAt, locale) : "—"}
-            </span>
-          </div>
+                <GlyphIcon d={CARD_ICONS.sessions} size={ICON_SIZE.inlineGlyph} />
+                {a.sessionCount}
+              </span>
+              {(
+                [
+                  ["tools", STAT_ICONS.toolCalls, a.toolCount, S.agent.toolCount(a.toolCount)],
+                  ["skills", CARD_ICONS.skills, a.skillCount, S.skills.skillCount(a.skillCount)],
+                  ["hooks", ICONS.fishHook, a.hookCount, S.hooks.hookCount(a.hookCount)],
+                  [
+                    "workbenches",
+                    ICONS.anvil,
+                    a.workbenchCount ?? 0,
+                    S.workbenches.count(a.workbenchCount ?? 0),
+                  ],
+                  ["memory", CARD_ICONS.memory, a.memoryCount, S.agent.memoryCount(a.memoryCount)],
+                  [
+                    "vault",
+                    CARD_ICONS.vaultKeys,
+                    a.vaultKeyCount,
+                    S.agent.vaultKeyCount(a.vaultKeyCount),
+                  ],
+                  [
+                    "schedules",
+                    CARD_ICONS.schedules,
+                    a.scheduleCount,
+                    S.agent.scheduleCount(a.scheduleCount),
+                  ],
+                ] as const
+              ).map(([tab, glyph, count, label]) => (
+                <button
+                  key={tab}
+                  type="button"
+                  className={STAT_LINK_CLASS}
+                  disabled={!reachable}
+                  data-tooltip={label}
+                  aria-label={label}
+                  onClick={() => openSettingsTab(a.agentId, tab, machineId)}
+                >
+                  <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
+                  {count}
+                </button>
+              ))}
+              <span
+                className="inline-flex shrink-0 items-center gap-1"
+                data-tooltip={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}
+                data-tooltip-extra={Boolean(a.updatedAt)}
+              >
+                <GlyphIcon d={STAT_ICONS.elapsed} size={ICON_SIZE.inlineGlyph} />
+                {a.updatedAt ? formatRelativeDays(a.updatedAt, locale) : "—"}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Session activity sparkline, GitHub Pulse style: daily active Session counts
@@ -893,6 +914,7 @@ export function AgentsPage() {
         /* One collapsible section per author, the Plugins page's grouping: a search opens every
            section it leaves, since a match folded away would read as a missing one. */
         <div className="space-y-3">
+          {systemRows.map((row) => renderCard(row))}
           {authorGroups.map(({ author, items }) => (
             <CollapsibleSection
               key={author}
@@ -914,6 +936,7 @@ export function AgentsPage() {
            own, shown only when there is one to list. */
         <>
           <div className="space-y-3">
+            {systemRows.map((row) => renderCard(row))}
             {sections.agents.map((row) => renderCard(row))}
             {firstAgentCall}
           </div>
@@ -922,7 +945,7 @@ export function AgentsPage() {
               title={S.agent.employeesSection}
               count={sections.employees.length}
               info={S.agent.employeesSectionInfo}
-              className={sections.agents.length > 0 ? "mt-8" : ""}
+              className={sections.agents.length + systemRows.length > 0 ? "mt-8" : ""}
             >
               <div className="space-y-3">{sections.employees.map((row) => renderCard(row))}</div>
             </RuledSection>

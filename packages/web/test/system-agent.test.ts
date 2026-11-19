@@ -5,7 +5,10 @@
  *
  * - Given the Project's system Agent, the Agents page shows its card under the dictionary's name
  *   (not its file's), tagged System, with Settings and the built-in Agents' disabled delete only:
- *   no New chat, no Usage, no Export. Opening it keeps the Agent the user talks to current.
+ *   no New chat, no Usage, no Export, and no stats row. Opening it keeps the Agent the user talks
+ *   to current.
+ * - Its card is pinned above the list whichever way the list is grouped, in no author group and
+ *   in no group's count.
  * - Given an Agent of the user's that already holds the id `system_agent` (no system flag), the
  *   Project's owner is asked to move it to another id, and its card can be deleted as any other;
  *   a member is not asked.
@@ -22,6 +25,7 @@ import type { PluginItem } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { AgentsPage } from "../src/features/agents/agents-page";
+import { AGENTS_GROUP_BY_KEY } from "../src/features/agents/agent-groups";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
 import { PluginsPage } from "../src/features/plugins/plugins-page";
 import {
@@ -88,6 +92,30 @@ describe("the system Agent on the Agents page", () => {
       expect(cardHas(card, gone)).toBe(false);
     }
     expect(card.querySelector(`[aria-label="${en.agent.builtinUndeletable}"]`)).not.toBeNull();
+    expect(cardHas(card, en.skills.skillCount(0))).toBe(false);
+    expect(card.querySelector(`[data-tooltip="${en.agent.sessionCount(0)}"]`)).toBeNull();
+  });
+
+  it("is pinned above the author groups, in none of them and in no count", async () => {
+    agentServer(undefined, { moreAgents: [SYSTEM] });
+    await mountAgentApp(h(AgentsPage), { route: "/list", at: "/list" });
+    await waitFor(() => cards().length === 2);
+    expect(cards()[0]).toBe(cardNamed(en.agent.systemName));
+    const people = [...document.querySelectorAll("button[aria-expanded]")].find((b) =>
+      b.textContent?.includes(en.agent.authorGroups.user),
+    )!;
+    expect(people.textContent).toContain(en.agent.agentCount(1));
+    const body = document.getElementById(people.getAttribute("aria-controls")!)!;
+    expect(body.contains(cardNamed(en.agent.systemName))).toBe(false);
+    expect(body.contains(cardNamed("Helper"))).toBe(true);
+  });
+
+  it("is pinned above the list when it is not grouped", async () => {
+    localStorage.setItem(AGENTS_GROUP_BY_KEY, "none");
+    agentServer(undefined, { moreAgents: [SYSTEM] });
+    await mountAgentApp(h(AgentsPage), { route: "/list", at: "/list" });
+    await waitFor(() => cards().length === 2);
+    expect(cards().map((c) => c === cardNamed(en.agent.systemName))).toEqual([true, false]);
   });
 
   it("keeps the current Agent when its card is opened", async () => {
