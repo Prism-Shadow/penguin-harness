@@ -24,11 +24,4 @@ describe("quick start", () => {
     expect(goal?.quickStart).toMatchObject({ goal: true });
     expect(goal?.quickStart?.prompt.length).toBeGreaterThan(0);
   });
-
-  it("opens the Plan plugin demo in planning mode", async () => {
-    const body = (await (await api.get("/api/plugins")).json()) as PluginLibraryResponse;
-    const plan = body.groups.flatMap((g) => g.plugins).find((p) => p.name === "plan");
-    expect(plan?.quickStart).toMatchObject({ plan: true });
-    expect(plan?.quickStart?.goal).toBeUndefined();
-  });
 });

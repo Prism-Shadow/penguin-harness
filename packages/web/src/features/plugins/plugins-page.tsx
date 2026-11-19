@@ -728,7 +728,7 @@ export function PluginsPage() {
       // the Project's new-chat defaults (new-chat.ts).
       prepareNewChatDraft(userId, projectId);
       const key = draftKey(userId, projectId);
-      const { skills: _skills, goal: _goal, plan: _plan, ...rest } = loadDraft(key);
+      const { skills: _skills, goal: _goal, ...rest } = loadDraft(key);
       saveDraft(key, {
         ...rest,
         agentId,
@@ -737,7 +737,6 @@ export function PluginsPage() {
           ? { skills: quickStart.skills }
           : {}),
         ...(quickStart.goal === true ? { goal: true as const } : {}),
-        ...(quickStart.plan === true ? { plan: true as const } : {}),
         handoffAgentId: undefined,
       });
     }

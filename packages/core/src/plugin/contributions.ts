@@ -169,7 +169,7 @@ function readQuickStart(value: unknown, at: string, warnings: string[]): QuickSt
     warnings.push(`${at} needs a prompt; ignored`);
     return undefined;
   }
-  const { prompt, promptZh, skills, goal, plan } = value;
+  const { prompt, promptZh, skills, goal } = value;
   if (promptZh !== undefined && typeof promptZh !== "string") {
     warnings.push(`${at}.promptZh must be a string; ignored`);
   }
@@ -183,15 +183,11 @@ function readQuickStart(value: unknown, at: string, warnings: string[]): QuickSt
   if (goal !== undefined && typeof goal !== "boolean") {
     warnings.push(`${at}.goal must be true or false; ignored`);
   }
-  if (plan !== undefined && typeof plan !== "boolean") {
-    warnings.push(`${at}.plan must be true or false; ignored`);
-  }
   return {
     prompt,
     ...(typeof promptZh === "string" && promptZh.trim() !== "" ? { promptZh } : {}),
     ...(skillList !== undefined ? { skills: skillList } : {}),
     ...(goal === true ? { goal: true } : {}),
-    ...(plan === true ? { plan: true } : {}),
   };
 }
 

@@ -173,7 +173,6 @@ export abstract class SessionIndex {
   abstract findById(sessionId: string): SessionRow | null;
   abstract listByAgent(projectId: string, agentId: string): SessionRow[];
   abstract listByProject(projectId: string): SessionRow[];
-  abstract setPlanMode(sessionId: string, enabled: boolean): void;
   abstract updateApprovalMode(sessionId: string, mode: ApprovalMode): void;
   abstract updateSandbox(sessionId: string, sandbox: SandboxSettings): void;
   abstract updateThinkingLevel(sessionId: string, level: ThinkingLevelName): void;
@@ -233,8 +232,6 @@ export abstract class AgentState extends Interface<{
 
 /** The target pair plus a run's options (`approve` answers the run's tool rounds). */
 export type RunOpts = {
-  /** Optional host-triggered hook to consult alongside the ordinary user-prompt hooks. */
-  promptHook?: string;
   approve: ApproveFn;
   signal: AbortSignal;
 };

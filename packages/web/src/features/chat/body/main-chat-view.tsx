@@ -57,7 +57,6 @@ export function createMainChatView(
     onRecallSteering,
     onRecallFollowUp,
     onChangePermission,
-    applySessionRow,
     onCompact,
     onPickTurnThinkingLevel,
     onPickSessionModel,
@@ -159,8 +158,6 @@ export function createMainChatView(
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
       sessionId={selected.sessionId}
-      planMode={selected.planMode === true}
-      onSessionPatched={applySessionRow}
       vision={vision}
       approvalMode={selected.approvalMode}
       // An organization's Session is not offered always-ask: nobody is there to be asked.

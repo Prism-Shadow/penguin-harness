@@ -59,18 +59,6 @@ function Composer({ gate, goalOn }: { gate: GoalPluginGate | null; goalOn: boole
 const composer = (gate: GoalPluginGate | null, goalOn: boolean) => h(Composer, { gate, goalOn });
 
 describe("the goal plugin check", () => {
-  it("offers to update a preview Plan hook before using its replacement", async () => {
-    const installed = installedLists(["plan"]);
-    installed.hooks[0]!.version = "2026.11.18.1";
-    fetch.answer(({ method }) => {
-      if (method === "POST") installed.hooks[0]!.version = "2026.11.19.1";
-      return json(installed);
-    });
-    const gate = goalPluginGate("p", "a1", null);
-    expect(await gate.check("plan")).toBe(false);
-    expect(await gate.install("plan")).toBe(true);
-  });
-
   it("finds the plugin missing when goal mode is engaged, and holds Send; off, it asks nothing", async () => {
     const gate = goalPluginGate("p", "a1", null);
     const page = await mount(composer(gate, false));

@@ -54,7 +54,6 @@ export interface SessionComposerSession {
   onPickSessionModel: ChatInputProps["onPickSessionModel"];
   onPickTurnThinkingLevel: ChatInputProps["onChangeTurnThinkingLevel"];
   onChangeCompactionLimit: ChatInputProps["onChangeCompactionLimit"];
-  applySessionRow: (session: SessionInfo) => void;
   onChangePermission: ChatInputProps["onChangePermission"];
   onHandoff: ChatInputProps["onHandoff"];
   onDraftSkillsChange: ChatInputProps["onSkillsChange"];
@@ -96,7 +95,6 @@ export function SessionComposer({
     onPickTurnThinkingLevel,
     onChangeCompactionLimit,
     onChangePermission,
-    applySessionRow,
     onHandoff,
     onDraftSkillsChange,
     onDraftTextChange,
@@ -145,8 +143,6 @@ export function SessionComposer({
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
       sessionId={selected.sessionId}
-      planMode={selected.planMode === true}
-      onSessionPatched={applySessionRow}
       vision={vision}
       approvalMode={selected.approvalMode}
       // An organization's Session is not offered always-ask: nobody is there to be asked.

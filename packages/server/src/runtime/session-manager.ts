@@ -1220,7 +1220,6 @@ export class SessionManager {
     },
   ): AsyncGenerator<AmspRecord> {
     const gen = entry.session.run(args.input, {
-      ...(this.deps.sessions.findById(entry.sessionId)?.planMode ? { promptHook: "plan" } : {}),
       approve: args.approve,
       signal: args.signal,
     });
@@ -1319,7 +1318,6 @@ export class SessionManager {
 
     const approve = this.entryApprove(entry);
     const gen = entry.session.run(input, {
-      ...(this.deps.sessions.findById(entry.sessionId)?.planMode ? { promptHook: "plan" } : {}),
       approve,
       signal: ac.signal,
     });

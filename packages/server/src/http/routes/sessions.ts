@@ -773,9 +773,6 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         "modelId and provider must be given together as a model reference pair: specify both, or neither to use the Project's default model.",
       );
     }
-    const planMode = body.planMode;
-    if (planMode !== undefined && typeof planMode !== "boolean")
-      throw badRequest("planMode must be a boolean.");
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
     const sandbox = parseSandboxPick(body);
     // Creating-client hint stored on the row ("cli" from the CLI; default "web"). Provenance:
@@ -802,7 +799,6 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       ...(provider !== undefined ? { provider } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
       ...(approvalMode !== undefined ? { approvalMode } : {}),
-      ...(planMode === true ? { planMode } : {}),
       ...(sandbox !== undefined ? { sandbox, isAdmin: c.var.user.isAdmin } : {}),
       ...(client !== undefined ? { client } : {}),
       ...(source !== undefined ? { source } : {}),
@@ -845,9 +841,6 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   app.patch("/:sessionId", async (c) => {
     const row = resolveSession(c);
     const body = await readJson(c);
-    const planMode = body.planMode;
-    if (planMode !== undefined && typeof planMode !== "boolean")
-      throw badRequest("planMode must be a boolean.");
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
     const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVEL_NAMES);
     const sandbox = parseSandboxPick(body);
@@ -878,7 +871,6 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       }
     }
     if (
-      planMode === undefined &&
       approvalMode === undefined &&
       sandbox === undefined &&
       thinkingLevel === undefined &&
@@ -888,7 +880,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       throw new HttpError(
         400,
         "no_update",
-        "No updatable field provided (planMode / approvalMode / sandbox / thinkingLevel / archived / title).",
+        "No updatable field provided (approvalMode / sandbox / thinkingLevel / archived / title).",
       );
     }
     // Every check before any write: the sandbox pick's (the non-admin ceiling, what this server
@@ -911,7 +903,6 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       );
     }
     let updated: SessionRow = { ...row };
-    if (planMode !== undefined) deps.sessionsRepo.setPlanMode(row.sessionId, planMode);
     if (title !== undefined) {
       // Manual renaming takes priority over auto-generation: TitleGenerator only ever replaces the fallback title it wrote itself, never a manual rename.
       deps.sessionsRepo.updateTitle(row.sessionId, title);

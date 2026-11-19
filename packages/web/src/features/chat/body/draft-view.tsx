@@ -234,7 +234,6 @@ export function DraftView({
   // Only what the person picked: the rest follows the server's sandbox settings, which the
   // chat-defaults response carries, so the button shows what the Session would start with.
   const [sandboxPick, setSandboxPick] = useState<Partial<SessionSandbox>>(cached.sandbox ?? {});
-  const [planMode, setPlanMode] = useState(cached.plan === true);
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(cached.modelRef ?? null);
   const textRef = useRef(cached.text ?? "");
   // A restored prompt can match an example. Typing only clears that match once.
@@ -584,7 +583,6 @@ export function DraftView({
     if (workspaceMachine !== null) data.machineId = workspaceMachine;
     if (agentId) data.agentId = agentId;
     if (modelRef) data.modelRef = modelRef;
-    if (planMode) data.plan = true;
     if (skillsRef.current.length > 0) data.skills = skillsRef.current;
     // Carried through every write, so a reload finds the prefill still marked as composed
     // rather than resuming it as if it had been typed here.
@@ -601,7 +599,6 @@ export function DraftView({
     workspace,
     workspaceMachine,
     approvalMode,
-    planMode,
     sandboxPick,
     modelRef,
   ]);
@@ -793,7 +790,7 @@ export function DraftView({
       const dockScope = currentDockScope();
       let createdId: string | null = null;
       try {
-        const body: SessionCreateRequest = { approvalMode, ...(planMode ? { planMode } : {}) };
+        const body: SessionCreateRequest = { approvalMode };
         if (Object.keys(sandboxPick).length > 0) body.sandbox = sandboxPick;
         // Model reference is submitted as a pair (provider + modelId; falls back to the Project default when not set).
         if (modelRef) {
@@ -851,7 +848,6 @@ export function DraftView({
       projectId,
       agentId,
       approvalMode,
-      planMode,
       sandboxPick,
       modelRef,
       workspace,
@@ -933,8 +929,6 @@ export function DraftView({
         skills={agentSkills}
         {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
         {...(cached.goal === true ? { initialGoal: true } : {})}
-        planMode={planMode}
-        onDraftPlanChange={setPlanMode}
         goalPlugin={goalPlugin}
         onSkillsChange={onSkillsChange}
         initialText={cached.text ?? ""}

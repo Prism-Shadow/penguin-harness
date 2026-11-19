@@ -182,8 +182,6 @@ export interface SessionConfig {
    * `openNextContext` opens may bring its own.
    */
   hooks?: SessionHooks;
-  /** A host-selected hook may have been installed since the context opened. */
-  installedHostPromptHook?: (name: string) => Promise<UserPromptHook | undefined>;
   /**
    * Project sandbox command policy (`[command_policy]` of `.project_config.toml`), as a
    * SOURCE answering with the running context's policy: command policy is strict-tier —
@@ -198,7 +196,7 @@ export interface SessionConfig {
 }
 
 /** `Session.run` options: the engine's per-call options. */
-export type SessionRunOptions = RunOptions & { promptHook?: string };
+export type SessionRunOptions = RunOptions;
 
 /**
  * Why a model switch was refused before its first event (see {@link ModelSwitchRefusedError}).
@@ -411,7 +409,6 @@ export class Session {
    */
   private stopHooks: readonly StopHook[] = [];
   private preToolUseHooks: readonly PreToolUseHook[] = [];
-  private readonly installedHostPromptHook: SessionConfig["installedHostPromptHook"];
   private userPromptHooks: readonly UserPromptHook[] = [];
   private spawnSubagent: HookSubagentSpawner | undefined;
   private readonly commandPolicy?: CommandPolicySource;
@@ -446,7 +443,6 @@ export class Session {
   private bgMessageListener: ((msg: AmspRecord) => void) | null = null;
 
   constructor(config: SessionConfig) {
-    this.installedHostPromptHook = config.installedHostPromptHook;
     this.sessionId = config.meta.session_id;
     this.workspaceDir = config.meta.workspace;
     this.environment = config.environment;
@@ -562,15 +558,8 @@ export class Session {
   private async consultUserPromptHooks(
     input: AmspRecord[],
     signal?: AbortSignal,
-    selected?: string,
   ): Promise<{ records: AmspRecord[] } | null> {
     const hooks = this.userPromptHooks.filter((h) => h.trigger !== "host");
-    if (selected) {
-      const hook =
-        this.userPromptHooks.find((h) => h.trigger === "host" && h.name === selected) ??
-        (await this.installedHostPromptHook?.(selected));
-      if (hook) hooks.push(hook);
-    }
     if (hooks.length === 0) return null;
     const texts: string[] = [];
     for (const msg of input) {
@@ -691,7 +680,7 @@ export class Session {
     // input, which no user submitted.
     let taskOpts: SessionRunOptions | undefined = {
       ...opts,
-      userPrompt: (prompt, signal) => this.consultUserPromptHooks(prompt, signal, opts?.promptHook),
+      userPrompt: (prompt, signal) => this.consultUserPromptHooks(prompt, signal),
     };
     let input = newMessages;
     /** Whether `input` is a stop hook's `continue`: yielded by the Session, since no host submitted it. */

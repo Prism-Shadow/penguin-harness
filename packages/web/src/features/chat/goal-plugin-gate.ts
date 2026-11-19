@@ -22,16 +22,13 @@ export const GOAL_PLUGIN = "goal";
 
 export interface GoalPluginGate {
   /** Whether the Agent has the goal hook package. Rejects when the list cannot be read. */
-  check(plugin?: string): Promise<boolean>;
+  check(): Promise<boolean>;
   /** Installs the goal plugin on the Agent; whether its hook package is there afterwards. Rejects when the install is refused. */
-  install(plugin?: string): Promise<boolean>;
+  install(): Promise<boolean>;
 }
 
-// The preview Plan hook asks for an approval action that no longer exists.
-const hasModeHook = (res: AgentPluginsInstallResponse, plugin: string): boolean =>
-  res.hooks.some(
-    (hook) => hook.name === plugin && (plugin !== "plan" || hook.version !== "2026.11.18.1"),
-  );
+const hasGoalHook = (res: AgentPluginsInstallResponse): boolean =>
+  res.hooks.some((hook) => hook.name === GOAL_PLUGIN);
 
 /** The gate for one Agent; `machineId` is the machine that holds it (null = this server). */
 export function goalPluginGate(
@@ -40,10 +37,9 @@ export function goalPluginGate(
   machineId: string | null,
 ): GoalPluginGate {
   return {
-    check: async (plugin = GOAL_PLUGIN) =>
-      hasModeHook(await getAgentPlugins(projectId, agentId, machineId), plugin),
-    install: async (plugin = GOAL_PLUGIN) =>
-      hasModeHook(await installAgentPlugins(projectId, agentId, [plugin], machineId), plugin),
+    check: async () => hasGoalHook(await getAgentPlugins(projectId, agentId, machineId)),
+    install: async () =>
+      hasGoalHook(await installAgentPlugins(projectId, agentId, [GOAL_PLUGIN], machineId)),
   };
 }
 
@@ -63,7 +59,6 @@ export type GoalPluginStatus = "unknown" | "checking" | "installed" | "missing" 
 export function useGoalPluginGate(
   gate: GoalPluginGate | null,
   goalOn: boolean,
-  plugin?: string,
 ): {
   status: GoalPluginStatus;
   /** Whether Send is held: the plugin is known to be missing, or being installed. */
@@ -81,7 +76,7 @@ export function useGoalPluginGate(
       return;
     }
     setStatus("checking");
-    (plugin ? gate.check(plugin) : gate.check()).then(
+    gate.check().then(
       (installed) => {
         if (asked.current === ask) setStatus(installed ? "installed" : "missing");
       },
@@ -90,20 +85,20 @@ export function useGoalPluginGate(
         if (asked.current === ask) setStatus("unknown");
       },
     );
-  }, [gate, goalOn, plugin]);
+  }, [gate, goalOn]);
 
   const install = useCallback(async () => {
     if (gate === null) return;
     const ask = asked.current;
     setStatus("installing");
     try {
-      const installed = await (plugin ? gate.install(plugin) : gate.install());
+      const installed = await gate.install();
       if (asked.current === ask) setStatus(installed ? "installed" : "missing");
     } catch (err) {
       toastApiError(err);
       if (asked.current === ask) setStatus("missing");
     }
-  }, [gate, plugin]);
+  }, [gate]);
 
   return { status, holdsSend: status === "missing" || status === "installing", install };
 }

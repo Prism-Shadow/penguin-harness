@@ -70,15 +70,6 @@ describe("parseDraft (field-by-field validation)", () => {
     });
   });
 
-  it("restores a Plan quick start and accepts independent mode choices", () => {
-    expect(parseDraft(JSON.stringify({ plan: true }))).toEqual({ plan: true });
-    expect(parseDraft(JSON.stringify({ plan: "yes" }))).toEqual({});
-    expect(parseDraft(JSON.stringify({ goal: true, plan: true }))).toEqual({
-      goal: true,
-      plan: true,
-    });
-  });
-
   it("the AI-prefill mark round-trips only as true, so nothing else can pass for it", () => {
     // It decides whether the text is treated as the user's own (draft-view, draft-sessions):
     // an "aiPrefill": "yes" left in storage must not read as a composed prompt.

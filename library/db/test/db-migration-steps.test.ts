@@ -25,33 +25,6 @@ import {
   stampThrough,
 } from "./db-migrations-fixtures.js";
 
-it("keeps the preview Plan preference and the conversation's original proposal when its Session is rekeyed", () => {
-  const db = openFresh();
-  try {
-    db.exec(`PRAGMA foreign_keys = ON;
-      ALTER TABLE sessions DROP COLUMN plan_mode;
-      CREATE TABLE session_plans (session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE, revision TEXT, proposal TEXT);
-      INSERT INTO sessions (session_id,project_id,agent_id,provider,model_id,workspace,created_at)
-      VALUES ('planned','p','a','custom','m','', 'today'), ('ordinary','p','a','custom','m','', 'today');
-      INSERT INTO session_plans VALUES ('planned','revision','Original design');
-    `);
-    const latest = MIGRATIONS.find((m) => m.name === "2026-11-19-session-plan-mode")!;
-    latest.up(db);
-    db.exec("UPDATE sessions SET session_id = 'restored' WHERE session_id = 'planned'");
-    expect(
-      db.prepare("SELECT session_id, plan_mode FROM sessions ORDER BY session_id").all(),
-    ).toEqual([
-      { session_id: "ordinary", plan_mode: 0 },
-      { session_id: "restored", plan_mode: 1 },
-    ]);
-    expect(
-      db.prepare("SELECT proposal FROM session_plans WHERE session_id='restored'").get(),
-    ).toEqual({ proposal: "Original design" });
-  } finally {
-    db.close();
-  }
-});
-
 describe("0.2.4 → current", () => {
   /** The whole point: an older runtime's database becomes what a current build creates. */
   it("brings a 0.2.4 database to the shape a fresh one is created with", () => {
@@ -337,7 +310,6 @@ describe("2026-09-23-machines-columns → current: 2026-10-04-browser-extensions
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
-        "2026-11-19-session-plan-mode",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -402,7 +374,6 @@ describe("a sessions table from before the sidebar mark: 2026-10-12-sessions-kep
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
-        "2026-11-19-session-plan-mode",
       ]);
       expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
         { session_id: "s1", kept_at: null },
@@ -461,7 +432,6 @@ describe("an agent_api table from before the session settings: 2026-10-14-agent-
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
-        "2026-11-19-session-plan-mode",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -523,7 +493,6 @@ describe("an agent_api table from before the concurrency limit: 2026-10-14-agent
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
-        "2026-11-19-session-plan-mode",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -573,7 +542,6 @@ describe("a machines table from before the adoption times: 2026-10-16-machines-a
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
-        "2026-11-19-session-plan-mode",
       ]);
       expect(db.prepare("SELECT address, adopted_at FROM machines").all()).toEqual([
         { address: "ssh:nas", adopted_at: null },
@@ -618,10 +586,7 @@ describe("a database from before the account's drafts: 2026-10-26-user-drafts", 
   it("adds both tables while a pushed platform boots, and they go with their user", () => {
     const db = openPreUserDrafts();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual([
-        "2026-10-26-user-drafts",
-        "2026-11-19-session-plan-mode",
-      ]);
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["2026-10-26-user-drafts"]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES ('ann', 'hash', 0, 'now')",

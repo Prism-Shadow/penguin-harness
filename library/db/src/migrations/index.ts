@@ -69,8 +69,6 @@ import { agentApiSessionSettings } from "./steps/2026-10-14-agent-api-session-se
 import { machinesAdoptedAt } from "./steps/2026-10-16-machines-adopted-at.js";
 import { userDrafts } from "./steps/2026-10-26-user-drafts.js";
 
-import { sessionPlanMode } from "./steps/2026-11-19-session-plan-mode.js";
-
 export type { Migration } from "./migration.js";
 export { IrreversibleMigrationError, UnknownMigrationError, appliedMigrations } from "./runner.js";
 export type { MigrateResult } from "./runner.js";
@@ -103,7 +101,6 @@ export const MIGRATIONS: readonly Migration[] = [
   machinesAdoptedAt,
   modelTablesAdoption,
   userDrafts,
-  sessionPlanMode,
 ];
 
 /**

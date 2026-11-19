@@ -405,7 +405,6 @@ export class SessionService {
       modelId: row.modelId,
       workspace: row.workspace,
       approvalMode: row.approvalMode,
-      ...(row.planMode ? { planMode: true } : {}),
       sandbox: this.sandboxView(this.sandboxOf(row)),
       ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
       ...(row.title !== null ? { title: row.title } : {}),
@@ -799,7 +798,6 @@ export class SessionService {
     workspace?: string;
     thinkingLevel?: ThinkingLevelName;
     approvalMode?: ApprovalMode;
-    planMode?: boolean;
     /** The composer's sandbox picks; omitted halves take the server's settings. */
     sandbox?: Partial<SessionSandbox>;
     /** Whether the creator is an administrator (may loosen past the settings). Default false. */
@@ -897,7 +895,6 @@ export class SessionService {
       workspace: session.workspaceDir,
       ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
       approvalMode: this.startApproval(args.approvalMode, args.client),
-      ...(args.planMode ? { planMode: true } : {}),
       sandbox,
       title: null,
       // The creator's hint: "cli" when the CLI created this Session through the API,

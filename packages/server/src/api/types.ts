@@ -1795,8 +1795,6 @@ export interface MemoryImportResponse {
 }
 
 export interface SessionInfo {
-  /** Discuss a new task through the Plan prompt hook. */
-  planMode?: boolean;
   sessionId: string;
   projectId: string;
   agentId: string;
@@ -2201,8 +2199,6 @@ export interface DirectorySkillsResponse {
 }
 
 export interface SessionCreateRequest {
-  /** Discuss a new task through the Plan prompt hook. */
-  planMode?: boolean;
   /** Upstream id of the session's model; always sent together with provider. Omit both for the Project's default Model. */
   modelId?: string;
   /**
@@ -2268,8 +2264,6 @@ export interface SessionResponse {
 }
 
 export interface SessionPatchRequest {
-  /** Discuss a new task through the Plan prompt hook. */
-  planMode?: boolean;
   approvalMode?: ApprovalMode;
   /**
    * Change this Session's sandbox policy; applies from its next command. A non-admin may not
@@ -4269,8 +4263,6 @@ export interface QuickStartItem {
   skills?: string[];
   /** Open the draft in goal mode. */
   goal?: boolean;
-  /** Discuss the demo with the Plan prompt hook. */
-  plan?: boolean;
 }
 
 export interface PluginGroupItem {

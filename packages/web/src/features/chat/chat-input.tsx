@@ -96,7 +96,6 @@ import type {
   PendingFollowUpInfo,
   PendingSteeringInfo,
   RecalledMessageResponse,
-  SessionInfo,
   SessionSandbox,
   SessionStatus,
   SkillMetadataItem,
@@ -161,8 +160,6 @@ import {
   skillSlashItems,
 } from "../../lib/skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
-import { patchSession } from "../../api/endpoints";
-import { toastApiError } from "../../lib/toast-api-error";
 import { useGoalPluginGate } from "./goal-plugin-gate";
 import type { GoalPluginGate } from "./goal-plugin-gate";
 import { mergeRecalledDraft } from "./recall-draft";
@@ -617,9 +614,6 @@ export function ChatInput({
   skills,
   initialSkills,
   initialGoal,
-  planMode = false,
-  onDraftPlanChange,
-  onSessionPatched,
   goalPlugin = null,
   onSkillsChange,
   onHandoff,
@@ -836,9 +830,6 @@ export function ChatInput({
   initialSkills?: string[];
   /** Start in goal mode (a plugin's quick start whose demo is a goal): read once on mount. */
   initialGoal?: boolean;
-  planMode?: boolean;
-  onDraftPlanChange?: (enabled: boolean) => void;
-  onSessionPatched?: (session: SessionInfo) => void;
   /**
    * The goal plugin check for the Agent this composer sends to (goal-plugin-gate.ts): while the
    * goal chip is engaged and the plugin is missing, a notice above the input offers to install
@@ -977,23 +968,6 @@ export function ChatInput({
       ? S.chat.goalBudgetValue(humanizeTokens(goalBudget))
       : S.chat.goalBudgetUnlimited;
   const goalGate = useGoalPluginGate(goalPlugin, goalOn);
-  const planGate = useGoalPluginGate(goalPlugin, planMode, "plan");
-  const missingMode = planGate.holdsSend ? planGate : goalGate;
-  const [planSaving, setPlanSaving] = useState(false);
-  const togglePlan = async () => {
-    if (!sessionId || !onSessionPatched) {
-      onDraftPlanChange?.(!planMode);
-      return;
-    }
-    setPlanSaving(true);
-    try {
-      onSessionPatched((await patchSession(sessionId, { planMode: !planMode })).session);
-    } catch (err) {
-      toastApiError(err);
-    } finally {
-      setPlanSaving(false);
-    }
-  };
   /**
    * Where a send with a staged chip would go — and, for a `/model` fork, whether it may go at
    * all right now (see stagedSendRoute): a fork branches a NEW session off this session's
@@ -1021,8 +995,6 @@ export function ChatInput({
     !running &&
     !compacting &&
     !busy &&
-    !planSaving &&
-    !planGate.holdsSend &&
     (goalOn
       ? text.trim().length > 0 &&
         attachments.length === 0 &&
@@ -2298,19 +2270,19 @@ export function ChatInput({
       {/* Goal mode on an Agent without the goal plugin: the goal could not start, so Send is held
           and the plugin is offered right here — installed on the Agent this composer sends to.
           `attention`, like the threshold notice above: it waits on the user. */}
-      {missingMode.holdsSend && (
+      {goalOn && (goalGate.status === "missing" || goalGate.status === "installing") && (
         <Notice
           tone="attention"
-          glyph={planGate.holdsSend ? ICONS.clipboard : GOAL_ICON}
+          glyph={GOAL_ICON}
           role="status"
           className="anim-fade mb-1"
           action={{
             label: S.chat.goalPluginInstall,
-            onClick: () => void missingMode.install(),
-            busy: missingMode.status === "installing",
+            onClick: () => void goalGate.install(),
+            busy: goalGate.status === "installing",
           }}
         >
-          {planGate.holdsSend ? S.chat.planPluginMissing : S.chat.goalPluginMissing}
+          {S.chat.goalPluginMissing}
         </Notice>
       )}
 
@@ -2585,15 +2557,6 @@ export function ChatInput({
                     active: goalOn,
                     disabled: running || compacting || busy,
                     onSelect: () => toggleGoal(!goalOn),
-                  },
-                  {
-                    key: "plan",
-                    icon: ICONS.clipboard,
-                    label: S.chat.planMode,
-                    desc: S.chat.planModeDesc,
-                    active: planMode,
-                    disabled: planSaving || busy,
-                    onSelect: () => void togglePlan(),
                   },
                 ]}
                 footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}

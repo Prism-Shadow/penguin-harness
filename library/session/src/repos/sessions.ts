@@ -22,7 +22,6 @@ export interface SessionRow {
   modelId: string;
   workspace: string;
   approvalMode: ApprovalMode;
-  planMode?: boolean;
   /**
    * Thinking level pinned for THIS session (PATCH /api/sessions/:id); NULL = not pinned,
    * so runs that carry no level of their own follow the Agent config as before. Sessions
@@ -108,7 +107,6 @@ function mapRow(r: Record<string, unknown>): SessionRow {
     modelId: r.model_id as string,
     workspace: r.workspace as string,
     approvalMode: r.approval_mode as ApprovalMode,
-    ...(r.plan_mode ? { planMode: true } : {}),
     thinkingLevel: (r.thinking_level as ThinkingLevelName | null) ?? null,
     title: (r.title as string | null) ?? null,
     archivedAt: (r.archived_at as string | null) ?? null,
@@ -176,8 +174,8 @@ export class SessionsRepo implements SessionIndex {
   private runInsert(verb: "INSERT" | "INSERT OR IGNORE", row: SessionRow): void {
     this.db
       .prepare(
-        `${verb} INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, last_active_at, created_at, sandbox, thinking_level, plan_mode)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ?), ?, ?, ?, ?)`,
+        `${verb} INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, last_active_at, created_at, sandbox, thinking_level)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ?), ?, ?, ?)`,
       )
       .run(
         row.sessionId,
@@ -195,7 +193,6 @@ export class SessionsRepo implements SessionIndex {
         row.createdAt,
         row.sandbox ? JSON.stringify(row.sandbox) : null,
         row.thinkingLevel ?? null,
-        row.planMode ? 1 : 0,
       );
   }
 
@@ -270,12 +267,6 @@ export class SessionsRepo implements SessionIndex {
   listByProject(projectId: string): SessionRow[] {
     const rows = this.db.prepare("SELECT * FROM sessions WHERE project_id = ?").all(projectId);
     return rows.map(mapRow);
-  }
-
-  setPlanMode(sessionId: string, enabled: boolean): void {
-    this.db
-      .prepare("UPDATE sessions SET plan_mode = ? WHERE session_id = ?")
-      .run(enabled ? 1 : 0, sessionId);
   }
 
   updateApprovalMode(sessionId: string, mode: ApprovalMode): void {
