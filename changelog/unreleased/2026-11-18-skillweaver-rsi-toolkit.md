@@ -20,7 +20,7 @@ Added the SkillWeaver RSI Toolkit, `skillweaver-rsi-toolkit`, reproducing SkillW
 
 - The Target's library is a target-owned Skill, `skillweaver-apis`: an index of API scripts with signatures, documentation, test counts and usage logs, the scripts themselves, and a feature-centric description of the site, read through one fixed `AGENTS.md` line.
 - An API is a Node module over `penguin browser`, the counterpart of upstream's Playwright skill function: it starts by opening a site-relative path, takes typed, human-readable parameters, and prints one JSON result line. The shipped runtime runs it and checks its arguments; on Windows it starts the CLI from the server's `penguin.cmd` shim directly, so no browser script passes through cmd.exe.
-- `skillweaver.mjs` is the controller's tool: code verification (syntax, the only allowed import, naming and parameter rules, a relative first navigation, at least two browser calls), library records, the practice-utility choice and the index. A script that fails a check is dropped whole.
+- `skillweaver.mjs` is the controller's tool: code verification (syntax, the only allowed import, naming and parameter rules, a relative first navigation, at least two browser calls), library records, the practice-utility choice and the index. A script that fails a check goes back to the Synthesiser with its problems, up to 10 attempts as upstream does, and is dropped if it still fails. The library carries a fingerprint the controller checks before and after every practice cell and role call, so only the Publish step can change it, and the run reports which of its limits are enforced and which are instructions.
 
 ## Packaging
 

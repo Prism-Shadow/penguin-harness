@@ -226,6 +226,37 @@ describe("the library", () => {
   });
 });
 
+describe("integrity", () => {
+  it("fingerprints every file, and any change, addition or removal moves the digest", () => {
+    tool.init(dir, SITE);
+    put("search_products", api("search_products"));
+    const first = tool.fingerprint(dir);
+    expect(Object.keys(first.files).sort()).toEqual([
+      "library.json",
+      "search_products.mjs",
+      "skillweaver-api.mjs",
+    ]);
+    expect(tool.fingerprint(dir)).toEqual(first);
+    writeFileSync(path.join(dir, "search_products.mjs"), api("search_products") + "\n");
+    const edited = tool.fingerprint(dir);
+    expect(edited.digest).not.toBe(first.digest);
+    mkdirSync(path.join(dir, "sub"));
+    writeFileSync(path.join(dir, "sub", "x.txt"), "x");
+    expect(tool.fingerprint(dir).files["sub/x.txt"]).toBeDefined();
+    rmSync(path.join(dir, "sub"), { recursive: true });
+    expect(tool.fingerprint(dir)).toEqual(edited);
+  });
+
+  it("refuses a runtime copy that differs from the shipped one", () => {
+    tool.init(dir, SITE);
+    expect(tool.verifyRuntime(dir)).toEqual({ problems: [] });
+    writeFileSync(path.join(dir, "skillweaver-api.mjs"), "// changed\n");
+    expect(tool.verifyRuntime(dir).problems[0]).toMatch(/differs from the shipped runtime/);
+    rmSync(path.join(dir, "skillweaver-api.mjs"));
+    expect(tool.verifyRuntime(dir).problems[0]).toMatch(/missing/);
+  });
+});
+
 describe("the API runtime", () => {
   function fakePenguin(behaviour: "ok" | "fail") {
     const log = path.join(dir, "calls.jsonl");

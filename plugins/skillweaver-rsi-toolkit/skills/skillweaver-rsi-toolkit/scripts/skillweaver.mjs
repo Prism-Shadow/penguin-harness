@@ -8,11 +8,21 @@
 //   node skillweaver.mjs tested <apis-dir> <name> <ref>     one more passing test
 //   node skillweaver.mjs pick-test <apis-dir> [--seed N]   choose an untested API (practice utility)
 //   node skillweaver.mjs index <apis-dir>               rewrite INDEX.md from the APIs and library.json
+//   node skillweaver.mjs fingerprint <dir>              one SHA-256 over every file under <dir>, and each file's
+//   node skillweaver.mjs verify-runtime <apis-dir>      the runtime copy is byte-identical to the shipped one
 //
 // Every command prints one JSON object and exits 1 on a refusal.
 
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  copyFileSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -264,6 +274,46 @@ export async function buildIndex(dir) {
   return { apis: entries.length };
 }
 
+/** Every regular file under `dir`, as sorted POSIX-style relative paths. */
+function filesUnder(dir, rel = "") {
+  const out = [];
+  for (const entry of readdirSync(path.join(dir, rel), { withFileTypes: true })) {
+    const child = rel === "" ? entry.name : `${rel}/${entry.name}`;
+    if (entry.isDirectory()) out.push(...filesUnder(dir, child));
+    else if (entry.isFile()) out.push(child);
+  }
+  return out.sort();
+}
+
+/**
+ * A fingerprint of a directory: the SHA-256 of each file and one digest over all of them, so the
+ * controller can prove that nobody but its Publish step changed the library between two points.
+ */
+export function fingerprint(dir) {
+  if (!statSync(dir).isDirectory()) throw new Error(`${dir} is not a directory`);
+  const files = {};
+  const all = createHash("sha256");
+  for (const rel of filesUnder(dir)) {
+    const digest = createHash("sha256")
+      .update(readFileSync(path.join(dir, rel)))
+      .digest("hex");
+    files[rel] = digest;
+    all.update(`${rel}\0${digest}\n`);
+  }
+  return { digest: all.digest("hex"), files };
+}
+
+/** The runtime an API library carries must be the one this toolkit ships, byte for byte. */
+export function verifyRuntime(dir) {
+  const shipped = readFileSync(path.join(HERE, RUNTIME));
+  const copy = path.join(dir, RUNTIME);
+  const problems = [];
+  if (!existsSync(copy)) problems.push(`${RUNTIME} is missing from the library`);
+  else if (!readFileSync(copy).equals(shipped))
+    problems.push(`${RUNTIME} differs from the shipped runtime`);
+  return { problems };
+}
+
 async function main(argv) {
   const [cmd, ...rest] = argv;
   switch (cmd) {
@@ -281,6 +331,10 @@ async function main(argv) {
     }
     case "index":
       return buildIndex(rest[0]);
+    case "fingerprint":
+      return fingerprint(rest[0]);
+    case "verify-runtime":
+      return verifyRuntime(rest[0]);
     default:
       throw new Error(`unknown command ${JSON.stringify(cmd)}`);
   }

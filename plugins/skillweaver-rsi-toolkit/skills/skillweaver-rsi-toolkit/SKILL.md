@@ -18,7 +18,7 @@ This Skill needs `run_subagent`, so it runs in a top-level Session. It also need
 - `iterations` - practice iterations; default 10 (the smoke budget). The paper explores for 160.
 - `test_probability` - the chance that an iteration tests an untested API instead of exploring; default 0.5, upstream's `test_probability:0.5`.
 - `benchmark_id` (optional) - a published Benchmark of this Project whose cases are tasks on the same site: H1 (the empty library) and the final library are measured on it. Without one, the run reports the practice log and the API tests only, and says that nothing was measured. Never practise on its cases: SkillWeaver proposes its own tasks.
-- `runs` - runs per case in every measurement; default 1, or the request's `test_repetitions`.
+- `runs` - runs per case in every measurement; default 1, or the request's `test_repetitions`. One run checks the pipeline; a claim that the library helps needs at least 3, and the report gives every run, the mean and the spread.
 - The runtime - the `provider` / `model_id` pair the user names, else your Environment's, fixed for the whole experiment (`references/evaluation.md`, controller step 2). The Proposer, Judge, Synthesiser and Tester run on your own model; record it.
 
 Budget, for I iterations, C cases and R runs: I practice cells of the Target, at most I Proposer or Tester calls, at most I Judge calls and at most I Synthesiser calls; with a Benchmark, `2 × C × R` cells more for H1 and the final measurement. Before the first practice cell, show the user the plan (site, `live_site`, iterations, the Benchmark if any, these numbers) and wait for their go-ahead: a quick-start prompt is not one. Never launch a larger budget implicitly.
@@ -82,12 +82,26 @@ Follow `references/initialization.md`. It creates the empty skill library Skill 
 
 With a `benchmark_id`, every measurement is a full case × `runs` matrix through `references/evaluation.md`, following its controller section, and lands in that Benchmark's `scoreboard.yaml`. Measure H1 before the first practice cell. A prior record is reusable only when its State version, case set, runtime and runs all match. Practice cells are never scored and never enter a scoreboard.
 
+### The same site for both measurements
+
+Practice changes a sandboxed site (it creates, edits and filters data), so H1 and the final library would otherwise be measured on different sites. With `live_site: false`, the user names how the site is reset to one fixed snapshot (for a WebArena container, restoring its image); reset it before H1 and again before the final measurement, and record the command and the time of each reset. If it cannot be reset, say so in the report next to the scores. A live site drifts on its own: measure H1 and the final library close together, and report that the two ran on a moving site. Both measurements use the same browser profile and sign-ins, and nobody else uses the agent browser while a cell runs.
+
+## Integrity checks
+
+These are the checks the run enforces itself, not instructions to anyone:
+
+- **The library changes only through Publish.** After every Publish, record `TOOL fingerprint LIBRARY` in `OUT/state.yaml`. Before and after every practice cell and every role call, compute it again; any difference you did not publish is a stop (`a Target edit to LIBRARY` or `a role edit to LIBRARY`), and the changed files are named in the report.
+- **The runtime is the shipped one.** Before every practice cell, `TOOL verify-runtime APIS` must report no problem.
+- **Every API passed the checker.** Only files `TOOL check` accepted are registered, and `INDEX.md` lists registered APIs only.
+
+You never edit anything under `SKILL_DIR`, and never pass a setting the user did not give or this Skill does not name.
+
 ## The practice loop
 
 Iterations are sequential: one browser, one Target, each iteration using the library the ones before it built. For iteration `n` = 0, 1, …:
 
 1. **Go home.** `penguin browser open <site_url>` (upstream returns to the base URL every iteration). Save `penguin browser scan --text --max-chars 12000` as `OUT/iter_<n>/page.txt` and `penguin browser screenshot -o OUT/iter_<n>/page.png`.
-2. **Choose.** Draw `u` with `node -e 'console.log(Math.random())'` (never pick it yourself) and record it. When `u < test_probability` and `TOOL pick-test APIS --seed <n>` names an API, this is a **test** iteration: run the Tester on that API (`references/roles.md`). Otherwise it is an **explore** iteration: run the Proposer. Write `OUT/iter_<n>/choose.json`.
+2. **Choose.** Draw `u` with `node -e 'console.log(Math.random())'` (never pick it yourself) and record it. When `u < test_probability` and `TOOL pick-test APIS --seed <n>` names an API, this is a **test** iteration: run the Tester on that API (`references/roles.md`); an API with no parameters needs no Tester and is tested with `{}`, as the paper runs such an API directly as a unit test. Otherwise it is an **explore** iteration: run the Proposer. Write `OUT/iter_<n>/choose.json`.
 3. **Practise.** Run one practice cell (below) with the task: for explore, the proposed skill; for test, `Test the API <name> with the arguments <json>`.
 4. **Update.**
    - A test whose Trace shows the Target calling that API with exactly those arguments and the call printing `{"ok":true,…}` passes: `TOOL tested APIS <name> iter_<n>`, then `TOOL index APIS`. Nothing else changes.
@@ -116,7 +130,7 @@ Never put a Benchmark case, a score or another iteration's outcome in it.
 
 Only you write `LIBRARY`, and only while no cell runs. For each API file the Synthesiser returns:
 
-1. Write it to `OUT/iter_<n>/candidates/<name>.mjs`, copy it into `APIS` (a new file, or a new version replacing the old one), and run `TOOL check APIS/<name>.mjs`. A file with any problem is removed again (the previous version, if any, restored) and recorded with its problems; never repair it yourself. A version that drops a documented usage-log entry of the one it replaces is a problem too.
+1. Write it to `OUT/iter_<n>/candidates/<name>.mjs`, copy it into `APIS` (a new file, or a new version replacing the old one), and run `TOOL check APIS/<name>.mjs`. A version that drops a documented usage-log entry of the one it replaces is a problem too. A file with any problem is removed again (the previous version, if any, restored) and its problems recorded; never repair it yourself. Instead, as upstream's `KnowledgeBase.update` does, send the same Synthesiser (`input_subagent` on its Session) the code and the problems of every attempt so far and ask it to write that file again, up to 10 attempts in all; a file that still fails after the tenth is dropped and recorded.
 2. For each that passed, `TOOL register APIS <name> iter_<n>` (a new version starts untested).
 3. When the reply carries site knowledge, replace `LIBRARY/site.md` with it, unless it lost a section the old one had (then keep the old one and record it).
 4. `TOOL index APIS`; then bump the `skillweaver-apis` Skill's `version` (the next `N` when it carries today's date, else today's `.1`) and the State `version` in `STATE/system_config.yaml` by 1, replacing the field rather than adding a second one; parse both back, and copy `LIBRARY` to `OUT/library/v<version>/`.
@@ -125,7 +139,7 @@ A reply that adds nothing that passes publishes nothing. There is no cap on the 
 
 ### Stops
 
-Stop when the budget is spent, when the browser stays unavailable, on `version_changed` or `benchmark_invalid`, on an `evaluation_failed` with no repair left, on a runtime mismatch, on a Target edit to `LIBRARY`, and when a Benchmark case, a rubric or a score enters a role's context (discard that output as contaminated). The last published State stays; never publish a partial or contaminated change, and say what stopped the run.
+Stop when the budget is spent, when the browser stays unavailable, when an integrity check fails, on `version_changed` or `benchmark_invalid`, on an `evaluation_failed` with no repair left, on a runtime mismatch, on a Target edit to `LIBRARY`, and when a Benchmark case, a rubric or a score enters a role's context (discard that output as contaminated). The last published State stays; never publish a partial or contaminated change, and say what stopped the run.
 
 ## Freeze and report
 
@@ -137,5 +151,6 @@ Report:
 - the H1 and final State versions and the final library: each API's signature, version, test count and usage log, and every API dropped by the checks with its problems;
 - the practice log iteration by iteration (explore or test, the task, the Judge's verdict, what was published);
 - with a Benchmark, the baseline and final scores per case, and the APIs the Traces show the Target calling (a read is not a use, and a use is not a gain); without one, that nothing was measured;
-- the cost of every role and cell from the Sessions' recorded usage;
-- the source links and revision, and every adaptation: APIs are Node scripts over `penguin browser`, not Playwright Python; the agent is the Target with its own tools, not upstream's code-generating agent, and the 10-action limit is an instruction, not enforced; the Target picks APIs by reading `INDEX.md`, not through upstream's retrieval call; the success checker is an agent Judge on the Trace and the final screenshot; exploration is sequential. This is not a reproduction of the paper's WebArena numbers.
+- the cost of every role and cell from the Sessions' recorded usage, including retried iterations, failed cells, the Synthesiser's regeneration rounds and role output discarded as contaminated;
+- what is enforced and what is only an instruction: the library fingerprint, the runtime check and the code check are enforced by this run; the roles' read limits, the live-site safety rules, the 10-action limit and the Target's duty not to edit its State are instructions the Traces can show being followed or broken but nothing prevents. The code check is a quality gate, not a sandbox: an API runs with the same rights as the Target's own shell;
+- the source links and revision, and every adaptation: APIs are Node scripts over `penguin browser`, not Playwright Python; the agent is the Target with its own tools, not upstream's code-generating agent, and the 10-action limit is an instruction, not enforced; the Target picks APIs by reading `INDEX.md`, not through upstream's retrieval call; the success checker is an agent Judge on the Trace and the final screenshot, where the paper's reward model also sees a screenshot per step; exploration is sequential, one attempt per iteration; the paper's information-seeking proposals and scraping prompts (§2.1, Appendix A.7) are not used, as upstream's exploration loop does not load them at this revision; upstream repairs a failing locator inside the call (`allow_recovery`) and feeds those repairs to the update, while here the Target works around a failing call with its own tools and the Synthesiser updates the API from that Trace. This is not a reproduction of the paper's WebArena numbers.

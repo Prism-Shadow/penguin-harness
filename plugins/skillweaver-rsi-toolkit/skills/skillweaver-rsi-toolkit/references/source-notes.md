@@ -10,11 +10,14 @@ This toolkit implements SkillWeaver from the paper and its reference implementat
 | `explore.py`: `_successfully_executes_function_without_errors` | a test passes when the Target's call of the API printed `{"ok":true,…}` |
 | `knowledge_base/check_success.py`: `check_success_simple` | Judge |
 | `knowledge_base/knowledge_base.py`: `update` (verified code plus the functions used in the episode as context), `templates/kb_procedural_update_base.md`, `kb_procedural_update_single.md`, `kb_semantic_update.md` | Synthesiser, Publish |
-| `knowledge_base/code_verification.py`: syntax and parameter checks | `skillweaver.mjs check` |
+| `knowledge_base/code_verification.py`: syntax and parameter checks; `KnowledgeBase.update` re-prompts with every attempt's violations, up to 10 attempts (paper §2.2) | `skillweaver.mjs check`; Publish sends the problems back to the same Synthesiser, up to 10 attempts |
+| Paper §2.3: an API with no parameters is run directly as a unit test | a test with `{}`, no Tester |
 | `attempt_task.py` with the knowledge base and `templates/predict_relevant_functions.md` | the Target reading `INDEX.md` and calling the API scripts |
 | Playwright `async def skill(page, …)` starting with `page.goto("/…")` | `apis/<name>.mjs` starting with `browser.open("/…")`, over `penguin browser` |
 
-Left out on purpose: WebArena container orchestration and login helpers, the WebArena and VisualWebArena evaluators, the Browser-Use variant, the information-seeking templates (`propose_information_seeking_*.md`, which no code at this revision loads), and the bundled `skillnet/` libraries, which were learned for specific WebArena sites.
+Left out on purpose: WebArena container orchestration and login helpers, the WebArena and VisualWebArena evaluators, the Browser-Use variant, and the bundled `skillnet/` libraries, which were learned for specific WebArena sites.
+
+Where the paper and the code differ, this toolkit follows the code and reports the difference as an adaptation: the paper also proposes information-seeking tasks with scraping prompts (§2.1, Appendix A.7), but `explore.py` never proposes them and no code at this revision loads `propose_information_seeking_*.md`; the paper's reward model sees a screenshot per step (§2.2), the code's `check_success_simple` sees the trajectory text and the final screenshot. Upstream's in-call locator repair (`allow_recovery`, `debug_prompt.md`) has no counterpart: the Target works around a failing call with its own tools and the Synthesiser updates the API from that Trace.
 
 ## Upstream license
 
