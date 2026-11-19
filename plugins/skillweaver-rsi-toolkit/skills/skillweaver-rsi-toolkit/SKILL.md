@@ -1,7 +1,7 @@
 ---
 name: skillweaver-rsi-toolkit
 description: Run SkillWeaver (Zheng et al. 2025) on an agent - let it explore a website on its own, propose skills worth having, practise them, and hone the successful ones into tested, reusable API scripts in a skill library, then freeze the library and measure it on a published Benchmark of tasks on that site. Use when asked to make an agent better at a website by learning skills or APIs from self-directed practice.
-version: 2026.11.20.2
+version: 2026.11.20.3
 ---
 
 # SkillWeaver
@@ -119,7 +119,7 @@ A practice cell is one execution of the Target in a fresh Workspace, the launche
 Website: <site_url>
 Task: <the proposed skill, or "Test the API <name> with the arguments <json>">
 
-Use only `penguin browser` and the registered SkillWeaver APIs that invoke it to access this website. Do not use `curl`, `wget`, shell or Node HTTP clients, other browser tools, or network requests inside browser scripts to fetch pages directly. This applies to verification and fallbacks too. Use at most 10 browser actions. If you cannot finish within these limits, report what remains. Your Agent State is read-only for this task, including its memory and memory index. Do not save observations, corrections, or discoveries to memory. Write any task output only in this Workspace.
+Use only `penguin browser` and the registered SkillWeaver APIs that invoke it to access this website. Do not use `curl`, `wget`, shell or Node HTTP clients, or other browser tools to reach the site. This applies to verification and fallbacks too. Browser scripts remain within the site's origin. Use at most 10 browser actions. If you cannot finish within these limits, report what remains. Your Agent State is read-only for this task, including its memory and memory index. Do not save observations, corrections, or discoveries to memory. Write any task output only in this Workspace.
 <for a test: Call it exactly as INDEX.md describes, with these arguments, and report its output.>
 <when live_site: Do not create accounts, publish or submit content, reserve anything, contact support, or do anything else that could affect other users of the website; stop instead.>
 When you are done, try `penguin browser screenshot -o final.png` in this Workspace (skip it if it fails; it is optional) and say in one or two sentences what you did and whether it worked.
