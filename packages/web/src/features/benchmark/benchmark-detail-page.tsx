@@ -6,7 +6,7 @@
  * button is the way out rather than a close cross. An id that no longer resolves — a deleted
  * Benchmark or a stale link — says so in place of the detail and keeps that way out.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import type {
   BenchmarkManifestProblem,
@@ -29,7 +29,6 @@ import { nameOnMachine } from "../../lib/workspace-machines";
 import { useSessions } from "../../state/sessions";
 import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { downloadArchive } from "../agents";
@@ -38,6 +37,7 @@ import { benchmarkPath } from "./benchmark-prompts";
 import { useBenchmarksAcross } from "./benchmark-sources";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /**
  * What stands in place of the detail for a Benchmark that is not published: still being built,
@@ -187,7 +187,14 @@ export function BenchmarkDetailPage() {
     benchmarkId === "" ? null : (listed.benchmarks?.find((b) => b.id === benchmarkId) ?? null);
   /** The Project's list came back without this id: the Benchmark was deleted, or the link is stale. */
   const missing = benchmark === null && listed.benchmarks !== null && listed.pending.length === 0;
-  const error = listed.error === null ? null : apiErrorText(listed.error);
+  // Made once per failure, so its report keeps the time it failed at.
+  const error = useMemo(
+    () =>
+      listed.error === null
+        ? null
+        : failureNode(listed.error, { what: "a Project's Benchmarks could not be listed" }),
+    [listed.error],
+  );
 
   useDocumentTitle(benchmark?.title ?? S.benchmark.title);
 

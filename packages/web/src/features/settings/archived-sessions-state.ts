@@ -31,6 +31,7 @@
  * against the fetch fake (the component only renders it and asks before a delete).
  */
 import { createStore } from "zustand/vanilla";
+import type { Failure } from "@prismshadow/penguin-ui";
 import type {
   ArchivedSessionGroup,
   ArchivedSessionGroupsResponse,
@@ -53,6 +54,7 @@ import {
   settlePage,
 } from "./archived-sessions-paging";
 import type { HeldRows } from "./archived-sessions-paging";
+import { failureOf } from "../../lib/failure";
 
 /** Groups shown before "more groups". */
 export const ARCHIVE_GROUP_PAGE = 20;
@@ -144,8 +146,8 @@ export interface ArchiveState {
   selection: ArchiveSelection;
   /** An action is running: its buttons stay disabled until it settles. */
   busy: boolean;
-  /** Why the last read failed; null when it did not. */
-  error: string | null;
+  /** Why the last read failed — its words and, for a failure, its report; null when it did not. */
+  error: Failure | null;
   /** Machines whose archive could not be read this time, by alias. */
   unreachable: string[];
 }
@@ -349,7 +351,9 @@ export function createArchiveStore(
               if (g !== gen) return;
               const now = get().rows.get(key);
               if (now !== undefined) setRows(key, { ...now, loading: false });
-              set({ error: apiErrorText(err) });
+              set({
+                error: failureOf(err, { what: "archived conversations could not be listed" }),
+              });
             }
           });
         }),
@@ -408,7 +412,7 @@ export function createArchiveStore(
         local = await api.listArchivedSessionGroups(filters, "here");
       } catch (err) {
         if (g !== gen) return;
-        set({ error: apiErrorText(err) });
+        set({ error: failureOf(err, { what: "archived conversations could not be listed" }) });
         if (get().groups === null) set({ groups: [], total: 0 });
         return;
       }
