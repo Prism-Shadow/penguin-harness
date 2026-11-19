@@ -34,6 +34,7 @@ export {
 } from "./project-model-request.js";
 export type {
   ProjectModelClientOptions,
+  ProjectModelRequest,
   ProjectModelRequestEnd,
   ProjectModelRequestOptions,
 } from "./project-model-request.js";

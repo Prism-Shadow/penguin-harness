@@ -30,6 +30,7 @@ import { HttpError } from "../http/errors.js";
 import type { Machines } from "../machines/service.js";
 import { pluginHostFrom } from "../plugin/host.js";
 import { toolModelBindingRoutes } from "../http/routes/tool-model-bindings.js";
+import { modelModalities } from "./model-modalities.js";
 import { toolBindingKeyFault } from "./tool-binding-key.js";
 
 /** A binding's name, one per language — what the picker is labelled with. */
@@ -53,6 +54,15 @@ export interface ToolModelCandidate {
   clientType?: string;
   /** The row's `vision` annotation; absent = supported. */
   vision?: boolean;
+  /**
+   * The MMSP client a request to the row goes to: `clientType`, else the one its id's family routes
+   * to (`openai-image`, `google-official` …); absent when MMSP cannot route it.
+   */
+  client?: string;
+  /** What MMSP's registry says the model takes on that client (`Text`, `Image`, `Audio` …); absent when unlisted. */
+  input?: string[];
+  /** What MMSP's registry says the model returns on that client (`Text`, `Image`, `Web` …); absent when unlisted. */
+  output?: string[];
 }
 
 /** The code half one binding binds. */
@@ -146,12 +156,13 @@ export function toolModelBindingsOver(
   projectConfig: Pick<ProjectConfigStore, "getModels" | "getToolModels" | "setToolModel">,
   declared: () => DeclaredBinding[],
 ): ToolModelBindings {
-  const candidatesOf = async (projectId: string) =>
+  const candidatesOf = async (projectId: string): Promise<ToolModelCandidate[]> =>
     (await projectConfig.getModels(projectId)).models.map((info) => ({
       provider: info.provider,
       modelId: info.modelId,
       ...(info.effective.clientType !== undefined ? { clientType: info.effective.clientType } : {}),
       ...(info.vision !== undefined ? { vision: info.vision } : {}),
+      ...modelModalities(info.modelId, info.effective.clientType),
     }));
   const list = async (projectId: string): Promise<ToolModelBindingView[]> => {
     const bindings = declared();

@@ -8,6 +8,8 @@
  *   configure, and a key no plugin declares are each refused, and nothing is written.
  * - Renaming the bound model on the models page moves the binding; deleting it unbinds.
  * - "Restore defaults" clears every binding.
+ * - A binding judges a model by the MMSP client it is routed to and the modalities MMSP's registry
+ *   lists for it there, as well as by its pair and vision mark.
  * - Declarations a package cannot stand behind are dropped: no plugin behind the module, a key
  *   that is not a binding key, a key an earlier package already declared.
  */
@@ -136,6 +138,63 @@ describe("tool-model bindings", () => {
     });
     expect(restored.status).toBe(200);
     expect(await t.deps.projectConfigService.getToolModels(PROJECT)).toEqual({});
+  });
+});
+
+describe("what a binding judges a model by", () => {
+  /** Accepts what MMSP routes to its image client, or what MMSP's registry lists returning an image. */
+  function imageByMmsp(): ModuleDef {
+    return {
+      manifest: parseManifest({
+        name: "AcmeMmspImages",
+        requires: {},
+        provides: {},
+        contributes: {
+          "ToolModelBindingsProvider.bindings": [
+            { id: "acme.image", key: "image", title: { en: "Image", zh: "图像" } },
+          ],
+        },
+        children: [],
+      }),
+      create: () => ({
+        api: {},
+        bind: {
+          "acme.image": {
+            accepts: (m: ToolModelCandidate) =>
+              m.client === "openai-image" || (m.output?.includes("Image") ?? false),
+          },
+        },
+      }),
+    };
+  }
+  let t: TestApp | undefined;
+  afterAll(async () => {
+    await t?.cleanup();
+  });
+
+  it("offers the models MMSP routes to an image client or lists as returning an image", async () => {
+    const host = new PluginHost();
+    host.use({ specifier: "@acme/mmsp-images", modules: [imageByMmsp()], replaces: [] });
+    t = await createTestApp({ plugins: host });
+    const owner = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    const routedToImages = { provider: "custom", modelId: "house-images" };
+    const listedAsImages = { provider: "custom", modelId: "gemini-3.1-flash-image" };
+    const text = { provider: "custom", modelId: "house-chat" };
+    const configured = await owner.put(`/api/projects/${PROJECT}/models`, {
+      defaultModel: text,
+      models: [
+        { ...text, clientType: "openai-chat", baseUrl: "https://models.example/v1" },
+        { ...routedToImages, clientType: "openai-image", baseUrl: "https://models.example/v1" },
+        {
+          ...listedAsImages,
+          clientType: "google-official",
+          baseUrl: "https://generativelanguage.googleapis.com",
+        },
+      ],
+    });
+    expect(configured.status, await configured.clone().text()).toBe(200);
+    const { bindings } = (await (await owner.get(BINDINGS)).json()) as ToolModelBindingsResponse;
+    expect(bindings[0]?.candidates).toEqual([routedToImages, listedAsImages]);
   });
 });
 

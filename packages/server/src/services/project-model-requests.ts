@@ -11,7 +11,7 @@
  * request that reported usage is billed by it; one that did not is a 0-token row with its status
  * (`failed`, `aborted`), as a chat request is.
  */
-import type { UniConfig, UniEvent, UniMessage } from "@prismshadow/mmsp";
+import type { UniEvent } from "@prismshadow/mmsp";
 import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import type { Opaque } from "@prismshadow/penguin-core/kernel";
 import {
@@ -21,7 +21,11 @@ import {
   tokenUsage,
   usageToTokenCounts,
 } from "@prismshadow/penguin-core";
-import type { ProjectModelRequestEnd, StopReason } from "@prismshadow/penguin-core";
+import type {
+  ProjectModelRequest,
+  ProjectModelRequestEnd,
+  StopReason,
+} from "@prismshadow/penguin-core";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import type { UsageContext, UsageRecording } from "@prismshadow/penguin-library-observability";
@@ -40,16 +44,12 @@ export interface ProjectModelScope {
   purpose: string;
 }
 
-/** One request: the MMSP messages and config, and how long it may run. */
-export interface ProjectModelRequest {
-  messages: UniMessage[];
-  /** MMSP's request config (modalities, voice, thinking …). */
-  config?: UniConfig;
-  /** Stops the request; its usage row says `aborted` unless the provider had reported usage. */
-  signal?: AbortSignal;
-  /** Longest wait between two events from the model (default: chat's, 600 s; 0 disables). */
-  idleTimeoutMs?: number;
-}
+/**
+ * One request: the MMSP messages and config, and how long it may run. Core declares it, so that a
+ * plugin requiring this interface names the same opaque type (an opaque value is matched by the
+ * package that declares its type, and a plugin compiles against core, never against the server).
+ */
+export type { ProjectModelRequest };
 
 @Interface()
 export abstract class ProjectModelRequests {
