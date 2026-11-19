@@ -1321,6 +1321,16 @@ export interface AgentCompactionConfigDto {
   maxSessionTurns?: number;
   mode?: "summarize" | "discard";
   prompt?: string;
+  /**
+   * Tool rounds a summarize compaction may take before the summary (`max_rounds`); `<= 0` allows
+   * none. Reported as the effective value: a file without the key reads as the built-in default,
+   * as core reads it. Written as an integer of 0 or more. Absent only from an older server.
+   */
+  maxRounds?: number;
+  /** The line sent after each tool round (`reminder`); effective value like `maxRounds`. A blank one sends none. */
+  reminder?: string;
+  /** The note a context opens with when no summary could be had (`handoff_note`); effective value like `maxRounds`. A blank one gives the quoted data alone. */
+  handoffNote?: string;
 }
 
 /** Memory config. All fields report effective values (a config with no `memory` section reads as enabled with the built-in prompts, matching core); the prompts are edited on the Memory tab. */

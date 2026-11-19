@@ -372,7 +372,16 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       systemPrompt,
       maxTurns: 40,
       model: { maxTokens: 32_000, thinkingLevel: "medium", timeoutMs: 120_000 },
-      compaction: { maxContextLength: 800_000, maxSessionTurns: 60, mode: "summarize" },
+      compaction: {
+        maxContextLength: 800_000,
+        maxSessionTurns: 60,
+        mode: "summarize",
+        maxRounds: 8,
+        reminder:
+          "Tool round {{ROUNDS_USED}} done. Reply with the summary as soon as the hand-off files are written.",
+        handoffNote:
+          "No summary of the earlier conversation could be written.\n\n{{ERROR}}\n\n{{USER_MESSAGES}}\n\n{{LAST_TURN}}\n\nTrace file: {{TRACE_PATH}}",
+      },
       memory: {
         enabled: true,
         prompt: "# Memory\n\n{{USER_MEMORY_INDEX}}",

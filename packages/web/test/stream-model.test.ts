@@ -113,7 +113,7 @@ import {
   type UserSteeringItem,
   type UserTextItem,
 } from "../src/lib/amsp/stream-model";
-import { refusalHandoffOccurrence } from "../src/lib/amsp/compaction-summary";
+import { refusalHandoff } from "../src/lib/amsp/compaction-summary";
 import { liveSessionElapsedMs } from "../src/lib/amsp/task-stats";
 
 /** A completion notice as core delivers it: steered (engine drain) or unstamped (idle take). */
@@ -1179,7 +1179,7 @@ describe("approvals and events", () => {
         gaveUp: r.gaveUp,
       })),
     row: rowOf(m),
-    refusal: refusalHandoffOccurrence(m.items) !== null,
+    refusal: refusalHandoff(m.items) !== null,
     taskOpen: m.taskOpen,
     runEnded: m.runEnded,
   });
@@ -1211,31 +1211,31 @@ describe("approvals and events", () => {
   it("the Session's refusal hand-off is its latest compaction row until a later compaction ends otherwise", () => {
     const m = createStreamModel();
     for (const msg of refusedTask(false)) pushMessage(m, msg);
-    const first = refusalHandoffOccurrence(m.items);
-    expect(first).not.toBeNull();
+    const first = refusalHandoff(m.items)?.occurrence;
+    expect(first).toBeDefined();
     // A later refusal is an occurrence of its own, so a dismissed notice is raised again for it.
     for (const msg of refusedRequest("completed")) {
       pushMessage(m, at(msg, "2026-01-01T00:05:00.000Z"));
     }
-    const second = refusalHandoffOccurrence(m.items);
-    expect(second).not.toBeNull();
+    const second = refusalHandoff(m.items)?.occurrence;
+    expect(second).toBeDefined();
     expect(second).not.toBe(first);
     // A later compaction that completes normally takes it down; so does one that fails.
     pushMessage(
       m,
       compactionBegin({ reason: "manual", mode: "summarize", context: 900, turns: 2 }),
     );
-    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    expect(refusalHandoff(m.items)).toBeNull();
     pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
-    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    expect(refusalHandoff(m.items)).toBeNull();
     for (const msg of refusedRequest("completed")) pushMessage(m, msg);
-    expect(refusalHandoffOccurrence(m.items)).not.toBeNull();
+    expect(refusalHandoff(m.items)).not.toBeNull();
     pushMessage(
       m,
       compactionBegin({ reason: "manual", mode: "summarize", context: 900, turns: 2 }),
     );
     pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "aborted" }));
-    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    expect(refusalHandoff(m.items)).toBeNull();
     // A compaction request the provider refused presents the same way as a refused turn.
     pushMessage(
       m,
@@ -1244,14 +1244,14 @@ describe("approvals and events", () => {
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("fatal", { errorCode: "rejected", errorMessage: REFUSAL }));
     pushMessage(m, degradedEnd("rejected", REFUSAL, 1));
-    expect(refusalHandoffOccurrence(m.items)).not.toBeNull();
+    expect(refusalHandoff(m.items)).not.toBeNull();
     // Any other degraded end is no refusal.
     pushMessage(
       m,
       compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 4 }),
     );
     pushMessage(m, degradedEnd("malformed", "the response contained no usable summary", 3));
-    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    expect(refusalHandoff(m.items)).toBeNull();
   });
 
   it("a refusal whose hand-off could not open the next context settles the retry line it announced", () => {
@@ -1260,7 +1260,7 @@ describe("approvals and events", () => {
     const retry = items(m).find((i) => i.kind === "reconnect") as ReconnectItem;
     expect(retry.gaveUp).toBe(true);
     expect(rowOf(m)).toMatchObject({ status: "fatal", summaryText: undefined });
-    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    expect(refusalHandoff(m.items)).toBeNull();
     // The next run's first request is no retry of it.
     pushMessage(m, requestBegin());
     expect(retry.retrying).toBe(false);
@@ -1292,7 +1292,7 @@ describe("approvals and events", () => {
         summaryText: undefined,
         thinkingText: undefined,
       });
-      expect(refusalHandoffOccurrence(m.items)).toBeNull();
+      expect(refusalHandoff(m.items)).toBeNull();
     }
   });
 
