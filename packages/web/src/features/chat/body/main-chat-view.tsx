@@ -1,6 +1,6 @@
 import { sessionActivity, sessionBackgroundTasks } from "../../../lib/session-activity";
 import { bucketCostUsd } from "../../../lib/amsp/task-stats";
-import { refusalHandoffOccurrence } from "../../../lib/amsp/compaction-summary";
+import { refusalHandoff } from "../../../lib/amsp/compaction-summary";
 import { agentDisplayName } from "../../../state/project";
 import { modelTaskStartCount } from "../agent-topology";
 import { ChatInput } from "../chat-input";
@@ -12,6 +12,7 @@ import { headerStats } from "../session/main-chat-helpers";
 import type { useChatController } from "../session/use-chat-controller";
 import { agentPagePath } from "../session/main-chat-dock";
 import { machineForSession } from "../../../lib/session-machines";
+import { handoffFailure } from "../request-notice";
 
 export function createMainChatView(
   scope: ReturnType<typeof useChatController> & {
@@ -61,6 +62,7 @@ export function createMainChatView(
     onPickTurnThinkingLevel,
     onPickSessionModel,
     modelPricing,
+    setFailureShown,
   } = scope;
 
   // Header statistics (chip row + info dropdown), live while a Task runs; recomputed every
@@ -112,6 +114,9 @@ export function createMainChatView(
   const vision = modelInfo?.vision !== false;
   const emptyChat =
     selected !== null && !stream.loading && !stream.error && stream.model.items.length === 0;
+  // A refusal hand-off raises the composer's notice; its 「[详情]」 opens the refused request's
+  // details in this page's failure dialog.
+  const handoff = refusalHandoff(stream.model.items);
 
   // Input area in session state: Agent and Workspace are fixed by the Session. The toolbar's
   // model picker switches this conversation's model in place (confirmed, compacting first);
@@ -154,7 +159,12 @@ export function createMainChatView(
       onOpenAgentSettings={() =>
         navigate(agentPagePath(selected.agentId, machineForSession(selected.sessionId), "runtime"))
       }
-      refusalHandoff={refusalHandoffOccurrence(stream.model.items)}
+      refusalHandoff={
+        handoff && { occurrence: handoff.occurrence, message: handoff.item.errorMessage }
+      }
+      {...(handoff !== null
+        ? { onShowRefusal: () => setFailureShown(handoffFailure(handoff.item)) }
+        : {})}
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
       sessionId={selected.sessionId}

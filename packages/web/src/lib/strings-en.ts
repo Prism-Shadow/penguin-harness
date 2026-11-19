@@ -4547,8 +4547,12 @@ Scenarios:
       `This model's context window ${n} is smaller than this agent's compaction threshold ${m}, so compaction actually fires at the edge of the window. Drag the dashed mark in the context panel, or set the threshold below the window in the agent settings — it applies immediately.`,
     contextWindowUnderThresholdAction: "Open agent settings",
     contextWindowUnderThresholdDismiss: "Dismiss",
-    contextRefusedHandoff:
-      "The provider refused the last request: too little room was left for compaction, so this conversation continued from a Trace hand-off note. Correct this model's context window in the model settings, or lower this agent's compaction threshold (drag the dashed mark in the context panel).",
+    contextRefusedHandoff: {
+      reason: (said: boolean): string =>
+        said ? "The provider refused the last request:" : "The provider refused the last request.",
+      advice:
+        "Most likely too little room was left for compaction, so this conversation continued from a Trace hand-off note. Correct this model's context window in the model settings, or lower this agent's compaction threshold (drag the dashed mark in the context panel).",
+    },
     slashHint: "Type / for commands",
     switchAgent: "Hand off to another agent — opens a new session on send",
     switchAgentTitle: "Choose agent",
@@ -4635,14 +4639,25 @@ Scenarios:
       tracePath
         ? `No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to: ${tracePath}`
         : "No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to",
-    compactionDegradedHint: (errorMessage?: string): string =>
-      errorMessage !== undefined
-        ? `No full summary could be written; the next context opens with a Trace hand-off note: ${errorMessage}`
-        : "No full summary could be written; the next context opens with a Trace hand-off note.",
-    compactionRoomHint: (providerMessage?: string): string =>
-      `Too little room was left for compaction, so the next context opens with a Trace hand-off note. Correct this model's context window, or lower the compaction threshold.${
-        providerMessage !== undefined ? ` The provider said: ${providerMessage}` : ""
-      }`,
+    compactionDegradedHint: (
+      why: string | null,
+      errorMessage: string | undefined,
+      room: boolean,
+    ): string => {
+      // The retry line's cause sits inside parentheses, lower-case; here it starts a line.
+      const cause = why === null ? null : `${why.charAt(0).toUpperCase()}${why.slice(1)}`;
+      return [
+        cause !== null && errorMessage !== undefined
+          ? `${cause}: ${errorMessage}`
+          : (cause ?? errorMessage),
+        "No full summary could be written; the next context opens with a Trace hand-off note.",
+        room
+          ? "Too little room was left for compaction: correct this model's context window, or lower the compaction threshold."
+          : undefined,
+      ]
+        .filter((line) => line !== undefined)
+        .join("\n");
+    },
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";

@@ -4786,9 +4786,17 @@ Benchmark：
       `当前模型的上下文窗口 ${n} 小于本 Agent 的压缩阈值 ${m}，压缩实际会在窗口边缘触发。拖动上下文面板里的虚线或在 Agent 设置中把阈值调到窗口以下，立即生效。`,
     contextWindowUnderThresholdAction: "打开 Agent 设置",
     contextWindowUnderThresholdDismiss: "忽略",
-    /** Composer notice in the same slot, with the same two buttons: the Session's latest compaction was a refusal hand-off (see composerNotice). */
-    contextRefusedHandoff:
-      "服务商拒绝了上一次请求：留给压缩的空间不足，本对话已改由 Trace 交接说明接续。请在模型配置中更正该模型的上下文窗口，或调低本 Agent 的压缩阈值（可拖动上下文面板里的虚线）。",
+    /**
+     * Composer notice in the same slot, with the same two buttons: the Session's latest compaction
+     * was a refusal hand-off (see composerNotice). Why first: the lead, then the provider's own
+     * words after its colon when it sent any; then what was done and what to correct.
+     */
+    contextRefusedHandoff: {
+      reason: (said: boolean): string =>
+        said ? "服务商拒绝了上一次请求：" : "服务商拒绝了上一次请求。",
+      advice:
+        "多半是留给压缩的空间不足，本对话已改由 Trace 交接说明接续。请在模型配置中更正该模型的上下文窗口，或调低本 Agent 的压缩阈值（可拖动上下文面板里的虚线）。",
+    },
     slashHint: "输入 / 使用命令",
     /** `/agent` handoff: command description, picker title, search box, no-match hint, and the staged target's description and remove button. */
     switchAgent: "交给其他 Agent，发送时开启新会话",
@@ -4888,16 +4896,26 @@ Benchmark：
       tracePath
         ? `没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件：${tracePath}`
         : "没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件",
-    /** The settled row's status-mark tooltip and accessible name when the compaction completed without a full summary: the title stays 压缩完毕, only the mark says it; carries the end's error message when there is one. */
-    compactionDegradedHint: (errorMessage?: string): string =>
-      errorMessage !== undefined
-        ? `未能生成完整摘要，新上下文改以 Trace 交接说明开头：${errorMessage}`
-        : "未能生成完整摘要，新上下文改以 Trace 交接说明开头",
-    /** The same when too little room was left for the compaction (compactionShortOfRoom): what to correct, then the provider's own words when it refused. */
-    compactionRoomHint: (providerMessage?: string): string =>
-      `留给压缩的空间不足，新上下文改以 Trace 交接说明开头。请更正该模型的上下文窗口，或调低压缩阈值。${
-        providerMessage !== undefined ? `服务商的原话：${providerMessage}` : ""
-      }`,
+    /**
+     * The settled row's status-mark tooltip and accessible name when the compaction completed without
+     * a full summary: the title stays 压缩完毕, only the mark says it. Why first — the cause in words
+     * (the retry line's, with the HTTP status) and the error's own words — then what was done, then,
+     * short of room (compactionShortOfRoom), what to correct. One line each.
+     */
+    compactionDegradedHint: (
+      why: string | null,
+      errorMessage: string | undefined,
+      room: boolean,
+    ): string =>
+      [
+        why !== null && errorMessage !== undefined
+          ? `${why}：${errorMessage}`
+          : (why ?? errorMessage),
+        "未能生成完整摘要，新上下文改以 Trace 交接说明开头。",
+        room ? "留给压缩的空间不足：请更正该模型的上下文窗口，或调低压缩阈值。" : undefined,
+      ]
+        .filter((line) => line !== undefined)
+        .join("\n"),
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";
