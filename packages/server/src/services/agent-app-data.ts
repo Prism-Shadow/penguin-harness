@@ -4,11 +4,11 @@
  * at the same place below the Agent's directory: `<agentId>/app/data/<workbenchId>/…`.
  *
  * It is the workbench's data, as `state.json` is: an export carries it only with
- * `workbenchData`, and only for a workbench it carries; the cache folder never travels. An
- * overwrite import replaces the folder of each workbench the package brings data for, keeps the
- * folder of a workbench it brings none for, and removes the data and cache of a workbench the
- * new State no longer has — that workbench is gone, as its `state.json` is. The backup the
- * import takes first holds every folder it replaces or removes.
+ * `workbenchData`, and only for a workbench it carries; the cache and state folders never
+ * travel. An overwrite import replaces the folder of each workbench the package brings data for,
+ * keeps the folder of a workbench it brings none for, and removes the data, cache and state of a
+ * workbench the new State no longer has — that workbench is gone, as its `state.json` is. The
+ * backup the import takes first holds every data folder it replaces or removes.
  *
  * Nothing here follows a link: a link on the way to a folder on disk leaves the folder out of
  * an export and refuses an import, and a package that holds a link below `app/` is refused.
@@ -16,9 +16,14 @@
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { agentDir, workbenchCacheDir, workbenchDataDir } from "@prismshadow/penguin-core";
+import {
+  agentDir,
+  workbenchCacheDir,
+  workbenchDataDir,
+  workbenchStateDir,
+} from "@prismshadow/penguin-core";
 import { badRequest } from "../http/errors.js";
-import { realDirs, removeBelow, WorkbenchFileError } from "../workbenches/files.js";
+import { realDirs, removeBelow, WorkbenchDirError } from "../workbenches/data-dirs.js";
 import { isTempName, isWorkbenchId } from "../workbenches/store.js";
 import { APP_DATA } from "./agent-zip.js";
 
@@ -85,14 +90,16 @@ async function firstLink(dir: string): Promise<string | null> {
  */
 export class AppDataImport {
   private constructor(
+    private readonly root: string,
     private readonly base: string,
     private readonly extractDir: string,
     /** Workbenches the package brings data for: their folders are replaced. */
     private readonly replaced: string[],
-    /** Workbenches the new State no longer has: their data and cache go. */
+    /** Workbenches the new State no longer has: their data, cache and state go. */
     private readonly dropped: string[],
     private readonly dataDir: (id: string) => string,
     private readonly cacheDir: (id: string) => string,
+    private readonly stateDir: (id: string) => string,
   ) {}
 
   /**
@@ -116,19 +123,21 @@ export class AppDataImport {
     try {
       await realDirs(base, APP_DATA, "import");
     } catch (err) {
-      if (err instanceof WorkbenchFileError) throw badRequest(`Import failed: ${err.message}`);
+      if (err instanceof WorkbenchDirError) throw badRequest(`Import failed: ${err.message}`);
       throw err;
     }
     const incoming = new Set(await workbenchIds(path.join(incomingState, "workbenches")));
     const carried = await workbenchIds(path.join(extractDir, ...APP_DATA));
     const current = await workbenchIds(path.join(stateDir, "workbenches"));
     return new AppDataImport(
+      root,
       base,
       extractDir,
       carried.filter((id) => incoming.has(id)),
       current.filter((id) => !incoming.has(id)),
       (id) => workbenchDataDir(root, projectId, agentId, id),
       (id) => workbenchCacheDir(root, projectId, agentId, id),
+      (id) => workbenchStateDir(root, projectId, agentId, id),
     );
   }
 
@@ -144,8 +153,8 @@ export class AppDataImport {
 
   /**
    * After the State swap: each carried folder moves in over the current one (moved into
-   * `trash`, which the caller removes with its staging), and the cache of a replaced or dropped
-   * workbench goes with the data of a dropped one.
+   * `trash`, which the caller removes with its staging), the cache of a replaced or dropped
+   * workbench goes, and so do the data and state of a dropped one.
    */
   async land(trash: string): Promise<void> {
     for (const id of this.replaced) {
@@ -157,7 +166,10 @@ export class AppDataImport {
       }
       await fs.rename(path.join(this.extractDir, ...APP_DATA, id), target);
     }
-    for (const id of this.dropped) await removeBelow(this.base, this.dataDir(id));
+    for (const id of this.dropped) {
+      await removeBelow(this.base, this.dataDir(id));
+      await removeBelow(this.root, this.stateDir(id));
+    }
     for (const id of [...this.replaced, ...this.dropped]) {
       await removeBelow(this.base, this.cacheDir(id));
     }

@@ -4,10 +4,10 @@
  * - The default export carries the State without its schedules, vault, workbench build output
  *   or git entries, and without Traces.
  * - A workbench's data folder beside the State travels only with `workbenchData`, never its cache
- *   nor a folder no carried workbench owns, and lands under the new id.
+ *   or state folder nor a folder no carried workbench owns, and lands under the new id.
  * - An overwrite that brings no data keeps each workbench's data folder, and a workbench the
- *   package no longer has goes with its data; one that brings data replaces the folder. The
- *   backup holds every folder replaced or removed.
+ *   package no longer has goes with its data, cache and state; one that brings data replaces the
+ *   folder. The backup holds every data folder replaced or removed.
  * - `traces=last:N` takes the N latest Sessions and the subagent Sessions they started; a date
  *   range takes the Sessions in those date folders; a vault value in a Trace travels as its key.
  * - An export with its Traces imports under a new id with its parts, version and Sessions, listed
@@ -34,6 +34,7 @@ import {
   defaultSystemConfig,
   snapshotsDir,
   tracesDir,
+  workbenchStateDir,
 } from "@prismshadow/penguin-core";
 import type {
   AgentApiKeyCreateResponse,
@@ -157,6 +158,7 @@ describe("Agent zip export and import", () => {
     await write(path.join(app, "data/desk/decks/a.json"), "the source's deck");
     await write(path.join(app, "cache/desk/thumb.png"), "cache");
     await write(path.join(app, "data/orphan/left.md"), "no workbench owns this");
+    await write(path.join(workbenchStateDir(t.root, P, "source", "desk"), "dev.lock"), "runtime");
     const traces = tracesDir(t.root, P, "source");
     await write(
       path.join(traces, "2026-01-10", `${P1}_001.jsonl`),
@@ -191,10 +193,15 @@ describe("Agent zip export and import", () => {
     ).toEqual([]);
   });
 
-  it("a workbench's data folder travels only with its data, never its cache, and lands under the new id", async () => {
+  it("a workbench's data folder travels only with its data, never its cache or state, and lands under the new id", async () => {
     const pkg = await exportOf("source");
     const app = names(pkg).filter((e) => e.startsWith("source/app/"));
     expect(app).toEqual(["source/app/data/desk/decks/a.json"]);
+    // Nothing beside the State and the data folders: the state folder (`<root>/run/…`) stays.
+    expect(
+      names(pkg).filter((e) => !e.startsWith("source/agent_state/") && !app.includes(e)),
+    ).toEqual([]);
+    expect(await fs.readFile(path.join(workbenchStateDir(t.root, P, "source", "desk"), "dev.lock"), "utf8")).toBe("runtime");
     expect(
       names(await exportOf("source", "?workbenchData=0")).filter((e) => e.includes("/app/")),
     ).toEqual([]);
@@ -230,6 +237,9 @@ describe("Agent zip export and import", () => {
       await write(path.join(target(), "cache/desk/thumb.png"), "cache");
       await write(path.join(target(), "data/gone/notes.md"), "the removed workbench's notes");
       await write(path.join(target(), "cache/gone/thumb.png"), "cache");
+      for (const id of ["desk", "gone"]) {
+        await write(path.join(workbenchStateDir(t.root, P, "data_target", id), "dev.lock"), id);
+      }
     });
 
     it("an overwrite that brings no data keeps each workbench's, and a workbench the package lacks goes with its data", async () => {
@@ -241,9 +251,17 @@ describe("Agent zip export and import", () => {
       await expect(
         fs.readFile(path.join(target(), "data/desk/decks/own.json"), "utf8"),
       ).resolves.toBe("the target's deck");
-      for (const rel of ["data/gone", "cache/gone"]) {
-        await expect(fs.stat(path.join(target(), rel))).rejects.toMatchObject({ code: "ENOENT" });
+      for (const dir of [
+        path.join(target(), "data/gone"),
+        path.join(target(), "cache/gone"),
+        workbenchStateDir(t.root, P, "data_target", "gone"),
+      ]) {
+        await expect(fs.stat(dir)).rejects.toMatchObject({ code: "ENOENT" });
       }
+      // A workbench the package still has keeps its runtime files.
+      await expect(
+        fs.readFile(path.join(workbenchStateDir(t.root, P, "data_target", "desk"), "dev.lock"), "utf8"),
+      ).resolves.toBe("desk");
       const { backup } = (await res.json()) as AgentArchiveImportResponse;
       expect(await backedUp(backup!)).toContain("app/data/gone/notes.md");
     });

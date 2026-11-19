@@ -47,7 +47,13 @@ import type {
   ModuleDef,
   ModuleTree,
 } from "@prismshadow/penguin-core/kernel";
-import { agentDir, userText, workbenchCacheDir, workbenchDataDir } from "@prismshadow/penguin-core";
+import {
+  agentDir,
+  userText,
+  workbenchCacheDir,
+  workbenchDataDir,
+  workbenchStateDir,
+} from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
 import { HttpError } from "../http/errors.js";
@@ -82,7 +88,7 @@ import {
   writeAppCenterShow,
   type AppCenterManifest,
 } from "./app-center.js";
-import { removeBelow, WorkbenchFiles } from "./files.js";
+import { ensureDir, removeBelow, socketPathIn } from "./data-dirs.js";
 import { migrateWorkbenches } from "./migrate.js";
 import { WorkbenchSubscriptions } from "./subscribe.js";
 import {
@@ -95,7 +101,7 @@ import {
 import { compileWorkbenchUi, hasTsxPages, type UiBuild } from "./compile-ui.js";
 import { installHarnessTypes, readHarnessTable } from "./harness-types.js";
 import { checkIfaces, ifaceQuestions } from "../plugin/iface-check.js";
-import { loadTypeScript } from "../plugin/typescript.js";
+import { loadTypeScript, nodeTypesRoot } from "../plugin/typescript.js";
 import { openUiRuntime, requireUiRuntime, type UiRuntime, type WebFiles } from "./ui-runtime.js";
 import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
 import {
@@ -658,14 +664,16 @@ export class WorkbenchService implements Workbenches {
     } finally {
       this.removing.delete(k);
     }
-    // Its data and cache folders go with it, so a workbench made later under the same id
+    // Its data, cache and state folders go with it, so a workbench made later under the same id
     // starts empty. A link the Agent left on the way to them is never followed.
     const root = this.paths.root;
-    for (const dir of [
-      workbenchDataDir(root, projectId, agentId, folder.id),
-      workbenchCacheDir(root, projectId, agentId, folder.id),
-    ]) {
-      await removeBelow(agentDir(root, projectId, agentId), dir).catch((err: unknown) => {
+    const agent = agentDir(root, projectId, agentId);
+    for (const [base, dir] of [
+      [agent, workbenchDataDir(root, projectId, agentId, folder.id)],
+      [agent, workbenchCacheDir(root, projectId, agentId, folder.id)],
+      [root, workbenchStateDir(root, projectId, agentId, folder.id)],
+    ] as const) {
+      await removeBelow(base, dir).catch((err: unknown) => {
         this.log.line(`[workbenches] ${k}: ${dir} not removed: ${messageOf(err)}`);
       });
     }
@@ -1058,7 +1066,12 @@ export class WorkbenchService implements Workbenches {
         [HOST_IFACE, MAIN_IFACE],
         this.clock.now(),
       );
-      const entry = compileWorkbench(ts, folder.dir, folder.revision);
+      const entry = compileWorkbench(
+        ts,
+        folder.dir,
+        folder.revision,
+        nodeTypesRoot(this.hmr.assetsDir()),
+      );
       // Pages in TSX are the same load's second program, checked against the runtime this
       // server serves them with; a folder of plain pages never touches the runtime.
       if (hasTsxPages(folder.files)) {
@@ -1205,10 +1218,13 @@ export class WorkbenchService implements Workbenches {
   ) {
     const service = this;
     let state: unknown = await readState(folder.dir);
-    const files = new WorkbenchFiles(
-      agentDir(service.paths.root, projectId, agentId),
-      workbenchDataDir(service.paths.root, projectId, agentId, folder.id),
-    );
+    const root = service.paths.root;
+    const agent = agentDir(root, projectId, agentId);
+    const dirs = {
+      dataDir: workbenchDataDir(root, projectId, agentId, folder.id),
+      cacheDir: workbenchCacheDir(root, projectId, agentId, folder.id),
+      stateDir: workbenchStateDir(root, projectId, agentId, folder.id),
+    };
     return {
       listAgents: () => service.agents.list(projectId).map((row) => ({ agentId: row.agentId })),
       async createSession(opts?: { agentId?: string; approvalMode?: WorkbenchApprovalMode }) {
@@ -1268,22 +1284,17 @@ export class WorkbenchService implements Workbenches {
         service.ownSession(projectId, sessionId, "subscribe");
         return subscriptions.subscribe(sessionId, listener);
       },
-      // The folder is made before its path is handed out: the Agent it is named to may be
-      // sandboxed, and its commands can write `<agentDir>/app` only once that exists.
+      // The folders are made before their paths are handed out: the Agent they are named to
+      // may be sandboxed, and its commands can write them only once they exist.
       dataPaths: () => {
-        files.ensure("dataPaths");
-        return {
-          dataDir: files.pathOf(),
-          cacheDir: workbenchCacheDir(service.paths.root, projectId, agentId, folder.id),
-        };
+        ensureDir(agent, dirs.dataDir, "dataPaths");
+        ensureDir(agent, dirs.cacheDir, "dataPaths");
+        ensureDir(root, dirs.stateDir, "dataPaths");
+        return { ...dirs };
       },
-      listFiles: () => files.list(),
-      readFile: (rel: string) => files.read(rel),
-      writeFile: (rel: string, data: Uint8Array | string) => files.write(rel, data),
-      removeFile: (rel: string) => files.remove(rel),
-      filePath: (rel?: string) => {
-        const at = files.pathOf(rel);
-        files.ensure("filePath");
+      socketPath: (name: string) => {
+        const at = socketPathIn(dirs.stateDir, name);
+        if (process.platform !== "win32") ensureDir(root, dirs.stateDir, "socketPath");
         return at;
       },
       getState: () => state,

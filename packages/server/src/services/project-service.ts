@@ -24,6 +24,7 @@ import fs from "node:fs/promises";
 import {
   DEFAULT_PROJECT_ID,
   projectDir,
+  projectRunDir,
   provisionProjectAgents,
   provisionProjectBenchmarks,
   type BuiltinBenchmark,
@@ -33,6 +34,7 @@ import { HttpError } from "../http/errors.js";
 import type { ProjectRow } from "@prismshadow/penguin-library-project/repos/projects";
 import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
 import type { SessionManager } from "../runtime/session-manager.js";
+import { removeBelow } from "../workbenches/data-dirs.js";
 import {
   isNewSemanticId,
   NEW_ID_RULE,
@@ -309,6 +311,9 @@ export class ProjectService implements ProjectLifecycle {
     this.orgCache.deleteProject(projectId);
     this.traceIndex.removeProject(projectId);
     await fs.rm(projectDir(this.root, projectId), { recursive: true, force: true });
+    // Its workbenches' runtime files (sockets, locks) sit apart, at a short path (core's runDir).
+    // A link where a level belongs is left alone rather than followed; the deletion stands.
+    await removeBelow(this.root, projectRunDir(this.root, projectId)).catch(() => undefined);
   }
 
   // —— Member authorization ——

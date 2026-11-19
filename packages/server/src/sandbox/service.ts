@@ -240,9 +240,9 @@ export class SandboxService {
       // it on disk: bubblewrap refuses to start on a missing bind source. Ensured on every
       // spawn, here, where every confined spawn meets — see SandboxPolicy.writableRoots.
       if (scratchpadDir !== undefined) ensureScratchpad(scratchpadDir);
-      // The caller's further roots (the Agent's app data, `<agentDir>/app`) are bound only once
-      // they exist: whoever writes there first creates them, and a spawn never does, so an
-      // Agent with no workbench data gets no directory it did not ask for.
+      // The caller's further roots (the Agent's workbench folders) are bound only once they
+      // exist: whoever writes there first creates them, and a spawn never does, so an Agent with
+      // no workbench data gets no directory it did not ask for.
       const extraRoots =
         settings.mode === "workspace-write" ? (writableRoots ?? []).filter(isDirectory) : [];
       const roots = [...(scratchpadDir !== undefined ? [scratchpadDir] : []), ...extraRoots];
@@ -251,9 +251,9 @@ export class SandboxService {
       const policy: SandboxPolicy = {
         mode: settings.mode,
         workspaceRoot: opts.workspaceDir,
-        // The Session's scratchpad and the Agent's app data are writable beside the Workspace:
-        // the plan file, a goal's state file and the attachments live in the one, the files a
-        // workbench shares with its Agent in the other, and hooks and commands write both.
+        // The Session's scratchpad and the Agent's workbench folders are writable beside the
+        // Workspace: the plan file, a goal's state file and the attachments live in the one, the
+        // files and sockets a workbench shares with its Agent in the others.
         ...(roots.length > 0 ? { writableRoots: roots } : {}),
         ...(settings.network !== undefined ? { network: settings.network } : {}),
         ...(settings.maskPaths !== undefined && settings.maskPaths.length > 0

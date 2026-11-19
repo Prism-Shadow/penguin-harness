@@ -5,6 +5,7 @@
  * This module only provides constants and pure path functions; it never creates directories or reads/writes files.
  * Docs: /docs/sessions-and-traces § "Data layout".
  */
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 
@@ -181,6 +182,42 @@ export function workbenchCacheDir(
   workbenchId: string,
 ): string {
   return path.join(agentAppDir(root, projectId, agentId), "cache", workbenchId);
+}
+
+/**
+ * `<root>/run`: the runtime-only files of the server's workbenches — Unix sockets, pipes, locks.
+ * A Unix socket's path holds at most 104 bytes on macOS (108 on Linux), and an Agent's folder is
+ * deep (a Project id and an Agent id of up to 64 characters each), so these live at a short path
+ * of their own: one fixed-length segment per level, a hash of its id (`runSegment`). Never
+ * exported; a level goes when its Project, Agent or workbench does.
+ */
+export function runDir(root: string): string {
+  return path.join(root, "run");
+}
+
+/** The fixed-length name an id takes under {@link runDir}: 10 hex characters of its SHA-256. */
+export function runSegment(id: string): string {
+  return createHash("sha256").update(id).digest("hex").slice(0, 10);
+}
+
+/** `<root>/run/<project>`: one Project's runtime folder. */
+export function projectRunDir(root: string, projectId: string): string {
+  return path.join(runDir(root), runSegment(projectId));
+}
+
+/** `<root>/run/<project>/<agent>`: one Agent's runtime folder, writable to its sandboxed commands. */
+export function agentRunDir(root: string, projectId: string, agentId: string): string {
+  return path.join(projectRunDir(root, projectId), runSegment(agentId));
+}
+
+/** `<root>/run/<project>/<agent>/<workbench>`: one workbench's state folder (sockets, pipes, locks). */
+export function workbenchStateDir(
+  root: string,
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+): string {
+  return path.join(agentRunDir(root, projectId, agentId), runSegment(workbenchId));
 }
 
 /** `<agentStateDir>/schedule`, the scheduled-task directory (doesn't exist when unconfigured). */

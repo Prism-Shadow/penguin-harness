@@ -37,7 +37,7 @@ PenguinHarness 的全部运行时数据都存放在本地文件系统上。配�
         │   │                         # each with its own MEMORY.md index
         │   └── workbenches/          # one folder per workbench: source, ui/, state.json
         ├── agent_state.git/          # bare git repository the server writes: workbench versions
-        ├── app/                      # workbench data beside the Agent State: data/<workbench>/
+        ├── app/                      # workbench folders beside the Agent State: data/<workbench>/
         │                             # (exported with the workbench's data) and cache/<workbench>/
         ├── traces/
         │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl
@@ -50,6 +50,8 @@ PenguinHarness 的全部运行时数据都存放在本地文件系统上。配�
         ├── workspaces/               # temporary Workspaces (tmp-<8hex>)
         └── snapshots/                # Agent State version snapshots
 ```
+
+工作台的运行时文件（Unix socket、管道、锁）另放在 `<root>/run/<project>/<agent>/<workbench>/`，每一级是其 id 的 10 位哈希，使 socket 路径不超过 Unix socket 路径的 103 字节上限。它们从不导出，随所属的工作台、Agent 或 Project 一并删除。
 
 各配置文件的字段见[配置参考](/configuration)。
 

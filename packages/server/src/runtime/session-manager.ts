@@ -66,6 +66,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   agentAppDir,
+  agentRunDir,
   createAgent,
   findLatestTraceFile,
   getModel,
@@ -2954,8 +2955,9 @@ export class SessionsModule {
       // Each Session confines under its OWN policy — the snapshot on its row, its root's for a
       // subagent — so a settings change reaches only Sessions created after it. A row from
       // before snapshots takes the settings at its first command and keeps them from then on.
-      // Under workspace-write the Agent's app data (`<agentDir>/app`, where its workbenches keep
-      // the files they share with it) is writable too, once something has created it.
+      // Under workspace-write the Agent's workbench folders are writable too, once something has
+      // created them: `<agentDir>/app` (data and cache) and its runtime folder under `<root>/run`
+      // (sockets, pipes, locks).
       confineSpawn: (ctx: ControlEnvContext) =>
         sandbox.confinerFor(() => {
           const root = manager.rootSessionOf(ctx.sessionId);
@@ -2964,7 +2966,10 @@ export class SessionsModule {
           const snapshot = sandbox.currentSettings();
           if (row !== null) sessionsRepo.updateSandbox(root, snapshot);
           return snapshot;
-        }, [agentAppDir(config.root, ctx.projectId, ctx.agentId)]),
+        }, [
+          agentAppDir(config.root, ctx.projectId, ctx.agentId),
+          agentRunDir(config.root, ctx.projectId, ctx.agentId),
+        ]),
     };
 
     const notifyProjectUsers = (projectId: string, event: ServerEvent): void =>

@@ -18,8 +18,10 @@ import type { Dirent } from "node:fs";
 import path from "node:path";
 import { HttpError } from "../http/errors.js";
 import { countEntries, FsLimiter, purgeTree } from "./tree-purge.js";
+import { removeBelow } from "../workbenches/data-dirs.js";
 import {
   agentDir,
+  agentRunDir,
   agentsDir,
   agentsMdPath,
   BUILTIN_AGENT_IDS,
@@ -557,6 +559,9 @@ export class AgentService implements AgentLifecycle {
     refuseBuiltinDeletion(agentId);
     const deletionId = await this.moveAside(projectId, agentId);
     this.agents.delete(projectId, agentId);
+    // Its workbenches' runtime files (sockets, locks) sit apart, at a short path (core's runDir).
+    // A link where a level belongs is left alone rather than followed; the deletion stands.
+    await removeBelow(this.root, agentRunDir(this.root, projectId, agentId)).catch(() => undefined);
     if (deletionId === null) {
       // The folder was already gone: there is nothing to remove.
       return { deletionId: `${agentId}-0`, agentId, phase: "done", total: 0, removed: 0 };

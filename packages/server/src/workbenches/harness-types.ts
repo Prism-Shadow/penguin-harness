@@ -129,24 +129,31 @@ check: \`const sdk = "../sdk/workbench.js"; await import(sdk)\`.
 snapshot: \`running\`, \`completed\` with the final \`text\`, or \`failed\` with an \`error\`.
 Persist the Session id with \`host.setState\`, then poll from GET requests until terminal. Do not
 mark a running snapshot failed because its text is empty. Store small reports in host state;
-keep uploaded files in the data folder (below), never among the source. Never edit state.json by
-hand.
+keep uploaded files in \`dataDir\` (below), never among the source. Never edit state.json by hand.
 
-## Files shared with the Agent
+## Your folders
 
-\`host.listFiles()\`, \`readFile(path)\`, \`writeFile(path, data)\` and \`removeFile(path)\` work on
-this workbench's data folder, outside this source folder: documents BOTH the handler and the Agent
-write, the Agent with its own file tools. Use it for what the user edits in the page and asks the
-Agent to change, and for uploads and exports: one file on disk, each side reading what the other
-wrote last. A write reloads nothing and enters no version; a rollback or a plugin update leaves it
-alone; the Agent export carries it with the workbench's data, and removing the workbench removes
-it. \`host.filePath(path)\` is the file's path on this machine: name it when a run asks the Agent
-to edit the file, rather than building a path yourself. To notice the Agent's writes, call
-\`listFiles()\` on a timer while a page is connected and compare \`mtimeMs\` and \`size\`. Paths
-are \`/\`-separated and stay inside the folder; links are never followed; a file is at most 50 MB.
-\`host.dataPaths()\` gives \`{ dataDir, cacheDir }\`: the data folder, and a cache folder for what
-the Agent's commands can make again (never exported). Never put code in either. A
-\`plugin.d.ts\` here without \`listFiles\` predates them; delete \`.harness/\` to take them.
+\`host.dataPaths()\` returns \`{ dataDir, cacheDir, stateDir }\`: three folders outside this source
+folder, made by the time it returns. Read and write them with Node's own modules —
+\`import { readFile, writeFile, rename } from "node:fs/promises"\`, \`import path from "node:path"\`,
+\`import net from "node:net"\` are typed here, nothing to install — and serve what the page needs
+from your own routes. A write there reloads nothing and enters no version.
+
+- \`dataDir\`: files the handler and the Agent both write, the Agent with its own file tools —
+  what the user edits in the page and asks the Agent to change, uploads, exports. Name a file's
+  path (\`path.join(dataDir, …)\`) in the run's text when you ask the Agent to edit it. The Agent
+  export carries it with the workbench's data; removing the workbench removes it.
+- \`cacheDir\`: files that can be made again. Never exported.
+- \`stateDir\`: runtime-only files — Unix sockets, pipes, locks. Never exported, kept across
+  restarts: unlink a stale socket before listening. A Unix socket path holds at most 103 bytes, so
+  take it from \`host.socketPath("dev.sock")\`, which throws naming the limit when the path would be
+  longer, and on Windows answers a named pipe (\`\\\\.\\pipe\\…\`), which is no file on disk.
+
+The Agent may write these folders too, so never follow a link out of them: \`lstat\` a path the
+Agent could have written before reading or writing through it. Write a file whole (a temporary
+name beside it, then \`rename\`). Never put code in them. To notice the Agent's writes, \`stat\` the
+file on a timer while a page is connected and compare \`mtimeMs\` and \`size\`. A \`plugin.d.ts\` here
+without \`socketPath\` predates these members; delete \`.harness/\` to take them.
 
 ## A Session that only talks
 
