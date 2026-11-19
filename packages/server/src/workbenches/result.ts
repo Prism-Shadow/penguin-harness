@@ -1,6 +1,6 @@
 /** A workbench reads the latest task's answer, never an earlier answer or a child's output. */
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { WorkbenchResult } from "../mechanisms/workbenches.js";
+import type { WorkbenchResult } from "@prismshadow/penguin-library-workbench";
 
 export function workbenchResult(status: string, messages: readonly AmspRecord[]): WorkbenchResult {
   if (status !== "idle") return { status: "running", text: "", error: null };

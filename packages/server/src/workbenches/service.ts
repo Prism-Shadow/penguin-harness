@@ -29,6 +29,12 @@
  * listing, watcher event or request loads it. The markers are dot entries the watcher ignores,
  * so a switch takes effect through setEnabled / setAgentEnabled, which unload or load at once.
  */
+import type {
+  ServerEvent,
+  AgentIndex,
+  Members,
+  Projects,
+} from "@prismshadow/penguin-library-project";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -45,21 +51,23 @@ import { agentDir, userText } from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
 import { appStorageBaseDir, assertValidAppId } from "../sandbox/service.js";
-import type { ServerEvent } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { Channels, Clock, Config, Hmr, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
-import type { AgentIndex, Members, Projects } from "../mechanisms/projects.js";
-import type { Traces } from "../mechanisms/traces.js";
+import type { Traces } from "@prismshadow/penguin-library-trace";
 import { workbenchResult } from "./result.js";
-import type { SessionIndex } from "../mechanisms/sessions.js";
+import type { SessionIndex } from "@prismshadow/penguin-library-session";
+import type {
+  WorkbenchAppLevel,
+  WorkbenchApprovalMode,
+  WorkbenchHost,
+  Workbenches,
+} from "../mechanisms/workbenches.js";
 import type {
   AppCenterShortcut,
-  WorkbenchAppLevel,
   WorkbenchTabIcon,
   WorkbenchInfo,
-  WorkbenchHost,
   WorkbenchInput,
   WorkbenchRecord,
   WorkbenchRequest,
@@ -69,8 +77,7 @@ import type {
   WorkbenchUiRuntime,
   WorkbenchUiRuntimeFile,
   WorkbenchVersion,
-  Workbenches,
-} from "../mechanisms/workbenches.js";
+} from "@prismshadow/penguin-library-workbench";
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler.js";
 import {
   agentShortcuts,
@@ -126,6 +133,8 @@ export const TABS_SLOT = "sessionTabs";
 const OPEN_WEB_SLOTS = [TABS_SLOT] as const;
 /** A burst of file writes (an editor, a git checkout, a rollback) becomes one reload. */
 const WATCH_SETTLE_MS = 300;
+/** What `createSession` takes as `approvalMode`: the two modes that never wait for a person. */
+const WORKBENCH_APPROVAL_MODES: readonly WorkbenchApprovalMode[] = ["allow-all", "deny-all"];
 
 interface Loaded {
   folder: WorkbenchFolder;
@@ -1205,15 +1214,24 @@ export class WorkbenchService implements Workbenches {
         ) {
           throw new Error("createSession: model needs a provider and modelId");
         }
+        // Unattended, like a scheduled run: allow-all unless the workbench asks for deny-all,
+        // whatever the default preset says. The handler's types name the two values, but a
+        // cast gets past them, so the value is checked here too: any other mode would park a
+        // call for a person who is not there.
+        const approvalMode = opts?.approvalMode === undefined ? "allow-all" : opts.approvalMode;
+        if (!WORKBENCH_APPROVAL_MODES.includes(approvalMode)) {
+          throw new Error(
+            `createSession: approvalMode is "allow-all" or "deny-all", not ${JSON.stringify(approvalMode)}`,
+          );
+        }
         if (!service.agents.exists(projectId, target)) {
           throw new Error(`createSession: this Project has no Agent '${target}'`);
         }
-        // Unattended, like a scheduled run: allow-all, whatever the default preset asks.
         return service.sessions.createSession({
           projectId,
           agentId: target,
           ...(model ? { provider: model.provider, modelId: model.modelId } : {}),
-          approvalMode: "allow-all",
+          approvalMode,
           source: "workbench",
           client: "workbench",
         });

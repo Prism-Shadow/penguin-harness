@@ -491,6 +491,8 @@ Skill 分两步加载：先加载索引，正文按需读取。
 
 工作台可以在 Agent 工作时实时跟随它发起的会话。页面引入 `../sdk/workbench.js`，这是服务端为每个工作台提供的页面 SDK；`followSession(sessionId)` 以当前登录用户的权限读取该 Session 的 [AMSP 记录](/amsp-records)，回答因此随 Agent 的生成逐字出现；`abortSession(sessionId)` 停止当前这一轮。工作台的服务端代码通过 `host.subscribe(sessionId, listener)` 收到同样的记录。发起任务与保存结果仍由工作台自己的处理器完成，用 `host.sessionResult` 读取结果、定时轮询的做法照常可用。这些都不需要 Agent API 密钥。
 
+工作台打开的 Session 中，每一次工具调用都不经询问直接执行（`allow-all`），与定时任务相同：没有人在场回答审批。这适合让 Agent 干活的工作台。只做对话的工作台（例如角色对话、游戏主持）可以为这类 Session 选用已有的审批模式 `deny-all`：`host.createSession({ approvalMode: "deny-all" })`。该 Session 内的每一次工具调用都被拒绝，模型改用文字作答，用户输入的内容和工作台转交的内容都无法执行命令。不接受其他模式。这样的 Session 与其他工作台 Session 一样默认归档；在 Web App 中打开后，可以在那里修改它的审批模式。
+
 工作台页面也可以用 TSX 编写，直接使用应用自己的组件。在 `ui/` 下的 `index.html` 旁边放一个 `app.tsx`，页面里按 `app.js` 加载它，从 `react`、`react-dom/client` 和 `@prismshadow/penguin-ui` 导入即可。不用安装任何东西：服务端会像检查工作台的服务端代码一样严格地检查页面类型，再编译它，React 和组件也由服务端自己提供，所以页面运行的就是检查它的那一份，离线也一样。类型出错，或者导入了这几个之外的模块，加载会失败并指出文件和行号，上一个版本继续运行。每个组件的确切属性都在 `.harness/ui/` 里，由服务端在编译页面时写入。
 
 ```tsx

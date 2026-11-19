@@ -19,6 +19,8 @@
  *   accent as a mark on the page and the card (a selected row's `>`, a link-coloured glyph) —
  *   3:1; both for the theme's own accent and, in the second suite, for every preset the theme
  *   lists, overlaid on the theme's values for that mode (a dark lift included);
+ *   and, where a pack draws its decorative icons in the accent, every preset as a mark on the
+ *   navigation column — 3:1;
  * - text and muted text on the shell's two columns, composited onto the field behind the window
  *   (Frost's navigation column is translucent glass on the field) — 4.5:1;
  * - the calm dark (2026-09-29, raised the same day after the owner found the first pass too
@@ -102,6 +104,16 @@ const ACCENT_PAIRS: readonly Pair[] = [
   { fg: "--ui-accent", bg: "--ui-surface", min: 3 },
   { fg: "--ui-switch-knob-on", bg: "--ui-accent", min: 3 },
 ];
+
+/**
+ * The packs that draw their decorative icons in the accent: there the accent is a mark on the
+ * navigation column too, in every preset the pack lists.
+ */
+const ACCENT_ICON_PACKS: readonly ThemeId[] = [];
+const accentPairs = (id: ThemeId): readonly Pair[] =>
+  ACCENT_ICON_PACKS.includes(id)
+    ? [...ACCENT_PAIRS, { fg: "--ui-accent", bg: "--ui-shell-nav-bg", min: 3 }]
+    : ACCENT_PAIRS;
 
 /**
  * The ink floors on the three page surfaces, per mode. Light keeps the WCAG floors and exempts
@@ -506,7 +518,7 @@ describe("accent presets, per theme", () => {
             );
           };
           const failures: string[] = [];
-          for (const pair of ACCENT_PAIRS) {
+          for (const pair of accentPairs(id)) {
             const result = measure(pair, mode, resolve);
             if (typeof result === "string") failures.push(`${pair.fg} on ${pair.bg}: ${result}`);
             else if (result.ratio < pair.min) {

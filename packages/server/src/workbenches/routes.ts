@@ -59,17 +59,14 @@ import { iconResponse } from "../http/icon-response.js";
 import { mediaType } from "../http/media-type.js";
 import { badRequest, readJson, requireString, requireValidId } from "../http/validate.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
-import type { Access, Projects } from "../mechanisms/projects.js";
-import type { UiPrefsStore } from "../mechanisms/settings.js";
+import type { Access, Projects } from "@prismshadow/penguin-library-project";
+import type { UiPrefsStore } from "@prismshadow/penguin-library-setting";
 import { MAX_ARCHIVE_BYTES } from "../services/skill-import-limits.js";
 import { forwardToMachine } from "../machines/proxy.js";
 import { MachineSocketRelay } from "../machines/socket-relay.js";
 import type { Machines } from "../machines/service.js";
-import type {
-  WorkbenchRequest,
-  WorkbenchResponse,
-  Workbenches,
-} from "../mechanisms/workbenches.js";
+import type { Workbenches } from "../mechanisms/workbenches.js";
+import type { WorkbenchRequest, WorkbenchResponse } from "@prismshadow/penguin-library-workbench";
 import {
   parseAppCenterLayout,
   readAppCenterLayout,

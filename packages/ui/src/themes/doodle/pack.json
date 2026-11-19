@@ -2,21 +2,21 @@
   "api": 1,
   "id": "doodle",
   "names": { "zh": "卡通", "en": "Doodle" },
-  "version": "1.0.0",
+  "version": "2.0.0",
   "base": "modern",
   "modes": ["light", "dark"],
   "swatches": {
-    "light": { "canvas": "#fbf9f4", "ink": "#2b2521", "accent": "#2b2521" },
-    "dark": { "canvas": "#1c1a17", "ink": "#efe8dc", "accent": "#ece5d6" }
+    "light": { "canvas": "#fffdf8", "ink": "#402e40", "accent": "#c23b4e" },
+    "dark": { "canvas": "#211d29", "ink": "#f9eff6", "accent": "#f78fa0" }
   },
   "accent": {
-    "own": { "light": "#2b2521", "dark": "#ece5d6" },
+    "own": { "light": "#c23b4e", "dark": "#f78fa0" },
     "presets": [
-      { "id": "marker", "swatch": "#bb4f27" },
-      { "id": "ballpoint", "swatch": "#2c4f9e" },
-      { "id": "grass", "swatch": "#2f6b45" },
-      { "id": "crayon", "swatch": "#b3261e" },
-      { "id": "grape", "swatch": "#6a46b8" }
+      { "id": "ink", "swatch": "#402e40" },
+      { "id": "marker", "swatch": "#bf501e" },
+      { "id": "grass", "swatch": "#297343" },
+      { "id": "crayon", "swatch": "#b52a22" },
+      { "id": "grape", "swatch": "#6d43b8" }
     ]
   },
   "fonts": {
