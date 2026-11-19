@@ -7,7 +7,7 @@
  * (benchmark-archive.ts) shares them all but the file count.
  */
 import { unzipSync } from "fflate";
-import { HttpError, badRequest } from "../http/errors.js";
+import { HttpError, badRequest } from "./errors.js";
 
 /** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). Shared with the hooks and Benchmark archive routes. */
 export const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;

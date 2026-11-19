@@ -4,7 +4,7 @@
  * `state.json` (the workbench's data), a dot entry (the server's `.build/`, `.harness/`,
  * `.plugin.json`), `node_modules` or a staging file of ours. The export puts them under one
  * top-level `<id>/`, so it imports back unchanged. The Skill archive's caps
- * (../services/skill-import-limits.ts) bound both directions.
+ * (@prismshadow/penguin-library-http/skill-import-limits) bound both directions.
  *
  * A name is judged the way the strictest disk an Agent State travels to judges it: letter case
  * and Unicode normal form folded, as macOS and Windows compare names, and Windows' own rules on
@@ -22,8 +22,8 @@ import {
   MAX_TOTAL_BYTES,
   assertSafeEntryPath,
   unzipBounded,
-} from "../services/skill-import-limits.js";
-import { CONTROL_CHARACTER, specialEntries } from "../services/zip-entries.js";
+} from "@prismshadow/penguin-library-http/skill-import-limits";
+import { CONTROL_CHARACTER, specialEntries } from "@prismshadow/penguin-library-http/zip-entries";
 import { HARNESS_DIR } from "./harness-types.js";
 import { removeLeftovers } from "./leftovers.js";
 import { isGitName } from "./repo.js";

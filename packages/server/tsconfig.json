@@ -69,6 +69,10 @@
       "@prismshadow/penguin-library-http": ["../../library/http/src/index.ts"],
       "@prismshadow/penguin-library-http/app-env": ["../../library/http/src/app-env.ts"],
       "@prismshadow/penguin-library-http/attribution": ["../../library/http/src/attribution.ts"],
+      "@prismshadow/penguin-library-http/skill-import-limits": [
+        "../../library/http/src/skill-import-limits.ts"
+      ],
+      "@prismshadow/penguin-library-http/zip-entries": ["../../library/http/src/zip-entries.ts"],
       "@prismshadow/penguin-library-http/errors": ["../../library/http/src/errors.ts"],
       "@prismshadow/penguin-library-http/json-answer": ["../../library/http/src/json-answer.ts"],
       "@prismshadow/penguin-library-http/json-compression": [

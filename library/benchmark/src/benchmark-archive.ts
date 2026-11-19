@@ -39,8 +39,12 @@ import {
   MAX_TOTAL_BYTES,
   assertSafeEntryPath,
   unzipBounded,
-} from "./skill-import-limits.js";
-import { assertDistinctPaths, CONTROL_CHARACTER, specialEntries } from "./zip-entries.js";
+} from "@prismshadow/penguin-library-http/skill-import-limits";
+import {
+  assertDistinctPaths,
+  CONTROL_CHARACTER,
+  specialEntries,
+} from "@prismshadow/penguin-library-http/zip-entries";
 
 /** A case's directory: `CASE-` and the id alphabet, the create route's rule for a case id. */
 const CASE_DIR = /^CASE-[A-Za-z0-9_-]+$/;

@@ -61,7 +61,7 @@ import { badRequest, readJson, requireString, requireValidId } from "../http/val
 import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Access, Projects } from "@prismshadow/penguin-library-project";
 import type { UiPrefsStore } from "@prismshadow/penguin-library-setting";
-import { MAX_ARCHIVE_BYTES } from "../services/skill-import-limits.js";
+import { MAX_ARCHIVE_BYTES } from "@prismshadow/penguin-library-http/skill-import-limits";
 import { forwardToMachine } from "../machines/proxy.js";
 import { MachineSocketRelay } from "../machines/socket-relay.js";
 import type { Machines } from "../machines/service.js";
