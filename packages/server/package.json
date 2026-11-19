@@ -147,14 +147,14 @@
     "unified": "^11.0.5",
     "which": "^5.0.0",
     "ws": "^8.18.3",
-    "yaml": "^2.5.0",
-    "@prismshadow/penguin-library-benchmark": "workspace:*"
+    "yaml": "^2.5.0"
   },
   "devDependencies": {
     "@prismshadow/penguin-hmr": "workspace:*",
     "@prismshadow/penguin-library-agent": "workspace:*",
     "@prismshadow/penguin-library-agent-api": "workspace:*",
     "@prismshadow/penguin-library-auth": "workspace:*",
+    "@prismshadow/penguin-library-benchmark": "workspace:*",
     "@prismshadow/penguin-library-cli": "workspace:*",
     "@prismshadow/penguin-library-db": "workspace:*",
     "@prismshadow/penguin-library-http": "workspace:*",
