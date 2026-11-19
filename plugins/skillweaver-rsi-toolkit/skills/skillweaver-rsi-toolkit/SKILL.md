@@ -1,7 +1,7 @@
 ---
 name: skillweaver-rsi-toolkit
 description: Run SkillWeaver (Zheng et al. 2025) on an agent - let it explore a website on its own, propose skills worth having, practise them, and hone the successful ones into tested, reusable API scripts in a skill library, then freeze the library and measure it on a published Benchmark of tasks on that site. Use when asked to make an agent better at a website by learning skills or APIs from self-directed practice.
-version: 2026.11.20.1
+version: 2026.11.20.2
 ---
 
 # SkillWeaver
@@ -80,7 +80,7 @@ Follow `references/initialization.md`. It creates the empty skill library Skill 
 
 ## Measure
 
-With a `benchmark_id`, every measurement is a full case × `runs` matrix through `references/evaluation.md`, following its controller section, and lands in that Benchmark's `scoreboard.yaml`. Measure H1 before the first practice cell. A prior record is reusable only when its State version, case set, runtime and runs all match. Practice cells are never scored and never enter a scoreboard. Before and after each measurement matrix, record `TOOL fingerprint STATE`. The Target must keep its State read-only, including memory, throughout measurement. If the fingerprint changes, retain the records, mark the matrix invalid, and stop.
+With a `benchmark_id`, every measurement is a full case × `runs` matrix through `references/evaluation.md`, following its controller section, and lands in that Benchmark's `scoreboard.yaml`. Measure H1 before the first practice cell. A prior record is reusable only when its State version, case set, runtime and runs all match. Practice cells are never scored and never enter a scoreboard. Before and after each measurement matrix, record `TOOL fingerprint STATE`. The Target must keep its State read-only, including memory, throughout measurement. If the fingerprint changes, retain the records, mark the matrix invalid, and stop. Review the Target Traces for direct access to the website outside `penguin browser` or its registered API scripts. Preserve any affected cells and invalidate the matrix if that access occurred.
 
 ### The same site for both measurements
 
@@ -111,7 +111,7 @@ Iterations are sequential: one browser, one Target, each iteration using the lib
 
 ### Practice cell
 
-A practice cell is one execution of the Target in a fresh Workspace, the launcher of `references/evaluation.md`, worker step 2, with no rubric and no score. Create a unique directory under `TARGET/workspaces/`, write its `README.md` as below, and launch `penguin run` there with `run_in_background` (a practice attempt outlasts `exec_command`'s two minutes); wait for it to exit. Bind its root Trace as the worker does and keep the session id.
+A practice cell is one execution of the Target in a fresh Workspace, the launcher of `references/evaluation.md`, worker step 2, with no rubric and no score. Create a unique directory under `TARGET/workspaces/`, write its `README.md` as below, and launch `penguin run` there with `run_in_background` (a practice attempt outlasts `exec_command`'s two minutes); wait for it to exit. Bind its root Trace as the worker does and keep the session id. Before judging or updating, review the tool calls for direct website access outside `penguin browser` and the registered APIs. If found, record the offending call and treat the attempt as unsuccessful regardless of its final message.
 
 ```markdown
 # Practice task
@@ -119,7 +119,7 @@ A practice cell is one execution of the Target in a fresh Workspace, the launche
 Website: <site_url>
 Task: <the proposed skill, or "Test the API <name> with the arguments <json>">
 
-Do this in the agent browser with `penguin browser`, on this website only. Use at most 10 browser actions. Your Agent State is read-only for this task, including its memory and memory index. Do not save observations, corrections, or discoveries to memory. Write any task output only in this Workspace.
+Use only `penguin browser` and the registered SkillWeaver APIs that invoke it to access this website. Do not use `curl`, `wget`, shell or Node HTTP clients, other browser tools, or network requests inside browser scripts to fetch pages directly. This applies to verification and fallbacks too. Use at most 10 browser actions. If you cannot finish within these limits, report what remains. Your Agent State is read-only for this task, including its memory and memory index. Do not save observations, corrections, or discoveries to memory. Write any task output only in this Workspace.
 <for a test: Call it exactly as INDEX.md describes, with these arguments, and report its output.>
 <when live_site: Do not create accounts, publish or submit content, reserve anything, contact support, or do anything else that could affect other users of the website; stop instead.>
 When you are done, try `penguin browser screenshot -o final.png` in this Workspace (skip it if it fails; it is optional) and say in one or two sentences what you did and whether it worked.
@@ -153,5 +153,5 @@ Report:
 - the practice log iteration by iteration (explore or test, the task, the Judge's verdict, what was published);
 - with a Benchmark, the baseline and final scores per case, and the APIs the Traces show the Target calling (a read is not a use, and a use is not a gain); without one, that nothing was measured;
 - the cost of every role and cell from the Sessions' recorded usage, including retried iterations, failed cells, the Synthesiser's regeneration rounds and role output discarded as contaminated;
-- what is enforced and what is only an instruction: the library fingerprint, the State fingerprints around practice cells and measurement matrices, the runtime check and the code check are checked at run time; role scope, live-site safety rules, the 10-action limit and the Target's duty to keep State read-only during execution are instructions. A role's Trace can show out-of-scope actions, but the audit does not prevent them. The code check is a quality gate, not a sandbox: an API runs with the same rights as the Target's own shell;
+- what is enforced and what is only an instruction: the library fingerprint, the State fingerprints around practice cells and measurement matrices, the runtime check and the code check are checked at run time; role scope, direct-network restrictions, live-site safety rules, the 10-action limit and the Target's duty to keep State read-only during execution are instructions. A role's Trace can show out-of-scope actions, but the audit does not prevent them. The code check is a quality gate, not a sandbox: an API runs with the same rights as the Target's own shell;
 - the source links and revision, and every adaptation: APIs are Node scripts over `penguin browser`, not Playwright Python; the agent is the Target with its own tools, not upstream's code-generating agent, and the 10-action limit is an instruction, not enforced; the Target picks APIs by reading `INDEX.md`, not through upstream's retrieval call; the success checker is an agent Judge on the Trace and, when one could be taken, the final screenshot, where the paper's reward model also sees a screenshot per step; the Proposer and Tester see a screenshot only when the browser could render one (a page outside the Browser panel cannot), else the page text alone; exploration is sequential, one attempt per iteration; the paper's information-seeking proposals and scraping prompts (§2.1, Appendix A.7) are not used, as upstream's exploration loop does not load them at this revision; upstream repairs a failing locator inside the call (`allow_recovery`) and feeds those repairs to the update, while here the Target works around a failing call with its own tools and the Synthesiser updates the API from that Trace. This is not a reproduction of the paper's WebArena numbers.
