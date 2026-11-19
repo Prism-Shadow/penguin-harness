@@ -1,5 +1,5 @@
 import { sectionWindow, SIDEBAR_PAGE_SIZE, TIME_LIST_KEY } from "../../lib/session-grouping";
-import { Fold, GroupHeader, MoreRow, SkeletonList } from "@prismshadow/penguin-ui";
+import { Fold, GroupHeader, MoreRow, Waiting } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { GROUP_MODE_ICONS } from "../../components/ui/group-list";
 import type { MainSidebarState } from "./main-sidebar-controller";
@@ -75,7 +75,7 @@ export function renderMainGroupByTime(scope: MainSidebarState) {
               {S.chat.noSessions}
             </p>
           ) : pendingLoads.has(TIME_LIST_KEY) ? (
-            <SkeletonList rows={2} />
+            <Waiting rows={2} />
           ) : null)}
 
         {!searching &&
@@ -90,7 +90,7 @@ export function renderMainGroupByTime(scope: MainSidebarState) {
     );
   };
   return groupMode !== "time" || timeRows === null ? null : loading && sessions.length === 0 ? (
-    <SkeletonList rows={5} />
+    <Waiting rows={5} />
   ) : (
     renderTimeList()
   );

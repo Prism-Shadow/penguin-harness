@@ -25,7 +25,9 @@
  * 2026-11-05), the twenty-fourth, `ui-avatar` (an Agent's default avatar, the mascot drawn in
  * every theme's style; 2026-11-04), and the twenty-fifth and twenty-sixth, `ui-segmented` (the
  * segmented control) and `ui-action` (the primary action that heads a navigation list), which let
- * a pack draw Material 3's button group and FAB (2026-11-17). This suite holds the source to it:
+ * a pack draw Material 3's button group and FAB (2026-11-17), and the twenty-seventh,
+ * `ui-waiting` (the one waiting state, which shows only once a wait is slow; 2026-11-19). This
+ * suite holds the source to it:
  *
  * - no `ui-*` class in markup, and no `.ui-*` selector in a stylesheet, outside the list — in the
  *   package, the web app and the gallery;
@@ -52,7 +54,8 @@
  *   state's art's `line` and `doodle`), wherever a `data-set` is written; a fold's phase, which
  *   the foundation's layout motion turns into a track, is one of the three it knows (`open`,
  *   `closing`, `settled`) wherever a `data-fold` is written; the run indicator's state is
- *   `running` and an empty state's form `page` or `slot`.
+ *   `running`, an empty state's form `page` or `slot`, and a wait's state `pending` or `shown`
+ *   and its form `rows`, `page` or `custom`.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -233,6 +236,8 @@ const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
   // sidebar and on the folded rail (2026-11-17).
   "ui-segmented": ["Segmented"],
   "ui-action": ["NavRow", "RailItem"],
+  // The one waiting state (2026-11-19).
+  "ui-waiting": ["Waiting"],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */
@@ -254,6 +259,8 @@ const WIDGET_KINDS = new Set(["weather", "clock", "countdown", "metrics", "chart
 const WIDGET_SLOTS = new Set(["head", "body", "foot"]);
 const RUN_STATES = new Set(["running"]);
 const EMPTY_FORMS = new Set(["page", "slot"]);
+const WAITING_STATES = new Set(["pending", "shown"]);
+const WAITING_FORMS = new Set(["rows", "page", "custom"]);
 /** Glass apart from a floating layer: a plugin tile or the navigation wallpaper backdrop. */
 const GLASS_KINDS = new Set(["tile", "navigation"]);
 /** A chart's parts, wherever a chart's children are written (a mark component draws into the frame's svg). */
@@ -512,6 +519,16 @@ describe("style hooks", () => {
         const form = element.attributes.get("data-form");
         if (names.has("ui-empty") && typeof form === "string" && !EMPTY_FORMS.has(form)) {
           problems.push(`${at} .ui-empty data-form="${form}" is not page or slot`);
+        }
+        if (
+          names.has("ui-waiting") &&
+          typeof runState === "string" &&
+          !WAITING_STATES.has(runState)
+        ) {
+          problems.push(`${at} .ui-waiting data-state="${runState}" is not pending or shown`);
+        }
+        if (names.has("ui-waiting") && typeof form === "string" && !WAITING_FORMS.has(form)) {
+          problems.push(`${at} .ui-waiting data-form="${form}" is not rows, page or custom`);
         }
         const fold = element.attributes.get("data-fold");
         if (typeof fold === "string" && !FOLD_PHASES.has(fold)) {

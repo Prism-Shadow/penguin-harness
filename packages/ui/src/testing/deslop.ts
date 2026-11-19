@@ -95,7 +95,7 @@ export interface DeslopPolicy {
   readonly layoutMotion?: readonly string[];
   /** Rule 3: keyframe-driven entrances that may run 300 ms or longer. */
   readonly entranceMotion: readonly string[];
-  /** Rule 6: files that may pulse without `.ui-live` — the dot, the skeleton, the streaming caret. */
+  /** Rule 6: files that may pulse without `.ui-live` — the dot, the streaming caret. */
   readonly pulseHomes: readonly string[];
   /** Rule 11: the one file that spins. */
   readonly spinnerHomes: readonly string[];

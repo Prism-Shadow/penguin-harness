@@ -423,6 +423,8 @@ export const en: GalleryStrings = {
         "an agent's default avatar each theme draws its own way: one small egg-shaped penguin drawn in a thin brown line, on a rounded square (Primer), a circle (Frost), a cookie (Doodle) or in pixel art (Console)",
       "ui-segmented": "a segmented control: one choice among a few options side by side",
       "ui-action": "the primary action that heads a navigation list: New chat",
+      "ui-waiting":
+        "a waiting state: the placeholder a page, a tab or a list shows once a read is slow",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],
@@ -529,7 +531,7 @@ export const en: GalleryStrings = {
       },
       loading: {
         title: "Loading",
-        description: "The spinner, the skeletons, the progress bar and the transfer row.",
+        description: "The spinner, the waiting state, the progress bar and the transfer row.",
       },
       streaming: {
         title: "Streaming",
@@ -1030,9 +1032,18 @@ export const en: GalleryStrings = {
     loading: {
       spinner: "Spinner",
       sizes: "Three sizes",
-      skeleton: "Skeletons",
-      list: "List",
-      card: "Card",
+      waiting: "Waiting state",
+      waitingHint: (ms: number) =>
+        `Appears only once a read takes longer than ${ms} ms, and holds its place before that`,
+      waitingRows: "List",
+      waitingPage: "Page",
+      waitingCards: "The caller's own shapes (cards)",
+      waitingReplay: "Quick and slow",
+      waitingReplayHint: "Replay: both regions start reading at once",
+      waitingQuick: (ms: number) => `Answers within ${ms} ms: no waiting state`,
+      waitingSlow: (ms: number) =>
+        `Answers after ${ms} ms: the waiting state appears once the delay is over`,
+      waitingContent: "The content has arrived, in the place the waiting state held.",
       progress: "Progress bar",
       progressHint: "Three heights; still while indeterminate",
       progressLabel: "Download progress",

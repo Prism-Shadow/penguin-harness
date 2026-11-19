@@ -42,6 +42,7 @@ export * from "./components/icons/update-dot/update-dot";
 export * from "./components/feedback/badge/badge";
 export * from "./components/feedback/pill/pill";
 export * from "./components/feedback/skeleton/skeleton";
+export * from "./components/feedback/waiting/waiting";
 export * from "./components/feedback/empty-state/empty-state";
 export * from "./components/feedback/load-failed/load-failed";
 

@@ -1,35 +1,29 @@
 /**
- * Loading placeholders shaped like what is coming: a line, a list of rows, a card. Each shares the
- * border, radius and fill of the real container it stands in for, so nothing shifts when the data
- * arrives. The blocks pulse gently while they wait — this file is where a placeholder's pulse
- * lives — and are hidden from assistive technology: the region they sit in announces loading,
- * a grey bar has nothing to say.
+ * The placeholder shapes a wait is drawn with: a block (a line of text by default) and a card.
+ * Each shares the border, radius and fill of the real container it stands in for, so nothing
+ * shifts when the data arrives. They are hidden from assistive technology: the region they sit in
+ * announces loading, a grey bar has nothing to say.
+ *
+ * A region that is loading puts them inside `Waiting` (waiting.tsx), which holds them back for the
+ * first moments of a wait and announces it; a shape on its own (a row's pending detail, an earlier
+ * page of a transcript) shows at once. Their breathing is the theme's, on `[data-skeleton]` in
+ * theme.css, so it follows the theme's live timing and stops under reduced motion.
  */
 import type { ReactNode } from "react";
 
 /**
  * One placeholder block; `className` sets its size (a line of text by default). `data-skeleton`
- * lets the shell's custom background thin its fill (wallpaper.css): a block stands in for words,
- * and a solid grey slab would lay a box over the image the words never cover.
+ * names it to the theme sheet, and lets the shell's custom background thin its fill
+ * (wallpaper.css): a block stands in for words, and a solid grey slab would lay a box over the
+ * image the words never cover.
  */
 export function Skeleton({ className }: { className?: string }) {
   return (
     <div
       aria-hidden
       data-skeleton=""
-      className={`animate-pulse rounded-sm bg-line ${className ?? "h-4 w-full"}`}
+      className={`rounded-sm bg-line ${className ?? "h-4 w-full"}`}
     />
-  );
-}
-
-/** A list loading: `rows` row-height blocks. */
-export function SkeletonList({ rows = 3 }: { rows?: number }) {
-  return (
-    <div className="space-y-2 p-2">
-      {Array.from({ length: rows }, (_, i) => (
-        <Skeleton key={i} className="h-8 w-full" />
-      ))}
-    </div>
   );
 }
 

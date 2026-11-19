@@ -14,7 +14,7 @@
  * linked document in place, as it does for any Workspace file.
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Button, EmptyState, SkeletonList } from "@prismshadow/penguin-ui";
+import { Button, EmptyState, Waiting } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -65,9 +65,7 @@ export function HandbookPage() {
         }
       />
     ) : (
-      <div aria-busy="true">
-        <SkeletonList rows={8} />
-      </div>
+      <Waiting rows={8} />
     );
   }
 

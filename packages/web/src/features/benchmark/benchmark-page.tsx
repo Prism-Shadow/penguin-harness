@@ -36,6 +36,7 @@ import {
   Select,
   Skeleton,
   SkeletonCard,
+  Waiting,
   Sparkline,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
@@ -375,7 +376,7 @@ export function BenchmarkCard({
 /** Card-shaped placeholders, so nothing shifts when the fetch lands. */
 function CardSkeletons({ rows }: { rows: number }) {
   return (
-    <div className="space-y-3">
+    <Waiting className="space-y-3">
       {Array.from({ length: rows }, (_, i) => (
         <SkeletonCard key={i} className="flex flex-wrap items-center gap-x-6 gap-y-2 p-4">
           <div className="min-w-[14rem] flex-1">
@@ -387,7 +388,7 @@ function CardSkeletons({ rows }: { rows: number }) {
           <Skeleton className="h-8 w-44" />
         </SkeletonCard>
       ))}
-    </div>
+    </Waiting>
   );
 }
 

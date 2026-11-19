@@ -1,25 +1,28 @@
 /**
- * 加载: the running-state spinner on its three rungs, the skeleton line, list and card, the
- * progress bar on its three heights, toned and indeterminate, and the transfer row in every place
- * a conversation's history coming over from a machine shows it — standing in for the transcript
- * (counting, not yet counted, waiting for the machine), over the transcript (going on, and
- * waiting in the same line), under an unfolded output.
+ * 加载: the running-state spinner on its three rungs; the waiting state — its rows, its page and a
+ * caller's own cards, shown as they look once a wait is slow, and a replay that answers one region
+ * inside the delay and the other after it, so the first never shows a placeholder and the second
+ * shows it only from the delay on; the progress bar on its three heights, toned and
+ * indeterminate; and the transfer row in every place a conversation's history coming over from a
+ * machine shows it — standing in for the transcript (counting, not yet counted, waiting for the
+ * machine), over the transcript (going on, and waiting in the same line), under an unfolded
+ * output.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   GlyphIcon,
   ICONS,
   ICON_SIZE,
   ProgressBar,
   RetryStatus,
-  Skeleton,
   SkeletonCard,
-  SkeletonList,
   StatusIcon,
   TransferProgress,
+  WAITING_DELAY_MS,
+  Waiting,
 } from "@prismshadow/penguin-ui";
 import type { ProgressBarSize, StatusIconSize } from "@prismshadow/penguin-ui";
-import { BoardGroup } from "../../foundations/shared";
+import { BoardGroup, ReplayButton } from "../../foundations/shared";
 import { useGallery } from "../../state";
 
 /** The rungs and the pixels each one draws at. */
@@ -63,22 +66,28 @@ export function LoadingBoard() {
           ))}
         </div>
       </BoardGroup>
-      <BoardGroup title={t.skeleton}>
+      <BoardGroup title={t.waiting} aside={t.waitingHint(WAITING_DELAY_MS)}>
         <div className="lib-stack">
-          <Skeleton className="h-4 w-2/3" />
-          <Skeleton className="h-4 w-1/2" />
+          <div className="grid gap-1">
+            <span className="lib-caption">{t.waitingRows}</span>
+            <div className="lib-box">
+              <Waiting rows={3} delay={0} />
+            </div>
+          </div>
+          <div className="grid gap-1">
+            <span className="lib-caption">{t.waitingPage}</span>
+            <Waiting form="page" delay={0} />
+          </div>
+          <div className="grid gap-1">
+            <span className="lib-caption">{t.waitingCards}</span>
+            <Waiting delay={0} className="grid gap-3 sm:grid-cols-2">
+              <SkeletonCard />
+              <SkeletonCard />
+            </Waiting>
+          </div>
         </div>
       </BoardGroup>
-      <BoardGroup title={t.list}>
-        <div className="lib-box">
-          <SkeletonList rows={3} />
-        </div>
-      </BoardGroup>
-      <BoardGroup title={t.card}>
-        <div className="lib-stack">
-          <SkeletonCard />
-        </div>
-      </BoardGroup>
+      <WaitingReplay />
       <BoardGroup title={t.progress} aside={t.progressHint}>
         <div className="lib-stack">
           {BAR_RUNGS.map(([size, value]) => (
@@ -163,6 +172,55 @@ export function LoadingBoard() {
         </div>
       </BoardGroup>
     </div>
+  );
+}
+
+/** How long the slow region of the replay takes to answer, in ms. */
+const SLOW_ANSWER_MS = 1600;
+
+/**
+ * One region of the replay: it waits on a read that answers after `answerMs`, then shows its
+ * content. Remounted by the replay, so each run starts its wait from nothing.
+ */
+function ReplayRegion({ answerMs, content }: { answerMs: number; content: string }) {
+  const [answered, setAnswered] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setAnswered(true), answerMs);
+    return () => clearTimeout(timer);
+  }, [answerMs]);
+  return (
+    <div className="lib-box" style={{ minHeight: "7.5rem" }}>
+      {answered ? <p className="p-3 text-sm text-fg">{content}</p> : <Waiting rows={3} />}
+    </div>
+  );
+}
+
+/** A quick answer beside a slow one, replayed: the quick one never shows its wait. */
+function WaitingReplay() {
+  const { S } = useGallery();
+  const t = S.library.loading;
+  const [run, setRun] = useState(0);
+  return (
+    <BoardGroup
+      title={t.waitingReplay}
+      aside={t.waitingReplayHint}
+      action={<ReplayButton onClick={() => setRun((n) => n + 1)} />}
+    >
+      <div className="lib-stack" style={{ maxWidth: "36rem" }}>
+        <div className="grid gap-1">
+          <span className="lib-caption">{t.waitingQuick(WAITING_DELAY_MS / 2)}</span>
+          <ReplayRegion
+            key={`quick-${run}`}
+            answerMs={WAITING_DELAY_MS / 2}
+            content={t.waitingContent}
+          />
+        </div>
+        <div className="grid gap-1">
+          <span className="lib-caption">{t.waitingSlow(SLOW_ANSWER_MS)}</span>
+          <ReplayRegion key={`slow-${run}`} answerMs={SLOW_ANSWER_MS} content={t.waitingContent} />
+        </div>
+      </div>
+    </BoardGroup>
   );
 }
 

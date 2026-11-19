@@ -53,6 +53,7 @@ import {
   Select,
   Skeleton,
   SkeletonCard,
+  Waiting,
   TodoNotice,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
@@ -984,15 +985,17 @@ export function PluginsPage() {
         </div>
       ) : groups === null ? (
         // The cards' own grid, so the placeholders stand in the columns the cards will take.
-        <EntityCardGrid>
-          {Array.from({ length: 4 }, (_, i) => (
-            <SkeletonCard key={i} className="p-4">
-              <Skeleton className="h-4 w-32" />
-              <Skeleton className="mt-2 h-4 w-3/4" />
-              <Skeleton className="mt-3 h-6 w-36" />
-            </SkeletonCard>
-          ))}
-        </EntityCardGrid>
+        <Waiting>
+          <EntityCardGrid>
+            {Array.from({ length: 4 }, (_, i) => (
+              <SkeletonCard key={i} className="p-4">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="mt-2 h-4 w-3/4" />
+                <Skeleton className="mt-3 h-6 w-36" />
+              </SkeletonCard>
+            ))}
+          </EntityCardGrid>
+        </Waiting>
       ) : (
         <div className="space-y-3">
           {groupBy === "none"

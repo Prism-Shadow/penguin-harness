@@ -5,8 +5,10 @@
 //   a navigation starts no transition.
 // - Given a draft, sending its first message and opening a new chat stay on the chat page, so
 //   neither starts a transition; leaving for another page does.
-// - Given each theme, a page change starts a transition in Frost, Console and Doodle, and none in
-//   Primer, whose page motion is instant.
+// - Given each theme, a page change starts a transition in Console and Doodle, and none in Primer
+//   or Frost, whose page change is instant.
+// - Given a theme that animates a page change, switching the Agent settings tabs and the Plugins
+//   tab's sub-pages starts none: a tab is part of its page, and only a page change moves.
 import { expect, test } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
 
@@ -31,7 +33,7 @@ async function countTransitions(page) {
 test("page transitions leave the navigation live and respect reduced motion", async ({ page }) => {
   await provisionAndLogin(page.request, "navmotion", "password123");
   await page.request.put("/api/me/prefs", {
-    data: { themeId: "modern", initialPasswordBannerDismissed: true },
+    data: { themeId: "geek", initialPasswordBannerDismissed: true },
   });
   // Not a draft: with no model configured, the draft page opens a dialog over the sidebar.
   await page.goto("/models");
@@ -49,12 +51,12 @@ test("page transitions leave the navigation live and respect reduced motion", as
   await expect
     .poll(() =>
       page.evaluate(() =>
-        document
-          .getAnimations()
-          .some(
-            (animation) =>
-              animation.effect?.pseudoElement === "::view-transition-new(penguin-page)",
-          ),
+        document.getAnimations().some(
+          // Console animates the outgoing picture (its dissolve), so either picture counts.
+          (animation) =>
+            animation.effect?.pseudoElement === "::view-transition-old(penguin-page)" ||
+            animation.effect?.pseudoElement === "::view-transition-new(penguin-page)",
+        ),
       ),
     )
     .toBe(true);
@@ -101,7 +103,7 @@ test("sending from a draft and opening a new chat stay on one page, so nothing t
 }) => {
   await provisionAndLogin(page.request, "navsend", "password123");
   await page.request.put("/api/me/prefs", {
-    data: { themeId: "modern", initialPasswordBannerDismissed: true },
+    data: { themeId: "geek", initialPasswordBannerDismissed: true },
   });
   const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
   const projectId = projects.projects[0].projectId;
@@ -141,16 +143,16 @@ test("sending from a draft and opening a new chat stay on one page, so nothing t
   await expect.poll(started).toBe(1);
 });
 
-test("a page change transitions in Frost, Console and Doodle, and not in Primer", async ({
+test("a page change transitions in Console and Doodle, and not in Primer or Frost", async ({
   page,
 }) => {
   await provisionAndLogin(page.request, "navthemes", "password123");
   const started = await countTransitions(page);
   for (const [themeId, transitions] of [
-    ["modern", 1],
     ["geek", 1],
     ["doodle", 1],
     ["github", 0],
+    ["modern", 0],
   ]) {
     await page.request.put("/api/me/prefs", {
       data: { themeId, initialPasswordBannerDismissed: true },
@@ -163,4 +165,45 @@ test("a page change transitions in Frost, Console and Doodle, and not in Primer"
     await expect(models).toHaveAttribute("aria-current", "page");
     await expect.poll(started, { message: themeId }).toBe(transitions);
   }
+});
+
+test("switching Agent settings tabs and Plugins sub-pages starts no transition", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, "navtabs", "password123");
+  await page.request.put("/api/me/prefs", {
+    data: { themeId: "geek", initialPasswordBannerDismissed: true },
+  });
+  const started = await countTransitions(page);
+  await page.goto("/agents/default_agent");
+  const tab = (name) => page.getByRole("tab", { name, exact: true });
+  await expect(tab("概览")).toHaveAttribute("aria-selected", "true");
+  for (const name of [
+    "系统提示词",
+    "运行参数",
+    "工具",
+    "记忆",
+    "密钥保险柜",
+    "定时任务",
+    "API",
+    "插件",
+  ]) {
+    await tab(name).click();
+    await expect(tab(name)).toHaveAttribute("aria-selected", "true");
+  }
+  const subPages = page.getByRole("group", { name: "插件的子页面" });
+  for (const name of ["技能", "钩子", "工作台", "插件"]) {
+    await subPages.getByRole("button", { name, exact: true }).click();
+    await expect(subPages.getByRole("button", { name, exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  }
+  expect(await started()).toBe(0);
+
+  // Leaving for another page from the same place does start one, so the zero above is not a
+  // transition that could never start.
+  await nav(page, "/models").click();
+  await expect(page).toHaveURL(/\/models$/);
+  await expect.poll(started).toBe(1);
 });

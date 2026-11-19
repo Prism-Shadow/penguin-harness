@@ -68,8 +68,9 @@ const POLICY: DeslopPolicy = {
   // reveal and layout rules in theme.css read their own tokens (`--ui-dur-enter`, …), which the
   // rule does not judge — it holds STATE transitions (hover, press, selection) to 120–200 ms.
   entranceMotion: [],
-  // Rule 6: the dot's live pulse, the skeleton's arrival pulse and the streaming caret.
-  pulseHomes: ["dot.tsx", "skeleton.tsx", "streaming-caret.tsx"],
+  // Rule 6: the dot's live pulse and the streaming caret. A placeholder block breathes in the
+  // theme sheet (`[data-skeleton]`), on the theme's live timing.
+  pulseHomes: ["dot.tsx", "streaming-caret.tsx"],
   // Rule 11: the one Spinner (K-redesign §5.1).
   spinnerHomes: ["components/icons/spinner/spinner.tsx"],
   // Rule 20: tokens only; hex colours in the avatar palettes (the letter tiles', the Agent
@@ -480,7 +481,7 @@ describe("the rule checks, on known shapes", () => {
     expect(tsx('<i className="ui-live animate-pulse" data-live="caret" />')).toEqual([]);
     expect(
       found(
-        "components/skeleton/skeleton.tsx",
+        "components/icons/dot/dot.tsx",
         'export const S = () => <i className="animate-pulse" />;',
       ),
     ).toEqual([]);

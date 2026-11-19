@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { MemberInfo } from "@prismshadow/penguin-server/api";
-import { Badge, Button, ConfirmModal, Input } from "@prismshadow/penguin-ui";
+import { Badge, Button, ConfirmModal, Input, Waiting } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
 import { toastApiError } from "../../../lib/toast-api-error";
@@ -57,7 +57,7 @@ export function MembersSection({ projectId, isOwner }: { projectId: string; isOw
   };
 
   if (loadError) return <p className="text-xs text-red-600 dark:text-red-400">{loadError}</p>;
-  if (members === null) return <p className="text-xs text-gray-400">{S.common.loading}</p>;
+  if (members === null) return <Waiting rows={3} />;
   return (
     // Member permission table: username / role / actions; cells never wrap. Last row
     // (owner only) = add member: small username input + add button (new members are

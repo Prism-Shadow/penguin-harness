@@ -28,7 +28,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { AgentPluginsInstallResponse, PluginGroupItem } from "@prismshadow/penguin-server/api";
-import { CollapsibleSection, SettingsEmpty, SkeletonList } from "@prismshadow/penguin-ui";
+import { CollapsibleSection, SettingsEmpty, Waiting } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import {
   installsOf,
@@ -106,7 +106,7 @@ export function AgentPluginsPage({
 
   if (library === null || catalog === null) {
     // The rows' placeholders, as the kind sub-pages' lists show them.
-    return <SkeletonList rows={4} />;
+    return <Waiting rows={4} />;
   }
 
   const rows = new Map<string, PluginRow>(pluginRows(library, []).map((row) => [row.name, row]));
