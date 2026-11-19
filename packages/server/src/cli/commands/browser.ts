@@ -42,7 +42,7 @@ import type {
   BuiltinBrowserTab,
   BuiltinBrowserTabsResponse,
 } from "../../api/types.js";
-import type { Messages } from "../i18n.js";
+import type { BrowserMessages } from "./browser.messages.js";
 import {
   renderCdpResult,
   renderExec,
@@ -86,7 +86,7 @@ import {
 import fs from "node:fs";
 import path from "node:path";
 
-export function registerBrowserCommand(browser: Command, t: Messages): void {
+export function registerBrowserCommand(browser: Command, t: BrowserMessages): void {
   /** `--json` and `--server`, which every leaf takes, after its own options. */
   const leaf = (cmd: Command): Command =>
     cmd.option("--json", t.common.json).option("--server <url>", t.common.server);

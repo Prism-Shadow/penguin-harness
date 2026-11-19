@@ -85,6 +85,8 @@ export default defineConfig({
     "@prismshadow/penguin-library-machine",
     "@prismshadow/penguin-library-model",
     "@prismshadow/penguin-library-workbench",
+    // The CLI face: the `cli` subpath re-exports it, and the `lock` entry its lock reader.
+    "@prismshadow/penguin-library-cli",
 
     "@prismshadow/penguin-hmr",
     "@prismshadow/penguin-theme-pack",
