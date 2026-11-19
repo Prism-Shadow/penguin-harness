@@ -148,10 +148,12 @@ export interface Messages
   cliModule: {
     /** The module did not boot: none of its commands are on the program. */
     failed(pkg: string, reason: string): string;
-    /** One command was left out (`reason` is `taken`'s, or the key grammar's own words). */
+    /** One command was left out (`reason` is `taken`'s, the key grammar's or its register's words). */
     dropped(pkg: string, key: string, reason: string): string;
-    /** The first word of the command's key is already one of the CLI's commands. */
+    /** A word of the command's key already names a command or alias on the program. */
     taken(word: string): string;
+    /** One of the module's message groups has a host group's name: the host's is the one read. */
+    groupTaken(pkg: string, group: string): string;
   };
   error(message: string): string;
 }
@@ -225,7 +227,9 @@ const en: Messages = {
   cliModule: {
     failed: (pkg, reason) => `[warning] ${pkg}: its commands are unavailable (${reason})`,
     dropped: (pkg, key, reason) => `[warning] ${pkg}: the command "${key}" is left out (${reason})`,
-    taken: (word) => `"${word}" is already a command`,
+    taken: (word) => `"${word}" already names a command or an alias`,
+    groupTaken: (pkg, group) =>
+      `[warning] ${pkg}: its message group "${group}" has the name of one of the CLI's; the CLI's is used`,
   },
   error: (message) => `[error] ${message}`,
   ...sessionruntimeEn,
@@ -316,7 +320,8 @@ const zh: Messages = {
   cliModule: {
     failed: (pkg, reason) => `[警告] ${pkg}：其命令不可用（${reason}）`,
     dropped: (pkg, key, reason) => `[警告] ${pkg}：未注册命令「${key}」（${reason}）`,
-    taken: (word) => `「${word}」已是一条命令`,
+    taken: (word) => `「${word}」已是某条命令的名称或别名`,
+    groupTaken: (pkg, group) => `[警告] ${pkg}：消息组「${group}」与 CLI 自有的组同名，沿用 CLI 的`,
   },
   error: (message) => `[错误] ${message}`,
   ...sessionruntimeZh,

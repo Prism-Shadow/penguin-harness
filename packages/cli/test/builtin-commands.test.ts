@@ -16,8 +16,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cliCommandKeyFault } from "@prismshadow/penguin-core/cli";
 import { bootBuiltinCommands } from "../src/cli-commands.js";
 import type { BuiltinCommand } from "../src/cli-commands.js";
-import { bootCompanyCommands, getMessages } from "@prismshadow/penguin-server/cli";
-import { bootShippedCommands, SHIPPED_CLI_MODULES } from "../src/cli-modules.js";
+import { bootCompanyCommands } from "@prismshadow/penguin-server/cli";
+import { bootCliModule, shippedCliModules } from "../src/cli-modules.js";
 import { cli } from "../src/index.js";
 
 /** The commands in the generated table's order (source-file path order), which help follows. */
@@ -106,14 +106,15 @@ describe("CliCommandsModule", () => {
 describe("help lists the collected commands", () => {
   it("penguin --help lists the top-level commands in order, each with its summary, in each language", async () => {
     const commands = await bootBuiltinCommands();
+    const shipped = [];
+    for (const entry of shippedCliModules())
+      shipped.push(...(await bootCliModule(await entry.load())));
     // Help lists the CLI's own commands first, then the commands the server contributes
     // through the company module (`org` among them), then the shipped CLI modules' (`browser`).
     const topLevel = [
       ...commands.filter((c) => !c.key.includes(".")),
       ...(await bootCompanyCommands()).filter((c) => !c.key.includes(".")),
-      ...(await bootShippedCommands(SHIPPED_CLI_MODULES, [], getMessages("en"))).filter(
-        (c) => !c.key.includes("."),
-      ),
+      ...shipped.filter((c) => !c.key.includes(".")),
     ];
     for (const language of ["en", "zh"] as const) {
       process.env.PENGUIN_LANG = language;
