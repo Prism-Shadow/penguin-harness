@@ -17,7 +17,8 @@ export function withPageTransitions(router: DataRouter): DataRouter {
       CSS.supports("selector(:active-view-transition)") &&
       !router.window?.matchMedia("(prefers-reduced-motion: reduce)").matches &&
       doc.documentElement.dataset.motion !== "reduced" &&
-      doc.querySelector("[data-page-viewport]") !== null;
+      doc.querySelector("[data-page-viewport]") !== null &&
+      parseFloat(getComputedStyle(doc.documentElement).getPropertyValue("--ui-page-duration")) > 0;
     return navigate(to, {
       ...options,
       viewTransition: enabled && options?.viewTransition !== false,

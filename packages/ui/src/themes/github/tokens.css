@@ -354,8 +354,9 @@
   --ui-live-timing: linear;
   /* Presence, reveal and layout: the app's own feel — a layer fades in over 150ms with a 4px
      slide from its edge and leaves faster, streamed text fades in, the sidebar's width eases. */
-  --ui-page-enter: ui-page-slide-in var(--ui-dur-enter) ease-in-out;
-  --ui-page-exit: ui-page-slide-out var(--ui-dur-enter) ease-in-out;
+  --ui-page-duration: 0ms;
+  --ui-page-enter: none;
+  --ui-page-exit: none;
   --ui-dur-enter: 150ms;
   --ui-dur-exit: 100ms;
   --ui-ease-enter: var(--ui-ease-overlay-in);

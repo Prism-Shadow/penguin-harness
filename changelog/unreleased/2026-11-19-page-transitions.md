@@ -7,4 +7,4 @@
 
 [中文版](2026-11-19-page-transitions.zh.md)
 
-Frost lifts the next page into view as the previous page recedes. Primer slides two panels along a shared edge. Console replaces the page in bands from top to bottom. Doodle turns the old sheet from its lower right corner. The sidebar stays available during all four transitions, and Reduce Motion shows the destination immediately.
+Frost softly blurs the outgoing page as the next comes into focus. Console dissolves the old page in small squares. Doodle gives the incoming page a small bounce. Primer switches instantly. The sidebar stays available throughout, and Reduce Motion switches pages instantly in every theme.

@@ -432,7 +432,7 @@
   }
   ::view-transition-group(penguin-page) {
     overflow: clip;
-    animation-duration: var(--ui-dur-enter);
+    animation-duration: var(--ui-page-duration);
   }
   /* A snapshot moves in the top layer, outside the shell's usual overflow clip. When the
      desktop viewport begins at the edge of the sheet, keep its rounded frame in front. */
@@ -445,97 +445,86 @@
   }
   ::view-transition-old(penguin-page),
   ::view-transition-new(penguin-page) {
-    mix-blend-mode: normal;
+    mix-blend-mode: plus-lighter;
   }
   ::view-transition-old(penguin-page) {
-    animation: var(--ui-page-exit) both;
+    animation: var(--ui-page-exit) var(--ui-page-duration) ease-in-out both;
   }
   ::view-transition-new(penguin-page) {
-    animation: var(--ui-page-enter) both;
+    animation: var(--ui-page-enter) var(--ui-page-duration) ease-in-out both;
   }
 
-  /* Frost brings the next surface up from underneath. Additive blending keeps the two
-     snapshots at a combined opacity of one, including on translucent shell backgrounds. */
-  @keyframes ui-page-rise {
+  /* Frost keeps both pages registered with the shell. A shallow blur at the handoff
+     clears as the new ink becomes legible. Neither snapshot zooms or shifts. */
+  @keyframes ui-page-unfrost {
     from {
       opacity: 0;
-      transform: translateY(18px) scale(0.985);
-      mix-blend-mode: plus-lighter;
+      filter: blur(1.75px) saturate(0.88);
     }
     to {
       opacity: 1;
-      mix-blend-mode: plus-lighter;
+      filter: blur(0) saturate(1);
     }
   }
-  @keyframes ui-page-recede {
+  @keyframes ui-page-frost {
     from {
       opacity: 1;
-      mix-blend-mode: plus-lighter;
+      filter: blur(0) saturate(1);
     }
     to {
       opacity: 0;
-      transform: translateY(-8px);
-      mix-blend-mode: plus-lighter;
+      filter: blur(1.75px) saturate(0.88);
     }
   }
 
-  /* Primer's panels share an edge throughout the slide. Only the page viewport moves. */
-  @keyframes ui-page-slide-in {
-    from {
-      translate: 100% 0;
-    }
-    to {
-      translate: 0 0;
-    }
-  }
-  @keyframes ui-page-slide-out {
-    from {
-      translate: 0 0;
-    }
-    to {
-      translate: -100% 0;
-    }
-  }
-
-  /* Console replaces horizontal bands from the top down. The complementary clips leave
-     each band in place until the next page reaches it. */
-  @keyframes ui-page-scan-in {
-    from {
-      clip-path: inset(0 0 100%);
-    }
-    to {
-      clip-path: inset(0);
-    }
-  }
-  @keyframes ui-page-scan-out {
-    from {
-      clip-path: inset(0);
-    }
-    to {
-      clip-path: inset(100% 0 0);
-    }
-  }
-
-  /* Doodle turns the old sheet from its lower right corner. The new sheet lies flat
-     underneath; the corner travels diagonally towards the binding at the upper left. */
-  @keyframes ui-page-peel {
+  /* Console lays the destination beneath the outgoing page. Clearing the solid part
+     of its mask lets four-pixel squares with different coverage dissolve in place. */
+  @keyframes ui-page-dissolve {
     from,
     to {
       z-index: var(--layer-raised);
-      transform-origin: top left;
-      background-color: var(--ui-canvas);
+      mix-blend-mode: normal;
+      background-color: var(--ui-shell-main-bg);
+      mask-image: linear-gradient(currentColor 0 0), url("./motion/page-pixels.svg");
+      mask-size:
+        100% 100%,
+        16px 16px;
     }
     from {
-      clip-path: polygon(0 0, 100% 0, 100% 100%, 100% 100%, 0 100%);
-      transform: perspective(1200px) rotateY(0deg) rotateZ(0deg);
+      color: black;
+      opacity: 1;
     }
-    50% {
-      clip-path: polygon(0 0, 100% 0, 100% 10%, 10% 100%, 0 100%);
-      transform: perspective(1200px) rotateY(-4deg) rotateZ(-0.8deg);
+    30% {
+      opacity: 0.96;
+    }
+    55% {
+      color: transparent;
     }
     to {
-      clip-path: polygon(0 0, 0 0, 0 0, 0 0, 0 0);
-      transform: perspective(1200px) rotateY(-14deg) rotateZ(-2deg);
+      color: transparent;
+      opacity: 0;
+    }
+  }
+
+  @keyframes ui-page-hop {
+    from {
+      opacity: 0;
+      translate: 0 4px;
+    }
+    62% {
+      translate: 0 -2px;
+    }
+    to {
+      opacity: 1;
+      translate: 0 0;
+    }
+  }
+  @keyframes ui-page-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
     }
   }
 

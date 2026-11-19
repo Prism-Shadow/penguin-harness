@@ -6,12 +6,13 @@ import { provisionAndLogin } from "./auth.mjs";
 
 test("page transitions leave the navigation live and respect reduced motion", async ({ page }) => {
   await provisionAndLogin(page.request, "navmotion", "password123");
+  await page.request.put("/api/me/prefs", { data: { themeId: "modern" } });
   await page.goto("/chat/new");
   const agents = page.locator('.ui-shell [data-slot="nav"] a[href="/agents"]').first();
   const models = page.locator('.ui-shell [data-slot="nav"] a[href="/models"]').first();
   await expect(agents).toBeVisible();
   // Hold the transition long enough to interact during it, independent of machine speed.
-  await page.addStyleTag({ content: ":root { --ui-dur-enter: 1s !important; }" });
+  await page.addStyleTag({ content: ":root { --ui-page-duration: 1s !important; }" });
   await page.evaluate(() => {
     window.firstNavigation = document.querySelector('.ui-shell [data-slot="nav"]');
     window.firstViewport = document.querySelector("[data-page-viewport]");
@@ -58,9 +59,19 @@ test("page transitions leave the navigation live and respect reduced motion", as
   await models.click();
   await expect(models).toHaveAttribute("aria-current", "page");
   expect(await page.evaluate(() => window.startedTransitions)).toBe(0);
+
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.evaluate(() => {
+    document.documentElement.dataset.motion = "reduced";
+  });
+  await agents.click();
+  await expect(agents).toHaveAttribute("aria-current", "page");
+  expect(await page.evaluate(() => window.startedTransitions)).toBe(0);
 });
 
-test("themes lift, slide, scan and turn the same page in different ways", async ({ page }) => {
+test("a page refocuses, dissolves or settles in place, and Primer goes straight to the destination", async ({
+  page,
+}) => {
   await provisionAndLogin(page.request, "navthemes", "password123");
   for (const themeId of ["modern", "github", "geek", "doodle"]) {
     await page.request.put("/api/me/prefs", {
@@ -92,30 +103,42 @@ test("themes lift, slide, scan and turn the same page in different ways", async 
               .borderTopLeftRadius,
             opacity: Number(next.opacity),
             incomingShift: next.translate,
-            oldClip: old.clipPath,
-            newClip: next.clipPath,
+            oldOpacity: Number(old.opacity),
+            incomingFilter: next.filter,
+            outgoingMask: old.maskImage,
             oldTransform: old.transform,
+            newTransform: next.transform,
           };
         });
         return transition;
       };
     });
     await models.click();
+    await expect(models).toHaveAttribute("aria-current", "page");
+    if (themeId === "github") {
+      expect(await page.evaluate(() => !!window.frame)).toBe(false);
+      continue;
+    }
     await page.waitForFunction(() => !!window.frame);
     const frame = await page.evaluate(() => window.frame);
+    expect(frame.corner).toBe(frame.shellCorner);
+    expect(frame.oldTransform).toBe("none");
+    expect(frame.newTransform).toBe("none");
     if (themeId === "modern") {
-      expect(frame.opacity).toBeGreaterThan(0);
-      expect(frame.opacity).toBeLessThan(1);
-    } else if (themeId === "github") {
-      expect(parseFloat(frame.incomingShift)).toBeGreaterThan(0);
+      expect(frame.opacity + frame.oldOpacity).toBeCloseTo(1);
+      expect(frame.incomingFilter).toMatch(/blur\((0\.|1\.)/);
+      expect(frame.incomingShift).toBe("none");
     } else if (themeId === "geek") {
-      expect(frame.oldClip).toMatch(/^inset\([1-9]/);
-      expect(frame.newClip).toMatch(/^inset\(/);
+      // Midway, the solid cover must already be translucent so the tiled mask is visible.
+      expect(frame.outgoingMask).toMatch(/linear-gradient\(rgba\(/);
+      expect(frame.outgoingMask).toContain("url(");
+      expect(frame.oldOpacity).toBeGreaterThan(0);
+      expect(frame.oldOpacity).toBeLessThan(1);
     } else {
-      expect(parseFloat(frame.corner)).toBeGreaterThan(0);
-      expect(frame.corner).toBe(frame.shellCorner);
-      expect(frame.oldClip).toMatch(/^polygon\(/);
-      expect(frame.oldTransform).toMatch(/^matrix3d\(/);
+      const [x, y] = frame.incomingShift.split(" ").map(parseFloat);
+      expect(x).toBe(0);
+      expect(Math.abs(y)).toBeGreaterThan(0);
+      expect(Math.abs(y)).toBeLessThan(3);
     }
   }
 });

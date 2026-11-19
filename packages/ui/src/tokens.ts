@@ -534,6 +534,7 @@ export const TOKEN_GROUPS = [
       "--ui-ease-enter",
       "--ui-ease-exit",
       "--ui-enter-shift",
+      "--ui-page-duration",
       "--ui-page-enter",
       "--ui-page-exit",
       "--ui-enter-scale",
