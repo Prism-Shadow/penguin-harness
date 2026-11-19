@@ -49,6 +49,8 @@ import type {
 } from "@prismshadow/penguin-core/kernel";
 import {
   agentDir,
+  installedPlugin,
+  PLUGIN_NAME_PATTERN,
   userText,
   workbenchCacheDir,
   workbenchDataDir,
@@ -63,7 +65,11 @@ import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Traces } from "@prismshadow/penguin-library-trace";
 import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
-import type { WorkbenchApprovalMode, Workbenches } from "../mechanisms/workbenches.js";
+import type {
+  WorkbenchApprovalMode,
+  WorkbenchDataLevel,
+  Workbenches,
+} from "../mechanisms/workbenches.js";
 import type {
   AppCenterShortcut,
   WorkbenchTabIcon,
@@ -88,7 +94,13 @@ import {
   writeAppCenterShow,
   type AppCenterManifest,
 } from "./app-center.js";
-import { ensureDir, removeBelow, socketPathIn } from "./data-dirs.js";
+import {
+  ensureDir,
+  levelFolders,
+  removeBelow,
+  socketPathIn,
+  type WorkbenchPlace,
+} from "./data-dirs.js";
 import { migrateWorkbenches } from "./migrate.js";
 import { WorkbenchSubscriptions } from "./subscribe.js";
 import {
@@ -1218,12 +1230,15 @@ export class WorkbenchService implements Workbenches {
   ) {
     const service = this;
     let state: unknown = await readState(folder.dir);
-    const root = service.paths.root;
-    const agent = agentDir(root, projectId, agentId);
-    const dirs = {
-      dataDir: workbenchDataDir(root, projectId, agentId, folder.id),
-      cacheDir: workbenchCacheDir(root, projectId, agentId, folder.id),
-      stateDir: workbenchStateDir(root, projectId, agentId, folder.id),
+    // The plugin it came from names the app at the shared levels; a name no plugin could have
+    // is no app's.
+    const from = await installedPlugin(folder.dir).catch(() => null);
+    const place: WorkbenchPlace = {
+      root: service.paths.root,
+      projectId,
+      agentId,
+      workbenchId: folder.id,
+      plugin: from !== null && PLUGIN_NAME_PATTERN.test(from) ? from : null,
     };
     return {
       listAgents: () => service.agents.list(projectId).map((row) => ({ agentId: row.agentId })),
@@ -1285,16 +1300,18 @@ export class WorkbenchService implements Workbenches {
         return subscriptions.subscribe(sessionId, listener);
       },
       // The folders are made before their paths are handed out: the Agent they are named to
-      // may be sandboxed, and its commands can write them only once they exist.
-      dataPaths: () => {
-        ensureDir(agent, dirs.dataDir, "dataPaths");
-        ensureDir(agent, dirs.cacheDir, "dataPaths");
-        ensureDir(root, dirs.stateDir, "dataPaths");
-        return { ...dirs };
+      // may be sandboxed, and its commands can write the agent level only once it exists.
+      dataPaths: (level?: WorkbenchDataLevel) => {
+        const { paths, bases } = levelFolders(level, place, "dataPaths");
+        ensureDir(bases.dataDir, paths.dataDir, "dataPaths");
+        ensureDir(bases.cacheDir, paths.cacheDir, "dataPaths");
+        ensureDir(bases.stateDir, paths.stateDir, "dataPaths");
+        return paths;
       },
-      socketPath: (name: string) => {
-        const at = socketPathIn(dirs.stateDir, name);
-        if (process.platform !== "win32") ensureDir(root, dirs.stateDir, "socketPath");
+      socketPath: (name: string, level?: WorkbenchDataLevel) => {
+        const { paths, bases } = levelFolders(level, place, "socketPath");
+        const at = socketPathIn(paths.stateDir, name);
+        if (process.platform !== "win32") ensureDir(bases.stateDir, paths.stateDir, "socketPath");
         return at;
       },
       getState: () => state,

@@ -4,7 +4,8 @@
  * - The default export carries the State without its schedules, vault, workbench build output
  *   or git entries, and without Traces.
  * - A workbench's data folder beside the State travels only with `workbenchData`, never its cache
- *   or state folder nor a folder no carried workbench owns, and lands under the new id.
+ *   or state folder, the server level its app shares, nor a folder no carried workbench owns, and
+ *   lands under the new id.
  * - An overwrite that brings no data keeps each workbench's data folder, and a workbench the
  *   package no longer has goes with its data, cache and state; one that brings data replaces the
  *   folder. The backup holds every data folder replaced or removed.
@@ -33,6 +34,7 @@ import {
   agentVaultPath,
   defaultSystemConfig,
   snapshotsDir,
+  serverAppDir,
   tracesDir,
   workbenchStateDir,
 } from "@prismshadow/penguin-core";
@@ -159,6 +161,8 @@ describe("Agent zip export and import", () => {
     await write(path.join(app, "cache/desk/thumb.png"), "cache");
     await write(path.join(app, "data/orphan/left.md"), "no workbench owns this");
     await write(path.join(workbenchStateDir(t.root, P, "source", "desk"), "dev.lock"), "runtime");
+    // What every copy of the app shares on this server.
+    await write(path.join(serverAppDir(t.root), "data", "desk-kit", "desk", "weights.bin"), "w");
     const traces = tracesDir(t.root, P, "source");
     await write(
       path.join(traces, "2026-01-10", `${P1}_001.jsonl`),
@@ -197,7 +201,8 @@ describe("Agent zip export and import", () => {
     const pkg = await exportOf("source");
     const app = names(pkg).filter((e) => e.startsWith("source/app/"));
     expect(app).toEqual(["source/app/data/desk/decks/a.json"]);
-    // Nothing beside the State and the data folders: the state folder (`<root>/run/…`) stays.
+    // Nothing beside the State and the data folders: the state folder (`<root>/run/…`) and the
+    // server level (`<root>/app/…`) stay.
     expect(
       names(pkg).filter((e) => !e.startsWith("source/agent_state/") && !app.includes(e)),
     ).toEqual([]);

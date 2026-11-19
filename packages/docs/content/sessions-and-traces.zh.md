@@ -51,7 +51,7 @@ PenguinHarness 的全部运行时数据都存放在本地文件系统上。配�
         └── snapshots/                # Agent State version snapshots
 ```
 
-工作台的运行时文件（Unix socket、管道、锁）另放在 `<root>/run/<project>/<agent>/<workbench>/`，每一级是其 id 的 10 位哈希，使 socket 路径不超过 Unix socket 路径的 103 字节上限。它们从不导出，随所属的工作台、Agent 或 Project 一并删除。
+工作台的运行时文件（Unix socket、管道、锁）另放在 `<root>/run/<project>/<agent>/<workbench>/`，每一级是其 id 的 10 位哈希，使 socket 路径不超过 Unix socket 路径的 103 字节上限。它们从不导出，随所属的工作台、Agent 或 Project 一并删除。 从插件安装的工作台还可以存放由该应用所有副本共用的文件：本服务器上位于 `<root>/app/{data,cache}/<plugin>/<workbench>/`（状态在 `<root>/run/server/` 下），这台电脑上本 OS 用户的位于 `~/.penguin/machine/`（或 `PENGUIN_MACHINE_HOME`）。两者都不导出，也不随工作台删除。
 
 各配置文件的字段见[配置参考](/configuration)。
 

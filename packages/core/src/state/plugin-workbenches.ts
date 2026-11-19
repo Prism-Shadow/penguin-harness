@@ -39,6 +39,14 @@ async function receipt(dir: string): Promise<Receipt | null> {
     throw error;
   }
 }
+/**
+ * The plugin that installed the workbench folder `dir`, from its install receipt; null for a
+ * workbench made in place. The receipt is written by the install, inside the Agent State, which
+ * a sandboxed command cannot write.
+ */
+export async function installedPlugin(dir: string): Promise<string | null> {
+  return (await receipt(dir))?.plugin ?? null;
+}
 export async function listInstalledWorkbenches(
   root: string,
   project: string,

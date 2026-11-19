@@ -1,7 +1,7 @@
 ---
 name: penguin-plugin
 description: Use for PenguinHarness plugins and workbenches — what a plugin package is and how to build, test, share and submit one, and the workbenches (the tabs and pages beside the chat, with server code behind them) an Agent keeps in its Agent State — building one, changing it, showing it as the whole app, restoring an earlier version, and removing it when the user wants the custom UI gone.
-version: 2026.11.19.2
+version: 2026.11.19.3
 ---
 
 # Penguin Plugins
@@ -384,7 +384,7 @@ Each entry under `WebModule.sessionTabs` is one tab beside the chat: `key` (uniq
 
 ### The host
 
-`WorkbenchHost` (published as module `Host`) speaks the SDK's verbs, scoped to the workbench's Project: `listAgents()` returns the Project's Agents as `{ agentId }[]`; `createSession({ agentId?, approvalMode? })` opens a Session of this Agent — or of another Agent of the same Project — and returns `{ sessionId }`. Every tool call in it runs (`allow-all`) unless `approvalMode` is `"deny-all"`, which denies them all: pass it for a Session that only talks — a character, a game host, anything that hands the model the user's words or a text the user imported — and say in its prompt as well that it has no tools. No other mode is accepted: nobody is there to answer an ask. These Sessions carry source `workbench` and are automatically archived from the main chat sidebar; your list still reads and runs them through the host. `sessionTitle(sessionId)` returns the current generated title (or `null` before one exists); `run(sessionId, [{ text: "…" }])` — the SDK's `session.run`, its input items spelled out because a workbench has no package to import `userText` from — runs one turn in a Session, new or existing, and returns `{ sessionId, queued }` once it has started (a busy Session queues it as a follow-up; the Agent hears it as a message from the server, not from a person); `sessionStatus(sessionId)` says `idle` / `running` / …; `await sessionResult(sessionId)` returns a snapshot of the latest task (see *Background jobs*); `subscribe(sessionId, listener)` hands the listener the Session's AMSP records as they are written, live only, and returns the function that stops it (see *Follow the Agent live*); `getState()` / `setState(doc)` over `state.json` (`getState()` is `unknown`: narrow it); `dataPaths()` returning the workbench's own folders `{ dataDir, cacheDir, stateDir }`, and `socketPath(name)` for a local socket in `stateDir` (see *Data and storage*); `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workbench`, with their own `requires` between them — the tree is checked as a whole.
+`WorkbenchHost` (published as module `Host`) speaks the SDK's verbs, scoped to the workbench's Project: `listAgents()` returns the Project's Agents as `{ agentId }[]`; `createSession({ agentId?, approvalMode? })` opens a Session of this Agent — or of another Agent of the same Project — and returns `{ sessionId }`. Every tool call in it runs (`allow-all`) unless `approvalMode` is `"deny-all"`, which denies them all: pass it for a Session that only talks — a character, a game host, anything that hands the model the user's words or a text the user imported — and say in its prompt as well that it has no tools. No other mode is accepted: nobody is there to answer an ask. These Sessions carry source `workbench` and are automatically archived from the main chat sidebar; your list still reads and runs them through the host. `sessionTitle(sessionId)` returns the current generated title (or `null` before one exists); `run(sessionId, [{ text: "…" }])` — the SDK's `session.run`, its input items spelled out because a workbench has no package to import `userText` from — runs one turn in a Session, new or existing, and returns `{ sessionId, queued }` once it has started (a busy Session queues it as a follow-up; the Agent hears it as a message from the server, not from a person); `sessionStatus(sessionId)` says `idle` / `running` / …; `await sessionResult(sessionId)` returns a snapshot of the latest task (see *Background jobs*); `subscribe(sessionId, listener)` hands the listener the Session's AMSP records as they are written, live only, and returns the function that stops it (see *Follow the Agent live*); `getState()` / `setState(doc)` over `state.json` (`getState()` is `unknown`: narrow it); `dataPaths(level?)` returning the workbench's own folders `{ dataDir, cacheDir, stateDir }` at the `agent` (default), `server` or `machine` level, and `socketPath(name, level?)` for a local socket in that `stateDir` (see *Data and storage*); `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workbench`, with their own `requires` between them — the tree is checked as a whole.
 
 ### HTTP
 
@@ -437,6 +437,7 @@ Keep each kind of thing where it belongs:
 | A workbench's files | `host.dataPaths().dataDir`, through `node:fs` | Documents the user edits and the Agent changes, uploads, media, exports — never code |
 | A workbench's cache | `host.dataPaths().cacheDir` | What can be made again: thumbnails, intermediate renders |
 | A workbench's runtime files | `host.dataPaths().stateDir` | Unix sockets, pipes, locks |
+| What every copy of an app shares | `host.dataPaths("server")` or `("machine")` | A model's weights, a tool's binaries, a small local server — never anything one Project must not see |
 
 ### Adding configuration
 
@@ -447,7 +448,7 @@ Use PenguinHarness's built-in configuration mechanism rather than writing standa
 
 ### A workbench's folders
 
-`host.dataPaths()` returns three folders of the workbench's own, outside its source folder and made by the time it returns. The handler runs in the server process with Node's modules typed for it, so it reads and writes them with `node:fs` like any Node program and serves what its page needs from its own routes; the host has no file API. The Agent edits the same files with its own file tools, so a document the user edits in the page and asks the Agent to change is one file on disk:
+`host.dataPaths(level?)` returns three folders of the workbench's own, outside its source folder and made by the time it returns. The handler runs in the server process with Node's modules typed for it, so it reads and writes them with `node:fs` like any Node program and serves what its page needs from its own routes; the host has no file API. The Agent edits the same files with its own file tools, so a document the user edits in the page and asks the Agent to change is one file on disk:
 
 ```ts
 import { readFile, rename, stat, writeFile } from "node:fs/promises";
@@ -464,11 +465,15 @@ await host.run(sessionId, [{ text: `${request}\n\nDeck file: ${deck}` }]);
 const { mtimeMs, size } = await stat(deck);
 ```
 
-- `dataDir` (`<agent>/app/data/<id>/`): the workbench's files. The Agent export carries it only with **With their data**.
-- `cacheDir` (`<agent>/app/cache/<id>/`): what can be made again. Never exported.
-- `stateDir` (a short path under the data root's `run/`): runtime-only files — Unix sockets, pipes, locks. Never exported. A Unix socket path holds at most 103 bytes (macOS's limit; Linux allows 108), so listen on `host.socketPath("dev.sock")`, which throws naming the limit when the path would be longer. On Windows it answers a named pipe, `\\.\pipe\penguin-…-dev.sock`, which is no file on disk: `net.createServer().listen(host.socketPath(…))` works on every platform. The folder survives a restart, so unlink a stale socket before listening.
-- A write in these folders reloads nothing and records no version; restoring a version or updating the plugin leaves them alone. Removing the workbench, or uninstalling its plugin, removes all three: say so before a removal that would discard documents the user made.
-- Under a `workspace-write` sandbox the Agent's commands can write these folders too. So the handler never follows a link the Agent may have left: `lstat` a path before reading or writing through it, and refuse a link or a path that leaves the folder. The host itself refuses a link where one of the folders belongs.
+- `dataDir`: files kept for good. `cacheDir`: what can be made again, never exported. `stateDir`: runtime-only files — Unix sockets, pipes, locks — never exported. A Unix socket path holds at most 103 bytes (macOS's limit; Linux allows 108), so listen on `host.socketPath("dev.sock", level?)`, which throws naming the limit when the path would be longer. On Windows it answers a named pipe, `\\.\pipe\penguin-…-dev.sock`, which is no file on disk: `net.createServer().listen(host.socketPath(…))` works on every platform. The state folder survives a restart, so unlink a stale socket before listening.
+- **Choose the level by who shares the files.**
+  - `"agent"` (the default) is this Agent's copy of the app: `<agent>/app/{data,cache}/<id>/`. The Agent edits these files with its own file tools, even in a sandbox. The Agent export carries `dataDir` only with **With their data**, and removing the workbench removes all three folders. The user's documents go here, and nothing private goes anywhere else.
+  - `"server"` is every copy of the same app on this server, across its Projects and Agents: a TTS model's weights, a local language model. It lives under the data root's `app/`.
+  - `"machine"` is every PenguinHarness on this computer for this OS user (the installed app and a dev instance alike): a minimal server one computer runs once. It lives under `~/.penguin/machine/`. Other OS users never share it: anything they need is a system package an administrator installs.
+  - The two shared levels are never exported and never removed with a workbench; a user clears them by hand. Only an app installed from a plugin has them, since the plugin's name is what makes two copies one app; a workbench made in place gets an error and keeps to the agent level.
+  - Only the handler writes the shared levels. The Agent's sandboxed commands may read them but not write them, so a download step or a long-running process for them runs from the handler: `fetch`, or a child process it spawns. Anything written there is seen by every Project's copy of the app, so store only what is the same for everyone.
+- A write in these folders reloads nothing and records no version; restoring a version or updating the plugin leaves them alone. Removing the workbench, or uninstalling its plugin, removes its agent-level folders: say so before a removal that would discard documents the user made.
+- Under a `workspace-write` sandbox the Agent's commands can write the agent-level folders. So the handler never follows a link the Agent may have left: `lstat` a path before reading or writing through it, and refuse a link or a path that leaves the folder. The host itself refuses a link where one of the folders belongs.
 - The handler names every path it gives the Agent. Never have the Agent work a path out from its `# Environment` block, and never put code in these folders.
 
 ## Test a plugin

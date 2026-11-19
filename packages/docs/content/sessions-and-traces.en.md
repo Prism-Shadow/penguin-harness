@@ -51,7 +51,7 @@ The data root is the `PENGUIN_HOME` environment variable, `~/.penguin/data` by d
         └── snapshots/                # Agent State version snapshots
 ```
 
-Workbench runtime files — Unix sockets, pipes, locks — sit apart at `<root>/run/<project>/<agent>/<workbench>/`, each level a 10-character hash of its id, so that a socket path stays under the 103 bytes a Unix socket path holds. They are never exported and go with their workbench, agent or Project.
+Workbench runtime files — Unix sockets, pipes, locks — sit apart at `<root>/run/<project>/<agent>/<workbench>/`, each level a 10-character hash of its id, so that a socket path stays under the 103 bytes a Unix socket path holds. They are never exported and go with their workbench, agent or Project. A workbench installed from a plugin may also keep files shared by every copy of that app: on this server at `<root>/app/{data,cache}/<plugin>/<workbench>/` (its state under `<root>/run/server/`), and for this OS user on this computer at `~/.penguin/machine/` (or `PENGUIN_MACHINE_HOME`). Neither is exported or removed with a workbench.
 
 For the fields of each config file, see the [Configuration Reference](/configuration).
 

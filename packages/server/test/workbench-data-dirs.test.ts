@@ -10,6 +10,9 @@
  * - A local socket listens in the state folder; a path past the 103 bytes a Unix socket path
  *   holds is refused naming the limit, before `listen` could answer a bare EINVAL; a name that is
  *   not one plain segment is refused; on Windows the socket is a named pipe of its own.
+ * - The agent level is the default; the server level is the data root's, the machine level this
+ *   OS user's, each keyed by the plugin and the workbench and with a short state folder; a
+ *   workbench made in place has no shared level, and an unknown level is refused.
  */
 import fs from "node:fs/promises";
 import net from "node:net";
@@ -18,11 +21,13 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ensureDir,
+  levelFolders,
   MAX_SOCKET_PATH_BYTES,
   removeBelow,
   socketPathIn,
   WorkbenchDirError,
 } from "../src/workbenches/data-dirs.js";
+import type { WorkbenchPlace } from "../src/workbenches/data-dirs.js";
 
 let base: string;
 const data = () => path.join(base, "app", "data", "deck");
@@ -141,5 +146,77 @@ describe("a workbench's local socket", () => {
     const two = socketPathIn("C:\\data\\run\\p\\a\\w2", "dev.sock", "win32");
     expect(one).toMatch(/^\\\\\.\\pipe\\penguin-[0-9a-f]{16}-dev\.sock$/);
     expect(two).not.toBe(one);
+  });
+});
+
+describe("a workbench's levels", () => {
+  const place = (plugin: string | null): WorkbenchPlace => ({
+    root: path.join(base, "root"),
+    projectId: "acme",
+    agentId: "writer",
+    workbenchId: "voice",
+    plugin,
+  });
+  let machineBefore: string | undefined;
+  beforeEach(() => {
+    machineBefore = process.env.PENGUIN_MACHINE_HOME;
+    process.env.PENGUIN_MACHINE_HOME = path.join(base, "machine");
+  });
+  afterEach(() => {
+    if (machineBefore === undefined) delete process.env.PENGUIN_MACHINE_HOME;
+    else process.env.PENGUIN_MACHINE_HOME = machineBefore;
+  });
+
+  it("answer the agent level when none is named, and each level its own folders and base", () => {
+    const at = place("voice-kit");
+    const root = at.root;
+    const agent = path.join(root, "acme", "agents", "writer");
+    expect(levelFolders(undefined, at, "dataPaths")).toEqual(
+      levelFolders("agent", at, "dataPaths"),
+    );
+    expect(levelFolders("agent", at, "dataPaths").paths).toMatchObject({
+      dataDir: path.join(agent, "app", "data", "voice"),
+      cacheDir: path.join(agent, "app", "cache", "voice"),
+    });
+    const server = levelFolders("server", at, "dataPaths");
+    expect(server.paths.dataDir).toBe(path.join(root, "app", "data", "voice-kit", "voice"));
+    expect(server.paths.cacheDir).toBe(path.join(root, "app", "cache", "voice-kit", "voice"));
+    expect(path.dirname(server.paths.stateDir)).toBe(path.join(root, "run", "server"));
+    expect(server.bases).toEqual({ dataDir: root, cacheDir: root, stateDir: root });
+    const machine = levelFolders("machine", at, "dataPaths");
+    const home = path.join(base, "machine");
+    expect(machine.paths.dataDir).toBe(path.join(home, "data", "voice-kit", "voice"));
+    expect(path.dirname(machine.paths.stateDir)).toBe(path.join(home, "run"));
+    expect(machine.bases.dataDir).toBe(home);
+    // Another Agent's copy of the same app shares both levels; another app does not.
+    const twin = { ...at, projectId: "other", agentId: "reader" };
+    expect(levelFolders("server", twin, "dataPaths").paths).toEqual(server.paths);
+    expect(levelFolders("machine", twin, "dataPaths").paths).toEqual(machine.paths);
+    expect(levelFolders("server", place("other-kit"), "dataPaths").paths.stateDir).not.toBe(
+      server.paths.stateDir,
+    );
+  });
+
+  it("give a shared level only to an app installed from a plugin, and refuse an unknown level", () => {
+    for (const level of ["server", "machine"]) {
+      expect(() => levelFolders(level, place(null), "dataPaths")).toThrow(
+        /made in place: keep its files at the agent level/,
+      );
+    }
+    expect(() => levelFolders("project", place("voice-kit"), "dataPaths")).toThrow(
+      /level is "agent", "server" or "machine"/,
+    );
+  });
+
+  it("keep a socket path short at every level: the state folder adds a fixed length to its base", () => {
+    const at = place("voice-kit");
+    for (const level of ["agent", "server", "machine"] as const) {
+      const { paths, bases } = levelFolders(level, at, "socketPath");
+      const added = Buffer.byteLength(paths.stateDir) - Buffer.byteLength(bases.stateDir);
+      expect(added).toBeLessThanOrEqual(37);
+      expect(socketPathIn(paths.stateDir, "dev.sock", "linux")).toBe(
+        path.join(paths.stateDir, "dev.sock"),
+      );
+    }
   });
 });

@@ -210,6 +210,43 @@ export function agentRunDir(root: string, projectId: string, agentId: string): s
   return path.join(projectRunDir(root, projectId), runSegment(agentId));
 }
 
+/**
+ * `<root>/app`: the server level of a workbench's folders — what every copy of an app installed
+ * from a plugin shares across this data root's Projects and Agents (a model's weights, a tool's
+ * binaries). Its state folders sit under `<root>/run/server` at a short path.
+ */
+export function serverAppDir(root: string): string {
+  return path.join(root, "app");
+}
+
+/**
+ * The machine level of a workbench's folders: shared by every data root of this OS user on this
+ * computer (the installed app, a dev instance, the CLI's own root), `~/.penguin/machine` unless
+ * `PENGUIN_MACHINE_HOME` names another. Never shared between OS users.
+ */
+export function machineAppDir(): string {
+  return process.env.PENGUIN_MACHINE_HOME ?? path.join(os.homedir(), ".penguin", "machine");
+}
+
+/**
+ * One installed app's folders at a shared level: `<base>/{data,cache}/<plugin>/<workbenchId>`,
+ * and its state folder `<runBase>/<runSegment("<plugin>/<workbenchId>")>` at a short path. `base`
+ * and `runBase` are the server's (`serverAppDir`, `<root>/run/server`) or the machine's
+ * (`machineAppDir`, `<machineAppDir>/run`).
+ */
+export function sharedWorkbenchDirs(
+  base: string,
+  runBase: string,
+  plugin: string,
+  workbenchId: string,
+): { dataDir: string; cacheDir: string; stateDir: string } {
+  return {
+    dataDir: path.join(base, "data", plugin, workbenchId),
+    cacheDir: path.join(base, "cache", plugin, workbenchId),
+    stateDir: path.join(runBase, runSegment(`${plugin}/${workbenchId}`)),
+  };
+}
+
 /** `<root>/run/<project>/<agent>/<workbench>`: one workbench's state folder (sockets, pipes, locks). */
 export function workbenchStateDir(
   root: string,

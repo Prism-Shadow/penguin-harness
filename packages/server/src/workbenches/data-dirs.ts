@@ -1,24 +1,40 @@
 /**
- * A workbench's own folders, as `WorkbenchHost.dataPaths()` hands them out:
+ * A workbench's own folders, as `WorkbenchHost.dataPaths(level)` hands them out (core's paths):
  *
- *   dataDir   <agentDir>/app/data/<id>/     files the workbench and its Agent both write; exported
- *   cacheDir  <agentDir>/app/cache/<id>/    files that can be made again; never exported
- *   stateDir  <root>/run/<p>/<a>/<w>/       sockets, pipes, locks; never exported
+ *   agent    <agentDir>/app/{data,cache}/<id>/            state <root>/run/<p>/<a>/<w>/
+ *   server   <root>/app/{data,cache}/<plugin>/<id>/       state <root>/run/server/<h>/
+ *   machine  <machine>/{data,cache}/<plugin>/<id>/        state <machine>/run/<h>/
  *
- * (core's `workbenchDataDir`, `workbenchCacheDir`, `workbenchStateDir`). The host only makes
- * them and says where they are: a handler reads and writes them with Node's own `fs`, and serves
+ * `<machine>` is `~/.penguin/machine`. The agent level is this Agent's copy of the app alone;
+ * the server level every copy of the same plugin's workbench on this data root; the machine
+ * level every data root of this OS user on this computer. The shared levels need the plugin the
+ * workbench came from, so a workbench made in place has none. The host only makes the folders
+ * and says where they are: a handler reads and writes them with Node's own `fs`, and serves
  * whatever its page needs from its own routes.
  *
- * The Agent's sandboxed commands may write `<agentDir>/app` and its `run/` folder, so a link may
- * stand where one of these folders belongs. Nothing here goes through one: making a folder
- * checks every level below the trusted base (the Agent's directory, or the data root for the
- * state folder) is a real directory, and removing one never reaches through a link on the way.
+ * Only the agent level is writable to the Agent's sandboxed commands ({@link agentWritableRoots}),
+ * so a link may stand where one of its folders belongs. Nothing here goes through one: making a
+ * folder checks every level below its trusted base (the Agent's directory, the data root, the
+ * machine folder) is a real directory, and removing one never reaches through a link on the way.
  * What the handler then does inside its folders is its own: it is server code, unconfined.
  */
 import { createHash } from "node:crypto";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import {
+  agentAppDir,
+  agentDir,
+  agentRunDir,
+  machineAppDir,
+  runDir,
+  serverAppDir,
+  sharedWorkbenchDirs,
+  workbenchCacheDir,
+  workbenchDataDir,
+  workbenchStateDir,
+} from "@prismshadow/penguin-core";
+import type { WorkbenchDataLevel, WorkbenchDataPaths } from "../mechanisms/workbenches.js";
 
 /**
  * The longest Unix socket path, in bytes, a workbench is given: macOS's `sun_path` holds 104
@@ -118,4 +134,78 @@ export function socketPathIn(
     );
   }
   return at;
+}
+
+const LEVELS: readonly WorkbenchDataLevel[] = ["agent", "server", "machine"];
+
+/** Where one workbench is, for {@link levelFolders}. */
+export interface WorkbenchPlace {
+  root: string;
+  projectId: string;
+  agentId: string;
+  workbenchId: string;
+  /** The plugin that installed it; null for a workbench made in place. */
+  plugin: string | null;
+}
+
+/**
+ * A level's three folders for one workbench, and the trusted base each is made below. Throws for
+ * a level that is none of the three, and for a shared level of a workbench made in place.
+ */
+export function levelFolders(
+  level: unknown,
+  at: WorkbenchPlace,
+  call: string,
+): { paths: WorkbenchDataPaths; bases: WorkbenchDataPaths } {
+  const chosen = level ?? "agent";
+  if (!LEVELS.includes(chosen as WorkbenchDataLevel)) {
+    throw new WorkbenchDirError(
+      `${call}: level is "agent", "server" or "machine", not ${JSON.stringify(level)}`,
+    );
+  }
+  const { root, projectId, agentId, workbenchId, plugin } = at;
+  if (chosen === "agent") {
+    const agent = agentDir(root, projectId, agentId);
+    return {
+      paths: {
+        dataDir: workbenchDataDir(root, projectId, agentId, workbenchId),
+        cacheDir: workbenchCacheDir(root, projectId, agentId, workbenchId),
+        stateDir: workbenchStateDir(root, projectId, agentId, workbenchId),
+      },
+      bases: { dataDir: agent, cacheDir: agent, stateDir: root },
+    };
+  }
+  if (plugin === null) {
+    throw new WorkbenchDirError(
+      `${call}: the ${chosen} level is shared by every copy of an app installed from a plugin, ` +
+        `and workbench ${JSON.stringify(workbenchId)} was made in place: keep its files at the agent level`,
+    );
+  }
+  if (chosen === "server") {
+    return {
+      paths: sharedWorkbenchDirs(
+        serverAppDir(root),
+        path.join(runDir(root), "server"),
+        plugin,
+        workbenchId,
+      ),
+      bases: { dataDir: root, cacheDir: root, stateDir: root },
+    };
+  }
+  const machine = machineAppDir();
+  // The machine folder itself is trusted, as the data root is: below it nothing is.
+  fsSync.mkdirSync(machine, { recursive: true, mode: 0o700 });
+  return {
+    paths: sharedWorkbenchDirs(machine, path.join(machine, "run"), plugin, workbenchId),
+    bases: { dataDir: machine, cacheDir: machine, stateDir: machine },
+  };
+}
+
+/**
+ * What the Agent's sandboxed commands may write besides the Workspace and the Session's
+ * scratchpad: the agent level of its workbenches (`<agentDir>/app` and its `run/` folder), and
+ * nothing of the server or machine level, which every Project's copy of an app reads.
+ */
+export function agentWritableRoots(root: string, projectId: string, agentId: string): string[] {
+  return [agentAppDir(root, projectId, agentId), agentRunDir(root, projectId, agentId)];
 }
