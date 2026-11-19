@@ -211,6 +211,7 @@ for (const lang of ["zh", "en"]) {
     await expect(btn(4)).toBeVisible({ timeout: 35000 });
     await btn(4).click();
     await expect(btn(5)).toHaveAttribute("aria-pressed", "true");
+    await expectPlaying(page);
     await btn(5).click();
     await expect(btn(4)).toBeVisible();
     expect(playbackCount).toBe(1);
@@ -532,8 +533,11 @@ test("disabling the project's provider stops dictation before upload and restore
     data: { projectId: project, name: "Voice provider test" },
   });
   expect([201, 409], await created.text()).toContain(created.status());
-  const enabled = await page.request.post(endpoint, { data: { specifier: plugin } });
-  expect(enabled.ok(), await enabled.text()).toBe(true);
+  const installed = await (await page.request.get(endpoint)).json();
+  const enabled = installed.plugins
+    .filter((entry) => entry.everywhere)
+    .map((entry) => entry.specifier);
+  expect(enabled).toContain(plugin);
   const models = [first, speaker].map((ref) => ({
     ...ref,
     clientType: "mmsp",
@@ -572,9 +576,9 @@ test("disabling the project's provider stops dictation before upload and restore
   const finish = page.getByRole("button", { name: "Finish recording and transcribe", exact: true });
   await expect(finish).toBeVisible();
   try {
-    const disabled = await page.request.delete(
-      endpoint + "?specifier=" + encodeURIComponent(plugin),
-    );
+    const disabled = await page.request.put(endpoint, {
+      data: { plugins: enabled.filter((name) => name !== plugin) },
+    });
     expect(disabled.ok(), await disabled.text()).toBe(true);
     await expect
       .poll(async () => (await (await page.request.get(api + "/capabilities")).json()).available)
@@ -598,7 +602,7 @@ test("disabling the project's provider stops dictation before upload and restore
     if (process.env.VOICE_EVIDENCE)
       await page.screenshot({ path: process.env.VOICE_EVIDENCE + "/provider-disabled-models.png" });
   } finally {
-    const restored = await page.request.post(endpoint, { data: { specifier: plugin } });
+    const restored = await page.request.put(endpoint, { data: { plugins: enabled } });
     expect(restored.ok(), await restored.text()).toBe(true);
   }
   await page.reload();
