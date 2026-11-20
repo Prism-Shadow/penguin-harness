@@ -51,7 +51,7 @@ function useCompanyMode(): ModeState {
       return isOrgRoute(location.pathname) ? "/chat" : null;
     },
     // The organization's six pages — channels are not among them, they are the list below —
-    // each a favourite or in the fold at the user's choice, none favourited by default. With no
+    // drawn as plain rows at the top of the column's scroll area. With no
     // organization the six keep their places, disabled: the pages exist, they just have no
     // organization to show yet, and a nav that empties itself reads as a broken shell rather
     // than as an empty one.

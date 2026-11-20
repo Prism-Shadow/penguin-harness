@@ -33,13 +33,11 @@ export const en: Strings = {
     expandSidebar: "Expand sidebar",
     back: "Back",
     forward: "Forward",
+    /** A fold's toggle: the UI package's words for every fold it draws (lib/ui-strings.ts). */
     collapseGroup: "Collapse",
     expandGroup: "Expand",
     pinGroup: "Pin group",
     unpinGroup: "Unpin group",
-    /** A nav entry's favourite toggle (a star): a favourite stays visible when the collapsible area folds. */
-    pinEntry: "Add to favorites",
-    unpinEntry: "Remove from favorites",
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest). */
     org: {
       overview: "Overview",
@@ -1547,6 +1545,8 @@ export const en: Strings = {
     presetUpdates: (n: number) =>
       n === 1 ? "1 new preset model to add" : `${n} new preset models to add`,
     unexpectedErrors: (n: number) => (n === 1 ? "1 unexpected error" : `${n} unexpected errors`),
+    /** Several trails' sentences under one dot (the App Center's entry, a folder), or a tile's name with its trail's. */
+    joined: (parts: readonly string[]) => parts.join("; "),
     /** Combined anchor whose trails are not all updates — an unexpected error is not one. */
     pending: "Something needs attention",
     /** Clears an update the user has decided not to take now (a later one raises the badge again). */

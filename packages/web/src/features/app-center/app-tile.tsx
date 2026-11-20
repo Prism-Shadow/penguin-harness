@@ -8,6 +8,11 @@
  *   build ends. An app whose last load failed is the dimmed tile with a warning mark: it still
  *   opens, and its menu shows the error. A system app's tile is always ready; its hint says it is
  *   a system app instead of naming an Agent.
+ * - A system app with something waiting on its page (a plugin update, new presets, unexpected
+ *   errors) wears the update dot on its icon's corner, and its hint and accessible name add that
+ *   trail's sentence: the App Center's nav entry carries the same dot, and the page clears it
+ *   (lib/system-app-notes.ts). A folder holding such an app wears the dot too, with the
+ *   sentences of the apps inside, so the trail never ends at a closed folder.
  * - A folder tile shows the first four of its apps' icons in a 2×2 square and opens the folder.
  * - What a drag would do is marked here: a line in the gap beside the tile, or a ring around the
  *   icon it would go into. Neither moves anything. The tile's `data-drop` names the mark it wears.
@@ -29,6 +34,7 @@ import {
   ICON_SIZE,
   ImageIcon,
   InstallRing,
+  UpdateDot,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
@@ -121,6 +127,19 @@ function IntoRing() {
 const TILE_BUTTON =
   "flex w-full select-none flex-col items-center gap-2 rounded-lg p-2 text-center transition-colors duration-150 [-webkit-touch-callout:none] hover:bg-fg/5 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none";
 
+/**
+ * The update dot on an icon's top-right corner, straddling it: the page surface's dot (no ring),
+ * placed the way a page button wears it.
+ */
+function TileDot() {
+  return <UpdateDot size="inline" position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2" />;
+}
+
+/** A tile's hint or name with the sentence of what waits on its page, when something does. */
+function withNote(text: string, note: string | null): string {
+  return note === null ? text : S.todo.joined([text, note]);
+}
+
 /** The name under the icon: two lines at most, then an ellipsis. */
 function TileName({ children }: { children: ReactNode }) {
   return (
@@ -136,10 +155,13 @@ export function AppTile({
   lifted,
   menuItems,
   onOpen,
+  note = null,
 }: {
   app: GridApp;
   /** The title in the reader's language. */
   title: string;
+  /** What is waiting on the app's page (a system app's trail), for its dot; null for none. */
+  note?: string | null;
   drag: TileDragProps;
   mark: TileMark;
   /** This tile is the one being dragged. */
@@ -154,13 +176,20 @@ export function AppTile({
   const state = building ? S.appCenter.building : failed ? S.appCenter.broken : null;
   // A system app is always ready, and the platform's rather than an Agent's: it says so instead.
   const system = shortcut.system !== undefined;
-  const tip = system
-    ? S.appCenter.systemTileName(title)
-    : building
-      ? S.appCenter.buildingTip(title, owner)
-      : failed
-        ? S.appCenter.failedTip(title, owner)
-        : S.appCenter.tileTip(title, owner);
+  const tip = withNote(
+    system
+      ? S.appCenter.systemTileName(title)
+      : building
+        ? S.appCenter.buildingTip(title, owner)
+        : failed
+          ? S.appCenter.failedTip(title, owner)
+          : S.appCenter.tileTip(title, owner),
+    note,
+  );
+  const name = withNote(
+    system ? S.appCenter.systemTileName(title) : S.appCenter.tileName(title, owner, state),
+    note,
+  );
   return (
     <li
       className="relative"
@@ -176,9 +205,7 @@ export function AppTile({
             ref={target.ref}
             {...target.props}
             type="button"
-            aria-label={
-              system ? S.appCenter.systemTileName(title) : S.appCenter.tileName(title, owner, state)
-            }
+            aria-label={name}
             aria-disabled={building || shortcut.unavailable || undefined}
             data-tooltip={tip}
             data-tooltip-extra
@@ -209,6 +236,7 @@ export function AppTile({
                   <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.rowLead} />
                 </span>
               )}
+              {note !== null && <TileDot />}
               {mark === "into" && <IntoRing />}
             </span>
             <TileName>{title}</TileName>
@@ -232,10 +260,13 @@ export function FolderTile({
   lifted,
   menuItems,
   onOpen,
+  notes = [],
 }: {
   folder: GridFolder;
   /** An app's title in the reader's language. */
   titleOf: (shortcut: AppCenterShortcut) => string;
+  /** What is waiting on the pages of the apps inside, in their order, for the folder's dot. */
+  notes?: readonly string[];
   drag: TileDragProps;
   mark: TileMark;
   lifted: boolean;
@@ -253,8 +284,8 @@ export function FolderTile({
             {...target.props}
             type="button"
             aria-haspopup="dialog"
-            aria-label={S.appCenter.folderName(folder.name, count)}
-            data-tooltip={S.appCenter.folderTip(folder.name, count)}
+            aria-label={S.todo.joined([S.appCenter.folderName(folder.name, count), ...notes])}
+            data-tooltip={S.todo.joined([S.appCenter.folderTip(folder.name, count), ...notes])}
             data-tooltip-extra
             onClick={() => {
               if (target.consumeLongPressClick()) return;
@@ -279,6 +310,7 @@ export function FolderTile({
                   size={MINI_PX}
                 />
               ))}
+              {notes.length > 0 && <TileDot />}
               {mark === "into" && <IntoRing />}
             </span>
             <TileName>{folder.name}</TileName>

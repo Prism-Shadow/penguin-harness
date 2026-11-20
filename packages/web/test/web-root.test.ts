@@ -35,8 +35,10 @@ const OrgProposalsPage = () => null;
  *   session, the five layers in their mount order, and the user event handlers of company, the
  *   built-in browser and schedules in their dispatch order.
  * - The sidebar receives the Project switcher and the session list for development mode,
- *   company's mode with its switcher, channels, roadmaps and desks, the to-do dots and the
- *   balance on their anchors, and company's unread count on the contributed proposals page's row
+ *   company's mode with its switcher, channels, roadmaps and desks, the to-do dots on the
+ *   anchors that still have a row (Agents, the App Center, the account and the drawer button; the
+ *   system apps' trails ride on the App Center's) and the balance on the account, and company's
+ *   unread count on the contributed proposals page's row
  *   (anchored by the renderer's name);
  *   the session list receives the messaging binding, the scheduled mark and the dock's "Browse
  *   files".
@@ -67,7 +69,7 @@ import { navPagesOf, type WebAppPage } from "../src/web-app";
 import { pageTableOf } from "../src/web-app/page-table";
 import { contributedPagesOf } from "../src/web-app/contributions";
 import { orgPagesOf } from "../src/features/company/use-org-pages";
-import { navKeysFor } from "../src/web-app/sidebar/nav-state";
+import { navKeysFor } from "../src/lib/nav-pages";
 import { SidebarModule } from "../src/web-app/sidebar/module";
 import { badgesOf, marksFor, modesOf, sectionsIn, sectionsOf } from "../src/web-app/sidebar/modes";
 import { SessionListModule } from "../src/features/session-list/module";
@@ -369,7 +371,7 @@ describe("the booted sidebar slots", () => {
   });
   it("binds main badge hooks and balance without restoring the retired todos provider", () => {
     const badges = badgesOf(sidebarSlots.navBadges ?? []);
-    for (const anchor of ["agents", "models", "plugins", "usage", "menu", "account"]) {
+    for (const anchor of ["agents", "apps", "menu", "account"]) {
       const on = badges.filter((b) => b.anchor === anchor && typeof b.badge.useNote === "function");
       expect(on).toHaveLength(1);
       expect(typeof on[0]!.badge.useNote).toBe("function");

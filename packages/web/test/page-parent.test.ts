@@ -1,19 +1,19 @@
 /**
  * A page under another page: `PageData.parent` (web-app/page-table.ts) and how the nav groups
- * it (web-app/sidebar/nav-state.ts).
+ * it (lib/nav-pages.ts).
  *
  * - parentedPagesOf keeps a child whose parent is in the table and drops one whose parent is
  *   absent, one whose parent sits under another page (one level only — the parent stays), and
  *   one naming itself; a table without parents comes back as it is.
  * - The nav's entries are the top-level pages; each entry's children follow it in table order,
  *   offered like entries (unreleased to nobody, admin-only to admins), and are never entries of
- *   their own, so they take no part in the pinned/collapsible split.
+ *   their own.
  */
 import type { ComponentType } from "react";
 import { describe, expect, it } from "vitest";
 import { parentedPagesOf, type WebAppPage } from "../src/web-app/page-table";
 
-import { navChildKeysFor, navEntryKeysFor, navKeysFor } from "../src/web-app/sidebar/nav-state";
+import { navChildKeysFor, navKeysFor } from "../src/lib/nav-pages";
 
 const Blank: ComponentType = () => null;
 
@@ -77,7 +77,7 @@ describe("the nav's children", () => {
 
   it("entries are the top-level pages only", () => {
     expect(navKeysFor(pages, true)).toEqual(["agents", "benchmark", "machines"]);
-    expect(navEntryKeysFor(pages, false)).toEqual(["newChat", "agents", "benchmark"]);
+    expect(navKeysFor(pages, false)).toEqual(["agents", "benchmark"]);
   });
 
   it("each entry carries its children in table order, offered like entries", () => {

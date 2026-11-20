@@ -68,6 +68,8 @@ export function useMainSidebarInputs(
   const inCompany = currentMode >= 0;
   /** The organization the company nav points at: the open one, else the one last opened (the switcher names the same). */
   const navOrg = parseOrgKey(company.currentOrgKey ?? company.lastOrgKey);
+  /** The main nav's pages, as the modules contributed them (web-app/page-table.ts). */
+  const navPages = navPagesOf(useWebAppPages());
   return {
     onNavigate,
     onCollapse,
@@ -116,5 +118,6 @@ export function useMainSidebarInputs(
     company,
     inCompany,
     navOrg,
+    navPages,
   };
 }
