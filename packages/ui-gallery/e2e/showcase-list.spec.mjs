@@ -13,6 +13,9 @@
  *   the row's box, each on one line, and the version chip is not shown.
  * - Given the same list in a narrow column, the rows fall back to one column.
  * - The switch is two icon buttons with no words, each named, the current one pressed.
+ * - Given the public site's card (tags and facts, no bar) in the list, its tags and facts sit
+ *   beside the text in a wide column and drop under it in a phone's, inside the card either way;
+ *   the site's switch names its icons in native titles.
  */
 import { test, expect } from "@playwright/test";
 
@@ -94,3 +97,32 @@ for (const lang of ["en", "zh"]) {
     expect(new Set(narrow.map((row) => row.left)).size, "one column").toBe(1);
   });
 }
+
+test("a site row keeps its tags and facts beside the text, and under it in a phone column", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/lib.html?topic=site&theme=modern&mode=light&lang=en");
+  const grid = page.getByTestId("site-market-grid");
+  const list = page.getByRole("button", { name: LIST.en, exact: true });
+  await expect(list).toHaveAttribute("title", LIST.en);
+  await list.click();
+  await expect(grid).toHaveAttribute("data-layout", "list");
+  const place = () =>
+    grid.evaluate((g) => {
+      const card = g.querySelector("article.showcase-card");
+      const r = (el) => el.getBoundingClientRect();
+      const body = r(card.querySelector(".showcase-card-body"));
+      const foot = r(card.querySelector(".showcase-card-foot"));
+      const box = r(card);
+      return {
+        beside: foot.left >= body.right - 0.5 && foot.top < body.bottom,
+        under: foot.top >= body.bottom - 0.5,
+        inside: foot.right <= box.right + 0.5 && card.scrollWidth <= card.clientWidth + 1,
+      };
+    });
+  await grid.evaluate((g) => (g.style.width = "800px"));
+  expect(await place()).toEqual({ beside: true, under: false, inside: true });
+  await grid.evaluate((g) => (g.style.width = "360px"));
+  expect(await place()).toEqual({ beside: false, under: true, inside: true });
+});

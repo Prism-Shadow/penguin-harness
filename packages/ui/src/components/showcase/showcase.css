@@ -476,8 +476,15 @@
 .showcase-grid[data-layout="list"] .showcase-card-bar > button + button {
   border-inline-start: 0;
 }
-/* A phone-width column has no room beside the text: the end part drops under the row, the bar
-   back to its full width under a rule. */
+/* A narrow column has no room beside the text: the end part drops under the row. Tags and facts
+   need more room than two short actions, so they drop sooner (under 40rem) than a bar does (under
+   26rem, a phone's column), which then takes its full width under a rule. */
+@container showcase-grid (width < 40rem) {
+  .showcase-grid[data-layout="list"] .showcase-card-foot {
+    flex-basis: 100%;
+    padding-top: 0;
+  }
+}
 @container showcase-grid (width < 26rem) {
   .showcase-grid[data-layout="list"] > .showcase-card:has(> .showcase-card-bar) {
     flex-wrap: wrap;
