@@ -17,9 +17,13 @@
  * `prepare` is not among them: npm runs it for a git repository or a local directory, never
  * for a registry or tarball install, which are the only installs made without npm.
  *
- * Where it may install is npm's own rule (EBADPLATFORM): an `os` or `cpu` list naming values
- * excludes every other one, and a `!value` excludes that one.
+ * `binding.gyp` with `gypfile: false` is not compiled, as npm leaves it.
+ *
+ * Where it may install is npm's own rule (EBADPLATFORM): an `os`, `cpu` or `libc` list naming
+ * values excludes every other one, and a `!value` excludes that one.
  */
+
+import { readFileSync } from "node:fs";
 
 /** The fields of a package manifest these rules read; anything else is ignored. */
 export type PackageManifest = Record<string, unknown>;
@@ -82,30 +86,88 @@ export function npmNeededBecause(
     reasons.push(`it has install scripts (${declared.join(", ")}), which npm runs`);
   } else if (manifest.hasInstallScript === true) {
     reasons.push("it has install scripts, which npm runs");
-  } else if (bindingGyp || manifest.gypfile === true) {
+  } else if ((bindingGyp && manifest.gypfile !== false) || manifest.gypfile === true) {
     reasons.push("it carries binding.gyp, which npm compiles with node-gyp");
   }
   return reasons;
 }
 
+/** The C library this Linux machine runs on, as npm tells it apart (glibc, musl); undefined elsewhere or when it cannot tell. */
+let libcFamily: { value: string | undefined } | null = null;
+function currentLibc(platform: string): string | undefined {
+  if (platform !== "linux") return undefined;
+  libcFamily ??= { value: detectLibc() };
+  return libcFamily.value;
+}
+
+/** npm-install-checks' reading: `ldd` names its library; else the process report's runtime. */
+function detectLibc(): string | undefined {
+  try {
+    const ldd = readFileSync("/usr/bin/ldd", "utf8");
+    if (ldd.includes("musl")) return "musl";
+    if (ldd.includes("GNU C Library")) return "glibc";
+  } catch {
+    // No ldd to read: the process report answers below.
+  }
+  const report = process.report?.getReport() as
+    { header?: { glibcVersionRuntime?: string }; sharedObjects?: unknown } | undefined;
+  if (report?.header?.glibcVersionRuntime !== undefined) return "glibc";
+  const shared = Array.isArray(report?.sharedObjects) ? (report.sharedObjects as string[]) : [];
+  return shared.some((f) => f.includes("libc.musl-") || f.includes("ld-musl-"))
+    ? "musl"
+    : undefined;
+}
+
+/** npm's `checkList`: `any` admits everything; no `!value` may match, and one plain value must when any is listed. */
+function listAdmits(value: string | undefined, list: readonly string[]): boolean {
+  if (list.length === 1 && list[0] === "any") return true;
+  let negated = 0;
+  let match = false;
+  for (const entry of list) {
+    if (entry.startsWith("!")) {
+      negated += 1;
+      if (value === entry.slice(1)) return false;
+    } else {
+      match ||= value === entry;
+    }
+  }
+  return match || negated === list.length;
+}
+
+/** A platform list as npm reads one: a string is a list of one. */
+function platformList(manifest: PackageManifest, field: string): string[] | null {
+  const value = manifest[field];
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === "string");
+  return null;
+}
+
 /**
- * Why the package does not install on this machine, by its `os` and `cpu` lists (npm's
- * EBADPLATFORM rule); null when it does.
+ * Why the package does not install on this machine, by its `os`, `cpu` and `libc` lists
+ * (npm's EBADPLATFORM rule, npm-install-checks `checkPlatform`); null when it does. A `libc`
+ * list excludes every machine that is not Linux.
  */
 export function platformRefusal(
   manifest: PackageManifest,
   platform: string = process.platform,
   arch: string = process.arch,
+  libc: () => string | undefined = () => currentLibc(platform),
 ): string | null {
-  const refusal = (field: "os" | "cpu", current: string, what: string): string | null => {
-    const list = dependencyNames(manifest, field);
-    const blocked = list.filter((v) => v.startsWith("!")).map((v) => v.slice(1));
-    const allowed = list.filter((v) => !v.startsWith("!"));
-    if (blocked.includes(current)) return `its ${field} list excludes ${what} ${current}`;
-    if (allowed.length > 0 && !allowed.includes(current)) {
-      return `it supports the ${what} ${allowed.join(", ")} only, not ${current}`;
+  const refusal = (field: string, current: () => string | undefined, what: string) => {
+    const list = platformList(manifest, field);
+    if (list === null) return null;
+    const value = current();
+    // npm refuses a `libc` list where it cannot name the C library (every machine but Linux).
+    if (field === "libc" && value === undefined) {
+      return `its libc list (${list.join(", ")}) needs a Linux machine whose C library npm can name`;
     }
-    return null;
+    return listAdmits(value, list)
+      ? null
+      : `its ${field} list (${list.join(", ")}) does not admit this machine's ${what}, ${value}`;
   };
-  return refusal("os", platform, "operating system") ?? refusal("cpu", arch, "CPU");
+  return (
+    refusal("os", () => platform, "operating system") ??
+    refusal("cpu", () => arch, "CPU") ??
+    refusal("libc", libc, "C library")
+  );
 }

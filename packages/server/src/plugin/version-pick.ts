@@ -49,6 +49,14 @@ function parsePartial(text: string): Partial | null {
   if (match === null) return null;
   const part = (value: string | undefined) =>
     value === undefined || /^[xX*]$/.test(value) ? null : Number(value);
+  // Past the safe integers a part is no number at all (npm's semver refuses it too).
+  if (
+    [match[1], match[2], match[3]].some(
+      (p) => p !== undefined && /^\d+$/.test(p) && !Number.isSafeInteger(Number(p)),
+    )
+  ) {
+    return null;
+  }
   const major = part(match[1]);
   // An open part closes every part after it: `1.x.3` reads as `1.x`.
   const minor = major === null ? null : part(match[2]);
@@ -159,8 +167,9 @@ export function savedRange(spec: string | undefined, version: string): string {
   const asked = spec === undefined ? "" : spec.trim();
   const bounds = asked === "" ? null : boundsOf(asked);
   if (bounds === null || bounds.exact) return caret;
-  const own = boundsOf(caret)!;
+  const own = boundsOf(caret);
   const inside =
+    own === null ||
     bounds.ceiling === null ||
     (own.ceiling !== null && compareSemver(own.ceiling, bounds.ceiling) <= 0);
   return inside ? caret : asked;

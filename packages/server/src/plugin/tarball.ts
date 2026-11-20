@@ -13,7 +13,12 @@
  *   regular file is ever written from an archive.
  * - An entry whose path is absolute, climbs with `..`, or carries a backslash or a colon (a
  *   Windows separator, drive or alternate data stream) refuses the whole archive: such a
- *   tarball is hostile or broken, and installing what is left of it would be worse.
+ *   tarball is hostile or broken, and installing what is left of it would be worse. So does
+ *   a file that is also a directory (`a` and `a/b`), and two names one file system takes for
+ *   one (`package.json` and `PACKAGE.JSON`, or the same name in two Unicode normalisations):
+ *   the package that was vetted must be the one that lands.
+ * - Extended headers, global headers and lone zero blocks are read as node-tar reads them, so
+ *   an archive yields the files npm's own extraction would.
  *
  * The bytes were checked against a pinned sha512 before they reach this reader; the checks
  * here are about what a correctly signed archive may still try to write.
@@ -26,6 +31,9 @@ export const TARBALL_UNPACKED_MAX_BYTES = 256 * 1024 * 1024;
 export const TARBALL_MAX_FILES = 20_000;
 
 const BLOCK = 512;
+
+/** The entry types an extended header may describe (node-tar's `normalFsTypes`); the rest are metadata. */
+const FS_TYPES = new Set(["0", "\0", "1", "2", "3", "4", "5", "6", "7", "D"]);
 
 /** One regular file of the package, by its path inside the package. */
 export interface TarballFile {
@@ -133,18 +141,31 @@ export function readPackageTarball(
 
   const files = new Map<string, TarballFile>();
   let at = 0;
-  let longName: string | null = null;
-  let pax: Map<string, string> | null = null;
+  // node-tar's reading, which is npm's: the pending extended header (`x` records, a GNU long
+  // name) describes the next file-system entry only and is dropped once that entry is read;
+  // the global one (`g`) lends every later entry what it does not say itself — except its path.
+  // Neither ever applies to another metadata record.
+  let ex: Map<string, string> | null = null;
+  const gex = new Map<string, string>();
+  let sawNullBlock = false;
   while (at + BLOCK <= tar.length) {
     const header = tar.subarray(at, at + BLOCK);
-    if (header.every((byte) => byte === 0)) break;
+    if (header.every((byte) => byte === 0)) {
+      // One zero block may sit between entries; two in a row end the archive.
+      if (sawNullBlock) break;
+      sawNullBlock = true;
+      at += BLOCK;
+      continue;
+    }
+    sawNullBlock = false;
     if (!checksumHolds(header)) {
       throw new TarballError(
         `the tarball is not a readable tar archive (a header checksum does not match at byte ${at}); it is not installed`,
       );
     }
     const type = String.fromCharCode(header[156]!);
-    const declared = pax?.get("size");
+    const entry = FS_TYPES.has(type);
+    const declared = entry ? (ex?.get("size") ?? gex.get("size")) : undefined;
     const size = declared !== undefined ? Number(declared) : number(header, 124, 12);
     const start = at + BLOCK;
     const end = start + size;
@@ -153,31 +174,36 @@ export function readPackageTarball(
     }
     const data = tar.subarray(start, end);
     at = start + Math.ceil(size / BLOCK) * BLOCK;
-    // Records that describe the next entry rather than being one.
+    // Records that describe what follows rather than being an entry.
     if (type === "x") {
-      pax = paxRecords(data);
+      ex = new Map([...(ex ?? []), ...paxRecords(data)]);
+      continue;
+    }
+    if (type === "g") {
+      for (const [key, value] of paxRecords(data)) gex.set(key, value);
       continue;
     }
     if (type === "L") {
-      longName = text(data, 0, data.length);
+      ex = new Map([...(ex ?? []), ["path", text(data, 0, data.length)]]);
       continue;
     }
-    if (type === "g" || type === "K") continue;
-    // POSIX ustar splits a long path into a prefix field; GNU's magic ("ustar  ") keeps other
-    // data in those bytes, so the prefix is read only under the POSIX magic.
-    const posix = text(header, 257, 6) === "ustar";
-    const prefix = posix ? text(header, 345, 155) : "";
-    const name = text(header, 0, 100);
-    const raw = pax?.get("path") ?? longName ?? (prefix === "" ? name : `${prefix}/${name}`);
-    longName = null;
-    pax = null;
+    if (!entry) continue;
+    // POSIX ustar splits a long path into a prefix field, which node-tar puts before the name
+    // (or the extended header's path); GNU's magic ("ustar  ") keeps other data in those bytes.
+    let raw = ex?.get("path") ?? text(header, 0, 100);
+    ex = null;
+    if (Buffer.from(header.subarray(257, 265)).toString("latin1") === "ustar\u000000") {
+      const prefix = header[475] !== 0 ? text(header, 345, 155) : text(header, 345, 130);
+      if (prefix !== "") raw = `${prefix}/${raw}`;
+    }
     const inside = packagePath(raw);
     if (inside === null) continue;
-    // Regular files only ("0", the old "\0", and "7", a contiguous file); every other type is
-    // skipped — a directory is implied by its files, a link or a device is never created.
-    if (type !== "0" && type !== "\0" && type !== "7") continue;
+    // Regular files only ("0", the old "\0", and "7", a contiguous file) — and an old-style
+    // file entry whose name ends in "/" is a directory; every other type is skipped: a
+    // directory is implied by its files, a link or a device is never created.
+    if ((type !== "0" && type !== "\0" && type !== "7") || raw.endsWith("/")) continue;
     files.set(inside, {
-      data: Uint8Array.from(data),
+      data,
       executable: (number(header, 100, 8) & 0o111) !== 0,
     });
     if (files.size > maxFiles) {
@@ -190,5 +216,38 @@ export function readPackageTarball(
   if (at < tar.length && at + BLOCK > tar.length && tar.subarray(at).some((byte) => byte !== 0)) {
     throw new TarballError("the tarball is truncated; it is not installed");
   }
+  const collision = collidingPaths(files.keys());
+  if (collision !== null) {
+    throw new TarballError(
+      `the tarball's entries ${JSON.stringify(collision[0])} and ${JSON.stringify(collision[1])} would land on one path on some file systems; it is not installed`,
+    );
+  }
   return files;
+}
+
+/**
+ * Two of `paths` that a file system would take for one: a file that is also another file's
+ * directory, or two names equal once case and Unicode normalisation are folded (macOS and
+ * Windows fold one or both). Null when there are none; a path listed twice is not a pair.
+ */
+export function collidingPaths(paths: Iterable<string>): [string, string] | null {
+  const fold = (p: string) => p.normalize("NFC").toLowerCase();
+  const files = new Map<string, string>();
+  const dirs = new Map<string, string>();
+  for (const raw of paths) {
+    const folded = fold(raw);
+    const seen = files.get(folded);
+    if (seen !== undefined && seen !== raw) return [seen, raw];
+    files.set(folded, raw);
+    const parts = folded.split("/");
+    for (let i = 1; i < parts.length; i += 1) {
+      const dir = parts.slice(0, i).join("/");
+      if (!dirs.has(dir)) dirs.set(dir, raw);
+    }
+  }
+  for (const [folded, raw] of files) {
+    const under = dirs.get(folded);
+    if (under !== undefined) return [raw, under];
+  }
+  return null;
 }

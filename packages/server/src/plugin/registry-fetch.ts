@@ -46,6 +46,31 @@ export interface FetchLimits {
 
 const megabytes = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
 
+/** As many hops as a release asset takes (GitHub's goes through one), and then some. */
+const MAX_REDIRECTS = 10;
+
+/** The hosts plain http is allowed to: this machine's own loopback. */
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
+/**
+ * Whether an address may be fetched for a package's bytes: https anywhere, or http on this
+ * machine's loopback (a registry or an index on the machine itself) — parsed, not prefix-
+ * matched, and never with credentials in it. The sha512 the bytes are checked against is what
+ * guards them; this keeps the fetch itself off plain http across a network. The same rule as
+ * a published index's channel (registry.ts `indexChannelOf`).
+ */
+export function fetchableAddress(address: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(address);
+  } catch {
+    return false;
+  }
+  if (url.username !== "" || url.password !== "") return false;
+  if (url.protocol === "https:") return true;
+  return url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname);
+}
+
 /**
  * The body at `url`, whole: refused (AddressError) on a non-2xx answer, a declared or streamed
  * length past `maxBytes`, or the window running out — before the headers or while the body
@@ -56,18 +81,40 @@ export async function fetchWithin(url: string, limits: FetchLimits): Promise<Uin
   const timer = setTimeout(() => controller.abort(), limits.timeoutMs);
   try {
     let res: Response;
-    try {
-      res = await limits.fetch(url, {
-        headers: limits.mediaTypes !== undefined ? { accept: limits.mediaTypes } : {},
-        redirect: "follow",
-        signal: controller.signal,
-      });
-    } catch (err) {
-      throw new AddressError(
-        controller.signal.aborted
-          ? `no answer within ${Math.round(limits.timeoutMs / 1000)} s`
-          : `unreachable (${err instanceof Error ? err.message : String(err)})`,
-      );
+    // Redirects are followed by hand, each hop held to the same rule as the address itself:
+    // https, or http on this machine's loopback, and never from https down to http.
+    let at = url;
+    for (let hop = 0; ; hop += 1) {
+      if (!fetchableAddress(at)) {
+        throw new AddressError(
+          hop === 0
+            ? "is not an https address"
+            : `redirects to ${at}, which is not an https address`,
+        );
+      }
+      try {
+        res = await limits.fetch(at, {
+          headers: limits.mediaTypes !== undefined ? { accept: limits.mediaTypes } : {},
+          redirect: "manual",
+          signal: controller.signal,
+        });
+      } catch (err) {
+        throw new AddressError(
+          controller.signal.aborted
+            ? `no answer within ${Math.round(limits.timeoutMs / 1000)} s`
+            : `unreachable (${err instanceof Error ? err.message : String(err)})`,
+        );
+      }
+      const location = res.headers.get("location");
+      if (res.status < 300 || res.status >= 400 || location === null) break;
+      await res.body?.cancel().catch(() => undefined);
+      if (hop >= MAX_REDIRECTS)
+        throw new AddressError(`redirects more than ${MAX_REDIRECTS} times`);
+      const next = new URL(location, at).href;
+      if (at.startsWith("https:") && !next.startsWith("https:")) {
+        throw new AddressError(`redirects from https down to ${next}`);
+      }
+      at = next;
     }
     if (!res.ok) {
       await res.body?.cancel().catch(() => undefined);
@@ -103,10 +150,10 @@ export async function fetchWithin(url: string, limits: FetchLimits): Promise<Uin
       );
     }
     const body = new Uint8Array(received);
-    let at = 0;
+    let offset = 0;
     for (const chunk of chunks) {
-      body.set(chunk, at);
-      at += chunk.byteLength;
+      body.set(chunk, offset);
+      offset += chunk.byteLength;
     }
     return body;
   } finally {

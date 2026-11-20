@@ -10,7 +10,7 @@
  *   npm never runs.
  * - When the admin then removes it, its directory and its record go, without npm.
  * - When the registry does not have the name, the published index's release channel answers:
- *   the asset is verified and placed, and the prefix records the release URL; when neither
+ *   the asset is verified, placed and kept in `archives/`, which the prefix records; when neither
  *   has it, the refusal says so in the installer's own words, not as npm's.
  * - A plugin with dependencies is refused before its tarball is fetched; the refusal names the
  *   dependency and how to get npm, does not read as npm's own, and nothing lands.
@@ -19,6 +19,7 @@
  * - A zip of a plugin with no dependencies installs what its `files` field publishes, packed
  *   into `archives/` and recorded the way npm records an uploaded tarball.
  * - A zip of a plugin with dependencies is refused, and nothing lands.
+ * - A prefix package.json that will not parse answers 400 `plugin_install_failed`, not a 500.
  * With npm on the machine:
  * - A plugin with no dependencies still installs through npm, and the server never reads the
  *   registry itself.
@@ -48,15 +49,35 @@
  *   named over plain http off this machine refuses, one on the loopback is fetched; a version
  *   that pins no sha512 refuses.
  * - A release channel whose sha512 is unreadable, or whose every address fails, refuses.
- * - A zip's `files` field: paths, `*`, `**` and `main` pick what lands; a negation keeps it all.
+ * - A zip installs exactly what `npm pack` would publish from it (the cases npm itself was
+ *   asked about): `.npmignore`, else `.gitignore`, nested ones too, npm's always-ignored names,
+ *   `files`, the always-included names and every `bin` target — in the prefix and in the
+ *   `archives/` tarball alike, so a git-ignored `.env` never lands.
+ * - A release channel's asset is kept in `archives/` and recorded as `file:archives/…`, so a
+ *   later real npm run installs from disk, offline, without the release URL.
+ * - What the tarball's own package.json says is checked after the download as well: its
+ *   dependencies, install scripts or `binding.gyp` refuse it even when the registry's document
+ *   did not; `binding.gyp` beside `gypfile: false` does not.
+ * - Every `bin` target is left executable.
+ * - A redirect to https on another host is followed; one down to plain http is not; an address
+ *   with credentials that only looks local is never fetched.
+ * - A rename briefly refused (EBUSY) is tried again and the install lands; when the new version
+ *   cannot be put in place nor the old one moved back, the old one is kept where it is, the
+ *   refusal says where, and the sweep leaves it.
+ * - A prefix package.json that will not parse, and staging that cannot be written, refuse in
+ *   words (a 400 from the route), never a raw error.
  * - A directory that cannot be moved (something holds it) refuses an upgrade and leaves the
  *   installed version as it was.
  * - With npm on the machine, every operation (a name, a zip, a channel, a removal) goes to npm,
  *   and nothing is fetched.
  * - Removing a name never installed, from a prefix never created, is not an error.
  * - The tarball reader: a plain tar, pax and GNU long names, a global header, GNU's magic and
- *   base-256 sizes read; a corrupt gzip, a broken checksum, a truncated entry or end, too many
- *   files and a plain tar past its cap refuse.
+ *   base-256 sizes read; a global header's size applies to later entries, a lone zero block is
+ *   passed over, a GNU long name read after a pax path wins, a pending pax size never applies
+ *   to a long-name record, an old-style file entry ending in "/" is a directory; a corrupt
+ *   gzip, a broken checksum, a truncated entry or end, too many files, a plain tar past its
+ *   cap, a file that is also a directory and names equal but for case or Unicode refuse.
+ * - Where a package may install: npm's `os` / `cpu` / `libc` lists.
  * - Which version a spec picks from the registry's document, and what the prefix records.
  */
 import fs from "node:fs/promises";
@@ -71,8 +92,15 @@ import {
   OFFICIAL_REGISTRY,
 } from "../src/plugin/direct-install.js";
 import type { WithoutNpm } from "../src/plugin/direct-install.js";
-import { PluginInstallError, type NpmRun } from "../src/plugin/install.js";
+import {
+  locateNpm,
+  npm as realNpm,
+  PluginInstallError,
+  type NpmRun,
+} from "../src/plugin/install.js";
+import { platformRefusal } from "../src/plugin/npm-requirement.js";
 import { NpmPluginPackages } from "../src/plugin/packages.js";
+import { placePackage, type PrefixOps } from "../src/plugin/prefix-place.js";
 import type { PluginProxyRule } from "../src/plugin/registry.js";
 import { readPackageTarball, TarballError } from "../src/plugin/tarball.js";
 import { pickRegistryVersion, savedRange } from "../src/plugin/version-pick.js";
@@ -83,6 +111,7 @@ import {
   stubFetch,
   type FetchFake,
 } from "./fixtures/fetch.js";
+import { NPM_PACK_CASES } from "./fixtures/npm-pack-cases.js";
 import { integrityOf, packageTarball, tarball, type TarEntry } from "./fixtures/npm-tarball.js";
 import { contentTable } from "./plugin-fixtures.js";
 import { apiClient, createTestApp, loginAdmin, type TestApp } from "./helpers.js";
@@ -182,6 +211,14 @@ afterAll(async () => {
 });
 
 const prefixOf = (root: string) => path.join(root, "plugins");
+/** A package's files as the placer takes them: bytes, none executable. */
+const filesOf = (files: Files) =>
+  new Map(
+    Object.entries(files).map(([rel, v]) => [
+      rel,
+      { data: typeof v === "string" ? strToU8(v) : v, executable: false },
+    ]),
+  );
 const installedDir = (root: string, name: string) =>
   path.join(prefixOf(root), "node_modules", ...name.split("/"));
 const prefixDeps = async (root: string) =>
@@ -322,7 +359,12 @@ describe("the installed-plugins routes on a machine without npm", () => {
       version: "1.0.0",
     });
     expect(await installedVersion(t.root, "@acme/channels")).toBe("1.0.0");
-    expect((await prefixDeps(t.root))["@acme/channels"]).toBe(RELEASE);
+    expect((await prefixDeps(t.root))["@acme/channels"]).toBe(
+      "file:archives/acme-channels-1.0.0.tgz",
+    );
+    expect(
+      await fs.readFile(path.join(prefixOf(t.root), "archives", "acme-channels-1.0.0.tgz")),
+    ).toEqual(Buffer.from(channelAsset));
     expect(npm.runs).toEqual([]);
   });
 
@@ -393,6 +435,22 @@ describe("the installed-plugins routes on a machine without npm", () => {
       /^@acme\/zipdeps@1\.0\.0 needs npm to install: it depends on koffi/,
     );
     expect(await present(installedDir(t.root, "@acme/zipdeps"))).toBe(false);
+  });
+
+  it("answers a prefix package.json that will not parse with 400, not a 500", async () => {
+    const manifest = path.join(prefixOf(t.root), "package.json");
+    const kept = await fs.readFile(manifest);
+    await fs.writeFile(manifest, "{ not json");
+    try {
+      const res = await install("@acme/notes");
+      expect(res.status).toBe(400);
+      const { code, message } = ((await res.json()) as { error: { code: string; message: string } })
+        .error;
+      expect(code).toBe("plugin_install_failed");
+      expect(message).toMatch(/the plugin prefix's package\.json .* could not be read/);
+    } finally {
+      await fs.writeFile(manifest, kept);
+    }
   });
 });
 
@@ -856,7 +914,12 @@ describe("installing without npm", () => {
       version: "1.0.0",
       withoutNpm: true,
     });
-    expect((await prefixDeps(root))["@acme/channels"]).toBe(url);
+    expect((await prefixDeps(root))["@acme/channels"]).toBe(
+      "file:archives/acme-channels-1.0.0.tgz",
+    );
+    expect(
+      await fs.readFile(path.join(prefixOf(root), "archives", "acme-channels-1.0.0.tgz")),
+    ).toEqual(Buffer.from(asset));
   });
 
   it("refuses a tarball that carries no package.json", async () => {
@@ -958,6 +1021,7 @@ describe("installing without npm", () => {
   it.each([
     ["over plain http off this machine", "http://cdn.example/notes-1.0.0.tgz", false],
     ["over http on the loopback", "http://127.0.0.1:4873/notes-1.0.0.tgz", true],
+    ["with credentials that only look local", "http://localhost:1@evil.example/x.tgz", false],
   ])(
     "fetches a tarball the registry names %s only when it is https or local",
     async (_how, url, installs) => {
@@ -1023,55 +1087,325 @@ describe("installing without npm", () => {
     await refusedWith(installChannel(root, channel, io(serving(new Map()))), pattern);
   });
 
-  it.each<[string[], string[]]>([
+  it.each(Object.entries(NPM_PACK_CASES))(
+    "installs from a zip exactly what npm pack publishes, given %s",
+    async (_what, { files, packed }) => {
+      const root = await tempRoot();
+      const packages = new NpmPluginPackages({
+        locate: () => ({ found: false, notes: NO_NPM_NOTES }),
+        npm: forbiddenNpm().run,
+        fetch: () => serving(new Map()).fetch,
+      });
+      await packages.installFiles(
+        root,
+        Object.fromEntries(Object.entries(files).map(([k, v]) => [k, strToU8(v)])),
+      );
+      const dir = installedDir(root, "@acme/probe");
+      const installed = (await fs.readdir(dir, { recursive: true, withFileTypes: true }))
+        .filter((e) => e.isFile())
+        .map((e) => path.relative(dir, path.join(e.parentPath, e.name)).split(path.sep).join("/"))
+        .sort();
+      expect(installed).toEqual(packed);
+      const archive = await fs.readFile(
+        path.join(prefixOf(root), "archives", "acme-probe-1.0.0.tgz"),
+      );
+      expect([...readPackageTarball(archive).keys()].sort()).toEqual(packed);
+    },
+  );
+
+  it.skipIf(!locateNpm().found)(
+    "keeps a release channel's asset so a later real npm run installs from disk, offline",
+    async () => {
+      const root = await tempRoot();
+      const asset = packageTarball(skillsPlugin("@acme/channels", "1.0.0"));
+      const url = "https://releases.invalid/acme/channels-1.0.0.tgz";
+      await installChannel(
+        root,
+        { name: "@acme/channels", version: "1.0.0", integrity: integrityOf(asset), url },
+        io(serving(new Map([[url, () => new Response(asset)]]))),
+      );
+      const other = path.join(root, "other-1.0.0.tgz");
+      await fs.writeFile(
+        other,
+        packageTarball({
+          "package.json": JSON.stringify({ name: "@acme/other", version: "1.0.0" }),
+        }),
+      );
+      // An unrelated install by real npm, with the network off: it has to rebuild the prefix
+      // from what package.json records, the channel's package among it.
+      await realNpm(prefixOf(root), [
+        "install",
+        "--offline",
+        "--no-audit",
+        "--no-fund",
+        "--ignore-scripts",
+        "--",
+        other,
+      ]);
+      expect(await installedVersion(root, "@acme/channels")).toBe("1.0.0");
+      expect(await installedVersion(root, "@acme/other")).toBe("1.0.0");
+    },
+    60_000,
+  );
+
+  it.each<[string, Files, RegExp]>([
     [
-      ["dist", "skills/**/*.md"],
-      ["README.md", "dist/index.js", "dist/sub/a.js", "package.json", "skills/notes/SKILL.md"],
-    ],
-    [["*.json"], ["README.md", "dist/index.js", "ifaces.json", "package.json"]],
-    [["dist/*.js"], ["README.md", "dist/index.js", "package.json"]],
-    [
-      ["dist/**", "ifaces.jso?"],
-      ["README.md", "dist/index.js", "dist/sub/a.js", "ifaces.json", "package.json"],
+      "dependencies",
+      skillsPlugin("@acme/notes", "1.0.0", { dependencies: { "left-pad": "^1.3.0" } }),
+      /needs npm to install: it depends on left-pad/,
     ],
     [
-      ["ifaces.json", "!src"],
-      [
-        "README.md",
-        "dist/index.js",
-        "dist/sub/a.js",
-        "ifaces.json",
-        "package.json",
-        "skills/notes/SKILL.md",
-        "src/index.ts",
-      ],
+      "an install script",
+      skillsPlugin("@acme/notes", "1.0.0", { scripts: { postinstall: "node setup.js" } }),
+      /needs npm to install: it has install scripts \(postinstall\)/,
     ],
-  ])("installs from a zip what its files field %j publishes", async (files, landed) => {
+    [
+      "binding.gyp",
+      { ...skillsPlugin("@acme/notes", "1.0.0"), "binding.gyp": "{}" },
+      /needs npm to install: it carries binding\.gyp/,
+    ],
+  ])(
+    "refuses a tarball whose own package needs npm (%s), though the registry's document did not say so",
+    async (_what, packed, pattern) => {
+      const root = await tempRoot();
+      const { fake, result } = await installFrom(
+        root,
+        {
+          "@acme/notes": {
+            "1.0.0": {
+              files: skillsPlugin("@acme/notes", "1.0.0"),
+              tarball: packageTarball(packed),
+            },
+          },
+        },
+        "@acme/notes",
+      );
+      await refusedWith(result, pattern);
+      expect(fake.calls.map((c) => c.url)).toContain(tarballUrl(REGISTRY, "@acme/notes", "1.0.0"));
+      expect(await present(installedDir(root, "@acme/notes"))).toBe(false);
+    },
+  );
+
+  it("installs a package carrying binding.gyp whose manifest says gypfile: false", async () => {
     const root = await tempRoot();
-    const packages = new NpmPluginPackages({
-      locate: () => ({ found: false, notes: NO_NPM_NOTES }),
-      npm: forbiddenNpm().run,
-      fetch: () => serving(new Map()).fetch,
-    });
-    const upload: Files = {
-      ...skillsPlugin("@acme/notes", "1.0.0", { files, main: "dist/index" }),
-      "README.md": "# Notes\n",
-      "dist/index.js": "export {};\n",
-      "dist/sub/a.js": "export {};\n",
-      "src/index.ts": "export {};\n",
+    const files = {
+      ...skillsPlugin("@acme/notes", "1.0.0", { gypfile: false }),
+      "binding.gyp": "{}",
     };
-    await packages.installFiles(
+    const { result } = await installFrom(
       root,
-      Object.fromEntries(
-        Object.entries(upload).map(([k, v]) => [k, typeof v === "string" ? strToU8(v) : v]),
-      ),
+      { "@acme/notes": { "1.0.0": { files } } },
+      "@acme/notes",
     );
-    const dir = installedDir(root, "@acme/notes");
-    const found = (await fs.readdir(dir, { recursive: true, withFileTypes: true }))
-      .filter((e) => e.isFile())
-      .map((e) => path.relative(dir, path.join(e.parentPath, e.name)).split(path.sep).join("/"))
-      .sort();
-    expect(found).toEqual(landed);
+    await expect(result).resolves.toMatchObject({ version: "1.0.0" });
+  });
+
+  it("refuses a release channel's asset whose package depends on others, and keeps nothing", async () => {
+    const root = await tempRoot();
+    const asset = packageTarball(
+      skillsPlugin("@acme/channels", "1.0.0", { dependencies: { koffi: "^2.0.0" } }),
+    );
+    const url = "https://releases.example/channels-1.0.0.tgz";
+    await refusedWith(
+      installChannel(
+        root,
+        { name: "@acme/channels", version: "1.0.0", integrity: integrityOf(asset), url },
+        io(serving(new Map([[url, () => new Response(asset)]]))),
+      ),
+      /needs npm to install: it depends on koffi/,
+    );
+    expect(await present(installedDir(root, "@acme/channels"))).toBe(false);
+    expect(await present(path.join(prefixOf(root), "archives"))).toBe(false);
+  });
+
+  it.skipIf(process.platform === "win32")("leaves every bin target executable", async () => {
+    const root = await tempRoot();
+    const files = {
+      ...skillsPlugin("@acme/notes", "1.0.0", { bin: { notes: "./bin/notes.js" } }),
+      "bin/notes.js": "#!/usr/bin/env node\n",
+    };
+    await (
+      await installFrom(root, { "@acme/notes": { "1.0.0": { files } } }, "@acme/notes")
+    ).result;
+    const { mode } = await fs.stat(path.join(installedDir(root, "@acme/notes"), "bin", "notes.js"));
+    expect(mode & 0o111).not.toBe(0);
+  });
+
+  it.each<[string, string, string, RegExp]>([
+    [
+      "from the loopback to plain http elsewhere",
+      "http://127.0.0.1:4873/notes-1.0.0.tgz",
+      "http://objects.example/notes-1.0.0.tgz",
+      /redirects to http:\/\/objects\.example\/notes-1\.0\.0\.tgz, which is not an https address/,
+    ],
+    [
+      "back to itself, over and over",
+      "https://loop.example/notes-1.0.0.tgz",
+      "https://loop.example/notes-1.0.0.tgz",
+      /redirects more than 10 times/,
+    ],
+  ])("refuses a tarball that redirects %s", async (_how, url, target, pattern) => {
+    const root = await tempRoot();
+    const bytes = packageTarball(skillsPlugin("@acme/notes", "1.0.0"));
+    const document = {
+      name: "@acme/notes",
+      "dist-tags": { latest: "1.0.0" },
+      versions: {
+        "1.0.0": {
+          name: "@acme/notes",
+          version: "1.0.0",
+          dist: { tarball: url, integrity: integrityOf(bytes) },
+        },
+      },
+    };
+    const routes = new Map<string, () => Response>([
+      [`${REGISTRY}/@acme%2fnotes`, () => jsonResponse(document)],
+      [url, () => new Response(null, { status: 302, headers: { location: target } })],
+    ]);
+    await refusedWith(installFromRegistry(root, "@acme/notes", io(serving(routes))), pattern);
+  });
+
+  it.each([
+    ["to https on another host", "https://objects.example/notes-1.0.0.tgz", true],
+    ["down to plain http", "http://objects.example/notes-1.0.0.tgz", false],
+  ])(
+    "follows a tarball's redirect %s only when it stays on https",
+    async (_how, target, follows) => {
+      const root = await tempRoot();
+      const url = tarballUrl(REGISTRY, "@acme/notes", "1.0.0");
+      const bytes = packageTarball(skillsPlugin("@acme/notes", "1.0.0"));
+      const { result } = await installFrom(
+        root,
+        {
+          "@acme/notes": {
+            "1.0.0": { files: skillsPlugin("@acme/notes", "1.0.0"), tarball: bytes },
+          },
+        },
+        "@acme/notes",
+        {
+          [url]: () => new Response(null, { status: 302, headers: { location: target } }),
+          [target]: () => new Response(bytes),
+        },
+      );
+      if (follows) await expect(result).resolves.toMatchObject({ version: "1.0.0" });
+      else await refusedWith(result, /redirects from https down to http:\/\/objects\.example/);
+    },
+  );
+
+  it("tries a rename again while something briefly holds the files, and installs", async () => {
+    const root = await tempRoot();
+    await (
+      await installFrom(root, { "@acme/notes": { "1.0.0": notes("1.0.0") } }, "@acme/notes")
+    ).result;
+    let renames = 0;
+    let clock = 0;
+    const ops: PrefixOps = {
+      rename: async (from, to) => {
+        renames += 1;
+        if (renames === 2 || renames === 3) {
+          throw Object.assign(new Error("EBUSY: resource busy or locked"), { code: "EBUSY" });
+        }
+        await fs.rename(from, to);
+      },
+      retryBusy: true,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      now: () => clock,
+    };
+    await placePackage(
+      root,
+      "@acme/notes",
+      filesOf(skillsPlugin("@acme/notes", "2.0.0")),
+      "^2.0.0",
+      {
+        ops,
+      },
+    );
+    expect(await installedVersion(root, "@acme/notes")).toBe("2.0.0");
+    expect((await prefixDeps(root))["@acme/notes"]).toBe("^2.0.0");
+  });
+
+  it("keeps the installed version where it is when it cannot be moved back, says where, and the sweep leaves it", async () => {
+    const root = await tempRoot();
+    await (
+      await installFrom(root, { "@acme/notes": { "1.0.0": notes("1.0.0") } }, "@acme/notes")
+    ).result;
+    let renames = 0;
+    let clock = 0;
+    const ops: PrefixOps = {
+      // The installed version moves aside; nothing moves after that.
+      rename: async (from, to) => {
+        renames += 1;
+        if (renames === 1) return fs.rename(from, to);
+        throw Object.assign(new Error(`EPERM: operation not permitted, rename '${from}'`), {
+          code: "EPERM",
+        });
+      },
+      retryBusy: true,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      now: () => clock,
+    };
+    const err = await refusedWith(
+      placePackage(root, "@acme/notes", filesOf(skillsPlugin("@acme/notes", "2.0.0")), "^2.0.0", {
+        ops,
+      }),
+      /could not be moved back .* it is kept at /,
+    );
+    // It kept trying for the whole window before it said so.
+    expect(clock).toBeGreaterThanOrEqual(60_000);
+    const keptAt = /it is kept at (.+?previous)\./.exec(err.message)![1]!;
+    expect(
+      (
+        JSON.parse(await fs.readFile(path.join(keptAt, "package.json"), "utf8")) as {
+          version: string;
+        }
+      ).version,
+    ).toBe("1.0.0");
+    expect((await prefixDeps(root))["@acme/notes"]).toBe("^1.0.0");
+    // An hour later, the next install's sweep passes it by.
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await fs.utimes(path.dirname(keptAt), twoHoursAgo, twoHoursAgo);
+    await (
+      await installFrom(
+        root,
+        { "@acme/todo": { "1.0.0": { files: skillsPlugin("@acme/todo", "1.0.0") } } },
+        "@acme/todo",
+      )
+    ).result;
+    expect(await present(path.join(keptAt, "package.json"))).toBe(true);
+  });
+
+  it.each<[string, (prefix: string) => Promise<void>, RegExp]>([
+    [
+      "a prefix package.json that will not parse",
+      async (prefix) => {
+        await fs.mkdir(prefix, { recursive: true });
+        await fs.writeFile(path.join(prefix, "package.json"), "{ not json");
+      },
+      /the plugin prefix's package\.json .* could not be read/,
+    ],
+    [
+      "staging that cannot be written",
+      async (prefix) => {
+        await fs.mkdir(prefix, { recursive: true });
+        await fs.writeFile(path.join(prefix, "package.json"), '{"name":"penguin-plugins"}\n');
+        await fs.writeFile(path.join(prefix, ".staging"), "a file where a folder goes");
+      },
+      /@acme\/notes could not be written into the plugin prefix \(ENOTDIR|EEXIST/,
+    ],
+  ])("refuses in words, given %s", async (_what, arrange, pattern) => {
+    const root = await tempRoot();
+    await arrange(prefixOf(root));
+    const { result } = await installFrom(
+      root,
+      { "@acme/notes": { "1.0.0": notes("1.0.0") } },
+      "@acme/notes",
+    );
+    const err = await refusedWith(result, pattern);
+    expect(err.withoutNpm).toBe(true);
   });
 
   it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
@@ -1166,6 +1500,13 @@ describe("the tarball reader", () => {
   const files = (archive: Uint8Array) => [...readPackageTarball(archive).keys()].sort();
   const longPath = `${"d".repeat(60)}/${"e".repeat(60)}/file.txt`;
   const text = (value: string) => new TextEncoder().encode(value);
+  /** One pax record, `<length> <key>=<value>\n`, its length counting itself. */
+  const pax = (key: string, value: string) => {
+    const body = ` ${key}=${value}\n`;
+    let length = body.length;
+    while (`${length}${body}`.length !== length) length = `${length}${body}`.length;
+    return `${length}${body}`;
+  };
 
   it.each<[string, Uint8Array, string[]]>([
     ["a plain tar", tarball([{ path: "package/a.txt", data: "a" }], { gzip: false }), ["a.txt"]],
@@ -1216,6 +1557,49 @@ describe("the tarball reader", () => {
       ]),
       ["a.txt"],
     ],
+    [
+      "a global header's size, which later entries take",
+      tarball([
+        { path: "pax_global_header", typeflag: "g", data: pax("size", "3") },
+        { path: "package/a.txt", data: "abc", patch: (h) => h.set(text("00000000000\0"), 124) },
+      ]),
+      ["a.txt"],
+    ],
+    [
+      "a lone zero block between two entries",
+      (() => {
+        const first = tarball([{ path: "package/a.txt", data: "a" }], { gzip: false });
+        const second = tarball([{ path: "package/b.txt", data: "b" }], { gzip: false });
+        return new Uint8Array([...first.subarray(0, 1024 + 512), ...second]);
+      })(),
+      ["a.txt", "b.txt"],
+    ],
+    [
+      "a GNU long name read after a pax path, which wins",
+      tarball([
+        { path: "././@PaxHeader", typeflag: "x", data: pax("path", "package/from-pax.txt") },
+        { path: "././@LongLink", typeflag: "L", data: "package/from-gnu.txt\0" },
+        { path: "package/short", data: "x" },
+      ]),
+      ["from-gnu.txt"],
+    ],
+    [
+      "a pending pax size, kept off the long-name record and given to the entry",
+      tarball([
+        { path: "././@PaxHeader", typeflag: "x", data: pax("size", "3") },
+        { path: "././@LongLink", typeflag: "L", data: "package/long.txt\0" },
+        { path: "package/short", data: "abc", patch: (h) => h.set(text("00000000000\0"), 124) },
+      ]),
+      ["long.txt"],
+    ],
+    [
+      "an old-style file entry whose name ends in /, a directory",
+      tarball([
+        { path: "package/dir/", typeflag: "0" },
+        { path: "package/dir/a.txt", data: "a" },
+      ]),
+      ["dir/a.txt"],
+    ],
   ])("reads %s", (_what, archive, expected) => {
     expect(files(archive)).toEqual(expected);
   });
@@ -1247,6 +1631,33 @@ describe("the tarball reader", () => {
           { gzip: false },
         ).subarray(0, 1024 + 100),
       /truncated/,
+    ],
+    [
+      "a file that is also a directory",
+      () =>
+        tarball([
+          { path: "package/a", data: "a" },
+          { path: "package/a/b", data: "b" },
+        ]),
+      /"a" and "a\/b" would land on one path/,
+    ],
+    [
+      "names equal but for case",
+      () =>
+        tarball([
+          { path: "package/package.json", data: "{}" },
+          { path: "package/PACKAGE.JSON", data: "{}" },
+        ]),
+      /would land on one path/,
+    ],
+    [
+      "names equal once Unicode is normalised",
+      () =>
+        tarball([
+          { path: "package/café.txt", data: "a" },
+          { path: "package/café.txt", data: "b" },
+        ]),
+      /would land on one path/,
     ],
   ])("refuses %s", (_what, archive, pattern) => {
     expect(() => readPackageTarball(archive())).toThrow(TarballError);
@@ -1299,7 +1710,28 @@ describe("which version a spec picks from a registry document", () => {
     ["nope", true],
     [">=1.0.0", false],
     ["1.0.0||2.0.0", false],
+    ["9999999999999999999999", true],
   ])("%s picks nothing (unavailable: %s)", (spec, unavailable) => {
     expect(pickRegistryVersion("@acme/notes", document, spec)).toMatchObject({ unavailable });
+  });
+});
+
+describe("where a package may install", () => {
+  it.each<[string, Record<string, unknown>, string, string, string | undefined, boolean]>([
+    ["an os named as a string", { os: "linux" }, "linux", "x64", "glibc", true],
+    ["an os excluded by name", { os: ["!linux"] }, "linux", "x64", "glibc", false],
+    ["any os", { os: ["any"] }, "win32", "x64", undefined, true],
+    ["another cpu", { cpu: ["arm64"] }, "linux", "x64", "glibc", false],
+    ["the C library this Linux runs on", { libc: ["glibc"] }, "linux", "x64", "glibc", true],
+    ["another C library", { libc: ["glibc"] }, "linux", "x64", "musl", false],
+    ["a C library list off Linux", { libc: ["glibc"] }, "darwin", "arm64", undefined, false],
+  ])("given %s, admits the machine: %s", (_what, manifest, platform, arch, libc, admitted) => {
+    expect(platformRefusal(manifest, platform, arch, () => libc) === null).toBe(admitted);
+  });
+
+  it("names this machine's own C library: a list of both admits Linux, and nothing else", () => {
+    expect(platformRefusal({ libc: ["glibc", "musl"] }) === null).toBe(
+      process.platform === "linux",
+    );
   });
 });

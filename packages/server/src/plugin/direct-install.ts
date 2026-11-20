@@ -16,10 +16,13 @@
  *   **before** a byte of it is unpacked; a tarball that does not match moves to the next
  *   address, and a version that pins no sha512 is refused.
  * - **A release channel** of the published index: its asset, checked against the entry's
- *   sha512 the same way, over the channel's addresses in order.
- * - **An uploaded zip** (or a package directory the CLI zipped): the files the package's
- *   `files` field would publish, packed by this server into the `archives/` tarball npm pack
- *   would have written, so the prefix records the install as npm does.
+ *   sha512 the same way, over the channel's addresses in order, then kept in `archives/` and
+ *   recorded as `file:archives/<asset>` so a later npm run never has to fetch it again.
+ * - **An uploaded zip** (or a package directory the CLI zipped): exactly the files `npm pack`
+ *   would publish from it (packlist.ts: `files`, `.npmignore` / `.gitignore`, npm's defaults,
+ *   `bin` and `main`), packed by this server into the `archives/` tarball npm pack would have
+ *   written, so the prefix records the install as npm does.
+ * - Every `bin` target is left executable, as npm's bin-links leaves it.
  * - **Removal**: the directory and its package.json entry.
  *
  * Whatever was downloaded is read by tarball.ts (regular files only, no path leaving the
@@ -42,19 +45,21 @@ import {
 } from "./install.js";
 import { indexMirrorRules } from "./mirror-settings.js";
 import { npmNeededBecause, platformRefusal, type PackageManifest } from "./npm-requirement.js";
+import { normalizedBins, packedFiles } from "./packlist.js";
 import { placePackage, refusal, removePackage } from "./prefix-place.js";
 import { pluginProxyMirrors, type IndexChannel, type PluginProxyRule } from "./registry.js";
 import {
   AddressError,
   DOCUMENT_MAX_BYTES,
   DOCUMENT_TIMEOUT_MS,
+  fetchableAddress,
   fetchFirst,
   TARBALL_MAX_BYTES,
   TARBALL_TIMEOUT_MS,
   WalkError,
 } from "./registry-fetch.js";
 import { parsePluginSource } from "./source.js";
-import { readPackageTarball, TarballError, type TarballFile } from "./tarball.js";
+import { collidingPaths, readPackageTarball, TarballError, type TarballFile } from "./tarball.js";
 import { pickRegistryVersion, savedRange, type RegistryDocument } from "./version-pick.js";
 
 /** The registry a deployment that names none installs from — npm's own default. */
@@ -141,6 +146,34 @@ function vetUnpacked(
   admit(label, manifest, files.has("binding.gyp"), io);
 }
 
+/**
+ * The files with every `bin` target executable, as npm's bin-links leaves them once it has
+ * installed a package (the targets as npm normalizes the manifest).
+ */
+function withExecutableBins(
+  files: ReadonlyMap<string, TarballFile>,
+  manifest: PackageManifest,
+): Map<string, TarballFile> {
+  const out = new Map(files);
+  for (const target of Object.values(normalizedBins(manifest, { files: files.keys() }))) {
+    const file = out.get(target);
+    if (file !== undefined) out.set(target, { ...file, executable: true });
+  }
+  return out;
+}
+
+/** A package's manifest from its unpacked files; `{}` when there is none to read (vetUnpacked has refused that). */
+function manifestOf(files: ReadonlyMap<string, TarballFile>): PackageManifest {
+  try {
+    const raw = files.get("package.json");
+    return raw === undefined
+      ? {}
+      : (JSON.parse(Buffer.from(raw.data).toString("utf8")) as PackageManifest);
+  } catch {
+    return {};
+  }
+}
+
 /** A download's checker: the bytes pass only when their sha512 is the pinned one. */
 function pinnedTo(digest: string, what: string) {
   return (bytes: Uint8Array): Uint8Array => {
@@ -150,13 +183,6 @@ function pinnedTo(digest: string, what: string) {
     }
     return bytes;
   };
-}
-
-/** Whether a tarball URL may be fetched: https, or http on this machine's own loopback. */
-function fetchable(url: string): boolean {
-  return (
-    url.startsWith("https://") || /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])([:/]|$)/.test(url)
-  );
 }
 
 /** A registry document, or the AddressError that moves the walk to the next address. */
@@ -244,7 +270,7 @@ export async function installFromRegistry(
       `${label}: the registry pins no sha512 integrity for it, so its bytes cannot be verified; it is not installed`,
     );
   }
-  if (typeof dist.tarball !== "string" || !fetchable(dist.tarball)) {
+  if (typeof dist.tarball !== "string" || !fetchableAddress(dist.tarball)) {
     throw refusal(`${label}: the registry names no https tarball for it; it is not installed`);
   }
   let bytes: Uint8Array;
@@ -265,15 +291,22 @@ export async function installFromRegistry(
   }
   const files = unpack(label, bytes, io);
   vetUnpacked(label, files, name, version, io);
-  await placePackage(root, name, files, savedRange(source.version, version));
+  await placePackage(
+    root,
+    name,
+    withExecutableBins(files, manifestOf(files)),
+    savedRange(source.version, version),
+  );
   return { name, version, withoutNpm: true };
 }
 
 /**
  * Installs a version through the published index's release channel without npm: the asset,
  * checked against the entry's sha512 before it is unpacked, over the channel's addresses in
- * order (the URL the index published, then its CDN mirrors). The prefix records the release
- * URL, as npm records a tarball URL it installed.
+ * order (the URL the index published, then its CDN mirrors). The verified asset is kept in
+ * `archives/` and the prefix records `file:archives/<asset>`, as for an uploaded zip: a later
+ * npm run then installs those very bytes from disk instead of fetching the release URL again —
+ * which may be unreachable by then, and which npm would fetch without the index's sha512.
  */
 export async function installChannel(
   root: string,
@@ -310,70 +343,21 @@ export async function installChannel(
   }
   const files = unpack(label, bytes, io);
   vetUnpacked(label, files, channel.name, channel.version, io);
-  await placePackage(root, channel.name, files, channel.url);
+  const asset = packFileName(channel.name, channel.version);
+  await placePackage(
+    root,
+    channel.name,
+    withExecutableBins(files, manifestOf(files)),
+    `file:${ARCHIVES_DIR}/${asset}`,
+    {
+      beforeSwap: async () => {
+        const archives = path.join(pluginsPrefix(root), ARCHIVES_DIR);
+        await fs.mkdir(archives, { recursive: true });
+        await fs.writeFile(path.join(archives, asset), bytes);
+      },
+    },
+  );
   return { name: channel.name, version: channel.version, withoutNpm: true };
-}
-
-/** Root files npm publishes whatever `files` says. */
-const ALWAYS_PUBLISHED = /^(readme|license|licence|copying)(\.[^/]*)?$/i;
-
-/** A `files` entry as a path or a glob relative to the package root. */
-function filesEntry(entry: string): string {
-  return entry
-    .replace(/^(\.\/)+/, "")
-    .replace(/^\/+/, "")
-    .replace(/\/+$/, "");
-}
-
-/** A glob of `*`, `**` and `?` as an anchored regex matching the path or anything under it. */
-function globMatcher(glob: string): RegExp {
-  let out = "";
-  for (let i = 0; i < glob.length; i += 1) {
-    const c = glob[i]!;
-    if (c === "*" && glob[i + 1] === "*") {
-      out += glob[i + 2] === "/" ? "(?:.*/)?" : ".*";
-      i += glob[i + 2] === "/" ? 2 : 1;
-    } else if (c === "*") {
-      out += "[^/]*";
-    } else if (c === "?") {
-      out += "[^/]";
-    } else {
-      out += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-    }
-  }
-  return new RegExp(`^${out}(?:/.*)?$`);
-}
-
-/**
- * The files npm would publish from an unpacked package: package.json, the README, LICENSE and
- * `main` always, and whatever the `files` entries name (a path takes everything under it; `*`,
- * `**` and `?` match as globs). A package with no `files` field publishes everything it has; so
- * does one whose `files` uses a negation, a class or a brace — read as npm would, it can only
- * name fewer files, and keeping every file errs on the side of the package still working.
- */
-function publishedFiles(
-  manifest: PackageManifest,
-  files: ReadonlyMap<string, Uint8Array>,
-): Map<string, Uint8Array> {
-  const entries = manifest.files;
-  if (!Array.isArray(entries) || entries.some((e) => typeof e !== "string" || /[![\]{}]/.test(e))) {
-    return new Map(files);
-  }
-  const main = typeof manifest.main === "string" ? filesEntry(manifest.main) : null;
-  const matchers = (entries as string[])
-    .map(filesEntry)
-    .filter((e) => e !== "")
-    .map(globMatcher);
-  const published = new Map<string, Uint8Array>();
-  for (const [rel, bytes] of files) {
-    const keep =
-      rel === "package.json" ||
-      ALWAYS_PUBLISHED.test(rel) ||
-      (main !== null && (rel === main || rel === `${main}.js`)) ||
-      matchers.some((m) => m.test(rel));
-    if (keep) published.set(rel, bytes);
-  }
-  return published;
 }
 
 /** The file name `npm pack` gives a package's tarball: `@scope/name` → `scope-name-<version>.tgz`. */
@@ -392,34 +376,55 @@ export async function installFiles(
   files: ReadonlyMap<string, Uint8Array>,
   io: WithoutNpm,
 ): Promise<InstalledPackage> {
-  const raw = files.get("package.json");
-  const manifest = (
-    raw === undefined ? {} : JSON.parse(Buffer.from(raw).toString("utf8"))
-  ) as PackageManifest;
+  let manifest: PackageManifest = {};
+  try {
+    const raw = files.get("package.json");
+    manifest = (
+      raw === undefined ? {} : JSON.parse(Buffer.from(raw).toString("utf8"))
+    ) as PackageManifest;
+  } catch {
+    manifest = {};
+  }
   const { name, version } = manifest;
   if (typeof name !== "string" || typeof version !== "string") {
     throw refusal("the package's package.json names no package and version");
   }
   const label = `${name}@${version}`;
-  admit(label, manifest, files.has("binding.gyp"), io);
+  // What `npm pack` would publish from the directory is what npm's install of it would put in
+  // the prefix (packlist.ts); the rest of the zip — a git-ignored `.env`, build caches — stays out.
   const published = new Map<string, TarballFile>(
-    [...publishedFiles(manifest, files)].map(([rel, data]) => [rel, { data, executable: false }]),
+    packedFiles(files).map((rel) => [rel, { data: files.get(rel)!, executable: false }]),
   );
-  const tarball = packFileName(name, version);
-  await placePackage(root, name, published, `file:${ARCHIVES_DIR}/${tarball}`, async (staged) => {
-    const archives = path.join(pluginsPrefix(root), ARCHIVES_DIR);
-    await fs.mkdir(archives, { recursive: true });
-    await tar.c(
-      {
-        gzip: true,
-        cwd: path.dirname(staged),
-        file: path.join(archives, tarball),
-        portable: true,
-        mtime: PACK_MTIME,
-      },
-      [path.basename(staged)],
+  const collision = collidingPaths(published.keys());
+  if (collision !== null) {
+    throw refusal(
+      `${label}: its files ${JSON.stringify(collision[0])} and ${JSON.stringify(collision[1])} would land on one path on some file systems; it is not installed`,
     );
-  });
+  }
+  admit(label, manifest, published.has("binding.gyp"), io);
+  const tarball = packFileName(name, version);
+  await placePackage(
+    root,
+    name,
+    withExecutableBins(published, manifest),
+    `file:${ARCHIVES_DIR}/${tarball}`,
+    {
+      beforeSwap: async (staged) => {
+        const archives = path.join(pluginsPrefix(root), ARCHIVES_DIR);
+        await fs.mkdir(archives, { recursive: true });
+        await tar.c(
+          {
+            gzip: true,
+            cwd: path.dirname(staged),
+            file: path.join(archives, tarball),
+            portable: true,
+            mtime: PACK_MTIME,
+          },
+          [path.basename(staged)],
+        );
+      },
+    },
+  );
   return { name, version };
 }
 
