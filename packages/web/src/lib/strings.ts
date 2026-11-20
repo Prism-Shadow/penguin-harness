@@ -5762,8 +5762,8 @@ Benchmark：
     last7d: "近 7 天",
     total: "累计",
     tokens: "Token",
-    requests: "Requests",
-    /** The summary row of the requests a plugin made for its tools (counted in Requests and Cost, not in Token). */
+    requests: "请求数",
+    /** The summary row of the requests a plugin made for its tools (counted in the request count and the cost, not in Token). */
     toolRequestsIncluded: "其中工具请求",
     /** The card listing tool requests by what they were for. */
     toolRequests: "工具请求",

@@ -27,3 +27,4 @@ Cost Center reads them from that one ledger.
 - Where two providers sell a model under the same name, the model filter and the by-model chart
   name the provider beside it.
 - A cost below a tenth of a cent shows four significant digits instead of rounding to `$0.0000`.
+- The Chinese Cost Center labels the request count 「请求数」 in the summary cards and the tool requests table. It used to show the English word.
