@@ -100,6 +100,7 @@ import type { PlacedAgent } from "../../lib/machine-agent-lists";
 import { toneInk } from "../../lib/tone";
 import { employmentsOf, splitByEmployment } from "../../lib/agent-employment";
 import { holdsSystemAgentId, isBuiltinAgent, isSystemAgent } from "../../lib/builtin-agents";
+import { useSystemApps } from "../../lib/system-apps";
 import {
   AGENT_GROUP_BYS,
   groupByAuthor,
@@ -233,6 +234,8 @@ export function AgentsPage() {
   const { user } = useAuth();
   const { currentProject, agents, agentsLoading, reloadAgents, setCurrentAgentId } = useProject();
   const avatarSrc = useAgentAvatarSrc();
+  /** The system apps the viewer sees: the system Agent's card counts them. */
+  const systemAppCount = useSystemApps().length;
   /**
    * An Agent of the user's holding the id reserved for the system Agent, which the Project then
    * lacks: its owner is asked to move it, the only way the system Agent can be added.
@@ -615,6 +618,22 @@ export function AgentsPage() {
           <p className="mt-1.5 min-h-4 truncate text-xs text-gray-500 dark:text-gray-400">
             {system ? S.agent.systemDescription : (a.description ?? "")}
           </p>
+          {/* The system Agent's one count: the system apps this viewer sees, which its settings'
+              Workbenches sub-page lists. */}
+          {system && (
+            <div className="mt-1.5 flex items-center text-xs text-gray-500 dark:text-gray-400">
+              <button
+                type="button"
+                className={STAT_LINK_CLASS}
+                data-tooltip={S.agent.systemAppCount(systemAppCount)}
+                aria-label={S.agent.systemAppCount(systemAppCount)}
+                onClick={() => openSettingsTab(a.agentId, "workbenches", machineId)}
+              >
+                <GlyphIcon d={ICONS.tiles} size={ICON_SIZE.inlineGlyph} />
+                {systemAppCount}
+              </button>
+            </div>
+          )}
           {/* An employee's organizations, one line each: the building every company
                       surface wears, then `<organization> · <title>`. */}
           {employments.map((e) => (

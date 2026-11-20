@@ -275,7 +275,9 @@ test("clicking the current Project in the dropdown: Agent and Session lists must
   await byName.first().click();
   await page.getByRole("button", { name: U }).first().click();
   await expect(generalAgent).toBeVisible();
-  await page.getByRole("link", { name: "插件市场" }).click();
+  // The plugin market is a system app: the App Center's tile opens it.
+  await page.getByRole("link", { name: "应用中心" }).click();
+  await page.locator('li[data-app="system_agent/plugins"] > button').click();
   await expect(page).toHaveURL(/\/plugins$/);
   // The category sections are open on entry. agent-optimization is the Default RSI Toolkit's
   // only skill.

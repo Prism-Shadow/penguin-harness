@@ -1,4 +1,4 @@
-/** The usage page. */
+/** The usage page, a system app (an App Center tile, lib/system-apps.ts). */
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import { UsagePage } from "./usage-page";
 
@@ -10,13 +10,14 @@ import { UsagePage } from "./usage-page";
         key: "usage",
         path: "/usage",
         frame: "shell",
-        nav: "main",
+        nav: "none",
         admin: false,
         released: true,
         order: 60,
         title: "Cost Center",
         titleZh: "成本中心",
         icon: "barChart",
+        app: { order: 40 },
       },
     ],
   },
