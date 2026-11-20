@@ -88,7 +88,7 @@ Agent 从不输入你的密码。Agent 需要的页面要求登录时，`browser
 2. 选择一个个人资料。个人资料按浏览器分组，名称与浏览器中显示的一致。
 3. 选择 **Cookie 与登录状态**、**历史记录**，或两者都选。
 4. 可以填写只导入哪些网站的 Cookie，用逗号分隔，例如 `amazon.com, github.com`。网站包括它的子域名。留空则导入所有网站的 Cookie。
-5. 开始导入。对话框会显示找到和导入的 Cookie 与历史记录条数，以及警告信息。
+5. 开始导入。对话框会显示找到和导入的 Cookie 与历史记录条数、每条被跳过的 Cookie 的原因（逐个原因给出数量），以及其他需要知道的情况。
 
 | 浏览器 | macOS | Windows | Linux |
 | --- | --- | --- | --- |
@@ -99,13 +99,21 @@ Agent 从不输入你的密码。Agent 需要的页面要求登录时，`browser
 各平台的注意事项：
 
 - **macOS**：基于 Chromium 的浏览器用保存在钥匙串里的密钥加密 Cookie，因此 macOS 会询问是否允许 PenguinHarness 使用以浏览器命名的钥匙串项目，例如「Chrome Safe Storage」。请选择允许；拒绝的话，加密的 Cookie 会被跳过，导入结果中会说明。
-- **Windows**：Chrome 127 及以后的版本用应用绑定加密保护大部分 Cookie，只有 Chrome 自己能读取。这些 Cookie 会被跳过并给出警告，请改为在面板里登录。正在运行的浏览器也可能占用它的 Cookie 文件，关闭浏览器后再导入即可。
+- **Windows**：Chrome 127 及以后的版本用应用绑定加密保护大部分 Cookie，只有 Chrome 自己能读取。这些 Cookie 会被跳过并计数。要导入它们，请[经 Chrome 扩展导入](#经-chrome-扩展导入)，或在面板里登录。正在运行的浏览器也可能占用它的 Cookie 文件，关闭浏览器后再导入即可。
 - **Linux**：较新的 Cookie 用保存在桌面密钥环里的密码加密，通过 `secret-tool` 读取（Debian 和 Ubuntu 上由 `libsecret-tools` 软件包提供）。没有它时，这些 Cookie 会被跳过并给出警告。
 - **Firefox** 的 Cookie 不加密。容器专用的 Cookie 和按其他网站分区的 Cookie 不会导入。
 
+### 经 Chrome 扩展导入
+
+[你自己的 Chrome](#使用你自己的-chrome) 连上之后，导入对话框会在「经 Chrome 扩展」下列出它。Cookie 由 Chrome 自己读出再交过来，因此应用绑定加密挡住的 Cookie 也能导入。这种方式只导入 Cookie，来自扩展所在的 Chrome 个人资料，与其他导入一样写入当前 Project。
+
+随后 Chrome 会打开一个页面，写明是哪台服务器在请求 Cookie。只有在该页面上选择**允许**才会发送；选择**拒绝**、关闭页面或两分钟内不作答，都不会发送任何内容。从个人资料导入时如果跳过了应用绑定 Cookie，而你的 Chrome 已连接，结果中的**经 Chrome 扩展导入**会直接带你回到这个选项。
+
+为此扩展需要 `cookies` 权限和访问所有网站的权限。这两项不会在你安装时 Chrome 已显示的警告之外增加新警告，所以更新扩展时 Chrome 不会再次询问；每次导入都由上面的页面询问。
+
 导入只读取数据：每个文件都先复制到临时目录，在那里读取后删除，不会向另一个浏览器写入任何内容。导入的历史记录与内置浏览器自己的历史记录合在一起保存，最多保留最近的 5,000 个页面。只有管理员可以导入。
 
-在 shell 里，`penguin browser import --list` 列出个人资料，`penguin browser import --from chrome --cookies --domain amazon.com` 导入一个网站的登录状态，见 [penguin browser](/cli#penguin-browser)。
+在 shell 里，`penguin browser import --list` 列出个人资料，`penguin browser import --from chrome --cookies --domain amazon.com` 导入一个网站的登录状态，`--from chrome-extension` 经已连接的 Chrome 导入，见 [penguin browser](/cli#penguin-browser)。
 
 ## 清除浏览数据
 
@@ -167,9 +175,9 @@ Agent 只操作这些标签页：
 - 你交给它的标签页：在该标签页上选择扩展的图标，再选择**添加此标签页**，它会移入 Penguin 标签组。
 - 由上述标签页打开的页面，例如弹窗或在新标签页中打开的链接。
 
-它看不到也碰不到你的其他标签页和窗口、密码、历史记录和下载内容，也不能直接读取或修改 Chrome 的 Cookie，触及这些内容的原始 DevTools 命令会被拒绝（`cdp_refused`）。Chrome 自己的页面（`chrome://`）、Chrome Web Store 和本地文件完全无法操作。导入、清除浏览数据和浏览历史记录属于内置浏览器；Chrome 有它自己的。
+它看不到也碰不到你的其他标签页和窗口、密码、历史记录和下载内容，也不能直接读取或修改 Chrome 的 Cookie，触及这些内容的原始 DevTools 命令会被拒绝（`cdp_refused`）。唯一的例外是你在 Chrome 显示的页面上允许的[内置浏览器导入](#经-chrome-扩展导入)。Chrome 自己的页面（`chrome://`）、Chrome Web Store 和本地文件完全无法操作。导入、清除浏览数据和浏览历史记录属于内置浏览器；Chrome 有它自己的。
 
-到达服务器的，是 Agent 向它操作的标签页索取的内容，与内置浏览器相同：简化后的 HTML 或纯文本、脚本的返回值、截图和对话框文字。页面中的脚本能读到页面本身可读的 Cookie；HttpOnly 的会话 Cookie 永远不会离开 Chrome。
+到达服务器的，是 Agent 向它操作的标签页索取的内容，与内置浏览器相同：简化后的 HTML 或纯文本、脚本的返回值、截图和对话框文字。页面中的脚本能读到页面本身可读的 Cookie；HttpOnly 的会话 Cookie 只会经你允许的导入离开 Chrome。
 
 ### 收回标签页或让 Agent 停手
 
@@ -257,4 +265,4 @@ EOF
 | `exec` 脚本时限 | 默认 15 秒（`--timeout`） |
 | 页面加载等待 | `open` 最多等 15 秒 |
 | 历史记录 | 最近的 5,000 个页面，含导入的部分 |
-| Windows 上导入 Cookie | Chrome 的应用绑定 Cookie（Chrome 127 及以后）无法导入 |
+| Windows 上导入 Cookie | Chrome 的应用绑定 Cookie（Chrome 127 及以后）无法从文件读取，可经 Chrome 扩展导入 |

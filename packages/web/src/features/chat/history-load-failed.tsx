@@ -23,7 +23,7 @@ import {
   LoadFailed,
   RetryStatus,
   exceptionReport,
-  isSeriousError,
+  isReportable,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { machineLink } from "../../lib/machine-link";
@@ -77,7 +77,7 @@ export function HistoryLoadFailed({
         description={error}
         action={{ label: S.common.retry, onClick: onRetry }}
         report={
-          isSeriousError(cause)
+          isReportable(cause)
             ? () =>
                 exceptionReport(cause, { what: "the conversation's history could not be loaded" })
             : null

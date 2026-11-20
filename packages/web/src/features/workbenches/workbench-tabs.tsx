@@ -9,7 +9,7 @@
  * refetches when the server announces `workbench_updated` for this Agent, so an Agent
  * editing its own workbench sees the tab update (the iframe keys on `uiRev`).
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
 import { Button, ConfirmModal, NoticeStrip } from "@prismshadow/penguin-ui";
@@ -41,6 +41,7 @@ import { isSafeMode, useSafeMode } from "../../rescue/safe-mode";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
 import { localizedText } from "../chat";
+import { failureNode } from "../../lib/failure";
 
 /** The Agent's workbench tabs, kept fresh by the server's `workbench_updated` events. */
 export function useWorkbenchTabs(
@@ -239,10 +240,10 @@ export function WorkbenchFrame({
   // Removal is armed by a first click and sent by the second; the arm drops when the tab changes.
   const [removeArmed, setRemoveArmed] = useState(false);
   useEffect(() => setRemoveArmed(false), [tab.workbenchId]);
-  const [failure, setFailure] = useState<string | null>(null);
+  const [failure, setFailure] = useState<ReactNode>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [versions, setVersions] = useState<WorkbenchVersion[] | null>(null);
-  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<ReactNode>(null);
   /** A revision whose restore awaits confirmation: it replaces the workbench's files. */
   const [restoring, setRestoring] = useState<string | null>(null);
 
@@ -254,7 +255,7 @@ export function WorkbenchFrame({
           .versions,
       );
     } catch (err) {
-      setHistoryError(err instanceof Error ? err.message : String(err));
+      setHistoryError(failureNode(err, { what: "a workbench's history could not be read" }));
     }
   }, [projectId, agentId, tab.workbenchId, tab.machineId]);
 
@@ -270,7 +271,7 @@ export function WorkbenchFrame({
         (await api.reloadWorkbench(projectId, agentId, tab.workbenchId, tab.machineId)).workbench,
       );
     } catch (err) {
-      setFailure(err instanceof Error ? err.message : String(err));
+      setFailure(failureNode(err));
     } finally {
       setBusy(null);
     }
@@ -285,7 +286,7 @@ export function WorkbenchFrame({
           .workbench,
       );
     } catch (err) {
-      setFailure(err instanceof Error ? err.message : String(err));
+      setFailure(failureNode(err));
     } finally {
       setBusy(null);
     }
@@ -332,7 +333,7 @@ export function WorkbenchFrame({
       await api.removeWorkbench(projectId, agentId, tab.workbenchId, tab.machineId);
       onRemoved();
     } catch (err) {
-      setFailure(err instanceof Error ? err.message : String(err));
+      setFailure(failureNode(err));
       setBusy(null);
       setRemoveArmed(false);
     }

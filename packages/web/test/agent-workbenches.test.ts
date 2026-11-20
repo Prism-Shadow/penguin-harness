@@ -12,6 +12,8 @@
  *   or from its words; a refused write leaves it where the file says.
  * - The More menu's first row is the same App Center setting, checkable: picking it writes at once
  *   and the row's switch follows.
+ * - A machine's Agent has the App Center switch too, and it writes on that machine: the App
+ *   Center lists a machine's apps, and this is where one taken off it comes back.
  * - The row leads with the workbench's own App Center icon when it has one, else no image.
  * - The More menu's sidebar row is checked by default; picking it writes the sidebar setting at
  *   once and nothing of the App Center's, and a refused write puts it back.
@@ -177,6 +179,25 @@ it("shows the workbench in the App Center from the More menu's checkable row, an
       .map((request) => [request.method, request.body]),
   ).toEqual([["PATCH", { show: true }]]);
   expect((await menuRow()).getAttribute("aria-checked")).toBe("true");
+});
+it("offers a machine's Agent the App Center switch too, and writes it on that machine", async () => {
+  setActiveStrings(en);
+  const server = agentServer(undefined, {
+    workbenches: [info([])],
+    machines: [{ machineId: "gpu1", alias: "gpu-box", agents: [AGENT_ID] }],
+  });
+  await mountAgentApp(h(AgentSettingsPage), {
+    at: `/agents/${AGENT_ID}?machine=gpu1&tab=workbenches`,
+  });
+  await waitFor(() => document.body.textContent?.includes("Support") === true);
+  await click(appCenterSwitch());
+  await waitFor(() => appCenterSwitch().getAttribute("aria-checked") === "true");
+  expect(
+    server
+      .writes()
+      .filter((request) => request.path.endsWith("/app-center"))
+      .map((request) => [request.machine, request.body]),
+  ).toEqual([["gpu1", { show: true }]]);
 });
 const row = () => appCenterSwitch().closest("li")!;
 it("leads the row with the workbench's own App Center icon", async () => {

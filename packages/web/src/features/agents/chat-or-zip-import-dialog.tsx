@@ -17,7 +17,7 @@
  * it while an upload is in flight. Opening the chat hands the source over, so the draft is
  * forgotten before the page moves to the conversation.
  */
-import { useState, type ChangeEvent } from "react";
+import { useState, type ChangeEvent, type ReactNode } from "react";
 
 import {
   Button,
@@ -35,11 +35,11 @@ import {
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import { ApiError } from "../../api/client";
-import { apiErrorText } from "../../lib/api-error";
 import { useAgentLocation } from "../../lib/agent-location";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { useAiBridge } from "../ai-create";
+import { failureNode } from "../../lib/failure";
 
 /** The Button look on the upload `<label>`. */
 const UPLOAD_LABEL_CLASS = buttonClass("secondary", "sm");
@@ -126,7 +126,7 @@ export function ChatOrZipImportDialog<T>({
   const form = useFormDraft<string>("", { normalize: (text) => text.trim() });
   const source = form.draft;
   const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<ReactNode>(null);
   // Non-null shows the overwrite confirm (the archive POST answered 409 `conflictCode`).
   const [overwriting, setOverwriting] = useState<PendingOverwrite | null>(null);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: uploading });
@@ -169,7 +169,7 @@ export function ChatOrZipImportDialog<T>({
         setOverwriting({ dataBase64, name: conflictName(e) ?? fallbackName });
       } else {
         setOverwriting(null);
-        setUploadError(apiErrorText(e));
+        setUploadError(failureNode(e, { what: "an Agent archive could not be imported" }));
       }
     } finally {
       setUploading(false);

@@ -16,11 +16,12 @@
  *   workbenches" is off every row's switch is greyed at its own value, and a server older than
  *   the switches gets none. A workbench that does not run (its own switch or the Agent-wide one
  *   is off) has nothing to open or reload; its history, restore, export and removal stay.
- * - The App Center setting, on a row of an Agent on this server (the App Center lists those
- *   only), commits at once too, from the switch or from the menu's row — one setting, two
- *   controls: it rewrites `penguin.appCenter.show` in the workbench's package.json, and the
- *   reload that follows (none while it does not run) records the edit as a version. A refused
- *   write puts both back where the file says.
+ * - The App Center setting commits at once too, from the switch or from the menu's row — one
+ *   setting, two controls: it rewrites `penguin.appCenter.show` in the workbench's package.json,
+ *   and the reload that follows (none while it does not run) records the edit as a version. A
+ *   refused write puts both back where the file says. A machine's Agent has it as well, written
+ *   on that machine: the App Center lists a machine's apps for an administrator, and its "Remove
+ *   from App Center" is this same setting, so this row is where such an app comes back.
  * - The sidebar setting is the menu's checkable "Show in the sidebar", on every row whose server
  *   reports it (`showInSidebar`). It commits at once and writes the installation's
  *   `.hidden-from-sidebar` marker, never the package.json: no reload and no version, and a plugin
@@ -157,6 +158,8 @@ function WorkbenchAppCenter({
 }) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  /** The machine the Agent lives on, whose copy of the workbench is written; null for this server. */
+  const machineId = useAgentLocation();
   const setting = useInstantSetting(workbench.appCenter?.show === true, async (show: boolean) => {
     if (!projectId) return;
     const res = await api.setWorkbenchAppCenter(
@@ -164,7 +167,7 @@ function WorkbenchAppCenter({
       options.agentId,
       workbench.id,
       show,
-      null,
+      machineId,
     );
     options.onSwitched(res.workbench);
   });
@@ -269,16 +272,13 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
     const source = sourceOf(workbench.id);
     // The body opens the workbench's files; "Open" stays the way into the app.
     const open = () => onOpenFiles({ kind: "workbench", name: workbench.id, title });
-    /** The row's controls, with the App Center and sidebar settings when the row has them. */
-    const controls = (
-      appCenter: AppCenterControl | undefined,
-      sidebar: SettingControl | undefined,
-    ) => (
+    /** The row's controls, the App Center setting among them, and the sidebar's when it has one. */
+    const controls = (appCenter: AppCenterControl, sidebar: SettingControl | undefined) => (
       <>
         {enabled !== undefined && (
           <WorkbenchSwitch workbench={{ ...workbench, enabled }} title={title} options={options} />
         )}
-        {appCenter !== undefined && <AppCenterToggle title={title} {...appCenter} />}
+        <AppCenterToggle title={title} {...appCenter} />
         {first && running && projectId && (
           <Button
             size="sm"
@@ -355,16 +355,11 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
         meta={workbench.version ? `v${workbench.version}` : undefined}
         trailing={
           <WorkbenchSidebar workbench={workbench} options={options}>
-            {(sidebar) =>
-              // The App Center lists this server's Agents only: a machine's row has no such setting.
-              machineId === null ? (
-                <WorkbenchAppCenter workbench={workbench} options={options}>
-                  {(appCenter) => controls(appCenter, sidebar)}
-                </WorkbenchAppCenter>
-              ) : (
-                controls(undefined, sidebar)
-              )
-            }
+            {(sidebar) => (
+              <WorkbenchAppCenter workbench={workbench} options={options}>
+                {(appCenter) => controls(appCenter, sidebar)}
+              </WorkbenchAppCenter>
+            )}
           </WorkbenchSidebar>
         }
       />
