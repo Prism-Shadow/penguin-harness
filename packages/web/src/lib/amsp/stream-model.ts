@@ -211,7 +211,19 @@ export interface BodyLoad {
   cause?: unknown;
 }
 
-export interface ThinkingItem {
+/** One clock per Task; its work groups share the live anchor and the settled trace span. */
+interface WorkTiming {
+  startMs: number;
+  durationMs?: number;
+}
+
+interface WorkStep {
+  workTiming?: WorkTiming;
+  /** Only the final work step of a settled Task carries its outcome and trace duration. */
+  workOutcome?: { state: "done" | "failed" | "stopped"; durationMs: number };
+}
+
+export interface ThinkingItem extends WorkStep {
   kind: "thinking";
   id: number;
   thinking: string;
@@ -226,7 +238,7 @@ export interface ThinkingItem {
   bodyLoad?: BodyLoad;
 }
 
-export interface ToolCallItem {
+export interface ToolCallItem extends WorkStep {
   kind: "tool_call";
   id: number;
   toolCallId: string;
@@ -340,7 +352,7 @@ function isReconnectStatus(status: string | undefined): status is ReconnectStatu
 }
 
 /** An LLM Request ending retryable → the engine retries carrying the content already produced. */
-export interface ReconnectItem extends RequestFailureFacts {
+export interface ReconnectItem extends RequestFailureFacts, WorkStep {
   kind: "reconnect";
   id: number;
   /** Trigger status (legacy Traces carry the finer pre-convergence spellings). */
@@ -687,6 +699,9 @@ export interface StreamModel {
   openApprovalWaitMs: number;
   /** Task segmentation state. */
   taskOpen: boolean;
+  taskFirstItemId: number;
+  /** Latest normal request or abort outcome, published on the last work step only when the Task closes. */
+  taskOutcome: NonNullable<WorkStep["workOutcome"]>["state"] | null;
   /**
    * Local-clock instant the running Task's header elapsed ticks from — display
    * only; no settled duration is ever derived from it (see finalizeOpenTask,
@@ -698,7 +713,8 @@ export interface StreamModel {
    * from the server's own clock rather than the Trace's tail so that an event
    * still in flight is counted too.
    */
-  taskStartLocalMs: number;
+  readonly taskStartLocalMs: number;
+  taskClock: WorkTiming;
   /** The Task's first message timestamp, in SERVER time: both the settled duration and the back-dated live anchor measure from it. */
   taskFirstTsMs: number;
   /**
@@ -786,7 +802,12 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     openRequestFirstItemId: null,
     openApprovalWaitMs: 0,
     taskOpen: false,
-    taskStartLocalMs: 0,
+    taskFirstItemId: 1,
+    taskOutcome: null,
+    taskClock: { startMs: 0 },
+    get taskStartLocalMs() {
+      return this.taskClock.startMs;
+    },
     taskFirstTsMs: 0,
     taskLastTsMs: 0,
     taskLastReqEndMs: null,
@@ -1080,7 +1101,7 @@ export function pushMessages(
   if (model.taskOpen) {
     const tracedSpan = model.taskLastTsMs - model.taskFirstTsMs;
     const serverSpan = serverNowMs === null ? 0 : serverNowMs - model.taskFirstTsMs;
-    model.taskStartLocalMs = nowMs - Math.max(0, tracedSpan, serverSpan);
+    model.taskClock.startMs = nowMs - Math.max(0, tracedSpan, serverSpan);
   }
 }
 
@@ -1167,11 +1188,13 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   // along, and the Task's own next request belongs to it.
   model.runEnded = false;
   model.taskOpen = true;
+  model.taskFirstItemId = model.nextItemId;
+  model.taskOutcome = null;
   model.taskModel = model.contextModel && {
     provider: model.contextModel.provider,
     modelId: model.contextModel.modelId,
   };
-  model.taskStartLocalMs = nowMs;
+  model.taskClock = { startMs: nowMs };
   const ts = Date.parse(timestamp);
   model.taskFirstTsMs = Number.isFinite(ts) ? ts : nowMs;
   model.taskLastTsMs = model.taskFirstTsMs;
@@ -1205,6 +1228,21 @@ function finalizeOpenTask(model: StreamModel): void {
   // latency folded into it.
   const endMs = model.taskLastReqEndMs ?? model.taskLastTsMs;
   const elapsed = Math.max(0, endMs - model.taskFirstTsMs);
+  model.taskClock.durationMs = elapsed;
+  if (model.taskOutcome) {
+    for (let i = model.items.length - 1; i >= 0; i--) {
+      const item = model.items[i]!;
+      if (item.id < model.taskFirstItemId) break;
+      if (
+        item.kind === "thinking" ||
+        item.kind === "tool_call" ||
+        (item.kind === "reconnect" && !item.gaveUp)
+      ) {
+        item.workOutcome = { state: model.taskOutcome, durationMs: elapsed };
+        break;
+      }
+    }
+  }
   const stats = endTask(model.stats, elapsed);
   if (model.nested) return;
   const reply = collectTaskAssistant(model);
@@ -1348,6 +1386,7 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
         const item: ThinkingItem = {
           kind: "thinking",
           id: nextId(model),
+          ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
           thinking: p.thinking ?? "",
           streaming: true,
         };
@@ -1630,6 +1669,7 @@ function handleComplete(
       const item: ThinkingItem = {
         kind: "thinking",
         id: nextId(model),
+        ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
         thinking: p.thinking,
         streaming: false,
         ...(elided !== undefined ? { elided } : {}),
@@ -1845,6 +1885,7 @@ function createToolCard(
   const item: ToolCallItem = {
     kind: "tool_call",
     id: nextId(model),
+    ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
     toolCallId: init.toolCallId,
     name: init.name,
     argumentsText: init.argumentsText,
@@ -1909,6 +1950,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       model.items.push(item);
       // The stop ended the run with its turn held: a Retry's first request opens a new Task.
       model.runEnded = true;
+      model.taskOutcome = "stopped";
       return;
     }
     case "token_usage":
@@ -2079,6 +2121,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         }
         return;
       }
+      model.taskOutcome = null;
       // A retry request was sent: mark the waiting reconnect hint as resent (a no-op when there's no such item before a normal first request).
       const waiting = findLastWaitingReconnect(model);
       if (waiting) waiting.retrying = true;
@@ -2132,6 +2175,13 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // retry_in_ms; `0` is an immediate retry). A request after it opens a new Task.
       model.runEnded =
         p.status === "fatal" || (p.status === "retryable" && p.retry_in_ms === undefined);
+      model.taskOutcome = model.runEnded
+        ? "failed"
+        : p.status === "aborted"
+          ? "stopped"
+          : p.status === "completed"
+            ? "done"
+            : null;
       // A fatal end stops the run — no abort event follows; this request_end is the
       // terminal record, rendered as an error banner.
       if (p.status === "fatal") {
@@ -2154,6 +2204,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         const item: ReconnectItem = {
           kind: "reconnect",
           id: nextId(model),
+          ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
           status: p.status,
           // The core stamps the authoritative ordinal on every retryable request_end; only
           // Traces written before the field existed lack it (rendered as attempt 1).

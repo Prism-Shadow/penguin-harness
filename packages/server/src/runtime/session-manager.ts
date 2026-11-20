@@ -119,6 +119,7 @@ import { Component, Interface, Module, Provide, Use } from "@prismshadow/penguin
 import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
 import type { ClassCtx, Json, Opaque } from "@prismshadow/penguin-core/kernel";
 import { Sandbox, SandboxModule } from "../sandbox/service.js";
+import { agentWritableRoots } from "../workbenches/data-dirs.js";
 import { SANDBOX_GROUP } from "../sandbox/settings-store.js";
 import { sandboxEnabledOf, sandboxPresetsOf, sandboxStartOf } from "../sandbox/settings-policy.js";
 import { PluginConfig } from "../plugin/config.js";
@@ -2992,15 +2993,21 @@ export class SessionsModule {
       // Each Session confines under its OWN policy — the snapshot on its row, its root's for a
       // subagent — so a settings change reaches only Sessions created after it. A row from
       // before snapshots takes the settings at its first command and keeps them from then on.
+      // Under workspace-write the agent level of the Agent's workbench folders is writable too,
+      // once something has created it: `<agentDir>/app` (data and cache) and its runtime folder
+      // under `<root>/run` (sockets, pipes, locks). The server and machine levels are not.
       confineSpawn: (ctx: ControlEnvContext) =>
-        sandbox.confinerFor(() => {
-          const root = manager.rootSessionOf(ctx.sessionId);
-          const row = sessionsRepo.findById(root);
-          if (row?.sandbox) return row.sandbox;
-          const snapshot = sandbox.currentSettings();
-          if (row !== null) sessionsRepo.updateSandbox(root, snapshot);
-          return snapshot;
-        }),
+        sandbox.confinerFor(
+          () => {
+            const root = manager.rootSessionOf(ctx.sessionId);
+            const row = sessionsRepo.findById(root);
+            if (row?.sandbox) return row.sandbox;
+            const snapshot = sandbox.currentSettings();
+            if (row !== null) sessionsRepo.updateSandbox(root, snapshot);
+            return snapshot;
+          },
+          agentWritableRoots(config.root, ctx.projectId, ctx.agentId),
+        ),
     };
 
     const notifyProjectUsers = (projectId: string, event: ServerEvent): void =>
