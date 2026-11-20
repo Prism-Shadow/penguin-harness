@@ -27,8 +27,8 @@
  * tile) beside the title over a one-line description, and the card's end part on the same row:
  * the bar's actions inline, or the tags over the facts — with no version chip; the rows stand in
  * two columns wherever two of them fit (`--showcase-list-min`, 22 rem for a row that ends in a
- * bar, 34 rem for one that ends in tags and facts), one otherwise. Only on a phone-width column
- * does a row's end part drop under it.
+ * bar, 34 rem for one that ends in tags and facts), one otherwise. In a narrow column a row's end
+ * part drops under it: tags and facts under 40 rem, a bar only in a phone's column.
  *
  * Props only: every word is the caller's. The look is showcase.css; the card is a `ui-showcase`
  * host (hooks.ts).
