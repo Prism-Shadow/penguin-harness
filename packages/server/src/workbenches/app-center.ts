@@ -18,6 +18,10 @@
  * A declaration that does not hold up (a wrong type, an icon outside `ui/`, missing, too large or
  * not a clean image of the format its name says, a tab the manifest does not contribute) is not a
  * load error: the workbench loads as before, has no shortcut, and its load hints name the fix.
+ *
+ * The same reader answers an Agent's sidebar list (GET …/workbenches?view=sidebar) with another
+ * filter: every workbench with a tab whose installation carries no `.hidden-from-sidebar` marker,
+ * declared for the App Center or not. It compiles nothing either.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -27,7 +31,14 @@ import type { IconRef } from "../api/types.js";
 import { iconRev } from "../http/icon-response.js";
 import type { AppCenterShortcut, WorkbenchAppCenter } from "@prismshadow/penguin-library-workbench";
 import { readLoadStatus } from "./compile.js";
-import { isSafeRelPath, isSwitchedOff, isWorkbenchId, TMP_SUFFIX, UI_DIR } from "./store.js";
+import {
+  HIDDEN_FROM_SIDEBAR,
+  isSafeRelPath,
+  isSwitchedOff,
+  isWorkbenchId,
+  TMP_SUFFIX,
+  UI_DIR,
+} from "./store.js";
 
 const TITLE_MAX = 60;
 const TABS_KEY = "WebModule.sessionTabs";
@@ -228,32 +239,55 @@ export function appCenterIconRef(
   return { url: `${base}/app-center/icon?rev=${icon.rev}`, tint: icon.tint };
 }
 
-/** The shortcut a shown declaration makes: its titles, icon URL, the page it opens, its build. */
+/**
+ * The shortcut a workbench makes: its titles, icon URL, the page it opens, its build. What the
+ * declaration leaves out (or all of it, for a workbench the sidebar lists without one) comes
+ * from its first tab, then its package name.
+ */
 function shortcutOf(
   projectId: string,
   agent: { agentId: string; agentName: string },
   workbenchId: string,
-  manifest: AppCenterManifest & { appCenter: WorkbenchAppCenter },
+  manifest: AppCenterManifest,
   build: Pick<AppCenterShortcut, "build" | "error">,
+  showInSidebar: boolean,
 ): AppCenterShortcut {
   const { appCenter, tabs } = manifest;
   const first = tabs[0];
-  const titleZh = appCenter.titleZh ?? first?.titleZh;
-  const tab = appCenter.tab ?? first?.key;
+  const titleZh = appCenter?.titleZh ?? first?.titleZh;
+  const tab = appCenter?.tab ?? first?.key;
   const page = `/app/${segment(projectId)}/${segment(agent.agentId)}/${segment(workbenchId)}`;
   return {
     agentId: agent.agentId,
     agentName: agent.agentName,
     workbenchId,
-    title: appCenter.title ?? first?.title ?? manifest.name,
+    title: appCenter?.title ?? first?.title ?? manifest.name,
     ...(titleZh !== undefined ? { titleZh } : {}),
     ...(manifest.icon !== undefined
       ? { icon: appCenterIconRef(projectId, agent.agentId, workbenchId, manifest.icon) }
       : {}),
-    path: appCenter.tab !== undefined ? `${page}/${segment(appCenter.tab)}` : page,
+    path: appCenter?.tab !== undefined ? `${page}/${segment(appCenter.tab)}` : page,
     ...(tab !== undefined ? { tab } : {}),
     ...build,
+    showInSidebar,
   };
+}
+
+/**
+ * Which of an Agent's workbenches a listing keeps: the App Center's tiles, or the rows of the
+ * Agent's sidebar list (GET …/workbenches?view=sidebar).
+ */
+export type ShortcutView = "appCenter" | "sidebar";
+
+/**
+ * Whether a workbench whose own switch is on belongs in `view`. The App Center keeps a
+ * declaration that holds up and is shown. The sidebar keeps one with at least one tab whose
+ * installation carries no `.hidden-from-sidebar` marker, declared for the App Center or not.
+ */
+async function inView(view: ShortcutView, dir: string, manifest: AppCenterManifest) {
+  if (view === "sidebar")
+    return manifest.tabs.length > 0 && !(await isSwitchedOff(dir, HIDDEN_FROM_SIDEBAR));
+  return manifest.appCenter?.show === true;
 }
 
 /**
@@ -267,6 +301,8 @@ export async function agentShortcuts(
   agent: { agentId: string; agentName: string },
   base: string,
   building: (workbenchId: string) => boolean,
+  /** Which filter: the App Center's, or the sidebar's ({@link inView}); the reading is the same. */
+  view: ShortcutView = "appCenter",
 ): Promise<AppCenterShortcut[]> {
   const entries = await fs.readdir(base, { withFileTypes: true }).catch(() => []);
   const out: AppCenterShortcut[] = [];
@@ -274,10 +310,11 @@ export async function agentShortcuts(
     if (!entry.isDirectory() || !isWorkbenchId(entry.name)) continue;
     const dir = path.join(base, entry.name);
     const manifest = await readAppCenterManifest(dir, entry.name);
-    if (manifest.appCenter?.show !== true || (await isSwitchedOff(dir))) continue;
-    const shown = { ...manifest, appCenter: manifest.appCenter };
+    if (!(await inView(view, dir, manifest)) || (await isSwitchedOff(dir))) continue;
     const build = await buildOf(dir, building(entry.name));
-    out.push(shortcutOf(projectId, agent, entry.name, shown, build));
+    // The sidebar lists only what is shown there; a tile carries the setting for its menu.
+    const showInSidebar = view === "sidebar" || !(await isSwitchedOff(dir, HIDDEN_FROM_SIDEBAR));
+    out.push(shortcutOf(projectId, agent, entry.name, manifest, build, showInSidebar));
   }
   return out.sort(
     (a, b) => a.title.localeCompare(b.title) || a.workbenchId.localeCompare(b.workbenchId),

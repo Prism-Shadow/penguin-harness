@@ -3,6 +3,9 @@
  *
  *   GET    /                       the Agent's workbenches, disabled ones included, and the
  *                                  Agent-wide switch (loads any that run and changed on disk)
+ *   GET    /?view=sidebar          the rows of the Agent's sidebar list: a shortcut for each
+ *                                  workbench that runs, has a tab and is not hidden from the
+ *                                  sidebar (manifests and load status only: nothing is compiled)
  *   PUT    /enabled {enabled}      the Agent-wide switch (owner only): off unloads them all
  *   POST   /archive {dataBase64, overwrite?}  import one workbench's source from a zip, then load it
  *   GET    /:id/archive            the workbench's source as a zip, which imports back unchanged
@@ -10,6 +13,7 @@
  *   POST   /:id/reload             re-import the folder now (the watcher does this on change too)
  *   GET    /:id/history            the versions that loaded, newest first
  *   POST   /:id/rollback {revision} restore that version's files and reload
+ *   PATCH  /:id/sidebar {show}     write or remove this installation's `.hidden-from-sidebar`
  *   PATCH  /:id/app-center {show}  set `penguin.appCenter.show` in its package.json and reload
  *   GET    /:id/app-center/icon    the image its App Center declaration names, re-checked and
  *                                  served as icons are (../http/icon-response.ts); 404
@@ -51,6 +55,8 @@ import type {
   WorkbenchAppCenterResponse,
   WorkbenchArchiveInstallResponse,
   WorkbenchesResponse,
+  WorkbenchSidebarResponse,
+  WorkbenchSidebarSetResponse,
 } from "../api/types.js";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Paths } from "../hmr/capabilities.js";
@@ -471,6 +477,10 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
   };
   app.get("/", async (c) => {
     const { projectId, agentId } = scope(c);
+    if (c.req.query("view") === "sidebar") {
+      const apps = await deps.workbenches.sidebar(projectId, agentId);
+      return c.json({ apps } satisfies WorkbenchSidebarResponse);
+    }
     const workbenches = await deps.workbenches.list(projectId, agentId);
     const enabled = await deps.workbenches.agentEnabled(projectId, agentId);
     return c.json({ workbenches, enabled } satisfies WorkbenchesResponse);
@@ -600,6 +610,18 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
       .rollback(projectId, agentId, c.req.param("id"), body.revision)
       .catch(notFound);
     return c.json({ workbench });
+  });
+
+  // The sidebar setting: member-level, like the App Center switch below. It writes a marker beside
+  // the source, so nothing reloads and no version is recorded.
+  app.patch("/:id/sidebar", async (c) => {
+    const { projectId, agentId } = scope(c);
+    const body = await readJson(c);
+    if (typeof body.show !== "boolean") throw badRequest("show must be true or false");
+    const workbench = await deps.workbenches
+      .setSidebar(projectId, agentId, c.req.param("id"), body.show)
+      .catch(notFound);
+    return c.json({ workbench } satisfies WorkbenchSidebarSetResponse);
   });
 
   // The App Center switch: member-level, like reload and remove. The answer is the workbench as

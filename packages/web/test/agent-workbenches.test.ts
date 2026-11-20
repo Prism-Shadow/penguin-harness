@@ -3,7 +3,11 @@
  * A workbench's row on the Agent settings Plugins tab's Workbenches sub-page, a handler-only one
  * included (one the user made, so it carries no plugin's mark), with its open and management
  * actions.
- * - "Open" opens the workbench in a new conversation with its owning Agent and tab.
+ * - "Open" opens the app's window over the main area, and its Close comes back to the row; a
+ *   workbench hidden from the sidebar and the App Center opens all the same, from the row's own
+ *   reading of it.
+ * - A workbench without a page shows what its load noticed on its row, every hint in the row's
+ *   hint.
  * - Each row of the More menu does its action: Reload reloads (a failure stays recoverable),
  *   Version history lists the versions and a restore asks first, and Remove asks first — a
  *   cancel writes nothing, a confirmation removes only that workbench and refreshes the list,
@@ -15,11 +19,15 @@
  * - A machine's Agent has the App Center switch too, and it writes on that machine: the App
  *   Center lists a machine's apps, and this is where one taken off it comes back.
  * - The row leads with the workbench's own App Center icon when it has one, else no image.
+ * - The More menu's sidebar row is checked by default; picking it writes the sidebar setting at
+ *   once and nothing of the App Center's, and a refused write puts it back.
  */
 import { createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
+import { ThemeProvider } from "../src/state/theme";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import {
@@ -82,21 +90,32 @@ async function more(item: string) {
   await click(menuItem(item));
 }
 const appCenterSwitch = () => switchNamed(`${en.workbenches.showInAppCenter} Support`);
-it("opens the selected workbench on its owning Agent", async () => {
-  const { router } = await open([
-    {
-      id: "support.main",
-      key: "main",
-      title: "Support",
-      renderer: { iframe: { src: "/support" } },
-    },
-  ]);
-  await click(button(`${en.workbenches.open} Support`));
-  expect(whereIs(router)).toBe("/chat/new");
-  expect(router.state.location.state).toMatchObject({
-    agentId: AGENT_ID,
-    workbench: { projectId: PROJECT_ID, agentId: AGENT_ID, tabId: "support/main" },
+/** The settings page with the shell's windows beside it, as the app mounts them. */
+async function openWithWindows(over: Partial<WorkbenchInfo> = {}) {
+  setActiveStrings(en);
+  const tab = { id: "support.main", key: "main", title: "Support" };
+  agentServer(undefined, {
+    workbenches: [info([{ ...tab, renderer: { iframe: { src: "/support" } } }], over)],
   });
+  const router = await mountAgentApp(h(AgentSettingsPage), {
+    at: `/agents/${AGENT_ID}?tab=workbenches`,
+    extra: [{ path: "/apps", element: h("p", null, "App Center") }],
+    layers: [h(ThemeProvider, null, h(AppCenterWindows))],
+  });
+  await waitFor(() => hasButton(`${en.workbenches.open} Support`));
+  return router;
+}
+const appWindow = () => document.querySelector<HTMLElement>('section[aria-label="Support"]');
+it("opens the app's window over the main area, and its Close comes back to the row", async () => {
+  const router = await openWithWindows();
+  await click(button(`${en.workbenches.open} Support`));
+  expect(whereIs(router)).toBe(`/apps?app=${encodeURIComponent(`${AGENT_ID}/support`)}`);
+  await waitFor(() => appWindow()?.querySelector("iframe") != null);
+  expect(appWindow()!.querySelector("iframe")!.getAttribute("title")).toBe("Support");
+
+  await click(buttonIn(appWindow()!, en.appCenter.windowClose));
+  expect(whereIs(router)).toBe(`/agents/${AGENT_ID}?tab=workbenches`);
+  expect(appWindow()).toBeNull();
 });
 it("reloads from the More menu, keeps a failed reload recoverable, and restores a recorded version after asking", async () => {
   const { server } = await open();
@@ -204,4 +223,49 @@ it("leads the row with the workbench's own App Center icon", async () => {
 it("leads the row with the anvil tile when the workbench names no icon", async () => {
   await open();
   expect(row().querySelector("img")).toBeNull();
+});
+/** The More menu's sidebar row, the menu opened for it. */
+async function sidebarRow() {
+  await click(button(`${en.workbenches.more} Support`));
+  return menuItem(en.workbenches.showInSidebar);
+}
+it("takes the workbench off the sidebar from the More menu, writing nothing of the App Center; a refused write puts it back", async () => {
+  const { server } = await open();
+  const sidebarWrites = () =>
+    server.writes().filter((request) => request.path.endsWith("/sidebar"));
+  expect((await sidebarRow()).getAttribute("aria-checked")).toBe("true");
+  server.refuseNext(500, "internal_error", "Disk full");
+  await click(menuItem(en.workbenches.showInSidebar));
+  await waitFor(() => sidebarWrites().length === 1);
+  const refused = await sidebarRow();
+  await waitFor(() => refused.getAttribute("aria-disabled") !== "true");
+  expect(refused.getAttribute("aria-checked")).toBe("true");
+
+  await click(refused);
+  await waitFor(() => sidebarWrites().length === 2);
+  const written = await sidebarRow();
+  await waitFor(() => written.getAttribute("aria-checked") === "false");
+  expect(sidebarWrites().map((request) => [request.method, request.body])).toEqual([
+    ["PATCH", { show: false }],
+    ["PATCH", { show: false }],
+  ]);
+  expect(server.writes().filter((request) => request.path.endsWith("/app-center"))).toEqual([]);
+  expect(appCenterSwitch().getAttribute("aria-checked")).toBe("false");
+});
+it("opens a workbench hidden from the sidebar and the App Center in its window all the same", async () => {
+  const router = await openWithWindows({ showInSidebar: false, appCenter: { show: false } });
+  await click(button(`${en.workbenches.open} Support`));
+  expect(whereIs(router)).toBe(`/apps?app=${encodeURIComponent(`${AGENT_ID}/support`)}`);
+  await waitFor(() => appWindow()?.querySelector("iframe") != null);
+});
+it("shows what the load of a workbench without a page noticed on its row", async () => {
+  const hints = [
+    "ui/extra.html is not shown by any page: list it in WebModule.sessionTabs",
+    "ui/old.html is not shown by any page: remove it",
+  ];
+  await open([], { hints });
+  const notice = [...document.querySelectorAll<HTMLElement>("[data-tooltip]")].find(
+    (el) => el.textContent === hints[0],
+  );
+  expect(notice?.dataset["tooltip"]).toBe(hints.join("\n"));
 });

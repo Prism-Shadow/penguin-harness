@@ -32,8 +32,9 @@ const OrgProposalsPage = () => null;
  *   company-mode proposals page is drawn by the proposals page, inside company mode and from
  *   the root alike.
  * - The shell receives company's provider and the update badges' owner for the signed-in
- *   session, the five layers in their mount order, and the user event handlers of company, the
- *   built-in browser and schedules in their dispatch order.
+ *   session, the five layers beside the columns in their mount order, the App Center's windows
+ *   over the page area, and the user event handlers of company, the built-in browser and
+ *   schedules in their dispatch order.
  * - The sidebar receives the Project switcher and the session list for development mode,
  *   company's mode with its switcher, channels, roadmaps and desks, the to-do dots on the
  *   anchors that still have a row (Agents, the App Center, the account and the drawer button; the
@@ -91,6 +92,7 @@ import { builtinBrowserUserEvents } from "../src/features/builtin-browser/browse
 import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
 import { SettingsLayer } from "../src/features/settings/settings-layer";
 import { DockScope } from "../src/features/dock/dock-scope";
+import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
 import { PinnedBalanceBadge } from "../src/features/models/group-balance";
 import { ProjectSwitcher } from "../src/features/projects/project-switcher";
 import {
@@ -105,9 +107,9 @@ import { browseFilesAction } from "../src/features/dock/browse-files";
 import type { UserEventHandler } from "../src/state/user-events";
 import { DockModule } from "../src/features/dock/module";
 import { ChatModule } from "../src/features/chat/module";
-import { fileRenderersOf, sessionTabsOf } from "../src/features/chat/deps";
+import { fileRenderersOf } from "../src/features/chat/deps";
 import { AudioFile } from "../src/features/audio/audio-file";
-import { WorkbenchSessionTab } from "../src/features/workbenches/session-tab";
+import { MainSidebarApps } from "../src/features/session-list/main-sidebar-apps";
 
 let pages: readonly WebAppPage[] = [];
 let pageRenderers: readonly Contributed[] = [];
@@ -118,7 +120,6 @@ let sidebarSlots: Readonly<Record<string, readonly Contributed[]>> = {};
 let rows: RowExtensions | null = null;
 let sessionListSection: unknown = null;
 let dockPanels: readonly Contributed[] = [];
-let sessionTabs: readonly Contributed[] = [];
 let fileRenderers: readonly Contributed[] = [];
 
 /** A slot's code halves in the order the shell mounts them. */
@@ -167,7 +168,6 @@ beforeAll(async () => {
   });
   const chat = Object.assign(new ChatModule(), {
     setup(ctx: ClassCtx) {
-      sessionTabs = ctx.contributions.sessionTabs ?? [];
       fileRenderers = ctx.contributions.fileRenderers ?? [];
       ChatModule.prototype.setup.call(chat, ctx);
     },
@@ -332,13 +332,19 @@ describe("the booted shell slots", () => {
     expect(new Set(codes).size).toBe(2);
   });
 
-  it("mounts the five layers in their order, the dock's scope last", () => {
-    expect(codeByOrder(layers)).toEqual([
+  it("mounts five layers beside the columns in their order, the dock's scope last", () => {
+    expect(codeByOrder(layers.filter((layer) => layer.data.area !== "page"))).toEqual([
       TerminalDockRuntime,
       ShortcutRuntime,
       SettingsLayer,
       BuiltinBrowserLayer,
       DockScope,
+    ]);
+  });
+
+  it("mounts the App Center's windows over the page area, so they outlive its page", () => {
+    expect(codeByOrder(layers.filter((layer) => layer.data.area === "page"))).toEqual([
+      AppCenterWindows,
     ]);
   });
 
@@ -348,12 +354,14 @@ describe("the booted shell slots", () => {
 });
 
 describe("the booted sidebar slots", () => {
-  it("development mode: the Project switcher above, the session list below", () => {
+  it("development mode: the Project switcher above, the Agent's apps then the session list below", () => {
     const sections = sectionsOf(sidebarSlots.sections ?? []);
     expect(sectionsIn(sections, "dev", "header").map((s) => s.section.Full)).toEqual([
       ProjectSwitcher,
     ]);
-    expect(sectionsIn(sections, "dev", "body").map((s) => s.section)).toEqual([sessionListSection]);
+    const body = sectionsIn(sections, "dev", "body").map((s) => s.section);
+    expect(body.map((section) => section.Full)).toEqual([MainSidebarApps, expect.any(Function)]);
+    expect(body[1]).toBe(sessionListSection);
   });
 
   it("company contributes its mode, its switcher, its channels, its roadmaps and its desks", () => {
@@ -440,11 +448,6 @@ describe("the booted dock slot", () => {
 });
 
 describe("the booted chat slot", () => {
-  it("the chat page receives the workflow tab strip", () => {
-    expect(sessionTabsOf(sessionTabs).map(({ Tab }) => Tab)).toEqual([WorkbenchSessionTab]);
-    expect(sessionTabs.map((c) => c.from)).toEqual(["WorkbenchesModule"]);
-  });
-
   it("the chat page's file renderer registry holds the audio module's player as `audio`", () => {
     expect([...fileRenderersOf(fileRenderers)]).toEqual([["audio", AudioFile]]);
     expect(fileRenderers.map((c) => c.from)).toEqual(["AudioModule"]);

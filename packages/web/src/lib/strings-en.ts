@@ -1166,14 +1166,8 @@ export const en: Strings = {
     noMatches: "No matching agents.",
     searchAgents: "Search agents",
 
-    tabsLabel: "Chat and workbenches",
-    chatTab: "Chat",
-    brokenMark: "The current files failed to load",
     reload: "Reload",
-    reloading: "Reloading…",
     history: "History",
-    loadError: "Load error",
-    loadingHistory: "Loading history…",
     /** The full-page route while it is still finding out which page it should show. */
     loadingPage: "Opening the page…",
     noHistory: "No versions recorded yet.",
@@ -1184,26 +1178,19 @@ export const en: Strings = {
     restoreConfirm: (revision: string) =>
       `Restore version ${revision}? The workbench's files are replaced by that version and reloaded at once; its data (state.json) stays. Edits that never loaded successfully are lost.`,
     remove: "Remove",
-    fillApp: "Fill the app",
-    /** `palette` is the formatted palette.toggle chord, null while unbound. */
-    fillAppHint: (palette: string | null): string =>
-      palette === null
-        ? "Show this page as the whole app; the command palette is the way to leave"
-        : `Show this page as the whole app; ${palette} opens the command palette to leave`,
-    exitFullPage: "Exit full page (back to workbench)",
+    exitToWindow: "Exit full screen (back to the app window)",
     exitFullPageButton: "Exit full screen",
     exitBallTuck: "Tuck to the edge",
     exitBallShow: "Show the exit button",
     retryHistory: "Retry",
     exitHint: (palette: string | null): string =>
       palette === null
-        ? "Open the command palette to get back to the workbench."
-        : `Press ${palette} for the command palette to get back to the workbench.`,
+        ? "Open the command palette to leave full screen."
+        : `Press ${palette} for the command palette to leave full screen.`,
     noSuchPage: "This workbench does not exist or has no page.",
     removeConfirm:
       "Delete this workbench and its data? Its past versions will no longer be listed.",
     removeYes: "Remove",
-    removing: "Removing…",
     removeNo: "Keep",
     importTitle: "Import workbench",
     importChatTitle: "Recommended: import it by chatting with the agent",
@@ -1257,6 +1244,8 @@ export const en: Strings = {
     /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
     showInAppCenterHint:
       "When on, this workbench appears as an app on the App Center page: every member of the Project sees its icon there and opens it with one click, without starting a chat first. Turning it off only takes the shortcut off the App Center; the workbench, its data and its versions are untouched. Flipping the switch rewrites penguin.appCenter.show in the workbench's package.json and is recorded as a version.",
+    /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
+    showInSidebar: "Show in the sidebar",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "Open",
     /** The row's "⋯" button, which holds its other actions. */
@@ -1265,6 +1254,15 @@ export const en: Strings = {
     historyAction: "Version history",
     /** The full page's way out when it was opened from the App Center. */
     exitToAppCenter: "Exit full page (back to the App Center)",
+  },
+  sidebarApps: {
+    title: "Apps",
+    manage: "Manage apps",
+    open: "Open",
+    removeFromSidebar: "Remove from sidebar",
+    viewInSettings: "View in agent settings",
+    rowName: (title: string, agent: string | null, state: string | null) =>
+      [title, agent === null ? null : `from ${agent}`, state].filter((s) => s !== null).join(", "),
   },
   appCenter: {
     title: "App Center",
@@ -1276,20 +1274,26 @@ export const en: Strings = {
     broken: "Failed to load",
     /** A tile whose app is still being built: it opens once the build is done. */
     building: "Building",
+    /** A tile whose app is running behind the grid, its window minimized. */
+    running: "Running",
     /** A tile's hint: its whole title and the Agent that owns it. */
     tileTip: (title: string, agent: string) => `${title}, from ${agent}`,
     buildingTip: (title: string, agent: string) =>
       `${title}, from ${agent}. Building; it opens once the build is done`,
     failedTip: (title: string, agent: string) =>
       `${title}, from ${agent}. Failed to load; its menu shows the error`,
+    runningTip: (title: string, agent: string) =>
+      `${title}, from ${agent}. Running; a click brings its window back`,
     /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
     tileName: (title: string, agent: string, state: string | null) =>
       state === null ? `${title}, ${agent}` : `${title}, ${agent}, ${state}`,
     systemTileName: (title: string) => `${title}, system app`,
     workbenchesEmptyTitle: "No apps from agents yet",
-    folderTip: (name: string, count: number) => `${name}, ${count} ${count === 1 ? "app" : "apps"}`,
-    folderName: (name: string, count: number) =>
-      `${name}, folder, ${count} ${count === 1 ? "app" : "apps"}`,
+    /** A folder's hint and accessible name: its apps, and how many of them are running. */
+    folderTip: (name: string, count: number, running: number) =>
+      `${name}, ${count} ${count === 1 ? "app" : "apps"}${running > 0 ? `, ${running} running` : ""}`,
+    folderName: (name: string, count: number, running: number) =>
+      `${name}, folder, ${count} ${count === 1 ? "app" : "apps"}${running > 0 ? `, ${running} running` : ""}`,
     /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
     newFolder: "New folder",
     /** The page header's button that opens the new-folder dialog. */
@@ -1303,6 +1307,7 @@ export const en: Strings = {
       removeFromFolder: "Remove from folder",
       removeFromAppCenter: "Remove from the App Center",
       viewInSettings: "View in agent settings",
+      showInSidebar: "Show in the sidebar",
       showError: "Show error",
       rename: "Rename",
       dissolve: "Ungroup",
@@ -1332,7 +1337,8 @@ export const en: Strings = {
     /** A failed tile with no recorded message (an older status file). */
     errorUnknown: "No error message was recorded. Open the app to see how it loads.",
     /** The windowed app's title bar. */
-    windowClose: "Close, back to the App Center",
+    windowMinimize: "Minimize",
+    windowClose: "Close",
     windowFullScreen: "Open full screen",
     /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
     machinesOffline: (names: string) =>

@@ -28,6 +28,7 @@ import type {
   AppCenterLayout,
   AppCenterLayoutResponse,
   AppCenterResponse,
+  AppCenterShortcut,
   BackgroundImagePutResponse,
   BackgroundImageRequest,
   BackgroundImageResponse,
@@ -253,6 +254,9 @@ import type {
   WorkbenchEnabledRequest,
   WorkbenchInfo,
   WorkbenchesResponse,
+  WorkbenchSidebarRequest,
+  WorkbenchSidebarResponse,
+  WorkbenchSidebarSetResponse,
   WorkbenchVersion,
   VersionRollbackResponse,
   VersionResponse,
@@ -2886,7 +2890,7 @@ export const openPrivacySettings = (pane: DesktopPrivacyPane) =>
 export const openDesktopWindow = () =>
   apiFetch<void>("/api/desktop/window", { method: "POST", body: {}, server: null });
 
-// ---- Workbenches (an Agent's own extension packages, served as tabs beside the chat) ----
+// ---- Workbenches (an Agent's own extension packages, opened as its apps) ----
 const workbenchesBase = (projectId: string, agentId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/workbenches`;
 /**
@@ -2898,6 +2902,25 @@ export const getWorkbenches = (projectId: string, agentId: string, machineId: st
   apiFetch<WorkbenchesResponse>(workbenchesBase(projectId, agentId), {
     server: machineId,
   }).then((r) => ({ ...r, workbenches: iconsOn(r.workbenches, machineId) }));
+/**
+ * The rows of the Agent's sidebar list: a shortcut for each workbench that runs, has a tab and is
+ * not hidden from the sidebar, read from the files without compiling anything. A server older
+ * than the setting ignores `view` and answers the full list (`workbenches`): everything it lists
+ * that runs and has a page is shown there.
+ */
+export const getSidebarApps = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null,
+): Promise<{ apps: AppCenterShortcut[] } | { workbenches: WorkbenchesResponse }> =>
+  apiFetch<WorkbenchSidebarResponse | WorkbenchesResponse>(
+    `${workbenchesBase(projectId, agentId)}?view=sidebar`,
+    { server: machineId },
+  ).then((r) =>
+    "apps" in r
+      ? { apps: iconsOn(r.apps, machineId) }
+      : { workbenches: { ...r, workbenches: iconsOn(r.workbenches, machineId) } },
+  );
 /** The Agent-wide switch (Project owner): off, none of the Agent's workbenches runs. */
 export const setWorkbenchesEnabled = (
   projectId: string,
@@ -2989,6 +3012,21 @@ export const removeWorkbench = (
     method: "DELETE",
     server: machineId,
   });
+/**
+ * The sidebar setting (any member): `false` writes the installation's `.hidden-from-sidebar`
+ * marker, `true` removes it. Nothing reloads and no version is recorded.
+ */
+export const setWorkbenchSidebar = (
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  show: boolean,
+  machineId: string | null,
+) =>
+  apiFetch<WorkbenchSidebarSetResponse>(
+    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/sidebar`,
+    { method: "PATCH", body: { show } satisfies WorkbenchSidebarRequest, server: machineId },
+  );
 /** The App Center switch: sets `penguin.appCenter.show` in the workbench's package.json and reloads it. */
 export const setWorkbenchAppCenter = (
   projectId: string,
