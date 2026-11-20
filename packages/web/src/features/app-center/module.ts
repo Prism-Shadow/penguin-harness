@@ -1,11 +1,14 @@
 /**
  * The App Center: the Project's home screen of the system apps and the workbench shortcuts, pinned
  * in the nav by default and lit there on the system apps' pages too, and the windows of the apps
- * opened from it, over the page area so they outlive the page.
+ * opened from it, over the page area so they outlive the page. A system app a server module draws
+ * in an iframe opens in those windows, and its full screen is a page of its own here, outside the
+ * shell like an Agent workbench's full page (system-app-page.tsx).
  */
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import { AppCenterPage } from "./app-center-page";
 import { AppCenterWindows } from "./app-center-windows";
+import { SystemAppPage } from "./system-app-page";
 
 @Module({
   contributes: {
@@ -23,6 +26,18 @@ import { AppCenterWindows } from "./app-center-windows";
         titleZh: "应用中心",
         icon: "tiles",
       },
+      {
+        // Beside an Agent workbench's full page (/app/:projectId/:agentId/:workbenchId), which
+        // its static segment outranks: no Agent but the system Agent has this id.
+        id: "app-center.system-app",
+        key: "system-app",
+        path: "/app/:projectId/system_agent/:appKey",
+        frame: "bare",
+        nav: "none",
+        admin: false,
+        released: true,
+        order: 112,
+      },
     ],
     "WebAppModule.layers": [{ id: "app-center.windows", order: 40, area: "page" }],
   },
@@ -30,4 +45,5 @@ import { AppCenterWindows } from "./app-center-windows";
 export class AppCenterModule {
   @Bind("app-center.page") page = AppCenterPage;
   @Bind("app-center.windows") windows = AppCenterWindows;
+  @Bind("app-center.system-app") systemApp = SystemAppPage;
 }

@@ -6,20 +6,25 @@
  * full page, whose exit comes back to this window); and close, which ends the app. Where the
  * window lives and what minimize keeps is app-center-windows.tsx's.
  *
- * The page itself is the same frame the chat's workbench tabs and the full page show, read the
- * same way (useAppPageTab): it follows the workbench as it reloads, and a workbench removed under
- * it closes the window.
+ * What the window draws depends on how the app is drawn:
+ * - an Agent's workbench: the same frame the chat's workbench tabs and the full page show, read
+ *   the same way (useAppPageTab): it follows the workbench as it reloads, and a workbench removed
+ *   under it closes the window;
+ * - a system app a server module draws in an iframe: that page's document, with its location
+ *   inside it kept in the window's address (frame-app-body.tsx).
  */
 import { AppWindowBar, ICON_SIZE } from "@prismshadow/penguin-ui";
 import type { LocatedShortcut } from "./arrangement";
 import { S } from "../../lib/strings";
 import { useAppPageTab, WorkbenchFrame } from "../workbenches";
 import { TileIcon } from "./app-tile";
+import { FrameAppBody } from "./frame-app-body";
 
 /** The title bar's icon: one rung above a line glyph in the same slot, as an avatar sits. */
 const BAR_ICON_PX = ICON_SIZE.sectionMark;
 
 export function AppCenterWindow({
+  appKey,
   projectId,
   shortcut,
   title,
@@ -27,6 +32,8 @@ export function AppCenterWindow({
   onClose,
   onFullScreen,
 }: {
+  /** The window's key in the address (`?app=`). */
+  appKey: string;
   projectId: string;
   shortcut: LocatedShortcut;
   title: string;
@@ -34,14 +41,7 @@ export function AppCenterWindow({
   onClose: () => void;
   onFullScreen: () => void;
 }) {
-  const { tab, off, failure } = useAppPageTab({
-    projectId,
-    agentId: shortcut.agentId,
-    workbenchId: shortcut.workbenchId,
-    tabKey: shortcut.tab,
-    machineId: shortcut.machineId ?? null,
-    ownEvents: false,
-  });
+  const frame = shortcut.system?.frame;
   return (
     <section aria-label={title} className="flex h-full min-h-0 flex-col">
       <AppWindowBar
@@ -57,26 +57,48 @@ export function AppCenterWindow({
         onClose={onClose}
       />
       <div className="relative min-h-0 flex-1">
-        {tab ? (
-          <WorkbenchFrame
-            projectId={projectId}
-            agentId={shortcut.agentId}
-            tab={tab}
-            bare
-            onChanged={() => undefined}
-            onRemoved={onClose}
-          />
+        {frame !== undefined ? (
+          <FrameAppBody appKey={appKey} projectId={projectId} src={frame} title={title} />
         ) : (
-          <p
-            role="status"
-            className="flex h-full items-center justify-center px-6 text-sm text-fg-muted"
-          >
-            {tab === undefined && failure === null
-              ? S.workbenches.loadingPage
-              : (failure ?? (off ? S.workbenches.offPage : S.workbenches.noSuchPage))}
-          </p>
+          <WorkbenchBody projectId={projectId} shortcut={shortcut} onClose={onClose} />
         )}
       </div>
     </section>
+  );
+}
+
+/** An Agent's workbench page, read as the full page reads it. */
+function WorkbenchBody({
+  projectId,
+  shortcut,
+  onClose,
+}: {
+  projectId: string;
+  shortcut: LocatedShortcut;
+  onClose: () => void;
+}) {
+  const { tab, off, failure } = useAppPageTab({
+    projectId,
+    agentId: shortcut.agentId,
+    workbenchId: shortcut.workbenchId,
+    tabKey: shortcut.tab,
+    machineId: shortcut.machineId ?? null,
+    ownEvents: false,
+  });
+  return tab ? (
+    <WorkbenchFrame
+      projectId={projectId}
+      agentId={shortcut.agentId}
+      tab={tab}
+      bare
+      onChanged={() => undefined}
+      onRemoved={onClose}
+    />
+  ) : (
+    <p role="status" className="flex h-full items-center justify-center px-6 text-sm text-fg-muted">
+      {tab === undefined && failure === null
+        ? S.workbenches.loadingPage
+        : (failure ?? (off ? S.workbenches.offPage : S.workbenches.noSuchPage))}
+    </p>
   );
 }

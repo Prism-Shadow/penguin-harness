@@ -36,6 +36,11 @@ export function rememberSelection(projectId: string, agentId: string): void {
   localStorage.setItem(agentKey(projectId), agentId);
 }
 
+/** Remembers a Project as rememberSelection does, leaving the Agent it had current as it was. */
+export function rememberProject(projectId: string): void {
+  localStorage.setItem(PROJECT_KEY, projectId);
+}
+
 interface ProjectContextValue {
   projects: ProjectSummary[];
   projectsLoading: boolean;

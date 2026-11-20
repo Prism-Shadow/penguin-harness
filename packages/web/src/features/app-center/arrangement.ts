@@ -22,6 +22,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 
 import { locatedAppKey } from "../../lib/app-center-path";
+import type { SystemShortcut } from "../../lib/system-apps";
 
 /** A shortcut with the server it came from: absent `machineId` is this server. */
 export interface LocatedShortcut extends AppCenterShortcut {
@@ -31,10 +32,11 @@ export interface LocatedShortcut extends AppCenterShortcut {
   /** Its machine is out of reach, or did not answer the last read: shown, but not opened. */
   unavailable?: boolean;
   /**
-   * A system app of the system Agent (system-tiles.ts), drawn with its page's glyph: it opens its
-   * page at `path`, never a window, and cannot be removed from the grid.
+   * A system app of the system Agent (system-tiles.ts), drawn with its page's glyph, never removed
+   * from the grid. With a `frame` it opens in the App Center's window like any app, and `path` is
+   * its full page; without one it opens its page at `path`, never a window.
    */
-  system?: { glyph: string };
+  system?: SystemShortcut;
 }
 
 /** An app's key in a layout: `<agentId>/<workbenchId>`, after `<machineId>:` for a machine's. */

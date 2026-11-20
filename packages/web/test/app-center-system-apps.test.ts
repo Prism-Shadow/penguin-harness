@@ -5,8 +5,9 @@
  *
  * - Given no arrangement of the viewer's, the system apps come first, in their order, then the
  *   workbenches; an administrator sees five, a member four (no Machines).
- * - A system tile opens its page at its own address, not a window, and its hint says it is a
- *   system app.
+ * - A system tile of the Web App's own opens its page at its own address, not a window, and its
+ *   hint says it is a system app (a server module's iframe one opens in the window:
+ *   app-center-frame-apps.test.ts).
  * - Its menu only opens and arranges it: no full screen, no Agent settings, no removal. "Move to…"
  *   puts it into a folder, and the stored arrangement names it `system_agent/<page key>`.
  * - Given an arrangement that does not name the system apps, they are appended after it.
@@ -132,7 +133,9 @@ it("shows a member the system apps without Machines", async () => {
 
 it("opens a system app as its own page, and says it is a system app", async () => {
   const { router } = await open();
-  expect(tile(system("models")).dataset["tooltip"]).toBe(en.appCenter.systemTileName("Models"));
+  expect(tile(system("models")).dataset["tooltip"]).toBe(
+    en.appCenter.systemTileName("Models", null),
+  );
   await click(tile(system("models")));
   expect(whereIs(router)).toBe("/models");
 });

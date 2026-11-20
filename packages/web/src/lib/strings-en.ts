@@ -1291,7 +1291,10 @@ export const en: Strings = {
     /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
     tileName: (title: string, agent: string, state: string | null) =>
       state === null ? `${title}, ${agent}` : `${title}, ${agent}, ${state}`,
-    systemTileName: (title: string) => `${title}, system app`,
+    systemTileName: (title: string, state: string | null) =>
+      state === null ? `${title}, system app` : `${title}, system app, ${state}`,
+    systemRunningTip: (title: string) =>
+      `${title}, system app. Running; a click brings its window back`,
     workbenchesEmptyTitle: "No apps from agents yet",
     /** A folder's hint and accessible name: its apps, and how many of them are running. */
     folderTip: (name: string, count: number, running: number) =>
@@ -1343,6 +1346,7 @@ export const en: Strings = {
     windowMinimize: "Minimize",
     windowClose: "Close, back to the App Center",
     windowFullScreen: "Open full screen",
+    exitToWindow: "Exit full page (back to the app window)",
     /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
     machinesOffline: (names: string) =>
       `Currently unreachable: ${names}. Cached items are still visible.`,

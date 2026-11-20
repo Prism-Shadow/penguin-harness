@@ -1,4 +1,4 @@
-import type { WebAppPage } from "./page-table";
+import { routePathOf, type WebAppPage } from "./page-table";
 import { WebAppPagesProvider, useWebAppPages, useWebAppPagesPending } from "./contributions";
 /**
  * Router: /login is public; all other routes go through the RequireAuth guard (redirects to
@@ -114,7 +114,8 @@ function RootFrame() {
 /** Every shell page, the company-mode ones included: a contributed page mounts both under the
  * organization (org-routes.tsx) and from the root, its rooted path (contributions.tsx). They stay
  * below the one data router and its leave guard; keep the router/history identity stable, so a
- * pending URL does not redirect before its page arrives. */
+ * pending URL does not redirect before its page arrives. A page that opens in the App Center's
+ * window answers every address under its path too (page-table.ts `routePathOf`). */
 export function ShellRoutes() {
   const pages = useWebAppPages();
   const pending = useWebAppPagesPending();
@@ -122,8 +123,12 @@ export function ShellRoutes() {
     <Routes>
       {pages
         .filter((page) => page.frame === "shell")
-        .map(({ id, path, Component }) => (
-          <Route key={id} path={path} element={path === "*" && pending ? null : <Component />} />
+        .map((page) => (
+          <Route
+            key={page.id}
+            path={routePathOf(page)}
+            element={page.path === "*" && pending ? null : <page.Component />}
+          />
         ))}
     </Routes>
   );

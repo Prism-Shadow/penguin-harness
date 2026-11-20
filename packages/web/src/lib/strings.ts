@@ -1439,8 +1439,11 @@ export const zh = {
     /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
     tileName: (title: string, agent: string, state: string | null) =>
       state === null ? `${title}，${agent}` : `${title}，${agent}，${state}`,
-    /** A system app's tile (lib/system-apps.ts): its hint and its accessible name. */
-    systemTileName: (title: string) => `${title}，系统应用`,
+    /** A system app's tile (lib/system-apps.ts): its hint, and its accessible name with its state. */
+    systemTileName: (title: string, state: string | null) =>
+      state === null ? `${title}，系统应用` : `${title}，系统应用，${state}`,
+    /** A system app's hint while it runs behind the grid, its window minimized. */
+    systemRunningTip: (title: string) => `${title}，系统应用。运行中，点击恢复窗口`,
     /** Under the system apps' tiles while no Agent has an app here: what a workbench is. */
     workbenchesEmptyTitle: "还没有 Agent 的应用",
     /** A folder's hint and accessible name: its apps, and how many of them are running. */
@@ -1492,6 +1495,8 @@ export const zh = {
     windowMinimize: "最小化",
     windowClose: "关闭，回到应用中心",
     windowFullScreen: "全屏打开",
+    /** A system app's full page: its way out, back to the app's window where the page is now. */
+    exitToWindow: "退出全页模式（回到应用窗口）",
     /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
     machinesOffline: (names: string) => `暂时无法连接：${names}。已缓存的内容仍可查看。`,
     aiCreateTitle: "用 AI 创建应用",
