@@ -366,6 +366,7 @@ export * from "./components/navigation/sub-page-bar/sub-page-bar";
 // grid, the selected carousel and its turn-taking, and a product page's parts.
 export * from "./components/showcase/cover";
 export * from "./components/showcase/cover-card";
+export * from "./components/showcase/showcase-layout-toggle";
 export * from "./components/showcase/carousel-rotation";
 export * from "./components/showcase/showcase-carousel";
 export * from "./components/showcase/product-page";

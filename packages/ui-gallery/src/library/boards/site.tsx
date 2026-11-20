@@ -2,8 +2,9 @@
  * 公开站点: what the landing page and the docs share from `@prismshadow/penguin-ui/site` — the
  * navigation bar's More menu and the bar's pages as the phone menu lists them, the footer in both
  * shapes, the code card and the copy button's looks, the category pills, the data pages' controls
- * (back link, view switch, toolbar menu buttons, data table), the plugin market's cover card,
- * selected carousel and product hero (the showcase family, as `/plugins` renders it), an
+ * (back link, view switch, toolbar menu buttons, data table), the plugin market's cover card
+ * with its cards / list switch, selected carousel and product hero (the showcase family, as
+ * `/plugins` renders it), an
  * article in the shared prose with its contents beside it, the docs sidebar, the search dialog
  * and the external-link confirmation. The site's own palette (site.css), not the theme under
  * test: a public page looks the same whatever the gallery previews.
@@ -16,6 +17,7 @@ import {
   ProductHero,
   ShowcaseCarousel,
   ShowcaseGrid,
+  ShowcaseLayoutToggle,
   extractToc,
   highlightSiteCode,
   ImageIcon,
@@ -43,6 +45,7 @@ import {
   SiteToc,
   currentSearchShortcutLabel,
   useActiveTocEntry,
+  useShowcaseLayout,
 } from "@prismshadow/penguin-ui/site";
 import type {
   SiteLinkOverride,
@@ -117,6 +120,7 @@ export function SiteBoard() {
   const sc = S.library.showcase;
   const [searchOpen, setSearchOpen] = useState(false);
   const [view, setView] = useState<(typeof VIEWS)[number]>("table");
+  const [layout, setLayout] = useShowcaseLayout("penguin.gallery.siteShowcaseLayout");
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set([t.dataRows[0]![0]]));
   const togglePicked = (name: string) =>
     setPicked((current) => {
@@ -313,7 +317,15 @@ export function SiteBoard() {
             eyebrow={sc.eyebrow}
             labels={sc.carouselLabels}
           />
-          <ShowcaseGrid>
+          {/* The site mounts no tooltip layer: the switch's words show as native titles. */}
+          <ShowcaseLayoutToggle
+            className="justify-self-end"
+            nativeTooltips
+            value={layout}
+            onChange={setLayout}
+            labels={{ group: sc.layoutLabel, cards: sc.cardView, list: sc.listView }}
+          />
+          <ShowcaseGrid layout={layout}>
             <CoverCard
               href="#"
               onOpen={stay}

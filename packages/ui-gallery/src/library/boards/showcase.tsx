@@ -5,7 +5,9 @@
  * a picture still on its way (the field in the picture's tone), one that loaded, one that failed
  * (the generated cover takes over); cover cards in their grid: short words, overlong words with
  * the machine they came from, the full foot, a foot without controls, the Web App market's card
- * (its version chip and its bar of text actions), and the placeholder; the selected carousel with three
+ * (its version chip and its bar of text actions), and the placeholder, then four market cards as
+ * the Web App lays them out — all switched between cards and the list by the layout toggle (in
+ * the list, a market card is one row, two abreast where two fit); the selected carousel with three
  * slides, with its thumbnail rail and with its controls alone; and a product page's parts. The
  * public sites' rendering of the same modules is the 公开站点 board's.
  *
@@ -33,10 +35,10 @@ import {
   ProductParts,
   ProductPrompt,
   ProductSection,
-  Segmented,
   useShowcaseLayout,
   ShowcaseCarousel,
   ShowcaseGrid,
+  ShowcaseLayoutToggle,
   StatusMark,
 } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
@@ -55,6 +57,46 @@ import {
 
 const BASE = import.meta.env.BASE_URL;
 const PACKAGE = "@penguinharness/penguin-support";
+
+/** The market specimen: two plugins not installed anywhere, two installed on some Agents. */
+const MARKET_CARDS = [
+  {
+    seed: "use-bento-slides",
+    hue: "orange",
+    svg: ICONS_BY_PLUGIN.bento,
+    title: "barTitle",
+    description: "barDescription",
+    version: "v0.3.1",
+    agents: 0,
+  },
+  {
+    seed: "goal",
+    hue: "green",
+    svg: ICONS_BY_PLUGIN.goal,
+    title: "shortTitle",
+    description: "shortDescription",
+    version: "v0.2.18",
+    agents: 2,
+  },
+  {
+    seed: "penguin-support",
+    hue: "teal",
+    svg: ICONS_BY_PLUGIN.support,
+    title: "fullTitle",
+    description: "fullDescription",
+    version: "v0.2.18",
+    agents: 1,
+  },
+  {
+    seed: "data-analysis",
+    hue: "slate",
+    svg: HUE_PLUGINS.slate.svg,
+    title: "plainTitle",
+    description: "plainDescription",
+    version: "v0.2.18",
+    agents: 0,
+  },
+] as const;
 
 function Specimen({ caption, children }: { caption: string; children: ReactNode }) {
   return (
@@ -157,14 +199,10 @@ export function ShowcaseBoard() {
 
       <BoardGroup title={t.cards} aside={t.cardsHint}>
         <div className="mb-3 flex justify-end">
-          <Segmented
-            cols={2}
+          <ShowcaseLayoutToggle
             value={layout}
             onChange={setLayout}
-            options={[
-              { value: "cards", label: t.cardView },
-              { value: "list", label: t.listView },
-            ]}
+            labels={{ group: t.layoutLabel, cards: t.cardView, list: t.listView }}
           />
         </div>
         <ShowcaseGrid layout={layout}>
@@ -238,12 +276,50 @@ export function ShowcaseBoard() {
             description={t.barDescription}
             version="v0.3.1"
             bar={[
-              { key: "install", label: t.barInstall, note: t.barInstallNote },
+              { key: "install", label: t.barInstall },
               { key: "quick", label: t.quickStart, hint: t.barQuickHint, disabled: true },
             ]}
           />
           <CoverCardSkeleton />
         </ShowcaseGrid>
+        <div className="mt-6">
+          <Specimen caption={t.marketCaption}>
+            <ShowcaseGrid layout={layout} data-testid="market-grid">
+              {MARKET_CARDS.map((card) => (
+                <CoverCard
+                  key={card.seed}
+                  data-plugin={card.seed}
+                  cover={
+                    layout === "list" ? (
+                      <LeadTile svg={card.svg} />
+                    ) : (
+                      <Cover
+                        seed={card.seed}
+                        hue={card.hue}
+                        icon={plugIcon(card.svg)}
+                        logo={LOGO}
+                      />
+                    )
+                  }
+                  title={t[card.title]}
+                  description={t[card.description]}
+                  version={card.version}
+                  bar={[
+                    {
+                      key: "install",
+                      label: card.agents > 0 ? t.barInstalledOn(card.agents) : t.barInstall,
+                    },
+                    {
+                      key: "quick",
+                      label: t.quickStart,
+                      ...(card.agents > 0 ? {} : { hint: t.barQuickHint, disabled: true }),
+                    },
+                  ]}
+                />
+              ))}
+            </ShowcaseGrid>
+          </Specimen>
+        </div>
       </BoardGroup>
 
       <BoardGroup title={t.carousel} aside={t.carouselHint}>
