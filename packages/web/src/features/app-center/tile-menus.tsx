@@ -47,6 +47,8 @@ export interface GridActions {
   /** Shows a new arrangement and stores it. */
   arrange: (next: GridItem[]) => void;
   open: (app: GridApp) => void;
+  /** The app is running, its window minimized: Open brings that window back, even mid-build. */
+  isRunning: (app: GridApp) => boolean;
   openFullScreen: (app: GridApp) => void;
   showError: (app: GridApp) => void;
   viewInSettings: (app: GridApp) => void;
@@ -186,7 +188,7 @@ export function AppMenu({
       <MenuItem
         glyph={ICONS.appWindow}
         label={S.appCenter.menu.open}
-        disabled={building || app.shortcut.unavailable}
+        disabled={(building && !actions.isRunning(app)) || app.shortcut.unavailable}
         onSelect={act(close, () => actions.open(app))}
       />
       {!system && (
