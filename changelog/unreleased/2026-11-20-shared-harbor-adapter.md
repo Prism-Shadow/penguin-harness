@@ -7,7 +7,7 @@
 
 [中文版](2026-11-20-shared-harbor-adapter.zh.md)
 
-Agent Evaluation can run Harbor tasks from a data repository with the shared Penguin adapter pinned separately.
+Agent Evaluation can run Harbor tasks from a data repository with the shared Penguin adapter pinned separately. Package imports preserve the external data repository link in `data_url`.
 
 ## Compatibility
 
