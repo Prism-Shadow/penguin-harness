@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feature
 - **Scope:** `server`
+- **PR:** [#1664](https://github.com/Prism-Shadow/penguin-harness/pull/1664)
 
 [English](2026-11-19-plugin-install-without-npm.md)
 
