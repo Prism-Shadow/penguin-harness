@@ -103,7 +103,15 @@ check(
   status.brief,
 );
 console.log(
-  `     ready=${status.json?.data?.penguin?.ready} preconditions=${JSON.stringify(status.json?.data?.penguin?.preconditions)}`,
+  `     ready=${status.json?.data?.penguin?.ready} checks=${JSON.stringify(status.json?.data?.penguin?.checks)}`,
+);
+const desktop = status.json?.data?.penguin?.desktop;
+check(
+  "status reports the desktop now: displays, focused window, the user's idle seconds or why unknown",
+  desktop !== undefined &&
+    (typeof desktop.userIdleSeconds === "number" ||
+      (desktop.userIdleSeconds === null && typeof desktop.idleUnknown === "string")),
+  JSON.stringify(desktop).slice(0, 300),
 );
 const version = await computer(["version"]);
 check("version", version.code === 0 && version.json?.data?.version === "1.3.1", version.brief);

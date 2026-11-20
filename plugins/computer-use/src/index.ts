@@ -138,10 +138,20 @@ const probes = new Map<string, Probe>();
             title: "Allow physical input",
             titleZh: "允许物理输入",
             description:
-              "The real mouse and keyboard: --headed, mouse-*, hover, drag, double-click, focus and the scroll wheel. They move the pointer and take focus, competing with the person at this computer.",
+              "The real mouse and keyboard: --headed, mouse-*, hover, drag, double-click, focus and the scroll wheel. They move the user's pointer and take keyboard focus away from whatever the user is doing. Off, Agents act only through each element's accessibility API, which leaves the pointer and focus alone but cannot drive every app (some Electron and canvas apps need real input).",
             descriptionZh:
-              "真实的鼠标与键盘：--headed、mouse-*、hover、drag、double-click、focus 与滚轮。它们会移动指针、抢走焦点，与使用这台电脑的人争抢输入。",
+              "真实的鼠标与键盘：--headed、mouse-*、hover、drag、double-click、focus 与滚轮。它们会移动用户的指针，并把键盘焦点从用户正在做的事情上抢走。关闭时，Agent 只经各元素的无障碍接口操作，不碰指针与焦点，但并非每个应用都能这样驱动（部分 Electron 与画布类应用需要真实输入）。",
             default: false,
+          },
+          pauseWhileUserActive: {
+            type: "boolean",
+            title: "Pause while the user is active",
+            titleZh: "用户操作时暂停",
+            description:
+              "Commands that act on the desktop are refused (user_active) while the person at this computer is using the keyboard or mouse — their last input under 3 seconds ago — so an Agent never works the same window at the same time. Where the input idle time cannot be read (Wayland, a machine without the readers) nothing pauses, and the card says so.",
+            descriptionZh:
+              "当使用这台电脑的人正在用键盘或鼠标时（最近一次输入不到 3 秒），作用于桌面的命令一律被拒绝（user_active），Agent 因此不会与人同时操作同一个窗口。读不到输入空闲时间的地方（Wayland、缺少读取工具的机器）不会暂停，卡片上会注明。",
+            default: true,
           },
           clipboardRead: {
             type: "boolean",
@@ -200,6 +210,9 @@ export class ComputerUse {
     const root = this.server.root;
     const config = this.config;
     const { service } = ready(root, config);
+    // Disposed — the plugin removed, or this generation replaced — the install in flight stops
+    // unless the next generation takes the service at once (ComputerUseService.retain).
+    ctx.effect(service.retain());
     // A save of the card applies at once: turning the plugin on installs agent-desktop, a program
     // path is read again.
     ctx.effect(config.watch(GROUP, () => void service.start()));
@@ -218,9 +231,10 @@ export class ComputerUseStatus {
   @Use() private readonly server!: ComputerUseServerConfig;
   @Bind("computer-use.status") status!: SettingsGroupStatus;
 
-  setup() {
+  setup(ctx: ClassCtx) {
     const root = this.server.root;
     const config = this.config;
+    ctx.effect(ready(root, config).service.retain());
     this.status = computerUseStatus(() => ready(root, config));
   }
 }

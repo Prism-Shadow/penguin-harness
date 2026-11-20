@@ -14,7 +14,10 @@ import path from "node:path";
 import { agentDesktopEnv } from "./env.js";
 import {
   installAgentDesktop,
+  installDirOf,
+  InstallStoppedError,
   readInstalled,
+  sweepLeftovers,
   targetPinOf,
   UnsupportedPlatformError,
 } from "./install.js";
@@ -27,7 +30,9 @@ import { runAgentDesktop } from "./runner.js";
 import type { AgentDesktopProgram, RunOutput } from "./runner.js";
 import { SelfTree } from "./self-target.js";
 import { mkdirPrivate, stateRootOf, sweepStateDirs } from "./state.js";
-import { settingsOf, registryOf } from "./settings.js";
+import { MIRRORS_GROUP, SOURCES_GROUP, registriesOf, settingsOf } from "./settings.js";
+import { readIdle } from "./idle.js";
+import type { IdleReading } from "./idle.js";
 import type { ComputerUseSettings } from "./settings.js";
 
 /** Where agent-desktop stands on this server. */
@@ -73,6 +78,12 @@ export interface ServiceOptions {
   program?: AgentDesktopProgram;
   /** Linux: the glibc version, or null for none (musl); read from Node's report by default. */
   glibc?: string | null;
+  /** Tests: the input idle time instead of the system's own reading (idle.ts). */
+  idle?: () => Promise<IdleReading>;
+  /** Tests: how long a module's release waits before it stops the install (RELEASE_GRACE_MS). */
+  releaseGraceMs?: number;
+  /** Tests: one address's idle timeout and the whole install's budget (install.ts). */
+  installTimeouts?: { idleMs?: number; totalMs?: number };
   /** Tests: where `launch` looks for desktop entries and programs, and what counts as the system's. */
   launch?: {
     dataDirs?: string[];
@@ -112,6 +123,17 @@ export interface SettingsReaders {
   get(name: string): Record<string, unknown>;
 }
 
+/** A module's release stops the install only if no module takes the service again this soon. */
+const RELEASE_GRACE_MS = 5_000;
+/** Input this close after the plugin's own input ended still counts as its own. */
+const OWN_INPUT_SLACK_MS = 750;
+
+/** What to do when the download fails: the settings that decide where it comes from. */
+export const INSTALL_NEXT_STEP = {
+  en: 'An administrator can choose another npm registry under Settings → Plugins → Plugin Sources (or add the "npm registry mirror" under Plugin mirrors) and select Retry on the Computer Use card, or give an agent-desktop installed by other means in the card\'s advanced "agent-desktop program path".',
+  zh: "管理员可以在 设置 › 插件 › 插件源 中换一个 npm registry（或在「插件镜像」中加入「npm registry 镜像」），然后在电脑操作卡片上点「重试」；也可以在卡片的高级选项「agent-desktop 程序路径」中填写以其他方式安装的 agent-desktop。",
+};
+
 /** An install that failed is tried again on demand after this long. */
 const RETRY_AFTER_MS = 10 * 60 * 1000;
 const SWEEP_EVERY_MS = 60 * 60 * 1000;
@@ -128,6 +150,16 @@ export class ComputerUseService {
   private readonly log: (line: string) => void;
   private readonly testProgram: AgentDesktopProgram | undefined;
   private readonly launchOpts: ServiceOptions["launch"];
+  private readonly idleImpl: ServiceOptions["idle"];
+  private readonly releaseGraceMs: number;
+  private readonly installTimeouts: ServiceOptions["installTimeouts"];
+  /** The install in flight: what stops it (stop()). */
+  private installAbort: AbortController | null = null;
+  /** Modules of this data root holding the service (retain); none, and it stops after a grace. */
+  private holders = 0;
+  private releaseTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Until when input on this desktop may be this plugin's own (a press, physical input), ms. */
+  private ownInputUntil = 0;
   private readers: SettingsReaders | null = null;
   private current: InstallState = { kind: "missing" };
   private installing: Promise<void> | null = null;
@@ -147,6 +179,9 @@ export class ComputerUseService {
     this.log = opts.log ?? ((line) => console.warn(line));
     this.testProgram = opts.program;
     this.launchOpts = opts.launch;
+    this.idleImpl = opts.idle;
+    this.releaseGraceMs = opts.releaseGraceMs ?? RELEASE_GRACE_MS;
+    this.installTimeouts = opts.installTimeouts;
     const target = targetKey(this.platform, this.arch);
     if (this.pin.targets[target] === undefined) {
       this.current = { kind: "unsupported", target };
@@ -165,8 +200,63 @@ export class ComputerUseService {
     return settingsOf(this.readers?.get("computer-use") ?? {});
   }
 
-  registry(): string {
-    return registryOf(this.readers?.get("plugin-sources") ?? {}, this.env);
+  /** Where agent-desktop is downloaded from, in the order tried (settings.ts registriesOf). */
+  registries(): string[] {
+    return registriesOf(
+      this.readers?.get(SOURCES_GROUP) ?? {},
+      this.readers?.get(MIRRORS_GROUP) ?? {},
+      this.env,
+    );
+  }
+
+  /**
+   * A module of this data root starts using the service; the function it gets back releases it.
+   * Once no module holds it — the plugin removed, its modules disposed — and none takes it again
+   * within the grace (a re-assembly disposes one generation and sets up the next), the install
+   * in flight is stopped and its staging removed.
+   */
+  retain(): () => void {
+    this.holders += 1;
+    if (this.releaseTimer !== null) {
+      clearTimeout(this.releaseTimer);
+      this.releaseTimer = null;
+    }
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.holders -= 1;
+      if (this.holders > 0) return;
+      this.releaseTimer = setTimeout(() => {
+        this.releaseTimer = null;
+        if (this.holders === 0) void this.stop();
+      }, this.releaseGraceMs);
+      this.releaseTimer.unref?.();
+    };
+  }
+
+  /** Stops the install in flight, if any, and removes what it staged. */
+  async stop(): Promise<void> {
+    const running = this.installing;
+    this.installAbort?.abort();
+    if (running !== null) await running.catch(() => {});
+    await sweepLeftovers(installDirOf(this.root, this.pin));
+  }
+
+  /** The person at this computer's input idle time, or why it is unknown (idle.ts). */
+  idle(): Promise<IdleReading> {
+    if (this.idleImpl !== undefined) return this.idleImpl();
+    return readIdle({ platform: this.platform, env: this.env });
+  }
+
+  /** Input this plugin itself sent (a press, physical input) ended now: idle time it resets is ours. */
+  noteOwnInput(at: number = this.now()): void {
+    this.ownInputUntil = Math.max(this.ownInputUntil, at);
+  }
+
+  /** Whether input `secondsAgo` ago may have been this plugin's own (within a short slack). */
+  ownInputAt(secondsAgo: number, at: number = this.now()): boolean {
+    return at - secondsAgo * 1000 <= this.ownInputUntil + OWN_INPUT_SLACK_MS;
   }
 
   state(): InstallState {
@@ -267,11 +357,20 @@ export class ComputerUseService {
     }
     const startedAt = this.now();
     this.current = { kind: "installing", progress: null, startedAt };
+    const abort = new AbortController();
+    this.installAbort = abort;
     this.installing = (async () => {
       try {
         const installed = await installAgentDesktop({
           root: this.root,
-          registry: this.registry(),
+          registries: this.registries(),
+          signal: abort.signal,
+          ...(this.installTimeouts?.idleMs !== undefined
+            ? { idleTimeoutMs: this.installTimeouts.idleMs }
+            : {}),
+          ...(this.installTimeouts?.totalMs !== undefined
+            ? { totalTimeoutMs: this.installTimeouts.totalMs }
+            : {}),
           platform: this.platform,
           arch: this.arch,
           pin: this.pin,
@@ -283,7 +382,10 @@ export class ComputerUseService {
         this.current = { kind: "installed", installed };
         this.log(`[computer-use] agent-desktop ${installed.version} installed in ${installed.dir}`);
       } catch (err) {
-        if (err instanceof UnsupportedPlatformError) {
+        if (err instanceof InstallStoppedError) {
+          this.current = { kind: "missing" };
+          this.log("[computer-use] installing agent-desktop stopped");
+        } else if (err instanceof UnsupportedPlatformError) {
           this.current = { kind: "unsupported", target: err.target };
         } else {
           const message = err instanceof Error ? err.message : String(err);
@@ -292,6 +394,7 @@ export class ComputerUseService {
         }
       } finally {
         this.installing = null;
+        if (this.installAbort === abort) this.installAbort = null;
       }
     })();
     return this.installing;
@@ -346,7 +449,7 @@ export class ComputerUseService {
         return {
           ok: false,
           code: "install_failed",
-          message: `agent-desktop could not be installed (${state.message}); an administrator retries it in Settings → Plugins → Computer Use`,
+          message: `agent-desktop could not be installed (${state.message}). ${INSTALL_NEXT_STEP.en}`,
         };
       case "missing":
         void this.install();

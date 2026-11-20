@@ -27,6 +27,14 @@
  * - Given two Sessions, each gets its own private state directory, so neither sees the other's refs;
  *   agent-desktop runs in the user's home, so an app it launches never holds that directory open.
  * - Given no arguments, the help prints in the caller's language.
+ * - Given the person at this computer used the keyboard or mouse under 3 s ago, a command that
+ *   changes the desktop is refused with user_active and nothing runs — observation still runs,
+ *   input the plugin itself just sent does not count, an unknown idle time pauses nothing, and an
+ *   administrator can turn the pause off.
+ * - Given a press aimed at a window that is not the focused one, it is refused with
+ *   window_not_focused naming the focus-window to run, and no key is sent; focused, it runs.
+ * - Given status, it reports the install apart from the checks, and the desktop now: the focused
+ *   window, the displays and the user's idle seconds.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -291,6 +299,114 @@ describe("penguin computer", () => {
       },
     });
     expect(typeof run.json!.data.penguin.plugin).toBe("string");
+  });
+
+  it("pauses commands that change the desktop while the user is active, observation aside", async () => {
+    const fake = await fakeAgentDesktop({
+      "list-apps": { stdout: ok("list-apps", { apps: [{ name: "Gedit", pid: 800 }] }) },
+    });
+    let idle: number | null = 1.2;
+    const t = await testService({ program: fake.program, idleSeconds: () => idle });
+    const click = await runComputer(t, ["click", "@s1:e2"]);
+    expect(click.exitCode).toBe(1);
+    expect(click.stderr).toMatch(
+      /^error: user_active: the user is using the computer — their last keyboard or mouse input was 1\.2 s ago\. Pause and ask them/,
+    );
+    expect((await runComputer(t, ["snapshot", "--app", "Gedit"])).exitCode).toBe(0);
+    expect(fake.calls().map((c) => c.argv[0])).toEqual(["list-apps", "snapshot"]);
+    // Unknown here: nothing pauses.
+    idle = null;
+    expect((await runComputer(t, ["click", "@s1:e2"])).exitCode).toBe(0);
+    // Turned off by an administrator: nothing pauses.
+    idle = 0.5;
+    t.reader.docs["computer-use"] = { pauseWhileUserActive: false };
+    expect((await runComputer(t, ["click", "@s1:e2"])).exitCode).toBe(0);
+  });
+
+  it("does not take the plugin's own keystrokes for the user's", async () => {
+    const fake = await fakeAgentDesktop({
+      "list-apps": { stdout: ok("list-apps", { apps: [{ name: "Gedit", pid: 800 }] }) },
+      "list-windows": {
+        stdout: ok("list-windows", [{ id: "w-1", pid: 800, app_name: "Gedit", is_focused: true }]),
+      },
+    });
+    let idle = 30;
+    const t = await testService({ program: fake.program, idleSeconds: () => idle });
+    expect((await runComputer(t, ["press", "ctrl+s", "--app", "Gedit"])).exitCode).toBe(0);
+    // The press reset the system's idle time just now: the next command is not paused for it.
+    idle = 0.2;
+    expect((await runComputer(t, ["click", "@s1:e2"])).exitCode).toBe(0);
+  });
+
+  it("refuses keystrokes to a window that is not focused, naming the focus-window to run", async () => {
+    const fake = await fakeAgentDesktop({
+      "list-apps": {
+        stdout: ok("list-apps", {
+          apps: [
+            { name: "QQ", pid: 800 },
+            { name: "Gedit", pid: 900 },
+          ],
+        }),
+      },
+      "list-windows": {
+        stdout: ok("list-windows", [
+          { id: "w-qq", pid: 800, app_name: "QQ", is_focused: false },
+          { id: "w-gedit", pid: 900, app_name: "Gedit", is_focused: true },
+        ]),
+      },
+    });
+    const t = await testService({ program: fake.program });
+    const press = await runComputer(t, ["press", "return", "--app", "QQ"]);
+    expect(press.exitCode).toBe(1);
+    expect(press.stderr).toMatch(
+      /^error: window_not_focused: QQ's window w-qq is not the focused window, so its keystrokes would go to another window/,
+    );
+    expect(press.stderr).toContain("penguin computer focus-window --window-id w-qq");
+    const byId = await runComputer(t, ["press", "return", "--window-id", "w-qq"]);
+    expect(byId.stderr).toMatch(
+      /^error: window_not_focused: window w-qq is not the focused window/,
+    );
+    expect(fake.calls().filter((c) => c.argv[0] === "press")).toEqual([]);
+    expect((await runComputer(t, ["press", "ctrl+s", "--app", "Gedit"])).exitCode).toBe(0);
+    expect(fake.calls().filter((c) => c.argv[0] === "press")).toHaveLength(1);
+  });
+
+  it("reports the install, the checks and the desktop now in status", async () => {
+    const fake = await fakeAgentDesktop({
+      status: {
+        stdout: ok("status", { permissions: { accessibility: { state: "granted" } } }),
+      },
+      "list-windows": {
+        stdout: ok("list-windows", [
+          { id: "w-1", pid: 800, app_name: "Gedit", title: "notes", is_focused: true },
+        ]),
+      },
+      "list-displays": {
+        stdout: ok("list-displays", [
+          { id: "1", bounds: { x: 0, y: 0, width: 2880, height: 1864 }, is_primary: true },
+          { id: "2", bounds: { x: 2880, y: 0, width: 2880, height: 5120 } },
+        ]),
+      },
+    });
+    const t = await testService({ program: fake.program, idleSeconds: 42.34, platform: "linux" });
+    const run = await runComputer(t, ["status"]);
+    const penguin = run.json!.data.penguin;
+    expect(penguin.install).toMatchObject({
+      state: expect.any(String),
+      pinned: expect.any(String),
+    });
+    expect(penguin.checks.map((c: { id: string }) => c.id)).toContain("idle");
+    expect(penguin.desktop).toEqual({
+      focused: { app: "Gedit", windowId: "w-1", title: "notes", pid: 800 },
+      displays: [
+        { id: "1", bounds: { x: 0, y: 0, width: 2880, height: 1864 }, is_primary: true },
+        { id: "2", bounds: { x: 2880, y: 0, width: 2880, height: 5120 } },
+      ],
+      userIdleSeconds: 42.3,
+      userActive: false,
+      idleSource: "XScreenSaver",
+    });
+    expect(penguin.settings.pauseWhileUserActive).toBe(true);
   });
 
   it("answers status with exit code 1 and the reason when Computer Use is off", async () => {

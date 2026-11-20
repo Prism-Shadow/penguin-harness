@@ -1,7 +1,8 @@
 /**
  * agent-desktop, installed by this plugin rather than by npm (see pin.ts for why).
  *
- * The install downloads the pinned tarball from the npm registry the server installs plugins from,
+ * The install downloads the pinned tarball from the npm registry the server installs plugins from
+ * — then, when that fails, from the next address (the npm registry mirror of Plugin Sources) —
  * refuses it unless it matches the pinned sha512, keeps only this machine's program and helper —
  * each checked against its pinned sha256 — and writes them, through a staging directory renamed
  * into place, to `<data root>/cache/computer-use/agent-desktop/<version>/`:
@@ -16,6 +17,11 @@
  * writable by group or others (agent-desktop refuses a helper that is, and a umask of 002 made
  * the clipboard fail). macOS also refuses a helper below a directory other users can write; that
  * is reported, not changed, since the directory is not this plugin's.
+ *
+ * A slow link is not a failure: an address is given up only when no byte arrives for
+ * IDLE_TIMEOUT_MS (or it answers an error), and the whole install only after TOTAL_TIMEOUT_MS.
+ * An install can be stopped (`signal`: the module was disposed, the plugin removed); it then ends
+ * at once and leaves no staging directory behind.
  *
  * What is installed is checked again before a process first runs it (readInstalled): the digests
  * still match, the modes are still private. A platform outside the six targets is not a failure:
@@ -48,15 +54,31 @@ export type InstallProgress =
 export interface InstallOptions {
   /** The server's data root. */
   root: string;
-  /** The npm registry's base URL. */
-  registry: string;
+  /** The npm registries' base URLs, in the order tried (Plugin Sources, then its mirror). */
+  registries: readonly string[];
   fetch?: typeof fetch;
   platform?: NodeJS.Platform;
   arch?: string;
   pin?: AgentDesktopPin;
   progress?: (at: InstallProgress) => void;
-  /** The whole download's budget. */
-  timeoutMs?: number;
+  /** How long one address may send nothing before the next is tried. */
+  idleTimeoutMs?: number;
+  /** The whole install's budget, over every address. */
+  totalTimeoutMs?: number;
+  /** Stops the install: it ends at once with InstallStoppedError, and leaves nothing staged. */
+  signal?: AbortSignal;
+}
+
+/** No byte for this long gives an address up (a slow link that still sends keeps going). */
+export const IDLE_TIMEOUT_MS = 30_000;
+/** The whole install's budget: generous, since ~16 MB at a few hundred KB/s takes minutes. */
+export const TOTAL_TIMEOUT_MS = 30 * 60_000;
+
+/** The install was stopped (its module disposed, the plugin removed), not failed. */
+export class InstallStoppedError extends Error {
+  constructor() {
+    super("the install was stopped");
+  }
 }
 
 /** This machine is not one agent-desktop ships a program for. */
@@ -182,58 +204,136 @@ export async function readInstalled(
   return installed;
 }
 
-/** The tarball's bytes, checked against the pinned integrity as they arrive. */
+/**
+ * The tarball's bytes from the first address that sends all of them and matches the pinned
+ * integrity, trying `registries` in order; the error names what each address did.
+ */
 async function download(opts: InstallOptions, pin: AgentDesktopPin): Promise<Buffer> {
-  const url = tarballUrl(opts.registry, pin);
-  const doFetch = opts.fetch ?? fetch;
-  const signal = AbortSignal.timeout(opts.timeoutMs ?? 180_000);
-  let response: Response;
-  try {
-    response = await doFetch(url, {
-      signal,
-      headers: { Accept: "application/octet-stream", "User-Agent": "penguinharness-computer-use" },
-    });
-  } catch (err) {
-    throw new Error(`could not reach ${url}: ${err instanceof Error ? err.message : String(err)}`);
-  }
-  if (!response.ok || response.body === null) {
-    throw new Error(`${url} answered ${response.status}`);
-  }
-  const total = Number(response.headers.get("content-length")) || pin.size;
-  const hash = createHash("sha512");
-  const chunks: Buffer[] = [];
-  let received = 0;
-  const reader = response.body.getReader();
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      received += value.byteLength;
-      if (received > pin.size * 2) {
-        throw new Error(`${url} sent more than twice the ${pin.size} bytes the pin expects`);
-      }
-      hash.update(value);
-      chunks.push(Buffer.from(value));
-      opts.progress?.({ step: "download", received, total });
+  const deadline = AbortSignal.timeout(opts.totalTimeoutMs ?? TOTAL_TIMEOUT_MS);
+  const failures: string[] = [];
+  for (const registry of opts.registries) {
+    if (opts.signal?.aborted) throw new InstallStoppedError();
+    try {
+      return await downloadFrom(registry, opts, pin, deadline);
+    } catch (err) {
+      if (err instanceof InstallStoppedError) throw err;
+      const host = new URL(tarballUrl(registry, pin)).host;
+      failures.push(`${host}: ${err instanceof Error ? err.message : String(err)}`);
+      if (deadline.aborted) break;
     }
+  }
+  throw new Error(
+    `${pin.name} ${pin.version} could not be downloaded (${failures.join("; ") || "no npm registry to try"})`,
+  );
+}
+
+/** A span for a message: seconds under a minute, minutes above. */
+function duration(ms: number): string {
+  if (ms >= 60_000) return `${Math.round(ms / 60_000)} min`;
+  return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
+}
+
+/** One address: given up after `idleTimeoutMs` without a byte, or at the overall deadline. */
+async function downloadFrom(
+  registry: string,
+  opts: InstallOptions,
+  pin: AgentDesktopPin,
+  deadline: AbortSignal,
+): Promise<Buffer> {
+  const url = tarballUrl(registry, pin);
+  const doFetch = opts.fetch ?? fetch;
+  const idleMs = opts.idleTimeoutMs ?? IDLE_TIMEOUT_MS;
+  const attempt = new AbortController();
+  let why: "idle" | "deadline" | "stopped" | null = null;
+  const abort = (reason: "idle" | "deadline" | "stopped") => {
+    why ??= reason;
+    attempt.abort();
+  };
+  let idle = setTimeout(() => abort("idle"), idleMs);
+  const touch = () => {
+    clearTimeout(idle);
+    idle = setTimeout(() => abort("idle"), idleMs);
+  };
+  const onDeadline = () => abort("deadline");
+  const onStop = () => abort("stopped");
+  deadline.addEventListener("abort", onDeadline);
+  opts.signal?.addEventListener("abort", onStop);
+  const explain = (err: unknown): Error =>
+    why === "stopped"
+      ? new InstallStoppedError()
+      : why === "idle"
+        ? new Error(`no data arrived for ${duration(idleMs)}`)
+        : why === "deadline"
+          ? new Error(
+              `the install ran out of its ${duration(opts.totalTimeoutMs ?? TOTAL_TIMEOUT_MS)}`,
+            )
+          : err instanceof Error
+            ? err
+            : new Error(String(err));
+  try {
+    let response: Response;
+    try {
+      response = await doFetch(url, {
+        signal: attempt.signal,
+        headers: {
+          Accept: "application/octet-stream",
+          "User-Agent": "penguinharness-computer-use",
+        },
+      });
+    } catch (err) {
+      const e = explain(err);
+      if (e instanceof InstallStoppedError) throw e;
+      throw new Error(`could not be reached: ${e.message}`);
+    }
+    if (!response.ok || response.body === null) throw new Error(`answered ${response.status}`);
+    touch();
+    const total = Number(response.headers.get("content-length")) || pin.size;
+    const hash = createHash("sha512");
+    const chunks: Buffer[] = [];
+    let received = 0;
+    const reader = response.body.getReader();
+    try {
+      for (;;) {
+        let chunk: { done: boolean; value?: Uint8Array };
+        try {
+          chunk = await reader.read();
+        } catch (err) {
+          throw explain(err);
+        }
+        if (why !== null) throw explain(null);
+        if (chunk.done || chunk.value === undefined) break;
+        touch();
+        received += chunk.value.byteLength;
+        if (received > pin.size * 2) {
+          throw new Error(`sent more than twice the ${pin.size} bytes the pin expects`);
+        }
+        hash.update(chunk.value);
+        chunks.push(Buffer.from(chunk.value));
+        opts.progress?.({ step: "download", received, total });
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    opts.progress?.({ step: "verify" });
+    const integrity = `sha512-${hash.digest("base64")}`;
+    if (integrity !== pin.integrity) {
+      throw new Error(
+        `sent a tarball that does not match the pinned integrity of ${pin.name} ${pin.version}; it was not used`,
+      );
+    }
+    return Buffer.concat(chunks);
   } finally {
-    reader.releaseLock();
+    clearTimeout(idle);
+    deadline.removeEventListener("abort", onDeadline);
+    opts.signal?.removeEventListener("abort", onStop);
   }
-  opts.progress?.({ step: "verify" });
-  const integrity = `sha512-${hash.digest("base64")}`;
-  if (integrity !== pin.integrity) {
-    throw new Error(
-      `the tarball from ${new URL(url).host} does not match the pinned integrity of ${pin.name} ${pin.version}; it was not used`,
-    );
-  }
-  return Buffer.concat(chunks);
 }
 
 /**
  * Removes what an interrupted or locked install left beside `dir`: staging directories and old
  * directories set aside (one still in use on Windows stays until the next install).
  */
-async function sweepLeftovers(dir: string): Promise<void> {
+export async function sweepLeftovers(dir: string): Promise<void> {
   const parent = path.dirname(dir);
   const base = path.basename(dir);
   let names: string[];
@@ -275,6 +375,7 @@ export async function installAgentDesktop(opts: InstallOptions): Promise<Install
   const arch = opts.arch ?? process.arch;
   const { key, target } = targetPinOf(pin, platform, arch);
   const tarball = await download(opts, pin);
+  if (opts.signal?.aborted) throw new InstallStoppedError();
   opts.progress?.({ step: "extract" });
   let archive: Buffer;
   try {
@@ -318,6 +419,8 @@ export async function installAgentDesktop(opts: InstallOptions): Promise<Install
       { mode: 0o644 },
     );
     await fs.chmod(path.join(staging, INSTALL_FILE), 0o644);
+    // Stopped while writing: the staging directory goes, and the install in place stays.
+    if (opts.signal?.aborted) throw new InstallStoppedError();
     // The old directory is renamed aside, never deleted in place: on Windows a running
     // agent-desktop keeps its program open, which a delete half-finishes and a rename survives.
     const aside = `${dir}.old-${randomUUID().slice(0, 8)}`;

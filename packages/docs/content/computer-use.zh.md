@@ -23,9 +23,9 @@ description: 让 Agent 用 penguin computer 查看并操作电脑桌面上的应
 2. 插件从「插件源」所选的 npm registry 下载 agent-desktop 1.3.1（约 16 MB），按插件钉死的摘要校验，只把本机的程序保存在数据根的 `cache/computer-use/` 下。设置 › 插件中的**电脑操作**卡片显示进度。
 3. 在 Agent 的**插件**标签页把插件装到该 Agent 上，Agent 即获得 `computer-use` 技能，该 Project 也随之在本服务端启用了本插件。
 
-从插件市场（或 zip）安装插件会在服务端所在的机器上运行 npm，而桌面应用目前不自带 npm：没有 npm 的机器上，安装会说明这一点。下载 agent-desktop 本身不需要 npm；它遵循「插件源」中选择的 registry，但不读取只写在 `.npmrc` 文件里的镜像。
+从插件市场（或 zip）安装插件会在服务端所在的机器上运行 npm，而桌面应用目前不自带 npm：没有 npm 的机器上，安装会说明这一点。下载 agent-desktop 本身不需要 npm。它先试「插件源」中选择的 registry，在「插件镜像」中选了 **npm registry 镜像**时再试该镜像；只写在 `.npmrc` 文件里的镜像不读取。网速慢也没关系：一个地址只有在 30 秒内没有任何数据时才放弃，整个下载最长 30 分钟。移除插件会停止正在进行的下载。
 
-无法访问 npm registry 的机器可以使用以其他方式安装的 agent-desktop 程序：在卡片高级设置的 **agent-desktop 程序路径**中填写它的绝对路径。
+下载失败时，卡片会说明，错误原文放在详情里：在 **插件源** 中换一个 registry 或加入 npm registry 镜像，然后点 **重试**。无法访问任何 npm registry 的机器，可以使用以其他方式安装的 agent-desktop 程序：在卡片高级设置的 **agent-desktop 程序路径**中填写它的绝对路径。
 
 ## 授予系统所需的权限
 
@@ -50,11 +50,19 @@ description: 让 Agent 用 penguin computer 查看并操作电脑桌面上的应
 
 每条读取或操作窗口的命令都必须指明应用，Agent 因此不会误操作恰好处于焦点的窗口。电脑操作从不操作 PenguinHarness 自身——桌面应用的窗口、服务端，以及它们启动的任何程序。
 
+### 与你共用桌面
+
+Agent 和你在同一块屏幕上工作，插件因此让它不妨碍你：
+
+- **你在用电脑时它会暂停。** 你最近一次键盘或鼠标输入不到 3 秒时，作用于桌面的命令一律被拒绝（`user_active`），并提示 Agent 先问你；读取屏幕仍然可以。可在卡片上关闭 **用户操作时暂停**。它需要读取你的输入空闲时间：macOS 与 Windows 上总能读取；Linux 上 X11 可以（借助 `xprintidle`，或大多数桌面都带的 Python 与 libXss），Wayland 不行——这时卡片会说明无法暂停，也不会暂停。
+- **按键只发往当前激活的窗口。** `press` 的按键总是发往拥有焦点的窗口，因此 Agent 指明的窗口不是焦点窗口时会被拒绝（`window_not_focused`），并告诉 Agent 先征得你同意，再用 `focus-window` 把哪个窗口调到前面。它从不悄悄抢焦点。
+- `penguin computer status` 会告诉 Agent 当前的焦点窗口、各显示器及其位置，以及你已空闲多久，让它知道你何时在操作。
+
 ### 需要你允许的操作
 
 | 设置 | 允许 |
 | --- | --- |
-| **允许物理输入** | 真实的鼠标与键盘：按坐标点击、悬停、拖拽、双击、切换焦点与滚轮。它们会移动指针，与你争抢输入。 |
+| **允许物理输入** | 真实的鼠标与键盘：按坐标点击、悬停、拖拽、双击、切换焦点与滚轮。它们会移动你的指针，并把键盘焦点从你正在做的事情上抢走。关闭时，Agent 只经各元素的无障碍接口操作，不碰指针，但并非每个应用都能这样驱动——部分 Electron 与画布类应用只响应真实输入。 |
 | **允许读取剪贴板** | `clipboard-get`：最近复制的内容，可能是密码。 |
 | **允许读取通知** | `list-notifications`：来自所有应用的通知。 |
 
@@ -96,10 +104,10 @@ penguin computer wait --element @s8f3k2p9:e9 --predicate actionable
 penguin computer screenshot --app "Calculator" calc.png --out-dir shots
 ```
 
-- `status` 在 `data.penguin` 下附上插件自己的状态：是否开启、agent-desktop 的安装情况、各项设置与本机的前提条件。电脑操作无法运行时以退出码 1 结束。
+- `status` 在 `data.penguin` 下附上插件自己的状态：是否开启、agent-desktop 的安装情况（`install`）、各项设置、本机的检查项（`checks`），以及此刻的桌面（`desktop`）——焦点窗口、各显示器及其范围、用户的输入空闲秒数（读不到时为 `null`）。电脑操作无法运行时以退出码 1 结束。
 - 截图保存在运行命令的目录（或 `--out-dir`），不会覆盖已有文件。
 - `--text-file <file>` 从文件读取 `type`、`set-value` 或 `clipboard-set` 的文本，秘密因此不会出现在命令行上。
 - `penguin computer <command> --help` 打印 agent-desktop 对单条命令的帮助。
-- 插件拒绝的操作输出一行 `error: policy_refused: <原因>`，退出码为 1。
+- 插件拒绝的操作输出一行 `error: <代码>: <原因>`，退出码为 1：如 `policy_refused`、`user_active`（你正在使用电脑）或 `window_not_focused`（所指的窗口不是焦点窗口）。
 
 ref（`@s8f3k2p9:e12`）属于产生它的那次快照，也属于做快照的那个对话：窗口变化之后请重新快照。

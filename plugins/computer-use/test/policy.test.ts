@@ -74,6 +74,28 @@ describe("what runs as typed", () => {
     expect(decide(["launch", "a", "b"], OFF)).toMatchObject({ kind: "usage" });
   });
 
+  it("tells what changes the desktop, what sends real input, and what needs window focus", () => {
+    const flags = (argv: string[], settings = OFF) => {
+      const d = decide(argv, settings);
+      return d.kind === "run" ? [d.input, d.ownInput, d.focus] : d.kind;
+    };
+    expect(flags(["snapshot", "--app", "x"])).toEqual([false, false, false]);
+    expect(flags(["click", "@s1:e1"])).toEqual([true, false, false]);
+    expect(flags(["press", "return", "--app", "x"])).toEqual([true, true, true]);
+    expect(flags(["focus-window", "--app", "x"])).toEqual([true, false, false]);
+    const physical = { ...OFF, physicalInput: true };
+    expect(flags(["mouse-click", "--xy", "1,1"], physical)).toEqual([true, true, false]);
+    expect(flags(["--headed", "click", "@s1:e1"], physical)).toEqual([true, true, false]);
+    expect(
+      flags(["batch", '[{"command":"get","args":{"ref_id":"@s1:e1","property":"value"}}]']),
+    ).toEqual([false, false, false]);
+    expect(flags(["batch", '[{"command":"click","args":{"ref_id":"@s1:e1"}}]'])).toEqual([
+      true,
+      false,
+      false,
+    ]);
+  });
+
   it("a window is named by its id, which is checked like an app", () => {
     expect(run(["focus-window", "--window-id", "w-12"]).targets).toEqual([{ windowId: "w-12" }]);
   });

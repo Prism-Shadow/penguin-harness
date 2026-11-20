@@ -23,9 +23,9 @@ For websites, use the [Built-in Browser](/builtin-browser) instead.
 2. The plugin downloads agent-desktop 1.3.1 (about 16 MB) from the npm registry chosen under **Plugin Sources**, checks it against the digests pinned in the plugin, and keeps only this machine's program in the data root, under `cache/computer-use/`. The **Computer Use** card under Settings → Plugins shows its progress.
 3. Install the plugin on an agent from the agent's **Plugins** tab. The agent gets the `computer-use` skill, and the Project gets the plugin enabled on this server.
 
-Installing a plugin from the market (or from a zip) runs npm on the server machine, and the desktop app does not bring npm of its own yet: on a machine without npm the install says so. The download of agent-desktop itself needs no npm. It honours the registry chosen under **Plugin Sources**, but not mirrors configured only in an `.npmrc` file.
+Installing a plugin from the market (or from a zip) runs npm on the server machine, and the desktop app does not bring npm of its own yet: on a machine without npm the install says so. The download of agent-desktop itself needs no npm. It tries the registry chosen under **Plugin Sources** first, then the **npm registry mirror** when it is chosen under Plugin mirrors; mirrors configured only in an `.npmrc` file are not read. A slow link is fine: an address is given up only after 30 seconds without data, and the whole download after 30 minutes. Removing the plugin stops a download in progress.
 
-A machine that cannot reach the npm registry can use an agent-desktop program installed by other means: give its absolute path in **agent-desktop program path**, under the card's advanced settings.
+If the download fails, the card says so with the error under its details: choose another registry or add the npm registry mirror under **Plugin Sources**, then select **Retry**. A machine that cannot reach any npm registry can use an agent-desktop program installed by other means: give its absolute path in **agent-desktop program path**, under the card's advanced settings.
 
 ## Grant what your system needs
 
@@ -50,11 +50,19 @@ The skill tells the agent to ask you before it launches or quits an app, moves w
 
 Every command that reads or acts on a window must name its app, so an agent never acts on whatever window happens to have focus. Computer Use never operates PenguinHarness itself — the desktop app's windows, the server, or anything they started.
 
+### Sharing the desktop with you
+
+An agent works on the same screen you do, so the plugin keeps it out of your way:
+
+- **It pauses while you are using the computer.** While your last keyboard or mouse input was less than 3 seconds ago, commands that change the desktop are refused (`user_active`) and the agent is told to ask you first; reading the screen still works. Turn this off with **Pause while the user is active** on the card. It needs to read how long you have been idle: on macOS and Windows it always can; on Linux it can under X11 (with `xprintidle`, or Python and libXss, both present on most desktops), not on Wayland — there the card says the pause cannot work and nothing pauses.
+- **Keystrokes go to the window you can see is active.** A key `press` goes to whichever window has focus, so it is refused while the window the agent names is not the focused one (`window_not_focused`); the agent is told which window to bring forward with `focus-window`, after asking you. It never takes focus silently.
+- `penguin computer status` shows the agent the focused window, your displays and their positions, and how long you have been idle, so it can tell when you are working.
+
 ### What stays off unless you allow it
 
 | Setting | Allows |
 | --- | --- |
-| **Allow physical input** | The real mouse and keyboard: clicks at coordinates, hovering, dragging, double-clicks, focus changes and the scroll wheel. They move the pointer and compete with you for input. |
+| **Allow physical input** | The real mouse and keyboard: clicks at coordinates, hovering, dragging, double-clicks, focus changes and the scroll wheel. They move your pointer and take keyboard focus away from whatever you are doing. Without it, an agent acts through each element's accessibility API, which leaves the pointer alone but cannot drive every app — some Electron and canvas apps only react to real input. |
 | **Allow reading the clipboard** | `clipboard-get`: whatever was last copied, which may be a password. |
 | **Allow reading notifications** | `list-notifications`: notifications from every app. |
 
@@ -96,10 +104,10 @@ penguin computer wait --element @s8f3k2p9:e9 --predicate actionable
 penguin computer screenshot --app "Calculator" calc.png --out-dir shots
 ```
 
-- `status` adds the plugin's own state under `data.penguin`: whether it is on, agent-desktop's install, the settings, and this machine's preconditions. It exits with code 1 when Computer Use cannot run.
+- `status` adds the plugin's own state under `data.penguin`: whether it is on, agent-desktop's install (`install`), the settings, this machine's `checks`, and the `desktop` now — the focused window, the displays with their bounds, and the user's input idle seconds (`null` where they cannot be read). It exits with code 1 when Computer Use cannot run.
 - A screenshot is saved where you run the command (or in `--out-dir`), never over an existing file.
 - `--text-file <file>` gives the text of `type`, `set-value` or `clipboard-set` from a file, so a secret never appears on a command line.
 - `penguin computer <command> --help` prints agent-desktop's help for one command.
-- What the plugin refuses is one line, `error: policy_refused: <why>`, with exit code 1.
+- What the plugin refuses is one line, `error: <code>: <why>`, with exit code 1: `policy_refused`, `user_active` (you are using the computer) or `window_not_focused` (the named window is not the focused one), among others.
 
 Refs (`@s8f3k2p9:e12`) belong to the snapshot that produced them and to the conversation that took it: take a new snapshot after the window changes.

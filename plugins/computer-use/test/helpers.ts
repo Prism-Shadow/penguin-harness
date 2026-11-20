@@ -155,6 +155,8 @@ export async function testService(opts: {
     pathDirs?: string[];
     trusted?: (file: string) => Promise<boolean>;
   };
+  /** The user's input idle seconds (null: unknown); unknown by default, which pauses nothing. */
+  idleSeconds?: number | null | (() => number | null);
 }) {
   const root = await tempDir();
   const ownPids = opts.ownPids ?? [];
@@ -169,6 +171,13 @@ export async function testService(opts: {
     log: () => {},
     ...(opts.platform !== undefined ? { platform: opts.platform } : {}),
     ...(opts.launch !== undefined ? { launch: opts.launch } : {}),
+    idle: async () => {
+      const raw = opts.idleSeconds;
+      const seconds = typeof raw === "function" ? raw() : (raw ?? null);
+      return seconds === null
+        ? { seconds: null, source: null, reason: "unknown in this test" }
+        : { seconds, source: "XScreenSaver" as const };
+    },
   });
   const reader = settingsReader({ "computer-use": opts.settings ?? {} });
   service.bind(reader);
@@ -264,4 +273,13 @@ export async function runComputer(
     json = null;
   }
   return { stdout, stderr, exitCode: exitCode ?? 0, files, json };
+}
+
+/** Waits until `cond` holds, polling; throws after `timeoutMs`. */
+export async function waitUntil(cond: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const until = Date.now() + timeoutMs;
+  while (!cond()) {
+    if (Date.now() > until) throw new Error("waitUntil: timed out");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }

@@ -100,7 +100,7 @@ describe("installing agent-desktop", () => {
     const progress: string[] = [];
     const installed = await installAgentDesktop({
       root,
-      registry: "https://registry.npmmirror.com/",
+      registries: ["https://registry.npmmirror.com/"],
       fetch: reg.fetch,
       pin,
       ...linux,
@@ -140,7 +140,7 @@ describe("installing agent-desktop", () => {
     const { tarball, pin } = fixture();
     await installAgentDesktop({
       root,
-      registry: "https://r.example",
+      registries: ["https://r.example"],
       fetch: registry(tarball).fetch,
       pin,
       ...linux,
@@ -149,7 +149,7 @@ describe("installing agent-desktop", () => {
     await expect(
       installAgentDesktop({
         root,
-        registry: "https://r.example",
+        registries: ["https://r.example"],
         fetch: registry(tampered).fetch,
         pin,
         ...linux,
@@ -165,7 +165,7 @@ describe("installing agent-desktop", () => {
     await expect(
       installAgentDesktop({
         root,
-        registry: "https://r.example",
+        registries: ["https://r.example"],
         fetch: registry(tarball).fetch,
         pin,
         ...linux,
@@ -181,7 +181,7 @@ describe("installing agent-desktop", () => {
     await expect(
       installAgentDesktop({
         root,
-        registry: "https://r.example",
+        registries: ["https://r.example"],
         fetch: reg.fetch,
         pin,
         platform: "freebsd",
@@ -196,7 +196,13 @@ describe("installing agent-desktop", () => {
     const { pin } = fixture();
     const missing = (async () => new Response("gone", { status: 404 })) as typeof fetch;
     await expect(
-      installAgentDesktop({ root, registry: "https://r.example", fetch: missing, pin, ...linux }),
+      installAgentDesktop({
+        root,
+        registries: ["https://r.example"],
+        fetch: missing,
+        pin,
+        ...linux,
+      }),
     ).rejects.toThrow(/r\.example.*answered 404/);
   });
 });
@@ -207,7 +213,7 @@ describe("installing over an install", () => {
     const { tarball, pin } = fixture();
     const opts = {
       root,
-      registry: "https://r.example",
+      registries: ["https://r.example"],
       fetch: registry(tarball).fetch,
       pin,
       ...linux,
@@ -229,7 +235,7 @@ describe("what is installed, read back", () => {
     const { tarball, pin } = fixture();
     const installed = await installAgentDesktop({
       root,
-      registry: "https://r.example",
+      registries: ["https://r.example"],
       fetch: registry(tarball).fetch,
       pin,
       ...linux,
@@ -243,7 +249,7 @@ describe("what is installed, read back", () => {
     const { tarball, pin } = fixture();
     const installed = await installAgentDesktop({
       root,
-      registry: "https://r.example",
+      registries: ["https://r.example"],
       fetch: registry(tarball).fetch,
       pin,
       ...linux,

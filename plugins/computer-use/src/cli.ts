@@ -11,8 +11,9 @@
  * Three things differ from running agent-desktop by hand, each for the Agent's sake:
  *
  *   status          agent-desktop's status, plus `data.penguin`: this plugin's version, whether
- *                   it is on, agent-desktop's install, the settings, the machine's preconditions;
- *                   exit code 1 when Computer Use cannot run here.
+ *                   it is on, agent-desktop's install (`install`), the settings, the machine's
+ *                   `checks`, and the `desktop` now — the focused window, the displays, the
+ *                   user's input idle seconds; exit code 1 when Computer Use cannot run here.
  *   screenshot      the PNG is taken on the server and handed back as a file, which the terminal
  *                   saves in the current directory or `--out-dir <dir>`; `data.path` is its name.
  *   --text-file F   the terminal reads F and sends it; it becomes the text of type, set-value or
@@ -25,6 +26,16 @@
  * Before a command that names an app or a window runs, the name must be one `list-apps` prints
  * (the window one `list-windows` shows), and its processes are checked against PenguinHarness's
  * own (self-target.ts): Computer Use never operates PenguinHarness. Anything unresolved is refused.
+ *
+ * Two more checks keep an Agent from working against the person at this computer:
+ *
+ *   user_active          a command that changes the desktop is refused while that person used the
+ *                        keyboard or mouse less than USER_ACTIVE_SECONDS ago (idle.ts) — input the
+ *                        plugin itself sent excepted — unless an administrator turned "Pause while
+ *                        the user is active" off. An idle time that cannot be read pauses nothing.
+ *   window_not_focused   keystrokes (`press`, `key-down`, `key-up`) go to whichever window has
+ *                        focus, so the named window must be the focused one; the refusal names the
+ *                        `focus-window` to run first. Focus is never taken silently.
  */
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
@@ -38,7 +49,9 @@ import type { Probe } from "./probe.js";
 import type { Envelope, RunOutput } from "./runner.js";
 import type { ComputerUseService, ProgramChoice } from "./service.js";
 import { launchDirOf, mkdirPrivate, stateDirFor, tmpDirOf } from "./state.js";
+import { USER_ACTIVE_SECONDS } from "./settings.js";
 import type { ComputerUseSettings } from "./settings.js";
+import type { IdleReading } from "./idle.js";
 import { helpText } from "./strings.js";
 
 const manifest = createRequire(import.meta.url)("../package.json") as { version: string };
@@ -252,6 +265,64 @@ async function afterRunRefusal(
   };
 }
 
+/**
+ * The user-active guard: a refusal while the person at this computer is using it, or null. Input
+ * the plugin itself just sent (`ownInputAt`) is not theirs; an idle time it cannot read, or the
+ * setting turned off, pauses nothing.
+ */
+async function activityRefusal(
+  service: ComputerUseService,
+  settings: ComputerUseSettings,
+): Promise<string | null> {
+  if (!settings.pauseWhileUserActive) return null;
+  const idle = await service.idle();
+  if (idle.seconds === null || idle.seconds >= USER_ACTIVE_SECONDS) return null;
+  if (service.ownInputAt(idle.seconds)) return null;
+  return `the user is using the computer — their last keyboard or mouse input was ${idle.seconds.toFixed(1)} s ago. Pause and ask them before acting on their desktop; working the same window at the same time makes focus and positions change under you (an administrator can turn this check off with "Pause while the user is active" in Settings → Plugins → Computer Use)`;
+}
+
+/** One window as `list-windows` reports it. */
+interface ListedWindow {
+  id?: unknown;
+  app_name?: unknown;
+  pid?: unknown;
+  title?: unknown;
+  is_focused?: unknown;
+}
+
+/**
+ * Keystrokes go to the focused window: the refusal when a named window (or none of a named app's
+ * windows) is focused, naming the `focus-window` to run; null when it is, or when `list-windows`
+ * cannot tell (agent-desktop then judges for itself).
+ */
+async function focusRefusal(
+  service: ComputerUseService,
+  choice: Ready,
+  targets: readonly Target[],
+  stateDir: string,
+): Promise<string | null> {
+  if (targets.length === 0) return null;
+  const listed = (await service.run(choice, ["list-windows"], { stateDir, budgetMs: 5_000 }))
+    .envelope;
+  if (listed?.ok !== true || !Array.isArray(listed.data)) return null;
+  const windows = listed.data as ListedWindow[];
+  for (const target of targets) {
+    const mine =
+      "windowId" in target
+        ? windows.filter((w) => w.id === target.windowId)
+        : windows.filter(
+            (w) =>
+              typeof w.app_name === "string" &&
+              w.app_name.toLowerCase() === target.app.toLowerCase(),
+          );
+    if (mine.length === 0 || mine.some((w) => w.is_focused === true)) continue;
+    const id = String(mine[0]!.id);
+    const what = "windowId" in target ? `window ${id}` : `${target.app}'s window ${id}`;
+    return `${what} is not the focused window, so its keystrokes would go to another window: run penguin computer focus-window --window-id ${id}, check penguin computer list-windows shows it "is_focused": true, then retry (the user may be working in another window — ask first if so)`;
+  }
+  return null;
+}
+
 /** The text a plan sends on stdin, read from the file the terminal sent for `--text-file`. */
 function stdinOf(plan: RunPlan, io: Io): { text?: Buffer | string; error?: string } {
   if (plan.stdin === undefined) return {};
@@ -289,6 +360,41 @@ function reportRun(io: Io, out: RunOutput, plain: boolean): Envelope | null {
   return out.envelope;
 }
 
+/**
+ * What is on the desktop now, for an Agent about to act: the focused window (null when none is,
+ * absent when it could not be listed), the displays with their bounds (coordinates are per
+ * display), and how long ago the person at this computer last used the keyboard or mouse.
+ */
+function desktopOf(
+  windows: Envelope | null,
+  displays: Envelope | null,
+  idle: IdleReading,
+): Record<string, unknown> {
+  const list =
+    windows?.ok === true && Array.isArray(windows.data) ? (windows.data as ListedWindow[]) : null;
+  const focused = list?.find((w) => w.is_focused === true);
+  return {
+    ...(list !== null
+      ? {
+          focused:
+            focused === undefined
+              ? null
+              : {
+                  app: focused.app_name,
+                  windowId: focused.id,
+                  title: focused.title,
+                  pid: focused.pid,
+                },
+        }
+      : {}),
+    ...(displays?.ok === true && Array.isArray(displays.data) ? { displays: displays.data } : {}),
+    userIdleSeconds: idle.seconds === null ? null : Math.round(idle.seconds * 10) / 10,
+    userActive: idle.seconds !== null && idle.seconds < USER_ACTIVE_SECONDS,
+    ...(idle.source !== null ? { idleSource: idle.source } : {}),
+    ...(idle.reason !== undefined ? { idleUnknown: idle.reason } : {}),
+  };
+}
+
 /** `status`: agent-desktop's, with this plugin's own state under `data.penguin`. */
 async function status(service: ComputerUseService, probe: Probe, argv: string[], io: Io) {
   await service.refresh();
@@ -298,13 +404,19 @@ async function status(service: ComputerUseService, probe: Probe, argv: string[],
   const choice = settings.enabled && allowed ? await service.program() : null;
   let envelope: Envelope | null = null;
   let probeResult = probe.latest();
+  let windows: Envelope | null = null;
+  let displays: Envelope | null = null;
   if (choice !== null && choice.ok) {
     const stateDir = await stateDirFor(service.root, callerOf(io));
     const out = await service.run(choice, argv, { stateDir, budgetMs: 10_000 });
     envelope = out.envelope;
     probeResult = await probe.refresh();
+    windows = (await service.run(choice, ["list-windows"], { stateDir, budgetMs: 5_000 })).envelope;
+    displays = (await service.run(choice, ["list-displays"], { stateDir, budgetMs: 5_000 }))
+      .envelope;
   }
-  const preconditions = preconditionsOf(service.platform, process.env, probeResult);
+  const idle = probeResult?.idle ?? (await service.idle());
+  const checks = preconditionsOf(service.platform, process.env, probeResult);
   const reason = !settings.enabled
     ? "disabled"
     : !allowed
@@ -313,18 +425,21 @@ async function status(service: ComputerUseService, probe: Probe, argv: string[],
         ? choice.code
         : envelope === null
           ? "agent_desktop_failed"
-          : preconditions.some((p) => p.ok === false)
-            ? "preconditions"
+          : checks.some((p) => p.ok === false)
+            ? "checks"
             : undefined;
   const penguin = {
     plugin: PLUGIN_VERSION,
     enabled: settings.enabled,
     ready: reason === undefined && envelope?.ok === true,
     ...(reason !== undefined ? { reason } : {}),
-    agentDesktop: {
+    // The install and version summary, apart from the checks (one block each on a status page).
+    install: {
       pinned: service.pin.version,
       state: state.kind,
-      ...(state.kind === "installed" ? { version: state.installed.version } : {}),
+      ...(state.kind === "installed"
+        ? { version: state.installed.version, target: state.installed.target }
+        : {}),
       ...(state.kind === "override" && state.version !== null ? { version: state.version } : {}),
       ...(choice !== null && !choice.ok ? { detail: choice.message } : {}),
     },
@@ -333,13 +448,16 @@ async function status(service: ComputerUseService, probe: Probe, argv: string[],
       physicalInput: settings.physicalInput,
       clipboardRead: settings.clipboardRead,
       notificationRead: settings.notificationRead,
+      pauseWhileUserActive: settings.pauseWhileUserActive,
     },
-    preconditions: preconditions.map((p) => ({
+    // What this machine offers: each check holds (true), fails (false) or is not known (null).
+    checks: checks.map((p) => ({
       id: p.id,
       ok: p.ok,
       detail: p.text.en,
       ...(p.detail !== undefined ? { agentDesktop: p.detail } : {}),
     })),
+    desktop: desktopOf(windows, displays, idle),
     refs: io.caller?.sessionId !== undefined ? "session" : "user",
   };
   const base: Envelope = envelope ?? { ok: false, command: "status" };
@@ -421,6 +539,14 @@ export async function handleComputer(
   const stateDir = await stateDirFor(service.root, callerOf(io));
   const refusal = await selfTargetRefusal(service, choice, decision.targets, stateDir);
   if (refusal !== null) return fail(io, refusal.code, refusal.message);
+  if (decision.input) {
+    const active = await activityRefusal(service, settings);
+    if (active !== null) return fail(io, "user_active", active);
+  }
+  if (decision.focus) {
+    const unfocused = await focusRefusal(service, choice, decision.targets, stateDir);
+    if (unfocused !== null) return fail(io, "window_not_focused", unfocused);
+  }
   // agent-desktop hands its environment, AGENT_DESKTOP_HOME included, to what it launches: a
   // launch gets a state directory of its own, holding no Session's refs.
   const runDir = decision.command === "launch" ? await launchDirOf(service.root) : stateDir;
@@ -438,6 +564,8 @@ export async function handleComputer(
       ...(launchPath !== undefined ? { path: launchPath } : {}),
       budgetMs,
     });
+    // Real input events this command sent reset the system's idle time: they are not the user's.
+    if (decision.ownInput) service.noteOwnInput();
     const envelope = reportRun(io, out, decision.plain);
     if (envelope === null) return;
     const after = await afterRunRefusal(service, choice, decision, envelope, stateDir);

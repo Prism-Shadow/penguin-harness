@@ -1,7 +1,7 @@
 ---
 name: computer-use
 description: "Operate the desktop apps on the user's computer from the shell with `penguin computer`: read an app's window as an accessibility tree, click, type, select, toggle and wait through each element's accessibility API, take window screenshots, and launch or quit apps, on macOS, Windows and Linux. Use it for any task in a desktop app (not a website) that the user asks you to do on their computer, such as working a calculator, filling a native form, or reading a value from a settings window."
-version: 2026.11.20.3
+version: 2026.11.20.4
 ---
 
 # Computer use
@@ -31,12 +31,29 @@ Exit code 0 and `data.penguin.ready: true` mean you can start. Otherwise read `d
 
 - `disabled`: Computer Use is switched off on this server. An administrator turns it on in **Settings → Plugins → Computer Use**.
 - `installing`: agent-desktop is still being installed on the server; try again in a minute.
-- `install_failed`, `not_installed`: agent-desktop could not be installed; `data.penguin.agentDesktop.detail` says why. An administrator retries it on the same card.
+- `install_failed`, `not_installed`: agent-desktop could not be installed; `data.penguin.install.detail` says why. Tell the user an administrator can pick another npm registry (or the npm registry mirror) under **Settings → Plugins → Plugin Sources** and select **Retry** on the Computer Use card, or give an agent-desktop installed by other means in the card's advanced **agent-desktop program path**.
 - `unsupported`: this machine is not one agent-desktop runs on (macOS, Windows or Linux with glibc 2.35 or later, on x64 or arm64).
 - `admin_only`: see above.
-- `preconditions`: `data.penguin.preconditions` lists what is missing, each with what to do: on macOS the Accessibility permission for PenguinHarness (the card has **Open System Settings**), on Linux a desktop session with a window manager, on Windows the signed-in user's desktop.
+- `checks`: `data.penguin.checks` lists what is missing (`ok: false`), each with what to do: on macOS the Accessibility permission for PenguinHarness (the card has **Open System Settings**), on Linux a desktop session with a window manager, on Windows the signed-in user's desktop.
 
-`data.penguin.settings` says what the administrator allows beyond the defaults: `allowMembers`, `physicalInput`, `clipboardRead`, `notificationRead` (all off unless allowed).
+`data.penguin.settings` says what the administrator allows beyond the defaults: `allowMembers`, `physicalInput`, `clipboardRead`, `notificationRead` (all off unless allowed), and `pauseWhileUserActive` (on unless turned off).
+
+`data.penguin.desktop` is the desktop right now: `focused` (the focused window: `app`, `windowId`, `title`), `displays` (each display's `bounds`; see below), and `userIdleSeconds` with `userActive` — how long ago the person at this computer last used the keyboard or mouse (`null` where it cannot be read, with `idleUnknown` saying why).
+
+## The person at the computer, focus and displays
+
+You share this desktop with a person. Three different things are called "focus"; keep them apart:
+
+1. **Element focus** — the control that has the caret (`focused: true` in a snapshot). Putting the caret in a text field does not make its window active.
+2. **Window focus** — the one window that receives keystrokes (`"is_focused": true` in `list-windows`). Keys always go there, whatever element you meant.
+3. **The person** — they may be using the mouse and keyboard right now, moving windows between displays and changing which window is focused under you.
+
+So:
+
+- **Before keyboard input** — `press`, and `type` or `set-value` where the app needs real keys — run `penguin computer list-windows` and check the target window shows `"is_focused": true`. If not, ask the user, then `penguin computer focus-window --window-id <id>` and check again. The plugin refuses `press` to a window that is not focused (`window_not_focused`, naming the `focus-window` to run) and never takes focus silently.
+- **Read back after every action** — `get`, `is`, a fresh snapshot or `wait`. An action's `ok` says agent-desktop delivered it, not that the app did what you wanted.
+- **When the person is active, stop and ask.** If `status` shows `userActive: true` (or `userIdleSeconds` near 0), or window positions keep changing between your reads, they are working: say what you were about to do and wait for them. While they are active the plugin refuses commands that change the desktop with `user_active` (an administrator can turn this off); reading — snapshots, `list-*`, `get` — still works.
+- **Several displays**: `penguin computer list-displays` gives each display's `bounds`; window bounds and coordinates are in that shared space, so a window can be on another display (x beyond the first display's width) or move to one. Read positions again before anything that depends on them; never reuse an old coordinate.
 
 ## The loop
 
@@ -91,7 +108,9 @@ penguin computer type <ref> --text-file ./secret.txt
 
 ## Keys
 
-`penguin computer press <combo> --app "<App>"` sends a key combination (`return`, `escape`, `tab`, `ctrl+s`, `cmd+s`) to that app only. It is real keyboard input even without `--headed`, which is why `--app` (or `--window-id`) is required. Use `cmd` on macOS and `ctrl` on Windows and Linux. A headless `press` never opens a menu item: find the item and `click` it.
+`penguin computer press <combo> --app "<App>"` sends a key combination (`return`, `escape`, `tab`, `ctrl+s`, `cmd+s`). It is real keyboard input even without `--headed`: it goes to the focused window, which is why `--app` (or `--window-id`) is required and why that window must be the focused one (see above). Use `cmd` on macOS and `ctrl` on Windows and Linux. A headless `press` never opens a menu item: find the item and `click` it.
+
+**Electron and Chromium apps** (QQ, Slack, VS Code, browsers) expose a thinner accessibility tree, and some of their inputs only react to real keys. Without physical input the usual way through is `set-value <ref> "<text>"` on the field, then `press return --app "<App>"` with the window focused. Its limits: `set-value` may update the field without the app's own handlers noticing (a send button stays disabled), and `press` needs window focus, which the person can take back at any moment. Read back after each step; if it does not take, tell the user it needs physical input rather than trying other tricks.
 
 ## Screenshots
 
@@ -153,7 +172,7 @@ agent-desktop's codes (in `error.code`):
 | `PLATFORM_NOT_SUPPORTED` | Not on this OS or session | Another approach, or tell the user |
 | `INTERNAL` | Unexpected OS failure | Retry once only if `retry` is `safe` |
 
-This plugin's own errors are one line on stderr, `error: <code>: <message>`: `policy_refused` (see above; also a name `list-apps` does not print, a window `list-windows` does not show, a `launch` name that is a path or not an installed app, and a reply that turned out to come from PenguinHarness's own window, which is discarded), `admin_only`, `session_required`, `driver_unknown`, `disabled`, `installing`, `install_failed`, `not_installed`, `unsupported` (see Before you start), `target_unverified` (the running apps could not be listed to check the target; retry), `timeout` (agent-desktop did not answer within its own time), `unknown_command`, `invalid_argument` (including combined short options such as `-vw`: give each on its own), `invalid_batch` and `too_long` (exit code 2).
+This plugin's own errors are one line on stderr, `error: <code>: <message>`: `policy_refused` (see above; also a name `list-apps` does not print, a window `list-windows` does not show, a `launch` name that is a path or not an installed app, and a reply that turned out to come from PenguinHarness's own window, which is discarded), `admin_only`, `session_required`, `driver_unknown`, `user_active` (the person at this computer is using it: stop and ask them), `window_not_focused` (run the `focus-window` it names after asking, check `list-windows`, then retry), `disabled`, `installing`, `install_failed`, `not_installed`, `unsupported` (see Before you start), `target_unverified` (the running apps could not be listed to check the target; retry), `timeout` (agent-desktop did not answer within its own time), `unknown_command`, `invalid_argument` (including combined short options such as `-vw`: give each on its own), `invalid_batch` and `too_long` (exit code 2).
 
 ## More
 

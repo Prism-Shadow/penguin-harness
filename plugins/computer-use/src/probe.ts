@@ -7,6 +7,7 @@
  * The card's notices are read synchronously on every page load, so the probe keeps its last
  * result and refreshes it in the background once it is older than PROBE_TTL_MS.
  */
+import type { IdleReading } from "./idle.js";
 import type { Envelope } from "./runner.js";
 import type { ComputerUseService } from "./service.js";
 
@@ -20,6 +21,8 @@ export interface ProbeResult {
   windows: Envelope | null;
   /** Why the probe could not run agent-desktop at all. */
   unavailable?: string;
+  /** The user's input idle time, or why it cannot be read here. */
+  idle?: IdleReading;
 }
 
 /** One precondition: what it is, whether it holds (null: not known), and what to do about it. */
@@ -205,6 +208,29 @@ export function preconditionsOf(
       });
     }
   }
+  const idle = probe?.idle;
+  if (idle !== undefined) {
+    out.push(
+      idle.seconds !== null
+        ? {
+            id: "idle",
+            ok: true,
+            text: {
+              en: `User activity: readable (${idle.source}), so commands can pause while the person at this computer is using it`,
+              zh: `用户活动：可读取（${idle.source}），命令可以在有人使用这台电脑时暂停`,
+            },
+          }
+        : {
+            id: "idle",
+            ok: null,
+            text: {
+              en: "User activity: unknown here, so commands do not pause while someone is using this computer",
+              zh: "用户活动：此处无法读取，因此有人使用这台电脑时命令不会暂停",
+            },
+            ...(idle.reason !== undefined ? { detail: idle.reason } : {}),
+          },
+    );
+  }
   return out;
 }
 
@@ -237,9 +263,16 @@ export class Probe {
   }
 
   private async read(): Promise<ProbeResult> {
+    const idle = await this.service.idle();
     const choice = await this.service.program();
     if (!choice.ok) {
-      this.last = { at: this.now(), status: null, windows: null, unavailable: choice.message };
+      this.last = {
+        at: this.now(),
+        status: null,
+        windows: null,
+        unavailable: choice.message,
+        idle,
+      };
       return this.last;
     }
     const stateDir = await this.service.probeDir();
@@ -252,6 +285,7 @@ export class Probe {
       at: this.now(),
       status: status.envelope,
       windows: windows?.envelope ?? null,
+      idle,
       ...(status.envelope === null
         ? {
             unavailable:

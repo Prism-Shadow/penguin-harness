@@ -48,6 +48,15 @@ export interface RunPlan {
   targets: Target[];
   /** `screenshot`: the name of the file handed back. */
   screenshot?: { name: string };
+  /** It changes the desktop: paused while the person at this computer is using it (cli.ts). */
+  input: boolean;
+  /** It sends real input events itself, which reset the system's idle time (cli.ts). */
+  ownInput: boolean;
+  /**
+   * Keystrokes to a named window (`press`, `key-down`, `key-up`): they go to whatever window has
+   * focus, so the target must be the focused window first (cli.ts).
+   */
+  focus: boolean;
   /**
    * `launch`: the app named, taken off `argv` — the caller checks it (launch-name.ts) and appends
    * what agent-desktop is given for it.
@@ -79,7 +88,16 @@ interface Facts {
   positionals: readonly string[];
 }
 
-type Check = { refused: string } | { usage: string; code: string } | { targets: Target[] };
+/** What a command that may run does to the desktop, beyond the targets to check. */
+interface Effects {
+  targets: Target[];
+  /** It changes the desktop (anything but reading it): paused while the user is active. */
+  input: boolean;
+  /** It sends real input events itself (a press, physical input, --headed). */
+  ownInput: boolean;
+}
+
+type Check = { refused: string } | { usage: string; code: string } | Effects;
 
 const FLAGS_REFUSED: Readonly<Record<string, string>> = {
   "--debug": "--debug writes a debug capture of the screen to the server's disk; it is not offered",
@@ -131,7 +149,7 @@ function check(facts: Facts, settings: PolicySettings, where: string): Check {
     if (!settings.physicalInput) {
       const what = facts.has("--headed") ? "--headed" : c;
       return {
-        refused: `${where}${what} is physical input (the real mouse and keyboard, which compete with the person at this computer); ${setting("Allow physical input")}`,
+        refused: `${where}${what} is physical input: it moves the user's real pointer and takes keyboard focus away from whatever they are doing; ${setting("Allow physical input")}. Without it, act through the element's accessibility API (click, set-value, type on a ref)`,
       };
     }
   }
@@ -191,6 +209,11 @@ function check(facts: Facts, settings: PolicySettings, where: string): Check {
       refused: `${where}permissions --guide and --request change what the system shows the user; ask the user to use "Open System Settings" on the Computer Use card in ${SETTINGS_PLACE}`,
     };
   }
+  const input =
+    spec.class !== "observe" &&
+    spec.class !== "clipboard-read" &&
+    spec.class !== "notification-read";
+  const ownInput = spec.class === "physical" || spec.class === "keyboard" || facts.has("--headed");
   const targets: Target[] = [];
   const app = facts.value("--app");
   const windowId = facts.value("--window-id");
@@ -225,7 +248,7 @@ function check(facts: Facts, settings: PolicySettings, where: string): Check {
       refused: `${where}wait --text needs --app <name>: without it the text is looked for in the focused app, which may be PenguinHarness itself`,
     };
   }
-  return { targets };
+  return { targets, input, ownInput };
 }
 
 const num = (value: string | undefined): number | undefined => {
@@ -314,6 +337,8 @@ function checkBatch(json: string | undefined, settings: PolicySettings): Check {
     return { usage: "batch takes a JSON array of {command, args} objects", code: "invalid_batch" };
   }
   const targets: Target[] = [];
+  let input = false;
+  let ownInput = false;
   for (const [i, raw] of entries.entries()) {
     const where = `batch entry ${i}: `;
     if (
@@ -351,8 +376,10 @@ function checkBatch(json: string | undefined, settings: PolicySettings): Check {
     const outcome = check(entryFacts(entry), settings, where);
     if (!("targets" in outcome)) return outcome;
     targets.push(...outcome.targets);
+    input ||= outcome.input;
+    ownInput ||= outcome.ownInput;
   }
-  return { targets };
+  return { targets, input, ownInput };
 }
 
 /** The positional that holds a command's text, for the commands whose text goes to stdin. */
@@ -385,7 +412,18 @@ export function budgetWithText(plan: RunPlan, textLength: number): number | Deci
 
 /** A run that prints agent-desktop's own help or version text. */
 function plainRun(command: string, argv: string[]): RunPlan {
-  return { kind: "run", command, argv, plain: true, targets: [], budgetMs: 10_000, perCharMs: 0 };
+  return {
+    kind: "run",
+    command,
+    argv,
+    plain: true,
+    targets: [],
+    input: false,
+    ownInput: false,
+    focus: false,
+    budgetMs: 10_000,
+    perCharMs: 0,
+  };
 }
 
 /** Decides what a `penguin computer` command line runs. */
@@ -416,7 +454,9 @@ export function decide(
   // A batch's own options (`--headed` applies to every entry) first, then each entry.
   let outcome = check(facts, settings, "");
   if (command === "batch" && "targets" in outcome) {
+    const headed = outcome.ownInput;
     outcome = checkBatch(parsed.positionals[0], settings);
+    if ("targets" in outcome && headed) outcome = { ...outcome, ownInput: true };
   }
   if ("refused" in outcome) return { kind: "refused", message: outcome.refused };
   if ("usage" in outcome) return { kind: "usage", code: outcome.code, message: outcome.usage };
@@ -501,7 +541,13 @@ export function decide(
     targets: outcome.targets,
     ...(screenshot !== undefined ? { screenshot } : {}),
     ...(launch !== undefined ? { launch } : {}),
+    input: outcome.input,
+    ownInput: outcome.ownInput,
+    focus: FOCUS_COMMANDS.has(command),
     budgetMs: total,
     perCharMs,
   };
 }
+
+/** Keystrokes that go to whichever window has focus, aimed at a named one (cli.ts focusRefusal). */
+const FOCUS_COMMANDS: ReadonlySet<string> = new Set(["press", "key-down", "key-up"]);

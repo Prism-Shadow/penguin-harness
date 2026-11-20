@@ -17,6 +17,8 @@
 - Agent 算作其对话中正在进行的运行的发起者（一位已登录的人），依据 [2026-11-20-plugin-command-caller](2026-11-20-plugin-command-caller.zh.md) 的插件命令规则：`penguin computer` 声明 `requiresProjectListing` 与 `tokenCaller: "session-driver"`，没有指明所在对话的 Agent 调用被拒绝（`session_required`）。
 - 策略缺省放行观察与语义操作。物理输入、读取剪贴板与读取通知各需管理员打开一个开关。会作用于焦点窗口的命令必须指明应用，且名称须与 `list-apps` 打印的完全一致；别名、名称的一部分或未列出的窗口一律拒绝。属于 PenguinHarness 自身进程树的目标一律拒绝，被复用的父进程 id 不被追溯。`launch` 只接受已安装应用的名称：不带 `--arg`、`--env`、`--cwd` 或 `--cdp`，也不接受路径或脚本；Linux 上名称须是系统桌面条目的 id、名称或命令（命令只在恰有一个条目运行它时才算，从不算 shell），终端模拟器不提供，启动时的 PATH 只含系统目录。事后发现来自 PenguinHarness 自身窗口的应答一律丢弃。`sandbox`、`mcp`、`session`、`trace`、通知操作、调试截图、短选项组合，以及 `batch` 中的文本或 `launch` 从不运行。每次拒绝输出 `error: policy_refused: <原因与对应设置>`。
 - `status` 在 `data.penguin` 下附上插件自己的状态与本机的前提条件。`screenshot` 把 PNG 作为文件交回终端，存在当前目录或 `--out-dir`。`--text-file` 从文件读取要输入的文本，经 stdin 传入。
+- 与使用这台电脑的人共用桌面。其最近一次键盘或鼠标输入不到 3 秒时，作用于桌面的命令会暂停（`user_active`）：macOS、Windows 与 Linux 的 X11 下都是如此。管理员可以关闭（「用户操作时暂停」，缺省开启）；读不到空闲时间的地方（如 Wayland）不会暂停。`press` 只发往已经是焦点的窗口（`window_not_focused`，并指明应运行的 `focus-window`）。`status` 会报告焦点窗口、各显示器与用户的空闲秒数，并把安装摘要与检查项分开。
+- agent-desktop 的下载先试「插件源」的 registry，选了 npm registry 镜像时再试该镜像。一个地址只有在 30 秒内没有任何数据时才放弃，整个下载最长 30 分钟。移除插件会停止正在进行的下载并清理暂存文件。下载失败时，卡片会指明 registry 设置与程序路径覆盖项。
 - 设置 › 插件新增电脑操作卡片：各开关、程序路径、一行常驻说明同一桌面上开着 Web App 的风险、agent-desktop 的安装进度（附「安装」或「重试」）与各系统的前提条件（中英两套措辞）。macOS 上另有「打开系统设置」。musl 或低于 2.35 的 glibc 显示「此平台不支持」。
 - `scripts/build-plugins.mjs` 新增 `MARKET_ONLY`：名单上的包照常发布并列入服务端的内置索引，但不进内置前缀。现有一项 `computer-use`。
 - 新增按路径触发的工作流 `computer-use-smoke.yml`，在 ubuntu-latest（Xvfb 下的 GTK 窗口）、windows-latest（记事本）与 macos-latest（无需辅助功能授权的命令）上运行插件的安装与命令。
