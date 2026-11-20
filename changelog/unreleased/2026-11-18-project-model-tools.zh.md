@@ -2,7 +2,7 @@
 
 - **Date:** 2026-11-18
 - **Type:** feature
-- **Scope:** `plugins`, `server`, `core`, `web`
+- **Scope:** `plugins`, `server`, `web`
 - **PR:** [#1597](https://github.com/Prism-Shadow/penguin-harness/pull/1597)
 
 [English](2026-11-18-project-model-tools.md)
@@ -30,8 +30,3 @@
 
 - 二十个图像、视频、语音、转写与网页模型作为普通条目加入模型目录，按 MMSP 注册表的价格计价（服务商的计费单位已折算进 MMSP 的 Token 桶）：Gemini 3.1 Flash（Lite）Image、Gemini 3.8 Flash（Lite）TTS、Gemini Omni 1.2 Flash、GPT Image 2.5 Flare、DeepSeek Search、Fetch、TTS 与 ASR（DeepSeek 与 TokenDance 各一份）、Jina Search 与 Reader、Seedream 5.5、5.0 Flash 与 5.0 Lite，以及 Fish Audio Drama 3 与 Transcribe 1。Gemini 的图像与语音条目与 MMSP 注册表一样不标价。已有项目可经「添加新模型」获得这些条目。
 - 目录标为工具模型的条目在 `GET /models` 中为 `chatEligible: false`，对话的模型选择器不再列出它。
-
-## 面向插件作者
-
-- 插件交给 `ProjectModelRequests.stream` 的请求类型 `ProjectModelRequest` 改由 `@prismshadow/penguin-core` 声明，插件包因此能依赖该接口；服务端照旧导出它。
-- 绑定的 `accepts(model)` 另外收到 `client`（请求实际使用的 MMSP 客户端）与 `input` / `output`（MMSP 注册表为该模型登记的模态）。

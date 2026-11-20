@@ -2,7 +2,7 @@
 
 - **Date:** 2026-11-18
 - **Type:** feature
-- **Scope:** `plugins`, `server`, `core`, `web`
+- **Scope:** `plugins`, `server`, `web`
 - **PR:** [#1597](https://github.com/Prism-Shadow/penguin-harness/pull/1597)
 
 [中文版](2026-11-18-project-model-tools.zh.md)
@@ -30,8 +30,3 @@ The built-in **Multimodal tools** plugin (`@penguinharness/multimodal-tools`) le
 
 - Twenty image, video, speech, transcription and web models join the catalog as ordinary rows priced as MMSP's registry prices them (the provider's billing units folded into MMSP's token buckets): Gemini 3.1 Flash (Lite) Image, Gemini 3.8 Flash (Lite) TTS, Gemini Omni 1.2 Flash, GPT Image 2.5 Flare, DeepSeek Search, Fetch, TTS and ASR (DeepSeek's and TokenDance's), Jina Search and Reader, Seedream 5.5, 5.0 Flash and 5.0 Lite, and Fish Audio Drama 3 and Transcribe 1. The Gemini image and speech rows are unpriced, as MMSP's registry leaves them. Existing Projects get them through **Add new models**.
 - A catalog row marked as a tool model reads `chatEligible: false` in `GET /models`, and the chat model picker no longer offers it.
-
-## For plugin authors
-
-- `ProjectModelRequest`, the request a plugin hands to `ProjectModelRequests.stream`, is now declared in `@prismshadow/penguin-core`, so a plugin package can require the interface; the server re-exports it.
-- A binding's `accepts(model)` also receives `client` (the MMSP client a request goes to) and `input` / `output` (the modalities MMSP's registry lists for the model there).
