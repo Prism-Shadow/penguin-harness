@@ -1,10 +1,10 @@
 /**
  * The builtin plugins, shipped as the npm packages they are: every `plugins/*` package with
- * a code entry is built by its own `build` script, packed by `pnpm pack` — exactly what
- * `npm publish` would send — and installed by npm into a staging directory laid out as an npm
- * prefix (`<out>/package.json` + `<out>/node_modules/<name>/…`, dependencies included). That
- * prefix is the one shape both consumers resolve from: the hot push ships it under `plugins/`
- * in its assets, the desktop build stages it beside `skills/`.
+ * a code entry, except the MARKET_ONLY ones, is built by its own `build` script, packed by
+ * `pnpm pack` — exactly what `npm publish` would send — and installed by npm into a staging
+ * directory laid out as an npm prefix (`<out>/package.json` + `<out>/node_modules/<name>/…`,
+ * dependencies included). That prefix is the one shape both consumers resolve from: the hot
+ * push ships it under `plugins/` in its assets, the desktop build stages it beside `skills/`.
  *
  * Nothing about a package is rewritten. Its `package.json`, its `exports`, its `dist/` and its
  * `README.md` reach the target as the package's own build produced them; a dependency it
@@ -71,6 +71,19 @@ const NATIVE_DEPENDENCIES = new Map([
   [
     "@deepseek-ai/node-addon-landlock-run",
     "resolves its per-platform launcher binary package at run time (sandbox-dsh)",
+  ],
+]);
+
+/**
+ * The plugins of this repository that are NOT shipped, each with a reason: they are built,
+ * tested and published to npm like every other, and the server's embedded index lists them, but
+ * an administrator installs them from the plugin market — they are not in the builtin prefix, so
+ * nothing carries them to every machine and no `409 plugin_shipped` stands in the market's way.
+ */
+const MARKET_ONLY = new Map([
+  [
+    "@penguinharness/computer-use",
+    "not preinstalled: it downloads its own native program (agent-desktop) on the machine that runs it",
   ],
 ]);
 
@@ -167,19 +180,20 @@ async function sourceHash(dir, into) {
 }
 
 /**
- * Every plugin package under `plugins/` with a code entry (`main` or `exports`): the packages of
- * server modules.
+ * Every plugin package under `plugins/` with a code entry (`main` or `exports`) that is not
+ * MARKET_ONLY: the packages of the server modules this build ships.
  */
-async function pluginPackages() {
+export async function pluginPackages(source = PLUGINS_SRC) {
   const out = [];
-  const entries = fs.existsSync(PLUGINS_SRC) ? await fsp.readdir(PLUGINS_SRC) : [];
+  const entries = fs.existsSync(source) ? await fsp.readdir(source) : [];
   for (const dirName of entries.sort()) {
-    const dir = path.join(PLUGINS_SRC, dirName);
+    const dir = path.join(source, dirName);
     const manifestFile = path.join(dir, "package.json");
     if (!fs.existsSync(manifestFile)) continue;
     const pkg = JSON.parse(await fsp.readFile(manifestFile, "utf8"));
     // A package with a code entry is built and packed; one without (skills, hooks) carries no code.
     if (pkg.main === undefined && pkg.exports === undefined) continue;
+    if (MARKET_ONLY.has(pkg.name)) continue;
     const unbundled = Object.keys(pkg.dependencies ?? {}).filter(
       (d) => !NATIVE_DEPENDENCIES.has(d),
     );

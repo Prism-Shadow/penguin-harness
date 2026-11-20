@@ -33,6 +33,7 @@
     "@penguinharness/ape-rsi-toolkit": "workspace:*",
     "@penguinharness/awm-rsi-toolkit": "workspace:*",
     "@penguinharness/browser-automation": "workspace:*",
+    "@penguinharness/computer-use": "workspace:*",
     "@penguinharness/continual-learning": "workspace:*",
     "@penguinharness/data-analysis": "workspace:*",
     "@penguinharness/default-rsi-toolkit": "workspace:*",

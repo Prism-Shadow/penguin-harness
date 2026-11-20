@@ -7,9 +7,10 @@
  *
  * Two implementations, one contract:
  *   - the builtin registry serves the index embedded in this package
- *     (builtin-index.json — the four sandbox backends the workspace ships, each row carrying
- *     the descriptions of the package's own card contribution and its icon, so its card renders
- *     on a server the package is not installed on);
+ *     (builtin-index.json — the server-module plugins of the workspace: the four sandbox
+ *     backends the build ships, and the market-only ones it does not, such as computer-use;
+ *     each row carries the descriptions of the package's own card contribution and its icon, so
+ *     its card renders on a server the package is not installed on);
  *   - the HTTP registry fetches an `index.json` URL and runs it through the same
  *     validator, so a remote index is trusted no further than the embedded one — and less
  *     in one respect: its entries lose their `icon`, an SVG this server would serve as its own
