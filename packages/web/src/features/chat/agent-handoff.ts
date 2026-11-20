@@ -15,6 +15,7 @@
  */
 import { buildHandoffMessage, buildModelSwitchMessage } from "@prismshadow/amsp/markers";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
+import { isConversationAgent } from "../../lib/builtin-agents";
 
 export {
   parseBackgroundTaskDoneMessage,
@@ -38,12 +39,13 @@ export const modelSwitchMessage = buildModelSwitchMessage;
  * Filters the `/agent` picker's candidates by its search box: a case-insensitive **substring**
  * match on the agentId or the display name — the same rule the model picker's search box uses,
  * so a word typed from memory ("creator") still finds the agent wherever it sits in the id. An
- * empty query returns every candidate.
+ * empty query returns every candidate but the system Agent, which takes no conversation.
  */
 export function filterAgents(agents: AgentSummary[], query: string): AgentSummary[] {
   const q = query.trim().toLowerCase();
-  if (!q) return agents;
-  return agents.filter(
+  const candidates = agents.filter(isConversationAgent);
+  if (!q) return candidates;
+  return candidates.filter(
     (a) => a.agentId.toLowerCase().includes(q) || (a.name ?? "").toLowerCase().includes(q),
   );
 }

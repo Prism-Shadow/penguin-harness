@@ -44,7 +44,7 @@ export function orgDeletePlan(
   for (const agent of agents) {
     const employments = employmentsOf(agent);
     if (!employments.some((e) => e.orgId === orgId)) continue;
-    if (isBuiltinAgent(agent.agentId)) {
+    if (isBuiltinAgent(agent)) {
       plan.kept.push({ agent, reason: { kind: "builtin" } });
       continue;
     }
