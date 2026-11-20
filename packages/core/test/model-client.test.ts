@@ -14,12 +14,17 @@
  *   the listing's own message.
  * - Given the mmsp client with a base URL and no key, the open MMSP server is listed keyless,
  *   even with MMSP_API_KEY set.
+ * - Given a JellyToken-compatible Chat Completions connection with a key, the request goes to the
+ *   JellyToken chat endpoint with the upstream model id unchanged and its Bearer key.
+ * - Given a JellyToken gateway without a key, construction fails before the gateway is called even
+ *   when OPENAI_API_KEY is set.
  * - Given any other construction failure, it passes through unchanged.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GenerativeModel } from "../src/llm/generative-model.js";
 import { listEndpointModels } from "../src/llm/list-models.js";
 import { ModelCredentialError } from "../src/llm/model-client.js";
+import { userText } from "@prismshadow/amsp/records";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -72,6 +77,43 @@ describe("building a model's client: MMSP decides what a missing key means", () 
     for (const baseUrl of [undefined, "https://api.deepseek.com", "https://API.deepseek.com/"]) {
       expect(buildError({ modelId: "deepseek-flash", baseUrl }), String(baseUrl)).toBeUndefined();
     }
+  });
+
+  it("a JellyToken-compatible request uses its gateway, Bearer key and unchanged model id", async () => {
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, _init?: RequestInit) =>
+        new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+          headers: { "content-type": "text/event-stream" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const model = new GenerativeModel({
+      modelId: "deepseek-v4.1-flash-1017",
+      apiKey: "sk-jellytoken-test",
+      baseUrl: "https://aiservice.jellytoken.com/v1",
+      clientType: "openai-chat",
+      tools: [],
+    });
+    const stream = model.streamGenerate({ newMessages: [userText("hi")] });
+    while (!(await stream.next()).done) {
+      // Drain the response.
+    }
+    expect(fetchMock).toHaveBeenCalled();
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toBe("https://aiservice.jellytoken.com/v1/chat/completions");
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer sk-jellytoken-test");
+    expect(JSON.parse(String(init?.body)).model).toBe("deepseek-v4.1-flash-1017");
+  });
+
+  it("a keyless JellyToken gateway is refused without borrowing OPENAI_API_KEY", () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-openai-env");
+    const err = buildError({
+      modelId: "deepseek-v4.1-flash-1017",
+      clientType: "openai-chat",
+      baseUrl: "https://aiservice.jellytoken.com/v1",
+    });
+    expect(err).toBeInstanceOf(ModelCredentialError);
+    expect((err as Error).message).toContain("OPENAI_API_KEY");
   });
 
   it("any other construction failure passes through unchanged", () => {

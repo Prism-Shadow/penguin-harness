@@ -10,7 +10,7 @@ import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { PeakWindows } from "./peak-windows";
 import type { ProtocolClientType } from "./protocol-client-types";
 import { EVOLUTION_DEMO } from "./evolution-demo";
-import type { Strings } from "./strings";
+import { zh, type Strings } from "./strings";
 
 export const en: Strings = {
   appName: "PenguinHarness",
@@ -2627,6 +2627,9 @@ export const en: Strings = {
     unpinGroup: "Remove from favorites",
     foldedGroups: (n: number): string => (n === 1 ? "1 more group" : `${n} more groups`),
     discountBadge: (pct: number): string => `${pct}% off`,
+    // The badge quotes the vendor's offer verbatim; its tooltip explains it in English.
+    offerFromBadge: zh.models.offerFromBadge,
+    offerFromTitle: (pct: number): string => `Advertised rates start at ${pct}% of list price`,
     discountTitle: (pct: number): string => `Promotion: ${pct}% off the list price`,
     offPeakTitle: (pct: number, peak: PeakWindows): string => {
       const day = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -2683,6 +2686,7 @@ export const en: Strings = {
     groupMenuTitle: (sort: string): string => `Settings · Sort: ${sort}`,
     sortHeading: "Sort",
     sortModes: {
+      catalog: "Catalog order",
       "price-asc": "Price (low to high)",
       "price-desc": "Price (high to low)",
       name: "Name (A→Z)",

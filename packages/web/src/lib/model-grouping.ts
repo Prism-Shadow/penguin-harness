@@ -17,6 +17,7 @@
  * order. Storage stays out of this module: the caller loads the array and passes it in.
  */
 import {
+  MODEL_CATALOG,
   MODEL_PROVIDERS,
   catalogEntryFor,
   offPeakAt,
@@ -98,6 +99,22 @@ export interface ProviderGroup<T extends ModelRowLike> {
   rows: T[];
 }
 
+// Only providers that publish a display order have a rank table. Unlisted project rows trail
+// their presets in the same relative order they had in the project.
+const catalogRanks = new Map(
+  MODEL_PROVIDERS.filter((p) => p.catalogOrder).map((p) => [
+    p.id,
+    new Map(MODEL_CATALOG.filter((m) => m.provider === p.id).map((m, i) => [m.modelId, i])),
+  ]),
+);
+
+export function catalogOrderedRows<T extends ModelRowLike>(rows: readonly T[]): T[] {
+  const ranks = rows[0] && catalogRanks.get(rows[0].provider);
+  if (!ranks) return [...rows];
+  const rank = (m: T) => ranks.get(m.modelId) ?? ranks.size;
+  return [...rows].sort((a, b) => rank(a) - rank(b));
+}
+
 /**
  * Filter + group by vendor; rows within a group keep their original order (the models page
  * then orders each group by that group's sort, model-sort.ts; the chat model picker keeps
@@ -134,14 +151,17 @@ export function groupModelRows<T extends ModelRowLike>(
  * Flattens the library grouping into one ordered list (the chat model picker uses this):
  * rows ordered exactly as the model page shows them — built-in provider groups in
  * MODEL_PROVIDERS order (custom last), then user-defined groups, with `groupOrder` applied
- * on top; in-group row order preserved. Passing the page's stored order here is what keeps
+ * on top; project row order is preserved unless the group publishes a catalog order.
+ * Passing the page's stored order here is what keeps
  * "exactly as the model page shows them" true once a user has dragged their groups.
  */
 export function orderModelsLikeLibrary<T extends ModelRowLike>(
   rows: T[],
   groupOrder: readonly string[] = [],
 ): T[] {
-  return groupModelRows(rows, "", groupOrder).flatMap((g) => g.rows);
+  return groupModelRows(rows, "", groupOrder).flatMap((g) =>
+    g.provider.catalogOrder ? catalogOrderedRows(g.rows) : g.rows,
+  );
 }
 
 /**

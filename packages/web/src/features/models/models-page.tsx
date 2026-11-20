@@ -21,8 +21,8 @@
  * Runcrate, user-defined), the speed test, and the gear last on every group: a menu with the
  * group's sort and the group settings (group-settings-menu.tsx, provider-settings-dialog.tsx).
  *
- * Each group orders its own models (model-sort.ts): by the price billed right now, low to high
- * unless the user picked otherwise from the gear, or by name. The choice is remembered per group
+ * Each group orders its own models (model-sort.ts): by the price billed right now, low to high,
+ * or by catalog order where the provider publishes one, unless the user picks another sort. The choice is remembered per group
  * in this browser, applies to search results too, and leaves the group order and the chat model
  * picker alone.
  *
@@ -161,7 +161,7 @@ import {
   loadModelGroupOrder,
   saveModelGroupOrder,
 } from "../../lib/model-group-order";
-import { TAG_TONE, modelTags } from "../../lib/model-tags";
+import { TAG_TONE, modelTags, showsVisionDetails } from "../../lib/model-tags";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -533,11 +533,9 @@ type FieldErrors = Partial<
  * checkable, base URL is required, an empty context falls back to the default). Matches
  * the catalog using the **identity as loaded** (original's paired reference).
  */
-function isPreset(row: RowState): boolean {
-  return (
-    row.original !== null &&
-    catalogEntryFor(row.original.provider, row.original.modelId) !== undefined
-  );
+function loadedPreset(row: RowState | null) {
+  const original = row?.original;
+  return original ? catalogEntryFor(original.provider, original.modelId) : undefined;
 }
 
 /**
@@ -2670,6 +2668,7 @@ export function ModelCard({
    * row of their own costs one line and gives the name the whole of the first.
    */
   const tags = modelTags({
+    preset: catalogEntryFor(row.provider, row.modelId),
     isDefault,
     vision: row.vision,
     isVisionModel,
@@ -3002,7 +3001,8 @@ function ModelDialog({
   /** Single-flight guard for the vision probe: it bills the user, so never twice at once. */
   const visionInFlight = useRef<Promise<void> | null>(null);
   const isNew = row === null;
-  const preset = row !== null && isPreset(row);
+  const preset = loadedPreset(row);
+  const showVisionDetails = showsVisionDetails(preset);
   /** The loaded row's running promotion, explained under the price fields. */
   const promotion = fractionOff(row?.discount);
   /**
@@ -3712,7 +3712,7 @@ function ModelDialog({
             {S.models.setDefault}
           </Button>
         )}
-        {!isNew && form.vision && !isVisionModel && (
+        {!isNew && showVisionDetails && form.vision && !isVisionModel && (
           <Button
             size="sm"
             title={S.models.visionModelHint}
@@ -4137,11 +4137,13 @@ function ModelDialog({
                   {form.modelId}
                 </span>
               )}
-              {(isDefault || form.vision || isVisionModel) && (
+              {(isDefault || (showVisionDetails && (form.vision || isVisionModel))) && (
                 <span className="flex flex-wrap items-center gap-1 pt-0.5">
                   {isDefault && <Pill tone={TAG_TONE.status}>{S.models.default}</Pill>}
-                  {form.vision && <Pill tone={TAG_TONE.capability}>{S.models.visionBadge}</Pill>}
-                  {isVisionModel && (
+                  {showVisionDetails && form.vision && (
+                    <Pill tone={TAG_TONE.capability}>{S.models.visionBadge}</Pill>
+                  )}
+                  {showVisionDetails && isVisionModel && (
                     <Pill tone={TAG_TONE.capability}>{S.models.visionModelBadge}</Pill>
                   )}
                 </span>

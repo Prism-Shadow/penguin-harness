@@ -13,7 +13,7 @@
  * `modelLabel` lives here too (model-select.tsx re-exports it for its existing importers), so
  * the modal and the triggers share it without importing each other.
  */
-import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
+import { catalogEntryFor, type ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
 import type { ModelInfo } from "@prismshadow/penguin-server/api";
 import {
   discountedPrice,
@@ -132,6 +132,7 @@ export function pickerRowTags(
   now: Date = new Date(),
 ): ModelTag[] {
   return modelTags({
+    preset: catalogEntryFor(m.provider, m.modelId),
     isDefault: sameModelRef(m, defaultModel),
     vision: m.vision !== false,
     fastMode: m.fastMode === true,
@@ -188,7 +189,8 @@ function atWordBoundary(f: string, q: string): boolean {
 
 /**
  * Search results across every group: the visible rows matching `query`, grouped by provider,
- * best matches first — rows within a group by rank, and groups by their best row. Ties keep the
+ * best matches first — groups by their best row. A curated group's rows keep their catalog
+ * order even while filtering; all other groups list their best matches first. Ties keep the
  * library order (the user's group order, then in-group order), so equally good matches read in
  * the sequence the rail shows.
  */
@@ -204,10 +206,10 @@ export function searchPickerGroups<T extends ModelCredentialRowLike>(
     ...(groupOrder !== undefined ? { groupOrder } : {}),
   });
   const ranked = regroup(visible, groupOrder).map((g, order) => {
-    const rows = g.rows
-      .map((row, i) => ({ row, i, rank: matchRank(row, query) }))
-      .sort((a, b) => a.rank - b.rank || a.i - b.i);
-    return { group: { ...g, rows: rows.map((r) => r.row) }, order, best: rows[0]?.rank ?? 4 };
+    const rows = g.rows.map((row) => ({ row, rank: matchRank(row, query) }));
+    const best = rows.reduce((rank, r) => Math.min(rank, r.rank), 4);
+    if (!g.provider.catalogOrder) rows.sort((a, b) => a.rank - b.rank);
+    return { group: { ...g, rows: rows.map((r) => r.row) }, order, best };
   });
   return ranked.sort((a, b) => a.best - b.best || a.order - b.order).map((r) => r.group);
 }

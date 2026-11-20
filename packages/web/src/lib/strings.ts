@@ -2829,6 +2829,8 @@ export const zh = {
     foldedGroups: (n: number): string => `其余 ${n} 个分组`,
     /** Badge on a row the seller is currently discounting: the rate off its list price. */
     discountBadge: (pct: number): string => `省 ${pct}%`,
+    offerFromBadge: (tenths: number): string => `${tenths / 10}折起`,
+    offerFromTitle: (pct: number): string => `供应商报价：最低为牌价的 ${pct}%`,
     discountTitle: (pct: number): string => `促销价：已在牌价基础上打 ${pct}% 折扣`,
     /**
      * Same badge as a flat promotion; only the explanation differs, because this rate comes and
@@ -2897,8 +2899,9 @@ export const zh = {
     groupMenuTitle: (sort: string): string => `设置 · 排序：${sort}`,
     /** The gear menu's first section: how the group's models are ordered (radio rows). */
     sortHeading: "排序",
-    /** The three orders; price is the blended rate billed right now. */
+    /** In-group orders; price is the blended rate billed right now. */
     sortModes: {
+      catalog: "目录顺序",
       "price-asc": "价格（从低到高）",
       "price-desc": "价格（从高到低）",
       name: "名称（A→Z）",
