@@ -23,6 +23,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { librarySkill, loadPreinstalledPlugins, usePushedPluginLibrary } from "../src/index.js";
 import {
+  agentDir,
   agentsMdPath,
   assembleSystemPrompt,
   DEFAULT_AGENT_ID,
@@ -190,7 +191,7 @@ describe("provisionProjectAgents", () => {
 describe("support Agent provisioning", () => {
   it("seeds the default Project's editable workbench once and preserves user edits", async () => {
     await provisionProjectAgents();
-    const base = path.join(tmpRoot, DEFAULT_PROJECT_ID, "agents", SUPPORT_AGENT_ID);
+    const base = agentDir(tmpRoot, DEFAULT_PROJECT_ID, SUPPORT_AGENT_ID);
     const file = path.join(base, "agent_state/workbenches/support/ui/index.html");
     expect((await fs.readFile(file, "utf8")).length).toBeGreaterThan(0);
     const config = await loadAgentState({ agentId: SUPPORT_AGENT_ID });
