@@ -4936,6 +4936,9 @@ Scenarios:
     goalRemove: "Exit goal mode",
     /** The remove label of a composer switch's chip (a plugin's mode, e.g. Plan mode). */
     switchOff: (title: string): string => `Turn off ${title}`,
+    /** The end of a "+" menu row for a composer mode the Agent lacks: picking it installs the plugin on the Agent, then turns the mode on. */
+    switchInstall: "Install",
+    switchInstalling: "Installing…",
     /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
     goalPluginMissing: "Goal mode needs the goal plugin: install it on this Agent to start a goal.",
     goalPluginInstall: "Install on this Agent",

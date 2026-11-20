@@ -1233,10 +1233,16 @@ export interface AgentCreateRequest {
   /**
    * Library plugin names installed into the new Agent, seeding it at creation — each plugin's
    * skills and hook package. Every name must exist in the library (404 `unknown_plugin`
-   * otherwise, before anything is created); omitted or empty leaves the Agent with nothing
-   * installed, which is what a plain Agent gets by default.
+   * otherwise, before anything is created). The library's default-install plugins join them
+   * unless `defaultPlugins` is false.
    */
   plugins?: string[];
+  /**
+   * Whether the library's default-install plugins (those whose card sets `defaultInstall`: goal
+   * mode and Plan mode) join `plugins`; omitted = true. A client that sends the complete list it
+   * showed the user, as the Web App's create dialog does, sends false with it.
+   */
+  defaultPlugins?: boolean;
   /**
    * Skills imported from a directory on disk instead of the library. `skillsDirectory` is the
    * absolute path the user picked and `directorySkills` are the names to install from it, read
@@ -4220,6 +4226,8 @@ export interface PluginItem {
   quickStart?: QuickStartItem;
   /** The card's `composerMode`: an Agent with the hook package gets it as a switch in the composer's "+" menu (sent as `TaskCreateRequest.promptHooks`). */
   composerMode?: true;
+  /** The card's `defaultInstall`: every new Agent gets the plugin (see `AgentCreateRequest.defaultPlugins`); absent on a server that predates the field, and for a plugin an admin installed. */
+  defaultInstall?: true;
   /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (its mcpServers contributions); `[]` without any. */
   mcpServers: PluginMcpServerItem[];
 }

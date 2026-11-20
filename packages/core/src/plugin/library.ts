@@ -58,6 +58,12 @@ export interface PluginCard {
   /** Whether default_agent gets the plugin at creation; absent = true for a shipped plugin, always false for one an operator installed. */
   preinstall?: boolean;
   /**
+   * Whether every Agent created from now on gets the plugin (an Agent create installs it unless
+   * the request opts out); absent = false, and always false for one an operator installed.
+   * default_agent's set is `preinstall`'s, not this.
+   */
+  defaultInstall?: boolean;
+  /**
    * Offer the hook package as a switch in the chat composer's "+" menu, titled by this card: while
    * it is on, every message the user sends runs the package's `trigger: "host"` `user_prompt`
    * command and its `context` follows the message. Needs such a command; ignored without one.
