@@ -4,18 +4,12 @@
  * - A model lists the tool bindings the enabled plugins declare and it can serve, in the server's
  *   order and language, marking the one the Project uses it for.
  * - The card's mark names the operations the model is in use for, and is absent otherwise.
- * - In the dialog an owner gets a short action on every other operation; a member sees only what
- *   is already assigned, with no action.
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ToolBinding } from "../src/api/tool-types";
-import {
-  ModelInUseMark,
-  ModelOperationsBlock,
-  modelOperations,
-} from "../src/features/models/model-operations";
+import { ModelInUseMark, modelOperations } from "../src/features/models/model-operations";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
@@ -61,27 +55,5 @@ describe("the operations a model offers", () => {
       );
     expect(mark(river)).toContain('aria-label="In use: Meeting notes"');
     expect(mark(lake)).toBe("");
-  });
-
-  it("gives an owner an action on each other operation and a member only what is assigned", () => {
-    setActiveStrings(en);
-    const block = (canEdit: boolean) =>
-      renderToStaticMarkup(
-        createElement(ModelOperationsBlock, {
-          operations: modelOperations(bindings, river, "en"),
-          canEdit,
-          isDisabled: () => false,
-          onUse: () => {},
-        }),
-      );
-    const owner = block(true);
-    expect(owner).toContain("Meeting notes");
-    expect(owner).toContain("In use");
-    expect(owner).toContain("Narration");
-    expect(owner.match(/<button/g)).toHaveLength(1);
-    const member = block(false);
-    expect(member).toContain("Meeting notes");
-    expect(member).not.toContain("Narration");
-    expect(member).not.toContain("<button");
   });
 });

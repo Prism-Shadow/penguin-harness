@@ -23,10 +23,6 @@ export const en: Strings = {
     unbound: "Not set",
     noModels: "No compatible models",
     noTools: "The multimodal tools plugin is off in this Project. Turn it on on the Plugins page.",
-    setDefault: "Set default",
-    setDefaultHint: (operation: string) =>
-      `Make this the Project's default ${operation.toLowerCase()} model`,
-    inUse: "In use",
     inUseFor: (operations: readonly string[]) => `In use: ${operations.join(", ")}`,
     dictation: "Dictation",
     polish: "Polish dictation",
@@ -56,6 +52,45 @@ export const en: Strings = {
     play: "Play audio",
     audioError: "Could not play the audio for this reply.",
     preparing: "Preparing audio",
+  },
+
+  defaultModels: {
+    title: "Default models",
+    intro:
+      "New chats, the multimodal tools and voice use these models by default. Each one is saved as you pick it.",
+    introMember:
+      "New chats, the multimodal tools and voice use these models by default. Only the Project's owner can change them.",
+    introOnboarding:
+      "Pick a default chat model first and new chats will use it; the multimodal and tool defaults can wait. Each one is saved as you pick it.",
+    chat: "Chat",
+    multimodal: "Multimodal",
+    tools: "Tools",
+    chatModel: "Default chat model",
+    chatHint: "Used for new chats",
+    empty: "Connect a provider that offers this kind of model",
+    emptyAction: "Go to Models",
+    done: "Done",
+    setMultimodal: "Set as default multimodal model",
+    setMultimodalHint: (operations: readonly string[]) =>
+      `Make it this Project's default for: ${operations.join(", ")}`,
+    confirmMultimodalTitle: "Set as default multimodal model",
+    confirmMultimodal: (name: string, operations: readonly string[]) =>
+      `Make "${name}" the default model for ${operations.join(", ")}?`,
+    multimodalSet: (operations: readonly string[]) => `Default for: ${operations.join(", ")}`,
+    guideTitle: "Connect a model provider first",
+    guideBody:
+      "This Project has no model it can use yet: no chat model has an API key. Connect a provider, or add a key on the Models page, then choose the default models.",
+    tokendance: "One wallet for many providers' models, no keys to type",
+    penguinGo: "PenguinHarness's own model service",
+    connect: "Connect",
+    keyText: "Already have an API key from a provider?",
+    keyAction: "Add an API key",
+    later: "Later",
+    composerNone:
+      "This Project has no default model yet. Set one, or choose a model for this chat.",
+    composerNoneMember:
+      "This Project has no default model yet. Ask its owner to set one, or choose a model for this chat.",
+    composerAction: "Set default model",
   },
 
   nav: {
@@ -3122,6 +3157,7 @@ export const en: Strings = {
     workspace: "Workspace",
     model: "Model",
     modelDefault: "Project default",
+    modelRequired: "This Project has no default model: choose the model this task runs on.",
     deleteTitle: "Delete scheduled task",
     deleteConfirm: (name: string): string => `Delete scheduled task "${name}"?`,
     /** Toasts after a write. A schedule fires on its own clock, so none of them mentions when a conversation picks the change up: there is nothing to pick up. */
@@ -6910,7 +6946,8 @@ Scenarios:
     },
     modelCredentialMissing: (modelId: string) =>
       `Model ${modelId} has no API key yet — configure it on the Models page first`,
-    noDefaultModel: "This project has no default model yet — add one on the Models page first",
+    noDefaultModel:
+      "This project has no default model yet — set one under Default models on the Models page",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
       invalid_credentials: "Incorrect username or password.",

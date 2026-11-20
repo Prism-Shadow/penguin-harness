@@ -30,7 +30,7 @@ export const zh = {
   appName: "PenguinHarness",
 
   voice: {
-    /** The Project settings page, the Models header's way there, and the model dialog's block. */
+    /** The Project settings page of the multimodal models. */
     models: "多模态模型",
     modelHelp:
       "penguin tools 命令使用这里选定的模型；「图片理解」就是项目的视觉模型，也替不支持图片的模型读图。聊天里，语音输入使用「语音识别」，朗读使用「语音合成」，润色使用「文本生成」。",
@@ -39,11 +39,6 @@ export const zh = {
     unbound: "未指定",
     noModels: "没有兼容的模型",
     noTools: "本项目未启用多模态工具插件，可在插件页启用。",
-    /** A model dialog's action for one operation the model can serve, and its tooltip. */
-    setDefault: "设为默认",
-    setDefaultHint: (operation: string) => `设为本项目的默认${operation}模型`,
-    /** The operation's current model, in the model dialog. */
-    inUse: "已选用",
     /** The quiet mark on a model card: which operations it is the Project's model for. */
     inUseFor: (operations: readonly string[]) => `已选用：${operations.join("、")}`,
     /** The Project settings group that holds dictation's polish. */
@@ -74,6 +69,47 @@ export const zh = {
     play: "播放语音",
     audioError: "无法播放这条回复的语音。",
     preparing: "正在生成语音",
+  },
+
+  defaultModels: {
+    /** The dialog's title, and the Models header's button that opens it. */
+    title: "默认模型",
+    intro: "新对话、多模态工具与语音交互默认使用这些模型。每项选好即保存。",
+    introMember: "新对话、多模态工具与语音交互默认使用这些模型。只有 Project 所有者可以更改。",
+    /** The sentence when the first-run guide opened the dialog. */
+    introOnboarding:
+      "先选一个默认对话模型，新对话就会用它；多模态与工具可以稍后再设。每项选好即保存。",
+    chat: "对话",
+    multimodal: "多模态",
+    tools: "工具",
+    chatModel: "默认对话模型",
+    chatHint: "新建对话时使用",
+    /** A row nothing can serve, and where it sends the reader. */
+    empty: "连接一个提供这类模型的供应商",
+    emptyAction: "前往模型库",
+    done: "完成",
+    /** A model dialog's action: the default for every multimodal operation it can serve. */
+    setMultimodal: "设为默认多模态模型",
+    setMultimodalHint: (operations: readonly string[]) =>
+      `设为本项目以下各项的默认模型：${operations.join("、")}`,
+    confirmMultimodalTitle: "设为默认多模态模型",
+    confirmMultimodal: (name: string, operations: readonly string[]) =>
+      `确定把「${name}」设为以下各项的默认模型？${operations.join("、")}。`,
+    multimodalSet: (operations: readonly string[]) => `已设为默认：${operations.join("、")}`,
+    /** The first-run guide, before any chat model has a key. */
+    guideTitle: "先连接一个模型供应商",
+    guideBody:
+      "这个 Project 还没有可用的模型：没有任何对话模型配置了 API key。连接一个供应商，或在模型库填写 key，之后再选择默认模型。",
+    tokendance: "一个钱包使用多家模型，无需逐个填写 key",
+    penguinGo: "PenguinHarness 自带的模型服务",
+    connect: "连接",
+    keyText: "已有某家供应商的 API key？",
+    keyAction: "填写 API key",
+    later: "稍后",
+    /** The composer's quiet reminder while a new chat has no model to run on. */
+    composerNone: "这个 Project 还没有默认模型。设置一个，或为这次对话选择一个模型。",
+    composerNoneMember: "这个 Project 还没有默认模型。请所有者设置，或为这次对话选择一个模型。",
+    composerAction: "设置默认模型",
   },
 
   nav: {
@@ -3369,6 +3405,7 @@ export const zh = {
     workspace: "Workspace",
     model: "Model",
     modelDefault: "Project 默认",
+    modelRequired: "这个 Project 没有默认模型，请为定时任务选择模型。",
     deleteTitle: "删除定时任务",
     deleteConfirm: (name: string): string => `确认删除定时任务「${name}」？`,
     /** Toasts after a write. A schedule fires on its own clock, so none of them mentions when a conversation picks the change up: there is nothing to pick up. */
@@ -7222,7 +7259,7 @@ Benchmark：
     },
     modelCredentialMissing: (modelId: string) =>
       `模型 ${modelId} 还没有可用的 API key，请先在「模型」页为它配置`,
-    noDefaultModel: "该 Project 还没有默认模型，请先在「模型」页添加模型并设为默认",
+    noDefaultModel: "该 Project 还没有默认模型，请先在模型库的「默认模型」中设置",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
       invalid_credentials: "用户名或密码错误。",

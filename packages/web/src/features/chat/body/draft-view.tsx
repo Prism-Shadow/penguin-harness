@@ -49,7 +49,7 @@ import {
   type RefObject,
 } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { Notice } from "@prismshadow/penguin-ui";
+import { Notice, TextAction } from "@prismshadow/penguin-ui";
 import type {
   AgentModelConfigDto,
   AgentSummary,
@@ -112,6 +112,7 @@ import { WorkspaceSelect } from "../../workspace";
 import { FilesPanelToggle } from "../dock-toggles";
 import { defaultChatModel, sameModelRef } from "../../models";
 import { toastApiError } from "../../../lib/toast-api-error";
+import { requestDefaultModels } from "../../../lib/default-models-request";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
@@ -171,7 +172,7 @@ export function DraftView({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { agents: localAgents, setCurrentAgentId } = useProject();
+  const { agents: localAgents, setCurrentAgentId, currentProject } = useProject();
   /**
    * Agents on the machine the workspace is on. They are per-server: a Session created on
    * another machine can only name an Agent that exists THERE, so offering this machine's
@@ -947,6 +948,23 @@ export function DraftView({
         >
           {S.project.noChatModels}
         </Notice>
+      )}
+      {/* No default model, and none chosen for this chat: Send waits for one (ChatInput's
+          canSend), and this quiet line says why, with the way to the 「默认模型」 dialog for the
+          owner — words and a text action, the way the composer's other notes read. */}
+      {models && chatModels.length > 0 && !models.defaultModel && modelRef === null && (
+        <p role="status" className="anim-fade mb-1 text-xs text-fg-muted">
+          {currentProject?.role === "owner" ? (
+            <>
+              {S.defaultModels.composerNone}{" "}
+              <TextAction onClick={requestDefaultModels}>
+                {S.defaultModels.composerAction}
+              </TextAction>
+            </>
+          ) : (
+            S.defaultModels.composerNoneMember
+          )}
+        </p>
       )}
       <ChatInput
         status="idle"

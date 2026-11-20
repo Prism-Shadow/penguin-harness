@@ -13,6 +13,8 @@
  * - A refused create keeps the dialog open with the reason under the form, still unsaved.
  * - Editing: Save is held while nothing differs from the task; flipping Enabled is a change that
  *   waits for Save (nothing is written on the click), and a prompt cleared is named as required.
+ * - In a Project with no default model, a task that would start a new Session names its model:
+ *   Create waits for one, and says why.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createElement as h, useState } from "react";
@@ -23,6 +25,7 @@ import { en } from "../src/lib/strings-en";
 import { ScheduleFormModal } from "../src/features/schedules/schedule-form-modal";
 import {
   AGENT_ID,
+  agentConfig,
   agentServer,
   buttonIn,
   fieldIn,
@@ -63,8 +66,11 @@ function Harness({ editing, onSaved }: { editing: ScheduleItem | null; onSaved: 
   });
 }
 
-async function openForm(editing: ScheduleItem | null = null) {
-  const server = agentServer();
+async function openForm(
+  editing: ScheduleItem | null = null,
+  options: Parameters<typeof agentServer>[1] = {},
+) {
+  const server = agentServer(agentConfig(), options);
   const onSaved = vi.fn();
   await mountAgentApp(h(Harness, { editing, onSaved }), { at: `/agents/${AGENT_ID}` });
   await waitFor(() => dialogs().length === 1);
@@ -139,6 +145,20 @@ describe("the scheduled task form", () => {
       // The start the picker was set to, on the reader's clock.
       startAt: new Date(2026, 9, 11, 9, 0).toISOString(),
     });
+  });
+
+  it("waits for a model in a Project with no default model, and says why", async () => {
+    const chat = {
+      provider: "deepseek",
+      modelId: "deepseek-flash",
+      isDefault: false,
+      credential: {},
+      effective: { apiKeySource: "none" },
+    };
+    await openForm(null, { models: { models: [chat], providers: {} } as never });
+    await fillRequired();
+    expect(verb(en.common.create).disabled).toBe(true);
+    expect(topDialog().textContent).toContain(en.schedule.modelRequired);
   });
 
   it("keeps a refused create open with the reason under the form, still unsaved", async () => {

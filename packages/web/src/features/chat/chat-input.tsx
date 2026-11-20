@@ -2739,6 +2739,8 @@ export function ChatInput({
                 {...(defaultModel !== undefined ? { defaultModel } : {})}
                 onChange={onChangeModel}
                 disabled={busy}
+                // A draft in a Project with no default model starts with none chosen.
+                emptyLabel={S.chat.chooseModel}
               />
             ) : models && onPickSessionModel && variant === "session" ? (
               <ModelCatalogSelect

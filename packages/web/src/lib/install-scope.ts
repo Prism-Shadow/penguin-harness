@@ -381,6 +381,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.modelOnboardingDismissed",
+    scope: "install",
+    why: "The Projects whose first-run model guide was closed in this browser — Project ids of this root.",
+  },
+  {
+    kind: "exact",
     key: "penguin.sandboxBackendPromptDismissed",
     scope: "install",
     why: "The machines whose Sandbox card no longer offers to install a backend — machine ids of this root.",
