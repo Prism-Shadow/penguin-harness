@@ -10,7 +10,8 @@
  * - With three workbenches of a fresh account's Agent: a real pointer drag of one tile onto the
  *   middle of another rings the target while it hovers and makes a folder on release, which
  *   opens as a panel over the grid; the menu moves a tile backward; the arrangement outlives a
- *   reload; restoring the default order asks first and then clears it.
+ *   reload; restoring the default order asks first and then clears it. After several pages of
+ *   navigation inside a grouped app, its close button still returns directly to its tile.
  * - The header's New folder makes a folder of the apps checked in its dialog, under the name
  *   typed there, at the first checked app's place.
  */
@@ -129,7 +130,9 @@ test.beforeAll(async ({ browser }) => {
         dataBase64: zip({
           [`${id}/package.json`]: JSON.stringify(manifest(title)),
           [`${id}/index.ts`]: INDEX,
-          [`${id}/ui/index.html`]: `<!doctype html><html><body><h1>${title}</h1></body></html>`,
+          [`${id}/ui/index.html`]: `<!doctype html><html><body><h1>${title}</h1>
+            <a href="#read">Read</a><a href="#review">Review</a><a href="#saved">Saved</a>
+            </body></html>`,
         }).toString("base64"),
       },
     });
@@ -215,9 +218,14 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   await expect(panel.getByRole("button", { name: /^Gamma,/ })).toBeVisible();
   await panel.getByRole("button", { name: /^Gamma,/ }).click();
   const window = page.getByRole("region", { name: "Gamma" });
-  await expect(window.frameLocator("iframe").getByRole("heading", { name: "Gamma" })).toBeVisible();
+  const inside = window.frameLocator("iframe");
+  await expect(inside.getByRole("heading", { name: "Gamma" })).toBeVisible();
+  for (const name of ["Read", "Review", "Saved"]) await inside.getByRole("link", { name }).click();
+  // Browser Back navigates the app's pages. The host's close leaves the whole app in one step.
+  await page.evaluate(() => history.back());
+  await expect.poll(() => inside.locator("body").evaluate(() => location.hash)).toBe("#review");
   await window.getByRole("button", { name: "Close, back to the App Center" }).click();
-  await expect(panel).toBeVisible();
+  await expect(panel.getByRole("button", { name: /^Gamma,/ })).toBeFocused();
 
   await page.keyboard.press("Escape");
   await expect(panel).toBeHidden();

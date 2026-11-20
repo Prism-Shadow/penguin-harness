@@ -14,6 +14,10 @@
  * - A click (or Enter) opens the app windowed, over the grid, in this page's own window stack
  *   (`?app=<agentId>/<workbenchId>`, `<machineId>:` first for a machine's, so Back closes it);
  *   the tile's menu also opens it full screen, the full page whose exit comes back here.
+ * - A folder unfolds in place from its icon (`?folder=<id>`, so Back closes it too;
+ *   folder-panel.tsx). Closing a window, a folder or the full page goes back to the host's own
+ *   entry for the view beneath, however many pages the app's frame went through
+ *   (lib/host-history.ts), and the focus goes back to the tile.
  * - A tile whose app is building shows a turning ring and does not open; it turns live by itself
  *   when the build ends (use-app-center.ts follows the server's workbench news).
  * - Every tile, every folder and the grid's empty space have a context menu: right-click,
@@ -23,7 +27,7 @@
  * With nothing to show, the page says what a workbench is and offers to have one built; there is
  * no manual path, so the AI button stands alone.
  */
-import { useLayoutEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import {
@@ -44,6 +48,7 @@ import {
 import * as api from "../../api/endpoints";
 import { agentSettingsPath } from "../../lib/agent-location";
 import { APP_CENTER_PATH } from "../../lib/app-center-path";
+import { openFullPage, returnToHostEntry } from "../../lib/host-history";
 import { localizedText } from "../../lib/skill-use";
 import { S } from "../../lib/strings";
 import { toastApiError } from "../../lib/toast-api-error";
@@ -52,7 +57,7 @@ import { useProject } from "../../state/project";
 import { AiCreateButtons, AiCreateModal } from "../ai-create";
 import type { AiExample } from "../ai-create";
 import { AppCenterWindow } from "./app-center-window";
-import { AppTile, FolderTile, MENU_PX, type TileMark } from "./app-tile";
+import { appTriggerId, AppTile, FolderTile, MENU_PX, type TileMark } from "./app-tile";
 import {
   arrange,
   dissolveFolder,
@@ -85,6 +90,10 @@ const APP_SKILLS = ["web-design", "penguin-plugin"];
 
 /** The query that names the app open in a window. */
 const OPEN_PARAM = "app";
+/** The query that names the open folder. */
+const FOLDER_PARAM = "folder";
+/** The history state a window's entry is pushed with: leaving it is a step back. */
+const WINDOW_ENTRY_STATE = { appCenterWindow: true };
 
 /** Three tiles a row on a phone, as a home screen has; as many as fit from `sm` up. */
 const GRID = "grid grid-cols-3 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(7rem,1fr))]";
@@ -104,6 +113,11 @@ function markOf(drop: Drop | null, id: string): TileMark {
   if (drop.kind === "beside" && drop.targetId === id) return drop.side;
   if (drop.kind === "into" && drop.targetId === id) return "into";
   return null;
+}
+
+/** The App Center's route with `params`: the grid, an open folder, a window. */
+function appCenterPath(params: URLSearchParams): string {
+  return params.size ? APP_CENTER_PATH + "?" + params : APP_CENTER_PATH;
 }
 
 export function AppCenterPage() {
@@ -128,36 +142,24 @@ export function AppCenterPage() {
   } = useAppCenter(projectId, agentIds);
 
   const [aiOpen, setAiOpen] = useState(false);
-  const folderParam = params.get("folder");
-  // Direct interaction must be visible in the same frame; the router also accepts browser Back
-  // and links from full-screen workbenches, which can arrive in a deferred React transition.
-  const [openFolderId, setSelectedFolderId] = useState(folderParam);
-  useLayoutEffect(() => setSelectedFolderId(folderParam), [folderParam]);
-  useLayoutEffect(() => {
-    // A rapid browser Back can skip the intermediate router render entirely. Its destination
-    // may have the same folderParam as the last committed render, despite our local open.
-    const onPop = () =>
-      setSelectedFolderId(new URLSearchParams(window.location.search).get("folder"));
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, []);
-  // Keep the departing folder mounted until its icons reach their previews, including on Back.
+  // The open folder is the address's alone, so Back, a link and a click all agree on it; a
+  // router update that React skips on the way (a Back pressed mid-transition) cannot leave a
+  // second copy behind.
+  const openFolderId = params.get(FOLDER_PARAM);
+  // The departing folder stays mounted until it has folded back into its icon, Back included.
   const [displayedFolderId, setDisplayedFolderId] = useState(openFolderId);
   if (openFolderId !== null && displayedFolderId !== openFolderId)
     setDisplayedFolderId(openFolderId);
+  /** Opening a folder from the grid adds an entry and another replaces it; closing leaves it. */
   const setOpenFolderId = (id: string | null) => {
-    setSelectedFolderId(id);
     const next = new URLSearchParams(params);
-    if (id === null) next.delete("folder");
-    else next.set("folder", id);
-    if (id === null && location.state?.fromAppGrid) void navigate(-1);
-    else
-      setParams(next, {
-        replace: openFolderId !== null,
-        state: {
-          fromAppGrid: id !== null && (openFolderId === null || location.state?.fromAppGrid),
-        },
-      });
+    if (id === null) {
+      next.delete(FOLDER_PARAM);
+      returnToHostEntry(navigate, appCenterPath(next));
+    } else {
+      next.set(FOLDER_PARAM, id);
+      setParams(next, { replace: openFolderId !== null });
+    }
   };
   const [renaming, setRenaming] = useState<GridFolder | null>(null);
   const [errorOf, setErrorOf] = useState<GridApp | null>(null);
@@ -212,24 +214,27 @@ export function AppCenterPage() {
   const openKey = params.get(OPEN_PARAM);
   const openApp = openKey === null || grid === null ? null : findItem(grid, openKey);
   const windowApp = openApp?.type === "app" && !openApp.shortcut.unavailable ? openApp : null;
-  /** The window was opened from this page, so closing it is a step back rather than a new entry. */
-  const openedHere = (location.state as { appCenterWindow?: boolean } | null)?.appCenterWindow;
+  // A window leaving the address hands the focus back to the tile that opened it.
+  const previousWindow = useRef(openKey);
+  useLayoutEffect(() => {
+    if (openKey === null && previousWindow.current !== null)
+      document.getElementById(appTriggerId(previousWindow.current))?.focus({ preventScroll: true });
+    previousWindow.current = openKey;
+  }, [openKey]);
 
   const openWindow = (app: GridApp) => {
     const next = new URLSearchParams(params);
     next.set(OPEN_PARAM, app.id);
-    setParams(next, { state: { appCenterWindow: true } });
+    setParams(next, { state: WINDOW_ENTRY_STATE });
   };
+  /** Back to the grid or folder beneath: a step back over the app's own pages when it was pushed. */
   const closeWindow = () => {
-    if (openedHere === true) void navigate(-1);
-    else {
-      const next = new URLSearchParams(params);
-      next.delete(OPEN_PARAM);
-      setParams(next, { replace: true });
-    }
+    const next = new URLSearchParams(params);
+    next.delete(OPEN_PARAM);
+    returnToHostEntry(navigate, appCenterPath(next), {
+      stepBack: (location.state as typeof WINDOW_ENTRY_STATE | null)?.appCenterWindow === true,
+    });
   };
-  const openFullScreen = (app: GridApp, returnTo: string) =>
-    void navigate(app.shortcut.path, { state: { returnTo } });
 
   const actions: GridActions | null =
     grid === null || projectId === null
@@ -240,7 +245,10 @@ export function AppCenterPage() {
           titleOf,
           arrange: commit,
           open: openWindow,
-          openFullScreen: (app) => openFullScreen(app, APP_CENTER_PATH + location.search),
+          openFullScreen: (app) =>
+            openFullPage(navigate, app.shortcut.path, appCenterPath(params), {
+              fromWindow: false,
+            }),
           showError: setErrorOf,
           viewInSettings: (app) =>
             void navigate(
@@ -419,7 +427,9 @@ export function AppCenterPage() {
             title={titleOf(windowApp.shortcut)}
             onClose={closeWindow}
             onFullScreen={() =>
-              openFullScreen(windowApp, `${APP_CENTER_PATH}?${params.toString()}`)
+              openFullPage(navigate, windowApp.shortcut.path, appCenterPath(params), {
+                fromWindow: true,
+              })
             }
           />
         </AppWindow>
