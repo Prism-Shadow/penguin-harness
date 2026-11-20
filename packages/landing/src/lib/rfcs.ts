@@ -41,6 +41,7 @@ export interface RfcEntry {
 
 interface ParsedDocument {
   file: string;
+  raw: string;
   id: string;
   zh: boolean;
   title: string;
@@ -77,6 +78,7 @@ export function parseRfcDocument(file: string, raw: string): ParsedDocument | nu
     .find(Boolean);
   return {
     file,
+    raw,
     id: file.replace(/\.zh\.md$|\.md$/, ""),
     zh: file.endsWith(".zh.md"),
     title,
