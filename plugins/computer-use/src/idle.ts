@@ -41,7 +41,8 @@ const run: ExecFile = (file, args, env) =>
       file,
       [...args],
       { env, timeout: 4_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
-      (err, stdout) => (err ? reject(err) : resolve(String(stdout))),
+      (err, stdout, stderr) =>
+        err ? reject(Object.assign(err, { stderr: String(stderr) })) : resolve(String(stdout)),
     );
   });
 
@@ -132,7 +133,15 @@ export async function readIdle(opts: IdleOptions): Promise<IdleReading> {
       const ps = path.win32.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
       const out = await exec(
         ps,
-        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", WIN_PS],
+        // Encoded: a script with quotes and a here-string survives no command-line quoting.
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-EncodedCommand",
+          Buffer.from(WIN_PS, "utf16le").toString("base64"),
+        ],
         pass([
           "SystemRoot",
           "SYSTEMROOT",
@@ -182,7 +191,7 @@ export async function readIdle(opts: IdleOptions): Promise<IdleReading> {
               ? "the X server has no MIT-SCREEN-SAVER extension"
               : code === 3
                 ? `the display ${env.DISPLAY} could not be opened`
-                : `the X11 idle time could not be read (${err instanceof Error ? err.message.split("\n")[0] : String(err)})`,
+                : `the X11 idle time could not be read (${firstLine(err)})`,
         );
       }
       const ms = Number(out.trim());
@@ -191,8 +200,13 @@ export async function readIdle(opts: IdleOptions): Promise<IdleReading> {
     }
     return unknown(`${opts.platform} has no idle-time reader here`);
   } catch (err) {
-    return unknown(
-      `the idle time could not be read (${err instanceof Error ? err.message.split("\n")[0] : String(err)})`,
-    );
+    return unknown(`the idle time could not be read (${firstLine(err)})`);
   }
+}
+
+/** What a failed reader said: its stderr's first line, else its error's. */
+function firstLine(err: unknown): string {
+  const stderr = (err as { stderr?: unknown }).stderr;
+  if (typeof stderr === "string" && stderr.trim() !== "") return stderr.trim().split(/\r?\n/)[0]!;
+  return err instanceof Error ? err.message.split("\n")[0]! : String(err);
 }

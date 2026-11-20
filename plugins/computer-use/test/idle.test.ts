@@ -57,6 +57,9 @@ describe("the input idle time", () => {
       "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
     );
     expect(sys.runs[0]!.args).toContain("-NoProfile");
+    // The script travels encoded, so no command-line quoting can break it.
+    const encoded = sys.runs[0]!.args[sys.runs[0]!.args.indexOf("-EncodedCommand") + 1]!;
+    expect(Buffer.from(encoded, "base64").toString("utf16le")).toContain("GetLastInputInfo");
   });
 
   it("reads X11's idle time with xprintidle when installed, else Python over libXss", async () => {
