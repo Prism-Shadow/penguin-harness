@@ -150,7 +150,7 @@ function SummaryCard({
  * A purpose (`<package>:<operation>`) as a row names it: the operation, and the package it came
  * from without its npm scope.
  */
-export function toolPurposeLabel(purpose: string): { operation: string; source: string } {
+function toolPurposeLabel(purpose: string): { operation: string; source: string } {
   const cut = purpose.lastIndexOf(":");
   if (cut <= 0) return { operation: purpose, source: "" };
   const pkg = purpose.slice(0, cut);
