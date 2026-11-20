@@ -18,7 +18,8 @@ import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
 import { useInstallManifest } from "../../lib/workbench-tabs";
 import { rememberSelection } from "../../state/project";
-import { isAppCenterPath, returnToAppCenter } from "../../lib/app-center-path";
+import { isAppCenterPath } from "../../lib/app-center-path";
+import { returnToHostEntry } from "../../lib/host-history";
 import { useSafeMode } from "../../rescue/safe-mode";
 import { usePaletteActions } from "../../lib/palette-actions";
 import { WorkbenchExitBall } from "./exit-ball";
@@ -71,7 +72,7 @@ export function WorkbenchAppPage() {
         run: () => {
           rememberSelection(projectId, agentId);
           if (isAppCenterPath(returnTo)) {
-            returnToAppCenter(navigate, returnTo);
+            returnToHostEntry(navigate, returnTo);
             return;
           }
           const destination =
