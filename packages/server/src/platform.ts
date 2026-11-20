@@ -152,6 +152,11 @@ import { NpmPluginPackages } from "./plugin/install.js";
 import { PluginSourceSettings } from "./plugin/source-settings.js";
 import { PluginMirrorSettings } from "./plugin/mirror-settings.js";
 import { PluginLibraryModule } from "./plugin/library-module.js";
+import { PluginModuleRequestsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-requests";
+import { PluginModulePreinstallsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-preinstalls";
+import { PluginModules } from "./mechanisms/plugins.js";
+import { PluginModulesService } from "./services/plugin-modules.js";
+import { PluginModuleRoutes } from "./http/routes/plugin-modules.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
@@ -203,7 +208,6 @@ import { OrgCache } from "@prismshadow/penguin-library-organization";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
-import { BuiltinBrowserModule } from "./builtin-browser/module.js";
 import { AgentApiModule } from "./amsp/module.js";
 
 /**
@@ -571,6 +575,24 @@ export class WorkbenchesModule {}
 export class ThemesModule {}
 
 /**
+ * A library plugin's server modules, brought along by an install on an Agent (PRFC-0031): the
+ * ledger of requests and decisions, the record of preinstalled modules handled per Project
+ * (PRFC-0030), the service that applies the rule, and the member's and the administrator's
+ * routes. Its own group: the Agent service and the installed-plugins routes
+ * reach it as `PluginModules`, and nothing else reads the ledger.
+ */
+@Module({
+  children: [
+    PluginModuleRequestsRepo,
+    PluginModulePreinstallsRepo,
+    PluginModulesService,
+    PluginModuleRoutes,
+  ],
+  exports: [PluginModules],
+})
+export class PluginModulesModule {}
+
+/**
  * The Storage page: the data root measured by category, the cleanup of what can be regenerated,
  * and the Sessions by size and age. Its own group: it reads the session runtime, the indexes and
  * the Agents, and nothing reads it.
@@ -601,6 +623,7 @@ export class StorageModule {}
     CompanyModule,
     ApiModule,
     PluginLibraryModule,
+    PluginModulesModule,
     SandboxModule,
     SandboxSettingsModule,
     TerminalModule,
@@ -612,7 +635,6 @@ export class StorageModule {}
     WorkbenchesModule,
     ThemesModule,
     StorageModule,
-    BuiltinBrowserModule,
     AgentApiModule,
     Startup,
   ],

@@ -4,28 +4,32 @@
  * non-admin the form. The admin APIs answer a non-admin with 403 either way; this filter is
  * convenience, not the boundary.
  *
- * - A web admin gets every page, each once; a non-admin gets exactly the admin's personal pages
- *   (their browser and their archived chats among them) and nothing server-global; the desktop
- *   shell's window drops the account page and user management; a password session against a
- *   desktop-mode server keeps the account page.
+ * - A web admin gets every page, each once, the contributed ones among them; a non-admin gets
+ *   exactly the admin's personal pages (their browser and their archived chats among them) and
+ *   nothing server-global; the desktop shell's window drops the account page and user management;
+ *   a password session against a desktop-mode server keeps the account page.
+ * - A contributed page takes its place among the app's own by its order, inside its group; an
+ *   admin-only one stays off a non-admin's rail; one reusing a key of the app's is dropped.
  * - The rail lists an admin's groups once each, in page order, and a single group when only
  *   one remains (its cue to draw no heading).
  * - A requested page passes through when the viewer may open it; a forbidden or unknown page,
  *   or none, falls back to the first visible page; nothing visible resolves to nothing.
  */
 import { describe, expect, it } from "vitest";
+import type { SettingsSectionData } from "@prismshadow/penguin-web-plugin";
 import {
   resolveSettingsSection,
   settingsGroups,
   visibleSettingsSections,
+  type HostSettingsSectionKey,
+  type SettingsViewer,
 } from "../src/lib/settings-sections";
-import type { SettingsSectionKey } from "../src/lib/settings-sections";
 
 /**
- * Every Settings page there is. Keyed by the union, so a new page does not compile until it is
+ * Every page of the app's own. Keyed by the union, so a new page does not compile until it is
  * named here, and none can vanish from the web admin's rail unnoticed.
  */
-const EVERY_PAGE: Record<SettingsSectionKey, true> = {
+const APP_PAGES: Record<HostSettingsSectionKey, true> = {
   profile: true,
   general: true,
   appearance: true,
@@ -33,47 +37,40 @@ const EVERY_PAGE: Record<SettingsSectionKey, true> = {
   archived: true,
   storage: true,
   account: true,
-  browser: true,
   proxy: true,
   uploads: true,
   company: true,
-  chromeExtension: true,
   agentApi: true,
   plugins: true,
   users: true,
 };
 
+/** Two contributed pages, as the agent browser brings them: one personal, one admin-only. */
+const CONTRIBUTED: readonly SettingsSectionData[] = [
+  { key: "browser", group: "personal", visibility: "everyone", icon: "appWindow", order: 70 },
+  { key: "chromeExtension", group: "server", visibility: "admin", icon: "plug", order: 140 },
+];
+
+const rail = (viewer: SettingsViewer, contributed = CONTRIBUTED) =>
+  visibleSettingsSections(viewer, contributed);
+
 /** Admin signed into a plain `penguin server` through the login form. */
-const admin = visibleSettingsSections({
-  isAdmin: true,
-  desktopMode: false,
-  sessionVia: "password",
-});
+const admin = rail({ isAdmin: true, desktopMode: false, sessionVia: "password" });
 /** Ordinary account on the same server. */
-const plain = visibleSettingsSections({
-  isAdmin: false,
-  desktopMode: false,
-  sessionVia: "password",
-});
+const plain = rail({ isAdmin: false, desktopMode: false, sessionVia: "password" });
 /** The desktop shell's own window: single-user, token session, no password to change. */
-const shell = visibleSettingsSections({
-  isAdmin: true,
-  desktopMode: true,
-  sessionVia: "desktop",
-});
+const shell = rail({ isAdmin: true, desktopMode: true, sessionVia: "desktop" });
 /** A browser signed into that same desktop-mode server over loopback, with a real password. */
-const desktopBrowser = visibleSettingsSections({
-  isAdmin: true,
-  desktopMode: true,
-  sessionVia: "password",
-});
+const desktopBrowser = rail({ isAdmin: true, desktopMode: true, sessionVia: "password" });
 
 /** A viewer's pages by key, in rail order. */
 const keys = (sections: readonly { key: string }[]): string[] => sections.map((s) => s.key);
 
 describe("visibleSettingsSections", () => {
   it("gives a web admin every page, each once", () => {
-    expect(keys(admin).sort()).toEqual(Object.keys(EVERY_PAGE).sort());
+    expect(keys(admin).sort()).toEqual(
+      [...Object.keys(APP_PAGES), ...CONTRIBUTED.map((c) => c.key)].sort(),
+    );
   });
 
   it("gives a non-admin their own pages and nothing server-global", () => {
@@ -97,6 +94,37 @@ describe("visibleSettingsSections", () => {
     // That session typed a real password and can still change it, while user management stays
     // desktop-hidden.
     expect(keys(desktopBrowser)).toEqual(keys(admin).filter((k) => k !== "users"));
+  });
+});
+
+describe("contributed pages", () => {
+  it("take their place among the app's own by their order, inside their group", () => {
+    expect(keys(admin)).toEqual([
+      "profile",
+      "general",
+      "appearance",
+      "shortcuts",
+      "archived",
+      "account",
+      "browser",
+      "proxy",
+      "uploads",
+      "company",
+      "chromeExtension",
+      "agentApi",
+      "plugins",
+      "users",
+    ]);
+  });
+
+  it("keep an admin-only page off a non-admin's rail", () => {
+    expect(keys(plain)).not.toContain("chromeExtension");
+  });
+
+  it("drop a page that reuses one of the app's keys", () => {
+    const viewer = { isAdmin: true, desktopMode: false, sessionVia: "password" } as const;
+    const taken = rail(viewer, [{ ...CONTRIBUTED[0]!, key: "proxy", group: "personal" }]);
+    expect(taken.filter((s) => s.key === "proxy")).toEqual([{ key: "proxy", group: "server" }]);
   });
 });
 

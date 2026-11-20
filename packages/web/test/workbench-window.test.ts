@@ -17,10 +17,12 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BuiltinBrowserStatus } from "@prismshadow/penguin-server/api";
 import { AppWindow, DockFrame, WindowStack } from "@prismshadow/penguin-ui";
+// The browser reaches the app's own helpers through the plugin face; this hands them over.
+import "../src/web-app/plugin-host";
 import { WorkbenchTabStrip } from "../src/features/workbenches/workbench-tabs";
-import { BuiltinBrowserPanel } from "../src/features/builtin-browser/browser-panel";
-import { dispatchBrowser } from "../src/features/builtin-browser/browser-store";
-import { hasVisibleSlot } from "../src/features/builtin-browser/slot-registry";
+import { BuiltinBrowserPanel } from "../../../plugins/browser-automation/src/web/browser-panel";
+import { dispatchBrowser } from "../../../plugins/browser-automation/src/web/browser-store";
+import { hasVisibleSlot } from "../../../plugins/browser-automation/src/web/slot-registry";
 import { S } from "../src/lib/strings";
 import { LocaleProvider } from "../src/state/locale";
 import type { WorkbenchTab } from "../src/lib/workbench-tabs";

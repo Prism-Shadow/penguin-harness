@@ -33,7 +33,7 @@ import {
   shellPortOf,
   wireShellUpdatePort,
 } from "../src/services/desktop-update-port.js";
-import { FakePort } from "./builtin-browser/fake-shell.js";
+import { FakePort } from "./helpers/fake-shell-port.js";
 
 const STATUS: DesktopUpdateStatus = {
   appVersion: "0.2.3",

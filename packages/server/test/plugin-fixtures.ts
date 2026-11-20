@@ -8,6 +8,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import ts from "typescript";
+import { usePushedPluginLibrary } from "@prismshadow/penguin-core";
+import type { TestApp } from "./helpers.js";
 
 /**
  * The decorators, as a plugin's bundle would carry them — here imported from this
@@ -168,4 +170,106 @@ export async function writePrefixPackage(
     "utf8",
   );
   return dir;
+}
+
+/**
+ * A hybrid plugin (PRFC-0031): a library plugin — its Skills, each at `skills/<name>` — that is
+ * also a server module, the one class its entry exports and its table lists. A plugin's build
+ * leaves this shape: the module class declares the Skills to the plugin library's slot, and
+ * gen-ifaces writes them into the table beside the class.
+ */
+export interface HybridPackage {
+  name: string;
+  /** The module class. */
+  module: string;
+  skills: string[];
+  /** The class stands in for a platform node (`plugin.replaces`) rather than adding one. */
+  replaces?: boolean;
+  /** The entry's source, when it is not the plain class (one whose setup throws, say). */
+  index?: string;
+  /** The card the class contributes too (`preinstall`, say); none when absent. */
+  card?: Record<string, unknown>;
+}
+
+/** The files of a hybrid package, by path relative to its directory. */
+export function hybridPackageFiles(pkg: HybridPackage): Record<string, string> {
+  const plugin = pkg.name.slice(pkg.name.lastIndexOf("/") + 1);
+  const files: Record<string, string> = {
+    "package.json": JSON.stringify({
+      name: pkg.name,
+      version: "1.0.0",
+      description: `The ${plugin} plugin.`,
+      type: "module",
+      main: "./index.js",
+    }),
+    "ifaces.json": JSON.stringify({
+      ifaces: {},
+      types: {},
+      modules: {
+        [pkg.module]: {
+          name: pkg.module,
+          requires: {},
+          provides: {},
+          contributes: {
+            ...(pkg.card !== undefined
+              ? { "PluginLibraryModule.cards": [{ id: `${plugin}.card`, ...pkg.card }] }
+              : {}),
+            "PluginLibraryModule.skills": pkg.skills.map((name) => ({
+              id: `${plugin}.skill.${name}`,
+              name,
+              path: `skills/${name}`,
+            })),
+          },
+          children: [],
+        },
+      },
+      plugin:
+        pkg.replaces === true
+          ? { modules: [], replaces: [pkg.module] }
+          : { modules: [pkg.module], replaces: [] },
+    }),
+    "index.js":
+      pkg.index ??
+      lower(`import { Module } from ${JSON.stringify(decorators)};
+             @Module() export class ${pkg.module} {}
+             export default { ${pkg.replaces === true ? "replaces" : "modules"}: [${pkg.module}] };`),
+  };
+  for (const name of pkg.skills) {
+    files[`skills/${name}/SKILL.md`] =
+      `---\nname: ${name}\ndescription: Do ${name}.\nversion: 2026.11.19.1\n---\n\n## Before you start\n`;
+  }
+  return files;
+}
+
+/** Writes a hybrid package into an npm prefix and names it in the prefix's manifest. */
+async function intoPrefix(prefix: string, pkg: HybridPackage): Promise<void> {
+  const manifest = path.join(prefix, "package.json");
+  const listed = JSON.parse(
+    await readFile(manifest, "utf8").catch(() => '{"name":"pushed","private":true}'),
+  ) as { dependencies?: Record<string, string> };
+  listed.dependencies = { ...listed.dependencies, [pkg.name]: "1.0.0" };
+  await mkdir(prefix, { recursive: true });
+  await writeFile(manifest, JSON.stringify(listed));
+  const dir = path.join(prefix, "node_modules", ...pkg.name.split("/"));
+  for (const [rel, body] of Object.entries(hybridPackageFiles(pkg))) {
+    await mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+    await writeFile(path.join(dir, rel), body);
+  }
+}
+
+/**
+ * What a hot push carried, as the runtime reports it (hmr.assetsDir()): the plugin library the
+ * build was made with, and the plugin prefix it ships — what makes a package built in. Every
+ * boot of the App reads both from there (hmr/platform.ts), a re-assembly's included. Shipping a
+ * package again rewrites it in place, as the next build would carry it. The caller resets the
+ * library with `usePushedPluginLibrary(null)` when it is done.
+ */
+export async function shipHybrids(t: TestApp, ...packages: HybridPackage[]): Promise<void> {
+  const assets = path.join(t.root, "pushed-assets");
+  for (const pkg of packages) {
+    await intoPrefix(path.join(assets, "library"), pkg);
+    await intoPrefix(path.join(assets, "plugins"), pkg);
+  }
+  (t.deps.hmr as { assetsDir(): string | null }).assetsDir = () => assets;
+  usePushedPluginLibrary(path.join(assets, "library"));
 }

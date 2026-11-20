@@ -38,7 +38,7 @@
  * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
  * always survive.
  */
-import { browserState, adoptBrowserSession } from "../../builtin-browser";
+import { handOverSession } from "../session-handover";
 import {
   useCallback,
   useEffect,
@@ -815,9 +815,9 @@ export function DraftView({
     async (input: TaskInputPart[], goal: { budget: number } | null = null): Promise<boolean> => {
       if (!agentId || sendingRef.current) return false;
       sendingRef.current = true;
-      const browserScope = browserState().scope;
       // The draft's own docks, named now: the send takes round trips, and the user may be on
-      // another conversation by the time it has a Session to hand them to.
+      // another conversation by the time it has a Session to hand them to. It is also the scope
+      // whatever other modules keep for the draft hands over from (`ChatModule.sessionHandovers`).
       const dockScope = currentDockScope();
       let createdId: string | null = null;
       try {
@@ -832,13 +832,13 @@ export function DraftView({
         // Created ON the machine that owns the workspace: that server runs the agent in it.
         const created = await api.createSession(projectId, agentId, body, workspaceMachine);
         createdId = created.session.sessionId;
-        // The first task can use the draft's pages as soon as it starts.
-        await adoptBrowserSession(browserScope, createdId);
+        // The first task can use what the draft holds (its browser pages) as soon as it starts.
+        await handOverSession(dockScope, createdId);
         const res = await api.postTask(createdId, {
           input,
           ...(goal ? { goal } : promptHooksField(switches.on)),
         });
-        await adoptBrowserSession(createdId, res.sessionId);
+        await handOverSession(createdId, res.sessionId);
         // The switches hold for the conversation, so the new Session keeps them on.
         if (userId) saveSessionPromptModes(userId, res.sessionId, switches.on);
         // postTask answers with the CURRENT id: a Session with no Trace whose process
@@ -871,7 +871,7 @@ export function DraftView({
         // discard it — out of the list first, then off the server (unstarted-session.ts says why
         // in that order) — or every resend would pile up another empty Session in the sidebar.
         if (createdId) {
-          await adoptBrowserSession(createdId, browserScope);
+          await handOverSession(createdId, dockScope);
           void discardUnstartedSession(createdId, { remove, deleteSession: api.deleteSession });
         }
         toastApiError(e, modelRef ? { modelId: modelRef.modelId } : {});

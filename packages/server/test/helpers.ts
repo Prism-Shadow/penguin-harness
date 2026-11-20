@@ -89,8 +89,6 @@ import { machineHistory } from "../src/machines/history-routes.js";
 import type { HistorySync } from "../src/machines/history-sync.js";
 import { TraceCache } from "../src/machines/trace-cache.js";
 import type { Access } from "@prismshadow/penguin-library-project";
-import { ProcessShellPort } from "../src/builtin-browser/module.js";
-import type { BrowserShellPort } from "../src/builtin-browser/shell-link.js";
 
 /** The roots {@link makeTempRoot} handed out that nothing has removed yet. */
 const tempRoots = new Set<string>();
@@ -346,8 +344,12 @@ export interface TestAppOptions {
   reveal?: (filePath: string) => Promise<void>;
   /** Test double: how plugin packages reach the data root's prefix, so a test never runs npm. */
   pluginPackages?: PluginPackages;
-  /** Test double: the desktop shell's port as the built-in browser reaches it (a fake shell). */
-  browserShellPort?: BrowserShellPort;
+  /**
+   * Test doubles for any other node of the platform's tree, by its class: what a feature's own
+   * test helper stands in for, so this file names no feature's nodes. (A plugin module's own
+   * nodes are stood in for where its definition is built: test/builtin-browser/plugin.ts.)
+   */
+  nodes?: ReadonlyArray<readonly [ModuleClass, object]>;
   /** Test double: the password work factor (scrypt at full strength is seconds per hash). */
   passwordHashCost?: number;
   /**
@@ -419,10 +421,7 @@ export function replacementsFor(
   out.push([UpdateCheckService, o.updateCheck ?? offlineUpdateCheck()]);
   if (o.reveal) out.push([RevealService, { reveal: o.reveal }]);
   if (o.pluginPackages) out.push([NpmPluginPackages, o.pluginPackages]);
-  if (o.browserShellPort) {
-    const port = o.browserShellPort;
-    out.push([ProcessShellPort, { current: () => port }]);
-  }
+  for (const node of o.nodes ?? []) out.push(node);
   if (o.feishuSdk) out.push([FeishuSdkProvider, { feishuSdk: { sdk: o.feishuSdk } }]);
   if (o.telegramTransport)
     out.push([

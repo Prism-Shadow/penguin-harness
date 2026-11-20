@@ -269,6 +269,22 @@ export type ServerEvent =
    */
   | { type: "themes_changed" }
   /**
+   * A library plugin's server module changed on this server, through an Agent install or the
+   * administrator's decision (PRFC-0031): it was enabled, asked for, declined or stopped. No
+   * payload: a page re-reads what it shows (an Agent's plugins, the Plugins page, the
+   * administrator's request list). To the administrator, and to the users of the Project the
+   * row belongs to; never a toast.
+   */
+  | { type: "plugin_modules_changed" }
+  /**
+   * The App re-assembled itself (a plugin was installed, removed, enabled or disabled), so what
+   * `GET /api/contributions` answers may have changed — the plugin server modules it lists in
+   * `modules` among it, which decide whether a plugin's web half is drawn. Every signed-in tab
+   * re-reads it. Published once the new App answers. No payload; on the user channel of
+   * everyone online.
+   */
+  | { type: "contributions_changed" }
+  /**
    * A Session now exists. On the user channel for every creation — the CLI, another tab,
    * a schedule, an agent spawning a child — so the list learns about rows it did not make;
    * and on the parent Session's channel for a subagent, which no list shows. `source` is what

@@ -310,6 +310,8 @@ describe("2026-09-23-machines-columns → current: 2026-10-04-browser-extensions
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
+        "2026-11-19-plugin-module-requests",
+        "2026-11-19-plugin-module-preinstalls",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -374,6 +376,8 @@ describe("a sessions table from before the sidebar mark: 2026-10-12-sessions-kep
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
+        "2026-11-19-plugin-module-requests",
+        "2026-11-19-plugin-module-preinstalls",
       ]);
       expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
         { session_id: "s1", kept_at: null },
@@ -432,6 +436,8 @@ describe("an agent_api table from before the session settings: 2026-10-14-agent-
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
+        "2026-11-19-plugin-module-requests",
+        "2026-11-19-plugin-module-preinstalls",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -493,6 +499,8 @@ describe("an agent_api table from before the concurrency limit: 2026-10-14-agent
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
+        "2026-11-19-plugin-module-requests",
+        "2026-11-19-plugin-module-preinstalls",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -542,6 +550,8 @@ describe("a machines table from before the adoption times: 2026-10-16-machines-a
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
+        "2026-11-19-plugin-module-requests",
+        "2026-11-19-plugin-module-preinstalls",
       ]);
       expect(db.prepare("SELECT address, adopted_at FROM machines").all()).toEqual([
         { address: "ssh:nas", adopted_at: null },
@@ -586,7 +596,11 @@ describe("a database from before the account's drafts: 2026-10-26-user-drafts", 
   it("adds both tables while a pushed platform boots, and they go with their user", () => {
     const db = openPreUserDrafts();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["2026-10-26-user-drafts"]);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "2026-10-26-user-drafts",
+        "2026-11-19-plugin-module-requests",
+        "2026-11-19-plugin-module-preinstalls",
+      ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES ('ann', 'hash', 0, 'now')",
@@ -617,6 +631,109 @@ describe("a database from before the account's drafts: 2026-10-26-user-drafts", 
       rollbackTo(db, "2026-09-23-model-tables-adoption");
       expect(hasTable(db, "user_drafts")).toBe(false);
       expect(hasTable(db, "user_background_images")).toBe(false);
+      migrate(db);
+      expect(shape(db)).toBe(after);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+// Given a database from before the module requests, the upgrade adds their table on the swap
+// path, a request outlives its Project with no Project named, and down takes the table away.
+describe("a database from before the module requests: 2026-11-19-plugin-module-requests", () => {
+  /** A root whose line declared everything through 2026-10-26-user-drafts. */
+  function openPreModuleRequests(): DatabaseSync {
+    const db = openFresh();
+    db.exec("DROP TABLE plugin_module_requests;");
+    stampThrough(db, "2026-10-26-user-drafts");
+    return db;
+  }
+
+  it("adds the table while a pushed platform boots, and a request outlives its Project", () => {
+    const db = openPreModuleRequests();
+    try {
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "2026-11-19-plugin-module-requests",
+        "2026-11-19-plugin-module-preinstalls",
+      ]);
+      db.exec("PRAGMA foreign_keys = ON");
+      db.exec(
+        "INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES ('ann', 'hash', 0, 'now')",
+      );
+      db.exec(
+        "INSERT INTO projects (project_id, owner_user_id, created_at) VALUES ('p1', 'ann', 'now')",
+      );
+      db.exec(
+        "INSERT INTO plugin_module_requests (package, plugin, project_id, agent_id, requested_by, requested_at)" +
+          " VALUES ('@acme/x', 'x', 'p1', 'a1', 'ann', 'now')",
+      );
+      db.exec("DELETE FROM projects WHERE project_id = 'p1'");
+      expect(db.prepare("SELECT package, project_id FROM plugin_module_requests").all()).toEqual([
+        { package: "@acme/x", project_id: null },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down drops the table, and a second up recreates it", () => {
+    const db = openPreModuleRequests();
+    try {
+      migrate(db);
+      const after = shape(db);
+      rollbackTo(db, "2026-10-26-user-drafts");
+      expect(hasTable(db, "plugin_module_requests")).toBe(false);
+      migrate(db);
+      expect(shape(db)).toBe(after);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+// Given a database from before the preinstall record, the upgrade adds its table on the swap
+// path, a second record of one package for one Project is refused by its key, and down takes
+// the table away.
+describe("a database from before the preinstall record: 2026-11-19-plugin-module-preinstalls", () => {
+  /** A root whose line declared everything through 2026-11-19-plugin-module-requests. */
+  function openPrePreinstalls(): DatabaseSync {
+    const db = openFresh();
+    db.exec("DROP TABLE plugin_module_preinstalls;");
+    stampThrough(db, "2026-11-19-plugin-module-requests");
+    return db;
+  }
+
+  it("adds the table while a pushed platform boots, one row per package and Project", () => {
+    const db = openPrePreinstalls();
+    try {
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "2026-11-19-plugin-module-preinstalls",
+      ]);
+      const record = db.prepare(
+        "INSERT OR IGNORE INTO plugin_module_preinstalls (package, project_id, listed_at) VALUES (?, ?, ?)",
+      );
+      expect(Number(record.run("@acme/x", "p1", "first").changes)).toBe(1);
+      expect(Number(record.run("@acme/x", "p1", "second").changes)).toBe(0);
+      expect(Number(record.run("@acme/x", "p2", "second").changes)).toBe(1);
+      expect(
+        db.prepare("SELECT project_id, listed_at FROM plugin_module_preinstalls ORDER BY 1").all(),
+      ).toEqual([
+        { project_id: "p1", listed_at: "first" },
+        { project_id: "p2", listed_at: "second" },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down drops the table, and a second up recreates it", () => {
+    const db = openPrePreinstalls();
+    try {
+      migrate(db);
+      const after = shape(db);
+      rollbackTo(db, "2026-11-19-plugin-module-requests");
+      expect(hasTable(db, "plugin_module_preinstalls")).toBe(false);
       migrate(db);
       expect(shape(db)).toBe(after);
     } finally {
