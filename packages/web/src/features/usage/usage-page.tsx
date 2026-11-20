@@ -131,7 +131,11 @@ function SummaryCard({
         {showTools && (
           <SummaryRow
             label={S.usage.toolRequestsIncluded}
-            value={`${bucket.toolRequests} · ${formatMoney(bucket.toolCost, currency)}`}
+            // No tool request costs nothing; the dash is for tool requests that ran unpriced.
+            value={`${bucket.toolRequests} · ${formatMoney(
+              bucket.toolRequests === 0 ? 0 : bucket.toolCost,
+              currency,
+            )}`}
             muted
           />
         )}
@@ -160,7 +164,13 @@ function toolPurposeLabel(purpose: string): { operation: string; source: string 
 /** The tool requests by purpose, one ruled line each: what they were for, how many, and their cost. */
 function ToolRequestsList({ tools, currency }: { tools: UsageToolRow[]; currency: "USD" | "CNY" }) {
   return (
-    <table className="w-full text-sm">
+    // Fixed layout: the two figures keep their width and the purpose takes the rest of the row.
+    <table className="w-full table-fixed text-sm">
+      <colgroup>
+        <col />
+        <col className="w-28" />
+        <col className="w-32" />
+      </colgroup>
       <thead>
         <tr className="text-left text-xs text-gray-500 dark:text-gray-400">
           <th className="pb-1 font-normal">{S.usage.toolColumn}</th>
@@ -173,7 +183,7 @@ function ToolRequestsList({ tools, currency }: { tools: UsageToolRow[]; currency
           const { operation, source } = toolPurposeLabel(t.purpose);
           return (
             <tr key={t.purpose} title={t.purpose}>
-              <td className="max-w-0 truncate py-1.5 pr-3">
+              <td className="truncate py-1.5 pr-3">
                 <span className="text-gray-900 dark:text-gray-100">{operation}</span>
                 {source && (
                   <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">{source}</span>
