@@ -311,7 +311,6 @@ describe("2026-09-23-machines-columns → current: 2026-10-04-browser-extensions
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
         "2026-11-19-usage-records-purpose",
-        "2026-11-20-sessions-driven-by",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -377,7 +376,6 @@ describe("a sessions table from before the sidebar mark: 2026-10-12-sessions-kep
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
         "2026-11-19-usage-records-purpose",
-        "2026-11-20-sessions-driven-by",
       ]);
       expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
         { session_id: "s1", kept_at: null },
@@ -437,7 +435,6 @@ describe("an agent_api table from before the session settings: 2026-10-14-agent-
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
         "2026-11-19-usage-records-purpose",
-        "2026-11-20-sessions-driven-by",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -500,7 +497,6 @@ describe("an agent_api table from before the concurrency limit: 2026-10-14-agent
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
         "2026-11-19-usage-records-purpose",
-        "2026-11-20-sessions-driven-by",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -551,7 +547,6 @@ describe("a machines table from before the adoption times: 2026-10-16-machines-a
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
         "2026-11-19-usage-records-purpose",
-        "2026-11-20-sessions-driven-by",
       ]);
       expect(db.prepare("SELECT address, adopted_at FROM machines").all()).toEqual([
         { address: "ssh:nas", adopted_at: null },
@@ -599,7 +594,6 @@ describe("a database from before the account's drafts: 2026-10-26-user-drafts", 
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "2026-10-26-user-drafts",
         "2026-11-19-usage-records-purpose",
-        "2026-11-20-sessions-driven-by",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -662,10 +656,7 @@ describe("a usage table from before the purpose column: 2026-11-19-usage-records
     const db = openPrePurpose();
     try {
       insertUsage(db);
-      expect(migrate(db, { swapPath: true }).applied).toEqual([
-        "2026-11-19-usage-records-purpose",
-        "2026-11-20-sessions-driven-by",
-      ]);
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["2026-11-19-usage-records-purpose"]);
       expect(db.prepare("SELECT session_id, purpose FROM usage_records").all()).toEqual([
         { session_id: "s1", purpose: null },
       ]);
@@ -684,51 +675,6 @@ describe("a usage table from before the purpose column: 2026-11-19-usage-records
       expect(db.prepare("SELECT purpose FROM usage_records").get()).toEqual({
         purpose: "acme-tools:t2i",
       });
-    } finally {
-      db.close();
-    }
-  });
-});
-
-// Given Sessions from before their driver was recorded, the upgrade adds the column while a
-// pushed platform boots and every existing row reads as nobody recorded; down keeps the column
-// with the drivers recorded since.
-describe("sessions from before their driver was recorded: 2026-11-20-sessions-driven-by", () => {
-  /** A root through 2026-11-19-usage-records-purpose whose sessions table has no `driven_by`. */
-  function openPreDrivenBy(): DatabaseSync {
-    const db = openFresh();
-    db.exec("ALTER TABLE sessions DROP COLUMN driven_by");
-    stampThrough(db, "2026-11-19-usage-records-purpose");
-    return db;
-  }
-
-  const insertSession = (db: DatabaseSync) =>
-    db.exec(
-      "INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, created_at)" +
-        " VALUES ('s1', 'p1', 'coder', 'openai', 'gpt', '/w', '2026-11-20T00:00:00.000Z')",
-    );
-
-  it("adds the column while a pushed platform boots, recording nobody for existing Sessions", () => {
-    const db = openPreDrivenBy();
-    try {
-      insertSession(db);
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["2026-11-20-sessions-driven-by"]);
-      expect(db.prepare("SELECT session_id, driven_by FROM sessions").all()).toEqual([
-        { session_id: "s1", driven_by: null },
-      ]);
-    } finally {
-      db.close();
-    }
-  });
-
-  it("down keeps the column and the drivers in it", () => {
-    const db = openPreDrivenBy();
-    try {
-      insertSession(db);
-      migrate(db);
-      db.exec("UPDATE sessions SET driven_by = 'mia'");
-      rollbackTo(db, "2026-11-19-usage-records-purpose");
-      expect(db.prepare("SELECT driven_by FROM sessions").get()).toEqual({ driven_by: "mia" });
     } finally {
       db.close();
     }

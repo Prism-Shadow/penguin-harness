@@ -117,7 +117,7 @@ CLI 命令访问本机上的服务器时，用本地 API token 认证；服务�
 
 本地 API token 不能改变 Agent 的对外暴露：开启 Agent 的 API、无密钥访问、审批模式、密钥，以及整台服务器的 Agent API 开关，都需要人的登录，因为每个 Agent 的命令都带着这个 token。服务器以 `403` `human_required` 拒绝携带 token 的这类请求，在 Session 之外，CLI 随即带着你保存的登录（如果有）把请求再发一次；下文的 `penguin auth token` 能为 CLI 提供这样的登录。这防止 Agent 借 harness 交给它的凭据自行对外开放，但不是边界：以数据根目录所属操作系统账号运行的进程同样能铸造会话。约束 Agent 的是沙盒。
 
-出于同样的原因，这个 token 能读取插件设置（设置 › 插件），但不能保存，也不能运行其中的操作，Agent 因此无法自行放宽自己的沙盒，或打开某个插件风险更高的能力。插件命令还可以要求为驱动该 Agent 所在 Session 的人运行，而不是为 token 所代表的管理员运行：这时 Agent 的调用必须指明 Session，并以最近在其中发起运行的人的身份运行。这同样是对 token 的收窄，在每个 Session 有了自己的凭据之前，它不是边界。
+出于同样的原因，这个 token 能读取插件设置（设置 › 插件），但不能保存，也不能运行其中的操作，Agent 因此无法自行放宽自己的沙盒，或打开某个插件风险更高的能力。插件命令还可以要求为某个人运行，而不是为 token 所代表的管理员运行：这时 Agent 的调用必须指明 Session，并以该 Session 此刻正在处理其消息的那位已登录者的身份运行。没有这样的运行在进行——无人署名的定时任务、Agent API、公司模式、目标模式，或被他人插话过的运行——时一律拒绝。定时任务的运行算作以自己的登录保存它的人，直到 Agent 或其他人改动了它的文件。这同样是对 token 的收窄，而不是边界：Agent 可以指明它能触及的 Project 中的另一个 Session，借用那里正在进行的运行的发起者。真正的隔离要等每个 Session 有了自己的凭据。
 
 Penguin Remote 可以凭这种本地所有权，通过 `POST /api/remote/session` 兑换浏览器会话。请求必须携带 `Authorization: Bearer <本地 API token>`、`Content-Type: application/json` 和空 JSON 对象。它只接受这一种凭证：即使属于管理员，密码、桌面、首次登录和 Remote Cookie 也会被拒绝。被拒绝的 Cookie 请求不会续期会话，也不会设置 Cookie。
 

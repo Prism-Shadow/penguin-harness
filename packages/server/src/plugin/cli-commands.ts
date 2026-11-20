@@ -27,8 +27,9 @@
  * `requiresProjectListing` the command runs only where the caller's Project lists its plugin for
  * this machine (403 `plugin_not_enabled`), checked before any code of it runs. With
  * `tokenCaller: "session-driver"` a call made with the local API token — every Agent's
- * credential — runs as the person driving the named Session rather than as the administrator the
- * token stands for (cli-command-caller.ts). Every other command keeps v1.1's rule.
+ * credential — runs as the person whose run is in progress in the named Session rather than as
+ * the administrator the token stands for (cli-command-caller.ts). Every other command keeps
+ * v1.1's rule.
  *
  * Output: a member command writes through the context only, and its runs are concurrent. An admin
  * command keeps v1.0's contract as well: for its run the process's stdout and stderr are
@@ -58,7 +59,7 @@ import { effectivePluginTable, isValidId } from "@prismshadow/penguin-core";
 import type { Users } from "@prismshadow/penguin-library-auth";
 import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
 import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
-import type { SessionIndex } from "@prismshadow/penguin-library-session";
+import type { SessionDrivers, SessionIndex } from "@prismshadow/penguin-library-session";
 import type {
   PluginCliCommandOutputFile,
   PluginCliCommandRunRequest,
@@ -417,6 +418,7 @@ export interface PluginCliCommandRouteDeps {
   access: Pick<Access, "requireProjectAccess" | "canAccess">;
   sessions: Pick<SessionIndex, "findById">;
   users: Pick<Users, "findById">;
+  drivers: Pick<SessionDrivers, "runDriverOf">;
 }
 
 export function pluginCliCommandRoutes(deps: PluginCliCommandRouteDeps): Hono<AppEnv> {
@@ -445,12 +447,19 @@ export function pluginCliCommandRoutes(deps: PluginCliCommandRouteDeps): Hono<Ap
     }
     const language = (body as { language?: unknown }).language;
     if (language !== "en" && language !== "zh") throw badRequest("language must be 'en' or 'zh'.");
+    // The local API token (every Agent's credential) runs a `session-driver` command as the
+    // person whose run is in progress in the Session it names: the command decides, never the
+    // request. That person's access to the Project is what counts then, not the token's — so a
+    // member's own Project, which the administrator cannot open, still reaches its Agents.
+    const own = deps.commands.list().filter((cmd) => cmd.package === pkg);
+    const target = cliCommandNamedBy(own, args);
+    const asDriver = target?.tokenCaller === "session-driver" && c.var.sessionVia === "token";
     // The caller's context, checked here so a command can trust what it reads from ctx.caller.
     const caller: CliCommandCaller = { userId: user.userId, isAdmin: user.isAdmin };
     if (body.projectId !== undefined) {
       const projectId = requireString(body, "projectId", { minLen: 1, maxLen: 128 });
       if (!isValidId(projectId)) throw badRequest("projectId is not a Project id.");
-      deps.access.requireProjectAccess(user.userId, projectId);
+      if (!asDriver) deps.access.requireProjectAccess(user.userId, projectId);
       caller.projectId = projectId;
     }
     if (body.sessionId !== undefined) {
@@ -462,14 +471,7 @@ export function pluginCliCommandRoutes(deps: PluginCliCommandRouteDeps): Hono<Ap
       caller.sessionId = sessionId;
       caller.agentId = row.agentId;
     }
-    // The local API token (every Agent's credential) runs a `session-driver` command as the
-    // person driving the Session it names: the command decides, never the request.
-    const own = deps.commands.list().filter((cmd) => cmd.package === pkg);
-    const target = cliCommandNamedBy(own, args);
-    const runAs =
-      target?.tokenCaller === "session-driver" && c.var.sessionVia === "token"
-        ? sessionDriverCaller(caller, deps)
-        : caller;
+    const runAs = asDriver ? sessionDriverCaller(caller, deps) : caller;
     const files = parseInputFiles(body.files);
     const result = await deps.commands.run({ package: pkg, args, language, prog, files }, runAs);
     if (result === null) {
@@ -506,6 +508,7 @@ export class PluginCliCommandsProvider {
   @Use() private readonly access!: Access;
   @Use() private readonly sessions!: SessionIndex;
   @Use() private readonly users!: Users;
+  @Use() private readonly drivers!: SessionDrivers;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly db!: Db;
   @Provide() pluginCliCommands!: PluginCliCommands;
@@ -565,6 +568,7 @@ export class PluginCliCommandsProvider {
       access: this.access,
       sessions: this.sessions,
       users: this.users,
+      drivers: this.drivers,
     });
   }
 }

@@ -169,7 +169,6 @@ export abstract class SessionIndex {
   abstract markOrgClient(sessionIds: readonly string[]): void;
   abstract markHasTrace(sessionId: string): void;
   abstract markDriven(sessionId: string, at: string): void;
-  abstract markDrivenBy(sessionId: string, userId: string): void;
   abstract touchLastActive(sessionId: string, at: string): void;
   abstract findById(sessionId: string): SessionRow | null;
   abstract listByAgent(projectId: string, agentId: string): SessionRow[];
@@ -203,6 +202,15 @@ export abstract class SessionDrivers {
   abstract note(sessionId: string, userId: string): void;
   /** The human `sessionId` acts for; null for a Session the server does not know. */
   abstract driverOf(sessionId: string): string | null;
+  /**
+   * The person whose run is in progress in `sessionId` right now — the signed-in user who started
+   * it (RuntimeEntry.runDriver) — or, for a subagent's Session, in its root; null when no run is
+   * in progress, or the one in progress was started by nobody (the local API token, a schedule
+   * without a creator, the Agent API, company mode, a goal, a compaction) or was steered by
+   * someone else. Memory only: nothing is in progress after a restart. What a `session-driver`
+   * plugin command runs as for an Agent.
+   */
+  abstract runDriverOf(sessionId: string): string | null;
 }
 
 /**
@@ -284,6 +292,8 @@ export interface QueuedFollowUp {
    * waiting on and starts first. Interrupts keep their own order at the head of the queue.
    */
   interrupt?: true;
+  /** The signed-in person who queued it: the driver of the run it becomes (RuntimeEntry.runDriver). */
+  driver?: string;
 }
 
 /** One undelivered steering entry: the display info broadcast on task_state, plus what a recall needs — the exact input list core queued (its unsteer handle) and the original content. */
@@ -518,6 +528,13 @@ export interface RuntimeEntry {
    */
   followUps: QueuedFollowUp[];
   /**
+   * The signed-in person who started the run in progress, set when the run launches (under the
+   * Session lock) and cleared when it ends; null while idle, for a run nobody started (the local
+   * API token, a schedule without a creator, the Agent API, company mode, a goal, a compaction),
+   * and once someone else steers the run. Read by SessionDrivers.runDriverOf.
+   */
+  runDriver?: string | null;
+  /**
    * The running Task's input messages, held from launch until the run ends. The engine
    * writes these exact envelopes to the Trace only after the session bootstrap (MCP
    * connect + discovery on the first run), so a history read during that window would
@@ -627,7 +644,10 @@ export abstract class Schedules {
     name: string;
     startAtMs: number;
     defHash: string;
+    /** Who vouches for the file as it stands: a person's own save; null for the token or a file found on disk. */
     creatorUserId: string | null;
+    /** A person's save through the schedules route: the creator is written even when nothing changed. */
+    attested?: boolean;
   }): { row: ScheduleStateRow; fresh: boolean };
   abstract markSlot(projectId: string, agentId: string, name: string, slotMs: number): void;
   abstract markFired(

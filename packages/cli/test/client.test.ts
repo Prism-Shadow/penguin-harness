@@ -4,8 +4,8 @@
  * reference resolution (full id / unique fragment / ambiguity).
  *
  * - Given a plugin command the server refuses for the token outside a Session (403
- *   `session_required`), the client sends it once more as the person's stored sign-in; inside a
- *   Session the refusal stands.
+ *   `session_required`), the client never sends the person's stored sign-in instead: an Agent can
+ *   unset PENGUIN_SESSION_ID, so the refusal stands everywhere.
  */
 import fs from "node:fs";
 import net from "node:net";
@@ -227,7 +227,7 @@ describe("a plugin command that runs for a Session's driver, called outside a Se
     process.env.PENGUIN_API_TOKEN = "boot-token";
     writeSession(root, { server: "http://localhost:7399", userId: "mia", token: "login-mia" });
     sent = [];
-    // The server: the token is refused, the person's sign-in runs the command.
+    // The server: the token is refused; a person's sign-in would run the command.
     globalThis.fetch = (async (_url: string, init: RequestInit) => {
       const headers = (init.headers ?? {}) as Record<string, string>;
       sent.push(headers);
@@ -245,8 +245,8 @@ describe("a plugin command that runs for a Session's driver, called outside a Se
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  const client = () =>
-    new ServerClient(
+  it("never sends the stored sign-in in the token's place: the refusal stands", async () => {
+    const client = new ServerClient(
       {
         baseUrl: "http://localhost:7399",
         root,
@@ -256,22 +256,10 @@ describe("a plugin command that runs for a Session's driver, called outside a Se
       },
       t,
     );
-
-  it("sends it once more as the stored sign-in, and the command runs", async () => {
-    const res = await client().request<{ stdout: string }>("POST", "/api/cli/commands/run", {});
-    expect(res.stdout).toBe("ran\n");
-    expect(sent.map((h) => h.authorization ?? h.cookie)).toEqual([
-      "Bearer boot-token",
-      "penguin_session=login-mia",
-    ]);
-  });
-
-  it("inside a Session, never sends the sign-in: the refusal stands", async () => {
-    process.env.PENGUIN_SESSION_ID = "session-2026-11-20-10-00-00-5e55a001";
-    await expect(client().request("POST", "/api/cli/commands/run", {})).rejects.toMatchObject({
+    await expect(client.request("POST", "/api/cli/commands/run", {})).rejects.toMatchObject({
       status: 403,
       code: "session_required",
     });
-    expect(sent).toHaveLength(1);
+    expect(sent.map((h) => h.authorization ?? h.cookie)).toEqual(["Bearer boot-token"]);
   });
 });

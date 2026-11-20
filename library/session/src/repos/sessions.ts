@@ -74,15 +74,6 @@ export interface SessionRow {
    * NULL = a row from before the column: it takes the settings at its next command.
    */
   sandbox?: SandboxSettings | null;
-  /**
-   * The person who last started a run in it — a user id, stamped through SessionDrivers.note
-   * each time a signed-in person starts or steers a run, or the scheduler starts one for its
-   * creator (the local API token stamps nothing), and inherited by a subagent's row from its root
-   * at registration. NULL = nobody recorded: a row from before the column, or one only the token
-   * or an API key has driven. What a `session-driver` plugin command runs as for an Agent (server
-   * plugin/cli-command-caller.ts).
-   */
-  drivenBy?: string | null;
 }
 
 /** A stored policy, or null when the column is empty or holds something unreadable. */
@@ -127,7 +118,6 @@ function mapRow(r: Record<string, unknown>): SessionRow {
     lastActiveAt: (r.last_active_at as string | null) ?? (r.created_at as string),
     createdAt: r.created_at as string,
     sandbox: parseSandbox(r.sandbox),
-    drivenBy: (r.driven_by as string | null) ?? null,
   };
 }
 
@@ -184,8 +174,8 @@ export class SessionsRepo implements SessionIndex {
   private runInsert(verb: "INSERT" | "INSERT OR IGNORE", row: SessionRow): void {
     this.db
       .prepare(
-        `${verb} INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, last_active_at, created_at, sandbox, thinking_level, driven_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ?), ?, ?, ?, ?)`,
+        `${verb} INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, last_active_at, created_at, sandbox, thinking_level)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ?), ?, ?, ?)`,
       )
       .run(
         row.sessionId,
@@ -203,7 +193,6 @@ export class SessionsRepo implements SessionIndex {
         row.createdAt,
         row.sandbox ? JSON.stringify(row.sandbox) : null,
         row.thinkingLevel ?? null,
-        row.drivenBy ?? null,
       );
   }
 
@@ -243,13 +232,6 @@ export class SessionsRepo implements SessionIndex {
          WHERE session_id = ?`,
       )
       .run(at, sessionId);
-  }
-
-  /** Record the person who started (or steered) a run in the Session: `driven_by`. */
-  markDrivenBy(sessionId: string, userId: string): void {
-    this.db
-      .prepare("UPDATE sessions SET driven_by = ? WHERE session_id = ?")
-      .run(userId, sessionId);
   }
 
   /** Stamp last_active_at alone (drive's run end); monotonic like markDriven. */
