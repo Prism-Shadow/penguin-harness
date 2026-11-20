@@ -85,7 +85,6 @@ import {
 import type { PluginPackages } from "../../mechanisms/plugins.js";
 import {
   installedPackageDir,
-  installPluginChannel,
   linkPluginDirectory,
   linkedPackages,
   PluginInstallError,
@@ -146,15 +145,21 @@ export async function installNamedOrChanneled(
       throw err;
     }
     const npmSaid = err.message;
+    // An install made without npm said it in its own words; what is added keeps them its own.
+    const failure = (message: string) => {
+      const next = new PluginInstallError(message);
+      if (err.withoutNpm === true) next.withoutNpm = true;
+      return next;
+    };
     const resolved = (await io.channelOf?.(source.name, source.version)) ?? {
       channel: null,
       fault: null,
     };
     if (resolved.fault !== null) {
-      throw new PluginInstallError(`${npmSaid}. ${resolved.fault}`);
+      throw failure(`${npmSaid}. ${resolved.fault}`);
     }
     if (resolved.channel === null) {
-      throw new PluginInstallError(
+      throw failure(
         `${npmSaid}. The published plugin index lists no installable github channel for ${source.name} either.`,
       );
     }
@@ -162,7 +167,7 @@ export async function installNamedOrChanneled(
       return await io.installChannel(root, resolved.channel, { onProgress: io.onProgress });
     } catch (channelErr) {
       if (channelErr instanceof PluginInstallError) {
-        throw new PluginInstallError(`${npmSaid}. Its index channel: ${channelErr.message}`);
+        throw failure(`${npmSaid}. Its index channel: ${channelErr.message}`);
       }
       throw channelErr;
     }
@@ -205,7 +210,7 @@ export interface InstalledPluginsDeps {
   ) => Promise<{ channel: IndexChannel | null; fault: string | null }>;
   /**
    * How a verified channel's bytes install, with the download's progress on its way in;
-   * a test stands in (installPluginChannel).
+   * absent, the packages node installs them (with npm, or without it where there is none).
    */
   installChannel?: (
     root: string,
@@ -379,32 +384,47 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     return { dir, overwrite: body.overwrite === true, force: body.force === true };
   };
 
+  /** What the installer said: npm's words as npm's, an install made without npm in its own. */
+  const installerSaid = (err: PluginInstallError) =>
+    err.withoutNpm === true ? err.message : `npm: ${err.message}`;
+
   /** npm's failure, as the answer: what it said, never a 500. */
   const viaNpm = async (run: () => Promise<InstalledPackage>): Promise<InstalledPackage> => {
     try {
       return await run();
     } catch (err) {
       if (err instanceof PluginInstallError) {
-        throw new HttpError(400, "plugin_install_failed", `npm: ${err.message}`);
+        throw new HttpError(400, "plugin_install_failed", installerSaid(err));
       }
       throw err;
     }
   };
 
+  /**
+   * Installs made without npm (the marker their result carried, taken off before the answer
+   * shows it): no script of theirs ran, so a refusal of one does not say it did.
+   */
+  const scriptless = new WeakSet<InstalledPackage>();
+
   /** The route's install of a specifier: npm first, the published index's channel on its failure. */
-  const installSpecifier = (
+  const installSpecifier = async (
     source: PluginSource,
     onProgress?: InstallProgress,
-  ): Promise<InstalledPackage> =>
-    viaNpm(() =>
+  ): Promise<InstalledPackage> => {
+    const { withoutNpm, ...installed } = await viaNpm(() =>
       installNamedOrChanneled(deps.root, source, {
         install: (root, spec) => deps.packages.install(root, spec),
         channelOf: deps.channelOf,
         installChannel: (root, channel, opts) =>
-          (deps.installChannel ?? installPluginChannel)(root, channel, opts),
+          deps.installChannel !== undefined
+            ? deps.installChannel(root, channel, opts)
+            : deps.packages.installChannel(root, channel, opts),
         onProgress,
       }),
     );
+    if (withoutNpm === true) scriptless.add(installed);
+    return installed;
+  };
 
   /** What a package in this server's prefix is, by its table (core plugin/kinds.ts): a library plugin (Skills, hooks, MCP servers or workbenches), server modules, or both. */
   const kindsOf = (name: string): { library: boolean; modules: boolean } => {
@@ -499,19 +519,26 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
    * Takes back a package an install just put in the prefix and refuses the install: one under the
    * name of a shipped module (409 `plugin_shipped`), or one that is no plugin (400
    * `not_a_plugin`). Its install scripts have run by now, and the refusal says so — and says so
-   * too when taking it back failed, which leaves it for the operator to remove.
+   * too when taking it back failed, which leaves it for the operator to remove. An install made
+   * without npm ran nothing of the package, and the refusal says only what happened.
    */
   const refuseInstalled = async (
-    name: string,
+    installed: InstalledPackage,
     status: 400 | 409,
     code: string,
     why: string,
   ): Promise<never> => {
-    let undone = `It was removed again, but its install scripts had already run on the server.`;
+    const ran = !scriptless.has(installed);
+    let undone = ran
+      ? `It was removed again, but its install scripts had already run on the server.`
+      : `It was removed again.`;
     try {
-      await deps.packages.remove(deps.root, name);
+      await deps.packages.remove(deps.root, installed.name);
     } catch (err) {
-      undone = `Its install scripts had already run on the server, and removing it failed (${err instanceof Error ? err.message : String(err)}): remove it from ${pluginsPrefix(deps.root)} by hand.`;
+      const failed = `removing it failed (${err instanceof Error ? err.message : String(err)}): remove it from ${pluginsPrefix(deps.root)} by hand.`;
+      undone = ran
+        ? `Its install scripts had already run on the server, and ${failed}`
+        : `It is in the prefix, and ${failed}`;
     }
     throw new HttpError(status, code, `${why} ${undone}`);
   };
@@ -520,7 +547,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
   const vetInstalled = async (installed: InstalledPackage) => {
     if ((await shippedNames()).includes(installed.name)) {
       return refuseInstalled(
-        installed.name,
+        installed,
         409,
         "plugin_shipped",
         `${installed.name} ships with this server: a package under its name would replace it for every Project.`,
@@ -529,7 +556,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     const kinds = kindsOf(installed.name);
     if (!kinds.library && !kinds.modules) {
       return refuseInstalled(
-        installed.name,
+        installed,
         400,
         "not_a_plugin",
         `${installed.name} is not a PenguinHarness plugin: its ifaces.json contributes no Skills, hook package, MCP servers or workbenches, and lists no server modules with a code entry (a package without an ifaces.json was never built: its build runs penguin-gen-ifaces).`,
@@ -764,7 +791,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         await deps.packages.remove(deps.root, specifier);
       } catch (err) {
         if (err instanceof PluginInstallError) {
-          throw new HttpError(500, "plugin_remove_failed", `npm: ${err.message}`);
+          throw new HttpError(500, "plugin_remove_failed", installerSaid(err));
         }
         throw err;
       }

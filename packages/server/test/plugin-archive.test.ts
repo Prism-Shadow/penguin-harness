@@ -159,6 +159,9 @@ function fakeNpm() {
       calls.push("<zip>");
       return place(root, files, "file:archives/upload.tgz");
     },
+    installChannel: async (): Promise<InstalledPackage> => {
+      throw new PluginInstallError("no release channel here");
+    },
     remove: async (root: string, name: string) => {
       removed.push(name);
       const prefixFile = path.join(root, "plugins", "package.json");
