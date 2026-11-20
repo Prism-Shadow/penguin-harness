@@ -33,7 +33,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type { PluginDeclaration } from "@prismshadow/penguin-core";
 import { findPackageJSON } from "node:module";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -53,7 +53,7 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
 import { PluginHost, pluginHostFrom } from "./host.js";
 import platformTable from "../ifaces.json" with { type: "json" };
-import { checkIfaces, ifaceQuestions } from "./iface-check.js";
+import { checkIfaces, ifaceQuestions, packageOf } from "./iface-check.js";
 import { loadTypeScript, TypeScriptUnavailable, type TypeScript } from "./typescript.js";
 
 /**
@@ -424,10 +424,12 @@ async function readPackageTable(file: string | null): Promise<{
  *
  * Two things can leave an interface uncompared, and neither fails the load — a pushed
  * platform must not take plugins away from a machine for something the plugin did not do:
- * a table that carries no copy of a host interface (the generator only writes the
- * interfaces a package DECLARES, so today that is every host interface a plugin requires),
- * and an installation whose program predates the compiler being a dependency. Both are
- * logged; an interface the table does carry, and that no longer fits, fails the load.
+ * a table that carries no copy of a host interface (the generator copies them only for a
+ * package built against the host's sources, with `--sources`; one built against the published
+ * declarations carries none), and an installation whose program predates the compiler being a
+ * dependency. Both are logged; an interface the table does carry, and that no longer fits,
+ * fails the load. An interface the package declares itself is not a host interface and is not
+ * asked about.
  */
 let compilerMissingLogged = false;
 async function interfaceMisfits(
@@ -435,8 +437,12 @@ async function interfaceMisfits(
   own: IfaceTable,
   defs: readonly ModuleDef[],
   assets: string | null,
+  /** The package's own name: an interface it declares itself is no host interface to compare. */
+  ownPackage: string | null,
 ): Promise<string[]> {
-  const questions = ifaceQuestions(defs.map((d) => d.manifest));
+  const questions = ifaceQuestions(defs.map((d) => d.manifest)).filter(
+    (q) => ownPackage === null || packageOf(q.key) !== ownPackage,
+  );
   if (questions.length === 0) return [];
   let ts: TypeScript;
   try {
@@ -454,6 +460,16 @@ async function interfaceMisfits(
     );
   }
   return fit.problems;
+}
+
+/** The `name` in a package.json, or null when it has none or cannot be read. */
+function packageNameOf(manifest: string): string | null {
+  try {
+    const name = (JSON.parse(readFileSync(manifest, "utf8")) as { name?: unknown }).name;
+    return typeof name === "string" ? name : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The package's default export as a Plugin, or null when it is not one. */
@@ -573,6 +589,7 @@ export async function loadPlugins(
         read.ifaces,
         [...modules, ...replaces],
         pushedAssets,
+        packageNameOf(read.where),
       );
       if (misfits.length > 0) throw new Error(misfits.join("\n"));
       loaded.push({ specifier, file, stamp, modules, replaces, ifaces: read.ifaces });

@@ -59,7 +59,14 @@ export async function connect(opts: CommonOpts, t: BrowserMessages): Promise<Ser
     try {
       return await request<T>(method, apiPath, body);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 404 && apiPath.startsWith("/api/builtin-browser")) {
+      // A route's own 404 names what it does not know (`no_such_tab`); `not_found` is also what a
+      // server without the route answers, so only that one asks why.
+      if (
+        err instanceof ApiError &&
+        err.status === 404 &&
+        err.code === "not_found" &&
+        apiPath.startsWith("/api/builtin-browser")
+      ) {
         const reason = await missingBrowser(request);
         if (reason !== null) throw new BrowserCliError("browser_unavailable", t.browser.unavailableHint(reason));
       }
