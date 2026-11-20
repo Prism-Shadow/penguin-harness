@@ -1,4 +1,4 @@
-# PRFC-0024 CLI Modules：命令是归属于拥有它的进程的贡献
+# PRFC-0024 CLI Modules
 
 [English](PRFC-0024-cli-modules.md)
 
