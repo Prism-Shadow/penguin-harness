@@ -25,7 +25,7 @@ import type { UniEvent } from "@prismshadow/mmsp";
 import { PluginHost } from "../src/plugin/host.js";
 import type { ProjectModelRequests } from "../src/services/project-model-requests.js";
 import type { AppEnv } from "../src/auth/middleware.js";
-import type { SessionCreateResponse } from "../src/api/types.js";
+import type { SessionCreateResponse, UsageResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin, type TestApp } from "./helpers.js";
 import { startMmspServer, textReply, type MmspServer } from "./fixtures/mmsp-server.js";
 
