@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from "react";
+import type { ModelRefDto } from "@prismshadow/penguin-server/api";
 import {
   Button,
   Chevron,
@@ -30,10 +31,13 @@ export function DictationPolishSettings({
   projectId,
   owner,
   refreshKey,
+  labelOf,
 }: {
   projectId: string;
   owner: boolean;
   refreshKey?: unknown;
+  /** A model's name as the pickers above show it. */
+  labelOf: (model: ModelRefDto) => string;
 }) {
   const [settings, setSettings] = useState<VoicePolishSettings | null>(null);
   const [busy, setBusy] = useState(false);
@@ -57,7 +61,9 @@ export function DictationPolishSettings({
     }
   };
   if (!settings) return <Spinner label={S.common.loading} />;
-  return <PolishForm settings={settings} owner={owner} busy={busy} onSave={save} />;
+  return (
+    <PolishForm settings={settings} owner={owner} busy={busy} labelOf={labelOf} onSave={save} />
+  );
 }
 
 /**
@@ -68,11 +74,13 @@ function PolishForm({
   settings,
   owner,
   busy,
+  labelOf,
   onSave,
 }: {
   settings: VoicePolishSettings;
   owner: boolean;
   busy: boolean;
+  labelOf: (model: ModelRefDto) => string;
   onSave: (patch: VoicePolishUpdate) => Promise<boolean>;
 }) {
   const { enabled, prompt, defaultPrompt, model } = settings;
@@ -93,7 +101,9 @@ function PolishForm({
       <SettingsGroup title={S.voice.dictation}>
         <ToggleRow
           label={S.voice.polish}
-          hint={model ? S.voice.polishWith(model.modelId, model.provider) : S.voice.polishNeedsText}
+          hint={
+            model ? S.voice.polishWith(labelOf(model), model.provider) : S.voice.polishNeedsText
+          }
           checked={enabled}
           disabled={!owner || busy || (!model && !enabled)}
           onChange={(value) => void onSave({ enabled: value })}

@@ -11,7 +11,7 @@
  * routes are answered here.
  */
 import { test, expect } from "@playwright/test";
-import { provisionAndLogin } from "./auth.mjs";
+import { ADMIN_ID, ADMIN_PASSWORD, login } from "./auth.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
 
 const BASE = process.env.BASE_URL;
@@ -48,13 +48,20 @@ function toneWav() {
   return Buffer.concat([header, data]);
 }
 
-/** The Project's table plus the mock chat model, with DeepSeek's speech models keyed. */
-async function seed(page, user) {
-  await provisionAndLogin(page.request, user, "password123");
+/**
+ * The admin's Project (only an admin turns a server plugin on) with the multimodal tools plugin
+ * on, its table plus the mock chat model, and DeepSeek's speech models keyed.
+ */
+async function seed(page) {
+  await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
   await setAccountPrefs(page.request, { lang: "en" });
   const { projects } = await (await page.request.get(`${BASE}/api/projects`)).json();
   const project = projects[0].projectId;
   const api = `${BASE}/api/projects/${project}`;
+  const installed = await page.request.post(`${api}/plugins/installed`, {
+    data: { specifier: "@penguinharness/multimodal-tools" },
+  });
+  expect(installed.ok(), await installed.text()).toBeTruthy();
   const current = await (await page.request.get(`${api}/models`)).json();
   const rows = current.models.map((m) => {
     const entry = { provider: m.provider, modelId: m.modelId };
@@ -66,7 +73,11 @@ async function seed(page, user) {
   for (const ref of [ASR, TTS])
     if (!rows.some((r) => r.provider === ref.provider && r.modelId === ref.modelId))
       rows.push({ ...ref, apiKey: "sk-local-test" });
-  rows.push({ ...CHAT, apiKey: "sk-mock", baseUrl: MOCK, contextWindow: 200000 });
+  // An earlier test of the run may have added it already: the table holds one row per pair.
+  const chat = rows.findIndex((r) => r.provider === CHAT.provider && r.modelId === CHAT.modelId);
+  const chatRow = { ...CHAT, apiKey: "sk-mock", baseUrl: MOCK, contextWindow: 200000 };
+  if (chat === -1) rows.push(chatRow);
+  else rows[chat] = chatRow;
   const put = await page.request.put(`${api}/models`, {
     data: { defaultModel: CHAT, models: rows },
   });
@@ -84,7 +95,7 @@ async function bind(page, api, key, model) {
 test("a tool model's dialog binds it; its card marks it and Project settings shows it", async ({
   page,
 }) => {
-  const { api } = await seed(page, "mmbindcard");
+  const { api } = await seed(page);
   await bind(page, api, "s2t", null);
   await page.goto(`${BASE}/models`);
   await page.getByPlaceholder(/Search models/).fill("DeepSeek ASR");
@@ -117,7 +128,7 @@ test("a tool model's dialog binds it; its card marks it and Project settings sho
 test("dictation sends 16 kHz WAV to speech recognition and Send keeps its place", async ({
   page,
 }) => {
-  const { api } = await seed(page, "mmdictate");
+  const { api } = await seed(page);
   await bind(page, api, "s2t", ASR);
   const uploads = [];
   await page.route("**/multimodal-tools/s2t/run", async (route) => {
@@ -154,7 +165,7 @@ test("dictation sends 16 kHz WAV to speech recognition and Send keeps its place"
 test("a reply plays the audio the plugin answers with, and stops on a second press", async ({
   page,
 }) => {
-  const { project, api } = await seed(page, "mmreadaloud");
+  const { project, api } = await seed(page);
   await bind(page, api, "t2s", TTS);
   const created = await page.request.post(`${api}/agents/default_agent/sessions`, {
     data: CHAT,

@@ -11,7 +11,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { getModels } from "../../../api/endpoints";
 import { MULTIMODAL_TOOLS_PACKAGE } from "../../../api/tool-types";
-import { ModelCatalogSelect } from "../../model-picker";
+import { ModelCatalogSelect, modelLabel } from "../../model-picker";
 import { putVisionModel } from "../../models";
 import { apiErrorText } from "../../../lib/api-error";
 import { sameModelRef } from "../../../lib/model-grouping";
@@ -128,7 +128,15 @@ export function MultimodalModelsSection({
       </SettingsGroup>
       {tools.bindings.length === 0 && <p className="text-sm text-fg-muted">{S.voice.noTools}</p>}
       {dictation && (
-        <DictationPolishSettings projectId={projectId} owner={owner} refreshKey={tools.bindings} />
+        <DictationPolishSettings
+          projectId={projectId}
+          owner={owner}
+          refreshKey={tools.bindings}
+          labelOf={(ref) => {
+            const row = modelByKey.get(modelKey(ref));
+            return row ? modelLabel(row) : ref.modelId;
+          }}
+        />
       )}
     </div>
   );
