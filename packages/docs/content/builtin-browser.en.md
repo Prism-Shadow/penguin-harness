@@ -88,7 +88,7 @@ Import copies cookies (which hold your sign-ins) into the current Project’s br
 2. Pick a profile. Profiles are grouped by browser and named as the browser names them.
 3. Choose **Cookies & sign-ins**, **History**, or both.
 4. Optionally, list the sites to import cookies for, separated by commas, such as `amazon.com, github.com`. A site includes its subdomains. Leave the field empty to import the cookies of every site.
-5. Start the import. The dialog shows how many cookies and history entries were found and imported, and any warnings.
+5. Start the import. The dialog shows how many cookies and history entries were found and imported, why each skipped cookie stayed behind (each reason with its count), and anything else worth knowing.
 
 | Browser | macOS | Windows | Linux |
 | --- | --- | --- | --- |
@@ -99,13 +99,21 @@ Import copies cookies (which hold your sign-ins) into the current Project’s br
 What to expect on each platform:
 
 - **macOS**: Chromium-based browsers encrypt cookies with a key kept in your Keychain, so macOS asks whether PenguinHarness may use the Keychain item named after the browser, such as "Chrome Safe Storage". Allow it; if you deny it, the encrypted cookies are skipped and the result says so.
-- **Windows**: Chrome 127 and later protect most cookies with app-bound encryption, which only Chrome itself can read. Those cookies are skipped with a warning; sign in in the panel instead. A browser that is running may also hold its cookie file open; close it and import again.
+- **Windows**: Chrome 127 and later protect most cookies with app-bound encryption, which only Chrome itself can read. Those cookies are skipped and counted. To bring them over, [import through your Chrome extension](#import-through-your-chrome-extension), or sign in in the panel. A browser that is running may also hold its cookie file open; close it and import again.
 - **Linux**: newer cookies are encrypted with a password kept in the desktop keyring, read through `secret-tool` (from the `libsecret-tools` package on Debian and Ubuntu). Without it those cookies are skipped with a warning.
 - **Firefox** stores cookies unencrypted. Cookies kept for a container or partitioned to another site are left out.
 
+### Import through your Chrome extension
+
+When [your own Chrome](#use-your-own-chrome) is connected, the import dialog also lists it under **Through the Chrome extension**. Chrome reads its own cookies and hands them over, so this brings the cookies that app-bound encryption keeps from the import above. It imports cookies only, from the Chrome profile the extension is installed in, into the same Project as any other import.
+
+Chrome then opens a page that names the server asking for the cookies. Nothing is sent until you select **Allow** there. Select **Deny**, close the page, or leave it for two minutes, and nothing is sent. When an import from a profile skipped app-bound cookies and your Chrome is connected, **Import through the Chrome extension** in the result takes you straight to this option.
+
+The extension needs the `cookies` permission and access to all sites for this. Neither adds a warning to the ones Chrome showed when you installed it, so updating the extension does not ask again; the page above asks each time.
+
 Import only reads: every file is copied to a temporary directory, read there and deleted, and nothing is written to the other browser. Imported history is kept together with the built-in browser's own, up to the newest 5,000 pages. Import is available to administrators only.
 
-From a shell, `penguin browser import --list` lists the profiles and `penguin browser import --from chrome --cookies --domain amazon.com` imports one site's sign-in; see [penguin browser](/cli#penguin-browser).
+From a shell, `penguin browser import --list` lists the profiles and `penguin browser import --from chrome --cookies --domain amazon.com` imports one site's sign-in; `--from chrome-extension` imports through your connected Chrome. See [penguin browser](/cli#penguin-browser).
 
 ## Clear browsing data
 
@@ -167,9 +175,9 @@ The agent drives only these tabs:
 - A tab you hand over: select the extension's icon on that tab, then **Add this tab**. It moves into the Penguin group.
 - Pages those tabs open, such as a pop-up or a link opened in a new tab.
 
-It cannot see or touch your other tabs and windows, your passwords, your history or your downloads, and it cannot read or change Chrome's cookies directly. Raw DevTools commands that would reach them are refused (`cdp_refused`). Chrome's own pages (`chrome://`), the Chrome Web Store and local files cannot be driven at all. Import, clearing browsing data and the browsing history belong to the built-in browser; Chrome keeps its own.
+It cannot see or touch your other tabs and windows, your passwords, your history or your downloads, and it cannot read or change Chrome's cookies directly. The one exception is an [import into the built-in browser](#import-through-your-chrome-extension) that you allow on the page Chrome shows. Raw DevTools commands that would reach them are refused (`cdp_refused`). Chrome's own pages (`chrome://`), the Chrome Web Store and local files cannot be driven at all. Import, clearing browsing data and the browsing history belong to the built-in browser; Chrome keeps its own.
 
-What reaches the server is what the agent asks of a driven tab, as with the built-in browser: the page as simplified HTML or text, the values its scripts return, screenshots and the text of dialogs. A script in the page can read the cookies the page itself can read; HttpOnly session cookies never leave Chrome.
+What reaches the server is what the agent asks of a driven tab, as with the built-in browser: the page as simplified HTML or text, the values its scripts return, screenshots and the text of dialogs. A script in the page can read the cookies the page itself can read; HttpOnly session cookies leave Chrome only through an import you allow.
 
 ### Take a tab back or stop the agent
 
@@ -257,4 +265,4 @@ Every tab is a whole web page with memory of its own: a busy shopping or news si
 | `exec` script time | 15 seconds by default (`--timeout`) |
 | Page load wait | 15 seconds for `open` |
 | History | The newest 5,000 pages, imported ones included |
-| Windows cookie import | Chrome's app-bound cookies (Chrome 127 and later) cannot be imported |
+| Windows cookie import | Chrome's app-bound cookies (Chrome 127 and later) cannot be read from its files; import them through the Chrome extension |

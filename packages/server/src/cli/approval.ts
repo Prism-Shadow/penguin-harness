@@ -9,6 +9,7 @@ import { createInterface } from "node:readline";
 import type { ApprovalDecision, ApproveFn } from "@prismshadow/penguin-core";
 import { defaultMessages } from "./i18n.js";
 import type { Messages } from "./i18n.js";
+import { terminalInput } from "./console-input.js";
 
 /** Valid string values for the `--approve` option (includes the default allow-all, so scripts can specify it explicitly and get the default behavior). */
 const APPROVE_MODES = ["allow-all", "deny-all", "read-only", "always-ask"] as const;
@@ -70,7 +71,10 @@ export function makeApprove(args: {
 export interface PromptApprovalOptions {
   /** Message set; resolved from the env var by default. */
   t?: Messages;
-  /** Stream to read the approval answer from; defaults to `process.stdin`. */
+  /**
+   * Stream to read the approval answer from; defaults to the terminal (`process.stdin`, or the
+   * console where the runtime was given no stdin, console-input.ts).
+   */
   input?: NodeJS.ReadableStream;
   /** Stream to print the approval prompt to; defaults to `process.stdout`. */
   output?: NodeJS.WritableStream;
@@ -97,7 +101,9 @@ export function denyActivePrompt(): boolean {
  * readline instance is closed after reading.
  */
 export function promptApproval(opts: PromptApprovalOptions = {}): Promise<ApprovalDecision> {
-  const input = opts.input ?? process.stdin;
+  // The caller's stream, or the terminal's, which this prompt releases once it is answered.
+  const terminal = opts.input === undefined ? terminalInput() : null;
+  const input: NodeJS.ReadableStream = terminal?.stream ?? opts.input ?? process.stdin;
   const output = opts.output ?? process.stdout;
   const t = opts.t ?? defaultMessages();
   const rl = createInterface({ input, output });
@@ -110,6 +116,7 @@ export function promptApproval(opts: PromptApprovalOptions = {}): Promise<Approv
       // this; this is a defensive check), don't clobber someone else's deny hook.
       if (activePromptDeny === deny) activePromptDeny = null;
       rl.close();
+      terminal?.release();
       resolve(decision);
     };
     const deny = () => finish("deny");

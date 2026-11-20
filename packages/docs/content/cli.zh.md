@@ -667,11 +667,11 @@ note: No visible change on the page.
 `import` 和 `history` 属于内置浏览器；对用户自己的 Chrome 调用时，返回 `not_supported`。
 
 - `--list` 列出本机的浏览器个人资料：来源 id、浏览器、个人资料名称，以及其中是否有 Cookie 和历史记录。
-- `--from` 接受列表中的来源 id，或浏览器名（`chrome`、`edge`、`brave`、`arc`、`vivaldi`、`opera`、`chromium` 或 `firefox`），后者表示该浏览器的 `Default` 个人资料，或它唯一的个人资料。
+- `--from` 接受列表中的来源 id，或浏览器名（`chrome`、`edge`、`brave`、`arc`、`vivaldi`、`opera`、`chromium` 或 `firefox`），后者表示该浏览器的 `Default` 个人资料，或它唯一的个人资料。用户的 Chrome 连着时列表中另有 `chrome-extension`，经它导入 Cookie，须用户在 Chrome 中允许。
 - `--cookies` 和 `--history` 选择导入什么；两者都不给时全部导入。
 - `--domain` 只保留某个网站及其子域名的 Cookie。可以重复给出，也可以用逗号分隔多个网站。
 
-结果先给出来源，再打印 `cookies: <n> imported, <n> skipped, <n> failed (<n> found)`、`history: <n> imported (<n> found)`，每条警告各占一行 `warning:`。各平台的细节（如 macOS 的钥匙串提示、Windows 上 Chrome 的应用绑定 Cookie）见[从你的浏览器导入](/builtin-browser#从你的浏览器导入)。
+结果先给出来源，再打印 `cookies: <n> imported, <n> skipped, <n> failed (<n> found)`、逐个原因给出跳过数量的一行 `skipped:`、`history: <n> imported (<n> found)`，其余需要知道的情况各占一行 `warning:`。各平台的细节（如 macOS 的钥匙串提示、Windows 上 Chrome 的应用绑定 Cookie）见[从你的浏览器导入](/builtin-browser#从你的浏览器导入)。
 
 ### history
 
@@ -687,6 +687,7 @@ note: No visible change on the page.
 - `keyboard_focus_failed`：内置浏览器无法让该标签页在应用窗口里取得键盘焦点，因此一个字也没有输入。`type` 以失败结果报告并附上这条信息，原始 `cdp` 键盘命令则直接返回该错误码。可重试一次。
 - `cdp_refused`：原始命令超出了该后端允许的范围（见 [screenshot 和 cdp](#screenshot-和-cdp)）。
 - `not_supported`：对用户自己的 Chrome 调用了导入或历史记录；错误信息会提示改为请用户在 Chrome 的 Penguin 标签页中登录。
+- `import_declined`：用户没有在 Chrome 中允许经扩展导入；`extension_outdated`：用户的扩展版本过旧。
 - `script_error`、`timeout`、`invalid_url`、`source_not_found` 和 `import_failed`。
 
 CLI 自己还有三种：命令写错时的 `invalid_argument`、文件读写失败时的 `io_error`，以及连不上服务器时的 `request_failed`。

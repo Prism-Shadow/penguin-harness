@@ -147,14 +147,15 @@ export function AppTile({
   onOpen: () => void;
 }) {
   const { shortcut } = app;
+  const owner = [shortcut.agentName, shortcut.machineLabel].filter(Boolean).join(" · ");
   const building = shortcut.build === "building";
   const failed = shortcut.build === "failed";
   const state = building ? S.appCenter.building : failed ? S.appCenter.broken : null;
   const tip = building
-    ? S.appCenter.buildingTip(title, shortcut.agentName)
+    ? S.appCenter.buildingTip(title, owner)
     : failed
-      ? S.appCenter.failedTip(title, shortcut.agentName)
-      : S.appCenter.tileTip(title, shortcut.agentName);
+      ? S.appCenter.failedTip(title, owner)
+      : S.appCenter.tileTip(title, owner);
   return (
     <li
       className="relative"
@@ -170,17 +171,17 @@ export function AppTile({
             ref={target.ref}
             {...target.props}
             type="button"
-            aria-label={S.appCenter.tileName(title, shortcut.agentName, state)}
-            aria-disabled={building || undefined}
+            aria-label={S.appCenter.tileName(title, owner, state)}
+            aria-disabled={building || shortcut.unavailable || undefined}
             data-tooltip={tip}
             data-tooltip-extra
             onClick={() => {
               // A press-and-hold that opened the menu must not also open the app.
               if (target.consumeLongPressClick()) return;
-              if (!building) onOpen();
+              if (!building && !shortcut.unavailable) onOpen();
             }}
             className={`${TILE_BUTTON} ${building ? "cursor-default" : ""} ${
-              failed ? "opacity-60" : ""
+              failed || shortcut.unavailable ? "opacity-60" : ""
             } ${lifted ? "opacity-40" : ""}`}
           >
             <span
@@ -210,6 +211,11 @@ export function AppTile({
               )}
             </span>
             <TileName>{title}</TileName>
+            {shortcut.machineLabel && (
+              <span className="max-w-full truncate text-xs text-fg-muted">
+                {shortcut.machineLabel}
+              </span>
+            )}
           </button>
         )}
       </ContextMenu>

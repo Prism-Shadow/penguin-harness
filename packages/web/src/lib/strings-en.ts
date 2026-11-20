@@ -636,6 +636,64 @@ export const en: Strings = {
       (c.failed > 0 ? `, ${c.failed} failed` : ""),
     importHistoryResult: (h: { found: number; imported: number }): string =>
       `History: ${h.imported} of ${h.found} entries imported`,
+    importSkip: ({ reason, count: n }, browser) => {
+      switch (reason) {
+        case "app_bound":
+          return `${n} protected by ${browser}'s app-bound encryption, which only ${browser} itself can read.`;
+        case "dpapi":
+          return `${n} whose key Windows would not unlock.`;
+        case "keychain":
+          return `${n} whose key the Keychain did not release; allow the access when macOS asks, then import again.`;
+        case "keyring":
+          return `${n} whose key the desktop keyring could not provide.`;
+        case "undecryptable":
+          return `${n} that could not be decrypted.`;
+        case "partitioned":
+          return `${n} partitioned to a single site or container.`;
+        case "expired":
+          return `${n} expired.`;
+      }
+    },
+    importNote: (note, browser) => {
+      const store = (which: "cookies" | "history") =>
+        which === "cookies" ? "cookie store" : "history";
+      switch (note.code) {
+        case "no_cookie_store":
+          return "This profile has no cookie store.";
+        case "no_history":
+          return "This source has no history to import.";
+        case "store_busy":
+          return `${browser} is holding its ${store(note.store)} open; close ${browser} and import again.`;
+        case "store_unreadable":
+          return `The ${store(note.store)} of ${browser} could not be read.`;
+        case "cookies_not_set":
+          return (
+            `${note.count} cookies could not be set in the built-in browser` +
+            (note.errors.length > 0 ? `: ${note.errors.join("; ")}` : ".")
+          );
+      }
+    },
+    importExtensionGroup: "Through the Chrome extension",
+    importExtensionHint:
+      "Reads the cookies of the Chrome profile the extension runs in; Chrome asks you to allow it first.",
+    importWaitingChrome: "Waiting for Chrome…",
+    importAppBoundHint: (route) =>
+      route === "not_paired"
+        ? "On Windows, only Chrome can read most of its cookies: connect your Chrome in Settings › Browser to import them through the extension, or sign in inside the Browser panel."
+        : route === "disconnected"
+          ? "On Windows, only Chrome can read most of its cookies: once your Chrome's PenguinHarness Browser extension is connected, import them through it, or sign in inside the Browser panel."
+          : route === "connected"
+            ? "On Windows, only Chrome can read most of its cookies; choose the Chrome extension below to import them through it."
+            : "On Windows, only Chrome can read most of its cookies; sign in inside the Browser panel instead.",
+    importAppBoundAdvice: (route) =>
+      route === "connected"
+        ? "Import again through the Chrome extension to bring them over, or sign in inside the Browser panel."
+        : route === "not_paired"
+          ? "Connect your Chrome in Settings › Browser to import them through the extension, or sign in inside the Browser panel."
+          : route === "disconnected"
+            ? "Once your Chrome's PenguinHarness Browser extension is connected, import them through it, or sign in inside the Browser panel."
+            : "Sign in to those sites inside the Browser panel instead.",
+    importUseExtension: "Import through the Chrome extension",
     importFailed: (reason: string): string => `Import failed: ${reason}`,
     clearTitle: "Clear browsing data",
     clearBody:
@@ -1276,9 +1334,9 @@ export const en: Strings = {
     /** The windowed app's title bar. */
     windowClose: "Close, back to the App Center",
     windowFullScreen: "Open full screen",
-    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
-    machinesNote:
-      "Workbenches of agents on machines are not listed here. Open them from the agent's settings.",
+    /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
+    machinesOffline: (names: string) =>
+      `Currently unreachable: ${names}. Cached items are still visible.`,
     aiCreateTitle: "Create an app with AI",
     aiCreateDescription: "The agent you pick builds a workbench and puts it in the App Center.",
     aiCreatePlaceholder: "Describe the app you want, such as a board for daily to-dos",
@@ -2066,6 +2124,21 @@ export const en: Strings = {
       ],
     ] as ReadonlyArray<readonly [string, string]>,
     compactionPrompt: "Summary prompt",
+    maxRounds: "Max tool rounds",
+    maxRoundsInfo:
+      "How many tool rounds (writing hand-off files, for example) a summarize compaction may take before its summary. Once they are used up without one, the next context opens with the hand-off note.",
+    maxRoundsHint: "0 allows none",
+    maxRoundsInvalid: "Must be an integer of 0 or more",
+    compactionReminder: "Per-round reminder",
+    compactionReminderInfo:
+      "The line sent to the model after the tool outputs of each tool round while it writes the summary.",
+    compactionReminderHint:
+      "Placeholders: {{ROUNDS_USED}}, {{ROUNDS_LEFT}}, {{SCRATCHPAD_DIR}}. Leave blank to send none",
+    compactionHandoffNote: "Hand-off note",
+    compactionHandoffNoteInfo:
+      "When no summary could be had, the next context opens with this note: the harness fills its placeholders from the Trace file, without asking the model.",
+    compactionHandoffNoteHint:
+      "Placeholders: {{ERROR}}, {{USER_MESSAGES}}, {{LAST_TURN}}, {{TRACE_PATH}}, {{SCRATCHPAD_DIR}}. Leave blank for the quoted data alone",
     numberInvalid: "Must be a positive integer or -1",
     numberCannotClear: "A saved value can't be cleared: enter a number, or use Reset to restore it",
     toolFieldInvalid: (name: string, field: string) =>
@@ -4547,8 +4620,12 @@ Scenarios:
       `This model's context window ${n} is smaller than this agent's compaction threshold ${m}, so compaction actually fires at the edge of the window. Drag the dashed mark in the context panel, or set the threshold below the window in the agent settings — it applies immediately.`,
     contextWindowUnderThresholdAction: "Open agent settings",
     contextWindowUnderThresholdDismiss: "Dismiss",
-    contextRefusedHandoff:
-      "The provider refused the last request: too little room was left for compaction, so this conversation continued from a Trace hand-off note. Correct this model's context window in the model settings, or lower this agent's compaction threshold (drag the dashed mark in the context panel).",
+    contextRefusedHandoff: {
+      reason: (said: boolean): string =>
+        said ? "The provider refused the last request:" : "The provider refused the last request.",
+      advice:
+        "This conversation continued from a Trace hand-off note. Most likely too little room was left for compaction: correct this model's context window in the model settings, or lower this agent's compaction threshold (drag the dashed mark in the context panel).",
+    },
     slashHint: "Type / for commands",
     switchAgent: "Hand off to another agent — opens a new session on send",
     switchAgentTitle: "Choose agent",
@@ -4635,14 +4712,25 @@ Scenarios:
       tracePath
         ? `No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to: ${tracePath}`
         : "No summary: the previous model was unavailable or its compaction failed, so the new one reads the earlier Trace file when it needs to",
-    compactionDegradedHint: (errorMessage?: string): string =>
-      errorMessage !== undefined
-        ? `No full summary could be written; the next context opens with a Trace hand-off note: ${errorMessage}`
-        : "No full summary could be written; the next context opens with a Trace hand-off note.",
-    compactionRoomHint: (providerMessage?: string): string =>
-      `Too little room was left for compaction, so the next context opens with a Trace hand-off note. Correct this model's context window, or lower the compaction threshold.${
-        providerMessage !== undefined ? ` The provider said: ${providerMessage}` : ""
-      }`,
+    compactionDegradedHint: (
+      why: string | null,
+      errorMessage: string | undefined,
+      room: boolean,
+    ): string => {
+      // The retry line's cause sits inside parentheses, lower-case; here it starts a line.
+      const cause = why === null ? null : `${why.charAt(0).toUpperCase()}${why.slice(1)}`;
+      return [
+        cause !== null && errorMessage !== undefined
+          ? `${cause}: ${errorMessage}`
+          : (cause ?? errorMessage),
+        "No full summary could be written; the next context opens with a Trace hand-off note.",
+        room
+          ? "Most likely too little room was left for compaction: correct this model's context window, or lower the compaction threshold."
+          : undefined,
+      ]
+        .filter((line) => line !== undefined)
+        .join("\n");
+    },
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";
@@ -4825,6 +4913,8 @@ Scenarios:
       "Invalid budget: use a positive number with an optional k/m suffix (500k, 2m)",
     goalBudgetSave: "Save budget",
     goalRemove: "Exit goal mode",
+    /** The remove label of a composer switch's chip (a plugin's mode, e.g. Plan mode). */
+    switchOff: (title: string): string => `Turn off ${title}`,
     /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
     goalPluginMissing: "Goal mode needs the goal plugin: install it on this Agent to start a goal.",
     goalPluginInstall: "Install on this Agent",
@@ -5398,7 +5488,8 @@ Scenarios:
     rangeCustom: "Custom",
     chartRequestsByAgent: "Requests & success rate by agent",
     chartRequestsByModel: "Requests & success rate by model",
-    legendSuccessRate: "Success rate",
+    legendRequestCount: "Requests (left axis)",
+    legendSuccessRate: "Success rate (right axis)",
     chartTokenTrend: "Token trend",
     chartCostTrend: "Cost trend",
     legendOther: (n: number): string => `Other (${n})`,
@@ -6751,7 +6842,7 @@ Scenarios:
   report: {
     action: "Report",
     title: "Report a problem",
-    lead: "An error like this is most likely a defect in PenguinHarness. Reporting it on GitHub helps improve this open-source project.",
+    lead: "This may be a defect in PenguinHarness, or it may come from the network, a model provider or a connected machine. If you think PenguinHarness is at fault, filing an issue on GitHub helps improve this open-source project.",
     check:
       "Keys, tokens and personal paths are taken out of the report; still check it for anything private before you send it.",
     label: "Report",
@@ -6838,6 +6929,8 @@ Scenarios:
       unknown_plugin: "This plugin is not in the plugin library.",
       goal_plugin_not_installed:
         "Goal mode needs the goal plugin — install it on this agent from the plugin library, and switch its hook package on.",
+      prompt_hook_not_installed:
+        "This agent no longer has the hook package a switch needs, or its hooks are off. Turn the switch off, or install its plugin again.",
       skill_too_large: "This skill directory exceeds the import limits.",
       hook_too_large: "This hook package exceeds the import limits.",
       workbench_too_large: "This workbench's source exceeds the export limits.",
@@ -6942,6 +7035,9 @@ Scenarios:
       browser_unavailable:
         "The browser is not available right now: the built-in browser needs the PenguinHarness desktop app open, and your Chrome needs the PenguinHarness Browser extension connected.",
       source_not_found: "That browser profile was not found.",
+      import_declined: "The import was not allowed in Chrome.",
+      extension_outdated:
+        "The PenguinHarness Browser extension in Chrome is too old for this. Update it and try again.",
       shell_unreachable: "The desktop app could not be reached.",
       timeout: "That took too long. Try again.",
     },
