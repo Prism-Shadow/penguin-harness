@@ -220,8 +220,8 @@ describe("model-catalog", () => {
       client_type: "openai-chat",
     });
     expect(providerInfo("jellytoken")).toMatchObject({
-      apiKeyUrl: "https://www.jellytoken.com/auth/login",
-      modelsUrl: "https://www.jellytoken.com/auth/login",
+      apiKeyUrl: "https://www.jellytoken.com/models?utm_source=penguin-harness",
+      modelsUrl: "https://www.jellytoken.com/models?utm_source=penguin-harness",
       gatewayBaseUrl: "https://aiservice.jellytoken.com/v1",
       addable: true,
       catalogOrder: true,

@@ -344,7 +344,7 @@ const VLLM_LOCAL_BASE_URL = "http://127.0.0.1:8000/v1";
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
 const JELLYTOKEN_BASE_URL = "https://aiservice.jellytoken.com/v1";
-const JELLYTOKEN_LOGIN = "https://www.jellytoken.com/auth/login";
+const JELLYTOKEN_MODELS_URL = "https://www.jellytoken.com/models?utm_source=penguin-harness";
 const QWEN_TOKEN_PLAN_BASE_URL =
   "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1";
 const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
@@ -565,8 +565,8 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     label: "JellyToken",
     envKey: "OPENAI_API_KEY",
     envBaseUrlKey: "OPENAI_BASE_URL",
-    apiKeyUrl: JELLYTOKEN_LOGIN,
-    modelsUrl: JELLYTOKEN_LOGIN,
+    apiKeyUrl: JELLYTOKEN_MODELS_URL,
+    modelsUrl: JELLYTOKEN_MODELS_URL,
     gatewayBaseUrl: JELLYTOKEN_BASE_URL,
     clientType: "openai-chat",
     addable: true,

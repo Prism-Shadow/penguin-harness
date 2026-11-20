@@ -7,7 +7,7 @@
 - 准备三个隔离项目：A 为新项目，使用没有已保存排序偏好的浏览器；B 为升级前的项目，保存一条自定义模型、地址、密钥和非 JellyToken 默认模型；C 在升级前已自建 `jellytoken` 分组并设置地址与密钥。记录 B、C 的非敏感配置以便比较。
 - 自动化使用模拟网关、虚构密钥和临时数据目录；记录请求方法、目标地址、模型标识和响应事件。真实供应商联调独立执行，不作为离线测试前提。
 - **九模型顺序基准**（以下称“基准序列”）：① `deepseek-v4.1-flash-1017` → ② `qwen4-max` → ③ `glm-5.3` → ④ `glm-5.3-flash` → ⑤ `qwen3.8-flash` → ⑥ `glm-5.3-flashx` → ⑦ `doubao-seed-2.1-lite` → ⑧ `doubao-seed-2-1-pro` → ⑨ `kimi-k3`。
-- **两个地址分开验收**：网页登录 `https://www.jellytoken.com/auth/login`；默认推理 `POST https://aiservice.jellytoken.com/v1/chat/completions`。
+- **两个地址分开验收**：页面入口 `https://www.jellytoken.com/models?utm_source=penguin-harness`；默认推理 `POST https://aiservice.jellytoken.com/v1/chat/completions`。
 - P0 为核心验收，P1 为回归或条件验收。执行时对每个编号记录通过／失败／阻塞及脱敏证据。未实现、无账号权限或未授权付费调用，均不记为通过。
 
 ## 一、模型发现与展示
@@ -23,7 +23,7 @@
 
 | 编号 | 前置条件与操作 | 预期结果 |
 | --- | --- | --- |
-| JT-05 · P0 | 以所有者打开 A 的分组设置，检查预填值；分别点击「前往密钥管理」「前往模型列表」。再打开组内新增模型表单，找到「获取模型 id」「前往密钥管理」并分别点击。 | 分组基础地址为 `https://aiservice.jellytoken.com/v1`，后缀为 `/chat/completions`，可编辑地址并手动检测协议。四个链接均打开上述网页登录地址，不附带密钥；点击「获取模型 id」不导入模型、不发推理请求。 |
+| JT-05 · P0 | 以所有者打开 A 的分组设置，检查预填值；分别点击「前往密钥管理」「前往模型列表」。再打开组内新增模型表单，找到「获取模型 id」「前往密钥管理」并分别点击。 | 分组基础地址为 `https://aiservice.jellytoken.com/v1`，后缀为 `/chat/completions`，可编辑地址并手动检测协议。四个链接均打开 `https://www.jellytoken.com/models?utm_source=penguin-harness`，不附带密钥；点击「获取模型 id」不导入模型、不发推理请求。 |
 | JT-06 · P0 | 在 A 输入虚构组密钥 K1 并保存。刷新、重开弹窗；密钥输入留空，只修改其他设置并保存，再用一条无覆盖的模型发起模拟请求。 | 保存本身不发推理请求；重开只见掩码，项目模型接口不回传明文；留空未清除 K1，请求仍使用组密钥。 |
 | JT-07 · P0 | 将组密钥 K1 换成 K2，以两条继承分组的模型分别请求；显式清除组密钥再试。 | 两条请求均使用 K2，不再使用 K1。清除后两条无独立密钥的模型均不再具备可用密钥。 |
 | JT-08 · P0 | 模型与组均无密钥，保留 JellyToken 默认地址；仅在测试服务环境中设一个假的 `OPENAI_API_KEY`，尝试对话。 | 明确提示缺少密钥；模拟网关没有收到携带环境密钥的请求。 |

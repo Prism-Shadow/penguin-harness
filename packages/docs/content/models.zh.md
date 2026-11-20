@@ -480,7 +480,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 
 ## 内置供应商分组
 
-JellyToken 的九个预设依次为：`deepseek-v4.1-flash-1017`、`qwen4-max`、`glm-5.3`、`glm-5.3-flash`、`qwen3.8-flash`、`glm-5.3-flashx`、`doubao-seed-2.1-lite`、`doubao-seed-2-1-pro`、`kimi-k3`。每个预设配置 1M 上下文。「几折起」是供应商报价标签，成本中心不会据此再次打折。「前往密钥管理」「前往模型列表」和「获取模型 id」均打开 [JellyToken 登录页](https://www.jellytoken.com/auth/login)。
+JellyToken 的九个预设依次为：`deepseek-v4.1-flash-1017`、`qwen4-max`、`glm-5.3`、`glm-5.3-flash`、`qwen3.8-flash`、`glm-5.3-flashx`、`doubao-seed-2.1-lite`、`doubao-seed-2-1-pro`、`kimi-k3`。每个预设配置 1M 上下文。「几折起」是供应商报价标签，成本中心不会据此再次打折。「前往密钥管理」「前往模型列表」和「获取模型 id」均打开 [JellyToken 登录页](https://www.jellytoken.com/models?utm_source=penguin-harness)。
 
 下表列出了各个内置分组，以及新建 Project 不写 base URL 的七个一方厂商分组在模型和分组都没有 key、且没有厂商缺省端点以外的 base URL 时使用的环境变量；其余分组不使用任何环境变量（—）。模型目录的源码位于 `packages/server/src/model-catalog/`。每个变量还有一个 `_BASE_URL` 变体，例如 `ANTHROPIC_BASE_URL`。**模型库**页面按这个顺序列出分组，你创建的分组排在后面。网关分组带 base URL，其条目因此**从不回退**：网关的协议客户端读取 `OPENAI_*`（或 `ANTHROPIC_*`），里面存的是你的厂商 key，这把 key 不会被发往网关（见[设置 API key](#设置-api-key)）。
 

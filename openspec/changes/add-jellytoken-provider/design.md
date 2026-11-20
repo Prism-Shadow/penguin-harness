@@ -11,7 +11,7 @@
 | `id` / `label` | `jellytoken` / `JellyToken` |
 | `gatewayBaseUrl` | `https://aiservice.jellytoken.com/v1`；客户端追加 `/chat/completions`，不再拼接 `/v1` |
 | `clientType` / `addable` | `openai-chat` / `true`；预设模型和手动添加的模型均可沿用分组连接 |
-| `apiKeyUrl` / `modelsUrl` | 两项均为 `https://www.jellytoken.com/auth/login`，只用于浏览器导航 |
+| `apiKeyUrl` / `modelsUrl` | 两项均为 `https://www.jellytoken.com/models?utm_source=penguin-harness`，只用于浏览器导航 |
 | `envKey` / `envBaseUrlKey` | `OPENAI_API_KEY` / `OPENAI_BASE_URL`，描述协议客户端，不授权把环境中的 OpenAI 密钥发给 JellyToken |
 
 服务端将连接写入项目配置。运行时按模型设置、分组设置的顺序解析连接，由 MMSP 使用 `Authorization: Bearer` 发出请求；没有模型或分组密钥时不能拿其他厂商的密钥代替。模型若单独指定另一来源，不向该来源转发分组密钥。不按模型名称路由，也不在 `packages/core` 增加供应商判断。若实际流式响应或工具调用不符合通用协议，记录差异并单独评估 MMSP 适配，不在本次目录变更里绕过。
@@ -48,6 +48,6 @@
 
 ## 实施前证据与交付
 
-使用脱敏资料记录九个模型标识、账号可用性和费率的核验来源与日期。自动化测试只模拟网络边界；经授权后，再用本地测试密钥验证一次无敏感内容的流式对话，并对支持工具的模型验证一次无副作用的工具往返。提交中英文产品文档、变更记录及实际验证结果；不提交密钥、原始账号信息或无关的编辑器文件。
+使用脱敏资料记录九个模型标识、账号可用性和费率的核验来源与日期。自动化测试只模拟网络边界；真实核验时只通过临时环境变量或权限受限的临时文件注入密钥，禁止使用命令行参数，禁止把密钥或原始响应写入代码、日志、OpenSpec、钉钉文档、截图或 PR。测试结束后删除临时凭据和响应文件，清理日志，撤销并重新生成测试密钥。提交中英文产品文档、变更记录及脱敏验证结果；不提交原始账号信息或无关的编辑器文件。
 
 参考：[JellyToken 接口文档](https://www.jellytoken.com/docs/index)、[Chat Completions](https://www.jellytoken.com/docs/chat-completions)、[Runcrate 接入先例](https://github.com/Prism-Shadow/penguin-harness/pull/1427)。

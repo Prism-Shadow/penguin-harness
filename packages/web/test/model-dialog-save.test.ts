@@ -457,7 +457,7 @@ describe("the model config dialog", () => {
       const link = [...dialogs()[0]!.querySelectorAll("a")].find(
         (a) => a.textContent?.trim() === label,
       )!;
-      expect(link.href).toBe("https://www.jellytoken.com/auth/login");
+      expect(link.href).toBe("https://www.jellytoken.com/models?utm_source=penguin-harness");
       expect(link.target).toBe("_blank");
       // Leave navigation to the browser, but let any click handler run.
       link.addEventListener("click", (e) => e.preventDefault(), { once: true });

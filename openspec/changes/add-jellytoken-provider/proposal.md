@@ -9,7 +9,7 @@
 ## 本次变更
 
 - 新增内置分组 `jellytoken`，显示名称为 `JellyToken`。默认使用 `openai-chat` 和 `https://aiservice.jellytoken.com/v1`，也允许手动添加账号已开通的模型。
-- 分组设置的「前往密钥管理」「前往模型列表」，以及模型配置中的「前往密钥管理」「获取模型 id」，都打开 `https://www.jellytoken.com/auth/login`。这是浏览器跳转，不是推理地址，也不会自动导入模型。
+- 分组设置的「前往密钥管理」「前往模型列表」，以及模型配置中的「前往密钥管理」「获取模型 id」，都打开 `https://www.jellytoken.com/models?utm_source=penguin-harness`。这是浏览器跳转，不是推理地址，也不会自动导入模型。
 - 按下列顺序预置并默认展示九个模型，保留原始请求标识：
 
   1. `deepseek-v4.1-flash-1017`

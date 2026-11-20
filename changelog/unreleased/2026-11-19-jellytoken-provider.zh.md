@@ -10,5 +10,5 @@
 
 ## 细节
 
-- 分组通过 `https://aiservice.jellytoken.com/v1` 调用 Chat Completions。密钥管理和模型列表入口均打开 JellyToken 登录页。
+- 分组通过 `https://aiservice.jellytoken.com/v1` 调用 Chat Completions。密钥管理、模型列表和模型 ID 入口均打开 `https://www.jellytoken.com/models?utm_source=penguin-harness`。
 - 九个预设均配置了 1M 上下文窗口。「几折起」标签只用于展示，不改变成本中心的费率。

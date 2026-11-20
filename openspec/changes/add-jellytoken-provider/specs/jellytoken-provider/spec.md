@@ -52,7 +52,7 @@
 
 ### Requirement: 两个设置弹窗的官网链接
 
-系统 MUST 将 JellyToken 的密钥管理、模型列表和模型标识查询入口指向 `https://www.jellytoken.com/auth/login`。
+系统 MUST 将 JellyToken 的密钥管理、模型列表和模型标识查询入口指向 `https://www.jellytoken.com/models?utm_source=penguin-harness`。
 
 #### Scenario: 分组设置中的链接
 - **WHEN** 用户在分组设置点击「前往密钥管理」或「前往模型列表」
