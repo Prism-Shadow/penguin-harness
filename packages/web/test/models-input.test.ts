@@ -6,8 +6,9 @@
  * - DTO -> row edit state (toRow): provider and modelId are both plain entry
  *   fields with no prefix parsing; the loaded identity (original) is a paired
  *   reference;
- * - An explicit default selection is written as a pair. A first model is offered as an
- *   initial chat default and the server checks whether its route supports conversation.
+ * - Ownership of the default/vision-agent model pointers after save
+ *   (nextPointers): always compared as pairs; renaming (either provider or
+ *   model_id changes) moves the pointer along.
  * - Which env fallback variables a key hint may promise (detectedEnvKeys):
  *   only those the server reported a value for.
  * - Whether a row has a key (hasKey) and what the card prints for it
@@ -49,7 +50,7 @@ import {
   hasKey,
   keyStatusNote,
   keyStatusText,
-  modelDefaultUpdate,
+  nextPointers,
   rowRef,
   toRow,
   type RowState,
@@ -343,14 +344,99 @@ describe("toRow (DTO → row edit state)", () => {
   });
 });
 
-describe("choosing a default when saving a model", () => {
-  const ref = { provider: "custom", modelId: "local" };
-  it("asks the server to check an initial addition and leaves ordinary edits alone", () => {
-    expect(modelDefaultUpdate("save", true, ref)).toEqual({ initialChatModel: ref });
-    expect(modelDefaultUpdate("save", false, ref)).toEqual({});
-    expect(modelDefaultUpdate("setDefault", false, ref)).toEqual({ defaultModel: ref });
+describe("nextPointers (where the default/vision-agent model pointers land after save; always paired)", () => {
+  const mA = { provider: "custom", modelId: "m-a" };
+  const mANew = { provider: "custom", modelId: "m-a-new" };
+  const mB = { provider: "custom", modelId: "m-b" };
+  const base = { action: "save" as const, defaultModel: mA, visionModel: mB };
+
+  it("renames carry the pointer along (otherwise the submitted stale reference is no longer in models and the server 400s)", () => {
+    // Renaming the current default model.
+    expect(nextPointers({ ...base, editing: mA, ref: mANew })).toEqual({
+      defaultModel: mANew,
+      visionModel: mB,
+    });
+    // Renaming the current vision-agent model.
+    const mBNew = { provider: "custom", modelId: "m-b-new" };
+    expect(nextPointers({ ...base, editing: mB, ref: mBNew })).toEqual({
+      defaultModel: mA,
+      visionModel: mBNew,
+    });
+    // Same model is both default and vision agent: both pointers move together.
+    expect(nextPointers({ ...base, editing: mA, ref: mANew, visionModel: mA })).toEqual({
+      defaultModel: mANew,
+      visionModel: mANew,
+    });
+  });
+
+  it("changing only the group (model_id unchanged) is also a rename: the pointer follows the new provider", () => {
+    const moved = { provider: "openai", modelId: "m-a" };
+    expect(nextPointers({ ...base, editing: mA, ref: moved })).toEqual({
+      defaultModel: moved,
+      visionModel: mB,
+    });
+  });
+
+  it("no rename, or editing another model: pointers stay put", () => {
+    expect(nextPointers({ ...base, editing: mA, ref: mA })).toEqual({
+      defaultModel: mA,
+      visionModel: mB,
+    });
+    const mC = { provider: "custom", modelId: "m-c" };
+    const mCNew = { provider: "custom", modelId: "m-c-new" };
+    expect(nextPointers({ ...base, editing: mC, ref: mCNew })).toEqual({
+      defaultModel: mA,
+      visionModel: mB,
+    });
+  });
+
+  it("the same model_id under two providers: only a pointer equal as a pair follows", () => {
+    // Default pointer points to openai/m-a, but the edit renames custom/m-a:
+    // same modelId, different provider — the pointer must not be changed.
+    const openaiA = { provider: "openai", modelId: "m-a" };
+    expect(
+      nextPointers({
+        action: "save",
+        editing: mA,
+        ref: mANew,
+        defaultModel: openaiA,
+        visionModel: undefined,
+      }),
+    ).toEqual({ defaultModel: openaiA, visionModel: undefined });
+  });
+
+  it("set as default / set as vision agent: the pointer points at this model", () => {
+    const mC = { provider: "custom", modelId: "m-c" };
+    expect(nextPointers({ ...base, editing: mC, ref: mC, action: "setDefault" })).toEqual({
+      defaultModel: mC,
+      visionModel: mB,
+    });
+    expect(nextPointers({ ...base, editing: mC, ref: mC, action: "setVisionModel" })).toEqual({
+      defaultModel: mA,
+      visionModel: mC,
+    });
+  });
+
+  it("the first model added (no default before) automatically becomes the default model", () => {
+    const first = { provider: "custom", modelId: "m-first" };
+    expect(
+      nextPointers({
+        editing: null,
+        ref: first,
+        action: "save",
+        defaultModel: undefined,
+        visionModel: undefined,
+      }),
+    ).toEqual({ defaultModel: first, visionModel: undefined });
+    // When a default already exists, a newly added model does not take it over.
+    const mNew = { provider: "custom", modelId: "m-new" };
+    expect(nextPointers({ ...base, editing: null, ref: mNew })).toEqual({
+      defaultModel: mA,
+      visionModel: mB,
+    });
   });
 });
+
 describe("fastModeState (whether the dialog offers the fast-mode switch, and on which protocol)", () => {
   // The provider defaults to a real vendor group, whose entries are routed by the vendor
   // family their model id begins with — the custom-like groups, which resolve to a protocol

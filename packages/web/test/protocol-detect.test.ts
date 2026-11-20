@@ -194,6 +194,7 @@ describe("needsProtocolDetectOnSave (save detects a still-unset protocol first)"
     expect(needsProtocolDetectOnSave("save", "vllm", "")).toBe(false);
     expect(needsProtocolDetectOnSave("remove", "custom", "")).toBe(false);
     expect(needsProtocolDetectOnSave("setDefault", "custom", "")).toBe(false);
+    expect(needsProtocolDetectOnSave("setVisionModel", "custom", "")).toBe(false);
   });
 });
 

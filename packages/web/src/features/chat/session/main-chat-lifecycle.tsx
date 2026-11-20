@@ -21,7 +21,7 @@ import { goalPluginGate } from "../goal-plugin-gate";
 import { usePromptModes, useSessionSwitches } from "../prompt-modes";
 import { useAgentSkills } from "../use-agent-skills";
 import { applyUsageFetch } from "../header-stats";
-import { defaultChatModel, hasConfiguredKey } from "../../models";
+import { hasConfiguredKey, sameModelRef } from "../../models";
 import { noteScheduleEvent } from "../../schedules";
 import {
   adoptDockScope,
@@ -696,8 +696,9 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
         setModels(scoped(projectId, res));
         const { prefs } = await api.getPrefs();
         if (cancelled || prefs.credentialGuideSeen) return;
-        const def = defaultChatModel(res.models, res.defaultModel);
-        if (def && !hasConfiguredKey(def)) setCredentialGuide(true);
+        const def = res.models.find((m) => sameModelRef(m, res.defaultModel));
+        const missing = !res.defaultModel || !def || !hasConfiguredKey(def);
+        if (missing) setCredentialGuide(true);
         // Mark as "seen" regardless of whether the dialog actually popped up: only ever once.
         void api.putPrefs({ credentialGuideSeen: true }).catch(() => undefined);
       } catch {

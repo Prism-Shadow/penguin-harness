@@ -304,7 +304,7 @@ export class MultimodalToolCommands {
   }
 }
 
-/** The Web App's routes: runs, a Session's generated files, transcript editing. */
+/** The Web App's routes: runs, a Session's generated files, transcript editing, read-aloud. */
 @Component({
   contributes: {
     "HttpModule.routes": [

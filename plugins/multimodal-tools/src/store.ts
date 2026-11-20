@@ -5,6 +5,7 @@
  *     voice-polish.json                 the Project's transcript-editing settings
  *     sessions/<session>/<run>.json     one run: its operation, model, status, text, sources, files
  *     sessions/<session>/<file>         the images, video and speech that run generated
+ *     sessions/<session>/read-aloud/    replies read aloud: `<key>.json` and its audio `<key>.<ext>`
  *
  * Every stored result belongs to a Session. A Session that is gone takes its folder with it: the
  * sweep, at boot and once a day, compares the folders with the Session index (there is no platform
@@ -25,8 +26,13 @@ const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** A generated file's name: `<operation>-<run prefix>[-n].<ext>`. */
 const FILE_NAME = /^[a-z0-9]+-[0-9a-f]{8}(?:-\d{1,3})?\.[a-z0-9]{1,5}$/;
 
+/** A reply's audio: `<key>.<ext>`, the key a digest of what it is reused by (read-aloud.ts). */
+const SPEECH_NAME = /^[0-9a-f]{32}\.[a-z0-9]{1,5}$/;
+const SPEECH_KEY = /^[0-9a-f]{32}$/;
+
 export const isRunId = (id: string): boolean => RUN_ID.test(id);
 export const isFileName = (name: string): boolean => FILE_NAME.test(name);
+export const isSpeechName = (name: string): boolean => SPEECH_NAME.test(name);
 
 function segment(id: string): string {
   if (!SEGMENT.test(id) || id === "." || id === "..")
@@ -48,6 +54,13 @@ export interface StoredFile {
   runId: string;
   operation: string;
   createdAt: string;
+}
+
+/** A reply's stored audio. */
+export interface StoredSpeech {
+  name: string;
+  mimeType: string;
+  bytes: number;
 }
 
 /** Writes a file whole, so a reader never sees half of it. */
@@ -172,6 +185,72 @@ export class ToolStore {
             createdAt: run.createdAt,
           })),
     );
+  }
+
+  private speechDir(projectId: string, sessionId: string): string {
+    return path.join(this.sessionDir(projectId, sessionId), "read-aloud");
+  }
+
+  /** A reply's audio stored under `key`, or null when there is none whole on disk. */
+  async readSpeech(
+    projectId: string,
+    sessionId: string,
+    key: string,
+  ): Promise<StoredSpeech | null> {
+    if (!SPEECH_KEY.test(key)) return null;
+    const dir = this.speechDir(projectId, sessionId);
+    let meta: StoredSpeech;
+    try {
+      meta = JSON.parse(await fs.readFile(path.join(dir, `${key}.json`), "utf8")) as StoredSpeech;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT" || err instanceof SyntaxError)
+        return null;
+      throw err;
+    }
+    if (!isSpeechName(meta.name) || !meta.name.startsWith(`${key}.`)) return null;
+    try {
+      const stat = await fs.stat(path.join(dir, meta.name));
+      return stat.isFile() && stat.size === meta.bytes && stat.size > 0 ? meta : null;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw err;
+    }
+  }
+
+  /** Stores a reply's audio under `key`: the audio first, then the record that points at it. */
+  async writeSpeech(
+    projectId: string,
+    sessionId: string,
+    key: string,
+    file: { extension: string; mimeType: string; data: Uint8Array },
+  ): Promise<StoredSpeech> {
+    const name = `${key}.${file.extension}`;
+    if (!SPEECH_KEY.test(key) || !isSpeechName(name))
+      throw new Error(`'${name}' is not a speech file name.`);
+    const dir = this.speechDir(projectId, sessionId);
+    await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+    await writeAtomic(path.join(dir, name), file.data);
+    const meta: StoredSpeech = { name, mimeType: file.mimeType, bytes: file.data.byteLength };
+    await writeAtomic(path.join(dir, `${key}.json`), JSON.stringify(meta));
+    return meta;
+  }
+
+  /** A reply's stored audio as a stream, with its size; null when there is none by that name. */
+  async openSpeech(
+    projectId: string,
+    sessionId: string,
+    name: string,
+  ): Promise<{ stream: NodeJS.ReadableStream; bytes: number } | null> {
+    if (!isSpeechName(name)) return null;
+    const file = path.join(this.speechDir(projectId, sessionId), name);
+    try {
+      const stat = await fs.stat(file);
+      if (!stat.isFile()) return null;
+      return { stream: createReadStream(file), bytes: stat.size };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw err;
+    }
   }
 
   async readPolish(projectId: string): Promise<PolishSettings> {
