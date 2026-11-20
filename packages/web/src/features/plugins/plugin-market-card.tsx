@@ -1,8 +1,9 @@
 /**
  * The plugin market's card: the UI package's `CoverCard` with its version chip and its bar of two
- * text actions, install and quick start. In the list layout the card leads with the plugin's icon
- * instead of its cover. This module only maps a plugin's facts onto the card; the look is the
- * showcase family's (showcase.css), the same card the public catalog draws.
+ * one-line text actions, install and quick start. In the list layout the card is one compact row
+ * led by the plugin's icon instead of its cover, the two actions at the row's end. This module
+ * only maps a plugin's facts onto the card; the look is the showcase family's (showcase.css), the
+ * same card the public catalog draws.
  */
 import type { ReactNode } from "react";
 import { CoverCard } from "@prismshadow/penguin-ui";
@@ -12,7 +13,6 @@ interface MarketAction {
   disabled: boolean;
   onClick: () => void;
   hint?: string | undefined;
-  note?: string | undefined;
 }
 
 interface MarketPluginCardProps {

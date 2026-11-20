@@ -61,7 +61,7 @@ import {
   SearchInput,
   Select,
   ShowcaseGrid,
-  Segmented,
+  ShowcaseLayoutToggle,
   useShowcaseLayout,
   Tabs,
   TodoNotice,
@@ -1079,17 +1079,15 @@ export function PluginsPage() {
               locale={locale}
             />
           </div>
-          <div role="group" aria-label={S.plugins.layoutLabel}>
-            <Segmented
-              cols={2}
-              value={layout}
-              onChange={chooseLayout}
-              options={[
-                { value: "cards", label: S.plugins.cardsLayout },
-                { value: "list", label: S.plugins.listLayout },
-              ]}
-            />
-          </div>
+          <ShowcaseLayoutToggle
+            value={layout}
+            onChange={chooseLayout}
+            labels={{
+              group: S.plugins.layoutLabel,
+              cards: S.plugins.cardsLayout,
+              list: S.plugins.listLayout,
+            }}
+          />
         </div>
         {groupBy !== "none" && <Tabs items={tabs} active={activeTab} onChange={selectTab} />}
       </div>
