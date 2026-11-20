@@ -1,13 +1,26 @@
 /**
- * The RFC index page: the repository's design RFCs (PRFCs), grouped by where each one stands —
- * landed, open, drafting — each row with its status and a link into the document, the English and
- * Chinese versions linking separately. The documents are read at build time; the page holds no
- * copy of them.
+ * The RFC index page: the repository's design RFCs (PRFCs) as one docs-style index — the table
+ * of all RFCs (number, title, status), the surface's conventions, and the directory's files.
+ * The documents are read at build time and the body is composed as Markdown, rendered through
+ * the shared site prose so it looks like a docs page; the page keeps no copy of the documents.
  */
-import { useSiteLocale } from "@prismshadow/penguin-ui/site";
+import { useMemo } from "react";
+import {
+  extractToc,
+  highlightSiteCode,
+  SITE_DOC_REMARK_PLUGINS,
+  SiteCopyButton,
+  SiteMarkdown,
+  SiteToc,
+  useActiveTocEntry,
+  useSiteLocale,
+} from "@prismshadow/penguin-ui/site";
+import type { ReactNode } from "react";
+import type { SiteMarkdownComponents } from "@prismshadow/penguin-ui/site";
 import { useDocumentMeta } from "../lib/document-meta";
 import { buildRfcIndex } from "../lib/rfcs";
 import type { RfcEntry, RfcStatus } from "../lib/rfcs";
+import { Link } from "react-router";
 import { S } from "../lib/strings";
 
 const documents = import.meta.glob("../../../../rfcs/*.md", {
@@ -18,106 +31,104 @@ const documents = import.meta.glob("../../../../rfcs/*.md", {
 
 const entries = buildRfcIndex(documents);
 
-const GROUPS: readonly RfcStatus[] = ["landed", "open", "drafting"];
-
 const statusLabel = (status: RfcStatus): string =>
-  status === "landed" ? S.rfcs.statusLanded : status === "open" ? S.rfcs.statusOpen : S.rfcs.statusDrafting;
+  status === "landed"
+    ? S.rfcs.statusLanded
+    : status === "open"
+      ? S.rfcs.statusOpen
+      : S.rfcs.statusDrafting;
 
-function RfcRow({ entry }: { entry: RfcEntry }) {
-  const { locale } = useSiteLocale();
-  const title = locale === "zh" ? (entry.titleZh ?? entry.title) : entry.title;
-  const primary = locale === "zh" ? (entry.zh ?? entry.en) : (entry.en ?? entry.zh);
-  return (
-    <li className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-gray-100 py-3 dark:border-gray-800">
-      <span className="w-28 shrink-0 font-mono text-sm text-gray-500 dark:text-gray-400">
-        {entry.number}
-      </span>
-      <span className="min-w-0 flex-1">
-        {primary ? (
-          <a
-            href={primary.href}
-            target="_blank"
-            rel="noreferrer"
-            className="font-medium text-gray-900 underline-offset-4 hover:underline dark:text-white"
-          >
-            {title}
-          </a>
-        ) : (
-          <span className="font-medium text-gray-900 dark:text-white">{title}</span>
-        )}
-        {entry.openRevision && (
-          <>
-            {" · "}
-            <a
-              href={entry.openRevision.href}
-              target="_blank"
-              rel="noreferrer"
-              className="text-sm text-gray-500 underline-offset-4 hover:underline dark:text-gray-400"
-            >
-              {S.rfcs.openRevision}
-            </a>
-          </>
-        )}
-      </span>
-      <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-        {statusLabel(entry.status)}
-      </span>
-      {entry.en && (
-        <a
-          href={entry.en.href}
-          target="_blank"
-          rel="noreferrer"
-          className="text-sm text-gray-500 underline-offset-4 hover:underline dark:text-gray-400"
-        >
-          English
-        </a>
-      )}
-      {entry.zh && (
-        <a
-          href={entry.zh.href}
-          target="_blank"
-          rel="noreferrer"
-          className="text-sm text-gray-500 underline-offset-4 hover:underline dark:text-gray-400"
-        >
-          中文
-        </a>
-      )}
-    </li>
-  );
+/** Internal "/<slug>" links -> client-side navigation; external links -> new tab. */
+function MdLink({ href = "", children }: { href?: string; children?: ReactNode }) {
+  if (href.startsWith("/")) {
+    return <Link to={href}>{children}</Link>;
+  }
+  if (/^https?:\/\//.test(href)) {
+    return (
+      <a href={href} target="_blank" rel="noreferrer">
+        {children}
+      </a>
+    );
+  }
+  return <a href={href}>{children}</a>;
+}
+
+/** Module-level, so react-markdown keeps one element type across renders. */
+const MD_COMPONENTS: SiteMarkdownComponents = {
+  a: ({ href, children }) => <MdLink href={href}>{children}</MdLink>,
+};
+
+/** The page's body as Markdown: the table of all RFCs, then the notes and the surface's sections. */
+function rfcIndexMarkdown(locale: string): string {
+  const row = (entry: RfcEntry): string => {
+    const doc = locale === "zh" ? (entry.zh ?? entry.en) : (entry.en ?? entry.zh);
+    const title = locale === "zh" ? (entry.titleZh ?? entry.title) : entry.title;
+    const titleCell = doc ? `[${title}](${doc.href})` : title;
+    const revision = entry.openRevision
+      ? `（[${S.rfcs.openRevision}](${entry.openRevision.href})）`
+      : "";
+    return `| ${entry.number} | ${titleCell} | ${statusLabel(entry.status)}${revision} |`;
+  };
+  const lines = [
+    `## ${S.rfcs.sectionAll}`,
+    "",
+    `| ${S.rfcs.colRfc} | ${S.rfcs.colTitle} | ${S.rfcs.colStatus} |`,
+    "| --- | --- | --- |",
+    ...entries.map(row),
+    "",
+    ...S.rfcs.notes.map((note) => `- ${note}`),
+    "",
+    `## ${S.rfcs.sectionConventions}`,
+    "",
+    ...S.rfcs.conventions.map((line) => `- ${line}`),
+    "",
+    `## ${S.rfcs.sectionFiles}`,
+    "",
+    `| ${S.rfcs.colFile} | ${S.rfcs.colContent} |`,
+    "| --- | --- |",
+    ...S.rfcs.files.map((f) => `| ${f.file} | ${f.content} |`),
+    "",
+  ];
+  return lines.join("\n");
 }
 
 export function RfcsPage() {
   const { locale } = useSiteLocale();
   useDocumentMeta(`${S.rfcs.title} | ${S.siteName}`, S.rfcs.description);
+  const body = rfcIndexMarkdown(locale);
+  const toc = useMemo(() => extractToc(body), [body]);
+  const { activeId, pinTo } = useActiveTocEntry(toc);
+
   return (
-    <section className="px-4 py-16 sm:px-6 sm:py-24">
-      <div className="mx-auto max-w-4xl">
-        <h1 className="text-3xl font-semibold tracking-tight text-gray-900 dark:text-white sm:text-4xl">
-          {S.rfcs.title}
-        </h1>
-        <p className="mt-4 max-w-3xl text-base leading-7 text-pretty text-gray-600 dark:text-gray-400">
-          {S.rfcs.description}
-        </p>
-        {GROUPS.filter((status) => entries.some((entry) => entry.status === status)).map(
-          (status) => (
-            <div key={status} className="mt-10">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                {statusLabel(status)}
-                <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
-                  {S.rfcs.count(entries.filter((entry) => entry.status === status).length)}
-                </span>
-              </h2>
-              <ul className="mt-3">
-                {entries
-                  .filter((entry) => entry.status === status)
-                  .map((entry) => (
-                    <RfcRow key={entry.id} entry={entry} />
-                  ))}
-              </ul>
+    <div className="anim-rise px-4 py-10 sm:px-6 lg:px-10 xl:grid xl:grid-cols-[minmax(0,1fr)_13rem] xl:gap-10">
+      <article className="mx-auto w-full max-w-3xl xl:mx-0">
+        <header>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <h1 className="text-3xl font-semibold tracking-tight text-balance">{S.rfcs.title}</h1>
+            <div className="pt-1.5">
+              <SiteCopyButton
+                text={body}
+                label={S.rfcs.copyMarkdown}
+                announcement={S.rfcs.copied}
+                look="pill-md"
+              />
             </div>
-          ),
-        )}
-      </div>
-    </section>
+          </div>
+          <p className="mt-3 text-[15px] text-gray-600 dark:text-gray-400">{S.rfcs.description}</p>
+        </header>
+        <SiteMarkdown
+          variant="doc"
+          className="mt-6"
+          remarkPlugins={SITE_DOC_REMARK_PLUGINS}
+          components={MD_COMPONENTS}
+          highlight={highlightSiteCode}
+        >
+          {body}
+        </SiteMarkdown>
+      </article>
+      {toc.length >= 2 && (
+        <SiteToc label={S.rfcs.toc} entries={toc} activeId={activeId} onNavigate={pinTo} />
+      )}
+    </div>
   );
 }

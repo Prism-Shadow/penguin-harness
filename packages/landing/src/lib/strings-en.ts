@@ -627,18 +627,44 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       k > 1 ? `Back to reference ${n}, citation ${k}` : `Back to reference ${n}`,
   },
 
-  /** The RFC index page (rfcs.tsx): the repository's design RFCs, grouped by where each stands. */
+  /** The RFC index page (rfcs.tsx): the repository's design RFCs as one docs-style index. */
   rfcs: {
     /** The tab title and description while the page is open. */
     title: "Design RFCs (PRFC)",
     description:
-      "Every PenguinHarness design RFC, listed by status — landed, open, drafting — with a link into each document, the English and Chinese versions linking separately.",
+      "Every PenguinHarness design decision is recorded as a PRFC document: this is the index of all RFCs — each row's title links into the document in the selected language.",
+    copyMarkdown: "Copy Markdown",
+    copied: "Copied",
+    toc: "On this page",
+    sectionAll: "All RFCs",
+    colRfc: "RFC",
+    colTitle: "Title",
+    colStatus: "Status",
     statusLanded: "Landed",
     statusOpen: "Open",
     statusDrafting: "Drafting",
     /** The row's link to the open design PR carrying a revision newer than the landed version. */
     openRevision: "unmerged revision",
-    count: (n: number) => `${n} document${n === 1 ? "" : "s"}`,
+    notes: [
+      "Status: landed = the document is in the repository's RFC directory; open = carried by an open design PR, linking to it; drafting = still being written, the row shows without a link.",
+      "Unlanded RFCs: a proposed RFC is an open design PR, a withdrawn one a closed PR; neither is listed in the table — each arrives with its own PR.",
+      "Bilingual alignment: every PRFC has a section-by-section `.zh.md` counterpart; the table links the document in the selected language, and the other language is one link away at the document's top.",
+      "The one index: the table is generated from the RFC directory — nothing outside it, nothing missing.",
+    ],
+    sectionConventions: "Conventions for this surface",
+    conventions: [
+      "A design RFC and its implementation changes do not share a pull request; either may merge independently.",
+      "Once landed, a design RFC should not change frequently.",
+      "A change that is needed must raise the revision (rev), e.g. `v2.0.0`.",
+      "Each change records the version's change items in a `## Changes` section at the end.",
+    ],
+    sectionFiles: "Files",
+    colFile: "File",
+    colContent: "Content",
+    files: [
+      { file: "rfcs/", content: "One file records one decision (`PRFC-NNNN-slug.md`) with its Chinese counterpart `.zh.md`" },
+      { file: "TEMPLATE.md", content: "The starting template for a new RFC" },
+    ],
   },
 
   amsp: {

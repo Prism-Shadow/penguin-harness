@@ -622,19 +622,45 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   /**
-   * The RFC index page (rfcs.tsx): the repository's design RFCs, grouped by where each stands.
+   * The RFC index page (rfcs.tsx): the repository's design RFCs as one docs-style index.
    */
   rfcs: {
     /** The tab title and description while the page is open. */
     title: "设计 RFC（PRFC）",
     description:
-      "PenguinHarness 的每份设计 RFC，按状态列出——已落地、open、drafting——英文版与中文版各链各的正文。",
+      "PenguinHarness 的每个设计决定都记录为一份 PRFC 文档：这里是全部 RFC 的索引，每行的标题链进所选语言版本的正文。",
+    copyMarkdown: "复制 Markdown",
+    copied: "已复制",
+    toc: "本页目录",
+    sectionAll: "全部 RFC",
+    colRfc: "RFC",
+    colTitle: "标题",
+    colStatus: "状态",
     statusLanded: "已落地",
     statusOpen: "open",
     statusDrafting: "drafting",
     /** The row's link to the open design PR carrying a revision newer than the landed version. */
-    openRevision: "有未合并修订",
-    count: (n: number) => `${n} 份`,
+    openRevision: "未合并修订",
+    notes: [
+      "状态：已落地＝文档已在主仓的 RFC 目录；open＝由一个未关闭的设计 PR 携带，链接指向该 PR；drafting＝起草中，索引行不带链接。",
+      "未合入的 RFC：提议中的 RFC 是未关闭的设计 PR，撤回的 RFC 是已关闭的 PR；两者均不列入上表，随各自的 PR 进来。",
+      "双语对齐：每份 PRFC 都有逐节对应的 .zh.md；表格中的标题链到所选语言的文档，另一语言由文档顶部互链切换。",
+      "唯一索引：本表随 RFC 目录自动生成——目录里没有的不出现，目录里有的不遗漏。",
+    ],
+    sectionConventions: "本面的约定",
+    conventions: [
+      "一份 RFC 与它对应的实现改动不放在同一个 PR 里，两者可独立合并。",
+      "RFC 一旦落地，就不应频繁修改。",
+      "确需修改时，必须提升版本号（rev），形如 `v2.0.0`。",
+      "每次修改在文末以 `## Changes` 一节列出该版本的改动项。",
+    ],
+    sectionFiles: "文件",
+    colFile: "文件",
+    colContent: "内容",
+    files: [
+      { file: "rfcs/", content: "一个文件记录一个设计决定（`PRFC-NNNN-slug.md`）及其中文对照 `.zh.md`" },
+      { file: "TEMPLATE.md", content: "新 RFC 的模板起点" },
+    ],
   },
 
   /**
