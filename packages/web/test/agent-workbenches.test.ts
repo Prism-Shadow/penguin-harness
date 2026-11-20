@@ -13,6 +13,9 @@
  * - The More menu's first row is the same App Center setting, checkable: picking it writes at once
  *   and the row's switch follows.
  * - The row leads with the workbench's own App Center icon when it has one, else no image.
+ * - The More menu's sidebar row is checked by default; picking it writes the sidebar setting at
+ *   once and nothing of the App Center's, and a refused write puts it back.
+ * - "Open" on a workbench hidden from the sidebar opens its full page: it has no tab beside a chat.
  */
 import { createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
@@ -183,4 +186,39 @@ it("leads the row with the workbench's own App Center icon", async () => {
 it("leads the row with the anvil tile when the workbench names no icon", async () => {
   await open();
   expect(row().querySelector("img")).toBeNull();
+});
+/** The More menu's sidebar row, the menu opened for it. */
+async function sidebarRow() {
+  await click(button(`${en.workbenches.more} Support`));
+  return menuItem(en.workbenches.showInSidebar);
+}
+it("takes the workbench off the sidebar from the More menu, writing nothing of the App Center; a refused write puts it back", async () => {
+  const { server } = await open();
+  const sidebarWrites = () => server.writes().filter((request) => request.path.endsWith("/sidebar"));
+  expect((await sidebarRow()).getAttribute("aria-checked")).toBe("true");
+  server.refuseNext(500, "internal_error", "Disk full");
+  await click(menuItem(en.workbenches.showInSidebar));
+  await waitFor(() => sidebarWrites().length === 1);
+  const refused = await sidebarRow();
+  await waitFor(() => refused.getAttribute("aria-disabled") !== "true");
+  expect(refused.getAttribute("aria-checked")).toBe("true");
+
+  await click(refused);
+  await waitFor(() => sidebarWrites().length === 2);
+  const written = await sidebarRow();
+  await waitFor(() => written.getAttribute("aria-checked") === "false");
+  expect(sidebarWrites().map((request) => [request.method, request.body])).toEqual([
+    ["PATCH", { show: false }],
+    ["PATCH", { show: false }],
+  ]);
+  expect(server.writes().filter((request) => request.path.endsWith("/app-center"))).toEqual([]);
+  expect(appCenterSwitch().getAttribute("aria-checked")).toBe("false");
+});
+it("opens a workbench hidden from the sidebar on its full page", async () => {
+  const { router } = await open(
+    [{ id: "support.main", key: "main", title: "Support", renderer: { iframe: { src: "/support" } } }],
+    { showInSidebar: false },
+  );
+  await click(button(`${en.workbenches.open} Support`));
+  expect(whereIs(router)).toBe(`/app/${PROJECT_ID}/${AGENT_ID}/support/main`);
 });

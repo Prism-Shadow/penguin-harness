@@ -387,7 +387,7 @@ export function agentServer(
   const listed = (w: WorkbenchInfo): WorkbenchInfo =>
     options.older
       ? w
-      : { ...w, enabled: !switchedOff.has(w.id), showInChat: w.showInChat !== false };
+      : { ...w, enabled: !switchedOff.has(w.id), showInSidebar: w.showInSidebar !== false };
   let vault: VaultEntryInfo[] = [{ key: "GITHUB_TOKEN", valueMasked: "gh****" }];
   let schedules: ScheduleItem[] = (options.schedules ?? [])
     .filter((s) => s.machineId === undefined)
@@ -1004,12 +1004,12 @@ export function agentServer(
         });
       }
       if (action === "history") return json({ versions: options.workbenchVersions ?? [] });
-      if ((action === "chat-tabs" || action === "app-center") && method === "PATCH") {
+      if ((action === "sidebar" || action === "app-center") && method === "PATCH") {
         const { show } = request.body as { show: boolean };
         const index = workbenches.indexOf(workbench);
         const next =
-          action === "chat-tabs"
-            ? { ...workbench, showInChat: show }
+          action === "sidebar"
+            ? { ...workbench, showInSidebar: show }
             : { ...workbench, appCenter: { ...workbench.appCenter, show } };
         workbenches = workbenches.map((item, i) => (i === index ? next : item));
         return json({ workbench: listed(next) });

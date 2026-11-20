@@ -1,7 +1,8 @@
 /**
  * Workbench tabs beside Chat, and the page a workbench tab shows.
  *
- * The strip lists the Agent's workbenches that ship a UI (lib/workbench-tabs.ts); the frame
+ * The strip lists the Agent's workbenches that ship a UI (lib/workbench-tabs.ts) and are shown in
+ * its sidebar (the sidebar setting, `GET …/workbenches?view=sidebar`); the frame
  * is that UI in an iframe served from the workbench's own `ui/` folder, plus a thin bar
  * with the workbench's version, its load error when the current files do not boot, a
  * reload, and a history fold with one restore button per recorded version. The list
@@ -77,13 +78,22 @@ export function useWorkbenchTabs(
       return;
     }
     try {
-      const res = await api.getWorkbenches(projectId, agentId, machineId, "chat");
+      const [res, sidebar] = await Promise.all([
+        api.getWorkbenches(projectId, agentId, machineId),
+        api.getSidebarApps(projectId, agentId, machineId),
+      ]);
       if (asked.current !== mine || isSafeMode()) return;
       // A switched-off workbench loads nothing: it offers no tab and has nothing to report.
       const running = runningWorkbenches(res);
+      // Until the sidebar's list replaces this strip, it offers the same apps: none hidden from
+      // the sidebar. A server older than that setting (null) hides none.
+      const shown =
+        sidebar === null
+          ? running
+          : running.filter((w) => sidebar.some((app) => app.workbenchId === w.id));
       setLoaded({
         scope,
-        tabs: workbenchTabsOf(running, machineId),
+        tabs: workbenchTabsOf(shown, machineId),
         notices: workbenchNoticesOf(running),
       });
     } catch {

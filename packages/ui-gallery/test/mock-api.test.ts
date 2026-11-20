@@ -105,7 +105,7 @@ describe("the mocked API", () => {
     await expect(api.getSession("nope")).rejects.toMatchObject({ status: 404, code: "not_found" });
   });
 
-  it("hides one installed workbench from Chat while keeping its pages and App Center shortcut", async () => {
+  it("lists an installed workbench in its Agent's sidebar until it is hidden there, keeping its pages and App Center tile", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const project = store.f.project.projectId;
     const shortcut = store.f.appCenter.shortcuts[0]!;
@@ -122,6 +122,7 @@ describe("the mocked API", () => {
         hints: [],
         loadedAt: new Date(store.f.now).toISOString(),
         enabled: true,
+        showInSidebar: true,
         appCenter: { show: true },
         tabs: [
           {
@@ -137,20 +138,20 @@ describe("the mocked API", () => {
         ],
       },
     ];
-    const chat = async () => (await api.getWorkbenches(project, agentId, null, "chat")).workbenches;
-    expect(await chat()).toHaveLength(1);
-    await api.setWorkbenchChatVisibility(project, agentId, id, false, null);
-    expect(await chat()).toEqual([]);
+    const sidebar = () => api.getSidebarApps(project, agentId, null);
+    expect(await sidebar()).toMatchObject([{ agentId, workbenchId: id, title, tab: "main" }]);
+    await api.setWorkbenchSidebar(project, agentId, id, false, null);
+    expect(await sidebar()).toEqual([]);
     expect((await api.getWorkbenches(project, agentId, null)).workbenches[0]).toMatchObject({
       id,
-      showInChat: false,
+      showInSidebar: false,
       tabs: [{ key: "main" }],
     });
     expect((await api.getAppCenter(project)).shortcuts).toContainEqual(shortcut);
-    await api.setWorkbenchChatVisibility(project, agentId, id, true, null);
-    expect(await chat()).toMatchObject([{ id, showInChat: true }]);
+    await api.setWorkbenchSidebar(project, agentId, id, true, null);
+    expect(await sidebar()).toMatchObject([{ workbenchId: id }]);
     await expect(
-      api.setWorkbenchChatVisibility(project, agentId, "missing", true, null),
+      api.setWorkbenchSidebar(project, agentId, "missing", true, null),
     ).rejects.toMatchObject({ status: 404 });
   });
 

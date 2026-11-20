@@ -21,6 +21,12 @@
  *   controls: it rewrites `penguin.appCenter.show` in the workbench's package.json, and the
  *   reload that follows (none while it does not run) records the edit as a version. A refused
  *   write puts both back where the file says.
+ * - The sidebar setting is the menu's checkable "Show in the sidebar", on every row whose server
+ *   reports it (`showInSidebar`). It commits at once and writes the installation's
+ *   `.hidden-from-sidebar` marker, never the package.json: no reload and no version, and a plugin
+ *   update keeps it, where it resets the App Center's. Every member sees the same sidebar list.
+ *   A refused write puts it back. Until the sidebar's list replaces the chat's workbench tabs,
+ *   the tabs follow it, so "Open" on a workbench hidden from the sidebar opens its full page.
  *
  * Everything but the Enable switch is member-level, matching the workbench routes, and goes to
  * the server the Agent lives on.
@@ -48,7 +54,7 @@ import * as api from "../../api/endpoints";
 import { formatDateTime } from "../../lib/format";
 import { useInstantSetting } from "../../lib/instant-setting";
 import { S } from "../../lib/strings";
-import { workbenchTabsOf } from "../../lib/workbench-tabs";
+import { workbenchAppPath, workbenchTabsOf } from "../../lib/workbench-tabs";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
@@ -65,6 +71,7 @@ import {
   WorkbenchMark,
   WorkbenchRowMenu,
   type AppCenterControl,
+  type SettingControl,
 } from "./workbench-row";
 
 /** The row of the newest version holding the workbench's current files; -1 when none does. */
@@ -169,6 +176,43 @@ function WorkbenchAppCenter({
 }
 
 /**
+ * One workbench's sidebar setting: its `.hidden-from-sidebar` marker, written at once on the
+ * server the Agent lives on and adopted from the answer, rolled back with a toast when refused.
+ * Absent (`children(undefined)`) when that server does not report the setting.
+ */
+function WorkbenchSidebar({
+  workbench,
+  options,
+  children,
+}: {
+  workbench: WorkbenchInfo;
+  options: WorkbenchRowsOptions;
+  children: (sidebar: SettingControl | undefined) => ReactNode;
+}) {
+  const { currentProject } = useProject();
+  const projectId = currentProject?.projectId ?? null;
+  /** The machine the Agent lives on, whose copy of the workbench carries the marker. */
+  const machineId = useAgentLocation();
+  const setting = useInstantSetting(workbench.showInSidebar !== false, async (show: boolean) => {
+    if (!projectId) return;
+    const res = await api.setWorkbenchSidebar(
+      projectId,
+      options.agentId,
+      workbench.id,
+      show,
+      machineId,
+    );
+    options.onSwitched(res.workbench);
+  });
+  if (workbench.showInSidebar === undefined) return children(undefined);
+  return children({
+    checked: setting.value,
+    disabled: setting.busy,
+    onChange: (show) => void setting.set(show),
+  });
+}
+
+/**
  * The rows of an Agent's workbenches, and the history dialog and the confirmation (restore,
  * remove) they share. A row shows the icon of the plugin it came from when the workbench declares
  * no App Center icon of its own; the anvil without either.
@@ -225,8 +269,11 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
     const source = sourceOf(workbench.id);
     // The body opens the workbench's files; "Open" stays the way into the app.
     const open = () => onOpenFiles({ kind: "workbench", name: workbench.id, title });
-    /** The row's controls, with the App Center setting when the row has one. */
-    const controls = (appCenter: AppCenterControl | undefined) => (
+    /** The row's controls, with the App Center and sidebar settings when the row has them. */
+    const controls = (
+      appCenter: AppCenterControl | undefined,
+      sidebar: SettingControl | undefined,
+    ) => (
       <>
         {enabled !== undefined && (
           <WorkbenchSwitch workbench={{ ...workbench, enabled }} title={title} options={options} />
@@ -237,20 +284,25 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
             size="sm"
             aria-label={`${S.workbenches.open} ${title}`}
             onClick={() =>
-              void navigate("/chat/new", {
-                state: {
-                  agentId,
-                  workspace: "",
-                  // A machine's Agent runs there: its temporary Workspace on it.
-                  ...(machineId !== null ? { machineId } : {}),
-                  workbench: {
-                    projectId,
-                    agentId,
-                    tabId: first.tabId,
-                    machineId,
-                  },
-                },
-              })
+              // Hidden from the sidebar, it has no tab beside the chat: its full page instead.
+              sidebar?.checked === false
+                ? void navigate(
+                    workbenchAppPath(projectId, agentId, workbench.id, first.key, machineId),
+                  )
+                : void navigate("/chat/new", {
+                    state: {
+                      agentId,
+                      workspace: "",
+                      // A machine's Agent runs there: its temporary Workspace on it.
+                      ...(machineId !== null ? { machineId } : {}),
+                      workbench: {
+                        projectId,
+                        agentId,
+                        tabId: first.tabId,
+                        machineId,
+                      },
+                    },
+                  })
             }
           >
             {S.workbenches.openAction}
@@ -260,6 +312,7 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
           title={title}
           disabled={busy}
           appCenter={appCenter}
+          sidebar={sidebar}
           onReload={
             running
               ? () =>
@@ -301,14 +354,18 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
         description={workbench.error ?? workbench.id}
         meta={workbench.version ? `v${workbench.version}` : undefined}
         trailing={
-          // The App Center lists this server's Agents only: a machine's row has no such setting.
-          machineId === null ? (
-            <WorkbenchAppCenter workbench={workbench} options={options}>
-              {controls}
-            </WorkbenchAppCenter>
-          ) : (
-            controls(undefined)
-          )
+          <WorkbenchSidebar workbench={workbench} options={options}>
+            {(sidebar) =>
+              // The App Center lists this server's Agents only: a machine's row has no such setting.
+              machineId === null ? (
+                <WorkbenchAppCenter workbench={workbench} options={options}>
+                  {(appCenter) => controls(appCenter, sidebar)}
+                </WorkbenchAppCenter>
+              ) : (
+                controls(undefined, sidebar)
+              )
+            }
+          </WorkbenchSidebar>
         }
       />
     );
