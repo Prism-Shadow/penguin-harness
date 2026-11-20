@@ -26,6 +26,7 @@ export const en: Strings = {
     plugins: "Plugins",
     benchmarks: "Benchmarks",
     leaderboards: "Leaderboards",
+    rfcs: "RFCs",
     amsp: "AMSP",
     docs: "Docs",
     gallery: "Theme Packs",
@@ -624,6 +625,20 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     references: "References",
     backToRef: (n: number, k: number) =>
       k > 1 ? `Back to reference ${n}, citation ${k}` : `Back to reference ${n}`,
+  },
+
+  /** The RFC index page (rfcs.tsx): the repository's design RFCs, grouped by where each stands. */
+  rfcs: {
+    /** The tab title and description while the page is open. */
+    title: "Design RFCs (PRFC)",
+    description:
+      "Every PenguinHarness design RFC, listed by status — landed, open, drafting — with a link into each document, the English and Chinese versions linking separately.",
+    statusLanded: "Landed",
+    statusOpen: "Open",
+    statusDrafting: "Drafting",
+    /** The row's link to the open design PR carrying a revision newer than the landed version. */
+    openRevision: "unmerged revision",
+    count: (n: number) => `${n} document${n === 1 ? "" : "s"}`,
   },
 
   amsp: {

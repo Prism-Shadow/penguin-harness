@@ -25,6 +25,7 @@ export const zh = {
     plugins: "插件",
     benchmarks: "评估集",
     leaderboards: "榜单",
+    rfcs: "RFC",
     amsp: "AMSP",
     docs: "文档",
     gallery: "主题包",
@@ -618,6 +619,22 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     /** A citation's back-link, for screen readers: the k-th place in the text that cites source n. */
     backToRef: (n: number, k: number) =>
       k > 1 ? `返回正文中引用 ${n} 的第 ${k} 处` : `返回正文中的引用 ${n}`,
+  },
+
+  /**
+   * The RFC index page (rfcs.tsx): the repository's design RFCs, grouped by where each stands.
+   */
+  rfcs: {
+    /** The tab title and description while the page is open. */
+    title: "设计 RFC（PRFC）",
+    description:
+      "PenguinHarness 的每份设计 RFC，按状态列出——已落地、open、drafting——英文版与中文版各链各的正文。",
+    statusLanded: "已落地",
+    statusOpen: "open",
+    statusDrafting: "drafting",
+    /** The row's link to the open design PR carrying a revision newer than the landed version. */
+    openRevision: "有未合并修订",
+    count: (n: number) => `${n} 份`,
   },
 
   /**

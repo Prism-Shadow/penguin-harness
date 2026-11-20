@@ -11,7 +11,7 @@ import {
   useSiteLocale,
   useSiteTheme,
 } from "@prismshadow/penguin-ui/site";
-import type { SiteLinkProps } from "@prismshadow/penguin-ui/site";
+import type { SiteLink, SiteLinkProps } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
 import { galleryUrl, REPO_API_URL, REPO_URL } from "../lib/links";
 
@@ -44,6 +44,17 @@ export function Nav() {
       gallery: { href: galleryUrl(locale) },
     },
   });
+  // The RFC index is this site's own page too; it joins the row just before the "More" group
+  // that ends it (siteNavLinks builds the shared sites' pages only).
+  const rfcsLink: SiteLink = {
+    id: "rfcs",
+    href: "/rfcs",
+    label: S.nav.rfcs,
+    active: /^\/rfcs\/?$/.test(pathname),
+    render: routeLink,
+  };
+  const moreAt = links.findIndex((item) => "links" in item);
+  links.splice(moreAt === -1 ? links.length : moreAt, 0, rfcsLink);
   return (
     <SiteNav
       name={S.siteName}
