@@ -6,7 +6,7 @@ import {
   leadIndex,
   ShowcaseCarousel,
   ShowcaseGrid,
-  SiteSegmented,
+  ShowcaseLayoutToggle,
   useShowcaseLayout,
   useSiteLocale,
 } from "@prismshadow/penguin-ui/site";
@@ -172,15 +172,13 @@ export function PluginsPage() {
         ) : undefined
       }
       controls={
-        <SiteSegmented
-          role="radiogroup"
-          label={t.layoutLabel}
+        // The site mounts no tooltip layer: the icons' names show as native titles.
+        <ShowcaseLayoutToggle
+          className="site-ui"
+          nativeTooltips
           value={layout}
           onChange={chooseLayout}
-          options={[
-            { id: "cards", label: t.cardsLayout },
-            { id: "list", label: t.listLayout },
-          ]}
+          labels={{ group: t.layoutLabel, cards: t.cardsLayout, list: t.listLayout }}
         />
       }
       wrapList={(cards) => (
