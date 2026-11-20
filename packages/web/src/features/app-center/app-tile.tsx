@@ -8,19 +8,24 @@
  *   build ends. An app whose last load failed is the dimmed tile with a warning mark: it still
  *   opens, and its menu shows the error.
  * - A folder tile shows the first four of its apps' icons in a 2×2 square and opens the folder.
- * - What a drag would do is marked here: a line in the gap beside the tile, or a ring around the
- *   icon it would go into. Neither moves anything. The tile's `data-drop` names the mark it wears.
+ * - What a drag would do is marked here: a line in the gap beside the tile, or an outline around
+ *   the icon it would go into. Neither moves anything. The tile's `data-drop` names the mark it
+ *   wears.
  *
  * A state never changes a tile's box: the ring and the marks are laid over the icon's square,
- * which is the same 56 px in every state.
+ * which is the same 56 px in every state. App and folder icons share the app icon shape
+ * (`AppIconShape`), whose corner scales with the icon, so a folder's previews are the outline of
+ * the icons they grow into when it opens.
  *
  * Icons are images (`ImageIcon`) from the URL the server serves them at under a sandboxing
  * policy, never markup put into the page. An icon that fails to load falls back to the letter
  * tile.
  */
-import type { CSSProperties, DragEvent as ReactDragEvent, ReactNode } from "react";
+import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import {
+  APP_ICON_PX,
+  AppIconShape,
   ContextMenu,
   GlyphIcon,
   ICONS,
@@ -32,10 +37,9 @@ import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { skillTileColor } from "../skills";
 import type { GridApp, GridFolder, Side } from "./arrangement";
-import "./app-tile.css";
 
 /** Edge of a tile's icon, in px: the phone home screen's size, large enough to read a glyph in. */
-export const ICON_PX = 56;
+const ICON_PX = APP_ICON_PX;
 /** The install ring sits just outside the icon's square. */
 const RING_PX = ICON_PX + 12;
 /** A folder's square holds up to four icons, two by two, with this inset and gap (px). */
@@ -63,7 +67,8 @@ export interface TileDragProps {
 /**
  * The app's own icon — an image from the URL the server serves it at (`ImageIcon`: an `<img>`, or
  * a mask in the text colour for a monochrome SVG) — else, and whenever that image fails to load,
- * a square in the id's colour with the title's first letter.
+ * a square in the id's colour with the title's first letter. Either is cut to the app icon shape
+ * at its size, so a small icon is the same outline as a full one.
  */
 export function TileIcon({
   shortcut,
@@ -85,14 +90,9 @@ export function TileIcon({
     </span>
   );
   return (
-    <span
-      aria-hidden
-      data-clip-surface
-      className="app-center-icon-shape block shrink-0"
-      style={{ width: size, height: size, "--app-icon-scale": size / ICON_PX } as CSSProperties}
-    >
+    <AppIconShape aria-hidden size={size}>
       <ImageIcon icon={shortcut.icon ?? null} size={size} fallback={letter} />
-    </span>
+    </AppIconShape>
   );
 }
 
@@ -108,7 +108,7 @@ function DropLine({ side }: { side: Side }) {
   );
 }
 
-/** An outline follows the actual icon mask and stays visible outside its clipped fill. */
+/** An outline follows the icon's shape and stays visible outside its clipped fill. */
 const DROP_OUTLINE = "outline-2 outline-offset-4 outline-accent";
 
 /**
@@ -118,10 +118,18 @@ const DROP_OUTLINE = "outline-2 outline-offset-4 outline-accent";
 const TILE_BUTTON =
   "flex w-full select-none flex-col items-center gap-2 rounded-lg p-2 text-center transition-colors duration-150 [-webkit-touch-callout:none] hover:bg-fg/5 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none";
 
-/** The name under the icon: two lines at most, then an ellipsis. */
-function TileName({ children }: { children: ReactNode }) {
+/**
+ * The name under the icon: two lines at most, then an ellipsis. Inside an open folder it has no
+ * preview to travel from, so it fades in as the folder unfolds.
+ */
+function TileName({ fade = false, children }: { fade?: boolean; children: ReactNode }) {
   return (
-    <span className="line-clamp-2 w-full break-words text-sm leading-snug text-fg">{children}</span>
+    <span
+      data-unfold-fade={fade || undefined}
+      className="line-clamp-2 w-full break-words text-sm leading-snug text-fg"
+    >
+      {children}
+    </span>
   );
 }
 
@@ -136,6 +144,7 @@ export function AppTile({
   onOpen,
 }: {
   app: GridApp;
+  /** In an open folder, where its icon travels from the folder's preview of it. */
   inFolder: boolean;
   /** The title in the reader's language. */
   title: string;
@@ -184,15 +193,12 @@ export function AppTile({
               failed || shortcut.unavailable ? "opacity-60" : ""
             } ${lifted ? "opacity-40" : ""}`}
           >
-            <span
-              data-app-icon
-              className={`app-center-icon-shape relative block ${mark === "into" ? DROP_OUTLINE : ""}`}
-              style={{ width: ICON_PX, height: ICON_PX }}
+            <AppIconShape
+              clip={false}
+              data-unfold-art={inFolder ? app.id : undefined}
+              className={`relative ${mark === "into" ? DROP_OUTLINE : ""}`}
             >
-              <span
-                data-layout-motion={inFolder ? "shared-artwork" : undefined}
-                className={`block ${building ? "opacity-50" : ""}`}
-              >
+              <span className={`block ${building ? "opacity-50" : ""}`}>
                 <TileIcon shortcut={shortcut} title={title} />
               </span>
               {building && (
@@ -209,10 +215,13 @@ export function AppTile({
                   <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.rowLead} />
                 </span>
               )}
-            </span>
-            <TileName>{title}</TileName>
+            </AppIconShape>
+            <TileName fade={inFolder}>{title}</TileName>
             {shortcut.machineLabel && (
-              <span className="max-w-full truncate text-xs text-fg-muted">
+              <span
+                data-unfold-fade={inFolder || undefined}
+                className="max-w-full truncate text-xs text-fg-muted"
+              >
                 {shortcut.machineLabel}
               </span>
             )}
@@ -268,23 +277,18 @@ export function FolderTile({
             }}
             className={`${TILE_BUTTON} ${lifted ? "opacity-40" : ""}`}
           >
-            <span
-              data-folder-icon
-              data-clip-surface
-              className={`app-center-icon-shape relative grid grid-cols-2 content-start bg-fg/10 ${mark === "into" ? DROP_OUTLINE : ""}`}
-              style={{
-                width: ICON_PX,
-                height: ICON_PX,
-                padding: FOLDER_INSET_PX,
-                gap: FOLDER_GAP_PX,
-              }}
+            {/* The open folder unfolds from this square, its apps from their previews in it. */}
+            <AppIconShape
+              data-unfold-from
+              className={`relative grid grid-cols-2 content-start bg-fg/10 ${mark === "into" ? DROP_OUTLINE : ""}`}
+              style={{ padding: FOLDER_INSET_PX, gap: FOLDER_GAP_PX }}
             >
               {folder.apps.slice(0, 4).map((app) => (
-                <span key={app.id} data-preview-app={app.id} className="flex">
+                <span key={app.id} data-unfold-source={app.id} className="flex">
                   <TileIcon shortcut={app.shortcut} title={titleOf(app.shortcut)} size={MINI_PX} />
                 </span>
               ))}
-            </span>
+            </AppIconShape>
             <TileName>{folder.name}</TileName>
           </button>
         )}

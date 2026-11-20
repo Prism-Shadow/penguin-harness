@@ -175,7 +175,8 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   const folder = grid.getByRole("button", { name: /^New folder, folder, 2 apps/ });
   // Inspect the two ends of the actual CSS transitions without racing the display refresh.
   const slow = await page.addStyleTag({
-    content: ".app-center-folder[data-ready] { --ui-dur-layout: 2s; }",
+    content:
+      "[data-unfold-surface][data-layout-motion], [data-unfold-surface] [data-layout-motion] { transition-duration: 2s; }",
   });
   await folder.click();
   const panel = page.getByRole("region", { name: "New folder" });
@@ -192,13 +193,13 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
         (parseFloat(getComputedStyle(el).borderTopLeftRadius) * width) / el.offsetWidth;
       return [x, y, width, radius].map(Math.round);
     };
-    const pairs = [...trigger.querySelectorAll("[data-preview-app]")].map((mini) => {
-      const tile = [...node.querySelectorAll("[data-app]")].find(
-        (el) => el.dataset.app === mini.dataset.previewApp,
+    const pairs = [...trigger.querySelectorAll("[data-unfold-source]")].map((mini) => {
+      const slot = [...node.querySelectorAll("[data-unfold-art]")].find(
+        (el) => el.dataset.unfoldArt === mini.dataset.unfoldSource,
       );
       return [
-        bounds(mini.querySelector("[data-clip-surface]")),
-        bounds(tile.querySelector("[data-app-icon] [data-clip-surface]")),
+        bounds(mini.querySelector("[data-app-icon-shape]")),
+        bounds(slot.firstElementChild.querySelector("[data-app-icon-shape]")),
       ];
     });
     for (const part of animations) part.finish();

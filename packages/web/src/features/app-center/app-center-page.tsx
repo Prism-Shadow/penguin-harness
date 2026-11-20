@@ -27,6 +27,7 @@ import { useLayoutEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import {
+  AppIconShape,
   AppWindow,
   Button,
   ConfirmModal,
@@ -320,7 +321,9 @@ export function AppCenterPage() {
                 <ul className={GRID} aria-busy aria-label={S.appCenter.loading}>
                   {[0, 1, 2, 3].map((i) => (
                     <li key={i} className="flex flex-col items-center gap-2 p-2">
-                      <Skeleton className="app-center-icon-shape size-14" />
+                      <AppIconShape>
+                        <Skeleton className="size-full" />
+                      </AppIconShape>
                       <Skeleton className="h-3 w-16" />
                     </li>
                   ))}

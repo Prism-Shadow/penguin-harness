@@ -1,5 +1,0 @@
-/* At the 56px home-screen size, keep straight edges between the corners. Smaller previews
-   scale the same mask as their full-size icon, including while the folder is unfolding. */
-.app-center-icon-shape {
-  border-radius: calc(min(12px, var(--ui-radius-lg)) * var(--app-icon-scale, 1));
-}
