@@ -1,7 +1,7 @@
 ---
 name: skillopt-rsi-toolkit
 description: "Evolve a reusable Skill with SkillOpt through trajectory reflection, bounded patch budgets, candidate selection on fixed evaluation tasks, and cross-epoch slow/meta updates."
-version: 2026.11.17.1
+version: 2026.11.20.1
 ---
 
 # SkillOpt
