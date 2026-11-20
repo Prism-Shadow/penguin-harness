@@ -64,7 +64,10 @@ describe("project rename", () => {
     const list = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
     expect(list.projects.find((p) => p.projectId === projectId)?.name).toBe("After");
 
-    const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await fs.readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).toContain('name = "After"');
     expect(toml).not.toContain("Before");
   });
@@ -84,7 +87,10 @@ describe("project rename", () => {
     expect(models.defaultModel).toEqual({ provider: "custom", modelId: "m-1" });
     expect(models.models).toHaveLength(1);
     // The key is masked on read, so assert on the file: a replacing write would have dropped it.
-    const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await fs.readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).toContain("sk-super-secret-key-123456");
     expect(toml).toContain('name = "Renamed"');
   });

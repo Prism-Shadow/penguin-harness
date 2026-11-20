@@ -14,7 +14,7 @@
  *   103 bytes a Unix socket path holds is refused naming the limit.
  * - An Agent named `aux` and a workbench named `report.v2`, made before such names were refused,
  *   still open; a new Agent under a name Windows reserves is refused, and so is a new Project
- *   named after the data root's own folders (`app`, `run`).
+ *   named `projects`, the data root's folder of Projects (its other folders' names are free).
  * - With a configured model credential, it opens and runs Sessions the SDK's way, inside
  *   its own Project only, with allow-all: nobody is there to answer an ask. Its Sessions
  *   are archived with workbench provenance, including before their first run after a restart.
@@ -466,16 +466,16 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     expect(await res.json()).toMatchObject({ greeting: "hello", path: "/greet" });
   });
 
-  it("refuses a new Project named after the data root's own folders, app and run", async () => {
+  it("takes a new Project named after the data root's own folders, and refuses only projects", async () => {
     const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-    for (const projectId of ["app", "run"]) {
-      const res = await admin.post("/api/projects", { projectId, name: projectId });
-      expect(res.status).toBe(400);
-      expect(await res.json()).toMatchObject({ error: { code: "invalid_project_id" } });
+    // Projects are folders of projects/ now: the data root's top level takes no id.
+    await fs.mkdir(path.join(t.root, "plugins"), { recursive: true });
+    for (const projectId of ["app", "run", "plugins"]) {
+      expect((await admin.post("/api/projects", { projectId, name: projectId })).status).toBe(201);
     }
-    expect((await admin.post("/api/projects", { projectId: "apps", name: "apps" })).status).toBe(
-      201,
-    );
+    const res = await admin.post("/api/projects", { projectId: "projects", name: "projects" });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: { code: "invalid_project_id" } });
   });
 
   it("refuses a new Agent under a name Windows reserves", async () => {

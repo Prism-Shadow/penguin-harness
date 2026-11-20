@@ -755,7 +755,7 @@ describe("agent delete route", () => {
       })
     ).json()) as AgentCreateResponse;
     const agentId = created.agent.agentId;
-    const dir = path.join(t.root, projectId, "agents", agentId);
+    const dir = path.join(t.root, "projects", projectId, "agents", agentId);
     await fs.access(dir); // directory exists after creation
 
     const outsiderRes = await outsider.delete(`/api/projects/${projectId}/agents/${agentId}`);

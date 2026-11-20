@@ -257,7 +257,10 @@ describe("support workbench following a question live", { timeout: 30000 }, () =
   let hold: Promise<void> | undefined;
   const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   const dir = () =>
-    path.join(t.root, "default_project/agents/penguin_support/agent_state/workbenches/support");
+    path.join(
+      t.root,
+      "projects/default_project/agents/penguin_support/agent_state/workbenches/support",
+    );
   /** The ticket as saved on disk, never read through GET. */
   const saved = async (id: string) =>
     (

@@ -26,9 +26,8 @@ import {
   agentAppDir,
   agentDir,
   agentRunDir,
-  agentsDir,
   machineAppDir,
-  projectConfigPath,
+  projectDir,
   runDir,
   serverAppDir,
   sharedWorkbenchDirs,
@@ -151,19 +150,25 @@ export interface WorkbenchPlace {
 }
 
 /**
- * Refuses `dir`, one of the data root's own folders (`app`, `run`), when a Project holds its
- * name: until Projects move under `<root>/projects/`, an older Project may be called so, and no
- * workbench folder is ever made inside a Project's folder.
+ * Refuses `dir`, one of the data root's own folders (`app`, `run`), when it is the link the
+ * layout migration left at the old place of a Project called so (PRFC-0034): the Project's
+ * folder is under `<root>/projects/` now, but the link stands until 1.0, and no workbench folder
+ * is ever made through a link — or inside a Project's folder. Making a folder would refuse the
+ * link anyway (ensureDir); this says why.
  */
-function refuseProjectFolder(root: string, dir: string, call: string): void {
+function refuseProjectLink(root: string, dir: string, call: string): void {
   const name = path.basename(dir);
-  if (
-    fsSync.existsSync(projectConfigPath(root, name)) ||
-    fsSync.existsSync(agentsDir(root, name))
-  ) {
+  let link = false;
+  try {
+    link = fsSync.lstatSync(dir).isSymbolicLink();
+  } catch {
+    // Nothing there yet: the folder is made when first asked for.
+  }
+  if (link) {
     throw new WorkbenchDirError(
-      `${call}: ${dir} is the folder of the Project "${name}", so this server keeps no workbench ` +
-        `folders there until Projects move under ${path.join(root, "projects")}`,
+      `${call}: ${dir} is the link to the folder of the Project "${name}", which moved to ` +
+        `${projectDir(root, name)}; the link stays until 1.0, so this server keeps ` +
+        `no workbench folders there until then`,
     );
   }
 }
@@ -171,7 +176,7 @@ function refuseProjectFolder(root: string, dir: string, call: string): void {
 /**
  * A level's three folders for one workbench, and the trusted base each is made below. Throws for
  * a level that is none of the three, for a shared level of a workbench made in place, and where
- * a folder would fall inside a Project's folder (a Project called `app` or `run`).
+ * a folder would fall through the link a Project called `app` or `run` left at its old place.
  */
 export function levelFolders(
   level: unknown,
@@ -187,8 +192,8 @@ export function levelFolders(
   const { root, projectId, agentId, workbenchId, plugin } = at;
   // The agent and server levels keep their state under `<root>/run`, the server level its data
   // and cache under `<root>/app`; the machine level is outside the data root.
-  if (chosen !== "machine") refuseProjectFolder(root, runDir(root), call);
-  if (chosen === "server") refuseProjectFolder(root, serverAppDir(root), call);
+  if (chosen !== "machine") refuseProjectLink(root, runDir(root), call);
+  if (chosen === "server") refuseProjectLink(root, serverAppDir(root), call);
   if (chosen === "agent") {
     const agent = agentDir(root, projectId, agentId);
     return {

@@ -18,6 +18,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { benchmarksDir } from "@prismshadow/penguin-core";
 import type { AgentCreateResponse, ProjectCreateResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -50,14 +51,14 @@ describe("semantic ids", () => {
     const { project } = (await created.json()) as ProjectCreateResponse;
     expect(project.projectId).toBe("my_proj_2");
     expect(project.name).toBe("my_proj_2"); // No display name given: defaults to the id
-    await expect(fs.access(path.join(t.root, "my_proj_2"))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(t.root, "projects", "my_proj_2"))).resolves.toBeUndefined();
   });
 
   it("refuses a DB-taken, directory-only or reserved Project id as taken", async () => {
     expect((await admin.post("/api/projects", { projectId: "taken", name: "a" })).status).toBe(201);
     expect((await admin.post("/api/projects", { projectId: "taken", name: "b" })).status).toBe(409);
     // A directory that exists but isn't tracked (e.g. created by the CLI) is also considered taken.
-    await fs.mkdir(path.join(t.root, "dir_only"), { recursive: true });
+    await fs.mkdir(path.join(t.root, "projects", "dir_only"), { recursive: true });
     expect((await admin.post("/api/projects", { projectId: "dir_only", name: "c" })).status).toBe(
       409,
     );
@@ -78,7 +79,7 @@ describe("semantic ids", () => {
     // With the prefix: created normally.
     const created = await api.post("/api/projects", { projectId: "ida-blog" });
     expect(created.status).toBe(201);
-    await expect(fs.access(path.join(t.root, "ida-blog"))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(t.root, "projects", "ida-blog"))).resolves.toBeUndefined();
   });
 
   it("rolls back a Project creation that fails midway, so the same id can be retried", async () => {
@@ -97,7 +98,7 @@ describe("semantic ids", () => {
       t.deps.projectConfigService.writeInitialConfig = original;
     }
     // No leftovers: neither the directory nor the DB row exist, so the id isn't held by an orphaned directory.
-    await expect(fs.access(path.join(t.root, "flaky"))).rejects.toThrow();
+    await expect(fs.access(path.join(t.root, "projects", "flaky"))).rejects.toThrow();
     expect(
       t.deps.db.prepare("SELECT 1 AS x FROM projects WHERE project_id = ?").get("flaky"),
     ).toBeUndefined();
@@ -108,10 +109,13 @@ describe("semantic ids", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const config = t.deps.projectConfigService;
     const original = config.seedPresetPromotions;
-    // The step right before the Benchmarks are written leaves a file where benchmarks/ goes.
+    // The step right before the Benchmarks are written leaves a file where the folder that holds
+    // them (the system Agent's app/) goes.
     config.seedPresetPromotions = async (projectId: string) => {
       await original.call(config, projectId);
-      await fs.writeFile(path.join(t.root, projectId, "benchmarks"), "");
+      const app = path.dirname(path.dirname(benchmarksDir(t.root, projectId)));
+      await fs.mkdir(path.dirname(app), { recursive: true });
+      await fs.writeFile(app, "");
     };
     try {
       expect(
@@ -120,7 +124,7 @@ describe("semantic ids", () => {
     } finally {
       config.seedPresetPromotions = original;
     }
-    await expect(fs.access(path.join(t.root, "flaky_bench"))).rejects.toThrow();
+    await expect(fs.access(path.join(t.root, "projects", "flaky_bench"))).rejects.toThrow();
     expect(
       t.deps.db.prepare("SELECT 1 AS x FROM projects WHERE project_id = ?").get("flaky_bench"),
     ).toBeUndefined();
@@ -143,7 +147,7 @@ describe("semantic ids", () => {
       t.deps.agentConfigService.updateConfig = original;
     }
     await expect(
-      fs.access(path.join(t.root, "ida-default_project", "agents", "flaky")),
+      fs.access(path.join(t.root, "projects", "ida-default_project", "agents", "flaky")),
     ).rejects.toThrow();
     expect(
       (await api.post("/api/projects/ida-default_project/agents", { agentId: "flaky" })).status,
@@ -172,6 +176,7 @@ describe("semantic ids", () => {
       fs.access(
         path.join(
           t.root,
+          "projects",
           "ida-default_project",
           "agents",
           "crawler",

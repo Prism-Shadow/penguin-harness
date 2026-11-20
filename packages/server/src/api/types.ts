@@ -4015,6 +4015,12 @@ export interface BenchmarkOrigin {
 export interface BenchmarkSummary {
   /** Directory name is the identifier (semantic naming, e.g. swe-bench-v1). */
   id: string;
+  /**
+   * The Benchmark's absolute folder on the server that answered, which the Evaluation Center's
+   * prompts name (`BENCHMARK_DIR`) so an Agent never derives it. Absent from a server that
+   * predates it, where the folder is `benchmarks/<id>/` under the Project's App Data Dir.
+   */
+  dir?: string;
   /** Title from benchmark_config.toml; the directory name when it gives none or the manifest cannot be read. */
   title: string;
   description?: string;
@@ -4065,6 +4071,12 @@ export interface BenchmarkSummary {
 
 export interface BenchmarksResponse {
   benchmarks: BenchmarkSummary[];
+  /**
+   * The absolute folder the Project's Benchmarks are in on this server — the Evaluation Center's
+   * data folder, `<root>/projects/<p>/agents/system_agent/app/data/benchmark` — for the prompts
+   * that make a new one. Absent from a server that predates it.
+   */
+  dir?: string;
 }
 
 export type CaseMaterial = "statement" | "rubric";
