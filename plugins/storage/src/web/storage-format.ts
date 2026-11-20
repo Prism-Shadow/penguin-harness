@@ -26,20 +26,20 @@ export const STORAGE_CATEGORIES: readonly StorageCategory[] = [
 /**
  * Each coloured category's palette slot (0-based: `--ui-chart-<slot + 1>`). Picked against every
  * theme's eight slots, light and dark, in OKLab: a theme's palette holds fewer well-separated hues
- * than seven, so the order is part of the choice —
- * - every two neighbours in the bar and the legend take clearly different hues (in Frost: rose,
- *   blue, orange, violet, teal, amber, mauve);
- * - the five a Project's and an Agent's bars hold (Traces to caches) are as far apart as eight
- *   slots allow;
- * - the closest pairs left fall on the server's own logs and plugins, which only an admin's bar
- *   shows, and sit far apart in the order: Traces and plugins at the two ends.
+ * than seven, so three pairs stay close whatever the order, and the order decides where they fall —
+ * - every two neighbours in the bar and the legend take clearly different hues (in Frost: violet,
+ *   orange, blue, rose, teal, amber, mauve);
+ * - Traces, the largest part, is close to no small one, and the five parts a Project's and an
+ *   Agent's bars hold (Traces to caches) are as far apart as eight slots allow;
+ * - the closest pair falls on two small parts far apart in the order (scratchpads and plugins),
+ *   and none falls on logs and scratchpads, or plugins and caches.
  * The legend names every part and its size beside its swatch, so colour is never read alone.
  */
 const CATEGORY_SLOTS: Readonly<Record<Exclude<StorageCategory, "other">, number>> = {
-  traces: 3,
-  agentState: 2,
-  workspaces: 7,
-  scratchpads: 0,
+  traces: 0,
+  agentState: 7,
+  workspaces: 2,
+  scratchpads: 3,
   caches: 6,
   logs: 1,
   plugins: 5,
