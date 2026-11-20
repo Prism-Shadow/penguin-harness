@@ -962,6 +962,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/storage':
+        specifier: workspace:*
+        version: link:../../plugins/storage
       '@penguinharness/trace-lookup':
         specifier: workspace:*
         version: link:../../plugins/trace-lookup
