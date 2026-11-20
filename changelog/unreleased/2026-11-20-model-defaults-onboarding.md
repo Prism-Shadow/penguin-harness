@@ -3,6 +3,7 @@
 - **Date:** 2026-11-20
 - **Type:** feature
 - **Scope:** `server`, `web`, `ui`, `cli`, `docs`
+- **PR:** [#1674](https://github.com/Prism-Shadow/penguin-harness/pull/1674)
 - **Breaking:** yes — a new Project has no default model, so a Session, schedule or organization created there without naming a model is refused until one is set
 
 [中文版](2026-11-20-model-defaults-onboarding.zh.md)

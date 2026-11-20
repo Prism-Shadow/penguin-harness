@@ -3,6 +3,7 @@
 - **Date:** 2026-11-20
 - **Type:** feature
 - **Scope:** `server`, `web`, `ui`, `cli`, `docs`
+- **PR:** [#1674](https://github.com/Prism-Shadow/penguin-harness/pull/1674)
 - **Breaking:** yes — 新建 Project 没有默认模型，在其中不指定模型就创建 Session、定时任务或组织会被拒绝，直到设置了默认模型
 
 [English](2026-11-20-model-defaults-onboarding.md)
