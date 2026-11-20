@@ -1,4 +1,4 @@
-# PRFC-0023 Harness Meta: every data root carries the record of its harness
+# PRFC-0023 Harness Meta File
 
 [中文版](PRFC-0023-harness-meta.zh.md)
 

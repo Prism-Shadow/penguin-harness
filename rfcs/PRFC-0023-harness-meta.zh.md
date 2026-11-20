@@ -1,4 +1,4 @@
-# PRFC-0023 Harness Meta：每个数据根都带着自己那份 harness 记录
+# PRFC-0023 Harness Meta File
 
 [English](PRFC-0023-harness-meta.md)
 
