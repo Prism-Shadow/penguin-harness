@@ -114,7 +114,7 @@ export function RfcsPage() {
               />
             </div>
           </div>
-          <p className="mt-3 text-[15px] text-gray-600 dark:text-gray-400">{S.rfcs.description}</p>
+          <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-400">{S.rfcs.description}</p>
         </header>
         <SiteMarkdown
           variant="doc"
