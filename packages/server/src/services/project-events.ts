@@ -7,12 +7,16 @@
  * listening on. The session runtime, the title generator and the sessions route all
  * publish through this, so the audience rule is written once.
  */
+import type {
+  ServerEvent,
+  Members,
+  ProjectEvents,
+  Projects,
+} from "@prismshadow/penguin-library-project";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ServerEvent } from "../api/types.js";
 import type { Channels } from "../hmr/capabilities.js";
 import type { ChannelHub } from "../runtime/channel.js";
 import { userChannelKey } from "../http/routes/events.js";
-import type { Members, ProjectEvents, Projects } from "../mechanisms/projects.js";
 
 @Component()
 export class ProjectNotifier implements ProjectEvents {

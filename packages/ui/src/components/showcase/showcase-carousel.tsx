@@ -1,7 +1,9 @@
 /**
  * The selected carousel: the head of a showcase. One slide at a time is the header post — its
  * cover large, beside it its name, its one line, a short description and its actions — and under
- * it a rail of every slide's thumbnail, the one on show marked.
+ * it a rail of every slide's thumbnail, the one on show marked. With `navigation="controls"`
+ * the rail gives way to the slide's place in the count ("2 / 5") beside the same controls, and
+ * no slide but the one on show is mounted, so no other cover loads before its turn.
  *
  * It moves on by itself every `intervalMs`, and stops whenever the reader would lose their
  * place: while the pointer is over it, while its tab is in the background, once keyboard focus
@@ -29,7 +31,7 @@ export interface ShowcaseSlide {
   /** The slide's cover at its full rendition. */
   cover: ReactNode;
   /** The same cover at its thumbnail rendition, for the rail. */
-  thumb: ReactNode;
+  thumb?: ReactNode;
   /** The subject's own mark beside its name (an icon tile). */
   lead?: ReactNode;
   title: string;
@@ -56,6 +58,8 @@ export interface ShowcaseCarouselLabels {
 
 export interface ShowcaseCarouselProps {
   slides: readonly ShowcaseSlide[];
+  /** Controls-only navigation renders the current slide without loading the other covers. */
+  navigation?: "thumbnails" | "controls";
   /** The carousel's accessible name ("Selected plugins"). */
   label: string;
   /** The small line over the name ("Selected"). */
@@ -94,6 +98,7 @@ function Mark({ d, filled = false }: { d: string; filled?: boolean }) {
 
 export function ShowcaseCarousel({
   slides,
+  navigation = "thumbnails",
   label,
   eyebrow,
   labels,
@@ -207,32 +212,38 @@ export function ShowcaseCarousel({
       </div>
       {count > 1 && (
         <div className="showcase-rail-row">
-          <div ref={railRef} className="showcase-rail">
-            {slides.map((s, i) => (
-              <button
-                key={s.key}
-                type="button"
-                className="showcase-rail-item"
-                aria-label={s.title}
-                aria-current={i === at ? "true" : undefined}
-                onClick={() => pick(i)}
-              >
-                {s.thumb}
-                <span className="showcase-rail-title">{s.title}</span>
-                <span className="showcase-rail-track" aria-hidden>
-                  {i === at && (
-                    <span
-                      // A new stay draws its bar from the start.
-                      key={`${at}:${running ? "run" : "rest"}`}
-                      className="showcase-rail-bar"
-                      data-running={running ? "true" : undefined}
-                      style={{ animationDuration: `${intervalMs}ms` }}
-                    />
-                  )}
-                </span>
-              </button>
-            ))}
-          </div>
+          {navigation === "thumbnails" ? (
+            <div ref={railRef} className="showcase-rail">
+              {slides.map((s, i) => (
+                <button
+                  key={s.key}
+                  type="button"
+                  className="showcase-rail-item"
+                  aria-label={s.title}
+                  aria-current={i === at ? "true" : undefined}
+                  onClick={() => pick(i)}
+                >
+                  {s.thumb}
+                  <span className="showcase-rail-title">{s.title}</span>
+                  <span className="showcase-rail-track" aria-hidden>
+                    {i === at && (
+                      <span
+                        // A new stay draws its bar from the start.
+                        key={`${at}:${running ? "run" : "rest"}`}
+                        className="showcase-rail-bar"
+                        data-running={running ? "true" : undefined}
+                        style={{ animationDuration: `${intervalMs}ms` }}
+                      />
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <span className="showcase-position" aria-hidden>
+              {at + 1} / {count}
+            </span>
+          )}
           <div className="showcase-controls">
             <button
               type="button"

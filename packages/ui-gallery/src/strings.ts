@@ -450,8 +450,10 @@ export const zh = {
       "ui-glyph":
         "按主题换画法的图标：朴素为线性画法，白领为线性画法衬淡色块（双色调），极客为像素画",
       "ui-avatar":
-        "按主题换画法的智能体缺省头像：同一只细棕线勾勒的蛋形小企鹅，朴素为圆角方块，白领与卡通为圆形，极客为像素画",
-      "ui-showcase": "封面陈列：封面卡片、精选轮播、榜单与产品页首屏",
+        "按主题换画法的智能体缺省头像：同一只细棕线勾勒的蛋形小企鹅，朴素为圆角方块，白领为圆形，卡通为饼干形，极客为像素画",
+      "ui-showcase": "封面陈列：封面卡片、精选轮播与产品页首屏",
+      "ui-segmented": "分段控件：并排的几个选项里选一个",
+      "ui-action": "导航列表打头的主操作：新建对话",
     } satisfies Record<HookName, string>,
     hookSamples: {
       menu: ["置顶", "重命名", "删除"] as readonly string[],
@@ -598,7 +600,7 @@ export const zh = {
       report: {
         title: "报告问题",
         description:
-          "严重错误的「[报告问题]」入口：页面崩溃时的提示、带入口的错误提示条、带入口的加载失败提示，以及报告对话框。",
+          "每一处失败都带的「[报告问题]」入口：页面崩溃时的提示、带入口的错误提示条、行内报错、带入口的加载失败提示，以及报告对话框。",
       },
       attachments: {
         title: "附件",
@@ -608,7 +610,7 @@ export const zh = {
       showcase: {
         title: "封面陈列",
         description:
-          "插件市场共用的陈列模块：各色调与底纹的生成封面，图片加载中、已加载与加载失败，封面卡片、精选轮播、网格旁的榜单与产品页的各个部分。",
+          "插件市场共用的陈列模块：各色调与底纹的生成封面，图片加载中、已加载与加载失败，封面卡片、精选轮播与产品页的各个部分。",
       },
       packs: {
         title: "主题包",
@@ -1148,11 +1150,13 @@ export const zh = {
       legendHitRate: "缓存命中率",
       legendParts: ["系统提示词", "工具定义", "对话消息", "工具结果"] as readonly string[],
       trend: "成本趋势",
-      trendHint: "十四天的成本折线，悬停查看某一天。",
+      trendHint: "十四天的成本折线，悬停查看某一天；也可按 Tab 聚焦，再用方向键逐日查看。",
       tokens: "Token 用量",
-      tokensHint: "按种类堆叠的每日 Token 柱，叠加缓存命中率曲线；悬停图例高亮一种。",
+      tokensHint:
+        "按种类堆叠的每日 Token 柱，叠加缓存命中率曲线；没有缓存流量的那天曲线断开。悬停图例高亮一种。",
       requests: "请求与成功率",
-      requestsHint: "按智能体堆叠的每日请求数，与各自的成功率线。",
+      requestsHint:
+        "按智能体堆叠的每日请求数，与各自的成功率线。第二个智能体空闲的日子线会断开，夹在其间的那一天画成一个点。",
       agents: ["docs-expert", "release-notes"] as readonly string[],
       activity: "活动折线",
       activityHint: "智能体卡片上的十四天会话数曲线，只看相对起伏。",
@@ -1871,7 +1875,8 @@ export const zh = {
       navHint:
         "当前行用实色填充，并标为当前页；图标只是装饰，旁边的标签已经说明了它。对话框的侧栏在手机上横向滚动。",
       navLabel: "智能体设置",
-      navRail: "侧栏：图标、标签与行尾计数；最后一行暂时无处可去",
+      navRail: "侧栏：先是主操作，然后是图标、标签与行尾计数；最后一行暂时无处可去",
+      navPrimary: "新建对话",
       navDense: "紧凑：用在面板里",
       navRows: {
         overview: "概览",
@@ -2169,13 +2174,21 @@ export const zh = {
         "某部分页面在显示时崩溃，原处不留空白，而是一行与「[已中断]」同一样式的提示，带「重新加载」与「报告问题」；报告里有错误、调用栈与组件栈，个人路径已去掉。",
       toast: "错误提示条",
       toastHint:
-        "只有严重错误（服务端未命名的 500、意料之外的异常）的提示条带「报告问题」，停留更久；可预期的错误（校验、权限、离线等）与原来一样。",
-      fireSerious: "严重错误",
-      fireExpected: "可预期的错误",
+        "失败的提示条带「报告问题」，停留更久；拒绝（校验不通过、名称已存在、没有权限等）与原来一样，不带入口。",
+      fireSerious: "失败",
+      fireExpected: "拒绝",
       seriousText: "服务端内部错误",
       expectedText: "没有权限访问该 Project",
       loadFailed: "加载失败",
-      loadFailedHint: "加载失败的提示在失败是严重错误时，在「重试」旁边多一个「报告问题」。",
+      loadFailedHint: "加载失败的提示在「重试」旁带「报告问题」；因拒绝而读不到时不带。",
+      inline: "行内报错",
+      inlineHint: "表单与面板里的行内报错在文字之后带「报告问题」；输入有误的提示不带。",
+      inlineLine: "机器 gpu-box 没有应答",
+      inlineNotice: "没能读取更早的 Trace：服务端内部错误",
+      inlineName: "名称",
+      inlineSaveFailed: "没能保存：服务端内部错误",
+      inlineRefused: "名称已存在",
+      inlineTold: "在「连接」一步失败",
       loadTitle: "历史消息加载失败",
       retry: "重试",
       dialog: "报告对话框",
@@ -2225,16 +2238,22 @@ export const zh = {
       listView: "列表",
       cards: "封面卡片",
       cardsHint:
-        "短文字、超长文字、带标签与信息行和两个操作的卡片、什么都不带的卡片，以及列表读取中的占位。",
+        "短文字、带来源机器的超长文字、带标签与信息行和两个操作的卡片、什么都不带的卡片、Web App 市场的卡片（版本标签与两个文字操作的操作条，第二个不可用，悬停说明原因），以及列表读取中的占位。",
       shortTitle: "目标模式",
       shortDescription: "让会话循环推进一个目标直到完成。",
       longTitle: "智能体公司：组织、员工协议、CEO、人事、财务、科研与镜像公司的完整操作手册",
+      origin: "实验室 GPU 机",
       longDescription:
         "把 Project 里的 Agent 组织成一家公司：先与用户一问一答地创建组织，再是每个工位会话与工单会话都遵循的员工协议，以及 CEO、人事与财务的操作手册。",
       fullTitle: "PenguinHarness 问答助手",
       fullDescription: "产品问答、来源引用与客服工作台。",
       plainTitle: "数据分析",
       plainDescription: "读表、清洗、作图，并写出结论。",
+      barTitle: "Bento 幻灯片",
+      barDescription: "一句话生成可直接演示的幻灯片。",
+      barInstall: "安装",
+      barInstallNote: "已装在 2 个智能体上",
+      barQuickHint: "请先为当前智能体安装",
       tagSelected: "精选",
       tagCategory: "办公效率",
       tagBuiltin: "内置",
@@ -2246,6 +2265,8 @@ export const zh = {
       carouselHint:
         "三页。每 7 秒换页，指针悬停时暂停；键盘焦点进入或点选缩略图后停止，直到按「继续轮播」。系统设置减少动态效果时不自动换页，按钮显示「继续轮播」。",
       carouselLabel: "精选插件",
+      carouselControlsCaption:
+        "只有控件（公开站点的精选插件）：只显示当前一页和它在几页中的位置，没有缩略图栏，其余封面轮到才加载",
       eyebrow: "精选",
       carouselLabels: {
         previous: "上一个",
@@ -2307,28 +2328,6 @@ export const zh = {
         license: "许可证",
         package: "包名",
       },
-      ranking: "榜单",
-      rankingHint:
-        "网格旁的排行：宽时在右侧一栏，窄时落到网格下方。两个榜可切换，前三名的名次在着色的底上，数字悬停时给出全称；点开任一行即是该插件。",
-      rankingTitle: "插件榜单",
-      rankingNote: "示例数据",
-      rankingNoteHint: "接入真实安装量之前，这里的数字均为示例数据。",
-      rankingNoteCaption: "数字还是占位数据时：标题行末一句淡色说明，悬停给出原委",
-      popular: "热门",
-      rising: "飙升",
-      installCount: (n: string) => `${n} 次安装`,
-      weeklyCount: (n: string) => `本周新增 ${n} 次安装`,
-      rankingNames: [
-        "浏览器自动化",
-        "A2UI 交互式回答",
-        "去 AI 味写作",
-        "Firecrawl 搜索",
-        "Bento 幻灯片",
-        "智能体公司",
-        "目标模式",
-        "PenguinHarness 问答助手",
-        "数据分析",
-      ] as readonly string[],
     },
   },
 };

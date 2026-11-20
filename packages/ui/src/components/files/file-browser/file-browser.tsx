@@ -61,7 +61,8 @@ export interface FileBrowserPreview {
   content?: string;
   truncated?: boolean;
   loading?: boolean;
-  error?: string;
+  /** The read failed: its words, and 「[报告问题]」 for a failure. */
+  error?: ReactNode;
   /** Where an image / pdf is served from; absent for in-memory text. */
   url?: string;
   /** A download link in the header when present. */
@@ -82,7 +83,7 @@ export interface FileBrowserProps<Row extends FileTreeRow> {
   /** The listing is in flight: with no rows to draw, both panes wait with a skeleton. */
   treeLoading?: boolean;
   /** The listing failed: the aside says so, above whatever rows it does have. */
-  treeError?: string | null;
+  treeError?: ReactNode;
   /** The header line while nothing is previewed: the plugin's name, the case's id. */
   headerFallback: string;
   /** What the header prints in place of the previewed row's own path. */

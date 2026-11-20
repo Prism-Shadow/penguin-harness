@@ -641,7 +641,7 @@ interface AgentApiKeyInfo {
 | PUT | `/api/projects/:projectId/plugins/installed` | 仅管理员。替换整个列表：`{plugins}` |
 | DELETE | `/api/projects/:projectId/plugins/installed?specifier=…` | 仅管理员。从列表中移除一个插件 |
 
-- 索引沿用 typst/packages 的 `index.json` 格式：扁平数组，每个元素是一个版本条目，包含 `name`、`version`、`description`、`authors` 和 `license`，可选 `repository`、`homepage`、`keywords`、`categories` 和 `updatedAt`，以及卡片字段 `descriptionZh`、`shortDescription`、`shortDescriptionZh` 和 `icon`（SVG 原文），均可选。包在本机上时，列表改用包自带 `ifaces.json` 中声明的卡片与图标中的这几项，且不发送不是纯 SVG 的图标。已发布的索引不提供 `icon`：Web App 会把 SVG 内联进页面，因此服务端丢弃每个远程条目的 `icon`。条目的 `name` 就是 Project 列表里使用的包名。索引合并两个来源：内嵌在 server 包中的那份，以及索引仓库发布的那份——固定 tag 上的 release 附件（`releases/download/nightly/index.json`），最多每 30 分钟抓取一次，其内容由每 6 小时运行一次的工作流替换。读不到的来源只会让列表变短、不会让它变空，并会列入 `failures`；但在单个文档**内部**，一行格式错误仍会让那份索引整体失败。`PENGUIN_PLUGIN_INDEX=off` 关闭已发布索引的查询（不发起任何出网请求），填其他值则替换其 URL。注册表只用于发现，从不导入插件代码。
+- 索引沿用 typst/packages 的 `index.json` 格式：扁平数组，每个元素是一个版本条目，包含 `name`、`version`、`description`、`authors` 和 `license`，可选 `repository`、`homepage`、`keywords`、`categories` 和 `updatedAt`，以及卡片字段 `descriptionZh`、`shortDescription`、`shortDescriptionZh` 和 `icon`（SVG 原文），均可选。包在本机上时，列表改用包自带 `ifaces.json` 中声明的卡片与图标中的这几项，且不发送不是纯 SVG 的图标。已发布的索引不提供 `icon`：Web App 会把 SVG 内联进页面，因此服务端丢弃每个远程条目的 `icon`。条目的 `name` 就是 Project 列表里使用的包名。索引合并多个来源：内嵌在 server 包中的那份，加上服务器「插件索引」设置组列表上的每个 `index.json` 地址——随本次发布的那份（固定 tag 上的 release 附件 `releases/download/nightly/index.json`）默认就在列表上，设置组没有开关：列表本身就是全部配置。按地址书写顺序逐个抓取、最多每 30 分钟一次，合并成一张表时先登记的来源提供整个条目。读不到的来源只会让列表变短、不会让它变空，并会列入 `failures`；但在单个文档**内部**，一行格式错误仍会让那份索引整体失败。清空列表即不读内置以外的任何来源（不发起任何出网请求）。注册表只用于发现，从不导入插件代码。
 - 除索引条目外，列表还为管理员从链接或 zip 安装的每个服务端模块包列出一行，描述取自包自己的 `package.json`。
 - `GET …/readme` 返回包自带的 `README.md`，从本机上的副本读取；没有时 `readme` 为 `null`。列表中没有的名称返回 `404` `not_found`，缺少 `name` 的请求返回 `400` `bad_request`。`GET …/archive` 与插件库的导出路由一样，把本机上一个已列出的包打成 zip 下载；包不在本机上时返回 `404` `plugin_not_here`。
 - `GET /api/plugins/market` 返回市场文档：`hero` 与 `selected` 列出 npm 包名（维护者精选的插件，以及其中可作市场轮播首屏的那些），`art` 按包名给出插件的 `cover`（`{url, thumbUrl?, tone?}`）、位图 `icon` 与 `screenshots`（`{url, thumbUrl?, caption?, captionZh?}`），每个 `url` 都是本服务端的图片路由。文档带有 `popularity` 时，它是 `{source, generatedAt, items}`，`items` 按包名给出每个插件的 `{installs, weekly}`；目前这些是**占位数字**（`source: "placeholder"`，以固定种子生成），之后由真实的安装量接口替换（`source: "live"`）。读不懂的该段会被略去，文档其余部分照常应答。文档即社区仓库的 `assets/plugins/market.json`，经与索引相同的镜像规则最多每 30 分钟抓取一次；在它应答之前，以及它不可达、格式错误或 `schema` 不同时，由服务端内置的副本应答，`source` 写明是哪一份（`embedded` 或 `published`）。`PENGUIN_PLUGIN_MARKET=off` 只读内置副本、不发起任何出网请求，填其他值则替换文档的 URL。图片路由只应答当前文档列出的路径，其他路径一律 `404` 且不发起抓取。内置插件的封面与缩略图随服务端一起发布，内置副本列出的路径直接从这里提供、不发起抓取，离线以及 `PENGUIN_PLUGIN_MARKET=off` 时同样如此。其余图片由服务端从文档旁抓取，字节须为 2 MB 以内的 WebP、PNG 或 JPEG 才会提供，并保存在 `<data root>/.cache/plugin-market/` 下，一天后重新校验，源不可达时从这里提供。取不到的图片返回 `404`。该目录只是缓存：删除它只会让每张图片重新抓取一次。
@@ -1011,7 +1011,7 @@ interface RunFormLive {
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, interrupt?, steerIfBusy?, goal?}` → 202 |
+| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, interrupt?, steerIfBusy?, goal?, promptHooks?}` → 202 |
 | POST | `/steer` | 为正在运行的 Task 排入一条插话消息：`{text, images?}` → 202 |
 | DELETE | `/steer/:steerId` | 撤回一条尚未投递的插话消息 |
 | DELETE | `/follow-ups/:followUpId` | 撤回一个排队的后续 Task |
@@ -1030,6 +1030,7 @@ interface RunFormLive {
 - `POST /tasks` 带 `interrupt: true` 时，忙碌的 Session 会停止当前运行，并把输入接在被打断的那一轮之后发出。输入排到后续 Task 队列的最前面（排在更早的打断之后，同样受队列上限约束），运行按 `POST /abort` 的方式中止，收尾后它最先启动（`queued: true`）；在它之前排队的后续 Task 在它之后启动。被打断那一轮已经产出的内容排在它前面一起发出，已提交的历史不变。尚未投递的插话与 `POST /abort` 时一样退回（`returnedSteering`）。启动之前，该条目以 `interrupt: true` 列在 `pendingFollowUps` 里，可以撤回。Session 空闲时直接启动 Task。与 `queueIfBusy` 或 `goal` 同时使用时返回 400。
 - `POST /tasks` 带 `steerIfBusy: true` 时，不论 Session 此刻在做什么都只需这一个请求，由服务端在会话锁内判定。空闲的 Session 直接启动 Task。有 Task 在运行时，输入作为插话送入，与 `POST /steer` 同一路径：插话镜像、撤回与退回照旧，`file` 部分以 `[attached file: <path>]` 行随插话送达；响应 `{sessionId, queued: false, steered: true}`。压缩期间没有 Task 可插话，运行恰在收束时也不再接受插话，这两种情况按 `queueIfBusy` 入队（`queued: true`）。与 `interrupt` 或 `goal` 同时使用时返回 400；同时带 `queueIfBusy` 不改变任何行为。
 - `POST /tasks` 带 `goal: {budget?}` 时改为启动目标循环。Agent 没有安装 `goal` 插件时返回 409 `goal_plugin_not_installed`。插件的启动钩子运行失败（脚本报错或超时，或沙盒拒绝运行它）时返回 409 `goal_start_failed` 并附上原因，不启动任何 Task。目标就是输入里的文本（去掉开头的标记块），所以输入必须带非空文本（否则返回 400）：只有图片说明不了目标。图片作为普通输入随第 1 轮发送，之后各轮只重新注入目标文本。`file` 部分一律以 400 拒绝，因为没有办法把文件带进每一轮都重新注入的目标。见[目标模式](/goal-mode)。
+- `POST /tasks` 带 `promptHooks: [name, …]` 时，携带的是输入框的开关。对所列的每个钩子包，服务端按顺序以用户的原话运行它 `"trigger": "host"` 的 `user_prompt` 命令，并把 context 以 `sender: "harness"` 标记紧随这条消息发出。这些命令在请求被接受时运行，所以排队或打断的输入带着各自的 context 等待，排队行与撤回仍只是用户自己的内容；转为插话的输入不运行任何命令。Agent 没有该钩子包、或包里没有这样的命令时返回 409 `prompt_hook_not_installed`；命令运行失败时返回 409 `prompt_hook_failed` 并附上原因。两种情况都不启动、也不入队。与 `goal` 同时使用时返回 400。
 - `POST /steer` 在轮次之间把消息作为一条独立的 `[user_steering]` 用户消息投递，图片紧随其后。`text` 和 `images` 任一字段都能单独携带消息，但两者都缺时返回 400。没有 Task 在运行时返回 409 `not_running`。
 - `DELETE /steer/:steerId` 接收 `task_state` 里 `pendingSteering` 的 id，把那条消息从队列撤回。响应 200，带原始内容 `{text, images, files}`，便于输入框恢复消息供编辑：文件以 data URL 的形式从暂存区读回，磁盘上的副本随之删除。消息已经投递给模型时返回 409 `not_pending`。
 - `DELETE /follow-ups/:followUpId` 接收 `task_state` 里 `pendingFollowUps` 的 id，在后续 Task 启动前把它移除。响应 200，带原始内容 `{text, images, files}`；无论以哪种方式排队，每个排队的后续 Task 都带这些内容。后续 Task 已经启动、或 id 未知时返回 409 `follow_up_started`。
@@ -1363,8 +1364,8 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | POST | `/tabs/:tab/activate` | 设为当前标签页；在 `chrome` 上，Chrome 也会切到该标签页 |
 | DELETE | `/tabs/:tab` | 关闭标签页；`204` |
 | POST | `/tabs/:tab/navigate`、`scan`、`exec`、`click`、`type`、`screenshot`、`cdp` | Agent 的各项操作，见 [penguin browser](/cli#penguin-browser) |
-| GET | `/import/sources` | 内置：可导入的系统浏览器个人资料 |
-| POST | `/import` | 内置：导入 Cookie 与历史记录：`{sourceId, cookies?, history?, domains?}` |
+| GET | `/import/sources` | 内置：可导入的系统浏览器个人资料，以及调用者已连接的 Chrome 扩展（`chrome-extension`，只有 Cookie）→ `{sources, extension?}`，`extension` 说明扩展为何未列出 |
+| POST | `/import` | 内置：导入 Cookie 与历史记录：`{sourceId, cookies?, history?, domains?}` → `{sourceId, browserName, cookies?: {found, imported, skipped, failed, skips}, history?, notes}`；跳过原因与提示都是代码加计数。经扩展导入须用户在 Chrome 中允许（否则 403 `import_declined`） |
 | GET / PUT | `/settings` | 主页：`{homepage}`。仅管理员 |
 | GET / DELETE | `/history?q=&limit=` | 内置：搜索或清空历史记录 |
 | POST | `/clear-data` | 内置：`{storages}`，取 `cookies`、`cache` 和 `storage` 中的若干项 |

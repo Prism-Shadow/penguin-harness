@@ -58,6 +58,7 @@ import { useLocale } from "../../state/locale";
 import { CreditsList } from "./credits-list";
 import { ReleaseNotesList } from "./release-notes-list";
 import { VersionStamp } from "./version-stamp";
+import { toldNode } from "../../lib/failure";
 
 const HOMEPAGE_URL = "https://penguin.ooo/";
 const REPOSITORY_URL = "https://github.com/Prism-Shadow/penguin-harness";
@@ -306,7 +307,13 @@ function Body({ mode, flow }: { mode: UpdateMode; flow: UpdateFlow }): ReactNode
       return (
         <>
           <p className={`text-sm font-medium ${toneInk.danger}`}>
-            {flow.retry === "check" ? S.update.checkFailed : S.update.failed}
+            {toldNode(flow.retry === "check" ? S.update.checkFailed : S.update.failed, {
+              what: "an update failed",
+              facts: [["Step", flow.retry === "check" ? "check" : "update"]],
+              // The updater's own words and its output's tail, as the lines below show them.
+              detail:
+                [flow.message, flow.detail].filter((part) => part !== null).join("\n\n") || null,
+            })}
           </p>
           {flow.message !== null && <p className="text-sm">{flow.message}</p>}
           {flow.detail !== null && <OutputTail text={flow.detail} />}

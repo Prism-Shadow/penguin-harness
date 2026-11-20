@@ -7,6 +7,7 @@
  * The answer is adopted rather than assumed: a server that stored something other than what was
  * asked for is what the switch must show.
  */
+import type { ReactNode } from "react";
 import type {
   ServerSettingsResponse,
   ServerSettingsUpdateRequest,
@@ -15,13 +16,13 @@ import type {
 /** What a flip settled on: the stored value now, or the value to revert to and why. */
 export type CompanyModeWriteResult =
   | { status: "applied"; companyMode: boolean }
-  | { status: "failed"; revertTo: boolean; error: string };
+  | { status: "failed"; revertTo: boolean; error: ReactNode };
 
 export interface CompanyModeWriteDeps {
   /** `api.adminPutSettings` in the app; a stub in tests. */
   put: (body: ServerSettingsUpdateRequest) => Promise<ServerSettingsResponse>;
-  /** Turns a rejection into the line shown under the switch (`apiErrorText` in the app). */
-  describeError: (error: unknown) => string;
+  /** Turns a rejection into the line shown under the switch (`failureNode` in the app). */
+  describeError: (error: unknown) => ReactNode;
 }
 
 /**

@@ -46,6 +46,7 @@ export interface WorkbenchTab {
 export const WORKBENCH_UPDATED_EVENT = "penguin:workbench-updated";
 
 export interface WorkbenchUpdatedDetail {
+  machineId?: string | null;
   projectId: string;
   agentId: string;
 }

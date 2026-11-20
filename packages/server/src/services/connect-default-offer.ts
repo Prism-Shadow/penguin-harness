@@ -15,7 +15,8 @@
  *   Go's delivery adds the models its group lacks).
  */
 import { providerInfo } from "../model-catalog/catalog.js";
-import type { DefaultModelOffer, ModelRefDto } from "../api/types.js";
+import type { DefaultModelOffer } from "../api/types.js";
+import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 
 /** What the rule reads of one write: the group, its key before and after, and the rows before. */
 export interface ConnectDefaultFacts {

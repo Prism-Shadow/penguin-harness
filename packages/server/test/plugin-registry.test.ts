@@ -43,7 +43,6 @@ import type { PluginIndexResponse } from "../src/api/types.js";
 import type { PluginBase } from "../src/plugin/loader.js";
 import {
   INDEX_RETRY_MS,
-  NIGHTLY_INDEX_URL,
   builtinPluginRegistry,
   cachedRegistry,
   compareSemver,
@@ -54,17 +53,17 @@ import {
   parsePluginIndex,
   selectIndexChannel,
 } from "../src/plugin/registry.js";
+import { indexUrlsOf } from "../src/plugin/index-config.js";
 import type { IndexDocumentEntry, PluginRegistry } from "../src/plugin/registry.js";
-import { resolveServerConfig } from "../src/config.js";
 import { pluginRegistryRoutes } from "../src/http/routes/plugins.js";
-import { fakeFetch, fetchFailed, jsonResponse } from "./fixtures/fetch.js";
+import { fakeFetch, fetchFailed, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { contentTable } from "./plugin-fixtures.js";
 
 /** A listing's rows as the index wrote them, but for the icon, which the listing names by URL. */
-const withoutIcons = (entries: readonly { icon?: unknown }[]) =>
-  entries.map(({ icon: _icon, ...row }) => row);
+const withoutIcons = <T extends { icon?: unknown }>(entries: readonly T[]): Omit<T, "icon">[] =>
+  entries.map(({ icon: _icon, ...row }) => row as Omit<T, "icon">);
 
 /** The first bytes of a PNG: as much of one as its format is told by. */
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
@@ -870,15 +869,70 @@ describe("selectIndexChannel", () => {
 });
 
 describe("the published index source", () => {
-  it("PENGUIN_PLUGIN_INDEX unset or blank reads the published index, off reads none, a URL replaces it", () => {
-    const at = (value: string | undefined) =>
-      resolveServerConfig({ ...(value === undefined ? {} : { PENGUIN_PLUGIN_INDEX: value }) })
-        .pluginIndexUrl;
-    expect(at(undefined)).toBe(NIGHTLY_INDEX_URL);
-    expect(at("")).toBe(NIGHTLY_INDEX_URL);
-    expect(at("off")).toBeNull();
-    expect(at("OFF")).toBeNull();
-    expect(at("https://example.invalid/index.json")).toBe("https://example.invalid/index.json");
+  it("the stored document answers the sources: the list as written, nothing else", () => {
+    // The addresses, in the order written — the whole configuration, no switch beside it.
+    expect(
+      indexUrlsOf({ sources: ["https://a.example/index.json", "https://b.example/index.json"] }),
+    ).toEqual(["https://a.example/index.json", "https://b.example/index.json"]);
+    // An emptied list is builtin entries only, and no outbound request.
+    expect(indexUrlsOf({ sources: [] })).toEqual([]);
+    // Nothing stored (the declared default fills the read) — the group's default carries the
+    // published index, which the defaults-of mechanism, not this function, supplies.
+    expect(indexUrlsOf({})).toEqual([]);
+  });
+
+  it("the sources are read per listing: a save swaps the sources without a restart", async () => {
+    // The settings group's document changes without a restart, so the routes read it per
+    // listing and answer what it holds at the moment the listing runs — even on a registry
+    // set that an earlier listing already built.
+    const published: IndexDocumentEntry = { ...VALID_ENTRY };
+    let urls: readonly string[] = ["https://one.example/index.json"];
+    const routes = pluginRegistryRoutes({
+      indexUrl: () => urls,
+      fetchImpl: fakeFetch(() => jsonResponse([published])).fetch,
+    });
+    // The first listing answers at once from what is in hand; the fetch lands behind it and
+    // the next listing carries the source's entries.
+    await routes.request("/");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const withSource = (await (await routes.request("/")).json()) as PluginIndexResponse;
+    expect(withSource.plugins.map((p) => p.name)).toContain(published.name);
+    // Clearing the list drops it on the next listing, builtin entries alone.
+    urls = [];
+    const cleared = (await (await routes.request("/")).json()) as PluginIndexResponse;
+    expect(cleared.plugins.map((p) => p.name)).not.toContain(published.name);
+    expect(cleared.failures).toEqual([]);
+    expect(cleared.pending).toEqual([]);
+  });
+
+  it("the sources come from the plugin-index settings group, changed without a restart", async () => {
+    const t = await createTestApp();
+    try {
+      const admin = await loginAdmin(t.app);
+      const client = apiClient(t.app, admin.cookie);
+      // The test app stores an emptied list (no test may reach the network to list plugins);
+      // the declared default beside it carries the published index, and a save replaces it.
+      const before = (await (await client.get("/api/admin/plugin-config")).json()) as {
+        plugins: { name: string; values: Record<string, unknown> }[];
+      };
+      const group = before.plugins.find((p) => p.name === "plugin-index");
+      expect(group).toBeDefined();
+      expect(group!.values.sources).toEqual([]);
+      // A save is stored and answered; the list reaches the document.
+      const saved = await client.put("/api/admin/plugin-config", {
+        name: "plugin-index",
+        values: { sources: ["https://one.example/index.json"] },
+      });
+      expect(saved.status).toBe(200);
+      const after = (await (await client.get("/api/admin/plugin-config")).json()) as {
+        plugins: { name: string; values: Record<string, unknown> }[];
+      };
+      expect(after.plugins.find((p) => p.name === "plugin-index")!.values.sources).toEqual([
+        "https://one.example/index.json",
+      ]);
+    } finally {
+      await t.cleanup();
+    }
   });
 });
 
@@ -910,13 +964,105 @@ describe("the route's own merge", () => {
     const offline = fakeFetch(() => {
       throw new TypeError("fetch failed");
     });
+    const url = "https://registry.example/index.json";
     const routes = pluginRegistryRoutes({
-      indexUrl: "https://registry.example/index.json",
+      indexUrl: () => [url],
       fetchImpl: offline.fetch,
-      seed: { at: Date.now(), entries: [{ ...published, icon: '<svg onload="alert(1)"></svg>' }] },
+      seed: {
+        at: Date.now(),
+        url,
+        entries: [{ ...published, icon: '<svg onload="alert(1)"></svg>' }],
+      },
     });
     const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
     expect(body.plugins.find((entry) => entry.name === published.name)).toEqual(published);
+  });
+
+  it("a parked document without its URL seeds nothing", async () => {
+    // A snapshot that does not name its source (a v1 park, before snapshots carried the
+    // URL) cannot be told apart from one of another source: it seeds no registry, so the
+    // configured source answers cold from its own fetch.
+    const served = fakeFetch(() => jsonResponse([published]));
+    const routes = pluginRegistryRoutes({
+      indexUrl: () => ["https://registry.example/index.json"],
+      fetchImpl: served.fetch,
+      seed: { at: Date.now(), entries: [published] },
+    });
+    const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
+    expect(body.plugins.find((entry) => entry.name === published.name)).toBeUndefined();
+  });
+
+  it("a parked document seeds only the source it was fetched from", async () => {
+    // The parked snapshot names its URL. A save that changed the sources must not hand the
+    // old source's entries to the new one: the new source answers cold, the parked rows
+    // stay out of the listing until the new source actually lists them.
+    const offline = fakeFetch(() => {
+      throw new TypeError("fetch failed");
+    });
+    const routes = pluginRegistryRoutes({
+      indexUrl: () => ["https://changed.example/index.json"],
+      fetchImpl: offline.fetch,
+      seed: {
+        at: Date.now(),
+        url: "https://original.example/index.json",
+        entries: [published],
+      },
+    });
+    const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
+    expect(body.plugins.find((entry) => entry.name === published.name)).toBeUndefined();
+  });
+
+  it("the park carries the URL through the platform's swap: v1 dropped, v2 same URL kept, v2 other URL not reused", async () => {
+    // Component-level, on a real App: the PluginRegistryRoutes module boots with its
+    // dependencies there, so the platform's park (what a swap hands the successor) really
+    // carries the module's document. The migration chain is what keeps a v1 park (no URL)
+    // from seeding anything and a v2 park from seeding another source.
+    const parkedSelf = (t: TestApp) => {
+      const parked = t.boot.instance.api.park() as {
+        modules?: {
+          PluginRegistryRoutes?: { self?: { index?: { url?: string; entries?: unknown } } | null };
+        };
+      };
+      // The module's park() returns { index }: the snapshot rides under self.index.
+      return parked.modules?.PluginRegistryRoutes?.self?.index ?? undefined;
+    };
+    // A listing first, so the module's cache (and its URL) exists at all: the sources come
+    // from the settings group, and the module's cache follows them per listing.
+    // The module boots on the real App without a fetchImpl, so the registry reads the
+    // global fetch (the same stand-in the fixtures install elsewhere): the fake answers
+    // both sources the test configures, one document each.
+    const fake = stubFetch(() => jsonResponse([published]));
+    const t = await createTestApp();
+    try {
+      // A listing first, so the module's cache (and its URL) exists at all.
+      const admin = await loginAdmin(t.app);
+      const client = apiClient(t.app, admin.cookie);
+      await client.put("/api/admin/plugin-config", {
+        name: "plugin-index",
+        values: { sources: ["https://same.example/index.json"] },
+      });
+      // A listing answers in hand while the fetch runs behind it, so wait for the fetch to
+      // land before reading the park (the second listing carries the source's entries).
+      await (await client.get("/api/plugins/registry")).json();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await (await client.get("/api/plugins/registry")).json();
+      // v2, the same URL: the park names it.
+      const same = parkedSelf(t);
+      expect(same?.url).toBe("https://same.example/index.json");
+      // v2, another URL: the module's cache follows the sources, and the parked snapshot
+      // names the new one — nothing of the old source rides under the new URL.
+      await client.put("/api/admin/plugin-config", {
+        name: "plugin-index",
+        values: { sources: ["https://other.example/index.json"] },
+      });
+      await (await client.get("/api/plugins/registry")).json();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await (await client.get("/api/plugins/registry")).json();
+      expect(parkedSelf(t)?.url).toBe("https://other.example/index.json");
+    } finally {
+      vi.unstubAllGlobals();
+      await t.cleanup();
+    }
   });
 
   describe("with a published index on a slow or unreachable network", () => {
@@ -939,7 +1085,7 @@ describe("the route's own merge", () => {
             answer = resolve;
           }),
       );
-      const routes = pluginRegistryRoutes({ indexUrl: url, fetchImpl: remote.fetch });
+      const routes = pluginRegistryRoutes({ indexUrl: () => [url], fetchImpl: remote.fetch });
       const first = await read(routes);
       expect(withoutIcons(first.plugins)).toEqual(
         withoutIcons(await builtinPluginRegistry().index()),
@@ -959,7 +1105,7 @@ describe("the route's own merge", () => {
       const remote = fakeFetch(() => {
         throw fetchFailed("ETIMEDOUT");
       });
-      const routes = pluginRegistryRoutes({ indexUrl: url, fetchImpl: remote.fetch });
+      const routes = pluginRegistryRoutes({ indexUrl: () => [url], fetchImpl: remote.fetch });
       expect(withoutIcons((await read(routes)).plugins)).toEqual(
         withoutIcons(await builtinPluginRegistry().index()),
       );
@@ -979,7 +1125,7 @@ describe("the route's own merge", () => {
   });
 
   it("with no published source configured, lists the builtin entries alone, each icon served as an image", async () => {
-    const routes = pluginRegistryRoutes({ indexUrl: null });
+    const routes = pluginRegistryRoutes({ indexUrl: () => [] });
     const res = await routes.request("/");
     const body = (await res.json()) as PluginIndexResponse;
     const index = await builtinPluginRegistry().index();
@@ -1116,5 +1262,63 @@ describe("the route's own merge", () => {
     } finally {
       await rm(prefix, { recursive: true, force: true });
     }
+  });
+
+  it("with several configured sources, lists them first-come-first-served and reports a down one by its URL", async () => {
+    const one = "https://one.example/index.json";
+    const two = "https://two.example/index.json";
+    const first = { ...VALID_ENTRY, name: "@example/penguin-plugin-first" };
+    const second = { ...VALID_ENTRY, name: "@example/penguin-plugin-second" };
+    // Both sources carry the first plugin's name; the earlier source's row is the one listed.
+    const clash = { ...first, description: "the later source's row" };
+    const fetch = fakeFetch((call) => {
+      if (call.url === "https://one.example/index.json") return jsonResponse([first]);
+      if (call.url === "https://two.example/index.json") return jsonResponse([second, clash]);
+      return new Response("nope", { status: 404 });
+    });
+    const routes = pluginRegistryRoutes({
+      indexUrl: () => [one, two],
+      fetchImpl: fetch.fetch,
+    });
+    // The listing answers at once from what is in hand; the first read starts the two
+    // fetches behind it, and once they have landed the second read carries the entries.
+    await routes.request("/");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
+    const builtin = await builtinPluginRegistry().index();
+    // The builtin entries stay first; the two sources follow in the order configured, and a
+    // name both carry is answered by the earlier one.
+    expect(withoutIcons(body.plugins.slice(builtin.length)).map((e) => e.description)).toEqual([
+      first.description,
+      second.description,
+    ]);
+    expect(body.failures).toEqual([]);
+    expect(body.pending).toEqual([]);
+    expect(fetch.calls.map((c) => c.url)).toEqual([
+      "https://one.example/index.json",
+      "https://two.example/index.json",
+    ]);
+  });
+
+  it("with one configured source down, the listing keeps the rest and names the dead one", async () => {
+    const one = "https://one.example/index.json";
+    const two = "https://two.example/index.json";
+    const second = { ...VALID_ENTRY, name: "@example/penguin-plugin-second" };
+    const fetch = fakeFetch((call) => {
+      if (call.url === "https://two.example/index.json") return jsonResponse([second]);
+      return new Response("gone", { status: 503 });
+    });
+    const routes = pluginRegistryRoutes({
+      indexUrl: () => [one, two],
+      fetchImpl: fetch.fetch,
+    });
+    await routes.request("/");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
+    // The dead source is named by its URL; the surviving source's entries list.
+    expect(body.failures).toEqual([
+      { source: "https://one.example/index.json", error: expect.stringMatching(/HTTP 503/) },
+    ]);
+    expect(body.plugins.some((e) => e.name === second.name)).toBe(true);
   });
 });

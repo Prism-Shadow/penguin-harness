@@ -252,10 +252,38 @@ describe("/api/admin/plugin-config", () => {
     const res = await admin.get("/api/admin/plugin-config");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginConfigResponse;
-    // The sandbox's group is ordered ahead of the rest; the server's own Plugin sources
-    // group (order 1) sits between it and the packages' groups.
-    expect(body.plugins.map((p) => p.name)).toEqual(["sandbox", "plugin-sources", "acme-bot"]);
-    expect(body.plugins[0]!.name).toBe("sandbox");
+    // The Plugin Sources card leads the page (order 0) with the index and mirrors entries
+    // drawn inside it (order 1–2, parent "plugin-sources", each saved under its own key);
+    // the sandbox's group and the packages' groups follow.
+    expect(body.plugins.map((p) => p.name)).toEqual([
+      "plugin-sources",
+      "plugin-index",
+      "plugin-mirrors",
+      "sandbox",
+      "acme-bot",
+    ]);
+    expect(body.plugins[0]!.name).toBe("plugin-sources");
+    const index = body.plugins.find((p) => p.name === "plugin-index")!;
+    // The test app stores an emptied list (no test may reach the network to list plugins);
+    // the declared default beside it carries the release's published index.
+    expect(index.values).toEqual({ sources: [] });
+    expect(index.parent).toBe("plugin-sources");
+    const mirrors = body.plugins.find((p) => p.name === "plugin-mirrors")!;
+    expect(mirrors.values).toEqual({ mirrors: [] });
+    // The mirror entries are chosen from the built-in mirrors' fixed set.
+    expect(mirrors.configuration.properties.mirrors?.items?.options?.map((o) => o.value)).toEqual([
+      "npm-registry",
+      "github-raw",
+      "github-proxy",
+    ]);
+    expect(mirrors.parent).toBe("plugin-sources");
+    expect(body.plugins.filter((p) => p.name === "acme-bot")).toEqual([
+      {
+        name: "acme-bot",
+        configuration: SCHEMA,
+        values: { agent: "default_agent", enabled: true },
+      },
+    ]);
     const member = apiClient(t.app, (await provisionUser(t.app, "member")).cookie);
     expect((await member.get("/api/admin/plugin-config")).status).toBe(403);
     expect(

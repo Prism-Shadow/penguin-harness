@@ -25,7 +25,7 @@ import { iconImage, MAX_ICON_BYTES } from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
 import type { IconRef } from "../api/types.js";
 import { iconRev } from "../http/icon-response.js";
-import type { AppCenterShortcut, WorkbenchAppCenter } from "../mechanisms/workbenches.js";
+import type { AppCenterShortcut, WorkbenchAppCenter } from "@prismshadow/penguin-library-workbench";
 import { readLoadStatus } from "./compile.js";
 import { isSafeRelPath, isSwitchedOff, isWorkbenchId, TMP_SUFFIX, UI_DIR } from "./store.js";
 

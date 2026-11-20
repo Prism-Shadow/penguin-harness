@@ -10,10 +10,12 @@
  * - A discard row is never titled as a compaction, running or settled, and a running row never
  *   reads as settled; an unknown mode is titled as a compaction — in both languages.
  * - A completion without a full summary is titled as compacted and says why only through its
- *   status mark's name and tooltip, with no result section; when too little room was left (a
- *   refusal, a summary cut off at the output limit) the mark says what to correct, and quotes
- *   the provider only when the provider refused. A fatal end keeps the failed row, and an old
- *   Trace's abandoned compactions keep their own reason lines — in both languages.
+ *   status mark's name and tooltip, with no result section, one line each: the cause first (in
+ *   words with the HTTP status the error names, then the error's own words, or those words alone
+ *   for a code with no words), then what was done; when too little room was left (a refusal, a
+ *   summary cut off at the output limit) a third line says what to correct. A fatal end keeps
+ *   the failed row, and an old Trace's abandoned compactions keep their own reason lines — in
+ *   both languages.
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -34,6 +36,15 @@ const attribute = (text: string): string =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#x27;");
+
+/** An attribute value from static markup, read back as the text it holds. */
+const unattribute = (value: string): string =>
+  value
+    .replace(/&#x27;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&gt;/g, ">")
+    .replace(/&lt;/g, "<")
+    .replace(/&amp;/g, "&");
 
 describe("compactionSummaryText", () => {
   it("strips the summary tags so the body reads as prose", () => {
@@ -156,42 +167,76 @@ describe.each([
       }),
     );
 
-  it("says a completion without a full summary on its status mark alone: titled as compacted, the reason as the mark's name and tooltip", () => {
-    const unusable = "the response contained no usable summary";
+  /**
+   * The degraded mark's accessible name, one entry per line, after checking its tooltip says the
+   * same; null when the row carries no such mark.
+   */
+  const markLines = (html: string): string[] | null => {
+    const found = /role="img" aria-label="([^"]*)" data-tooltip="([^"]*)"/.exec(html);
+    if (found === null) return null;
+    expect(found[2]).toBe(found[1]);
+    return unattribute(found[1]!).split("\n");
+  };
+  /** How many times a text appears in the markup. */
+  const count = (html: string, text: string): number => html.split(attribute(text)).length - 1;
+
+  it("a completion without a full summary names the cause first on its mark, then what was done; short of room it also says what to correct", () => {
     const refusal = "400 prompt is too long: 140000 tokens > 131072 maximum";
-    const cases = [
-      // Any other cause: the one degraded sentence, with its reason.
-      [
-        settled({ status: "completed", errorCode: "malformed", errorMessage: unusable }),
-        dict.chat.compactionDegradedHint(unusable),
-      ],
-      // Too little room: what to correct, and the provider's words when it refused.
-      [
-        settled({ status: "completed", errorCode: "rejected", errorMessage: refusal }),
-        dict.chat.compactionRoomHint(refusal),
-      ],
-      // A summary cut off at the output limit: the reason is the harness's, so no one is quoted.
-      [
-        settled({
-          status: "completed",
-          errorCode: "output_truncated",
-          errorMessage: "the response stopped at the output limit (finish_reason: length)",
-        }),
-        dict.chat.compactionRoomHint(),
-      ],
-    ] as const;
-    for (const [html, hint] of cases) {
+    const truncated = "the response stopped at the output limit (finish_reason: length)";
+    const unusable = "the response contained no usable summary";
+    const keyRefused = "401 invalid x-api-key";
+    const odd = "something nobody has words for";
+    const rows = {
+      refused: settled({ status: "completed", errorCode: "rejected", errorMessage: refusal }),
+      truncated: settled({
+        status: "completed",
+        errorCode: "output_truncated",
+        errorMessage: truncated,
+      }),
+      unusable: settled({ status: "completed", errorCode: "malformed", errorMessage: unusable }),
+      keyRefused: settled({ status: "completed", errorCode: "auth", errorMessage: keyRefused }),
+      odd: settled({ status: "completed", errorCode: "brand_new_code", errorMessage: odd }),
+    };
+    const lines = Object.fromEntries(
+      Object.entries(rows).map(([name, html]) => [name, markLines(html)!]),
+    ) as Record<keyof typeof rows, string[]>;
+    const said = {
+      refused: refusal,
+      truncated,
+      unusable,
+      keyRefused,
+      odd,
+    } as const;
+    for (const name of Object.keys(rows) as (keyof typeof rows)[]) {
+      const html = rows[name];
+      // Still a completion, titled as one.
       expect(html).toContain(dict.chat.compactionDone("summarize"));
-      expect(html).toContain(`aria-label="${attribute(hint)}"`);
-      expect(html).toContain(`data-tooltip="${attribute(hint)}"`);
-      // Nothing is written into the row itself: no reason line under the title.
-      expect(html).not.toContain(attribute(dict.chat.compactionFailed("fatal", refusal)));
+      // The error's own words lead, on the first line, and nowhere else: not in a reason line
+      // under the title, and not again further down the mark.
+      expect(lines[name][0]!.endsWith(said[name])).toBe(true);
+      expect(lines[name].slice(1).some((line) => line.includes(said[name]))).toBe(false);
+      expect(count(html, said[name])).toBe(2);
+      // Then what was done, the same whatever the cause.
+      expect(lines[name][1]).toBe(lines.unusable[1]);
     }
-    expect(cases[1][0]).toContain(attribute(refusal));
-    expect(cases[2][0]).not.toContain("finish_reason");
+    // The cause in words comes before them, with the HTTP status their words name.
+    expect(lines.refused[0]!.length).toBeGreaterThan(refusal.length);
+    expect(lines.refused[0]).toContain("HTTP 400");
+    expect(lines.keyRefused[0]).toContain("HTTP 401");
+    expect(lines.truncated[0]!.length).toBeGreaterThan(truncated.length);
+    expect(lines.unusable[0]!.length).toBeGreaterThan(unusable.length);
+    // A code with no words for it shows the error's words alone.
+    expect(lines.odd[0]).toBe(odd);
+    // Short of room — a refusal, or a summary cut off at the output limit — a third line says
+    // what to correct; no other cause has one.
+    expect(lines.refused).toHaveLength(3);
+    expect(lines.truncated).toHaveLength(3);
+    expect(lines.truncated[2]).toBe(lines.refused[2]);
+    for (const name of ["unusable", "keyRefused", "odd"] as const) {
+      expect(lines[name]).toHaveLength(2);
+    }
     // A full summary's mark stays the plain settled glyph, with nothing to name.
-    const plain = settled({ status: "completed", summaryText: "[summary]x" });
-    for (const [, hint] of cases) expect(plain).not.toContain(`aria-label="${attribute(hint)}"`);
+    expect(markLines(settled({ status: "completed", summaryText: "[summary]x" }))).toBeNull();
   });
 
   it("keeps a failed row for a compaction whose next context could not be opened, and an old Trace's abandoned ones read as before", () => {

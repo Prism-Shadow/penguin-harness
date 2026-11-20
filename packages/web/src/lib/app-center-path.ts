@@ -5,6 +5,15 @@
  */
 export const APP_CENTER_PATH = "/apps";
 
+/** Machine ids and Agent ids are opaque; local links keep their original key. */
+export function locatedAppKey(
+  agentId: string,
+  workbenchId: string,
+  machineId?: string | null,
+): string {
+  return `${machineId ? machineId + ":" : ""}${agentId}/${workbenchId}`;
+}
+
 /** The App Center with one app (`<agentId>/<workbenchId>`) open in its window. */
 export function appWindowPath(appId: string): string {
   return `${APP_CENTER_PATH}?${new URLSearchParams({ app: appId })}`;

@@ -1,7 +1,6 @@
 /*
- * The showcase family: the cover, the cover card and its grid, the selected carousel, a
- * product page's parts, and the ranking beside the grid. One look for the Web App's plugin
- * market and the public site's.
+ * The showcase family: the cover, the cover card and its grid, the selected carousel, and a
+ * product page's parts. One look for the Web App's plugin market and the public site's.
  *
  * Palette-agnostic on purpose, like the Markdown table sheet: every colour, radius and text
  * rung reads a `--showcase-*` custom property, falling back to a tint of the text's own ink
@@ -17,7 +16,7 @@
  *   --showcase-surface / -surface-muted     a card's fill; a set-apart block's
  *   --showcase-line / -line-muted / -line-strong / -line-w
  *   --showcase-fg / -fg-muted               a title's ink; a description's
- *   --showcase-accent                       the slide on show's bar; a top-three rank
+ *   --showcase-accent                       the slide on show's bar
  *   --showcase-radius / -radius-sm          a card, a cover on its own; a thumbnail, a control
  *   --showcase-text-sm / -text-xs           the body and the small rung
  *   --showcase-font-mono                    a package name
@@ -179,13 +178,23 @@
   flex-direction: column;
   padding: 0.75rem 0.875rem 0.875rem;
 }
-.showcase-card-open:not(:last-child) > .showcase-card-body {
+/* A foot carries its own top padding; a bar or a version chip under the opener does not. */
+.showcase-card-open:has(+ .showcase-card-foot) > .showcase-card-body {
   padding-bottom: 0;
 }
 .showcase-card-title {
   overflow: hidden;
   font-size: 0.9375rem;
   font-weight: 600;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.showcase-card-origin {
+  display: block;
+  overflow: hidden;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  font-size: var(--showcase-text-xs, 0.75rem);
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -244,6 +253,68 @@
   align-items: center;
   gap: 0.25rem;
 }
+/* The bar: text actions across the card's whole width, in equal columns split by a line. */
+.showcase-card-bar {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  margin-top: auto;
+  border-top: var(--showcase-line-w, 1px) solid
+    var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
+}
+.showcase-card-bar > button {
+  min-height: 2.6rem;
+  padding: 0.45rem 0.4rem;
+  border: 0;
+  background: transparent;
+  color: var(--showcase-fg, inherit);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.showcase-card-bar > button + button {
+  border-inline-start: var(--showcase-line-w, 1px) solid
+    var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
+}
+.showcase-card-bar > button:not(:disabled):hover {
+  background: var(--showcase-surface-muted, color-mix(in srgb, currentColor 6%, transparent));
+  color: var(--showcase-accent, currentColor);
+}
+.showcase-card-bar > button:focus-visible {
+  outline: 2px solid var(--showcase-accent, currentColor);
+  outline-offset: -3px;
+}
+.showcase-card-bar > button:disabled {
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+}
+.showcase-card-bar small {
+  display: block;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  font-size: var(--showcase-text-xs, 0.75rem);
+  font-weight: 400;
+}
+/* The version: a chip at the card's top end corner, over the cover; the opener takes its clicks. */
+.showcase-card-version {
+  position: absolute;
+  inset-block-start: 0.375rem;
+  inset-inline-end: 0.5rem;
+  max-width: calc(100% - 1rem);
+  overflow: hidden;
+  padding: 0.1rem 0.4rem;
+  border: var(--showcase-line-w, 1px) solid
+    var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
+  border-radius: var(--showcase-radius-sm, 0.5rem);
+  background: var(--showcase-surface, Canvas);
+  color: var(--showcase-fg, inherit);
+  font-family: var(--showcase-font-mono, ui-monospace, monospace);
+  font-size: var(--showcase-text-xs, 0.75rem);
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .showcase-skeleton {
   display: block;
   height: 0.75rem;
@@ -271,7 +342,7 @@
     gap: 0.75rem;
     padding: 0.75rem 0.75rem 0;
   }
-  .showcase-grid > .showcase-card > .showcase-card-open:last-child {
+  .showcase-grid > .showcase-card > .showcase-card-open:not(:has(+ .showcase-card-foot)) {
     padding-bottom: 0.75rem;
   }
   .showcase-grid > .showcase-card > .showcase-card-open > .showcase-cover {
@@ -288,6 +359,13 @@
   }
   .showcase-grid > .showcase-card > .showcase-card-foot {
     padding: 0.5rem 0.75rem 0.75rem;
+  }
+  /* Lying down, the chip stands over the text: the title starts under it. */
+  .showcase-grid
+    > .showcase-card:has(> .showcase-card-version)
+    > .showcase-card-open
+    > .showcase-card-body {
+    padding-top: 1.125rem;
   }
 }
 
@@ -322,6 +400,12 @@
 .showcase-grid[data-layout="list"] .showcase-card-foot {
   padding: 0 0.25rem 0.625rem;
 }
+.showcase-grid[data-layout="list"]
+  > .showcase-card:has(> .showcase-card-version)
+  > .showcase-card-open
+  > .showcase-card-body {
+  padding-top: 1.125rem;
+}
 @container showcase-grid (min-width: 40rem) {
   .showcase-grid[data-layout="list"] > .showcase-card {
     flex-direction: row;
@@ -332,6 +416,12 @@
     width: 36%;
     padding: 0.625rem 0.25rem;
   }
+}
+/* A list row with a bar keeps the bar under it, at every width. */
+.showcase-grid[data-layout="list"] > .showcase-card:has(> .showcase-card-bar) {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
 }
 /* --------------------------------------------------------------- carousel */
 
@@ -532,6 +622,15 @@
 }
 .showcase-rail-bar[data-running] {
   animation: showcase-stay linear both;
+}
+.showcase-position {
+  margin-left: auto;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--showcase-fg-muted, currentColor);
+}
+.showcase-position + .showcase-controls {
+  margin-left: 0;
 }
 .showcase-controls {
   display: flex;
@@ -848,206 +947,11 @@
   text-align: end;
 }
 
-/* ---------------------------------------------------------------- ranking */
-
-.showcase-ranking {
-  min-width: 0;
-  padding: 1rem 1rem 0.25rem;
-  border: var(--showcase-line-w, 1px) solid
-    var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
-  border-radius: var(--showcase-radius, 0.75rem);
-  background: var(--showcase-surface, transparent);
-  color: var(--showcase-fg, inherit);
-}
-/* The heading's line: the title, and a note about the figures at its end, which drops under the
-   title when the two do not fit side by side. */
-.showcase-ranking-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.125rem 0.75rem;
-}
-.showcase-ranking-title {
-  margin: 0;
-  font-size: 0.9375rem;
-  font-weight: 600;
-}
-.showcase-ranking-note {
-  position: relative;
-  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
-  font-size: var(--showcase-text-xs, 0.75rem);
-  font-weight: 400;
-}
-.showcase-ranking-tabs {
-  display: flex;
-  gap: 1.25rem;
-  margin-top: 0.5rem;
-  border-bottom: var(--showcase-line-w, 1px) solid
-    var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
-}
-.showcase-ranking-tab {
-  margin-bottom: calc(-1 * var(--showcase-line-w, 1px));
-  padding: 0.375rem 0 0.5rem;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
-  font: inherit;
-  font-size: var(--showcase-text-sm, 0.8125rem);
-  cursor: pointer;
-  transition: color var(--showcase-dur, 150ms) ease-out;
-}
-.showcase-ranking-tab:hover,
-.showcase-ranking-tab[aria-selected="true"] {
-  color: var(--showcase-fg, inherit);
-}
-.showcase-ranking-tab[aria-selected="true"] {
-  border-bottom-color: var(--showcase-fg, currentColor);
-  font-weight: 600;
-}
-.showcase-ranking-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-/* The title's opener stretches over its row (`::after`), so the rank and the thumbnail open it
-   too; the tags and the figure stand above it, for their own hover hints — positioned and later
-   in the row, they paint over the stretched box without a z-index of their own. */
-.showcase-ranking-row {
-  position: relative;
-  display: grid;
-  grid-template-columns: 1.375rem 4.25rem minmax(0, 1fr);
-  align-items: start;
-  gap: 0.625rem;
-  padding: 0.75rem 0;
-  border-bottom: var(--showcase-line-w, 1px) solid
-    var(--showcase-line-muted, color-mix(in srgb, currentColor 8%, transparent));
-}
-.showcase-ranking-row:last-child {
-  border-bottom: 0;
-}
-.showcase-ranking-rank {
-  display: grid;
-  height: 1.375rem;
-  /* Centred on the thumbnail (4.25rem wide, 16:9). */
-  margin-top: 0.5rem;
-  place-items: center;
-  border-radius: var(--showcase-radius-sm, 0.5rem);
-  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
-  font-size: var(--showcase-text-xs, 0.75rem);
-  font-variant-numeric: tabular-nums;
-}
-.showcase-ranking-rank[data-top] {
-  background: color-mix(in oklab, var(--showcase-accent, currentColor) 14%, transparent);
-  color: var(--showcase-accent, currentColor);
-  font-weight: 600;
-}
-.showcase-ranking-thumb > .showcase-cover {
-  border: var(--showcase-line-w, 1px) solid
-    var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
-  border-radius: var(--showcase-radius-sm, 0.5rem);
-}
-.showcase-ranking-text {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 0.375rem;
-}
-.showcase-ranking-open {
-  overflow: hidden;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  font-size: var(--showcase-text-sm, 0.8125rem);
-  font-weight: 600;
-  line-height: 1.4;
-  text-align: start;
-  text-decoration: none;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.showcase-ranking-open::after {
-  position: absolute;
-  inset: 0;
-  border-radius: var(--showcase-radius-sm, 0.5rem);
-  content: "";
-}
-.showcase-ranking-row:hover .showcase-ranking-open {
-  text-decoration: underline;
-}
-.showcase-ranking-open:focus-visible {
-  outline: none;
-}
-.showcase-ranking-open:focus-visible::after {
-  outline: 2px solid var(--showcase-accent, currentColor);
-}
-/* The figure keeps to the tags' line while both fit, at its end, and takes a line of its own
-   under them when a long tag leaves it no room. */
-.showcase-ranking-meta {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.25rem 0.5rem;
-}
-.showcase-ranking-tags {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: var(--showcase-text-xs, 0.75rem);
-}
-.showcase-ranking-count {
-  position: relative;
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 0.25rem;
-  margin-left: auto;
-  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
-  font-size: var(--showcase-text-xs, 0.75rem);
-  font-variant-numeric: tabular-nums;
-}
-/* Words for assistive technology alone: the full figure behind a shortened one. */
-.showcase-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-/* The ranking's place: beside the grid where the split holds a grid of two card columns and the
-   panel (2 × 17rem and the grid's 1rem gap, the split's 1.25rem gap, the panel's 17rem), under
-   it otherwise. */
-.showcase-split {
-  container: showcase-split / inline-size;
-}
-.showcase-split-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1.25rem;
-}
-@container showcase-split (min-width: 53.5rem) {
-  .showcase-split-grid {
-    grid-template-columns: minmax(0, 1fr) 17rem;
-    align-items: start;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .showcase-cover > img,
   .showcase-card,
   .showcase-rail-item,
-  .showcase-control,
-  .showcase-ranking-tab {
+  .showcase-control {
     transition: none;
   }
   .showcase-turn,

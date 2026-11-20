@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Button,
   Input,
@@ -9,7 +9,6 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
 import {
   PROJECT_ID_MAX_LENGTH,
   PROJECT_SUFFIX_PATTERN,
@@ -18,6 +17,7 @@ import {
 import { useProject } from "../../../state/project";
 import { useAuth } from "../../../state/auth";
 import { SemanticIdField } from "../../semantic-id";
+import { failureNode } from "../../../lib/failure";
 
 export function CreateProjectDialog({
   open,
@@ -46,7 +46,7 @@ export function CreateProjectForm({
   const form = useFormDraft({ name: "", idInput: "" });
   const { name, idInput } = form.draft;
   /** What the server refused about the id (a duplicate, say); cleared by the next edit of it. */
-  const [refused, setRefused] = useState<string | undefined>(undefined);
+  const [refused, setRefused] = useState<ReactNode>(undefined);
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
@@ -76,7 +76,7 @@ export function CreateProjectForm({
       discardUnsaved(form.scope);
       onCreated(res.project.projectId);
     } catch (e) {
-      setRefused(apiErrorText(e));
+      setRefused(failureNode(e, { what: "a Project could not be created" }));
     } finally {
       setBusy(false);
     }

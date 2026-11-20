@@ -206,6 +206,8 @@ export interface BodyLoad {
   doneBytes: number;
   totalBytes: number;
   error: string | null;
+  /** The failed read's error, kept beside its words so the note offers its report. */
+  cause?: unknown;
 }
 
 export interface ThinkingItem {
@@ -368,7 +370,12 @@ export interface ReconnectItem extends RequestFailureFacts {
   arrivedAtMs?: number;
 }
 
-export interface CompactionItem {
+/**
+ * A compaction row. It also keeps what a failed request's details report (`RequestFailureFacts`,
+ * set at an end that carries the error pair or did not complete): a refusal hand-off's pair is
+ * the refused request's, and the composer's notice opens its details.
+ */
+export interface CompactionItem extends RequestFailureFacts {
   kind: "compaction";
   id: number;
   reason: CompactionReason;
@@ -1957,12 +1964,16 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       }
       const degraded =
         p.status === "completed" && (p.error_code !== undefined || p.error_message !== undefined);
+      // An end that says something failed keeps what its details report: the model the closing
+      // context ran on (the next context's session_meta comes after this end) and the time.
+      const facts = degraded || p.status !== "completed" ? failureFacts(model, tsMs) : {};
       const item = findLastRunningCompaction(model);
       if (item) {
         item.running = false;
         item.status = p.status;
         if (p.error_code !== undefined) item.errorCode = p.error_code;
         if (p.error_message !== undefined) item.errorMessage = p.error_message;
+        Object.assign(item, facts);
         if (tsMs !== undefined && item.beginTsMs !== undefined) {
           item.durationMs = Math.max(0, tsMs - item.beginTsMs);
         }
@@ -2007,6 +2018,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           status: p.status,
           ...(p.error_code !== undefined ? { errorCode: p.error_code } : {}),
           ...(p.error_message !== undefined ? { errorMessage: p.error_message } : {}),
+          ...facts,
         };
         model.items.push(created);
       }

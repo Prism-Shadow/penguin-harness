@@ -42,7 +42,7 @@ import type {
   QQBindingResponse,
   QQTestResponse,
 } from "../src/api/types.js";
-import { ProjectsRepo } from "../src/db/repos/projects.js";
+import { ProjectsRepo } from "@prismshadow/penguin-library-project/repos/projects";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import {
   MESSAGING_APPROVAL_NOTICE,

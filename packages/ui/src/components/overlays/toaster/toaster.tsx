@@ -10,8 +10,8 @@
  *
  * A toast is a notice: each one renders through `NoticeStrip` as a button, so it carries the
  * `ui-notice` hook and the strip's tone colours, and a theme that restyles notices restyles toasts
- * with them. An error toast may carry a problem report (`toastError(text, { report })`, for an
- * error that is a defect rather than the person's to fix): it then holds two presses, its words
+ * with them. An error toast may carry a problem report (`toastError(text, { report })`, for a
+ * failure rather than a refusal: `isReportable`): it then holds two presses, its words
  * (dismiss) and 「[报告问题]」 after them, and stays a little longer so the second can be reached. The stack is portaled to the body on the `toast` layer, above dialogs and
  * drawers (`modal`) and their menus (`popover`), so a toast raised inside a dialog is still seen; the stack lets the pointer through and
  * only the toasts take it.
@@ -98,7 +98,7 @@ function push(kind: ToastKind, text: string, report?: ErrorReport | (() => Error
 }
 
 export interface ErrorToastOptions {
-  /** A serious error's problem report: the toast offers 「[报告问题]」. */
+  /** A failure's problem report: the toast offers 「[报告问题]」. */
   report?: ErrorReport | (() => ErrorReport);
 }
 

@@ -18,7 +18,8 @@
  *   connected now `extension_disconnected`.
  *
  * Import, history and clearing data belong to the built-in browser: on chrome they answer 405
- * `not_supported` (Chrome keeps its own).
+ * `not_supported` (Chrome keeps its own). The import may read through the user's connected
+ * extension, though: it hands over its Chrome's cookies once the user allows it in Chrome.
  */
 import { createHash } from "node:crypto";
 import type {
@@ -27,9 +28,11 @@ import type {
   BrowserBackendResponse,
   BuiltinBrowserExecResult,
   BuiltinBrowserHistoryEntry,
+  BuiltinBrowserImportNote,
   BuiltinBrowserImportRequest,
   BuiltinBrowserImportResult,
   BuiltinBrowserImportSource,
+  BuiltinBrowserImportSourcesResponse,
   BuiltinBrowserScanResult,
   BuiltinBrowserScreenshot,
   BuiltinBrowserServerEvent,
@@ -38,7 +41,7 @@ import type {
   BuiltinBrowserTab,
   BuiltinBrowserTabsResponse,
 } from "../api/types.js";
-import type { BrowserExtensionStore } from "../db/repos/browser-extensions.js";
+import type { BrowserExtensionStore } from "@prismshadow/penguin-library-machine/browser-extensions";
 import { HttpError } from "../http/errors.js";
 import { BrowserBackendRuntime } from "./backend-runtime.js";
 import type { BrowserTiming } from "./backend-runtime.js";
@@ -46,7 +49,15 @@ import { ExtensionHub } from "./extension-hub.js";
 import type { BrowserExtensionAdmission } from "./extension-hub.js";
 import type { ExtensionLinkTiming, ExtensionSocket } from "./extension-link.js";
 import { HistoryStore, historyFile, isWebUrl } from "./history.js";
+import {
+  EXTENSION_SOURCE_ID,
+  parseExtensionCookies,
+  readExtensionCookies,
+} from "./import/extension-cookies.js";
+import { normalizeDomains } from "./import/cookie-rules.js";
 import { listImportSources, readCookies, readHistory } from "./import/index.js";
+import type { CookieReadResult } from "./import/index.js";
+import { skippedCount } from "./import/skips.js";
 import { BrowserUnavailableError } from "./link.js";
 import { SettingsStore, settingsFile } from "./settings.js";
 import { ShellLink } from "./shell-link.js";
@@ -95,6 +106,12 @@ function importError(err: unknown, sourceId: string, what: "cookies" | "history"
   }
   return new HttpError(422, "import_failed", `The ${what} could not be read: ${messageOf(err)}`);
 }
+
+/**
+ * How long a `read-cookies` may wait: the extension asks the user in Chrome and gives up after two
+ * minutes, then reads and sends the cookies.
+ */
+const EXTENSION_COOKIES_TIMEOUT_MS = 150_000;
 
 function invalidUrl(url: unknown): HttpError {
   return new HttpError(
@@ -466,38 +483,55 @@ export class BuiltinBrowser {
 
   // --- the built-in browser's import, history, data -------------------------------
 
-  async listImportSources(actor: Actor): Promise<BuiltinBrowserImportSource[]> {
+  /**
+   * GET /import/sources: this computer's browser profiles, then the user's Chrome extension while
+   * it is connected — or why it is not listed.
+   */
+  async listImportSources(actor: Actor): Promise<BuiltinBrowserImportSourcesResponse> {
     this.builtinOnly(actor, "Importing from another browser");
-    return await this.importer.listImportSources();
+    const sources = await this.importer.listImportSources();
+    const extension = this.extensionSource(actor);
+    if (extension === null) return { sources };
+    return "source" in extension
+      ? { sources: [...sources, extension.source] }
+      : { sources, extension: extension.reason };
   }
 
   /**
    * POST /import: cookies go into the browser's session through the shell, history into the
    * history file. With neither flag both are imported. `sourceId` may also name just a
-   * browser (`chrome`), meaning its first profile.
+   * browser (`chrome`), meaning its first profile on this computer.
    */
   async importFrom(
     actor: Actor,
     req: BuiltinBrowserImportRequest,
   ): Promise<BuiltinBrowserImportResult> {
     this.builtinOnly(actor, "Importing from another browser");
-    const sources = await this.importer.listImportSources();
-    const source =
-      sources.find((s) => s.id === req.sourceId) ?? sources.find((s) => s.browser === req.sourceId);
+    const extension = req.sourceId === EXTENSION_SOURCE_ID ? this.extensionSource(actor) : null;
+    let source: BuiltinBrowserImportSource | undefined;
+    if (extension !== null) {
+      if (!("source" in extension)) throw new BrowserUnavailableError(extension.reason);
+      source = extension.source;
+    } else {
+      const sources = await this.importer.listImportSources();
+      source =
+        sources.find((s) => s.id === req.sourceId) ??
+        sources.find((s) => s.browser === req.sourceId);
+    }
     if (source === undefined) throw sourceNotFound(req.sourceId);
     const both = req.cookies === undefined && req.history === undefined;
-    const result: BuiltinBrowserImportResult = { sourceId: source.id, warnings: [] };
+    const result: BuiltinBrowserImportResult = {
+      sourceId: source.id,
+      browserName: source.browserName,
+      notes: [],
+    };
     if (both || req.cookies === true) {
       const runtime = this.shellRuntime();
       await runtime.ready();
-      let read: Awaited<ReturnType<Importer["readCookies"]>>;
-      try {
-        read = await this.importer.readCookies(source, {
-          ...(req.domains !== undefined ? { domains: req.domains } : {}),
-        });
-      } catch (err) {
-        throw importError(err, source.id, "cookies");
-      }
+      const read =
+        source.via === "extension"
+          ? await this.readExtensionCookies(actor, req.domains)
+          : await this.readProfileCookies(source, req.domains);
       let written = { set: 0, failed: 0, errors: [] as string[] };
       if (read.cookies.length > 0) {
         written = (await runtime.request(
@@ -512,28 +546,108 @@ export class BuiltinBrowser {
       result.cookies = {
         found: read.found,
         imported: written.set,
-        skipped: read.skipped,
+        skipped: skippedCount(read.skips),
         failed: written.failed,
+        skips: read.skips,
       };
-      result.warnings.push(...read.warnings);
+      result.notes.push(...read.notes);
       if (written.failed > 0) {
-        const named = written.errors.slice(0, 3).join("; ");
-        result.warnings.push(
-          `${written.failed} cookies could not be set in the browser${named !== "" ? `: ${named}` : "."}`,
-        );
+        result.notes.push({
+          code: "cookies_not_set",
+          count: written.failed,
+          errors: written.errors.slice(0, 3),
+        });
       }
     }
     if (both || req.history === true) {
-      let read: Awaited<ReturnType<Importer["readHistory"]>>;
-      try {
-        read = await this.importer.readHistory(source);
-      } catch (err) {
-        throw importError(err, source.id, "history");
-      }
-      result.history = { found: read.entries.length, imported: this.history.merge(read.entries) };
-      result.warnings.push(...read.warnings);
+      result.notes.push(...(await this.importHistory(source, result)));
     }
     return result;
+  }
+
+  /** A profile's cookies, read from its files on this computer. */
+  private async readProfileCookies(
+    source: BuiltinBrowserImportSource,
+    domains: string[] | undefined,
+  ): Promise<CookieReadResult> {
+    try {
+      return await this.importer.readCookies(source, {
+        ...(domains !== undefined ? { domains } : {}),
+      });
+    } catch (err) {
+      throw importError(err, source.id, "cookies");
+    }
+  }
+
+  /**
+   * The cookies of the user's Chrome, through its extension: it asks the user in Chrome first, and
+   * a refusal there answers 403 `import_declined`.
+   */
+  private async readExtensionCookies(
+    actor: Actor,
+    domains: string[] | undefined,
+  ): Promise<CookieReadResult> {
+    const runtime = this.extensions?.runtimeFor(actor.userId) ?? null;
+    if (runtime === null) throw new BrowserUnavailableError("extension_disconnected");
+    const reply = await runtime.request({ op: "read-cookies" }, EXTENSION_COOKIES_TIMEOUT_MS);
+    const cookies = parseExtensionCookies(reply);
+    if (cookies === null) {
+      throw new HttpError(
+        422,
+        "import_failed",
+        "The cookies could not be read: Chrome's extension answered with something other than a list of cookies.",
+      );
+    }
+    return readExtensionCookies(cookies, normalizeDomains(domains));
+  }
+
+  /** Merges the source's history into the store; what it reports, as notes. */
+  private async importHistory(
+    source: BuiltinBrowserImportSource,
+    result: BuiltinBrowserImportResult,
+  ): Promise<BuiltinBrowserImportNote[]> {
+    // The extension hands over cookies only.
+    if (source.via === "extension") return [{ code: "no_history" }];
+    let read: Awaited<ReturnType<Importer["readHistory"]>>;
+    try {
+      read = await this.importer.readHistory(source);
+    } catch (err) {
+      throw importError(err, source.id, "history");
+    }
+    result.history = { found: read.entries.length, imported: this.history.merge(read.entries) };
+    return read.notes;
+  }
+
+  /**
+   * The user's connected Chrome extension as an import source, or why it is not one now; null on
+   * a server that offers no Chrome backend.
+   */
+  private extensionSource(
+    actor: Actor,
+  ):
+    | { source: BuiltinBrowserImportSource }
+    | { reason: NonNullable<BuiltinBrowserImportSourcesResponse["extension"]> }
+    | null {
+    const hub = this.extensions;
+    if (hub === null) return null;
+    const reason = hub.unavailability(actor.userId);
+    if (reason === "extension_not_paired" || reason === "extension_disabled") return { reason };
+    if (reason !== null || hub.runtimeFor(actor.userId) === null) {
+      return { reason: "extension_disconnected" };
+    }
+    const name = hub.info(actor.userId).extension?.name ?? "Chrome";
+    return {
+      source: {
+        id: EXTENSION_SOURCE_ID,
+        browser: "chrome",
+        browserName: "Chrome",
+        profile: name,
+        profileName: name,
+        hasCookies: true,
+        hasHistory: false,
+        via: "extension",
+      },
+    };
   }
 
   searchHistory(actor: Actor, query: string, limit: number): BuiltinBrowserHistoryEntry[] {

@@ -180,6 +180,9 @@ export function LayoutBoard() {
           <span className="lib-caption">{t.navRail}</span>
           <div className="lib-box" data-narrow>
             <NavList label={t.navLabel} className="p-3">
+              {/* The list's primary action heads its rows: a row like the rest in most themes,
+                  the hero button where a pack draws one. */}
+              <NavRow primary label={t.navPrimary} glyph={ICONS.penLine} />
               {NAV_PAGES.map((page) => (
                 <NavRow
                   key={page.key}

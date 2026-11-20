@@ -3,11 +3,11 @@
  * previewed. The generated cover in every hue with every motif, each with a shipped plugin's own
  * icon; the four motifs with the logo on the tile (a plugin without an icon); a cover's states —
  * a picture still on its way (the field in the picture's tone), one that loaded, one that failed
- * (the generated cover takes over); cover cards in their grid: short words, overlong words, the
- * full foot, a foot without controls, and the placeholder; the selected carousel with three
- * slides; the ranking beside the grid, and on its own with the note it carries while its figures
- * are placeholders; and a product page's parts. The public sites' rendering of the same modules is the
- * 公开站点 board's.
+ * (the generated cover takes over); cover cards in their grid: short words, overlong words with
+ * the machine they came from, the full foot, a foot without controls, the Web App market's card
+ * (its version chip and its bar of text actions), and the placeholder; the selected carousel with three
+ * slides, with its thumbnail rail and with its controls alone; and a product page's parts. The
+ * public sites' rendering of the same modules is the 公开站点 board's.
  *
  * The picture still on its way never finishes: it is a lazy image held out of layout
  * (library.css), so the browser never fetches it and the cover stays in its loading state.
@@ -37,11 +37,7 @@ import {
   useShowcaseLayout,
   ShowcaseCarousel,
   ShowcaseGrid,
-  ShowcaseRanking,
-  ShowcaseSplit,
   StatusMark,
-  type CoverHue,
-  type RankingBoard,
 } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
@@ -59,21 +55,6 @@ import {
 
 const BASE = import.meta.env.BASE_URL;
 const PACKAGE = "@penguinharness/penguin-support";
-
-/** The ranking specimen's figures: made up, all-time installs in the order of the hues. */
-const INSTALLS = [12840, 9620, 7310, 5480, 4210, 3390, 2875, 1960, 1240];
-/** The risers: a hue's index and its installs this week, most first. */
-const WEEKLY: ReadonlyArray<readonly [number, number]> = [
-  [4, 860],
-  [7, 610],
-  [1, 430],
-  [0, 390],
-  [6, 270],
-  [2, 180],
-  [3, 150],
-  [5, 90],
-  [8, 40],
-];
 
 function Specimen({ caption, children }: { caption: string; children: ReactNode }) {
   return (
@@ -109,42 +90,6 @@ export function ShowcaseBoard() {
         }
       : {}),
   }));
-  const compact = new Intl.NumberFormat(state.lang === "zh" ? "zh-CN" : "en", {
-    notation: "compact",
-  });
-  const hues = COVER_HUES as readonly CoverHue[];
-  const rankingEntry = (index: number, figure: number, words: (n: string) => string) => {
-    const hue = hues[index]!;
-    return {
-      key: HUE_PLUGINS[hue].name,
-      thumb: (
-        <Cover
-          seed={HUE_PLUGINS[hue].name}
-          hue={hue}
-          icon={plugIcon(HUE_PLUGINS[hue].svg)}
-          logo={LOGO}
-        />
-      ),
-      title: t.rankingNames[index]!,
-      tags: index % 3 === 0 ? [tag(t.tagCategory), tag(t.tagBuiltin)] : [tag(t.tagCategory)],
-      count: compact.format(figure),
-      countLabel: words(figure.toLocaleString(state.lang === "zh" ? "zh-CN" : "en")),
-    };
-  };
-  const rankingBoards: RankingBoard[] = [
-    {
-      key: "popular",
-      label: t.popular,
-      mark: <GlyphIcon d={ICONS.download} size={ICON_SIZE.inlineGlyph} />,
-      entries: INSTALLS.map((n, i) => rankingEntry(i, n, t.installCount)),
-    },
-    {
-      key: "rising",
-      label: t.rising,
-      mark: <GlyphIcon d={ICONS.arrowUpRight} size={ICON_SIZE.inlineGlyph} />,
-      entries: WEEKLY.map(([i, n]) => rankingEntry(i, n, t.weeklyCount)),
-    },
-  ];
   return (
     <div className="gf-board">
       <BoardGroup title={t.generated} aside={t.generatedHint}>
@@ -234,6 +179,7 @@ export function ShowcaseBoard() {
             cover={<Cover seed="agent-company" hue="amber" logo={LOGO} />}
             title={t.longTitle}
             titleHint="@penguinharness/agent-company"
+            origin={t.origin}
             description={t.longDescription}
           />
           <CoverCard
@@ -279,6 +225,23 @@ export function ShowcaseBoard() {
               </MetaLine>
             }
           />
+          <CoverCard
+            cover={
+              <Cover
+                seed="use-bento-slides"
+                hue="orange"
+                icon={plugIcon(ICONS_BY_PLUGIN.bento)}
+                logo={LOGO}
+              />
+            }
+            title={t.barTitle}
+            description={t.barDescription}
+            version="v0.3.1"
+            bar={[
+              { key: "install", label: t.barInstall, note: t.barInstallNote },
+              { key: "quick", label: t.quickStart, hint: t.barQuickHint, disabled: true },
+            ]}
+          />
           <CoverCardSkeleton />
         </ShowcaseGrid>
       </BoardGroup>
@@ -295,35 +258,16 @@ export function ShowcaseBoard() {
           eyebrow={t.eyebrow}
           labels={t.carouselLabels}
         />
-      </BoardGroup>
-
-      <BoardGroup title={t.ranking} aside={t.rankingHint}>
-        <ShowcaseSplit aside={<ShowcaseRanking title={t.rankingTitle} boards={rankingBoards} />}>
-          <ShowcaseGrid>
-            <CoverCard
-              cover={
-                <Cover seed="goal" hue="green" icon={plugIcon(ICONS_BY_PLUGIN.goal)} logo={LOGO} />
-              }
-              title={t.shortTitle}
-              description={t.shortDescription}
-              tags={[tag(t.tagSelected), tag(t.tagCategory)]}
-            />
-            <CoverCard
-              cover={<Cover seed="data-analysis" hue="slate" logo={LOGO} />}
-              title={t.plainTitle}
-              description={t.plainDescription}
-              tags={[tag(t.tagBuiltin)]}
-            />
-          </ShowcaseGrid>
-        </ShowcaseSplit>
-        <div className="mt-6 max-w-[17rem]">
-          <Specimen caption={t.rankingNoteCaption}>
-            <ShowcaseRanking
-              title={t.rankingTitle}
-              note={t.rankingNote}
-              noteHint={t.rankingNoteHint}
-              boards={rankingBoards}
-              limit={3}
+        <div className="mt-6">
+          <Specimen caption={t.carouselControlsCaption}>
+            <ShowcaseCarousel
+              navigation="controls"
+              slides={sampleSlides(t, state.lang, () => (
+                <Button variant="primary">{t.viewDetails}</Button>
+              ))}
+              label={t.carouselLabel}
+              eyebrow={t.eyebrow}
+              labels={t.carouselLabels}
             />
           </Specimen>
         </div>
