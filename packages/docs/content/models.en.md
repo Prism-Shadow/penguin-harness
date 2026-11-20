@@ -582,7 +582,6 @@ Gemini 4 Argon is preset in Google, Penguin Go and OpenRouter, with a shared inp
 ### Prices and promotions
 
 - **Three price buckets.** Each model records `cache_read`, `cache_write` and `output` prices in USD per million Tokens. The cost center bills usage against them.
-- **Thinking price.** A model whose seller bills thinking apart from its other output (Gemini Omni's video thinking) also records a `thoughts` price. It applies to the requests that report their thinking tokens apart, which are the plugins' tool requests; everything else bills thinking at the `output` price.
 - **Rows with no price.** The pricing block can be absent altogether, which records "nobody has looked this vendor's price up" rather than "free": such a row shows no price badge on the **Models** page, and the cost center reports its usage as uncosted. ModelScope's preset rows are the catalog's only ones — ModelScope bills for api-inference, but its model pages are client-rendered and carry no read-able rate. Three zeros would be worse than absent: they would read as the free tier and badge a billed gateway "Free".
 - **Base tier only.** Where a vendor's prices step up with input size, the catalog records the base tier. MiniMax M3 records MiniMax's standard pay-as-you-go tier at 512K input tokens or below; above that, every rate doubles, and the priority tier is 1.5x, so long-context and priority usage is underestimated. OpenAI (above 272K), Gemini 3.1 Pro (above 200K) and Claude Haiku 5.5 (above 100K, where every rate is 5x) follow the same convention.
 - **DeepSeek off-peak.** The direct DeepSeek rows record the official peak prices and declare DeepSeek's off-peak schedule: outside Beijing time 9:00–12:00 and 14:00–18:00 on weekdays, every bucket is halved. The **Models** page shows a `50% off` tag during those hours, and the cost center bills at that rate.
@@ -620,7 +619,7 @@ Each `ModelEntry` has these fields:
 | `display_name` | Display name |
 | `vision` | Whether image input is supported, default true |
 | `fast_mode` | Optional fast mode (off by default): opts the model's Session requests into the provider's faster serving tier at premium pricing. Only `true` is ever persisted — omitting the field on a Web full-table save clears it. Models without a fast tier reject requests carrying it (see [Fast mode](#fast-mode)) |
-| `pricing` | Three price buckets (unit `usd_per_mtok`, USD per million tokens): `cache_read` / `cache_write` / `output`; optionally `thoughts`, a separate thinking price |
+| `pricing` | Three price buckets (unit `usd_per_mtok`, USD per million tokens): `cache_read` / `cache_write` / `output` |
 | `api_key` / `base_url` | The model's own key and endpoint, both optional; when blank, the model uses its group's (the key only when it reaches the model's endpoint), then its client's environment variables: the key with no base URL or the client's default endpoint, the base URL with none (see [Set API keys](#set-api-keys)) |
 
 The file also holds `default_model`, optionally `vision_model`, the proxy vision model, and each group's settings in `[providers.<group>]` (see [Group settings](#group-settings) and [Project config](/configuration#project-config)). A new Project's file already holds the settings of every built-in group the catalog gives an endpoint or protocol. File shape (illustrative):

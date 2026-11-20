@@ -140,8 +140,6 @@ function fromLocal(entry: ModelEntry): ModelUpdateEntry {
             cacheRead: entry.pricing.cache_read,
             cacheWrite: entry.pricing.cache_write,
             output: entry.pricing.output,
-            // A machine on an older build takes the three buckets and drops this.
-            ...(entry.pricing.thoughts !== undefined ? { thoughts: entry.pricing.thoughts } : {}),
           },
         }
       : {}),

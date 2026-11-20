@@ -114,7 +114,7 @@ Gemini 4 Argon uses `model_id = "gemini-4-argon"` in the `google` and `penguin-g
 | `vision` | boolean | `true` | Whether the model accepts image input |
 | `max_tokens` | number | The agent's `model.max_tokens` | Per-model max output Tokens; overrides the agent's `model.max_tokens` when set |
 | `fast_mode` | boolean | Off | Per-model fast mode (the provider's premium faster serving tier) |
-| `pricing` | table | — | Three price buckets, `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`), and an optional `thoughts` rate for a model that bills thinking apart from its other output. Always the list price |
+| `pricing` | table | — | Three price buckets, `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`). Always the list price |
 | `api_key` | string | The group key, where it reaches the entry; with none, the client's own environment variable when no `base_url` resolves or it is the client's default endpoint | Inline credential, this model's own |
 | `base_url` | string | The group's; with neither, the client's default endpoint | Custom base URL, this model's own |
 | `created_at` | string | — | When `api_key` was written (ISO 8601); a display field maintained by the interface layer |

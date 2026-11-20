@@ -45,9 +45,7 @@
  * - cache_read: the vendor's "cache hit" price;
  * - cache_write: the vendor's "cache write" price (e.g. Anthropic uses 1.25 x input); vendors
  *   without a separate cache-write fee use the standard input price;
- * - output: output price (thinking + reply);
- * - thoughts (optional): a thinking rate, only on a row whose seller bills thinking apart from
- *   its other output (Gemini Omni's video); absent, thinking bills at `output`.
+ * - output: output price (thinking + reply).
  * OpenAI charges extra for >272K input, Gemini 3.1 Pro for >200K input, MiniMax M3 doubles
  * every rate above 512K input, and Claude Haiku 5.5 quintuples every rate above 100K; this
  * catalog records their base tier (the cost center uses a single rate, so long-context usage
@@ -702,23 +700,8 @@ function cny(cacheRead: number, cacheWrite: number, output: number): ModelPricin
   return usd(r(cacheRead), r(cacheWrite), r(output));
 }
 
-/**
- * `thoughts` is a thinking rate for a model that bills thinking apart from its other output;
- * omitted, thinking is output (the convention every chat row follows).
- */
-function usd(
-  cacheRead: number,
-  cacheWrite: number,
-  output: number,
-  thoughts?: number,
-): ModelPricing {
-  return {
-    unit: "usd_per_mtok",
-    cache_read: cacheRead,
-    cache_write: cacheWrite,
-    output,
-    ...(thoughts !== undefined ? { thoughts } : {}),
-  };
+function usd(cacheRead: number, cacheWrite: number, output: number): ModelPricing {
+  return { unit: "usd_per_mtok", cache_read: cacheRead, cache_write: cacheWrite, output };
 }
 
 /**
@@ -837,7 +820,6 @@ export function effectivePricing(
     cache_read: off(pricing.cache_read),
     cache_write: off(pricing.cache_write),
     output: off(pricing.output),
-    ...(pricing.thoughts !== undefined ? { thoughts: off(pricing.thoughts) } : {}),
   };
 }
 
@@ -3738,8 +3720,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // prices it (0.5.10, read 2026-11-19): MMSP folds the provider's billing units — an image's
   // output tokens, a search, a second of audio, a character — into its token buckets
   // (MMSP-RFC-0003 §3.2), so the bill is the reported usage times these rates. A row MMSP prices
-  // nowhere is unpriced. A seller that bills thinking apart from the other output (Gemini Omni)
-  // carries its thinking rate as `thoughts`; the requests report their thinking tokens apart.
+  // nowhere is unpriced; the thinking of a video model bills at its output rate here, MMSP's
+  // separate thoughts rate having no bucket in this catalog yet.
   {
     provider: "google",
     modelId: "gemini-3.1-flash-lite-image",
@@ -3769,11 +3751,11 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     tool: true,
   },
   {
-    // $1.50 input, $12 per 1M video output tokens (5,792 a second at 720p) and $9 per 1M thinking tokens.
+    // $1.50 input and $12 per 1M video output tokens (5,792 a second at 720p); thinking bills $9.
     provider: "google",
     modelId: "gemini-omni-1.2-flash",
     displayName: "Gemini Omni 1.2 Flash",
-    pricing: usd(1.5, 1.5, 12, 9),
+    pricing: usd(1.5, 1.5, 12),
     supportsVision: true,
     tool: true,
   },

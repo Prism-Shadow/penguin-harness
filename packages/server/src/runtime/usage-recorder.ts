@@ -20,7 +20,6 @@ import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
 import type {
   UsageContext,
-  UsageDetail,
   UsageRecording,
   UsageStore,
 } from "@prismshadow/penguin-library-observability";
@@ -51,14 +50,12 @@ export class UsageRecorder implements UsageRecording {
    * Standalone usage — a request beside the Session's own (its title, or a tool request through
    * ProjectModelRequests) — never touches the Session's request bookkeeping: its `token_usage` is
    * one row, and its failed `request_end` one 0-token row with the status, even while the Session's
-   * own request or compaction is in flight. `ctx.purpose` is written to the row as it is, and so
-   * is the thinking share of a successful request's output when `detail` reports it.
+   * own request or compaction is in flight. `ctx.purpose` is written to the row as it is.
    */
   async record(
     ctx: UsageContext,
     msg: AmspRecord,
     source: "stream" | "standalone" = "stream",
-    detail?: UsageDetail,
   ): Promise<void> {
     if (isSessionMeta(msg) && msg.origin && msg.origin.length > 0) {
       const originSessionId = msg.origin[msg.origin.length - 1]!;
@@ -136,7 +133,6 @@ export class UsageRecorder implements UsageRecording {
         cacheWrite: r.cache_write,
         output: r.output,
         total: r.total,
-        ...(detail?.thoughts !== undefined ? { thoughts: detail.thoughts } : {}),
       });
       // A compaction's request boundaries are skipped above. Do not
       // retain state for those unpaired records after the compaction has finished.

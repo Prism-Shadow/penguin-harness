@@ -14,8 +14,6 @@ export interface PricingRates {
   cacheRead: number;
   cacheWrite: number;
   output: number;
-  /** The thinking rate of a model that bills thinking apart; absent, thinking is output at `output`. */
-  thoughts?: number;
 }
 
 /** Peak/off-peak pricing. */
@@ -37,13 +35,6 @@ export interface ModelPricingDto {
   cacheRead: number;
   cacheWrite: number;
   output: number;
-  /**
-   * The rate of thinking tokens, where the model bills them apart from its other output (Gemini
-   * Omni's video thinking). Absent: thinking is output, at `output`. It applies only to usage that
-   * reports its thinking tokens apart (a plugin's request through ProjectModelRequests); a chat
-   * turn's `token_usage` does not, so its output is priced at `output` throughout.
-   */
-  thoughts?: number;
 }
 
 // ---------------------------------------------------------------------------

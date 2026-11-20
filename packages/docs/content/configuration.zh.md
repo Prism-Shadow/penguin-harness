@@ -115,7 +115,7 @@ Gemini 4 Argon 在 `google` 和 `penguin-go` 分组使用 `model_id = "gemini-4-
 | `vision` | 布尔 | `true` | 模型是否接受图像输入 |
 | `max_tokens` | 数字 | Agent 的 `model.max_tokens` | 单个模型的最大输出 Token；设置后覆盖 Agent 的 `model.max_tokens` |
 | `fast_mode` | 布尔 | 关闭 | 单个模型的快速模式（供应商收取溢价的快速服务档位） |
-| `pricing` | 表 | — | 三档价格 `cache_read` / `cache_write` / `output`，以美元每百万 Token 计价（`unit = "usd_per_mtok"`）；思考与其余输出分开计价的模型另有可选的 `thoughts`（思考价格）。这里记的始终是牌价 |
+| `pricing` | 表 | — | 三档价格 `cache_read` / `cache_write` / `output`，以美元每百万 Token 计价（`unit = "usd_per_mtok"`）。这里记的始终是牌价 |
 | `api_key` | 字符串 | 分组密钥（以能借给该条目为限）；没有时，若解析不出 `base_url` 或解析出的是客户端缺省端点，为客户端自己的环境变量 | 该模型自己的内联凭证 |
 | `base_url` | 字符串 | 分组的；两者都没有时为客户端的缺省端点 | 该模型自己的 base URL |
 | `created_at` | 字符串 | — | `api_key` 的写入时间（ISO 8601）；由界面层维护的展示字段 |

@@ -6,10 +6,8 @@
  * the endpoint's attribution and chat's idle timeout, and the host's managed credential (the
  * resolver the Sessions use) when the model takes one. Its usage lands in the same ledger as a
  * chat turn's: one `usage_records` row per request, through the standalone path title
- * generation uses, marked with what the request was for (`purpose`) and with its thinking tokens
- * where MMSP reports them, so its cost is priced by the existing price path (thinking at the
- * model's thinking rate where it has one) and counted in the Session's, the Agent's and the
- * Project's totals. A
+ * generation uses, marked with what the request was for (`purpose`), so its cost is priced by the
+ * existing price path and counted in the Session's, the Agent's and the Project's totals. A
  * request that reported usage is billed by it; one that did not is a 0-token row with its status
  * (`failed`, `aborted`), as a chat request is.
  */
@@ -134,15 +132,7 @@ export class ProjectModelRequestsService implements ProjectModelRequests {
     try {
       if (end.usage !== null || end.status === "completed") {
         const request = end.usage !== null ? usageToTokenCounts(end.usage) : emptyTokenCounts();
-        // The thinking share of the output, which the token buckets fold in: a model that bills
-        // thinking at its own rate is priced by it.
-        const thoughts = end.usage?.thoughts_tokens ?? undefined;
-        await this.usage.record(
-          ctx,
-          tokenUsage(emptyTokenCounts(), request),
-          "standalone",
-          thoughts !== undefined ? { thoughts } : undefined,
-        );
+        await this.usage.record(ctx, tokenUsage(emptyTokenCounts(), request), "standalone");
       } else {
         await this.usage.record(ctx, requestEnd(stopReasonOf(end)), "standalone");
       }

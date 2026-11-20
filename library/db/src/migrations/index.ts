@@ -69,7 +69,6 @@ import { agentApiSessionSettings } from "./steps/2026-10-14-agent-api-session-se
 import { machinesAdoptedAt } from "./steps/2026-10-16-machines-adopted-at.js";
 import { userDrafts } from "./steps/2026-10-26-user-drafts.js";
 import { usageRecordsPurpose } from "./steps/2026-11-19-usage-records-purpose.js";
-import { usageRecordsThoughts } from "./steps/2026-11-19-usage-records-thoughts.js";
 
 export type { Migration } from "./migration.js";
 export { IrreversibleMigrationError, UnknownMigrationError, appliedMigrations } from "./runner.js";
@@ -104,7 +103,6 @@ export const MIGRATIONS: readonly Migration[] = [
   modelTablesAdoption,
   userDrafts,
   usageRecordsPurpose,
-  usageRecordsThoughts,
 ];
 
 /**

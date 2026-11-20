@@ -235,20 +235,10 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
           throw badRequest(`models[${i}].pricing.${key} must be a non-negative number.`);
         }
       }
-      // The thinking rate is optional: omitted, thinking is output (and a stored one is removed,
-      // like every other field this full-table write omits).
-      const thoughts = p.thoughts;
-      if (
-        thoughts !== undefined &&
-        (typeof thoughts !== "number" || !Number.isFinite(thoughts) || thoughts < 0)
-      ) {
-        throw badRequest(`models[${i}].pricing.thoughts must be a non-negative number.`);
-      }
       entry.pricing = {
         cacheRead: p.cacheRead as number,
         cacheWrite: p.cacheWrite as number,
         output: p.output as number,
-        ...(thoughts !== undefined ? { thoughts } : {}),
       };
     }
     // The promotion stored for this row (null clears it); the service checks the range.

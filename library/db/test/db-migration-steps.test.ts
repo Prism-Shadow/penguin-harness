@@ -311,7 +311,6 @@ describe("2026-09-23-machines-columns → current: 2026-10-04-browser-extensions
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
         "2026-11-19-usage-records-purpose",
-        "2026-11-19-usage-records-thoughts",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -377,7 +376,6 @@ describe("a sessions table from before the sidebar mark: 2026-10-12-sessions-kep
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
         "2026-11-19-usage-records-purpose",
-        "2026-11-19-usage-records-thoughts",
       ]);
       expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
         { session_id: "s1", kept_at: null },
@@ -437,7 +435,6 @@ describe("an agent_api table from before the session settings: 2026-10-14-agent-
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
         "2026-11-19-usage-records-purpose",
-        "2026-11-19-usage-records-thoughts",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -500,7 +497,6 @@ describe("an agent_api table from before the concurrency limit: 2026-10-14-agent
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
         "2026-11-19-usage-records-purpose",
-        "2026-11-19-usage-records-thoughts",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -551,7 +547,6 @@ describe("a machines table from before the adoption times: 2026-10-16-machines-a
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
         "2026-11-19-usage-records-purpose",
-        "2026-11-19-usage-records-thoughts",
       ]);
       expect(db.prepare("SELECT address, adopted_at FROM machines").all()).toEqual([
         { address: "ssh:nas", adopted_at: null },
@@ -599,7 +594,6 @@ describe("a database from before the account's drafts: 2026-10-26-user-drafts", 
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "2026-10-26-user-drafts",
         "2026-11-19-usage-records-purpose",
-        "2026-11-19-usage-records-thoughts",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -662,10 +656,7 @@ describe("a usage table from before the purpose column: 2026-11-19-usage-records
     const db = openPrePurpose();
     try {
       insertUsage(db);
-      expect(migrate(db, { swapPath: true }).applied).toEqual([
-        "2026-11-19-usage-records-purpose",
-        "2026-11-19-usage-records-thoughts",
-      ]);
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["2026-11-19-usage-records-purpose"]);
       expect(db.prepare("SELECT session_id, purpose FROM usage_records").all()).toEqual([
         { session_id: "s1", purpose: null },
       ]);
@@ -684,51 +675,6 @@ describe("a usage table from before the purpose column: 2026-11-19-usage-records
       expect(db.prepare("SELECT purpose FROM usage_records").get()).toEqual({
         purpose: "acme-tools:t2i",
       });
-    } finally {
-      db.close();
-    }
-  });
-});
-
-describe("a usage table from before the thinking column: 2026-11-19-usage-records-thoughts", () => {
-  /** A root through 2026-11-19-usage-records-purpose whose usage_records table has no `thoughts` column. */
-  function openPreThoughts(): DatabaseSync {
-    const db = openFresh();
-    db.exec("ALTER TABLE usage_records DROP COLUMN thoughts");
-    stampThrough(db, "2026-11-19-usage-records-purpose");
-    return db;
-  }
-
-  const insertUsage = (db: DatabaseSync) =>
-    db.exec(
-      "INSERT INTO usage_records (ts, date, project_id, agent_id, session_id, provider, model_id," +
-        " cache_read, cache_write, output, total, purpose)" +
-        " VALUES ('2026-11-19T00:00:00.000Z', '2026-11-19', 'p1', 'coder', 's1', 'google', 'video', 1, 2, 3, 6, 'acme-tools:t2v')",
-    );
-
-  it("adds the column while a pushed platform boots, leaving every existing row unreported", () => {
-    const db = openPreThoughts();
-    try {
-      insertUsage(db);
-      expect(migrate(db, { swapPath: true }).applied).toEqual([
-        "2026-11-19-usage-records-thoughts",
-      ]);
-      expect(db.prepare("SELECT output, thoughts FROM usage_records").all()).toEqual([
-        { output: 3, thoughts: null },
-      ]);
-    } finally {
-      db.close();
-    }
-  });
-
-  it("down keeps the column and the counts in it", () => {
-    const db = openPreThoughts();
-    try {
-      insertUsage(db);
-      migrate(db);
-      db.exec("UPDATE usage_records SET thoughts = 2");
-      rollbackTo(db, "2026-11-19-usage-records-purpose");
-      expect(db.prepare("SELECT thoughts FROM usage_records").get()).toEqual({ thoughts: 2 });
     } finally {
       db.close();
     }

@@ -460,12 +460,6 @@ export interface RowState {
   cacheWrite: string;
   output: string;
   /**
-   * The row's thinking rate (USD per million tokens), for a model that bills thinking apart from
-   * its other output. The dialog does not edit it; it is carried so that a save, which replaces
-   * the whole table, sends it back with the buckets. Absent when the row has none.
-   */
-  thoughts?: number;
-  /**
    * The running promotion the server reports for this row: a fraction off the list price above
    * (0.5 = half price), stored outside the config file and applied when usage is priced. Absent
    * when the row has none.
@@ -700,7 +694,6 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
     apiKeyInput: "",
     clearApiKey: false,
   };
-  if (m.pricing?.thoughts !== undefined) row.thoughts = m.pricing.thoughts;
   if (m.displayName !== undefined) row.displayName = m.displayName;
   if (m.envKey !== undefined) row.envKey = m.envKey;
   if (m.envKeyMasked !== undefined) row.envKeyMasked = m.envKeyMasked;
@@ -880,12 +873,7 @@ export function rowToEntry(row: RowState, group?: ProviderConnectionDto): ModelU
     Number.isFinite(cwr) &&
     Number.isFinite(out)
   ) {
-    entry.pricing = {
-      cacheRead: cr,
-      cacheWrite: cwr,
-      output: out,
-      ...(row.thoughts !== undefined ? { thoughts: row.thoughts } : {}),
-    };
+    entry.pricing = { cacheRead: cr, cacheWrite: cwr, output: out };
   }
   // The promotion is never sent: the server keeps the stored one unless this entry renames
   // the row or changes its price.

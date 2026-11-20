@@ -195,9 +195,8 @@ function platformPricingMatches(value: unknown, pricing: PlatformCatalogPricing)
 }
 
 /**
- * A stored `pricing` table as the three buckets and the thinking rate it may carry, or undefined
- * when it holds no bucket: one present bucket is a price, and a missing one reads as 0. A
- * thinking rate alone is no price.
+ * A stored `pricing` table as the three buckets, or undefined when it holds none: one present
+ * bucket is a price, and a missing one reads as 0.
  */
 function pricingDtoOf(value: unknown): ModelPricingDto | undefined {
   const pricing = asTable(value);
@@ -207,40 +206,23 @@ function pricingDtoOf(value: unknown): ModelPricingDto | undefined {
   if (cacheRead === undefined && cacheWrite === undefined && output === undefined) {
     return undefined;
   }
-  const thoughts = optNum(pricing.thoughts);
-  return {
-    cacheRead: cacheRead ?? 0,
-    cacheWrite: cacheWrite ?? 0,
-    output: output ?? 0,
-    ...(thoughts !== undefined ? { thoughts } : {}),
-  };
+  return { cacheRead: cacheRead ?? 0, cacheWrite: cacheWrite ?? 0, output: output ?? 0 };
 }
 
-/** The same numbers (the thinking rate included), or both absent. */
+/** The same three numbers, or both absent. */
 function samePricing(a: ModelPricingDto | undefined, b: ModelPricingDto | undefined): boolean {
   if (a === undefined || b === undefined) return a === b;
-  return (
-    a.cacheRead === b.cacheRead &&
-    a.cacheWrite === b.cacheWrite &&
-    a.output === b.output &&
-    a.thoughts === b.thoughts
-  );
-}
-
-/** Every rate of a price scaled by `kept`, rounded to six decimals; a thinking rate goes along. */
-function scaledRates(rates: PricingRates, kept: number): PricingRates {
-  const off = (v: number): number => Math.round(v * kept * 1e6) / 1e6;
-  return {
-    cacheRead: off(rates.cacheRead),
-    cacheWrite: off(rates.cacheWrite),
-    output: off(rates.output),
-    ...(rates.thoughts !== undefined ? { thoughts: off(rates.thoughts) } : {}),
-  };
+  return a.cacheRead === b.cacheRead && a.cacheWrite === b.cacheWrite && a.output === b.output;
 }
 
 /** A promotion's fraction off every bucket, rounded to six decimals the way `tieredRates` rounds. */
 function promotedRates(rates: PricingRates, discount: number): PricingRates {
-  return scaledRates(rates, 1 - discount);
+  const off = (v: number): number => Math.round(v * (1 - discount) * 1e6) / 1e6;
+  return {
+    cacheRead: off(rates.cacheRead),
+    cacheWrite: off(rates.cacheWrite),
+    output: off(rates.output),
+  };
 }
 
 /**
@@ -267,10 +249,17 @@ function tieredRates(provider: string, modelId: string, rates: PricingRates): Ti
   const untouched =
     rates.cacheRead === peak.cache_read &&
     rates.cacheWrite === peak.cache_write &&
-    rates.output === peak.output &&
-    rates.thoughts === peak.thoughts;
+    rates.output === peak.output;
   if (!untouched) return { peak: rates, offPeak: rates };
-  return { peak: rates, offPeak: scaledRates(rates, 1 - schedule.rate) };
+  const off = (v: number): number => Math.round(v * (1 - schedule.rate) * 1e6) / 1e6;
+  return {
+    peak: rates,
+    offPeak: {
+      cacheRead: off(rates.cacheRead),
+      cacheWrite: off(rates.cacheWrite),
+      output: off(rates.output),
+    },
+  };
 }
 
 function optStr(v: unknown): string | undefined {
@@ -2025,7 +2014,6 @@ export class ProjectConfigService implements ProjectConfigStore {
           cache_read: entry.pricing.cacheRead,
           cache_write: entry.pricing.cacheWrite,
           output: entry.pricing.output,
-          ...(entry.pricing.thoughts !== undefined ? { thoughts: entry.pricing.thoughts } : {}),
         };
       }
       // The row's own credential — an override of its group's — added/removed on top of the

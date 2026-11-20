@@ -581,7 +581,6 @@ Google、Penguin Go 和 OpenRouter 分组均预置了 Gemini 4 Argon，支持图
 ### 价格与促销
 
 - **三类价格。** 每个模型都记录 `cache_read`、`cache_write` 和 `output` 三项价格，单位是每百万 Token 多少美元。成本中心按这些价格结算用量。
-- **思考价格。** 卖家把思考与其余输出分开计价的模型（如 Gemini Omni 的视频思考）另记一项 `thoughts` 价格。它只用于单独报告了思考 Token 的请求，也就是插件的工具请求；其余请求的思考仍按 `output` 价格计。
 - **没有价格的条目。** 价格字段可以整体缺席，含义是「没人查过这家的价格」，而不是免费：这类条目在**模型库**页面不显示价格徽标，成本中心把它的用量报为未计价。目录里目前只有 ModelScope 的预置条目是这样——魔搭的 api-inference 是计费的，但它的模型页面是客户端渲染的，读不到费率。写成三个 0 反而更糟：那会被当作免费档，给一个计费网关打上「Free」徽标。
 - **仅记录基础档。** 供应商的价格随输入规模上调时，目录只记录基础档。MiniMax M3 记录的是 MiniMax 标准按量付费档在 512K 输入 Token 及以下的价格；超过后每项费率翻倍，priority 档为 1.5 倍，所以长上下文和 priority 用量的成本估算会偏低。OpenAI（272K 以上）、Gemini 3.1 Pro（200K 以上）和 Claude Haiku 5.5（100K 以上，每项费率为 5 倍）遵循同样的约定。
 - **DeepSeek 空闲时段。** 直连 DeepSeek 的条目记录官方高峰价格，并声明 DeepSeek 的空闲时段规则：工作日北京时间 9:00–12:00 和 14:00–18:00 以外的时段，三项价格全部减半。**模型库**页面在这些时段显示 `省 50%` 标签，成本中心也按这个费率计费。
@@ -619,7 +618,7 @@ Google、Penguin Go 和 OpenRouter 分组均预置了 Gemini 4 Argon，支持图
 | `display_name` | 展示名称 |
 | `vision` | 是否支持图像输入，默认 true |
 | `fast_mode` | 可选的快速模式（默认关闭）：开启后，这个模型的 Session 请求会改走供应商更快的服务层级，价格更高。持久化保存的值只有 `true`；在 Web 端整表保存时省略这个字段会把它清空。没有快速层级的模型会拒绝携带这个设置的请求（参见[快速模式](#快速模式)） |
-| `pricing` | 三档价格（单位 `usd_per_mtok`，即每百万 Token 的美元价格）：`cache_read` / `cache_write` / `output`；可选的 `thoughts` 为单独的思考价格 |
+| `pricing` | 三档价格（单位 `usd_per_mtok`，即每百万 Token 的美元价格）：`cache_read` / `cache_write` / `output` |
 | `api_key` / `base_url` | 该模型自己的 key 与端点，两项都可选；留空时使用分组的值（key 仅在能借给该模型的端点时），再回退到客户端的环境变量：key 限于不带 base URL 或为客户端缺省端点，base URL 限于任何一层都不带时（见[设置 API key](#设置-api-key)） |
 
 文件里还保存着 `default_model`、可选的 `vision_model`（即视觉代理模型），以及 `[providers.<分组>]` 里各分组的设置（见[分组设置](#分组设置)与 [Project 配置](/configuration#project-配置)）。新建 Project 的文件已带有目录给出端点或协议的每个内置分组的设置。文件结构（示例）：
