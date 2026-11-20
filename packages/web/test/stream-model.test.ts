@@ -161,6 +161,72 @@ function items(model: StreamModel) {
   return model.items;
 }
 
+describe("the final work step of a Task", () => {
+  const first = "2026-11-19T10:00:00.000Z";
+  const last = "2026-11-19T10:00:04.000Z";
+  const steps = (model: StreamModel) => model.items.filter((item) => item.kind === "thinking");
+  it("waits through the answer, then settles only the last group, identically on replay", () => {
+    const records = [
+      at(userText("question"), first),
+      at(requestBegin(), first),
+      at(thinkingMessage("inspect"), first),
+      at(assistantText("First result"), first),
+      at(thinkingMessage("verify"), first),
+      at(requestEnd("completed"), last),
+    ];
+    const live = createStreamModel();
+    pushMessages(live, records);
+    expect(steps(live).map((item) => item.workOutcome)).toEqual([undefined, undefined]);
+    const clock = steps(live)[0]!.workTiming;
+    expect(clock).toBeDefined();
+    expect(steps(live)[1]!.workTiming).toBe(clock);
+    expect(clock?.durationMs).toBeUndefined();
+    notifyTaskIdle(live);
+    const replay = createStreamModel();
+    pushMessages(replay, records);
+    finalizeHistory(replay);
+    for (const model of [live, replay]) {
+      expect(steps(model).map((item) => item.workTiming?.durationMs)).toEqual([4000, 4000]);
+      expect(steps(model).map((item) => item.workOutcome)).toEqual([
+        undefined,
+        { state: "done", durationMs: 4000 },
+      ]);
+    }
+  });
+  it.each([
+    [requestEnd("fatal"), "failed"],
+    [requestEnd("retryable", { attempt: 3 }), "failed"],
+    [abortEvent("user_abort"), "stopped"],
+  ] as const)(
+    "records an interrupted or failed turn and never overwrites it with a subsequent turn",
+    (end, state) => {
+      const model = createStreamModel();
+      pushMessages(model, [
+        at(userText("question"), first),
+        at(thinkingMessage("observe"), first),
+        at(end, last),
+      ]);
+      pushMessages(model, [
+        at(userText("next question"), last),
+        at(requestBegin(), last),
+        at(thinkingMessage("new turn"), last),
+        at(requestEnd("completed"), last),
+      ]);
+      finalizeHistory(model);
+      const [prior, next] = steps(model);
+      expect(prior?.workOutcome).toEqual({ state, durationMs: 4000 });
+      expect(prior?.workTiming?.durationMs).toBe(4000);
+      expect(next?.workTiming?.durationMs).toBe(0);
+    },
+  );
+  it("leaves an unfinished request without a fabricated completion", () => {
+    const model = createStreamModel();
+    pushMessages(model, [userText("question"), thinkingMessage("inspecting")]);
+    finalizeHistory(model);
+    expect(steps(model)[0]?.workOutcome).toBeUndefined();
+  });
+});
+
 describe("partial aggregation and full-message convergence", () => {
   it("partial_text start/delta/stop accumulates into one streaming item; the full message replaces its content", () => {
     const m = createStreamModel();

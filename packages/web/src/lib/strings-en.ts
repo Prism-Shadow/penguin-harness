@@ -31,6 +31,7 @@ export const en: Strings = {
     userSettings: "User settings",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
+    resizeSidebar: "Resize sidebar",
     back: "Back",
     forward: "Forward",
     collapseGroup: "Collapse",
@@ -1052,6 +1053,12 @@ export const en: Strings = {
     launcherInfo:
       "The round button floating on the conversation's right edge that fans out shortcuts to the workbench's panels and the terminal. Turning it off here removes it; the fan's \"Hide launcher\" entry does the same.",
     toolAliases: "Tool short names",
+    activityDisplayMode: "Reasoning display",
+    activityDisplayModeInfo:
+      "Standard lists each step. Select one to see its details. Expanded shows all thoughts and tool details. Compact follows the current step and lets you page through the others.",
+    activityDisplayStandard: "Standard",
+    activityDisplayExpanded: "Expanded",
+    activityDisplayCompact: "Compact",
     toolAliasesInfo:
       'Tool cards in a conversation name the built-in tools by a short alias: read_file reads as "read". Every other tool (MCP tools included) and the Trace viewer keep the tool\'s own name, and hovering a short name shows it.',
     notifications: "Task completion notifications",
@@ -1259,6 +1266,8 @@ export const en: Strings = {
     /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
     showInAppCenterHint:
       "When on, this workbench appears as an app on the App Center page: every member of the Project sees its icon there and opens it with one click, without starting a chat first. Turning it off only takes the shortcut off the App Center; the workbench, its data and its versions are untouched. Flipping the switch rewrites penguin.appCenter.show in the workbench's package.json and is recorded as a version.",
+    /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
+    showInSidebar: "Show in the sidebar",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "Open",
     /** The row's "⋯" button, which holds its other actions. */
@@ -4524,6 +4533,8 @@ Scenarios:
       heavy: "Syncing full outputs",
       /** Under an unfolded output or thinking block while its whole text arrives. */
       body: "Loading the full text",
+      /** On an unfolded output or thinking block the reader did not open (an Expanded view, a search): fetch the whole. */
+      bodyLoad: "Load the full text",
       /** The fetch failed: a notice line like the earlier-messages one, the failure in parentheses. */
       bodyFailed: (reason: string) => `[Load failed]: could not load the full text (${reason})`,
       /** The Trace panel bringing a machine's Trace file over before it opens it. */
@@ -4761,6 +4772,16 @@ Scenarios:
     } as Record<string, string>,
     workRunning: "Running",
     workDone: "Done",
+    workFailed: "Run failed",
+    workStopped: "Stopped",
+    workRetryStep: (n: number) => `Retry #${n}`,
+    previousWorkStep: "Previous step",
+    nextWorkStep: "Next step",
+    latestWorkStep: "Latest step",
+    waitingWorkStep: "Review pending step",
+    workElapsed: "Total time",
+    workStepWords: ["Step ", ""],
+    workStepJump: "Go to step",
     workGroupSteps: (n: number) => `${n} ${n === 1 ? "step" : "steps"}`,
     approvalWaiting: "awaiting approval",
     copyCode: "Copy code",

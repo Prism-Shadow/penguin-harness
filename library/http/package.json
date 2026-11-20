@@ -1,0 +1,91 @@
+{
+  "name": "@prismshadow/penguin-library-http",
+  "version": "0.2.18",
+  "description": "The server's HTTP vocabulary: the unified error shape, the request-validation helpers, the JSON answer rules (validators, compression), the public origin and page CSP, and the Hono env the auth middleware fills. A library package - the server imports it; nothing here imports the server.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "library/http"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "import": "./dist/errors.js"
+    },
+    "./app-env": {
+      "types": "./dist/app-env.d.ts",
+      "import": "./dist/app-env.js"
+    },
+    "./validate": {
+      "types": "./dist/validate.d.ts",
+      "import": "./dist/validate.js"
+    },
+    "./media-type": {
+      "types": "./dist/media-type.d.ts",
+      "import": "./dist/media-type.js"
+    },
+    "./json-answer": {
+      "types": "./dist/json-answer.d.ts",
+      "import": "./dist/json-answer.js"
+    },
+    "./json-compression": {
+      "types": "./dist/json-compression.d.ts",
+      "import": "./dist/json-compression.js"
+    },
+    "./json-validators": {
+      "types": "./dist/json-validators.d.ts",
+      "import": "./dist/json-validators.js"
+    },
+    "./public-origin": {
+      "types": "./dist/public-origin.d.ts",
+      "import": "./dist/public-origin.js"
+    },
+    "./page-csp": {
+      "types": "./dist/page-csp.d.ts",
+      "import": "./dist/page-csp.js"
+    },
+    "./settle": {
+      "types": "./dist/settle.d.ts",
+      "import": "./dist/settle.js"
+    },
+    "./attribution": {
+      "types": "./dist/attribution.d.ts",
+      "import": "./dist/attribution.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-auth": "workspace:*",
+    "hono": "^4.13.11"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "private": true
+}
