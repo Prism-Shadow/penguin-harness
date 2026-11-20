@@ -1,7 +1,6 @@
 /**
  * The mocked API covers every endpoint the Web App calls: the app's own endpoint wrappers
- * (`packages/web/src/api/endpoints.ts`, and the multimodal models' in
- * `packages/web/src/api/project-capabilities.ts`) are imported with the network layer swapped, as the
+ * (`packages/web/src/api/endpoints.ts`) are imported with the network layer swapped, as the
  * gallery swaps it, and every one is called against the mock. An endpoint the mock does not
  * route answers with the `gallery_unmocked` code and nothing else does, so that code — and a
  * handler that throws anything but the app's `ApiError` — is what fails here. The URL helpers
@@ -13,7 +12,6 @@
  */
 import { describe, expect, it } from "vitest";
 import * as api from "../../web/src/api/endpoints";
-import * as capabilities from "../../web/src/api/project-capabilities";
 import { runTry } from "../../web/src/features/agents/api-try-log";
 import type { TryAction } from "../../web/src/features/agents/api-try-log";
 import { ApiError, UNMOCKED } from "../src/app/mock/errors";
@@ -24,10 +22,10 @@ import { resetStore } from "../src/app/mock/store";
 
 type AnyFn = (...args: unknown[]) => unknown;
 
-/** Every function the wrappers modules export, the key-auth descriptors' included. */
+/** Every function the wrappers module exports, the key-auth descriptors' included. */
 function wrappers(): [name: string, fn: AnyFn][] {
   const found: [string, AnyFn][] = [];
-  for (const [name, value] of Object.entries({ ...api, ...capabilities })) {
+  for (const [name, value] of Object.entries(api)) {
     if (typeof value === "function") found.push([name, value as AnyFn]);
     else if (typeof value === "object" && value !== null) {
       for (const [inner, fn] of Object.entries(value)) {

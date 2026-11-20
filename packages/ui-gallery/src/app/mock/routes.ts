@@ -53,8 +53,6 @@ import type {
   ChatDefaultsDto,
   ContributionsResponse,
   CommandPolicyDto,
-  ToolModelSettings,
-  ToolModelSettingsPatch,
   DefaultModelResponse,
   DesktopTrayStatusResponse,
   DesktopUpdateStatusResponse,
@@ -161,6 +159,12 @@ import { IDS } from "./ids";
 import { empty, fail, json, raw, Router } from "./router";
 import type { RequestContext } from "./router";
 import type { DemoStore } from "./store";
+import type {
+  ToolBindingUpdate,
+  ToolBindingsResponse,
+  VoicePolishSettings,
+  VoicePolishUpdate,
+} from "../../../../web/src/api/tool-types";
 import { payloadOf } from "./types";
 import type { AmspRecord } from "./types";
 
@@ -408,36 +412,50 @@ function refreshEffective(store: DemoStore): void {
 }
 
 /**
- * The Project's multimodal models, as the Web App reads them: the gallery's server contributes no
- * operation, so the settings page says the tools are off and the chat shows no voice controls.
- * Running an operation or polishing a transcript needs a model behind it, which the demo has not.
+ * The model tools, as the Web App reads them: the platform's tool-model bindings and the
+ * multimodal tools plugin's routes. The gallery's server loads no plugin, so no binding is
+ * declared — the settings page lists image understanding alone and the chat shows no voice
+ * controls — and binding a model, running a tool or reading a reply aloud is refused. Transcript
+ * editing's settings are kept in the store, as the plugin keeps them per Project.
  */
-function demoToolModels(store: DemoStore): ToolModelSettings {
-  return {
-    available: [],
-    bindings: {},
-    candidates: { t2t: [], i2t: [], search: [], fetch: [], t2i: [], t2v: [], t2s: [], s2t: [] },
-    voicePolish: store.voicePolish,
-  };
-}
 router
-  .get("/api/projects/:projectId/capabilities/tools", ({ store }) => demoToolModels(store))
-  .patch("/api/projects/:projectId/capabilities/tools", ({ store, body }) => {
-    const patch = record(body) as ToolModelSettingsPatch;
-    if (patch.bindings && Object.values(patch.bindings).some(Boolean))
-      return readOnly("assign a multimodal model");
-    const { enabled, prompt } = patch.voicePolish ?? {};
-    store.voicePolish = {
-      ...store.voicePolish,
-      ...(enabled !== undefined ? { enabled } : {}),
-      ...(prompt !== undefined ? { prompt: prompt ?? store.voicePolish.defaultPrompt } : {}),
-    };
-    return demoToolModels(store);
+  .get("/api/projects/:projectId/models/tool-bindings", (): ToolBindingsResponse => ({
+    bindings: [],
+  }))
+  .patch("/api/projects/:projectId/models/tool-bindings", ({ body }) => {
+    const { key } = record(body) as Partial<ToolBindingUpdate>;
+    return fail(
+      404,
+      "unknown_binding",
+      `No enabled plugin declares the tool-model binding '${String(key)}'.`,
+    );
   })
-  .post("/api/projects/:projectId/capabilities/:capability/run", () =>
-    readOnly("run a multimodal model"),
+  .post("/api/projects/:projectId/multimodal-tools/:operation/run", () =>
+    readOnly("run a multimodal tool"),
   )
-  .post("/api/projects/:projectId/voice-polish", () => readOnly("polish a transcript"));
+  .get(
+    "/api/projects/:projectId/multimodal-tools/voice-polish/settings",
+    ({ store }): VoicePolishSettings => store.voicePolish,
+  )
+  .patch(
+    "/api/projects/:projectId/multimodal-tools/voice-polish/settings",
+    ({ store, body }): VoicePolishSettings => {
+      const { enabled, prompt } = record(body) as VoicePolishUpdate;
+      if (enabled === true) return readOnly("turn transcript editing on without a text model");
+      store.voicePolish = {
+        ...store.voicePolish,
+        ...(enabled !== undefined ? { enabled } : {}),
+        ...(prompt !== undefined ? { prompt: prompt ?? store.voicePolish.defaultPrompt } : {}),
+      };
+      return store.voicePolish;
+    },
+  )
+  .post("/api/projects/:projectId/multimodal-tools/voice-polish", () =>
+    readOnly("polish a transcript"),
+  )
+  .post("/api/projects/:projectId/multimodal-tools/read-aloud", () =>
+    readOnly("read a reply aloud"),
+  );
 
 router
   .get("/api/projects/:projectId/models", ({ store }): ModelsResponse => store.f.models)

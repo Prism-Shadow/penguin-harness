@@ -1,5 +1,7 @@
 export { defaultChatModel, sameModelRef } from "../../lib/model-grouping";
 
+export { putVisionModel } from "./vision-model";
+
 export { hasConfiguredKey } from "../../lib/model-grouping";
 
 export { promotedPricing } from "../../lib/model-grouping";

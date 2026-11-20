@@ -10,7 +10,7 @@ import { useState } from "react";
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
 import { ModelSelect } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { sameModelRef } from "../../lib/model-grouping";
+import { sameModelRef, visibleChatModels } from "../../lib/model-grouping";
 import { modelLabel } from "./model-picker-logic";
 import { ModelPickerModal } from "./model-picker-modal";
 
@@ -62,8 +62,15 @@ export function ModelCatalogSelect({
   onClear?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  // Something to pick: the list the picker will show once every model is listed.
   const canOpen =
-    Boolean(onClear) || models.some((m) => purpose === "tool" || m.chatEligible !== false);
+    Boolean(onClear) ||
+    visibleChatModels(models, {
+      showAll: true,
+      query: "",
+      selected: value,
+      tools: purpose === "tool",
+    }).length > 0;
   const current = models.find((m) => sameModelRef(m, value));
   const unset = value === null && emptyLabel !== undefined;
   // Display rule matches the model page's card: display name, or falls back to the upstream id

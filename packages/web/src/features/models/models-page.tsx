@@ -12,8 +12,9 @@
  * name + count + the collapse chevron), with one card per model within a group — the card
  * shows only the display name + status badges (default / vision / fast / free / discount), while
  * context, pricing, and key status are folded into a single line of small text. Clicking a card opens the config dialog
- * (credentials, context, pricing, vision toggle, plus set as default / set as vision model /
- * delete). The group header's right side holds the group's actions in a fixed order
+ * (credentials, context, pricing, vision toggle, plus set as default / delete, and the Project
+ * operations the model can serve: image understanding — the vision model — and the tool bindings
+ * of the enabled plugins, each with its short action; model-operations.tsx). The group header's right side holds the group's actions in a fixed order
  * (group-header.ts): its balance (one menu: pin, refresh, when it was read), the connection
  * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
  * Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
@@ -211,6 +212,15 @@ import {
   type ProviderConnections,
 } from "./connection";
 
+import { useToolBindings } from "../../state/use-tool-bindings";
+import { useOpenProjectSettings } from "../../lib/project-settings-location";
+import {
+  ModelInUseMark,
+  ModelOperationsBlock,
+  modelOperations,
+  VISION_OPERATION,
+  type ModelOperation,
+} from "./model-operations";
 import { ProviderSettingsDialog } from "./provider-settings-dialog";
 import { GroupSettingsControl } from "./group-settings-menu";
 import {
@@ -405,6 +415,8 @@ interface DetectOutcome {
 
 /** Local edit state for one model row (string-typed for form use; parsed uniformly on save). */
 export interface RowState {
+  /** False for a tool model (GET /models): an image, speech or web model, never a chat candidate. */
+  chatEligible?: boolean;
   /**
    * Vendor id (entry field, i.e. group membership): a value not in the catalog list is a
    * user-defined group, kept **verbatim** — an operation that only edits the key,
@@ -681,6 +693,7 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
     provider: m.provider,
     modelId: m.modelId,
     original: { provider: m.provider, modelId: m.modelId },
+    ...(m.chatEligible === false ? { chatEligible: false } : {}),
     vision: m.vision !== false,
     contextWindow: m.contextWindow !== undefined ? String(m.contextWindow) : "",
     maxTokens: m.maxTokens !== undefined ? String(m.maxTokens) : "",
@@ -944,6 +957,12 @@ export function ModelsPage() {
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);
   // Vision model used for read_file's proxy reads (describes images for session models with vision=false).
   const [visionModel, setVisionModel] = useState<ModelRefDto | undefined>(undefined);
+  /** The plugins' tool bindings, read again whenever the table changes (it changes the candidates). */
+  const toolBindings = useToolBindings(rows ? projectId : null, null, { refreshKey: rows });
+  /** The operations a row can serve and the ones it is in use for (model-operations.tsx). */
+  const operationsOf = (row: RowState | undefined): ModelOperation[] =>
+    row ? modelOperations(toolBindings.bindings, rowRef(row), locale) : [];
+  const openProjectSettings = useOpenProjectSettings();
   /** Edit target: paired reference of an existing row. */
   const [editing, setEditing] = useState<ModelRefDto | null>(null);
   /**
@@ -1728,6 +1747,7 @@ export function ModelsPage() {
                       speed={speedResults.get(refMapKey(row.provider, row.modelId))}
                       usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
                       hourTick={hourTick}
+                      operations={operationsOf(row)}
                       onOpen={() => {
                         setEditingMovedToCustom(false);
                         setEditing(rowRef(row));
@@ -1762,14 +1782,14 @@ export function ModelsPage() {
       {/* The header holds search, the owner-only catalog pair — "Add new models" and "Restore
           defaults" — and the pair of create buttons: the AI path and the group form, offered side
           by side (per-model entry points still live in each group header); on narrow screens the
-          actions wrap to their own line and the search box shrinks flexibly, fixed width at >=sm.
+          search takes its own row and the actions wrap below it, with a fixed search width at >=sm.
           A member reads why nothing here is editable behind the title's "?". */}
       <PageHeader
         title={S.models.title}
         info={isOwner ? undefined : S.models.readOnlyHint}
         actions={
           <>
-            <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+            <div className="w-full shrink-0 sm:w-56">
               <Input
                 size="sm"
                 value={query}
@@ -1777,6 +1797,10 @@ export function ModelsPage() {
                 placeholder={S.models.searchPlaceholder}
               />
             </div>
+            {/* Project settings' multimodal page, where every operation's model is chosen at once. */}
+            <Button size="sm" onClick={() => openProjectSettings("multimodal")}>
+              {S.voice.models}
+            </Button>
             {/* "Add new models" appears only while new presets are actually waiting, and the
                 accent says so — adding nothing is a no-op, and a permanent button spent the
                 header's width on one. That is also why the dot is gone: it marked this button as
@@ -2133,6 +2157,11 @@ export function ModelsPage() {
           canEdit={isOwner}
           isDefault={editingRow !== undefined && sameModelRef(rowRef(editingRow), defaultModel)}
           isVisionModel={editingRow !== undefined && sameModelRef(rowRef(editingRow), visionModel)}
+          operations={operationsOf(editingRow)}
+          operationsBusy={toolBindings.busy}
+          onBindOperation={(key) => {
+            if (editingRow) void toolBindings.bind(key, rowRef(editingRow));
+          }}
           onClose={closeModelDialog}
           // The dialog stays open, its draft intact, until the write answers; it closes only
           // once the table holds what it sent.
@@ -2608,6 +2637,7 @@ export function ModelCard({
   usedTokens,
   hourTick,
   onOpen,
+  operations,
   onMoveToCustom,
 }: {
   row: RowState;
@@ -2622,6 +2652,8 @@ export function ModelCard({
   /** Bumped on the hour (see useHourTick): the cue to re-read a time-of-day price. */
   hourTick: number;
   onOpen: () => void;
+  /** The Project operations this model can serve; the card marks the ones it is in use for. */
+  operations?: readonly ModelOperation[];
   /** Opens the config dialog with this row already moved to the custom group; absent for a member, who cannot write the config. */
   onMoveToCustom?: () => void;
 }) {
@@ -2671,7 +2703,8 @@ export function ModelCard({
    */
   const tags = modelTags({
     isDefault,
-    vision: row.vision,
+    // A tool model's image input is no chat capability: no "vision" tag on it.
+    vision: row.vision && row.chatEligible !== false,
     isVisionModel,
     fastMode: row.fastMode,
     free: isFreeModel(row),
@@ -2763,6 +2796,9 @@ export function ModelCard({
           <span data-slot="name" className="min-w-0 flex-1 truncate text-sm font-medium">
             {modelLabelOf(row.displayName, row.modelId)}
           </span>
+          {/* The Project operations this model is in use for: one quiet glyph, named in its
+              tooltip. Assigning happens in the model's dialog or in Project settings. */}
+          <ModelInUseMark operations={operations ?? []} />
           {/* What this model has spent over its whole life, on the row's right edge. Recessive by
               design — grey, on the small rung below the name: it is context for a name you are
               scanning past, not a figure the page is about. A model that has never run shows
@@ -2879,6 +2915,9 @@ function ModelDialog({
   canEdit,
   isDefault,
   isVisionModel,
+  operations,
+  operationsBusy,
+  onBindOperation,
   onClose,
   onSubmit,
 }: {
@@ -2897,6 +2936,12 @@ function ModelDialog({
   canEdit: boolean;
   isDefault: boolean;
   isVisionModel: boolean;
+  /** The tool bindings this model can serve (model-operations.tsx). */
+  operations: readonly ModelOperation[];
+  /** A binding write is in flight. */
+  operationsBusy: boolean;
+  /** Binds the saved model to one of `operations`. */
+  onBindOperation: (key: string) => void;
   onClose: () => void;
   /** Writes the row; resolves with whether it landed (the host closes the dialog when it did). */
   onSubmit: (row: RowState, action: DialogAction) => Promise<boolean>;
@@ -3699,28 +3744,18 @@ function ModelDialog({
    */
   const slots: Record<ModelDialogSlot, ReactNode> = {
     // Model-level actions: test connectivity (for a new model, fill in the id and key to verify
-    // before saving) / set default / set as vision proxy model / remove.
+    // before saving) / set default / remove. Choosing the vision model moved into the operations
+    // below, as image understanding.
     actions: canEdit && (
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" disabled={testing || !form.modelId.trim()} onClick={() => void runTest()}>
           {testing ? S.models.testing : S.models.testConnection}
         </Button>
-        {/* Setting the default or the vision model writes the draft with it, so those two wait
-            for it to be valid, like Save; removing writes nothing of the draft. */}
-        {!isNew && !isDefault && (
+        {/* Setting the default writes the draft with it, so it waits for the draft to be valid,
+            like Save; removing writes nothing of the draft. A tool model cannot hold a chat. */}
+        {!isNew && !isDefault && form.chatEligible !== false && (
           <Button size="sm" disabled={saving || !valid} onClick={() => setConfirming("setDefault")}>
             {S.models.setDefault}
-          </Button>
-        )}
-        {!isNew && form.vision && !isVisionModel && (
-          <Button
-            size="sm"
-            title={S.models.visionModelHint}
-            data-tooltip-extra
-            disabled={saving || !valid}
-            onClick={() => setConfirming("setVisionModel")}
-          >
-            {S.models.setVisionModel}
           </Button>
         )}
         {!isNew && (
@@ -3741,6 +3776,35 @@ function ModelDialog({
     // API key — "get API key" link next to the label. PasswordInput carries its own show/hide
     // toggle and brings its own <label> wrapper, so this outer container is a <div> (a nested
     // <label> is invalid).
+    // The Project operations this model can serve, each with its short action. Image
+    // understanding is the vision model: it writes the draft with it, like set default, so it
+    // waits for the draft to be valid; a binding names the saved model, so those wait while the
+    // draft holds unsaved edits.
+    tools: !isNew && (
+      <ModelOperationsBlock
+        operations={[
+          ...(form.vision && form.chatEligible !== false
+            ? [
+                {
+                  key: VISION_OPERATION,
+                  title: S.voice.imageUnderstanding,
+                  hint: S.models.visionModelHint,
+                  current: isVisionModel,
+                },
+              ]
+            : []),
+          ...operations,
+        ]}
+        canEdit={canEdit}
+        isDisabled={(op) =>
+          op.key === VISION_OPERATION ? saving || !valid : changed || saving || operationsBusy
+        }
+        onUse={(op) => {
+          if (op.key === VISION_OPERATION) setConfirming("setVisionModel");
+          else onBindOperation(op.key);
+        }}
+      />
+    ),
     apiKey: (
       <div className="space-y-1">
         <div className="block">
@@ -4137,10 +4201,12 @@ function ModelDialog({
                   {form.modelId}
                 </span>
               )}
-              {(isDefault || form.vision || isVisionModel) && (
+              {(isDefault || (form.vision && form.chatEligible !== false) || isVisionModel) && (
                 <span className="flex flex-wrap items-center gap-1 pt-0.5">
                   {isDefault && <Pill tone={TAG_TONE.status}>{S.models.default}</Pill>}
-                  {form.vision && <Pill tone={TAG_TONE.capability}>{S.models.visionBadge}</Pill>}
+                  {form.vision && form.chatEligible !== false && (
+                    <Pill tone={TAG_TONE.capability}>{S.models.visionBadge}</Pill>
+                  )}
                   {isVisionModel && (
                     <Pill tone={TAG_TONE.capability}>{S.models.visionModelBadge}</Pill>
                   )}

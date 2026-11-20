@@ -94,7 +94,7 @@ import {
   pluginIndex,
   pluginLibrary,
 } from "./plugin-reads";
-import { notifyProjectChange, serverPluginsChanged } from "../../lib/project-change-events";
+import { notifyPluginsChanged } from "../../lib/project-change-events";
 import {
   agentInstalls,
   rereadInstalls,
@@ -407,7 +407,7 @@ export function PluginsPage() {
             },
           )
         : await api.uninstallPlugin(target.projectId, specifier, target.machineId);
-      notifyProjectChange(serverPluginsChanged, target.projectId);
+      notifyPluginsChanged(target.projectId);
       // A write that answers in a later visit is not taken: that visit read the list itself.
       if (!isCurrentVisit()) return;
       if (target.machineId !== selfId) {
@@ -451,7 +451,7 @@ export function PluginsPage() {
    * Project's list are read again, each standing on screen until its answer lands.
    */
   const reloadServerPlugins = () => {
-    if (projectId) notifyProjectChange(serverPluginsChanged, projectId);
+    if (projectId) notifyPluginsChanged(projectId);
     pluginLibrary.invalidate(LIBRARY_KEY);
     pluginIndex.invalidate(INDEX_KEY);
     if (deploymentKey !== null) installedPlugins.invalidate(deploymentKey);

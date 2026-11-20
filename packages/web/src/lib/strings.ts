@@ -33,10 +33,12 @@ export const zh = {
     /** The Project settings page, the Models header's way there, and the model dialog's block. */
     models: "多模态模型",
     modelHelp:
-      "penguin tools 命令使用这里选定的模型。聊天里，语音输入使用「语音识别」，朗读使用「语音合成」，润色使用「文本生成」。",
+      "penguin tools 命令使用这里选定的模型；「图片理解」就是项目的视觉模型，也替不支持图片的模型读图。聊天里，语音输入使用「语音识别」，朗读使用「语音合成」，润色使用「文本生成」。",
+    /** Image understanding: the Project's vision model, listed among the operations. */
+    imageUnderstanding: "图片理解",
     unbound: "未指定",
     noModels: "没有兼容的模型",
-    noTools: "当前服务未启用多模态工具。",
+    noTools: "本项目未启用多模态工具插件，可在插件页启用。",
     /** A model dialog's action for one operation the model can serve, and its tooltip. */
     setDefault: "设为默认",
     setDefaultHint: (operation: string) => `设为本项目的默认${operation}模型`,
@@ -63,7 +65,6 @@ export const zh = {
     polishing: "正在润色",
     denied: "请在浏览器或系统设置中允许使用麦克风。",
     unsupported: "当前页面无法录音。请通过 HTTPS 在支持麦克风的浏览器中打开。",
-    modelChanged: "语音识别模型已更改，请重新录音。",
     recordFailed: "未能从麦克风录音。",
     tooLarge: "录音文件太大，请缩短录音时长。",
     empty: "未识别到语音。",
@@ -2897,6 +2898,7 @@ export const zh = {
     /** Card's right-edge figure: what this model has spent over its whole life. The unit stays English and is abbreviated the way the rest of the page abbreviates it — `tok/s`, `/M tok`. */
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "该模型累计消耗的 Token（不限时间范围）",
+    visionModelHint: "设为视觉模型：不支持图片的模型读图时由它代读，penguin tools i2t 也用它",
     priceUnitShort: "/M tok",
     testConnection: "测试连通性",
     testing: "测试中…",
@@ -3105,6 +3107,9 @@ export const zh = {
     } as Record<string, string | undefined>,
     envBaseUrlNote: (defaultBaseUrl: string, envBaseUrlKey: string): string =>
       `请求发往 ${defaultBaseUrl}；环境里设置了 ${envBaseUrlKey} 时改发往该地址`,
+    confirmVisionModelTitle: "设为视觉代理模型",
+    confirmVisionModel: (name: string): string =>
+      `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读，penguin tools i2t 也使用它。`,
     /** The add-model dialog's footer verb (the settings dialog's is the common Save). */
     addAction: "添加",
     /** A save that changes a promoted row's price or identity: the server then drops the promotion. */
@@ -7266,7 +7271,6 @@ Benchmark：
       memory_import_confirm_required: "本次导入会覆盖或删除已有记忆，请确认后继续。",
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
-      model_not_chat_eligible: "该模型仅支持专用工具，无法设为默认聊天模型。",
       model_not_addable: "该分组只承载内置模型，不能再添加其他模型；请在自定义分组中添加。",
       penguin_go_protocol_fixed: "Penguin Go 固定使用 MMSP 协议，不能改为其他协议。",
       model_not_routable:

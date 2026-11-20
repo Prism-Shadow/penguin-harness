@@ -10,23 +10,29 @@ import {
   type ReactNode,
 } from "react";
 import { GlyphIcon, ICONS, InlineIconButton, Spinner, toastError } from "@prismshadow/penguin-ui";
-import type { ToolModelSettings } from "@prismshadow/penguin-server/api";
+import { readReplyAloud } from "../../../api/endpoints";
+import type { ToolBinding } from "../../../api/tool-types";
 import { apiUrl } from "../../../lib/server-context";
 import { apiErrorText } from "../../../lib/api-error";
 import { S } from "../../../lib/strings";
 import { useAuth } from "../../../state/auth";
-import { useProjectCapabilities } from "../../../state/use-project-capabilities";
-import { runVoice } from "../../../api/project-capabilities";
-import { hasBoundCapability } from "../../../lib/bound-capability";
+import { boundToolModel, useToolBindings } from "../../../state/use-tool-bindings";
 
+/**
+ * The voice controls of one chat window: dictation into the composer (dictation.tsx) and reading
+ * a reply aloud. Both run on the Project's multimodal tools — speech recognition and speech
+ * synthesis — on the server the Session lives on, and show only while the plugin is on there
+ * and a model is bound. Reading aloud keeps its audio in the Session (the plugin reuses it by
+ * Session, reply and voice model), so a draft, which has no Session yet, offers none.
+ */
 type Playback = { id: string; phase: "loading" | "playing" | "ready" };
 interface VoiceState {
   projectId: string;
   server: string | null;
   sessionId: string | undefined;
   active: boolean;
-  settings: ToolModelSettings | null;
-  readCurrent: (signal: AbortSignal) => Promise<ToolModelSettings | null>;
+  bindings: ToolBinding[] | null;
+  readCurrent: (signal: AbortSignal) => Promise<ToolBinding[] | null>;
   playback: Playback | null;
   speak: (id: string, text: string) => void;
   stop: (replyId?: string) => void;
@@ -51,8 +57,8 @@ export function VoiceScope({
 }) {
   const listener = useAuth().user?.userId;
   const replays = useRef(new Map<string, { text: string; model: string; url: string }>());
-  const { settings, readCurrent } = useProjectCapabilities(active ? projectId : null, server);
-  const canSpeak = hasBoundCapability(settings, "t2s");
+  const { bindings, readCurrent } = useToolBindings(active ? projectId : null, server);
+  const canSpeak = sessionId !== undefined && boundToolModel(bindings, "t2s") !== undefined;
   const [playback, setPlayback] = useState<Playback | null>(null);
   const current = useRef<{ request: AbortController; audio: HTMLAudioElement; id: string } | null>(
     null,
@@ -93,7 +99,7 @@ export function VoiceScope({
       stop();
       return;
     }
-    if (!active || !canSpeak) return;
+    if (!active || !canSpeak || sessionId === undefined) return;
     let item = previous?.id === id ? previous : null;
     try {
       if (!item) {
@@ -103,10 +109,10 @@ export function VoiceScope({
         item = { request, audio, id };
         current.current = item;
         setPlayback({ id, phase: "loading" });
-        const latest = await readCurrent(request.signal);
+        // The binding as it is now: another tab may have changed the voice since this one read it.
+        const binding = boundToolModel(await readCurrent(request.signal), "t2s");
         if (current.current !== item) return;
-        const binding = latest?.bindings.t2s;
-        if (!binding || !hasBoundCapability(latest, "t2s")) {
+        if (!binding) {
           stop(id);
           return;
         }
@@ -114,22 +120,20 @@ export function VoiceScope({
         const cached = replays.current.get(id);
         let url = cached?.text === text && cached.model === model ? cached.url : undefined;
         if (!url) {
-          const result = await runVoice(
+          const spoken = await readReplyAloud(
             projectId,
             server,
-            "tts",
-            { text, ...(sessionId ? { sessionId, readAloud: true } : {}) },
+            { text, sessionId },
             request.signal,
           );
           if (current.current !== item) return;
-          const artifact = result.artifacts.find((a) => a.mimeType.startsWith("audio/"));
-          if (!artifact || !artifact.url.startsWith("/api/")) throw new Error(S.voice.audioError);
-          url = artifact.url;
-          if (
-            result.model?.provider === binding.provider &&
-            result.model.modelId === binding.modelId
-          )
-            replays.current.set(id, { text, model, url });
+          if (!spoken.url.startsWith("/api/")) throw new Error(S.voice.audioError);
+          url = spoken.url;
+          replays.current.set(id, {
+            text,
+            model: JSON.stringify([spoken.model.provider, spoken.model.modelId]),
+            url,
+          });
         }
         audio.onended = () => stop(id);
         audio.onerror = () => {
@@ -161,7 +165,7 @@ export function VoiceScope({
         server,
         sessionId,
         active,
-        settings,
+        bindings,
         readCurrent,
         playback,
         speak: (id, text) => void speak(id, text),
@@ -178,7 +182,8 @@ export function ReadReply({ text }: { text: string }) {
     id = useId();
   const stop = scope?.stop;
   useEffect(() => () => stop?.(id), [stop, id]);
-  if (!scope || !hasBoundCapability(scope.settings, "t2s") || !text.trim()) return null;
+  if (!scope?.sessionId || boundToolModel(scope.bindings, "t2s") === undefined || !text.trim())
+    return null;
   const own = scope.playback?.id === id ? scope.playback.phase : null;
   const label = own === "ready" ? S.voice.play : own ? S.voice.stop : S.voice.listen;
   return (

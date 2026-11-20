@@ -96,7 +96,9 @@ export interface ModelPickerModalProps {
   /** Names the dialog for assistive tech ("Choose model", "Switch model"). */
   title: string;
   models: ModelInfo[];
+  /** `tool`: a tool binding's candidates, whose tool models are listed; `chat` leaves them out. */
   purpose?: "chat" | "tool";
+  /** Offers a footer action that removes the assignment; absent where an empty value is no choice. */
   onClear?: () => void;
   /** Currently selected (provider, modelId) pair; null = not yet chosen. */
   value: ModelRefDto | null;
@@ -125,7 +127,7 @@ export function ModelPickerModal({ open, onClose, title, ...body }: ModelPickerM
 }
 
 function ModelPickerBody({
-  models: catalog,
+  models,
   purpose = "chat",
   onClear,
   value,
@@ -147,11 +149,9 @@ function ModelPickerBody({
     selected: value,
     defaultModel: defaultModel ?? null,
     groupOrder,
+    // A tool binding's picker lists its tool models; chat's leaves them out (visibleChatModels).
+    tools: purpose === "tool",
   };
-  const models = useMemo(
-    () => (purpose === "tool" ? catalog : catalog.filter((m) => m.chatEligible !== false)),
-    [purpose, catalog],
-  );
   const groups = pickerGroups(models, visibility);
   const results = searching ? searchPickerGroups(models, { ...visibility, query }) : [];
   const hidden = hiddenModelCount(models, { ...visibility, query });

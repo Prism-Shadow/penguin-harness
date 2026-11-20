@@ -8,7 +8,8 @@
  * One store per document (a frame is a document), created on first use for the frame's
  * language, and re-creatable for tests. Nothing here touches the DOM.
  */
-import type { ServerEvent, SessionInfo, ToolModelSettings } from "@prismshadow/penguin-server/api";
+import type { ServerEvent, SessionInfo } from "@prismshadow/penguin-server/api";
+import type { VoicePolishSettings } from "../../../../web/src/api/tool-types";
 import { buildFixtures, DEFAULT_MODEL } from "./fixtures";
 import type { DemoFixtures } from "./fixtures";
 import { harnessTranscript, orgDeskTranscript } from "./harness-transcript";
@@ -115,8 +116,12 @@ interface Live {
 
 export class DemoStore {
   readonly f: DemoFixtures;
-  /** Dictation's polish switch and instructions (the multimodal models page). */
-  voicePolish: ToolModelSettings["voicePolish"] = { enabled: false, prompt: "", defaultPrompt: "" };
+  /** Transcript editing's switch and instructions (the multimodal tools plugin's settings). */
+  voicePolish: VoicePolishSettings = {
+    enabled: false,
+    prompt: "Edit the transcript.",
+    defaultPrompt: "Edit the transcript.",
+  };
   readonly lang: Lang;
   /** Signed in as the fixtures' admin, or nobody. */
   signedIn: boolean;

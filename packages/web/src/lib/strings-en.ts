@@ -18,10 +18,11 @@ export const en: Strings = {
   voice: {
     models: "Multimodal models",
     modelHelp:
-      "The penguin tools CLI uses the models chosen here. In chat, dictation uses Speech recognition, read-aloud uses Speech synthesis, and polishing uses Text generation.",
+      "The penguin tools CLI uses the models chosen here. Image understanding is the Project's vision model, which also reads images for models without vision. In chat, dictation uses Speech recognition, read-aloud uses Speech synthesis, and polishing uses Text generation.",
+    imageUnderstanding: "Image understanding",
     unbound: "Not set",
     noModels: "No compatible models",
-    noTools: "Multimodal tools are disabled on this server.",
+    noTools: "The multimodal tools plugin is off in this Project. Turn it on on the Plugins page.",
     setDefault: "Set default",
     setDefaultHint: (operation: string) =>
       `Make this the Project's default ${operation.toLowerCase()} model`,
@@ -46,7 +47,6 @@ export const en: Strings = {
     denied: "Allow microphone access in your browser or system settings to dictate.",
     unsupported:
       "This browser cannot record audio here. Open this page over HTTPS in a browser with microphone support.",
-    modelChanged: "The speech recognition model changed. Record again to use it.",
     recordFailed: "Could not record from the microphone.",
     tooLarge: "This recording is too large. Try a shorter recording.",
     empty: "No speech was recognized.",
@@ -2689,6 +2689,8 @@ export const en: Strings = {
     visionModelBadge: "Proxy vision",
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "Tokens this model has used, all time",
+    visionModelHint:
+      "Make this the vision model: it reads images for models without vision, and runs penguin tools i2t",
     priceUnitShort: "/M tok",
     testConnection: "Test connection",
     testing: "Testing…",
@@ -2861,6 +2863,9 @@ export const en: Strings = {
     },
     envBaseUrlNote: (defaultBaseUrl: string, envBaseUrlKey: string): string =>
       `Requests go to ${defaultBaseUrl}, or to ${envBaseUrlKey} when it is set`,
+    confirmVisionModelTitle: "Set as proxy vision model",
+    confirmVisionModel: (name: string): string =>
+      `Make "${name}" the proxy vision model? Models without vision will read images through it when they call read_file, and penguin tools i2t runs on it.`,
     addAction: "Add",
     confirmCancelPromotionTitle: "Cancel promotion",
     confirmCancelPromotion: (name: string, pct: number): string =>
@@ -6960,7 +6965,6 @@ Scenarios:
         "This import would overwrite or delete memories. Confirm it to continue.",
       schedule_exists: "A scheduled task with this name already exists.",
       schedule_not_found: "This scheduled task no longer exists.",
-      model_not_chat_eligible: "This model cannot be set as the default for chat.",
       model_not_addable:
         "This group carries its built-in models only; add the model under a custom group.",
       penguin_go_protocol_fixed: "Penguin Go always uses the MMSP protocol; it cannot be changed.",

@@ -3,18 +3,36 @@ import { capturePcm } from "./pcm-recording";
 const MAX_BYTES = 20 * 1024 * 1024;
 const preferred = ["audio/webm;codecs=opus", "audio/mp4", "audio/ogg;codecs=opus", "audio/webm"];
 
-/** Resolves when the recorder stops. Aborting always releases tracks, including a permission grant that arrives late. */
+/** The browser can run an audio worklet: the recording is then 16 kHz PCM WAV (pcm-recording.ts). */
+function recordsPcm(): boolean {
+  return typeof AudioContext !== "undefined" && typeof AudioWorkletNode !== "undefined";
+}
+
+/** This page can record speech at all: a microphone API and a way to encode what it hears. */
+export function canRecordSpeech(): boolean {
+  return (
+    Boolean(navigator.mediaDevices?.getUserMedia) &&
+    (recordsPcm() || typeof MediaRecorder !== "undefined")
+  );
+}
+
+/**
+ * Records until `finish` is called and resolves with the recording. It is 16 kHz PCM WAV wherever
+ * the browser runs an audio worklet — a format every speech recognizer takes, DeepSeek's (which
+ * refuses WebM) included, so nothing depends on which model is bound — and the browser's own
+ * MediaRecorder format elsewhere. Aborting always releases the tracks, a permission grant that
+ * arrives late included.
+ */
 export async function captureSpeech(
   signal: AbortSignal,
   started: (finish: () => void, stream: MediaStream, context?: AudioContext) => void,
-  format?: "audio/wav",
 ): Promise<Blob> {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   const release = () => stream.getTracks().forEach((track) => track.stop());
   signal.addEventListener("abort", release, { once: true });
   try {
     signal.throwIfAborted();
-    if (format === "audio/wav") return await capturePcm(stream, signal, MAX_BYTES, started);
+    if (recordsPcm()) return await capturePcm(stream, signal, MAX_BYTES, started);
     const mimeType = preferred.find((type) => MediaRecorder.isTypeSupported(type));
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
     return await new Promise<Blob>((resolve, reject) => {

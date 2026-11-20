@@ -1,7 +1,7 @@
 /**
  * The Project operations a Model library entry offers (features/models/model-operations.tsx).
  *
- * - A model lists the operations an active plugin contributes and it can serve, in the server's
+ * - A model lists the tool bindings the enabled plugins declare and it can serve, in the server's
  *   order and language, marking the one the Project uses it for.
  * - The card's mark names the operations the model is in use for, and is absent otherwise.
  * - In the dialog an owner gets a short action on every other operation; a member sees only what
@@ -10,7 +10,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ToolModelSettings } from "@prismshadow/penguin-server/api";
+import type { ToolBinding } from "../src/api/tool-types";
 import {
   ModelInUseMark,
   ModelOperationsBlock,
@@ -22,38 +22,34 @@ import { en } from "../src/lib/strings-en";
 const river = { provider: "river", modelId: "voice" };
 const lake = { provider: "lake", modelId: "voice" };
 
-const settings: ToolModelSettings = {
-  available: [
-    { key: "s2t", package: "@example/voice", title: { en: "Meeting notes", zh: "会议记录" } },
-    { key: "t2s", package: "@example/voice", title: { en: "Narration", zh: "旁白" } },
-  ],
-  bindings: { s2t: river, t2i: river },
-  candidates: {
-    s2t: [river, lake],
-    t2s: [river],
-    // Bound and a candidate, but no active plugin contributes the operation.
-    t2i: [river],
-    t2v: [],
-    fetch: [],
-    search: [],
-    t2t: [],
-    i2t: [],
+const bindings: ToolBinding[] = [
+  {
+    key: "s2t",
+    package: "@example/voice",
+    title: { en: "Meeting notes", zh: "会议记录" },
+    model: river,
+    candidates: [river, lake],
   },
-  voicePolish: { enabled: false, prompt: "", defaultPrompt: "" },
-};
+  {
+    key: "t2s",
+    package: "@example/voice",
+    title: { en: "Narration", zh: "旁白" },
+    candidates: [river],
+  },
+];
 
 afterEach(() => setActiveStrings(zh));
 
 describe("the operations a model offers", () => {
   it("lists the contributed operations it can serve, marking the one it is in use for", () => {
-    expect(modelOperations(settings, river, "en")).toEqual([
+    expect(modelOperations(bindings, river, "en")).toEqual([
       { key: "s2t", title: "Meeting notes", current: true },
       { key: "t2s", title: "Narration", current: false },
     ]);
-    expect(modelOperations(settings, lake, "zh")).toEqual([
+    expect(modelOperations(bindings, lake, "zh")).toEqual([
       { key: "s2t", title: "会议记录", current: false },
     ]);
-    expect(modelOperations(settings, { provider: "sea", modelId: "voice" }, "en")).toEqual([]);
+    expect(modelOperations(bindings, { provider: "sea", modelId: "voice" }, "en")).toEqual([]);
     expect(modelOperations(null, river, "en")).toEqual([]);
   });
 
@@ -61,7 +57,7 @@ describe("the operations a model offers", () => {
     setActiveStrings(en);
     const mark = (model: typeof river) =>
       renderToStaticMarkup(
-        createElement(ModelInUseMark, { operations: modelOperations(settings, model, "en") }),
+        createElement(ModelInUseMark, { operations: modelOperations(bindings, model, "en") }),
       );
     expect(mark(river)).toContain('aria-label="In use: Meeting notes"');
     expect(mark(lake)).toBe("");
@@ -72,9 +68,9 @@ describe("the operations a model offers", () => {
     const block = (canEdit: boolean) =>
       renderToStaticMarkup(
         createElement(ModelOperationsBlock, {
-          operations: modelOperations(settings, river, "en"),
+          operations: modelOperations(bindings, river, "en"),
           canEdit,
-          disabled: false,
+          isDisabled: () => false,
           onUse: () => {},
         }),
       );

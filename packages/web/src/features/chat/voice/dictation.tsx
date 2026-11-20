@@ -11,6 +11,10 @@
  * `active` is true from the first press until the text is inserted or the dictation is cancelled;
  * the composer holds Send and Enter for that time. Esc cancels through the shared Escape stack,
  * so a dialog or menu opened over the composer closes first and the recording goes on.
+ *
+ * The recording goes to the multimodal tools plugin's speech recognition (`…/s2t/run`), then,
+ * when the Project turned transcript editing on, through its editing (`…/voice-polish`), which
+ * runs on the Project's text-generation model.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
@@ -25,9 +29,9 @@ import {
 } from "@prismshadow/penguin-ui";
 import { apiErrorText } from "../../../lib/api-error";
 import { S } from "../../../lib/strings";
-import { polishVoice, runVoice } from "../../../api/project-capabilities";
-import { hasBoundCapability } from "../../../lib/bound-capability";
-import { captureSpeech, recordingData } from "./recording";
+import { getVoicePolish, polishTranscript, transcribeRecording } from "../../../api/endpoints";
+import { boundToolModel } from "../../../state/use-tool-bindings";
+import { canRecordSpeech, captureSpeech, recordingData } from "./recording";
 import { useVoice } from "./voice-scope";
 
 type Phase = "idle" | "permission" | "recording" | "transcribing" | "polishing";
@@ -56,7 +60,7 @@ export function useDictation({
   disabled: boolean;
 }) {
   const scope = useVoice();
-  const canDictate = hasBoundCapability(scope?.settings, "s2t");
+  const canDictate = boundToolModel(scope?.bindings, "s2t") !== undefined;
   const [phase, setPhase] = useState<Phase>("idle");
   const [microphone, setMicrophone] = useState<{
     stream: MediaStream;
@@ -105,7 +109,7 @@ export function useDictation({
   useEscLayer(phase !== "idle", dismiss);
   async function record() {
     if (!scope?.active || !canDictate || job.current) return;
-    if (!navigator.mediaDevices?.getUserMedia) {
+    if (!canRecordSpeech()) {
       toastError(S.voice.unsupported);
       return;
     }
@@ -115,24 +119,12 @@ export function useDictation({
     setPhase("permission");
     try {
       const atStart = await scope.readCurrent(task.signal);
-      if (!atStart || !hasBoundCapability(atStart, "s2t")) return;
-      const supported =
-        atStart.dictationFormat === "audio/wav"
-          ? typeof AudioContext !== "undefined" && typeof AudioWorkletNode !== "undefined"
-          : typeof MediaRecorder !== "undefined";
-      if (!supported) {
-        toastError(S.voice.unsupported);
-        return;
-      }
-      const blob = await captureSpeech(
-        task.signal,
-        (stop, stream, context) => {
-          finish.current = stop;
-          setMicrophone({ stream, context });
-          setPhase("recording");
-        },
-        atStart.dictationFormat,
-      );
+      if (boundToolModel(atStart, "s2t") === undefined) return;
+      const blob = await captureSpeech(task.signal, (stop, stream, context) => {
+        finish.current = stop;
+        setMicrophone({ stream, context });
+        setPhase("recording");
+      });
       task.signal.throwIfAborted();
       finish.current = null;
       setMicrophone(null);
@@ -141,22 +133,13 @@ export function useDictation({
         return;
       }
       setPhase("transcribing");
-      const latest = await scope.readCurrent(task.signal);
-      if (!latest || !hasBoundCapability(latest, "s2t")) return;
-      if (latest.dictationFormat && latest.dictationFormat !== blob.type) {
-        toastInfo(S.voice.modelChanged);
-        return;
-      }
       const audio = await recordingData(blob);
       task.signal.throwIfAborted();
-      const result = await runVoice(
+      const sessionId = scope.sessionId;
+      const result = await transcribeRecording(
         scope.projectId,
         scope.server,
-        "stt",
-        {
-          audio,
-          ...(scope.sessionId ? { sessionId: scope.sessionId } : {}),
-        },
+        { audio, ...(sessionId ? { sessionId } : {}) },
         task.signal,
       );
       task.signal.throwIfAborted();
@@ -165,14 +148,19 @@ export function useDictation({
         toastInfo(S.voice.empty);
         return;
       }
-      if (latest.voicePolish.enabled && hasBoundCapability(latest, "t2t")) {
+      const polish = await getVoicePolish(scope.projectId, scope.server, task.signal).catch(
+        (e: unknown) => {
+          if (task.signal.aborted) throw e;
+          return null;
+        },
+      );
+      if (polish?.enabled && polish.model) {
         setPhase("polishing");
         try {
-          const polished = await polishVoice(
+          const polished = await polishTranscript(
             scope.projectId,
             scope.server,
-            text,
-            scope.sessionId,
+            { text, ...(sessionId ? { sessionId } : {}) },
             task.signal,
           );
           if (!polished.text?.trim()) throw new Error("empty");

@@ -96,6 +96,7 @@ import type {
   SshHostRequest,
   SshHostResponse,
   SshHostsResponse,
+  ModelRefDto,
   ModelsResponse,
   ModelsUpdateRequest,
   PresetSyncRequest,
@@ -285,6 +286,15 @@ import { ApiError, apiFetch, apiFetchStream, apiFetchWithMeta, apiUpload } from 
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
 import { activityCursorParam, type ActivityKey } from "../lib/session-grouping";
+import type {
+  SpokenReply,
+  ToolBindingUpdate,
+  ToolBindingsResponse,
+  ToolRun,
+  ToolRunRequest,
+  VoicePolishSettings,
+  VoicePolishUpdate,
+} from "./tool-types";
 
 // Auth & user -----------------------------------------------------------------
 
@@ -498,6 +508,94 @@ export const putDefaultModel = (projectId: string, body: DefaultModelUpdateReque
   apiFetch<DefaultModelResponse>(`/api/projects/${encodeURIComponent(projectId)}/models/default`, {
     method: "PUT",
     body,
+  });
+
+// Model tools: the platform's bindings and the multimodal tools plugin's routes ----------------
+
+const toolBindingsPath = (projectId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/models/tool-bindings`;
+const multimodalPath = (projectId: string, rest: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/multimodal-tools${rest}`;
+
+/** A JSON answer read through the abortable fetch path. */
+async function abortableJson<T>(
+  path: string,
+  options: { method?: "GET" | "POST"; body?: unknown; server: string | null; signal?: AbortSignal },
+): Promise<T> {
+  return (await (await apiFetchStream(path, options)).json()) as T;
+}
+
+/**
+ * Every tool-model binding the Project's enabled plugins declare, each with its model and the
+ * configured models it accepts (any member). `server` names the machine whose copy is read.
+ */
+export const getToolBindings = (projectId: string, server: string | null, signal?: AbortSignal) =>
+  abortableJson<ToolBindingsResponse>(toolBindingsPath(projectId), {
+    server,
+    ...(signal !== undefined ? { signal } : {}),
+  });
+
+/** Binds one key, or with `model: null` unbinds it (owner); answers the whole list. */
+export const patchToolBinding = (projectId: string, body: ToolBindingUpdate) =>
+  apiFetch<ToolBindingsResponse>(toolBindingsPath(projectId), { method: "PATCH", body });
+
+/** Transcribes a recording with the Project's speech-recognition model (any member). */
+export const transcribeRecording = (
+  projectId: string,
+  server: string | null,
+  body: ToolRunRequest,
+  signal?: AbortSignal,
+) =>
+  abortableJson<ToolRun>(multimodalPath(projectId, "/s2t/run"), {
+    method: "POST",
+    body,
+    server,
+    ...(signal !== undefined ? { signal } : {}),
+  });
+
+/** Transcript editing in the Project: the switch, the instructions and the model it runs on. */
+export const getVoicePolish = (projectId: string, server: string | null, signal?: AbortSignal) =>
+  abortableJson<VoicePolishSettings>(multimodalPath(projectId, "/voice-polish/settings"), {
+    server,
+    ...(signal !== undefined ? { signal } : {}),
+  });
+
+/** Changes what the update names (owner); answers the settings as stored. */
+export const patchVoicePolish = (projectId: string, body: VoicePolishUpdate) =>
+  apiFetch<VoicePolishSettings>(multimodalPath(projectId, "/voice-polish/settings"), {
+    method: "PATCH",
+    body,
+  });
+
+/** Edits one dictated transcript with the Project's text-generation model. */
+export const polishTranscript = (
+  projectId: string,
+  server: string | null,
+  body: { text: string; sessionId?: string },
+  signal?: AbortSignal,
+) =>
+  abortableJson<{ text: string; model: ModelRefDto }>(multimodalPath(projectId, "/voice-polish"), {
+    method: "POST",
+    body,
+    server,
+    ...(signal !== undefined ? { signal } : {}),
+  });
+
+/**
+ * A reply's audio in its Session: the stored one when this reply was read with this voice model
+ * before, else spoken now. Answers where to play it.
+ */
+export const readReplyAloud = (
+  projectId: string,
+  server: string | null,
+  body: { text: string; sessionId: string },
+  signal?: AbortSignal,
+) =>
+  abortableJson<SpokenReply>(multimodalPath(projectId, "/read-aloud"), {
+    method: "POST",
+    body,
+    server,
+    ...(signal !== undefined ? { signal } : {}),
   });
 
 /**
