@@ -317,7 +317,8 @@ export interface ModelCatalogEntry {
    */
   retired?: true;
   /**
-   * This row is, or once was, the default model of new Projects (PRESET_DEFAULT_MODEL). Usage
+   * This row was the default model of new Projects (until 2026-11-20 they were seeded with one;
+   * now they start with none). Usage
    * recorded on it stays priced after a Project stops storing the row — "Restore defaults"
    * deletes every row that is not a preset, retired ones included, and a former default is
    * often most of an older Project's history: retainedCatalogPricing gives the cost path this

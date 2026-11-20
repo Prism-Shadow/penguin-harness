@@ -283,6 +283,17 @@ async function upsert(
   // The pairing rule itself is enforced by parseScheduleFile above, which rejects half a reference.
   const refError = await validateScheduleModelRef(deps.projectConfigService, projectId, parsed.def);
   if (refError !== null) throw badRequest(`Invalid schedule configuration: ${refError}`);
+  // One that names no model runs on the Project's default: with none, every run would fail.
+  if (
+    parsed.def.modelId === undefined &&
+    (await deps.projectConfigService.getDefaultModelRef(projectId)) === undefined
+  ) {
+    throw new HttpError(
+      400,
+      "no_default_model",
+      "This Project has no default model: choose the model this schedule runs on, or set the Project's default model first.",
+    );
+  }
   await writeScheduleFile(deps.config.root, projectId, agentId, name, raw);
   // Creator attribution: the API writer is the creator (falls back to the Project owner only for hand-edited files).
   deps.schedulesRepo.registerOrSync({

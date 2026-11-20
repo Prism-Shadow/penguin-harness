@@ -7,7 +7,8 @@
  * - Starting and leaving — /exit, /quit, the end of the input, Ctrl-C twice on a terminal —
  *   makes no write request at all: no Session, no PATCH, no Task.
  * - The banner names the agent, the Workspace and the model the Session will have (the
- *   Project's default when the chat names none) and says it starts with the first message.
+ *   Project's default when the chat names none) and says it starts with the first message; a
+ *   Project with no default model is named as having none, with how to pick one.
  * - The first message creates exactly one Session, carrying the flags and the thinking level
  *   held before it; later messages go to the same Session. (A model switched before it: see
  *   chat-switch-model.test.ts.)
@@ -168,6 +169,16 @@ describe("starting penguin chat and leaving it", () => {
     // The Project's default model, read from the server, not created there.
     expect(out).toContain("Model: model-default");
     expect(out).toContain(t.chatNewConversation());
+  });
+
+  it("says the Project has no default model, and how to pick one, when it has none", async () => {
+    server.defaultModel = null;
+    const out = await driveChat(["hello", "/exit"]);
+    expect(out).toContain(`Model: ${t.chatNoDefaultModel()}`);
+    // The first message cannot create a Session: the CLI's own way out, and the message is kept.
+    expect(out).toContain(t.client.noDefaultModel());
+    expect(out).toContain(t.chatMessageKept());
+    expect(server.sessions.size).toBe(0);
   });
 
   it("names the model it is given, without reading the Project's default", async () => {

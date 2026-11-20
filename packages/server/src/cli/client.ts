@@ -239,6 +239,11 @@ export class ServerClient {
           : this.t.client.authFailed(this.conn.baseUrl),
       );
     }
+    // A Project with no default model, refusing a Session created without one: the CLI's own
+    // way out, its flags, rather than the server's wording for every caller.
+    if (code === "no_default_model") {
+      return new ApiError(res.status, code, this.t.client.noDefaultModel(), payload);
+    }
     return new ApiError(
       res.status,
       code,

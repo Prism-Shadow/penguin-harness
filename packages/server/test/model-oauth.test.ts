@@ -472,6 +472,10 @@ describe("model-oauth routes", () => {
       })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
+    // The default its owner chose (a new Project starts with none).
+    expect(
+      (await owner.put(`/api/projects/${projectId}/models/default`, DEEPSEEK_FLASH)).status,
+    ).toBe(200);
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_m" })).status,
     ).toBe(201);
@@ -781,6 +785,10 @@ describe("model-oauth callback without a session", () => {
   beforeEach(async () => {
     projects += 1;
     projectId = await create(`owner_o-cb_${projects}`);
+    // The default its owner chose (a new Project starts with none).
+    expect(
+      (await owner.put(`/api/projects/${projectId}/models/default`, DEEPSEEK_FLASH)).status,
+    ).toBe(200);
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "stranger_s" })).status,
     ).toBe(201);
