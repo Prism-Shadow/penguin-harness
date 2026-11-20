@@ -16,7 +16,7 @@ import type { AgentSummary, PluginItem } from "@prismshadow/penguin-server/api";
 import { Button, GlyphIcon, ICONS, ICON_SIZE, toastSuccess } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { agentDisplayName } from "../../state/project";
-import { CreateAgentDialog } from "../agents";
+import { CreateAgentDialog, defaultPicks } from "../agents";
 import type { CreateAgentDraft, PluginPickItem } from "../agents";
 
 /** What the page hands a card for the row: the picker's library, and how a new Agent joins the list. */
@@ -34,8 +34,11 @@ export interface BlankAgentSource {
 export function blankAgentDraft(
   plugin: Pick<PluginItem, "name">,
   title: string,
+  library: readonly PluginPickItem[] | null,
 ): Partial<CreateAgentDraft> {
-  return { name: title, plugins: [plugin.name] };
+  // The library's default-install plugins (goal and Plan mode) stay ticked beside this one: a
+  // prefilled list is the whole list Create sends, so leaving them out would skip them.
+  return { name: title, plugins: [...new Set([...defaultPicks(library), plugin.name])] };
 }
 
 /** The first row of the manage-installs list, laid out as the Agent rows under it are. */
@@ -86,7 +89,7 @@ export function BlankAgentDialog({
       projectId={projectId}
       library={source.library}
       libraryError={null}
-      initial={blankAgentDraft(plugin, title)}
+      initial={blankAgentDraft(plugin, title, source.library)}
       onClose={onClose}
       onCreated={async (_agentId, _machineId, agent) => {
         // Read into the list before the dialog closes, so the row is there when the list shows.

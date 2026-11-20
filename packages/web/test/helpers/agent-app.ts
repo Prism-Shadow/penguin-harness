@@ -396,7 +396,9 @@ export function agentServer(
   let allOn = true;
   /** A workbench as the list describes it: with its switch, unless the server predates them. */
   const listed = (w: WorkbenchInfo): WorkbenchInfo =>
-    options.older ? w : { ...w, enabled: !switchedOff.has(w.id) };
+    options.older
+      ? w
+      : { ...w, enabled: !switchedOff.has(w.id), showInSidebar: w.showInSidebar !== false };
   let vault: VaultEntryInfo[] = [{ key: "GITHUB_TOKEN", valueMasked: "gh****" }];
   let schedules: ScheduleItem[] = (options.schedules ?? [])
     .filter((s) => s.machineId === undefined)
@@ -1019,10 +1021,13 @@ export function agentServer(
         });
       }
       if (action === "history") return json({ versions: options.workbenchVersions ?? [] });
-      if (action === "app-center" && method === "PATCH") {
+      if ((action === "sidebar" || action === "app-center") && method === "PATCH") {
         const { show } = request.body as { show: boolean };
         const index = workbenches.indexOf(workbench);
-        const next = { ...workbench, appCenter: { ...workbench.appCenter, show } };
+        const next =
+          action === "sidebar"
+            ? { ...workbench, showInSidebar: show }
+            : { ...workbench, appCenter: { ...workbench.appCenter, show } };
         workbenches = workbenches.map((item, i) => (i === index ? next : item));
         return json({ workbench: listed(next) });
       }

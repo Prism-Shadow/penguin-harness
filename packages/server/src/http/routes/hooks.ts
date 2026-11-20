@@ -29,6 +29,8 @@ import {
   readInstalledIcon,
   removeHook,
   replaceSkillDirectory,
+  isWindowsReservedName,
+  WINDOWS_RESERVED_RULE,
 } from "@prismshadow/penguin-core";
 import type { HookCommand, HookManifest } from "@prismshadow/penguin-core";
 import type { AgentHooksResponse, HookItem } from "../../api/types.js";
@@ -320,6 +322,12 @@ export function agentHooksRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
         // overwrite confirmation copy.
         throw new HttpError(409, "hook_exists", `Hook package is already installed: ${hook.name}`);
       }
+    }
+    // A new package takes no name Windows refuses; one already on disk is replaced as it is.
+    if (isWindowsReservedName(hook.name) && (await fs.lstat(dir).catch(() => null)) === null) {
+      throw badRequest(
+        `Invalid hook package name ${JSON.stringify(hook.name)}: ${WINDOWS_RESERVED_RULE}.`,
+      );
     }
     // Replace semantics (the same as reinstalling from the library): the archive's files are
     // staged and swapped in, so no stale file survives and an interrupted import leaves no

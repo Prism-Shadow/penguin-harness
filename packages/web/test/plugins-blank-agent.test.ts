@@ -76,7 +76,7 @@ const MAIL = {
 const AGENTS_PATH = `/api/projects/${PROJECT_ID}/agents`;
 
 /** The plugin market with `plugin`'s manage-installs list open. */
-async function openInstalls(plugin: PluginItem) {
+async function openInstalls(plugin: PluginItem, others: PluginItem[] = []) {
   // jsdom has no ResizeObserver, which the card grid's container queries do not need here.
   vi.stubGlobal(
     "ResizeObserver",
@@ -86,7 +86,7 @@ async function openInstalls(plugin: PluginItem) {
       disconnect() {}
     },
   );
-  const server = agentServer(undefined, { library: [plugin] });
+  const server = agentServer(undefined, { library: [plugin, ...others] });
   const router = await mountAgentApp(h(PluginsPage), { route: "/plugins", at: "/plugins" });
   const manage = `${en.skills.manageInstall} ${plugin.name}`;
   await waitFor(() => hasButton(manage));
@@ -125,8 +125,29 @@ describe("installing a plugin on a new blank Agent", () => {
       author: "user",
       name: "Charts",
       plugins: ["charts"],
+      defaultPlugins: false,
     });
     expect(server.writes(`${AGENTS_PATH}/chart_maker/plugins`)).toEqual([]);
+  });
+
+  it("keeps the library's default-install plugins ticked beside the plugin, so the new Agent gets them too", async () => {
+    const goal = {
+      ...CHARTS,
+      name: "goal",
+      title: "Goal mode",
+      skills: [],
+      defaultInstall: true,
+    } as unknown as PluginItem;
+    const { server } = await openInstalls(CHARTS, [goal]);
+    await openBlank();
+
+    await type(fieldIn(topDialog(), en.agent.id), "chart_maker");
+    await click(create());
+    await waitFor(() => server.writes(AGENTS_PATH).length === 1);
+    expect(server.writes(AGENTS_PATH)[0]!.body).toMatchObject({
+      plugins: ["goal", "charts"],
+      defaultPlugins: false,
+    });
   });
 
   it("closes the dialog and keeps the list open, the new Agent in it reading Installed", async () => {

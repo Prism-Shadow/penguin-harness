@@ -120,3 +120,31 @@ export function loadTypeScript(assets: string | null = null): Promise<TypeScript
   });
   return loading;
 }
+
+let nodeTypes: string | null | undefined;
+
+/**
+ * The Node declarations a workbench's server code is checked with, so a handler imports
+ * `node:fs`, `node:path` or `node:net` as any Node program does: the `@types` folder holding
+ * `@types/node`, looked for where the compiler is — in the push's assets
+ * (scripts/typescript-payload.mjs carries it beside the compiler), beside this module (a
+ * dependency of this package), beside the running program (the desktop bundle). Null when no
+ * place has it; a workbench importing `node:` then fails its load naming the module.
+ *
+ * Declarations only: they change what the compiler accepts, not what the code may do. A
+ * handler has always run in this process, unconfined.
+ */
+export function nodeTypesRoot(assets: string | null = null): string | null {
+  if (nodeTypes !== undefined) return nodeTypes;
+  // A variable, not a literal, as for the compiler: nothing for the bundler to follow.
+  const specifier = "@types/node/package.json";
+  for (const from of compilerBases(assets)) {
+    try {
+      const pkg = createRequire(from()).resolve(specifier);
+      return (nodeTypes = path.dirname(path.dirname(pkg)));
+    } catch {
+      // Not in this place: the next one.
+    }
+  }
+  return (nodeTypes = null);
+}
