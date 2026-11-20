@@ -35,6 +35,8 @@ describe("the workspace's staged prefix", () => {
   });
 
   it("is none outside a workspace", () => {
-    expect(workspacePrefixManifest(path.join(root, "install", "lib", "dist", "penguin.js"))).toBeNull();
+    expect(
+      workspacePrefixManifest(path.join(root, "install", "lib", "dist", "penguin.js")),
+    ).toBeNull();
   });
 });

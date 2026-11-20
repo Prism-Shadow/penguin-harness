@@ -68,7 +68,8 @@ export async function connect(opts: CommonOpts, t: BrowserMessages): Promise<Ser
         apiPath.startsWith("/api/builtin-browser")
       ) {
         const reason = await missingBrowser(request);
-        if (reason !== null) throw new BrowserCliError("browser_unavailable", t.browser.unavailableHint(reason));
+        if (reason !== null)
+          throw new BrowserCliError("browser_unavailable", t.browser.unavailableHint(reason));
       }
       throw err;
     }

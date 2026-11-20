@@ -15,7 +15,7 @@ import path from "node:path";
 /** The workspace prefix's manifest for a program started from `entry`, or null when there is none. */
 export function workspacePrefixManifest(entry: string): string | null {
   if (path.resolve(entry).split(path.sep).includes("node_modules")) return null;
-  for (let dir = path.dirname(path.resolve(entry)); ; ) {
+  for (let dir = path.dirname(path.resolve(entry)); ;) {
     if (existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
       return path.join(dir, "packages", "server", "plugins", "package.json");
     }

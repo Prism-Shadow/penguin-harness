@@ -179,10 +179,14 @@ async function sourceHash(dir, into) {
 async function bundleInputsHash(dir, into) {
   const dist = path.join(dir, "dist");
   if (!fs.existsSync(dist)) return;
-  for (const meta of (await fsp.readdir(dist)).filter((f) => /^metafile-.*\.json$/.test(f)).sort()) {
+  for (const meta of (await fsp.readdir(dist))
+    .filter((f) => /^metafile-.*\.json$/.test(f))
+    .sort()) {
     let inputs;
     try {
-      inputs = Object.keys(JSON.parse(await fsp.readFile(path.join(dist, meta), "utf8")).inputs ?? {});
+      inputs = Object.keys(
+        JSON.parse(await fsp.readFile(path.join(dist, meta), "utf8")).inputs ?? {},
+      );
     } catch {
       into.update(`${meta}\0unreadable\0`);
       continue;
