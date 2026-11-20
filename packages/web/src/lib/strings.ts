@@ -1427,17 +1427,23 @@ export const zh = {
     broken: "加载失败",
     /** A tile whose app is still being built: it opens once the build is done. */
     building: "构建中",
+    /** A tile whose app is running behind the grid, its window minimized. */
+    running: "运行中",
     /** A tile's hint: its whole title and the Agent that owns it. */
     tileTip: (title: string, agent: string) => `${title}，来自 ${agent}`,
     buildingTip: (title: string, agent: string) =>
       `${title}，来自 ${agent}。构建中，完成后即可打开`,
     failedTip: (title: string, agent: string) =>
       `${title}，来自 ${agent}。加载失败，菜单中可查看错误`,
+    runningTip: (title: string, agent: string) => `${title}，来自 ${agent}。运行中，点击恢复窗口`,
     /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
     tileName: (title: string, agent: string, state: string | null) =>
       state === null ? `${title}，${agent}` : `${title}，${agent}，${state}`,
-    folderTip: (name: string, count: number) => `${name}，${count} 个应用`,
-    folderName: (name: string, count: number) => `${name}，分组，${count} 个应用`,
+    /** A folder's hint and accessible name: its apps, and how many of them are running. */
+    folderTip: (name: string, count: number, running: number) =>
+      `${name}，${count} 个应用${running > 0 ? `，${running} 个运行中` : ""}`,
+    folderName: (name: string, count: number, running: number) =>
+      `${name}，分组，${count} 个应用${running > 0 ? `，${running} 个运行中` : ""}`,
     /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
     newFolder: "新建分组",
     /** The page header's button that opens the new-folder dialog. */
@@ -1479,6 +1485,7 @@ export const zh = {
     /** A failed tile with no recorded message (an older status file). */
     errorUnknown: "没有记录错误信息。打开应用可查看它的加载状态。",
     /** The windowed app's title bar. */
+    windowMinimize: "最小化",
     windowClose: "关闭，回到应用中心",
     windowFullScreen: "全屏打开",
     /** Machines whose apps could not be read just now: what they last showed stays on the grid. */

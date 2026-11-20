@@ -1922,6 +1922,16 @@ export const en: GalleryStrings = {
         vault: "Vault",
         billing: "Billing",
       },
+      window: "Window title bar",
+      windowHint:
+        "A window that holds one app: its icon and name, then minimize, full screen and close at the end. Minimize only hides the window and the app keeps running; close ends it. A window that cannot minimize or go full screen leaves those buttons out.",
+      windowFull: "All three controls",
+      windowCloseOnly: "Close only",
+      windowTitle: "Daily to-dos",
+      windowBody: "The app's page goes here.",
+      windowMinimize: "Minimize",
+      windowFullScreen: "Open full screen",
+      windowClose: "Close",
     },
     data: {
       table: "Table",

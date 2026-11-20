@@ -315,6 +315,7 @@ export * from "./components/shell/floating-ball/floating-ball-geometry";
 // with the hover actions it shares.
 export * from "./components/shell/app-shell/app-shell";
 export * from "./components/shell/app-window/app-window";
+export * from "./components/shell/app-window/app-window-bar";
 export { WallpaperSurface } from "./components/shell/app-shell/wallpaper";
 export type { WallpaperStyle } from "./components/shell/app-shell/wallpaper";
 export * from "./components/shell/rail/rail";
