@@ -57,10 +57,11 @@ afterEach(async () => {
   motion.matches = false;
 });
 
-async function carousel() {
+async function carousel(navigation: "thumbnails" | "controls" = "thumbnails") {
   await mount(
     createElement(ShowcaseCarousel, {
       slides: SLIDES,
+      navigation,
       label: "Selected plugins",
       labels: LABELS,
       intervalMs: STAY,
@@ -163,6 +164,19 @@ describe("the selected carousel", () => {
     await wait(STAY * 3);
     expect(showing()).toBe("A2UI");
     expect(slideRegion().getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("mounts just the current feature in controls-only navigation", async () => {
+    const region = await carousel("controls");
+    expect(region.querySelector(".showcase-rail")).toBeNull();
+    expect(region.querySelector(".showcase-position")?.textContent).toBe("1 / 3");
+    expect(region.textContent).not.toContain("Browser Automation");
+    await act(async () => {
+      button("Next").click();
+    });
+    expect(showing()).toBe("Browser Automation");
+    expect(region.querySelector(".showcase-position")?.textContent).toBe("2 / 3");
+    expect(region.textContent).not.toContain("Goal Mode");
   });
 
   it("moves on with Next and keeps turning", async () => {

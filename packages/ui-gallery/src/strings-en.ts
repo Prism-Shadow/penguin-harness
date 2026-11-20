@@ -2330,6 +2330,8 @@ export const en: GalleryStrings = {
       carouselHint:
         "Three slides. It turns every 7 seconds and holds while the pointer is over it; keyboard focus or a picked thumbnail stops it until Play. Under the system's reduced-motion setting it never turns by itself, and the button reads Play.",
       carouselLabel: "Selected plugins",
+      carouselControlsCaption:
+        "Controls alone (the public site's featured plugin): the slide on show and its place in the count, no thumbnail rail, so no other cover loads until its slide comes up",
       eyebrow: "Selected",
       carouselLabels: {
         previous: "Previous",

@@ -2259,6 +2259,8 @@ export const zh = {
       carouselHint:
         "三页。每 7 秒换页，指针悬停时暂停；键盘焦点进入或点选缩略图后停止，直到按「继续轮播」。系统设置减少动态效果时不自动换页，按钮显示「继续轮播」。",
       carouselLabel: "精选插件",
+      carouselControlsCaption:
+        "只有控件（公开站点的精选插件）：只显示当前一页和它在几页中的位置，没有缩略图栏，其余封面轮到才加载",
       eyebrow: "精选",
       carouselLabels: {
         previous: "上一个",

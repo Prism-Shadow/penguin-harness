@@ -5,7 +5,7 @@
  * a picture still on its way (the field in the picture's tone), one that loaded, one that failed
  * (the generated cover takes over); cover cards in their grid: short words, overlong words, the
  * full foot, a foot without controls, and the placeholder; the selected carousel with three
- * slides; the ranking beside the grid, and on its own with the note it carries while its figures
+ * slides, with its thumbnail rail and with its controls alone; the ranking beside the grid, and on its own with the note it carries while its figures
  * are placeholders; and a product page's parts. The public sites' rendering of the same modules is the
  * 公开站点 board's.
  *
@@ -295,6 +295,19 @@ export function ShowcaseBoard() {
           eyebrow={t.eyebrow}
           labels={t.carouselLabels}
         />
+        <div className="mt-6">
+          <Specimen caption={t.carouselControlsCaption}>
+            <ShowcaseCarousel
+              navigation="controls"
+              slides={sampleSlides(t, state.lang, () => (
+                <Button variant="primary">{t.viewDetails}</Button>
+              ))}
+              label={t.carouselLabel}
+              eyebrow={t.eyebrow}
+              labels={t.carouselLabels}
+            />
+          </Specimen>
+        </div>
       </BoardGroup>
 
       <BoardGroup title={t.ranking} aside={t.rankingHint}>

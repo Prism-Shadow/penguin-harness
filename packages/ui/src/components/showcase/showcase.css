@@ -533,6 +533,15 @@
 .showcase-rail-bar[data-running] {
   animation: showcase-stay linear both;
 }
+.showcase-position {
+  margin-left: auto;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--showcase-fg-muted, currentColor);
+}
+.showcase-position + .showcase-controls {
+  margin-left: 0;
+}
 .showcase-controls {
   display: flex;
   flex-shrink: 0;
