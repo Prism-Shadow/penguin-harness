@@ -152,6 +152,11 @@ import { PluginSourceSettings } from "./plugin/source-settings.js";
 import { PluginMirrorSettings } from "./plugin/mirror-settings.js";
 import { PluginLibraryModule } from "./plugin/library-module.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
+import { SemanticIdModule } from "./services/semantic-id-kinds.js";
+import { StartPageModule } from "./http/routes/start-page.js";
+import { AppData, SystemAgentAppData } from "./services/app-data.js";
+import { AppSeeds, HostAppSeeds } from "./services/app-seeds.js";
+import { AgentTasks, HostAgentTasks } from "./services/agent-tasks.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "./terminal/manager.js";
@@ -341,6 +346,8 @@ export class IdentityModule {}
     ProjectAccess,
     ProjectNotifier,
     ShippedBuiltinBenchmarkSeeds,
+    SystemAgentAppData,
+    HostAppSeeds,
     ProjectService,
     ProjectConfigService,
     ModelOAuthProvider,
@@ -362,6 +369,8 @@ export class IdentityModule {}
     ModelScopeAuth,
     InitialProjectProvisioner,
     ProjectEvents,
+    AppData,
+    AppSeeds,
   ],
 })
 export class ProjectsModule {}
@@ -380,6 +389,7 @@ export class ProjectsModule {}
     SessionApiRoutes,
     SchedulerRoutes,
     EventsRoutes,
+    HostAgentTasks,
   ],
   exports: [
     SessionIndex,
@@ -397,6 +407,7 @@ export class ProjectsModule {}
     OrgRuns,
     OrgSessions,
     ProjectRuns,
+    AgentTasks,
   ],
 })
 export class SessionRuntimeModule {}
@@ -529,6 +540,7 @@ export class CompanyModule {}
     UpdateJobService,
     HarnessHistoryStore,
     HttpModule,
+    StartPageModule,
     WebModule,
     InstallRoutes,
     HandshakeRoutes,
@@ -545,6 +557,7 @@ export class CompanyModule {}
     NpmPluginPackages,
     InstalledPluginRoutes,
     PluginCliCommandsProvider,
+    SemanticIdModule,
     SuggestIdRoutes,
     LanguagesModule,
     LanguageRoutes,

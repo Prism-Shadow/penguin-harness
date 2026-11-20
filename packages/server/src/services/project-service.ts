@@ -50,6 +50,7 @@ import type { ErrorLog, UsageStore } from "@prismshadow/penguin-library-observab
 import type { TraceIndex } from "@prismshadow/penguin-library-trace";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
+import type { AppSeeds } from "./app-seeds.js";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;
@@ -90,6 +91,8 @@ export class ProjectService implements ProjectLifecycle {
   /** Users' unsent drafts of the Project and of its Sessions: nowhere left to send them. */
   @Use() private readonly drafts!: UserDraftsStore;
   @Use() private readonly benchmarkSeeds!: BuiltinBenchmarkSeeds;
+  /** The seeds built-in plugins ship for their system apps' data, written once at creation. */
+  @Use() private readonly appSeeds!: AppSeeds;
 
   // Access control lives in ProjectAccess (services/project-access.ts); these delegate so
   // in-package callers keep one entry point.
@@ -122,7 +125,8 @@ export class ProjectService implements ProjectLifecycle {
    * lowercase letters, digits, and underscores only — the hyphen is a reserved
    * separator, usernames never contain a hyphen, so the first hyphen is the
    * ownership boundary and the prefix can never be crafted from another username;
-   * an admin's id contains no hyphen (occupying no user's namespace).
+   * an admin's id contains no hyphen (occupying no user's namespace). Last, the seeds built-in
+   * plugins ship for their system apps' data are written (services/app-seeds.ts).
    */
   async createProject(owner: UserRow, projectId: string, name?: string): Promise<ProjectSummary> {
     if (owner.isAdmin) {
@@ -189,6 +193,8 @@ export class ProjectService implements ProjectLifecycle {
         .catch(() => {});
       throw err;
     }
+    // Last, with the Project in place: never a reason to roll it back (services/app-seeds.ts).
+    await this.appSeeds.seedProject(projectId);
     return {
       projectId,
       name: displayName,
@@ -242,6 +248,9 @@ export class ProjectService implements ProjectLifecycle {
     // Presets written just now bring their promotions, once the row they reference exists; a
     // Project that kept its own models keeps its own pricing.
     if (seeded) await this.projectConfig.seedPresetPromotions(projectId);
+    // Adopted, it is a new Project here: the system apps' seeds of the built-in packages its
+    // existing table lists, where their names are free.
+    await this.appSeeds.seedProject(projectId);
   }
 
   /**

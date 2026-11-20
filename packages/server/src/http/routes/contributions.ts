@@ -1,11 +1,12 @@
 /**
- * GET /api/contributions — the web slots' contributions, as data. What a pushed platform
- * or an installed plugin adds to the web app arrives here; the app merges it with its
- * own pages and renders what it has a renderer for.
+ * GET /api/contributions — the web slots' contributions, as data, and the start page's
+ * contributed counts (`startMetrics`, routes/start-page.ts). What a pushed platform or an
+ * installed plugin adds to the web app arrives here; the app merges it with its own pages and
+ * renders what it has a renderer for.
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
-import { Interface, Bind, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type {
   ContributionsResponse,
   RendererRef,
@@ -18,6 +19,7 @@ import type {
   WebPageRemovalData,
 } from "../../api/types.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import type { StartPage } from "./start-page.js";
 
 export interface ContributionsRouteDeps {
   web: WebShell;
@@ -88,6 +90,8 @@ export interface WebShellSlots {
   },
 })
 export class WebModule {
+  /** The start page's counts ride the same answer (routes/start-page.ts). */
+  @Use() private readonly startPage!: StartPage;
   @Provide() web!: WebShell;
   @Bind("web.contributions") contributionsRoutes!: Hono<AppEnv>;
   setup({ contributions }: ClassCtx) {
@@ -104,6 +108,7 @@ export class WebModule {
       pageRemovals: collect<WebPageRemovalContribution>("pageRemovals"),
       agentTabs: collect("agentTabs"),
       sessionTabs: collect("sessionTabs"),
+      startMetrics: this.startPage.metrics(),
     };
     const web: WebShell = { contributions: () => response };
     this.web = web;
