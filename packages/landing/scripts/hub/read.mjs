@@ -7,7 +7,7 @@
  * File formats: plugins follow the plugin package (RFC-0003: npm's `package.json`, and the
  * contributions its built `ifaces.json` carries), benchmarks
  * `benchmark_config.toml` / `task_config.toml` with their statement and rubric, plus the optional
- * task data linked in the statement (RFC-0001), experiments `meta_info.yaml`, `<phase>/summary.yaml`
+ * task files in the repository named by `data_url` (RFC-0001), experiments `meta_info.yaml`, `<phase>/summary.yaml`
  * and `<phase>/attempt-<n>.yaml` (RFC-0002), and leaderboards one `leaderboard.yaml` (RFC-0005).
  * A file that breaks its format fails the build: a page silently missing a benchmark is worse
  * than a deploy that waits for the source to be fixed. Only what is `published` is shown: a
@@ -19,7 +19,7 @@ import { parse as parseToml } from "smol-toml";
 import { parse as parseYaml } from "yaml";
 import { readPluginIcon } from "./icon.mjs";
 import { readLibraryEntries } from "./plugin-table.mjs";
-import { dataFiles as listDataFiles, pinnedDataRepo } from "./source.mjs";
+import { externalDataRepo } from "./source.mjs";
 
 export const PLUGINS_SOURCE = "https://github.com/Prism-Shadow/penguin-harness/tree/main/plugins";
 export const BENCHMARK_SOURCE = "https://github.com/Prism-Shadow/penguin-harness-benchmark";
@@ -41,6 +41,8 @@ function subdirs(dir) {
 
 const readText = (file) => readFileSync(file, "utf8");
 const optionalText = (file) => (existsSync(file) ? readText(file) : undefined);
+
+// Only regular files from a data repository can supply text for the page.
 const dataText = (file) =>
   lstatSync(file, { throwIfNoEntry: false })?.isFile() ? readText(file) : undefined;
 
@@ -154,66 +156,15 @@ export function readPlugins(pluginsDir) {
 }
 
 /**
- * A task's folder under `data/<benchmark-id>/tasks/`: the one its statement links to, else the
+ * A task's folder under the package's tasks directory: the one its statement links to, else the
  * task id without its `CASE-NNN-` prefix, when that folder has files.
  */
-function taskDataName(benchmarkId, taskId, statement, folders) {
-  const linked = new RegExp(`/data/${benchmarkId}/tasks/([^/\\s)#?]+)`).exec(statement)?.[1];
+function taskDataName(prefix, taskId, statement, folders) {
+  const linked = new RegExp(`/${prefix}tasks/([^/\\s)#?]+)`).exec(statement)?.[1];
   for (const name of [linked, taskId.replace(/^CASE-\d+-/, ""), taskId]) {
     if (name && folders.has(name)) return name;
   }
   return undefined;
-}
-
-/** The pinned GitHub task directory, for example owner/repo/tree/<commit>/data/<id>/tasks/<task>. */
-function externalTaskSource(statement) {
-  const link =
-    /https:\/\/github\.com\/([\w-]+\/[\w-][\w.-]*)\/tree\/([a-f0-9]{40})\/((?:[\w-][\w.-]*\/)*)tasks\/([\w-][\w.-]*)(?=\/?[\s)`#?]|\/?$)/g;
-  for (const [, repository, commit, prefix, task] of statement.matchAll(link)) {
-    if (`https://github.com/${repository}` !== BENCHMARK_SOURCE) {
-      return { repository, commit, prefix, task };
-    }
-  }
-  return undefined;
-}
-
-/** Resolve each repository revision once, even across Train/Test packages or shared training Cases. */
-function dataSources(repo, files) {
-  const local = { root: repo, files, tree: `${BENCHMARK_SOURCE}/tree/main` };
-  const pinned = new Map();
-  return (link) => {
-    if (!link) return local;
-    const { repository, commit } = link;
-    const tree = `https://github.com/${repository}/tree/${commit}`;
-    if (!pinned.has(tree)) {
-      const root = pinnedDataRepo(repository, commit);
-      pinned.set(tree, root && { root, files: listDataFiles(root, ""), tree });
-    }
-    return pinned.get(tree);
-  };
-}
-
-function datasetFolder(source, prefix) {
-  const paths = source.files
-    .filter((path) => path.startsWith(prefix))
-    .map((path) => path.slice(prefix.length));
-  if (paths.length === 0) return undefined;
-  const tasks = new Map();
-  for (const path of paths) {
-    const match = /^tasks\/([^/]+)\/(.+)$/.exec(path);
-    if (!match) continue;
-    if (!tasks.has(match[1])) tasks.set(match[1], []);
-    tasks.get(match[1]).push(match[2]);
-  }
-  const root = join(source.root, prefix);
-  const url = prefix ? `${source.tree}/${prefix.slice(0, -1)}` : source.tree;
-  const detail = {
-    url,
-    readme: dataText(join(root, "README.md")),
-    fileCount: paths.length,
-    entries: dataEntries(paths),
-  };
-  return { root, tasks, detail };
 }
 
 /**
@@ -241,7 +192,9 @@ function dataEntries(paths) {
 export function readBenchmarks(repo, dataFiles = []) {
   const root = join(repo, "packages");
   const benchmarks = [];
-  const resolveSource = dataSources(repo, dataFiles);
+  const sources = new Map([
+    [BENCHMARK_SOURCE, { root: repo, tree: `${BENCHMARK_SOURCE}/tree/main`, files: dataFiles }],
+  ]);
   for (const dirName of subdirs(root)) {
     const dir = join(root, dirName);
     const file = join(dir, "benchmark_config.toml");
@@ -251,7 +204,23 @@ export function readBenchmarks(repo, dataFiles = []) {
     if (requireText(config, "status", file) !== "published") continue;
     const author = readAuthor(config.author);
     if (author === undefined) fail(file, "[author] name is required");
-    const datasets = new Map();
+    const dataUrl = optionalString(config.data_url)?.trim();
+    const repository = dataUrl ?? BENCHMARK_SOURCE;
+    if (!sources.has(repository)) sources.set(repository, externalDataRepo(repo, repository));
+    const source = sources.get(repository);
+    const files = source?.files ?? [];
+    const legacyPrefix = `data/${dirName}/`;
+    const dataPrefix = dataUrl
+      ? ([`${dirName}/`, legacyPrefix].find((prefix) =>
+          files.some((path) => path.startsWith(`${prefix}tasks/`)),
+        ) ?? "")
+      : legacyPrefix;
+    const ownData = files.filter((path) => path.startsWith(dataPrefix));
+    const taskFolders = new Map();
+    for (const path of ownData) {
+      const match = /^tasks\/([^/]+)\/(.+)$/.exec(path.slice(dataPrefix.length));
+      if (match) taskFolders.set(match[1], [...(taskFolders.get(match[1]) ?? []), match[2]]);
+    }
     const tasks = subdirs(dir)
       .filter((name) => existsSync(join(dir, name, "task_config.toml")))
       .map((name) => {
@@ -260,15 +229,7 @@ export function readBenchmarks(repo, dataFiles = []) {
         if (task.id !== name) fail(taskFile, `id "${task.id}" does not match its directory`);
         const budget = task.budget && typeof task.budget === "object" ? task.budget : {};
         const statement = optionalText(join(dir, name, "statement", "README.md")) ?? "";
-        const linked = externalTaskSource(statement);
-        const source = resolveSource(linked);
-        const prefix = linked?.prefix ?? `data/${dirName}/`;
-        const key = `${source?.tree}/${prefix}`;
-        if (source && !datasets.has(key)) datasets.set(key, datasetFolder(source, prefix));
-        const dataset = datasets.get(key);
-        const dataName =
-          dataset && (linked?.task ?? taskDataName(dirName, name, statement, dataset.tasks));
-        const files = dataset?.tasks.get(dataName);
+        const dataName = taskDataName(dataPrefix, name, statement, taskFolders);
         return {
           id: name,
           title: requireText(task, "title", taskFile),
@@ -282,16 +243,20 @@ export function readBenchmarks(repo, dataFiles = []) {
           ),
           statement,
           rubric: optionalText(join(dir, name, "rubric", "README.md")) ?? "",
-          data: files
+          data: dataName
             ? {
-                url: `${dataset.detail.url}/tasks/${dataName}`,
-                instruction: dataText(join(dataset.root, "tasks", dataName, "instruction.md")),
-                files: files.toSorted().slice(0, MAX_TASK_FILES),
-                fileCount: files.length,
+                url: `${source.tree}/${dataPrefix}tasks/${dataName}`,
+                instruction: dataText(
+                  join(source.root, dataPrefix, "tasks", dataName, "instruction.md"),
+                ),
+                files: taskFolders.get(dataName).sort().slice(0, MAX_TASK_FILES),
+                fileCount: taskFolders.get(dataName).length,
               }
             : undefined,
         };
       });
+    const listed = dataUrl ? files : ownData.map((path) => path.slice(dataPrefix.length));
+    const listingPrefix = dataUrl ? "" : dataPrefix;
     benchmarks.push({
       id: dirName,
       title: requireText(config, "title", file),
@@ -303,8 +268,17 @@ export function readBenchmarks(repo, dataFiles = []) {
       status: requireText(config, "status", file),
       author,
       references: stringList(config.references),
+      dataUrl: dataUrl && /^https?:\/\//i.test(dataUrl) ? dataUrl : undefined,
       tasks,
-      data: datasets.size === 1 ? datasets.values().next().value?.detail : undefined,
+      data:
+        listed.length > 0
+          ? {
+              url: listingPrefix ? `${source.tree}/${listingPrefix.slice(0, -1)}` : source.tree,
+              readme: dataText(join(source.root, listingPrefix, "README.md")),
+              fileCount: listed.length,
+              entries: dataEntries(listed),
+            }
+          : undefined,
       sourceUrl: `${BENCHMARK_SOURCE}/tree/main/packages/${dirName}`,
     });
   }

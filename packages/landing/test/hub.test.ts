@@ -19,7 +19,7 @@
  * - Given a benchmark with a data folder, when it is read, then each task carries its rubric and
  *   finds its data folder by the link in its statement or by its id without the CASE prefix, and a
  *   task with neither has no data.
- * - Given Cases sharing a task in a separate repository, both show its pinned instructions and files.
+ * - Given a data_url, the Data panel shows the repository root and Cases can share a task folder.
  * - Given a leaderboard value averaging two experiments of three attempts each, when it is read,
  *   then its score is the mean of their summaries, its std the sample std of the per-attempt
  *   composites, and its cost, time and tokens the sums of one run; when the attempts do not line
@@ -36,12 +36,11 @@
  *   is shown in that unit (1.0 h, not 60 min; 1.0M, not 1000K).
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { loadHub } from "../scripts/hub/hub.mjs";
-import { CACHE_DIR } from "../scripts/hub/source.mjs";
 import { facetCounts, facetSplits, filterItems } from "../src/lib/hub/filter";
 import type { Facet } from "../src/lib/hub/filter";
 import { formatCompact, formatDuration } from "../src/lib/hub/text";
@@ -91,7 +90,7 @@ const table = (modules: Record<string, Record<string, object[]>>, listed = ["Plu
     plugin: { modules: listed, replaces: [] },
   });
 
-const benchmark = (id: string, status = "published") =>
+const benchmark = (id: string, status = "published", dataUrl?: string) =>
   [
     `id = "${id}"`,
     `title = "${id} title"`,
@@ -99,6 +98,7 @@ const benchmark = (id: string, status = "published") =>
     `version = "0.1.0"`,
     `last_update = "2026-10-29T12:00:00Z"`,
     `status = "${status}"`,
+    ...(dataUrl ? [`data_url = "${dataUrl}"`] : []),
     `[author]`,
     `name = "Prism-Shadow"`,
   ].join("\n");
@@ -333,58 +333,62 @@ describe("the hub readers", () => {
     expect(byId["t2"]!.data).toBeUndefined();
   });
 
-  it("reads the pinned task files when two Cases share an external Harbor task", () => {
-    const dataset = tree({
-      "scenario/README.md": "Training data",
-      "scenario/tasks/shared/instruction.md": "Work through the training tasks.",
-      "scenario/tasks/shared/task.toml": "",
-      "scenario/tasks/shared/environment/角色定义.txt": "角色",
-    });
-    const git = (...args: string[]) =>
-      execFileSync("git", ["-C", dataset, ...args], { encoding: "utf8" }).trim();
-    git("init", "-q");
-    git("add", ".");
-    git(
-      "-c",
-      "user.name=Test",
-      "-c",
-      "user.email=test@example.org",
-      "-c",
-      "commit.gpgsign=false",
-      "commit",
-      "-qm",
-      "Dataset",
-    );
-    const commit = git("rev-parse", "HEAD");
-    writeFileSync(join(dataset, "scenario/tasks/shared/instruction.md"), "Unpublished edits");
-    const repository = `test/${basename(dataset)}`;
-    const cache = join(CACHE_DIR, "data", repository);
-    roots.push(cache);
-    const datasetUrl = `https://github.com/${repository}/tree/${commit}/scenario`;
-    const taskUrl = `${datasetUrl}/tasks/shared`;
-    const statement = `[Adapter](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/${commit}/agents)\n[Task](${taskUrl})`;
-    const index = repo({
-      "packages/bench-a/t1/statement/README.md": statement,
-      "packages/bench-a/t2/statement/README.md": statement,
-    });
-    vi.stubEnv("PENGUIN_BENCHMARK_REPO", index);
-    try {
-      const bench = loadHub({ repo: index, pluginsDir: tree({}) }).details.benchmark["bench-a"]!;
-      expect(bench.data).toMatchObject({ url: datasetUrl, readme: "Training data", fileCount: 4 });
+  it.each(["", "data/"])(
+    "shows the repository root and finds a shared task under %sbench-a",
+    (prefix) => {
+      const dataset = tree({
+        "README.md": "Training data",
+        "examples/unrelated.csv": "value",
+        [`${prefix}bench-a/tasks/shared/instruction.md`]: "Work through the training tasks.",
+        [`${prefix}bench-a/tasks/shared/角色定义.txt`]: "角色",
+      });
+      const git = (...args: string[]) => execFileSync("git", ["-C", dataset, ...args]);
+      git("init", "-q");
+      git("add", ".");
+      git(
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.org",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-qm",
+        "Dataset",
+      );
+
+      const dataUrl = `https://github.com/test/${basename(dataset)}`;
+      const rootUrl = `${dataUrl}/tree/HEAD`;
+      const statement = `[Shared task](https://github.com/upstream/other/tree/old/${prefix}bench-a/tasks/shared)`;
+      const index = repo({
+        "packages/bench-a/benchmark_config.toml": benchmark("bench-a", "published", dataUrl),
+        "packages/bench-a/t1/statement/README.md": statement,
+        "packages/bench-a/t2/statement/README.md": statement,
+        "packages/bench-b/benchmark_config.toml": benchmark("bench-b", "published", dataUrl),
+      });
+      const benches = loadHub({ repo: index, pluginsDir: tree({}) }).details.benchmark;
+      const bench = benches["bench-a"]!;
+      expect(bench.data).toMatchObject({
+        url: rootUrl,
+        readme: "Training data",
+        fileCount: 4,
+        entries: [
+          { name: prefix ? "data" : "bench-a", dir: true, files: 2 },
+          { name: "examples", dir: true, files: 1 },
+          { name: "README.md", dir: false, files: 1 },
+        ],
+      });
       for (const task of bench.tasks) {
         expect(task.data).toMatchObject({
-          url: taskUrl,
+          url: `${rootUrl}/${prefix}bench-a/tasks/shared`,
           instruction: "Work through the training tasks.",
-          files: ["environment/角色定义.txt", "instruction.md", "task.toml"],
+          files: ["instruction.md", "角色定义.txt"],
         });
       }
-      expect(
-        existsSync(join(cache, commit, "scenario/tasks/shared/environment/角色定义.txt")),
-      ).toBe(false);
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
+      expect(benches["bench-b"]!.dataUrl).toBe(dataUrl);
+      expect(benches["bench-b"]!.data).toEqual(bench.data);
+    },
+  );
 
   it("averages a value's experiments, takes the std across attempt composites and sums one run", () => {
     const hub = loadHub({ repo: repo(board(mean2)), pluginsDir: plugins() });

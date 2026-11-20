@@ -7,8 +7,8 @@
 
 [中文版](2026-11-20-external-benchmark-file-browser.zh.md)
 
-The Benchmarks page reads each task's instruction and file list from the data revision in its Case. File links open that same commit on GitHub.
+The Benchmarks page uses each package’s `data_url` to find its data repository. The task file browser shows the repository’s default branch.
 
 ## Details
 
-The site reuses one sparse checkout per data revision and downloads only READMEs and instructions. The GDPevo article links to the migrated scenarios.
+Packages that share a repository reuse one sparse checkout. The GDPevo article links to the migrated scenarios.
