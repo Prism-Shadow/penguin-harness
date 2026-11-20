@@ -221,7 +221,7 @@ export class SandboxService {
    * The same closure under a policy the caller keeps — a Session's own snapshot. The
    * backends are still this service's, so a backend change reaches every Session.
    */
-  confinerFor(policyOf: () => SandboxSettings): SpawnConfiner {
+  confinerFor(policyOf: () => SandboxSettings, writableRoots?: readonly string[]): SpawnConfiner {
     return (argv, opts) => {
       const settings = policyOf();
       const required = requestedDimensions(settings);
@@ -240,14 +240,21 @@ export class SandboxService {
       // it on disk: bubblewrap refuses to start on a missing bind source. Ensured on every
       // spawn, here, where every confined spawn meets — see SandboxPolicy.writableRoots.
       if (scratchpadDir !== undefined) ensureScratchpad(scratchpadDir);
+      // The caller's further roots (the Agent's workbench folders) are bound only once they
+      // exist: whoever writes there first creates them, and a spawn never does, so an Agent with
+      // no workbench data gets no directory it did not ask for.
+      const extraRoots =
+        settings.mode === "workspace-write" ? (writableRoots ?? []).filter(isDirectory) : [];
+      const roots = [...(scratchpadDir !== undefined ? [scratchpadDir] : []), ...extraRoots];
       // workspaceRoot is the Session's Workspace, never the per-command cwd: a command
       // running in a workdir outside the Workspace must not widen the writable roots.
       const policy: SandboxPolicy = {
         mode: settings.mode,
         workspaceRoot: opts.workspaceDir,
-        // The Session's scratchpad is writable beside the Workspace: the plan file, a goal's
-        // state file and the attachments live there, and hooks and commands both write it.
-        ...(scratchpadDir !== undefined ? { writableRoots: [scratchpadDir] } : {}),
+        // The Session's scratchpad and the Agent's workbench folders are writable beside the
+        // Workspace: the plan file, a goal's state file and the attachments live in the one, the
+        // files and sockets a workbench shares with its Agent in the others.
+        ...(roots.length > 0 ? { writableRoots: roots } : {}),
         ...(settings.network !== undefined ? { network: settings.network } : {}),
         ...(settings.maskPaths !== undefined && settings.maskPaths.length > 0
           ? { maskPaths: settings.maskPaths }
@@ -330,6 +337,19 @@ function ensureScratchpad(dir: string): void {
         `(${err instanceof Error ? err.message : String(err)}); refusing to run the command without it.`,
       { cause: err },
     );
+  }
+}
+
+/**
+ * A further writable root is bound when it is a real directory. Never through a link: a Session
+ * that ran unconfined could have left `<agentDir>/app` pointing anywhere, and binding the target
+ * would let the next confined Session write there.
+ */
+function isDirectory(dir: string): boolean {
+  try {
+    return fs.lstatSync(dir).isDirectory();
+  } catch {
+    return false;
   }
 }
 
