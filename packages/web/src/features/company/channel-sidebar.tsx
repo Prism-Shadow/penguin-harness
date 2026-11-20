@@ -250,7 +250,7 @@ export function ChannelSidebar({
       {channels === null ? (
         company.channelsError !== null ? (
           <div className="flex items-center justify-between gap-2 px-2.5 py-1">
-            <span className={`text-xs ${toneInk.danger}`}>{S.company.channels.loadFailed}</span>
+            <span className={`text-xs ${toneInk.danger}`}>{company.channelsError}</span>
             <Button size="sm" onClick={() => void company.reloadChannels()}>
               {S.common.retry}
             </Button>

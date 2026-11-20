@@ -163,6 +163,7 @@ import {
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
 import { useGoalPluginGate } from "./goal-plugin-gate";
 import type { GoalPluginGate } from "./goal-plugin-gate";
+import { toggled, type ComposerSwitches } from "./prompt-modes";
 import { mergeRecalledDraft } from "./recall-draft";
 import { buildExampleFill } from "./example-fill";
 import {
@@ -175,6 +176,7 @@ import {
 
 import { isStopAction, midRunAction } from "./composer-send";
 import { composerNotice } from "./composer-notice";
+import { RefusedHandoffNotice } from "./refused-handoff-notice";
 import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
 import { splitDroppedFiles } from "../../lib/file-drop";
@@ -343,7 +345,8 @@ function SkillSelect({
 /** One entry of the composer's "+" extension menu. */
 interface PlusMenuItem {
   key: string;
-  icon: string;
+  /** A 24×24 line path, or a mark of its own (a plugin's icon). */
+  icon: string | ReactNode;
   label: string;
   desc: string;
   /** Whether the entry is currently engaged (rendered with a check mark; clicking toggles). */
@@ -599,6 +602,7 @@ export function ChatInput({
   onChangeCompactionLimit,
   onOpenAgentSettings,
   refusalHandoff,
+  onShowRefusal,
   contextNow,
   contextStale = false,
   sessionId,
@@ -616,6 +620,7 @@ export function ChatInput({
   initialSkills,
   initialGoal,
   goalPlugin = null,
+  switches,
   onSkillsChange,
   onHandoff,
   initialText,
@@ -779,8 +784,13 @@ export function ChatInput({
   onChangeCompactionLimit?: (maxContextLength: number) => Promise<void>;
   /** Opens the Session Agent's settings, where the compaction threshold is edited: the attention notice's action. */
   onOpenAgentSettings?: () => void;
-  /** The Session's refusal hand-off occurrence (`refusalHandoffOccurrence`), raising its notice; absent off session state. */
-  refusalHandoff?: string | null;
+  /**
+   * The Session's refusal hand-off (`refusalHandoff`): its occurrence, and the provider's words
+   * when it sent any, raising its notice; absent off session state.
+   */
+  refusalHandoff?: { occurrence: string; message?: string } | null;
+  /** Opens the refused request's failure details from the notice's 「[详情]」; absent where the host cannot show them. */
+  onShowRefusal?: () => void;
   /** Current context usage (total of the most recent main-session Request). */
   contextNow: number;
   /** After a successful compaction, before the next regular Request reports usage: usage is **unknown** (not 0); the ring is drawn empty and the value shown as `—`. */
@@ -837,6 +847,12 @@ export function ChatInput({
    * it and Send is held. Absent or null, nothing is checked and the server refuses instead.
    */
   goalPlugin?: GoalPluginGate | null;
+  /**
+   * The composer's switches (prompt-modes.ts): each one the Agent offers is a "+" menu entry, and
+   * each one on is a chip. The caller owns which are on and sends them with every Task but a goal,
+   * so a goal engaged here grays the entries out and hides the chips.
+   */
+  switches?: ComposerSwitches;
   /** Callback when selected skills change (check/prune; the clear after a successful send does not call back, same as onTextChange). */
   onSkillsChange?: (names: string[]) => void;
   /** Draft's initial text (restored on mount; paired with onTextChange for draft auto-caching). */
@@ -969,6 +985,14 @@ export function ChatInput({
       ? S.chat.goalBudgetValue(humanizeTokens(goalBudget))
       : S.chat.goalBudgetUnlimited;
   const goalGate = useGoalPluginGate(goalPlugin, goalOn);
+  /** The switches on, as their chips show them; none while a goal is engaged, which takes none. */
+  const switchesOn =
+    switches === undefined || goalOn
+      ? []
+      : switches.modes.filter((mode) => switches.on.includes(mode.name));
+  const flipSwitch = (name: string) => {
+    if (switches) switches.onChange(toggled(switches.on, name));
+  };
   /**
    * Where a send with a staged chip would go — and, for a `/model` fork, whether it may go at
    * all right now (see stagedSendRoute): a fork branches a NEW session off this session's
@@ -2297,12 +2321,14 @@ export function ChatInput({
               }
             : {})}
         >
-          {attention.kind === "refused"
-            ? S.chat.contextRefusedHandoff
-            : S.chat.contextWindowUnderThreshold(
-                humanizeTokens(attention.window),
-                humanizeTokens(attention.threshold),
-              )}
+          {attention.kind === "refused" ? (
+            <RefusedHandoffNotice message={attention.message} onDetails={onShowRefusal} />
+          ) : (
+            S.chat.contextWindowUnderThreshold(
+              humanizeTokens(attention.window),
+              humanizeTokens(attention.threshold),
+            )
+          )}
         </Notice>
       )}
 
@@ -2470,7 +2496,8 @@ export function ChatInput({
           pendingModel !== null ||
           selectedSkills.length > 0 ||
           references.length > 0 ||
-          goalOn ? (
+          goalOn ||
+          switchesOn.length > 0 ? (
             <ChipRow
               leading={
                 // Goal-mode chip: the budget stays compact as a value button; its editor is a
@@ -2485,7 +2512,27 @@ export function ChatInput({
                     onRemove={() => toggleGoal(false)}
                     control={goalBudgetPicker}
                   />
-                ) : undefined
+                ) : (
+                  // A switch's chip stays after a send: it holds until it is removed.
+                  switchesOn.map((mode) => (
+                    <Chip
+                      key={mode.name}
+                      label={mode.title}
+                      glyph={
+                        <SkillIcon
+                          icon={mode.icon}
+                          fallback={ICONS.fishHook}
+                          size={13}
+                          className="text-fg-muted"
+                        />
+                      }
+                      tooltip={mode.description}
+                      tooltipExtra
+                      removeLabel={S.chat.switchOff(mode.title)}
+                      onRemove={() => flipSwitch(mode.name)}
+                    />
+                  ))
+                )
               }
               chips={switchChips}
               onRemove={removeChip}
@@ -2597,6 +2644,25 @@ export function ChatInput({
                     disabled: running || compacting || busy,
                     onSelect: () => toggleGoal(!goalOn),
                   },
+                  // A switch holds for the messages that follow, so it stays reachable mid-run.
+                  ...(switches?.modes ?? []).map((mode) => ({
+                    key: `switch:${mode.name}`,
+                    // Drawn like the entries above, whose path glyphs the menu sets in the
+                    // muted subtle ink at the inline size: a plugin's mark takes the same.
+                    icon: (
+                      <SkillIcon
+                        icon={mode.icon}
+                        fallback={ICONS.fishHook}
+                        size={ICON_SIZE.inlineGlyph}
+                        className="text-fg-subtle"
+                      />
+                    ),
+                    label: mode.title,
+                    desc: mode.description,
+                    active: switches?.on.includes(mode.name) === true,
+                    disabled: goalOn,
+                    onSelect: () => flipSwitch(mode.name),
+                  })),
                 ]}
                 footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
                 direction={models && onChangeModel ? "down" : "up"}

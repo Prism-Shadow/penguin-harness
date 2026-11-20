@@ -24,8 +24,9 @@
  * `use-project-todos.ts` has the same shape for one pair of probes, `use-fresh-read.ts` for one
  * key without sharing; this is the general form, without a library.
  */
-import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { apiErrorText } from "./api-error";
+import { failureNode } from "./failure";
 
 export interface ReadState<T> {
   /** The last answer — from this page load or from storage; null when nothing is known. */
@@ -39,6 +40,8 @@ export interface ReadState<T> {
   reading: boolean;
   /** The last read's failure in words; null when it answered. `value` stands. */
   error: string | null;
+  /** The same failure as a page says it: the words, with 「[报告问题]」 after them for a failure. */
+  failure: ReactNode;
 }
 
 export interface ReadStorage<T> {
@@ -69,6 +72,7 @@ const NOTHING: ReadState<never> = Object.freeze({
   stale: false,
   reading: false,
   error: null,
+  failure: null,
 });
 
 /** The separator between a key's parts: no id the app mints contains it. */
@@ -107,11 +111,15 @@ interface Entry<T> {
 export function createReadStore<T>(
   options: {
     storage?: ReadStorage<T>;
+    /** A permission refusal or a deleted resource revokes the cached value even on a failed read. */
+    discardOnError?: (error: unknown) => boolean;
     /** Same data → the previous object is kept (identity stable, no re-render, no reorder). Default: JSON equality. */
     equal?: (a: T, b: T) => boolean;
+    /** What a failed read is, for the report it offers; "a read failed" when omitted. */
+    what?: string;
   } = {},
 ): ReadStore<T> {
-  const { storage, equal = jsonEqual } = options;
+  const { storage, equal = jsonEqual, what = "a read failed" } = options;
   const entries = new Map<string, Entry<T>>();
   const listeners = new Map<string, Set<() => void>>();
   resets.add(() => entries.clear());
@@ -198,11 +206,30 @@ export function createReadStore<T>(
               stale: ask <= e.invalidatedAt,
               reading: false,
               error: null,
+              failure: null,
             });
           },
           (err: unknown) => {
             if (!owns(key, e, ask)) return;
-            set(key, e, { ...e.state, reading: false, error: apiErrorText(err) });
+            if (options.discardOnError?.(err)) {
+              try {
+                storage?.clear(key);
+              } catch {
+                /* Storage may be unavailable. */
+              }
+              set(key, e, {
+                ...NOTHING,
+                error: apiErrorText(err),
+                failure: failureNode(err, { what }),
+              });
+            } else {
+              set(key, e, {
+                ...e.state,
+                reading: false,
+                error: apiErrorText(err),
+                failure: failureNode(err, { what }),
+              });
+            }
           },
         )
         .finally(() => {
@@ -225,6 +252,7 @@ export function createReadStore<T>(
         stale: false,
         reading: false,
         error: null,
+        failure: null,
       });
     },
 

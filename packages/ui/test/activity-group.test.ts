@@ -3,7 +3,11 @@
  * tree hooks' markup and the expand policy's first render — open while running, closed once
  * settled, forced open by a pending approval, a static head with no body — for the agent's work
  * and a harness event alike; a failure's title takes the danger ink, and the title stays
- * sentence case (a theme uppercases it through the hook, never the component). The app's
+ * sentence case (a theme uppercases it through the hook, never the component); a settled head
+ * that needs attention says so on the hook (`data-attention`), so a theme that draws no status
+ * marks keeps the mark that says why. A head that does not expand carries the caller's text
+ * actions after its duration (a failed row's Report); an expandable head is one button and
+ * renders none, its open body ending in the detail and the actions instead. The app's
  * containers decide the state; this reads what the card draws.
  *
  * The settle's motion, as far as a first render shows it: the body is a fold (the theme's layout
@@ -91,9 +95,61 @@ describe("ActivityGroup", () => {
     expect(html).toMatch(/<span data-slot="label" class="[^"]*">Compaction</);
   });
 
+  it("shows a failed static head's actions after its duration; an expandable head renders none", () => {
+    const actions = createElement("button", { type: "button", "data-act": "" }, "Report");
+    const fixed = card({
+      kind: "event",
+      state: "failed",
+      title: "Compaction",
+      durationMs: 1500,
+      actions,
+    });
+    expect(fixed).toMatch(
+      />1\.5s<\/span>.*<span data-slot="actions"[^>]*><button type="button" data-act="">Report</,
+    );
+    const expandable = card({
+      kind: "event",
+      state: "failed",
+      title: "Compaction",
+      rows: ROWS,
+      actions,
+    });
+    expect(expandable).not.toContain("data-act");
+  });
+
+  it("ends an expandable failed card's open body with its detail and actions, none in the head", () => {
+    const actions = createElement("button", { type: "button", "data-act": "" }, "Report");
+    const html = card({
+      kind: "event",
+      state: "failed",
+      title: "Compaction",
+      detail: "failed (the provider refused)",
+      pending: true,
+      rows: ROWS,
+      actions,
+    });
+    const [head, body] = html.split('data-slot="body"');
+    expect(head).not.toContain("data-act");
+    expect(body).toMatch(
+      /second step<\/div><div data-slot="foot"[^>]*><span[^>]*>failed \(the provider refused\)<\/span><span data-slot="actions"[^>]*><button type="button" data-act="">Report</,
+    );
+  });
+
   it("keeps a one-piece body out of the tree, and its title in sentence case", () => {
     const html = card({ kind: "event", state: "running", title: "Compacting", children: "report" });
     expect(markupStructure(html)).toContain('data-slot="body"><div>report</div>');
     expect(html).not.toContain("ui-tree");
+  });
+
+  it("tells the theme a settled head needs attention, expandable or not, and only when it does", () => {
+    const mark = createElement("span", { "data-tooltip": "why" }, "!");
+    for (const body of [{ children: "report" }, {}]) {
+      const flagged = card({ kind: "event", title: "Compacted", mark, attention: true, ...body });
+      expect(flagged).toMatch(/class="ui-activity [^"]*"[^>]*data-attention=""/);
+      expect(flagged).toContain('data-tooltip="why"');
+      expect(card({ kind: "event", title: "Compacted", mark, ...body })).not.toContain(
+        "data-attention",
+      );
+    }
   });
 });

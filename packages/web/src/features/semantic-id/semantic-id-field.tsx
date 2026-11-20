@@ -75,8 +75,11 @@ export function SemanticIdField({
   source: string;
   /** Ids already taken in the target scope, so a proposal never collides. Omitted where the caller knows of none. */
   taken?: readonly string[];
-  /** The caller's own validation message; it outranks anything the generation has to say. */
-  error?: string | undefined;
+  /**
+   * The caller's own validation message, or a failure's words with 「[报告问题]」 after them; it
+   * outranks anything the generation has to say.
+   */
+  error?: ReactNode;
   /** A fixed start of the id drawn in front of the box and not typed (`value` is what follows it). */
   lockedPrefix?: string;
   /** The generation clause appended to `hint`, when "the display name" is not what the dialog calls it. */

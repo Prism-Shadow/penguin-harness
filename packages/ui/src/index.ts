@@ -106,7 +106,9 @@ export * from "./components/overlays/report-dialog/report-dialog";
 // errors offer one, where reports open from, and the crash notice.
 export * from "./components/report/redact";
 export * from "./components/report/error-report";
-export * from "./components/report/seriousness";
+export * from "./components/report/reportable";
+export * from "./components/report/failure";
+export * from "./components/report/failure-text";
 export * from "./components/report/report-store";
 export * from "./components/report/report-host";
 export * from "./components/report/report-action";

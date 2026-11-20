@@ -5,9 +5,11 @@
  * Every Chrome listener is registered synchronously at the top level, so an event that wakes
  * the worker is delivered; each waits for `ready` (state restored from storage) before acting.
  * A server only ever reaches its own tabs: every command is checked against the tab set, and
- * every event goes to the one server that drives the tab.
+ * every event goes to the one server that drives the tab. The one thing outside a tab, this
+ * profile's cookies for an import, waits for the user's Allow on the consent page.
  */
 import { ServerConnection } from "./connection.js";
+import { CookieExport } from "./cookie-export.js";
 import { Debuggee } from "./debuggee.js";
 import { currentPlatform, deviceName } from "./pairing.js";
 import { isNavigableUrl } from "./policy.js";
@@ -60,6 +62,23 @@ const debuggee = new Debuggee({
 });
 
 let tabs: TabController;
+
+const cookieExport = new CookieExport({
+  openPage: async (id) => {
+    const tab = await chrome.tabs.create({
+      url: chrome.runtime.getURL(`pages/consent.html?id=${encodeURIComponent(id)}`),
+      active: true,
+    });
+    // The user is in the desktop app: bring Chrome's window forward with the question.
+    if (tab.windowId !== undefined) {
+      await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+    }
+    if (tab.id === undefined) throw new Error("the consent page has no tab");
+    return tab.id;
+  },
+  closePage: (tabId) => chrome.tabs.remove(tabId),
+  readAll: () => chrome.cookies.getAll({}),
+});
 
 const ready: Promise<void> = (async () => {
   const state = await TabController.restore(await readTabSet());
@@ -197,6 +216,9 @@ async function handle(server: string, command: DesktopBrowserCommand): Promise<u
     case "activate-tab":
       await tabs.activate(server, command.tabId);
       return {};
+    case "read-cookies":
+      if (paused) throw new Error("extension_paused");
+      return cookieExport.read(server);
     default:
       throw new Error("unknown_op");
   }
@@ -287,6 +309,7 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  cookieExport.tabClosed(tabId);
   void ready.then(() => tabs.onRemoved(tabId));
 });
 
@@ -333,7 +356,10 @@ chrome.action.onClicked.addListener((tab) => {
 type PageRequest =
   | { type: "adopt"; tabId: number; origin: string }
   | { type: "give-back"; tabId: number }
-  | { type: "reconnect"; origin: string };
+  | { type: "reconnect"; origin: string }
+  /** The consent page: which server asks (null once answered), and the user's answer. */
+  | { type: "consent"; id: string }
+  | { type: "consent-answer"; id: string; allow: boolean };
 
 chrome.runtime.onMessage.addListener((message: PageRequest, sender, respond) => {
   if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL(""))) {
@@ -350,6 +376,11 @@ chrome.runtime.onMessage.addListener((message: PageRequest, sender, respond) => 
           return { ok: true };
         case "reconnect":
           connections.get(message.origin)?.reconnect();
+          return { ok: true };
+        case "consent":
+          return { ok: true, request: cookieExport.request(message.id) };
+        case "consent-answer":
+          cookieExport.answer(message.id, message.allow === true);
           return { ok: true };
         default:
           return { ok: false };

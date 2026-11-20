@@ -41,7 +41,7 @@
  * dialog does once it succeeds — adopt the organization as the shell's current one, then open
  * where the creation leads.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import type {
   AgentsResponse,
@@ -65,7 +65,6 @@ import {
   Modal,
   Select,
   Textarea,
-  toastError,
   toastSuccess,
   useFormDraft,
   useGuardedClose,
@@ -95,11 +94,12 @@ import {
   orgDraftKey,
   saveOrgDraft,
 } from "./org-draft";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError, toastFailure } from "../../lib/toast-api-error";
 import { failedList } from "../../lib/bulk-update";
 import { followAgentDeletion } from "../../lib/agent-deletion-progress";
 import { orgDeletePlan } from "./org-delete-plan";
 import type { OrgDeletePlan } from "./org-delete-plan";
+import { toldFailure, failureNode } from "../../lib/failure";
 
 const APPROVAL_MODES: readonly OrgApprovalMode[] = ["allow-all", "read-only", "deny-all"];
 
@@ -125,7 +125,7 @@ const ID_ERROR_CODES = new Set(["org_exists", "invalid_org_id"]);
 /** The Project's configured models, loaded once per open; null until they arrive, with the failure kept beside them. */
 function useProjectModels(projectId: string, open: boolean) {
   const [models, setModels] = useState<ModelsResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   useEffect(() => {
     if (!open || !projectId) return;
     let cancelled = false;
@@ -137,7 +137,13 @@ function useProjectModels(projectId: string, open: boolean) {
         if (!cancelled) setModels(res);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(apiErrorText(e));
+        if (cancelled) return;
+        setError(
+          failureNode(e, {
+            text: S.company.modelsLoadFailed,
+            what: "a Project's models could not be listed",
+          }),
+        );
       });
     return () => {
       cancelled = true;
@@ -166,7 +172,8 @@ function ModelField({
   disabled,
 }: {
   models: ModelsResponse | null;
-  loadError: string | null;
+  /** Why the models could not be listed, in the field's words. */
+  loadError: ReactNode;
   value: ModelRefDto | null;
   onChange: (ref: ModelRefDto | null) => void;
   disabled: boolean;
@@ -197,7 +204,7 @@ function ModelField({
         emptyLabel={loading ? S.common.loading : defaultLabel}
       />
       {loadError !== null ? (
-        <FieldError>{S.company.modelsLoadFailed}</FieldError>
+        <FieldError>{loadError}</FieldError>
       ) : value === null ? null : (
         <span className="mt-1 flex flex-wrap items-baseline gap-x-2">
           {stale && (
@@ -300,7 +307,7 @@ export function CreateOrganizationDialog({
   const [idError, setIdError] = useState<string | undefined>(undefined);
   const [missionError, setMissionError] = useState<string | undefined>(undefined);
   const [budgetError, setBudgetError] = useState<string | undefined>(undefined);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<ReactNode>(null);
   /** A stored draft was put back into the fields: the notice above them says so and offers to drop it. */
   const [restored, setRestored] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -423,9 +430,8 @@ export function CreateOrganizationDialog({
       toastSuccess(S.company.createdOpeningCeo);
       onCreated(detail);
     } catch (e) {
-      const text = apiErrorText(e);
-      if (e instanceof ApiError && ID_ERROR_CODES.has(e.code)) setIdError(text);
-      else setFormError(text);
+      if (e instanceof ApiError && ID_ERROR_CODES.has(e.code)) setIdError(apiErrorText(e));
+      else setFormError(failureNode(e, { what: "an organization could not be created" }));
     } finally {
       setBusy(false);
     }
@@ -653,7 +659,7 @@ function OrganizationSettingsForm({
 }: OrganizationSettingsProps) {
   /** Stored settings as loaded on open (null until then) — the form's baseline. */
   const [settings, setSettings] = useState<OrganizationSettings | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<ReactNode>(null);
   const form = useFormDraft(orgSettingsDraft(settings), { normalize: normalizedOrgDraft });
   const { name, mission, timezone, language, approvalMode, modelRef, workspace } = form.draft;
   const [busy, setBusy] = useState(false);
@@ -665,7 +671,8 @@ function OrganizationSettingsForm({
   const [deleteAgents, setDeleteAgents] = useState(true);
   /** The Project's Agent list as read when the confirmation opened; null while it is read. */
   const [deleteRead, setDeleteRead] = useState<AgentsResponse | null>(null);
-  const [deleteListFailed, setDeleteListFailed] = useState(false);
+  /** Why that list could not be read, in the confirmation's words; null while it is read or once it was. */
+  const [deleteListFailure, setDeleteListFailure] = useState<ReactNode>(null);
   /** Reads of that list so far: only the newest one's answer is applied. */
   const deleteListAsked = useRef(0);
   const { models, error: modelsError } = useProjectModels(projectId, true);
@@ -683,15 +690,21 @@ function OrganizationSettingsForm({
   /** Reads the Agent list afresh, never the shell's copy, which may predate the last hire. */
   const readDeleteList = () => {
     setDeleteRead(null);
-    setDeleteListFailed(false);
+    setDeleteListFailure(null);
     const ask = ++deleteListAsked.current;
     api
       .listAgents(projectId, null)
       .then((res) => {
         if (ask === deleteListAsked.current) setDeleteRead(res);
       })
-      .catch(() => {
-        if (ask === deleteListAsked.current) setDeleteListFailed(true);
+      .catch((e: unknown) => {
+        if (ask !== deleteListAsked.current) return;
+        setDeleteListFailure(
+          failureNode(e, {
+            text: S.company.deleteOrgAgentsLoadFailed,
+            what: "a Project's Agents could not be listed",
+          }),
+        );
       });
   };
 
@@ -767,7 +780,13 @@ function OrganizationSettingsForm({
         );
         // The report carries each refusal's code: worded as the same error answered alone would be.
         const reason = apiErrorText(new ApiError(409, firstFailure.code, firstFailure.message));
-        toastError(`${S.company.deleteOrgAgentsFailed(orgId, names)} — ${reason}${kept}`);
+        toastFailure(
+          toldFailure(`${S.company.deleteOrgAgentsFailed(orgId, names)} — ${reason}${kept}`, {
+            what: "an organization's Agents could not all be deleted",
+            code: firstFailure.code,
+            detail: firstFailure.message,
+          }),
+        );
       } else if (report.deletedAgents.length > 0) {
         toastSuccess(`${S.company.deletedWithAgents(orgId, report.deletedAgents.length)}${kept}`);
       } else {
@@ -805,7 +824,8 @@ function OrganizationSettingsForm({
         if (!cancelled) setSettings(detail.settings);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setLoadError(apiErrorText(e));
+        if (cancelled) return;
+        setLoadError(failureNode(e, { what: "an organization's settings could not be loaded" }));
       });
     return () => {
       cancelled = true;
@@ -1001,7 +1021,9 @@ function OrganizationSettingsForm({
         busy={busy}
         // Nothing is armed until the Agents it names have arrived; after a failed read the box
         // is off, and the organization alone can go.
-        confirmDisabled={typedId.trim() !== orgId || (deleteList === null && !deleteListFailed)}
+        confirmDisabled={
+          typedId.trim() !== orgId || (deleteList === null && deleteListFailure === null)
+        }
         confirmLabel={S.common.delete}
         cancelLabel={S.common.cancel}
         widthClass="sm:max-w-md"
@@ -1026,12 +1048,8 @@ function OrganizationSettingsForm({
             )}
           </p>
         )}
-        {deleteListFailed ? (
-          <ErrorLine
-            className="mt-2"
-            message={S.company.deleteOrgAgentsLoadFailed}
-            onRetry={readDeleteList}
-          />
+        {deleteListFailure !== null ? (
+          <ErrorLine className="mt-2" message={deleteListFailure} onRetry={readDeleteList} />
         ) : (
           deletePlan === null && (
             <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{S.common.loading}</p>

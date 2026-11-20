@@ -20,7 +20,9 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { createReadStore, readKey } from "../../lib/read-store";
 
-export const pluginLibrary = createReadStore<PluginLibraryResponse>();
+export const pluginLibrary = createReadStore<PluginLibraryResponse>({
+  what: "the plugin library could not be read",
+});
 export const LIBRARY_KEY = "library";
 
 export const pluginIndex = createReadStore<PluginIndexResponse>();

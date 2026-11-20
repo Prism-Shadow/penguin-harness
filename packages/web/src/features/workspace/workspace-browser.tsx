@@ -55,6 +55,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 
 import {
@@ -109,7 +110,6 @@ import { filesApi, filesScopeKey, type FilesScope } from "../../api/workspace-fi
 
 import { useAuth } from "../../state/auth";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { isDesktopShellWindow } from "../../lib/account-menu";
 import { useReaderFind } from "../../lib/reader-find";
 import { isShortcut } from "../../lib/shortcuts/match";
@@ -164,6 +164,7 @@ import { toneInk } from "../../lib/tone";
 import { setCloseGuard, tabKey } from "../dock";
 import { WorkspaceTreeView } from "./workspace-tree-view";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /**
  * Above this, a Markdown file opens in the source view rather than rendered. Highlighting moved to
@@ -294,7 +295,9 @@ function FileActionVersionNote({ target }: { target: FileActionTarget | null }) 
     <p
       className={`text-xs ${target.reading ? "text-gray-500 dark:text-gray-400" : toneInk.danger}`}
     >
-      {target.reading ? S.files.actionVersionReading : S.files.actionVersionFailed}
+      {target.reading
+        ? S.files.actionVersionReading
+        : (target.failed ?? S.files.actionVersionFailed)}
     </p>
   );
 }
@@ -308,6 +311,8 @@ interface FileActionTarget {
   version: string | null;
   /** True while the read is still in flight — which is what tells "not yet" from "could not". */
   reading: boolean;
+  /** Why the read could not, said with its report; absent while it has not failed. */
+  failed?: ReactNode;
 }
 
 /** Whether the dialog's action can run: a folder's at once, a file's once its version is known. */
@@ -401,6 +406,7 @@ export function WorkspaceBrowser({
   reloadSignal,
   onAddReference,
   protectedPaths,
+  workspacePath = null,
 }: {
   /**
    * The Workspace on screen: a Session's (the chat page), or a directory named by its path (the
@@ -440,6 +446,11 @@ export function WorkspaceBrowser({
    * organization handbook's index, which every trigger tells an employee to read).
    */
   protectedPaths?: ReadonlySet<string>;
+  /**
+   * A Session's Workspace on its machine, kept out of every problem report the panel offers
+   * (`<workspace>`); a directory scope names its own.
+   */
+  workspacePath?: string | null;
 }) {
   // Whether the HTML preview lands on a separate origin. True routes both the in-app
   // rendered view and "open in new tab" through the preview origin; false downgrades
@@ -454,6 +465,10 @@ export function WorkspaceBrowser({
   // the same server, even on this machine, must not be.
   const isShellWindow = isDesktopShellWindow({ desktopMode, sessionVia });
   const scopeKey = filesScopeKey(scope);
+  // The Workspace's path, read when a failure is reported: no report the panel offers holds it.
+  const workspaceRoot = scope.kind === "workspace" ? scope.workspace : workspacePath;
+  const privacyRef = useRef<{ privatePaths: readonly string[] }>({ privatePaths: [] });
+  privacyRef.current = { privatePaths: workspaceRoot ? [workspaceRoot] : [] };
   // Keyed by the scope's identity, not the object: the parent builds a fresh one every render.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const files = useMemo(() => filesApi(scope), [scopeKey]);
@@ -472,7 +487,7 @@ export function WorkspaceBrowser({
   /** Open directories (the root is always open and never listed here). */
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [loadingDirs, setLoadingDirs] = useState<ReadonlySet<string>>(() => new Set());
-  const [rootError, setRootError] = useState<string | null>(null);
+  const [rootError, setRootError] = useState<ReactNode>(null);
   /** The directory the breadcrumbs name and uploads land in: the selected file's, or the last folder clicked. */
   const [currentDir, setCurrentDir] = useState("");
   /** The file chosen in the tree; the preview follows it once loaded. */
@@ -488,7 +503,7 @@ export function WorkspaceBrowser({
     hits: WorkspaceSearchHit[];
     truncated: boolean;
   } | null>(null);
-  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<ReactNode>(null);
   /** Which search each in-flight answer belongs to; an older one must not overwrite a newer. */
   const searchSeq = useRef(0);
   /** The directory last opened or closed, so the tree animates exactly that subtree once. */
@@ -499,7 +514,7 @@ export function WorkspaceBrowser({
   const [richView, setRichView] = useState<"rendered" | "source">("rendered");
   /** Error from the lazy source fetch of an isolated HTML preview: scoped to the source
    *  view — the rendered iframe keeps working no matter what happens to this fetch. */
-  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [sourceError, setSourceError] = useState<ReactNode>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [saving, setSaving] = useState(false);
   /** A save the server refused because the file had changed (non-null shows the conflict dialog). */
@@ -673,9 +688,9 @@ export function WorkspaceBrowser({
         if (!current()) return false;
         const text = err instanceof ApiError ? err.message : S.files.loadFailed;
         if (dir === "") {
-          setRootError(text);
+          setRootError(failureNode(err, { text, ...privacyRef.current }));
         } else {
-          toastError(text);
+          toastApiError(err, { text, ...privacyRef.current });
           setListings((m) => {
             if (!m.has(dir)) return m;
             const next = new Map(m);
@@ -841,8 +856,10 @@ export function WorkspaceBrowser({
               }
             : p,
         );
-      } catch {
-        if (!cancelled) setSourceError(S.files.loadFailed);
+      } catch (err) {
+        if (!cancelled) {
+          setSourceError(failureNode(err, { text: S.files.loadFailed, ...privacyRef.current }));
+        }
       }
     })();
     return () => {
@@ -903,15 +920,20 @@ export function WorkspaceBrowser({
           setRemoveTarget(opened);
         }
         if (kind === "dir") return;
-        const settle = (version: string | null) => {
+        const settle = (version: string | null, failed?: ReactNode) => {
           const next = (t: FileActionTarget | null): FileActionTarget | null =>
-            t !== null && t.path === path ? { path, kind, version, reading: false } : t;
+            t !== null && t.path === path ? { path, kind, version, reading: false, failed } : t;
           if (action === "rename") setRenameTarget(next);
           else setRemoveTarget(next);
         };
         void fetchFileVersion(filesRef.current.fileUrl(path))
-          .then(settle)
-          .catch(() => settle(null));
+          .then((version) => settle(version))
+          .catch((err: unknown) =>
+            settle(
+              null,
+              failureNode(err, { text: S.files.actionVersionFailed, ...privacyRef.current }),
+            ),
+          );
       };
       const editing = editorRef.current;
       if (kind === "dir" && (editing === null || !isWithin(editing.path, path))) open();
@@ -931,7 +953,7 @@ export function WorkspaceBrowser({
     } else if (err instanceof ApiError && err.code === "target_exists" && to !== undefined) {
       toastError(S.files.targetExists(to));
     } else {
-      toastApiError(err);
+      toastApiError(err, privacyRef.current);
     }
   };
 
@@ -1209,7 +1231,7 @@ export function WorkspaceBrowser({
         .catch((e: unknown) => {
           if (searchSeq.current !== run) return;
           setSearchResult(null);
-          setSearchError(apiErrorText(e));
+          setSearchError(failureNode(e, privacyRef.current));
         });
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
@@ -1281,8 +1303,8 @@ export function WorkspaceBrowser({
             ? { ...p, content: result.content, truncated: false, version: result.version }
             : p,
         );
-      } catch {
-        toastError(S.files.loadFailed);
+      } catch (err) {
+        toastApiError(err, { text: S.files.loadFailed, ...privacyRef.current });
         return;
       }
     }
@@ -1434,7 +1456,7 @@ export function WorkspaceBrowser({
         setConflict({ name: baseName(current.path) });
         return;
       }
-      toastApiError(err);
+      toastApiError(err, privacyRef.current);
     } finally {
       if (scopeKeyRef.current === key) setSaving(false);
     }
@@ -1466,7 +1488,7 @@ export function WorkspaceBrowser({
       }
       toastSuccess(S.files.uploadedCount(uploaded.length));
     } catch (err) {
-      toastApiError(err);
+      toastApiError(err, privacyRef.current);
     } finally {
       if (scopeKeyRef.current === key) setUploading(null);
     }
@@ -1563,7 +1585,7 @@ export function WorkspaceBrowser({
       if (err instanceof ApiError && err.code === "target_exists") {
         toastError(S.files.targetExists(path));
       } else {
-        toastApiError(err);
+        toastApiError(err, privacyRef.current);
       }
     } finally {
       if (scopeKeyRef.current === key) setCreating(false);
@@ -1580,7 +1602,7 @@ export function WorkspaceBrowser({
     try {
       await files.reveal(filePath);
     } catch (err) {
-      toastApiError(err);
+      toastApiError(err, privacyRef.current);
     }
   };
 

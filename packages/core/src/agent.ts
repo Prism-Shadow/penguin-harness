@@ -1390,7 +1390,7 @@ export class Agent {
 
     // When a context's model doesn't support images (vision=false): inject a vision model
     // service for read_file's image branch — images are described by the Project config's
-    // tools.i2t (a paired reference), and the tool returns text instead of image content.
+    // vision_model (a paired reference), and the tool returns text instead of image content.
     // Even when unconfigured or invalid, it is still injected (modelId=null): its presence is
     // what tells read_file the session model cannot view images; the tool then finishes with a
     // failed explanation, and images are never allowed into that session's history. Decided
@@ -1398,7 +1398,7 @@ export class Agent {
     // handed the answer for each context it is equipped for.
     const visionDescriberFor = (entry: ModelEntry): VisionDescriberService | undefined => {
       if (entry.vision !== false) return undefined;
-      const visionRef = this.projectConfig.tools?.i2t;
+      const visionRef = this.projectConfig.vision_model;
       const visionEntry = visionRef ? getModel(this.projectConfig, visionRef) : undefined;
       if (!visionEntry || visionEntry.vision === false) return { modelId: null };
       return {

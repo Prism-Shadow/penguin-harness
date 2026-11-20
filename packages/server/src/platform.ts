@@ -49,8 +49,12 @@ import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js"
 import { PluginConfig, PluginConfigProvider } from "./plugin/config.js";
 import { PluginConfigAdmin, PluginConfigPage } from "./plugin/config-page.js";
 import { IndexSources, PluginIndexSettings, StoredIndexSources } from "./plugin/index-config.js";
-import { ModelCapabilities, ModelCapabilitiesProvider } from "./cli/model-capabilities.js";
 import { PluginCliCommandsProvider } from "./plugin/cli-commands.js";
+import { ToolModelBindings, ToolModelBindingsProvider } from "./services/tool-model-bindings.js";
+import {
+  ProjectModelRequests,
+  ProjectModelRequestsService,
+} from "./services/project-model-requests.js";
 import {
   CoreSessionLoaders,
   DefaultTitleGenerators,
@@ -547,13 +551,12 @@ export class CompanyModule {}
     NpmPluginPackages,
     InstalledPluginRoutes,
     PluginCliCommandsProvider,
-    ModelCapabilitiesProvider,
     PluginUiRoutes,
     SuggestIdRoutes,
     LanguagesModule,
     LanguageRoutes,
   ],
-  exports: [Http, WebShell, UpdateCheck, ModelCapabilities],
+  exports: [Http, WebShell, UpdateCheck],
 })
 export class ApiModule {}
 
@@ -562,6 +565,17 @@ export class ApiModule {}
   exports: [Workbenches],
 })
 export class WorkbenchesModule {}
+
+/**
+ * What a plugin's model tools stand on: the bindings plugins declare, and requests to a Project
+ * model outside a chat turn. A group of its own, above the Projects, Sessions and usage it reads
+ * and the machines its bindings travel to; no operation is named here — those are the plugins'.
+ */
+@Module({
+  children: [ToolModelBindingsProvider, ProjectModelRequestsService],
+  exports: [ToolModelBindings, ProjectModelRequests],
+})
+export class ModelToolsModule {}
 
 /**
  * The server's theme packs: the store under the data root and the routes over it. Its own group:
@@ -602,6 +616,7 @@ export class ThemesModule {}
     HistoryRoutes,
     HistoryLinesRoutes,
     WorkbenchesModule,
+    ModelToolsModule,
     ThemesModule,
     BuiltinBrowserModule,
     AgentApiModule,

@@ -19,7 +19,7 @@
  *   delta carries it whole before stop, and the complete `tool_call_output` carries it again);
  * - present: the image and the caller's `prompt` (default: a detailed description; only a
  *   text-only model is handed the argument, see selectBuiltinToolsForModel) go in one
- *   one-off request to the Project's `tools.i2t`, whose text deltas stream back as this
+ *   one-off request to the Project's `vision_model`, whose text deltas stream back as this
  *   tool's own output; nothing of that request (thinking, token_usage) leaks into the parent
  *   session stream. Some providers flatly 400 on a tool_result carrying an image, which is why
  *   a text-only session never gets the image itself. A describer without a model
@@ -100,7 +100,7 @@ const DEFAULT_OUTPUT_BUDGET = 64000;
  */
 const NO_VISION_MODEL_MESSAGE =
   "No vision model is configured for this project. The current model does not accept " +
-  "images; ask the user to pick a vision model in the model settings (tools.i2t) " +
+  "images; ask the user to pick a vision model in the model settings (vision_model) " +
   "to enable image reading.";
 
 /**
