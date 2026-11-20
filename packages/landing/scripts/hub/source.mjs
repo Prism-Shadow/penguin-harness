@@ -122,14 +122,14 @@ export function dataFiles(repo, prefix = "data") {
     try {
       const out = execFileSync(
         "git",
-        ["-C", repo, "ls-tree", "-r", "--name-only", "HEAD", "--", ...(prefix ? [prefix] : [])],
+        ["-C", repo, "ls-tree", "-rz", "--name-only", "HEAD", "--", ...(prefix ? [prefix] : [])],
         {
           encoding: "utf8",
           maxBuffer: 64 * 1024 * 1024,
           stdio: ["ignore", "pipe", "pipe"],
         },
       );
-      return out.split("\n").filter(Boolean);
+      return out.split("\0").filter(Boolean);
     } catch {
       // Not a usable repository after all: fall back to what is on disk.
     }

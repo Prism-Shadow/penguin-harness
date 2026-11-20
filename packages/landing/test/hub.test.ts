@@ -338,7 +338,7 @@ describe("the hub readers", () => {
       "scenario/README.md": "Training data",
       "scenario/tasks/shared/instruction.md": "Work through the training tasks.",
       "scenario/tasks/shared/task.toml": "",
-      "scenario/tasks/shared/environment/input.csv": "x,y",
+      "scenario/tasks/shared/environment/角色定义.txt": "角色",
     });
     const git = (...args: string[]) =>
       execFileSync("git", ["-C", dataset, ...args], { encoding: "utf8" }).trim();
@@ -375,12 +375,12 @@ describe("the hub readers", () => {
         expect(task.data).toMatchObject({
           url: taskUrl,
           instruction: "Work through the training tasks.",
-          files: ["environment/input.csv", "instruction.md", "task.toml"],
+          files: ["environment/角色定义.txt", "instruction.md", "task.toml"],
         });
       }
-      expect(existsSync(join(cache, commit, "scenario/tasks/shared/environment/input.csv"))).toBe(
-        false,
-      );
+      expect(
+        existsSync(join(cache, commit, "scenario/tasks/shared/environment/角色定义.txt")),
+      ).toBe(false);
     } finally {
       vi.unstubAllEnvs();
     }
