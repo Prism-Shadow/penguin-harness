@@ -591,6 +591,11 @@ export const zh = {
         description:
           "机器管理页的组件：每种状态的状态胶囊、机器卡片与列表、详情工具栏与添加对话框。",
       },
+      models: {
+        title: "模型",
+        description:
+          "项目默认模型的完整弹窗（对话、多模态与工具三组，没有候选时写明原因），以及还没有任何 key 时的连接引导。",
+      },
       retry: {
         title: "重试",
         description:
@@ -2029,6 +2034,43 @@ export const zh = {
       listEmpty: "没有内容时",
       listEmptyText: "这个 Agent 还没有钩子包。",
       memoryFromPlugin: "由插件 Continual learning 写入",
+    },
+    models: {
+      dialog: "默认模型弹窗",
+      dialogHint:
+        "每行一个选择器，只列出能承担该项的模型；没有候选时写明原因并给出去处。工具一组较淡。",
+      openDialog: "打开「默认模型」",
+      guide: "连接引导",
+      guideHint: "还没有任何模型有 key 时先出现它；连接或填好 key 后换成「默认模型」弹窗。",
+      openGuide: "打开引导",
+      title: "默认模型",
+      intro: "新对话、多模态工具与语音交互默认使用这些模型。每项选好即保存。",
+      chat: "对话",
+      multimodal: "多模态",
+      tools: "工具",
+      chatModel: "默认对话模型",
+      chatHint: "新建对话时使用",
+      t2t: "文本生成",
+      i2t: "图片理解",
+      t2i: "图像生成",
+      t2v: "视频生成",
+      s2t: "语音识别",
+      t2s: "语音合成",
+      search: "网页搜索",
+      fetch: "读取网页",
+      empty: "连接一个提供这类模型的供应商",
+      emptyAction: "前往模型库",
+      unset: "未指定",
+      done: "完成",
+      guideTitle: "先连接一个模型供应商",
+      guideBody:
+        "这个 Project 还没有可用的模型：没有任何模型配置了 API key。连接一个供应商，或在模型库里填写 key，之后再选择默认模型。",
+      tokendance: "一个钱包使用多家模型，无需逐个填写密钥",
+      penguinGo: "PenguinHarness 自带的模型服务",
+      connect: "连接",
+      keyText: "已有某家供应商的 API key？",
+      keyAction: "填写 API key",
+      later: "稍后",
     },
     machines: {
       pills: "状态胶囊",

@@ -576,6 +576,11 @@ export const en: GalleryStrings = {
         description:
           "The Machines page's parts: the status pill in every state, the machine card and its list, the dialog toolbar and the add dialog.",
       },
+      models: {
+        title: "Models",
+        description:
+          "The Project's default-models dialog (chat, multimodal and tool groups, each row saying why it is empty when nothing can serve it), and the guide shown before any model has a key.",
+      },
       retry: {
         title: "Retry",
         description:
@@ -2083,6 +2088,45 @@ export const en: GalleryStrings = {
       listEmpty: "With nothing in it",
       listEmptyText: "This agent has no hook packages yet.",
       memoryFromPlugin: "Written by the Continual learning plugin",
+    },
+    models: {
+      dialog: "Default models dialog",
+      dialogHint:
+        "One picker per row, listing only the models that can serve it; a row nothing can serve says why and where to go. The tool group reads quieter.",
+      openDialog: "Open Default models",
+      guide: "Connect guide",
+      guideHint:
+        "Shown first while no model has a key; once one is connected or a key is set, the default-models dialog takes its place.",
+      openGuide: "Open the guide",
+      title: "Default models",
+      intro:
+        "New chats, the multimodal tools and voice use these models by default. Each one is saved as you pick it.",
+      chat: "Chat",
+      multimodal: "Multimodal",
+      tools: "Tools",
+      chatModel: "Default chat model",
+      chatHint: "Used for new chats",
+      t2t: "Text generation",
+      i2t: "Image understanding",
+      t2i: "Image generation",
+      t2v: "Video generation",
+      s2t: "Speech recognition",
+      t2s: "Speech synthesis",
+      search: "Web search",
+      fetch: "Fetch a web page",
+      empty: "Connect a provider that offers this kind of model",
+      emptyAction: "Go to Models",
+      unset: "Not set",
+      done: "Done",
+      guideTitle: "Connect a model provider first",
+      guideBody:
+        "This Project has no model it can use yet: no model has an API key. Connect a provider, or add a key on the Models page, then choose the default models.",
+      tokendance: "One wallet for many providers' models, no keys to type",
+      penguinGo: "PenguinHarness's own model service",
+      connect: "Connect",
+      keyText: "Already have an API key from a provider?",
+      keyAction: "Add an API key",
+      later: "Later",
     },
     machines: {
       pills: "Status pills",
