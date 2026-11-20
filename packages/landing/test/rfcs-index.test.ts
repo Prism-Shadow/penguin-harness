@@ -11,7 +11,18 @@
  *   the index skips files that are not PRFC documents (the surface's README and template).
  */
 import { describe, expect, it } from "vitest";
-import { buildRfcIndex } from "../src/lib/rfcs";
+import {
+  buildRfcIndex,
+  buildRfcSearchRecords,
+  findRfcSearchMatchRanges,
+  rfcBodyMarkdown,
+  rfcEntryShortTitle,
+  rfcEntryTitle,
+  rfcPagerFor,
+  searchRfcRecords,
+  shortRfcNumber,
+  shortRfcTitle,
+} from "../src/lib/rfcs";
 
 const DESIGN_PR = "https://github.com/Prism-Shadow/penguin-harness-design/pull/12";
 const UNMERGED_PR = "https://github.com/Prism-Shadow/penguin-harness-design/pull/279";
@@ -83,7 +94,7 @@ const drafting = [
 
 describe("buildRfcIndex", () => {
   it("classifies a landed document by its marker and links into the repository", () => {
-    const [entry] = buildRfcIndex({ "PRFC-0001-module.md": landedEn });
+    const entry = buildRfcIndex({ "PRFC-0001-module.md": landedEn })[0]!;
     expect(entry.status).toBe("landed");
     expect(entry.title).toBe("PRFC-0001 Module");
     expect(entry.number).toBe("PRFC-0001");
@@ -99,28 +110,28 @@ describe("buildRfcIndex", () => {
       "PRFC-0021-distros.md": nativeLanded,
     });
     expect(index.map((entry) => entry.number)).toEqual(["PRFC-0001", "PRFC-0021"]);
-    expect(index[0].status).toBe("landed");
-    expect(index[0].titleZh).toBe("PRFC-0001 模块");
-    expect(index[0].zh?.href).toBe("/rfcs/PRFC-0001-module.zh");
-    expect(index[1].status).toBe("landed");
+    expect(index[0]!.status).toBe("landed");
+    expect(index[0]!.titleZh).toBe("PRFC-0001 模块");
+    expect(index[0]!.zh?.href).toBe("/rfcs/PRFC-0001-module.zh");
+    expect(index[1]!.status).toBe("landed");
   });
 
   it("a document carried by an open design PR links to that PR, not the repository", () => {
-    const [entry] = buildRfcIndex({ "PRFC-0005-plugin-versioning.md": openDraft });
+    const entry = buildRfcIndex({ "PRFC-0005-plugin-versioning.md": openDraft })[0]!;
     expect(entry.status).toBe("open");
     expect(entry.en?.href).toBe(DESIGN_PR);
     expect(entry.en?.href).not.toContain("/blob/main/");
   });
 
   it("a document with no marker is drafting and shows without a link", () => {
-    const [entry] = buildRfcIndex({ "PRFC-0006-a-draft.md": drafting });
+    const entry = buildRfcIndex({ "PRFC-0006-a-draft.md": drafting })[0]!;
     expect(entry.status).toBe("drafting");
     expect(entry.en).toBeUndefined();
     expect(entry.zh).toBeUndefined();
   });
 
   it("an open design PR carrying a newer revision is the entry's open revision", () => {
-    const [entry] = buildRfcIndex({ "PRFC-0003-plugin.md": landedWithUnmerged });
+    const entry = buildRfcIndex({ "PRFC-0003-plugin.md": landedWithUnmerged })[0]!;
     expect(entry.status).toBe("landed");
     expect(entry.openRevision?.href).toBe(UNMERGED_PR);
   });
@@ -133,8 +144,51 @@ describe("buildRfcIndex", () => {
       "TEMPLATE.md": "# PRFC-NNNN Title",
     });
     expect(index).toHaveLength(1);
-    expect(index[0].id).toBe("PRFC-0001-module");
-    expect(index[0].title).toBe("PRFC-0001 Module");
-    expect(index[0].titleZh).toBe("PRFC-0001 模块");
+    expect(index[0]!.id).toBe("PRFC-0001-module");
+    expect(index[0]!.title).toBe("PRFC-0001 Module");
+    expect(index[0]!.titleZh).toBe("PRFC-0001 模块");
+  });
+
+  it("extracts short numbers, short titles, and locale-aware titles", () => {
+    const entry = buildRfcIndex({
+      "PRFC-0001-module.md": landedEn,
+      "PRFC-0001-module.zh.md": landedZh,
+    })[0]!;
+    expect(shortRfcNumber("PRFC-0001")).toBe("0001");
+    expect(shortRfcTitle("PRFC-0001 Module")).toBe("Module");
+    expect(shortRfcTitle("PRFC-0024: CLI Modules")).toBe("CLI Modules");
+    expect(rfcEntryTitle(entry, "en")).toBe("PRFC-0001 Module");
+    expect(rfcEntryTitle(entry, "zh")).toBe("PRFC-0001 模块");
+    expect(rfcEntryShortTitle(entry, "en")).toBe("Module");
+    expect(rfcEntryShortTitle(entry, "zh")).toBe("模块");
+  });
+
+  it("strips the leading H1 and language-switch link from the body Markdown", () => {
+    const body = rfcBodyMarkdown(landedEn);
+    expect(body).not.toContain("# PRFC-0001 Module");
+    expect(body).not.toContain("[中文版]");
+    expect(body).toContain("> **Source**:");
+    expect(body).toContain("## Motivation");
+  });
+
+  it("builds previous/next pagination across the index and landed RFCs", () => {
+    const fromIndex = rfcPagerFor("index", "en", "RFC index");
+    expect(fromIndex.prev).toBeUndefined();
+    expect(fromIndex.next?.href).toBe("/rfcs/PRFC-0001-module");
+    const fromFirst = rfcPagerFor("PRFC-0001-module", "en", "RFC index");
+    expect(fromFirst.prev).toEqual({ id: "index", href: "/rfcs", title: "RFC index" });
+    expect(fromFirst.next?.href).toBe("/rfcs/PRFC-0002-hmr");
+  });
+
+  it("indexes sections for search and highlights query match ranges", () => {
+    const records = buildRfcSearchRecords("en", {
+      title: "RFC index",
+      body: "Every design decision is recorded as an RFC.\n\n## The RFCs\n\nModule and Plugin.",
+    });
+    const hits = searchRfcRecords(records, "module");
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits.some((h) => h.record.href === "/rfcs/PRFC-0001-module")).toBe(true);
+    const ranges = findRfcSearchMatchRanges("PRFC-0001 Module system", "module");
+    expect(ranges).toEqual([{ start: 10, end: 16 }]);
   });
 });

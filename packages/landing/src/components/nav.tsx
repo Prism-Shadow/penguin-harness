@@ -50,7 +50,7 @@ export function Nav() {
     id: "rfcs",
     href: "/rfcs",
     label: S.nav.rfcs,
-    active: /^\/rfcs\/?$/.test(pathname),
+    active: pathname === "/rfcs" || pathname.startsWith("/rfcs/"),
     render: routeLink,
   };
   const moreAt = links.findIndex((item) => "links" in item);

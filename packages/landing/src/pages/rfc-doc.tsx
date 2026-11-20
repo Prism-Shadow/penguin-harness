@@ -1,9 +1,9 @@
 /**
- * One RFC document's page: the raw Markdown (title, provenance marker, body) rendered through
- * the shared site prose's doc variant, with the section's left rail beside it. The route picks
- * the language — `/rfcs/<id>` for the English document, `/rfcs/<id>.zh` for the Chinese one —
- * and the document's own top links switch between them. Links written against the directory's
- * files (a pair's `.zh.md` / `.md`) map onto the in-site routes; everything else opens outside.
+ * One RFC document's page: the H1 title and Copy Markdown button in the header, then the raw
+ * Markdown body (provenance marker, metadata bullets, numbered sections) rendered through the
+ * shared site prose's `doc` variant inside the 3-column RFC layout shell, with previous/next
+ * pagination and an "Edit this page on GitHub" link at the foot. The active site locale selects
+ * the English or Chinese document pair automatically.
  */
 import { useMemo } from "react";
 import { Link, useParams } from "react-router";
@@ -13,59 +13,42 @@ import {
   SITE_DOC_REMARK_PLUGINS,
   SiteCopyButton,
   SiteMarkdown,
-  SiteToc,
   useActiveTocEntry,
+  useSiteLocale,
 } from "@prismshadow/penguin-ui/site";
-import type { ReactNode } from "react";
-import type { SiteMarkdownComponents } from "@prismshadow/penguin-ui/site";
-import { RfcSidebar } from "../components/rfc-sidebar";
+import { RFC_MD_COMPONENTS, RfcShell } from "../components/rfc-sidebar";
 import { useDocumentMeta } from "../lib/document-meta";
-import { repositoryHref, rfcDocumentOf } from "../lib/rfcs";
+import {
+  repositoryHref,
+  rfcBodyMarkdown,
+  rfcDocForLocale,
+  rfcEntryOf,
+  rfcEntryShortTitle,
+  rfcEntryTitle,
+  shortRfcNumber,
+} from "../lib/rfcs";
 import { S } from "../lib/strings";
-
-function RfcLink({ href = "", children }: { href?: string; children?: ReactNode }) {
-  // A document's own links into the directory's files become the pair's in-site routes.
-  if (!href.startsWith("http") && /^[A-Za-z0-9._-]+\.md$/.test(href)) {
-    const id = href.replace(/\.md$/, "");
-    return <Link to={`/rfcs/${id}`}>{children}</Link>;
-  }
-  if (href.startsWith("/")) {
-    return <Link to={href}>{children}</Link>;
-  }
-  if (/^https?:\/\//.test(href)) {
-    return (
-      <a href={href} target="_blank" rel="noreferrer">
-        {children}
-      </a>
-    );
-  }
-  return <a href={href}>{children}</a>;
-}
-
-/** Module-level, so react-markdown keeps one element type across renders. */
-const MD_COMPONENTS: SiteMarkdownComponents = {
-  a: ({ href, children }) => <RfcLink href={href}>{children}</RfcLink>,
-};
+import { rfcIndexMarkdown } from "./rfcs";
 
 export function RfcDocPage() {
   const { id = "" } = useParams();
-  const found = rfcDocumentOf(id);
-  const doc = found?.doc;
-  const raw = found?.raw ?? "";
-  useDocumentMeta(
-    doc ? `${doc.title} | ${S.siteName}` : `${S.rfcs.title} | ${S.siteName}`,
-    S.rfcs.description,
-  );
-  const toc = useMemo(() => extractToc(raw), [raw]);
+  const { locale } = useSiteLocale();
+  const entry = rfcEntryOf(id);
+  const doc = entry ? rfcDocForLocale(entry, locale) : undefined;
+  const title = entry ? rfcEntryTitle(entry, locale) : S.rfcs.title;
+  useDocumentMeta(`${title} | ${S.siteName}`, S.rfcs.description);
+  const body = useMemo(() => (doc ? rfcBodyMarkdown(doc.raw) : ""), [doc]);
+  const indexBody = useMemo(() => rfcIndexMarkdown(locale), [locale]);
+  const toc = useMemo(() => extractToc(body), [body]);
   const { activeId, pinTo } = useActiveTocEntry(toc);
 
-  if (!doc) {
+  if (!entry || !doc) {
     return (
-      <div className="anim-rise px-4 py-10 sm:px-6 lg:px-10">
-        <p className="mx-auto max-w-3xl text-lg font-medium">{S.rfcs.notFound}</p>
+      <div className="mx-auto max-w-3xl px-4 py-24 text-center sm:px-6">
+        <p className="text-lg font-medium">{S.rfcs.notFound}</p>
         <Link
           to="/rfcs"
-          className="mx-auto mt-3 block max-w-3xl text-sm text-brand-700 hover:underline dark:text-brand-300"
+          className="mt-4 inline-block text-sm text-brand-700 hover:underline dark:text-brand-300"
         >
           {S.rfcs.backToIndex}
         </Link>
@@ -73,64 +56,40 @@ export function RfcDocPage() {
     );
   }
 
-  const pair = doc.zh ? rfcDocumentOf(doc.id) : rfcDocumentOf(`${doc.id}.zh`);
-  const pairHref = pair ? inSite(pair.doc) : undefined;
+  const shortTitle = rfcEntryShortTitle(entry, locale);
 
   return (
-    <div className="anim-rise px-4 py-10 sm:px-6 lg:px-10 xl:grid xl:grid-cols-[13rem_minmax(0,1fr)_13rem] xl:gap-8">
-      <RfcSidebar />
-      <article className="mx-auto w-full max-w-3xl xl:mx-0">
-        <header>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Link
-              to="/rfcs"
-              className="text-sm text-brand-700 hover:underline dark:text-brand-300"
-            >
-              {S.rfcs.backToIndex}
-            </Link>
-            <div className="flex items-center gap-2">
-              {pairHref && (
-                <Link
-                  to={pairHref}
-                  className="text-sm text-gray-500 hover:underline dark:text-gray-400"
-                >
-                  {doc.zh ? "English" : "中文"}
-                </Link>
-              )}
-              <a
-                href={repositoryHref(doc.file)}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm text-gray-500 hover:underline dark:text-gray-400"
-              >
-                {S.rfcs.github}
-              </a>
-              <SiteCopyButton
-                text={raw}
-                label={S.rfcs.copyMarkdown}
-                announcement={S.rfcs.copied}
-                look="pill-md"
-              />
-            </div>
+    <RfcShell
+      activeId={entry.id}
+      mobileLabel={`${shortRfcNumber(entry.number)} ${shortTitle}`}
+      editHref={repositoryHref(doc.file)}
+      indexSearchBody={indexBody}
+      toc={toc}
+      activeTocId={activeId}
+      onPinToc={pinTo}
+    >
+      <header>
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+          <h1 className="text-3xl font-semibold tracking-tight text-balance">{title}</h1>
+          <div className="pt-1.5">
+            <SiteCopyButton
+              text={doc.raw}
+              label={S.rfcs.copyMarkdown}
+              announcement={S.rfcs.copied}
+              look="pill-md"
+            />
           </div>
-        </header>
-        <SiteMarkdown
-          variant="doc"
-          className="mt-4"
-          remarkPlugins={SITE_DOC_REMARK_PLUGINS}
-          components={MD_COMPONENTS}
-          highlight={highlightSiteCode}
-        >
-          {raw}
-        </SiteMarkdown>
-      </article>
-      {toc.length >= 2 && (
-        <SiteToc label={S.rfcs.toc} entries={toc} activeId={activeId} onNavigate={pinTo} />
-      )}
-    </div>
+        </div>
+      </header>
+      <SiteMarkdown
+        variant="doc"
+        className="mt-6"
+        remarkPlugins={SITE_DOC_REMARK_PLUGINS}
+        components={RFC_MD_COMPONENTS}
+        highlight={highlightSiteCode}
+      >
+        {body}
+      </SiteMarkdown>
+    </RfcShell>
   );
-}
-
-function inSite(doc: { id: string; zh: boolean }): string {
-  return doc.zh ? `/rfcs/${doc.id}.zh` : `/rfcs/${doc.id}`;
 }

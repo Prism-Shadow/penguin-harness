@@ -25,7 +25,7 @@ export const zh = {
     plugins: "插件",
     benchmarks: "评估集",
     leaderboards: "榜单",
-    rfcs: "RFC",
+    rfcs: "RFCs",
     amsp: "AMSP",
     docs: "文档",
     gallery: "主题包",
@@ -622,20 +622,24 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   /**
-   * The RFC index page (rfcs.tsx): the repository's design RFCs as one docs-style index.
+   * The RFC pages (pages/rfcs.tsx, pages/rfc-doc.tsx): the repository's design RFCs (PRFCs) as a
+   * docs-style section, following the MMSP RFC site's layout and information structure.
    */
   rfcs: {
-    /** The tab title and description while the page is open. */
-    title: "设计 RFC（PRFC）",
+    /** The tab title and description while the index page is open. */
+    title: "RFC 索引",
+    sidebarTitle: "RFCs",
     description:
-      "PenguinHarness 的每个设计决定都记录为一份 PRFC 文档：这里是全部 RFC 的索引，站内逐篇渲染，每行的标题链进所选语言版本的页面。",
+      "PenguinHarness 的每个设计决定都记录为一篇 RFC：这里是索引，以及本面的约定。",
     indexLabel: "RFC 索引",
-    notFound: "找不到这份 RFC。",
+    notFound: "找不到这篇 RFC。",
     backToIndex: "返回 RFC 索引",
-    github: "GitHub",
+    editOnGithub: "在 GitHub 上编辑本页",
     copyMarkdown: "复制 Markdown",
     copied: "已复制",
     toc: "本页目录",
+    prev: "上一页",
+    next: "下一页",
     sectionAll: "全部 RFC",
     colRfc: "RFC",
     colTitle: "标题",
@@ -646,25 +650,37 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     /** The row's link to the open design PR carrying a revision newer than the landed version. */
     openRevision: "未合并修订",
     notes: [
-      "状态：已落地＝文档已在主仓的 RFC 目录；open＝由一个未关闭的设计 PR 携带，链接指向该 PR；drafting＝起草中，索引行不带链接。",
-      "未合入的 RFC：提议中的 RFC 是未关闭的设计 PR，撤回的 RFC 是已关闭的 PR；两者均不列入上表，随各自的 PR 进来。",
-      "双语对齐：每份 PRFC 都有逐节对应的 .zh.md；表格中的标题链到所选语言的文档，另一语言由文档顶部互链切换。",
-      "唯一索引：本表随 RFC 目录自动生成——目录里没有的不出现，目录里有的不遗漏。",
+      "**状态**：`已落地`＝文档已在主仓 `rfcs/` 目录；`open`＝由未关闭的设计 PR 携带，链接指向该 PR；`drafting`＝起草中，索引行不带链接。",
+      "**未合入的 RFC**：提议中的 RFC 是未关闭的设计 PR，撤回的 RFC 是已关闭的 PR；两者均随各自的 PR 落入 `rfcs/`。",
+      "**唯一索引**：上表由 `rfcs/` 目录在构建期自动生成——目录里没有的不出现，目录里有的不遗漏。",
     ],
-    sectionConventions: "本面的约定",
-    conventions: [
-      "一份 RFC 与它对应的实现改动不放在同一个 PR 里，两者可独立合并。",
-      "RFC 一旦落地，就不应频繁修改。",
-      "确需修改时，必须提升版本号（rev），形如 `v2.0.0`。",
-      "每次修改在文末以 `## Changes` 一节列出该版本的改动项。",
-    ],
-    sectionFiles: "文件",
     colFile: "文件",
     colContent: "内容",
     files: [
-      { file: "rfcs/", content: "一个文件记录一个设计决定（`PRFC-NNNN-slug.md`）及其中文对照 `.zh.md`" },
-      { file: "TEMPLATE.md", content: "新 RFC 的模板起点" },
+      {
+        file: "rfcs/",
+        path: "tree/main/rfcs",
+        content: "一个文件记录一个决定（`PRFC-NNNN-<slug>.md`）及其中文对照 `.zh.md`",
+      },
+      {
+        file: "TEMPLATE.md",
+        path: "blob/main/rfcs/TEMPLATE.md",
+        content: "新 RFC 的英文模板起点",
+      },
     ],
+    bilingualNote:
+      "**双语对齐**：除 `TEMPLATE.md` 外，每个文件都有逐节对应的 `<name>.zh.md`，由网站直接渲染于 `/rfcs/`。",
+    search: {
+      open: "搜索",
+      label: "搜索 RFC",
+      placeholder: "搜索 RFC 标题、章节和正文",
+      start: "输入关键词搜索当前语言的全部 RFC",
+      noResults: "没有找到匹配的 RFC",
+      noResultsHint: "请尝试更短或不同的关键词",
+      results: "搜索结果",
+      close: "关闭搜索",
+      keyboardHint: "使用上下方向键选择，按回车打开",
+    },
   },
 
   /**

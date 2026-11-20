@@ -627,20 +627,23 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       k > 1 ? `Back to reference ${n}, citation ${k}` : `Back to reference ${n}`,
   },
 
-  /** The RFC index page (rfcs.tsx): the repository's design RFCs as one docs-style index. */
+  /** The RFC pages (pages/rfcs.tsx, pages/rfc-doc.tsx): the repository's design RFCs as a docs-style section. */
   rfcs: {
-    /** The tab title and description while the page is open. */
-    title: "Design RFCs (PRFC)",
+    /** The tab title and description while the index page is open. */
+    title: "RFC index",
+    sidebarTitle: "RFCs",
     description:
-      "Every PenguinHarness design decision is recorded as a PRFC document: this is the index of all RFCs, rendered in site — each row's title links the document's page in the selected language.",
+      "Every design decision PenguinHarness makes is recorded as an RFC: the index, and the conventions for this surface.",
     indexLabel: "RFC index",
     notFound: "That RFC does not exist.",
     backToIndex: "Back to the RFC index",
-    github: "GitHub",
+    editOnGithub: "Edit this page on GitHub",
     copyMarkdown: "Copy Markdown",
     copied: "Copied",
     toc: "On this page",
-    sectionAll: "All RFCs",
+    prev: "Previous",
+    next: "Next",
+    sectionAll: "The RFCs",
     colRfc: "RFC",
     colTitle: "Title",
     colStatus: "Status",
@@ -650,25 +653,37 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     /** The row's link to the open design PR carrying a revision newer than the landed version. */
     openRevision: "unmerged revision",
     notes: [
-      "Status: landed = the document is in the repository's RFC directory; open = carried by an open design PR, linking to it; drafting = still being written, the row shows without a link.",
-      "Unlanded RFCs: a proposed RFC is an open design PR, a withdrawn one a closed PR; neither is listed in the table — each arrives with its own PR.",
-      "Bilingual alignment: every PRFC has a section-by-section `.zh.md` counterpart; the table links the document in the selected language, and the other language is one link away at the document's top.",
-      "The one index: the table is generated from the RFC directory — nothing outside it, nothing missing.",
+      "**Statuses**: `Landed` = the document is in `rfcs/`; `Open` = carried by an open design PR, linking to it; `Drafting` = still being written, listed without a link.",
+      "**Unmerged RFCs**: A proposed RFC is an open design PR and a withdrawn RFC is a closed PR; each lands in `rfcs/` with its own PR.",
+      "**Single index**: The table above is generated from `rfcs/` at build time — nothing outside the directory, nothing missing.",
     ],
-    sectionConventions: "Conventions for this surface",
-    conventions: [
-      "A design RFC and its implementation changes do not share a pull request; either may merge independently.",
-      "Once landed, a design RFC should not change frequently.",
-      "A change that is needed must raise the revision (rev), e.g. `v2.0.0`.",
-      "Each change records the version's change items in a `## Changes` section at the end.",
-    ],
-    sectionFiles: "Files",
     colFile: "File",
-    colContent: "Content",
+    colContent: "Holds",
     files: [
-      { file: "rfcs/", content: "One file records one decision (`PRFC-NNNN-slug.md`) with its Chinese counterpart `.zh.md`" },
-      { file: "TEMPLATE.md", content: "The starting template for a new RFC" },
+      {
+        file: "rfcs/",
+        path: "tree/main/rfcs",
+        content: "One decision per file (`PRFC-NNNN-<slug>.md`) and its `.zh.md` twin",
+      },
+      {
+        file: "TEMPLATE.md",
+        path: "blob/main/rfcs/TEMPLATE.md",
+        content: "Starting template for new RFCs (English only)",
+      },
     ],
+    bilingualNote:
+      "**Bilingual mirror**: Every file except `TEMPLATE.md` has a `<name>.zh.md` twin aligned section for section, rendered at `/rfcs/`.",
+    search: {
+      open: "Search",
+      label: "Search RFCs",
+      placeholder: "Search RFC titles, sections, and content",
+      start: "Enter a keyword to search all RFCs in the current language",
+      noResults: "No matching RFCs",
+      noResultsHint: "Try a shorter or different search term",
+      results: "Search results",
+      close: "Close search",
+      keyboardHint: "Use the arrow keys to select, then press Enter to open",
+    },
   },
 
   amsp: {
