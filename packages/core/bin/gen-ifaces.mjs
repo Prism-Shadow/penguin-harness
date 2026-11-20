@@ -108,8 +108,11 @@ function packageNameOf(fileName) {
     dir = parent;
   }
 }
-/** The package this table is generated for: the one around the first `--project`. */
-const ownPackage = packageNameOf(path.resolve(projects[0] ?? "tsconfig.json"));
+/**
+ * The package this table is generated for: the one around the first root file of the first
+ * `--project` (set when that project is read; a tsconfig may live outside the package it names).
+ */
+let ownPackage;
 
 /** `--sources <dir>`: the directories whose source files are projected (absolute, `/`-separated). */
 const sourceRoots = args.flatMap((a, i) =>
@@ -220,6 +223,7 @@ for (const project of projects) {
   );
   const program = ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options });
   const checker = program.getTypeChecker();
+  if (ownPackage === undefined) ownPackage = packageNameOf(parsed.fileNames[0] ?? configPath);
 
   const sourceFiles = program.getSourceFiles().filter(projectsFile);
   /** An `@Interface()` decorator, like every other decorator here a factory call. */
