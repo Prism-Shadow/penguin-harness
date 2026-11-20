@@ -215,7 +215,8 @@ async function sidebarRow() {
 }
 it("takes the workbench off the sidebar from the More menu, writing nothing of the App Center; a refused write puts it back", async () => {
   const { server } = await open();
-  const sidebarWrites = () => server.writes().filter((request) => request.path.endsWith("/sidebar"));
+  const sidebarWrites = () =>
+    server.writes().filter((request) => request.path.endsWith("/sidebar"));
   expect((await sidebarRow()).getAttribute("aria-checked")).toBe("true");
   server.refuseNext(500, "internal_error", "Disk full");
   await click(menuItem(en.workbenches.showInSidebar));
@@ -236,10 +237,19 @@ it("takes the workbench off the sidebar from the More menu, writing nothing of t
   expect(appCenterSwitch().getAttribute("aria-checked")).toBe("false");
 });
 it("opens a workbench hidden from the sidebar on its full page", async () => {
-  const { router } = await open(
-    [{ id: "support.main", key: "main", title: "Support", renderer: { iframe: { src: "/support" } } }],
-    { showInSidebar: false },
-  );
+  setActiveStrings(en);
+  const tab = { id: "support.main", key: "main", title: "Support" };
+  agentServer(undefined, {
+    workbenches: [
+      info([{ ...tab, renderer: { iframe: { src: "/support" } } }], { showInSidebar: false }),
+    ],
+  });
+  const router = await mountAgentApp(h(AgentSettingsPage), {
+    at: `/agents/${AGENT_ID}?tab=workbenches`,
+    extra: [{ path: "/app/*", element: h("p", null, "Full page") }],
+  });
+  await waitFor(() => hasButton(`${en.workbenches.open} Support`));
   await click(button(`${en.workbenches.open} Support`));
   expect(whereIs(router)).toBe(`/app/${PROJECT_ID}/${AGENT_ID}/support/main`);
+  expect(document.body.textContent).toContain("Full page");
 });

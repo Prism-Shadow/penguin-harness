@@ -270,7 +270,10 @@ describe("workbench switches", { timeout: 30_000 }, () => {
       const tiles = (await (await owner.get(`/api/projects/${PROJECT}/app-center`)).json()) as {
         shortcuts: AppCenterShortcut[];
       };
-      expect(tiles.shortcuts.filter((s) => s.agentId === agentId)).toEqual([]);
+      // Declared `show: false`, it has no tile: the two lists do not follow each other.
+      expect(tiles.shortcuts.some((s) => s.agentId === agentId && s.workbenchId === "desk")).toBe(
+        false,
+      );
 
       await turn(`${base}/enabled`, false);
       expect(await sidebarOf(base)).toEqual([]);
