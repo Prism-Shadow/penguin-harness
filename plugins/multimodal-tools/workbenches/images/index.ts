@@ -66,10 +66,12 @@ export default {
                     };
                     await host.setState({ jobs: [job, ...all()] });
                     const language = body.lang === "zh" ? "Chinese" : "English";
+                    // The run belongs to this Session: the CLI reads it from the Agent's environment,
+                    // and Image Studio shows the images the Session's runs stored.
                     const instructions = [
                       "[use_skills]\nskills: multimodal-tools\n[/use_skills]\n",
-                      "Generate one image through the project's configured image model by executing penguin tools image with --json. Use the supplied Session ID and aspect ratio. Pass the image brief as one literal argument. Your response must describe the real tool result or its failure.",
-                      `Session ID: ${sessionId}. Aspect ratio: ${ratio}. Respond in ${language}.`,
+                      "Generate one image with the Project's image model: run penguin tools t2i with the image brief as one literal argument, --aspect-ratio, --out image-studio and --json. Your response must describe the real tool result or its failure.",
+                      `Aspect ratio: ${ratio}. Respond in ${language}.`,
                       "Image brief (JSON string): " + JSON.stringify(prompt),
                     ].join("\n");
                     try {

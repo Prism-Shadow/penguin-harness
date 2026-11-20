@@ -30,8 +30,10 @@ it("isolates briefs, persists a rejected run and deduplicates a retried submissi
   expect(host.run.mock.calls[0]?.[1][0].text).toMatch(
     /^\[use_skills\]\nskills: multimodal-tools\n\[\/use_skills\]\n\n/,
   );
-  expect(host.run.mock.calls[0]?.[1][0].text).toContain("Session ID: first.");
-  expect(host.run.mock.calls[1]?.[1][0].text).toContain("Session ID: second.");
+  expect(host.run.mock.calls[0]?.[1][0].text).toContain("penguin tools t2i");
+  expect(host.run.mock.calls[0]?.[1][0].text).toContain("--json");
+  expect(host.run.mock.calls[0]?.[0]).toBe("first");
+  expect(host.run.mock.calls[1]?.[0]).toBe("second");
   expect((await handle({ method: "GET", path: "/jobs/" + b.id } as never)).body).toMatchObject({
     job: { sessionId: "second" },
     session: { status: "failed", error: "model unavailable" },

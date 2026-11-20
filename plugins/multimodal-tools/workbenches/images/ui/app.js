@@ -14,11 +14,29 @@ for (const [title, prompt] of S.ideas) {
   };
   $("ideas").append(button);
 }
-const path = location.pathname.match(
-  /^(.*?)\/api\/projects\/([^/]+)\/agents\/[^/]+\/workbenches\//,
-);
-const relay = path?.[1] || "";
-const cap = relay + "/api/projects/" + path?.[2] + "/capabilities";
+// The page SDK the server serves beside this workbench: `apiBase` is the API of the server this
+// page came from ("/api", "/server/<machine>/api", or whatever a proxy put in front), and
+// `abortSession` stops the driving Session. Imported by a name in a variable, so that no tool
+// tries to resolve the served file ahead of time.
+const SDK = "../sdk/workbench.js";
+const PLUGIN = "@penguinharness/multimodal-tools";
+let sdk = null,
+  tools = "",
+  bindingsUrl = "";
+/** Loads the page SDK and names this Project's routes under its API. */
+async function connect() {
+  if (sdk) return;
+  const loaded = await import(SDK);
+  // The page is served at <apiBase>/projects/<project>/agents/…: the Project is the segment
+  // after the runtime's API base.
+  const prefix = loaded.apiBase + "/projects/";
+  if (!location.pathname.startsWith(prefix)) throw new Error(S.unavailable);
+  const project = location.pathname.slice(prefix.length).split("/")[0];
+  tools = prefix + project + "/multimodal-tools";
+  bindingsUrl = prefix + project + "/models/tool-bindings";
+  sdk = loaded;
+}
+const sessionPath = (sessionId) => tools + "/sessions/" + encodeURIComponent(sessionId);
 const placeholder = $("stage").firstElementChild;
 let jobs = [],
   current = null,
@@ -79,13 +97,11 @@ function choose(job) {
   stage(S.running);
   void refresh(job, serial);
 }
+/** Where an image the Session's runs generated is downloaded; null for any other file. */
 function linkedImage(file, sessionId) {
-  if (file.sessionId !== sessionId || !/^image\/(?:png|jpe?g|webp|gif|avif)$/i.test(file.mimeType))
+  if (file.operation !== "t2i" || !/^image\/(?:png|jpe?g|webp|gif|avif)$/i.test(file.mimeType))
     return null;
-  const expected = cap + "/artifacts/" + encodeURIComponent(file.id);
-  const source = new URL(file.url, location.origin);
-  if (source.origin !== location.origin || relay + source.pathname !== expected) return null;
-  return expected;
+  return sessionPath(sessionId) + "/files/" + encodeURIComponent(file.name);
 }
 function renderImages(images, job) {
   const elements = [],
@@ -109,18 +125,18 @@ function renderImages(images, job) {
 }
 async function refresh(job, serial) {
   clearTimeout(timer);
-  const query = "?sessionId=" + encodeURIComponent(job.sessionId);
   try {
-    const [{ session, job: serverJob }, { runs }, { artifacts }] = await Promise.all([
+    await connect();
+    const [{ session, job: serverJob }, { runs }, { files }] = await Promise.all([
       request("../api/jobs/" + job.id),
-      request(cap + "/usage" + query),
-      request(cap + "/artifacts" + query),
+      request(sessionPath(job.sessionId) + "/runs"),
+      request(sessionPath(job.sessionId) + "/files"),
     ]);
     if (serial !== generation) return;
-    const imageRuns = runs.filter((r) => r.sessionId === job.sessionId && r.capability === "image");
+    const imageRuns = runs.filter((r) => r.operation === "t2i");
     const active = imageRuns.some((r) => r.status === "running");
     const working = session.status === "running" || active;
-    const images = artifacts
+    const images = files
       .map((file) => ({ file, url: linkedImage(file, job.sessionId) }))
       .filter((x) => x.url);
     const cancelled =
@@ -174,20 +190,17 @@ $("stop").onclick = async () => {
   $("stop").disabled = true;
   problem("");
   try {
+    await connect();
     // Stop the driving Session first so it cannot start another run while existing ones are cancelled.
-    const response = await fetch(
-      relay + "/api/sessions/" + encodeURIComponent(job.sessionId) + "/abort",
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
-    );
-    if (!response.ok && response.status !== 409) throw new Error(S.requestFailed);
-    const { runs } = await request(cap + "/usage?sessionId=" + encodeURIComponent(job.sessionId));
-    const active = runs.filter(
-      (r) => r.sessionId === job.sessionId && r.capability === "image" && r.status === "running",
-    );
+    const interrupted = await sdk.abortSession(job.sessionId).catch(() => {
+      throw new Error(S.requestFailed);
+    });
+    const { runs } = await request(sessionPath(job.sessionId) + "/runs");
+    const active = runs.filter((r) => r.operation === "t2i" && r.status === "running");
     await Promise.all(
-      active.map((r) => request(cap + "/runs/" + encodeURIComponent(r.id), "DELETE")),
+      active.map((r) => request(tools + "/runs/" + encodeURIComponent(r.id), "DELETE")),
     );
-    if (response.ok || active.length)
+    if (interrupted || active.length)
       await request("../api/jobs/" + job.id + "/stop-requested", "POST", {});
     if (serial === generation) await refresh(job, serial);
   } catch (e) {
@@ -201,9 +214,12 @@ $("stop").onclick = async () => {
 };
 async function refreshModel() {
   try {
-    const settings = await request(cap + "/tools");
-    const active = settings.available.some((row) => row.key === "t2i");
-    binding = active ? settings.bindings.t2i : null;
+    await connect();
+    const { bindings } = await request(bindingsUrl);
+    // Listed only while the multimodal tools plugin is on in this Project.
+    const declared = bindings.find((b) => b.key === "t2i" && b.package === PLUGIN);
+    const active = declared !== undefined;
+    binding = declared?.model ?? null;
     $("model").textContent = binding
       ? binding.provider + " / " + binding.modelId
       : active

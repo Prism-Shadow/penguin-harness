@@ -1,14 +1,14 @@
-# Image Studio and project media tools
+# Image Studio
 
 - **Date:** 2026-11-18
 - **Type:** feature
-- **Scope:** `plugins`, `multimodal-tools`
+- **Scope:** `plugins`
 - **PR:** [#1599](https://github.com/Prism-Shadow/penguin-harness/pull/1599)
 
 [中文版](2026-11-18-image-studio.zh.md)
 
-Image Studio opens from the App Center or the Agent's tabs. Describe a picture and choose a format. A dedicated Session generates it through the project's configured image model. Reopen a past brief to preview and download the images returned for that Session. Failed and cancelled generations remain in the history.
+The multimodal tools plugin gains **Image Studio**, opened from the App Center or the Agent's tabs. Describe a picture and choose its aspect ratio: each brief opens a Session of the Agent, which runs `penguin tools t2i … --json` in it with the Project's image generation model. The studio shows and downloads the images that Session's runs generated, from the Session's files. Reopen a past brief to see its images again; failed and cancelled briefs stay in the history with their status, and cancelling stops both the Session and its image run.
 
-If the Project turns off its image generation plugin, the studio keeps earlier images available to view and download. Enable the plugin again to start a new brief.
+With the plugin off in the Project, earlier images stay viewable and downloadable, and new briefs wait until it is on again.
 
-New default Agents also carry the multimodal-tools skill. It uses the Penguin CLI to search the web, read a page, generate images or videos, transcribe a recording and synthesize speech. Existing Agents can install the plugin from Utilities.
+The plugin's routes list a Session's runs (`GET …/multimodal-tools/sessions/:sessionId/runs`), which the studio follows. The `multimodal-tools` Skill tells the Agent how Image Studio reads its Session's images.
