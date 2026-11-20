@@ -18,6 +18,7 @@
 import { execFile, spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
+import { passedNames } from "./env.js";
 import { systemOnly } from "./launch-name.js";
 
 export interface IdleReading {
@@ -44,7 +45,9 @@ const run: ExecFile = (file, args, env, timeoutMs = 4_000) =>
       [...args],
       { env, timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
       (err, stdout, stderr) =>
-        err ? reject(Object.assign(err, { stderr: String(stderr) })) : resolve(String(stdout)),
+        err
+          ? reject(Object.assign(err, { stderr: String(stderr), stdout: String(stdout) }))
+          : resolve(String(stdout)),
     );
   });
 
@@ -198,18 +201,11 @@ export interface IdleOptions {
   windows?: { read(): Promise<number> };
 }
 
-/** The variables a Windows reader is given. */
-export const WINDOWS_READER_ENV = [
-  "SystemRoot",
-  "SYSTEMROOT",
-  "windir",
-  "TEMP",
-  "TMP",
-  "USERPROFILE",
-  "LOCALAPPDATA",
-  "APPDATA",
-  "PATH",
-];
+/**
+ * The variables a Windows reader is given: the system's own, non-secret ones agent-desktop gets
+ * too (env.ts) — PowerShell and Add-Type need the profile, program and module paths.
+ */
+export const WINDOWS_READER_ENV: readonly string[] = passedNames("win32");
 
 /** The input idle time of this desktop session, or why it is unknown. */
 export async function readIdle(opts: IdleOptions): Promise<IdleReading> {
@@ -304,9 +300,19 @@ export async function readIdle(opts: IdleOptions): Promise<IdleReading> {
   }
 }
 
-/** What a failed reader said: its stderr's first line, else its error's. */
+/** What a failed reader said: its stderr's first line, else its stdout's, else its error's. */
 function firstLine(err: unknown): string {
+  const code = (err as { code?: unknown; killed?: unknown }).killed === true ? "timed out" : null;
+  if (code !== null) return code;
   const stderr = (err as { stderr?: unknown }).stderr;
+  const stdout = (err as { stdout?: unknown }).stdout;
+  if (
+    typeof stdout === "string" &&
+    stdout.trim() !== "" &&
+    (typeof stderr !== "string" || stderr.trim() === "")
+  ) {
+    return stdout.trim().split(/\r?\n/)[0]!;
+  }
   if (typeof stderr === "string" && stderr.trim() !== "") return stderr.trim().split(/\r?\n/)[0]!;
   return err instanceof Error ? err.message.split("\n")[0]! : String(err);
 }
