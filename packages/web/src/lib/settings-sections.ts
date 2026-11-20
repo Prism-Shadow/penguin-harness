@@ -20,6 +20,9 @@
  * Other modules add pages of their own (`SettingsModule.sections`): each brings its key, group,
  * visibility and place (`order`), and joins the rail among the app's pages by that place, its
  * group kept contiguous. The rule here treats a contributed page exactly like one of the app's.
+ * A contribution in the `plugin` group takes no rail entry of its own: it joins its plugin's page
+ * (lib/plugin-pages.ts), and the plugin pages come last, under their own heading, in the order
+ * the caller gives them — each already holds only what this viewer may see.
  *
  * None of this is the boundary. The admin APIs answer a non-admin with 403 whatever the
  * browser chose to render.
@@ -52,8 +55,8 @@ export type HostSettingsSectionKey =
   | "plugins"
   | "users";
 
-/** Rail heading a page sits under: the viewer's own preferences vs. the whole server's. */
-export type SettingsGroupKey = "personal" | "server";
+/** Rail heading a page sits under: the viewer's own preferences, the whole server's, a plugin's. */
+export type SettingsGroupKey = "personal" | "server" | "plugin";
 
 export interface SettingsSection {
   readonly key: SettingsSectionKey;
@@ -61,7 +64,11 @@ export interface SettingsSection {
 }
 
 /** The rail's groups, in the order their headings are drawn. */
-const GROUP_ORDER: Readonly<Record<SettingsGroupKey, number>> = { personal: 0, server: 1 };
+const GROUP_ORDER: Readonly<Record<SettingsGroupKey, number>> = {
+  personal: 0,
+  server: 1,
+  plugin: 2,
+};
 
 /** Who is looking, and from where — the union of what the visibility rules consume. */
 export interface SettingsViewer extends AccountMenuSession {
@@ -72,7 +79,7 @@ type SectionRule = SettingsSection & { order: number; visible(viewer: SettingsVi
 
 /**
  * The app's own pages, each with its place and visibility rule. The places leave room between
- * them for contributed pages (the agent browser's sits at 70 and 140).
+ * them for contributed pages.
  */
 const SECTION_RULES: readonly SectionRule[] = [
   // Heads the personal group, and unlike the account page below it is visible in every
@@ -114,15 +121,24 @@ function ruleOf(section: SettingsSectionData): SectionRule {
 /**
  * The pages this viewer may open, in rail order: the app's own and the `contributed` ones, by
  * group and then by place, so the pages of one group stay contiguous — the rail renders this list
- * top to bottom and starts a heading wherever the group changes. A contributed page whose key the
- * app already uses is dropped.
+ * top to bottom and starts a heading wherever the group changes — then `pluginPages`, in the
+ * order given. A contributed page whose key the app already uses is dropped, and so is one in the
+ * `plugin` group: it is part of its plugin's page.
  */
 export function visibleSettingsSections(
   viewer: SettingsViewer,
   contributed: readonly SettingsSectionData[] = [],
+  pluginPages: readonly { key: string }[] = [],
 ): readonly SettingsSection[] {
   const own = new Set<string>(SECTION_RULES.map((rule) => rule.key));
-  return [...SECTION_RULES, ...contributed.filter((c) => !own.has(c.key)).map(ruleOf)]
+  const plugins = pluginPages.map((page, order): SectionRule => ({
+    key: page.key as ContributedSettingsKey,
+    group: "plugin",
+    order,
+    visible: () => true,
+  }));
+  const rules = contributed.filter((c) => c.group !== "plugin" && !own.has(c.key)).map(ruleOf);
+  return [...SECTION_RULES, ...rules, ...plugins]
     .filter((section) => section.visible(viewer))
     .sort((a, b) => GROUP_ORDER[a.group] - GROUP_ORDER[b.group] || a.order - b.order)
     .map(({ key, group }) => ({ key, group }));

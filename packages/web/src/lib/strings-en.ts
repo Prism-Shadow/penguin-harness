@@ -555,6 +555,8 @@ export const en: Strings = {
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
+    /** The rail's last group: a page per plugin that has options. */
+    groupPlugins: "Plugins",
     /** Personal pages of the settings dialog. */
     profile: "Profile",
     generalTitle: "General",
@@ -614,8 +616,8 @@ export const en: Strings = {
       tls: "TLS handshake failed",
       network: "Unreachable",
     },
-    /** Admin-only sub-page (server-global): the options loaded plugins declare. */
-    pluginsTitle: "Plugins",
+    /** Admin-only sub-page (server-global): plugin management; each plugin's own options have a page in the Plugins group. */
+    pluginsTitle: "Plugin admin",
     /** An enum option this machine cannot honour, listed greyed out. */
     pluginOptionUnavailable: (title: string, reason: string) =>
       `${title} (not supported: ${reason})`,
@@ -630,7 +632,35 @@ export const en: Strings = {
     pluginPositionOn: "On",
     pluginPositionOff: "Off",
     pluginsInfo:
-      "Below the switch: the options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here. The switch only changes what this browser lists on the Plugins page.",
+      "Below the switch: server-wide plugin management — where plugins install from, the sandbox, and the options of plugins this server has no page for, each drawn from its schema. Server-global, like the plugins themselves; a save applies at once, nothing to restart. Each plugin's own options have a page in the Plugins group on the left. The switch only changes what this browser lists on the Plugins page.",
+    /** A plugin's page in the Plugins group: its parts, the status page's blocks and words. */
+    pluginPage: {
+      /** The heading over the preconditions; its other end holds the one "check again". */
+      checks: "Checks",
+      /** The heading over the switches and fields. */
+      options: "Options",
+      /** The heading over the fields a plugin marks as security settings. */
+      security: "Security",
+      /** A precondition's state: the mark's tooltip and accessible name. */
+      checkState: {
+        ok: "OK",
+        action: "Needs action",
+        unknown: "Unknown",
+        na: "Not applicable",
+      },
+      /** The version element's state word. */
+      versionState: {
+        installed: "Installed",
+        preparing: "Preparing",
+        failed: "Install failed",
+        missing: "Not installed",
+        unsupported: "Not supported here",
+      },
+      /** The fold under a check or the version element. */
+      details: "Details",
+      /** The picked machine holds none of this plugin's settings. */
+      noneOnMachine: (machine: string) => `${machine} has no options for this plugin.`,
+    },
     /** The page's own switch, above the server's cards: a display preference of this browser. */
     pluginsIncompatibleOnly: "Show only incompatible plugins",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */

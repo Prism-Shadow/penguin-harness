@@ -14,6 +14,14 @@ import type {
   PluginConfigEntry,
   PluginConfigNotice,
   PluginConfiguration,
+  PluginStatusReport,
+} from "../api/types.js";
+
+export type {
+  PluginStatusCheck,
+  PluginStatusReport,
+  PluginStatusSummary,
+  PluginStatusVersion,
 } from "../api/types.js";
 import {
   PluginConfig,
@@ -50,6 +58,12 @@ export interface SettingsGroupStatus {
   saved?(): Promise<void>;
   /** What this group offers to do, drawn as buttons beneath its notices. */
   actions?(): PluginConfigAction[];
+  /**
+   * The group's status in the plugin page's shape — a summary word, the program the plugin
+   * installs beside itself, the preconditions it checks — asked per read, like the notices. Its
+   * `action`s and `recheck` name actions of `actions()`.
+   */
+  report?(): PluginStatusReport;
   /**
    * Enum options this machine cannot honour right now: drawn greyed out with the reason, and a
    * save choosing one is refused. Asked per read, like the notices.
@@ -155,6 +169,7 @@ export class PluginConfigPage {
       const actions = group?.actions?.() ?? [];
       const unavailable = group?.unavailable?.() ?? [];
       const backend = group?.backend?.();
+      const report = group?.report?.();
       return {
         ...entry,
         ...(group?.derive !== undefined
@@ -164,6 +179,7 @@ export class PluginConfigPage {
         ...(actions.length > 0 ? { actions } : {}),
         ...(unavailable.length > 0 ? { unavailable } : {}),
         ...(backend !== undefined ? { backend } : {}),
+        ...(report !== undefined ? { report } : {}),
       };
     };
     /** A group's values as the page reads them: stored onto defaults, then derived. */

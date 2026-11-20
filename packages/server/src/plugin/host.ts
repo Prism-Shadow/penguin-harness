@@ -137,6 +137,21 @@ export function runningPluginModules(host: PluginHost): string[] {
 }
 
 /**
+ * The package (its specifier) of the loaded plugin that adds `module` to the tree — one of its
+ * modules or stand-ins, or a child of one — or undefined for a module of the host's own. What a
+ * settings group declared by that module is said to belong to (the Settings dialog draws it on
+ * the plugin's page).
+ */
+export function pluginPackageOf(host: PluginHost, module: string): string | undefined {
+  const declares = (def: ModuleDef): boolean =>
+    def.manifest.name === module || (def.children ?? []).some(declares);
+  for (const plugin of host.entries().values()) {
+    if ([...plugin.modules, ...plugin.replaces].some(declares)) return plugin.specifier;
+  }
+  return undefined;
+}
+
+/**
  * Registry key for the loaded plugin host.
  *
  * Nothing about the host is the runtime's business: which plugins a deployment runs is

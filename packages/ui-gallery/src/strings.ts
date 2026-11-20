@@ -591,6 +591,11 @@ export const zh = {
         description:
           "机器管理页的组件：每种状态的状态胶囊、机器卡片与列表、详情工具栏与添加对话框。",
       },
+      status: {
+        title: "状态页",
+        description:
+          "插件设置页的部件：版本元素的每种状态（已安装、准备中、安装失败、未安装、此机器不支持）、检查清单的四种状态及其行内操作与折叠详情，以及带汇总胶囊与主要操作的状态行。",
+      },
       retry: {
         title: "重试",
         description:
@@ -2006,6 +2011,42 @@ export const zh = {
       listEmpty: "没有内容时",
       listEmptyText: "这个 Agent 还没有钩子包。",
       memoryFromPlugin: "由插件 Continual learning 写入",
+    },
+    status: {
+      versions: "版本元素",
+      versionsHint: "名称 | 版本 | 平台一枚分段胶囊，状态是图形加文字，不用红字；准备中有进度条。",
+      checks: "检查清单",
+      checksHint:
+        "四种状态各有形状，悬停说出状态；需要动手的那一行带它的按钮，工具原话折叠在行下。",
+      strip: "状态行",
+      stripHint: "版本元素与汇总胶囊在前，主要操作在另一端，放不下时换行。",
+      checksTitle: "检查",
+      recheck: "重新检查",
+      display: "显示",
+      accessibility: "无障碍",
+      accessibilityText: "会话总线不可达：请在桌面会话中启动服务端",
+      windowManager: "窗口管理器",
+      windowManagerText: "没有打开的窗口可供检查",
+      automation: "自动化权限",
+      openSettings: "打开系统设置",
+      details: "详情",
+      downloading: "下载中，6.4 / 16.0 MB",
+      verifying: "校验下载内容",
+      failedWhy: "registry 拒绝了下载：404",
+      unsupportedWhy: "agent-desktop 只支持 x64 与 arm64 上的 macOS、Windows 与 Linux",
+      retry: "重试",
+      install: "安装",
+      summary: "需要处理",
+      summaryHint: "还有一项检查需要处理",
+      exportLogs: "导出日志",
+      versionState: {
+        installed: "已安装",
+        preparing: "准备中",
+        failed: "安装失败",
+        missing: "未安装",
+        unsupported: "此机器不支持",
+      },
+      checkState: { ok: "通过", action: "需要处理", unknown: "未知", na: "不适用" },
     },
     machines: {
       pills: "状态胶囊",

@@ -192,6 +192,7 @@ const DIALOG_BODY_MODULES = new Set([
   "features/builtin-browser/chrome-extension-section.tsx",
   "features/settings/general-section.tsx",
   "features/settings/plugin-config-card.tsx",
+  "features/settings/plugin-group-page.tsx",
   "features/settings/proxy-section.tsx",
   "features/settings/shortcut-recorder.tsx",
   "features/settings/shortcuts-section.tsx",

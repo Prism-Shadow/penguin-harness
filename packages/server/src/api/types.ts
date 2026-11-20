@@ -6603,6 +6603,11 @@ export interface PluginConfigField {
    * fields. Presentation only: it is stored, validated and read like any other field.
    */
   advanced?: boolean;
+  /**
+   * A security setting — who may use the plugin, what it may reach: drawn under the plugin
+   * page's "Security" heading with a shield. Presentation only, like `advanced`.
+   */
+  security?: boolean;
   /** A save that would leave this field empty is refused. */
   required?: boolean;
   /** `enum` only: the values it may take, in display order. */
@@ -6795,6 +6800,79 @@ export interface PluginConfigEntry {
    * Asked per read, like the notices; the client never guesses the OS.
    */
   backend?: PluginConfigBackend;
+  /**
+   * The npm package of the plugin whose server module declared the group; absent for the host's
+   * own groups (the sandbox, plugin sources). The Settings dialog draws the group on that
+   * plugin's page.
+   */
+  plugin?: string;
+  /** What the group's status reports in the status page's shape; absent when it reports none. */
+  report?: PluginStatusReport;
+}
+
+/**
+ * A settings group's status in the plugin page's shape (its status contributor's `report()`):
+ * a summary word, the program the plugin installs beside itself, and the preconditions it
+ * checks. `action` and `recheck` name actions of the group's `actions`: an action named here is
+ * drawn on its element only; the others are the page's primary actions.
+ */
+export interface PluginStatusReport {
+  summary?: PluginStatusSummary;
+  version?: PluginStatusVersion;
+  /** Every precondition, in display order. */
+  checks?: PluginStatusCheck[];
+  /** The action that checks everything again: drawn once, at the checks' heading, and run without asking first (it only reads). */
+  recheck?: string;
+}
+
+/** Where the plugin stands, in a word or two, drawn as a pill in its state's tone. */
+export interface PluginStatusSummary {
+  /** `ready` usable now; `attention` something needs a person; `progress` work under way; `off` switched off or not usable here. */
+  state: "ready" | "attention" | "progress" | "off";
+  text: string;
+  textZh?: string;
+  /** What the word cannot say, on the pill's hover. */
+  hint?: string;
+  hintZh?: string;
+}
+
+/** A program the plugin installs and runs beside itself (agent-desktop), as its version element shows it. */
+export interface PluginStatusVersion {
+  /** The program's name as its maker spells it. */
+  name: string;
+  /** `preparing` = being downloaded or installed now (`progress`, step in `text`); `missing` = not installed yet. */
+  state: "installed" | "preparing" | "failed" | "missing" | "unsupported";
+  version?: string;
+  /** The OS and CPU the installed build is for ("linux-x64"). */
+  platform?: string;
+  /** While preparing: how far, from 0 to 1; absent when the step has no amount. */
+  progress?: number;
+  /** One line: the step while preparing, why when failed or unsupported, where it runs from. */
+  text?: string;
+  textZh?: string;
+  /** Folded under the element (an install directory, the whole error); lines separated by `\n`. */
+  details?: string;
+  detailsZh?: string;
+  /** The action the element offers as its button (install, retry). */
+  action?: string;
+}
+
+/** One precondition the plugin checks on this machine. */
+export interface PluginStatusCheck {
+  id: string;
+  /** What is checked, in a few words ("Display", "Accessibility"). */
+  label: string;
+  labelZh?: string;
+  /** `ok` holds; `action` needs a person; `unknown` could not be told yet; `na` does not apply on this machine. */
+  state: "ok" | "action" | "unknown" | "na";
+  /** One line in the plugin's own words: what was found, or what to do. */
+  text?: string;
+  textZh?: string;
+  /** Folded under the row: a tool's own words, paths; lines separated by `\n`. */
+  details?: string;
+  detailsZh?: string;
+  /** The action drawn on this row (open System Settings). */
+  action?: string;
 }
 
 /** Whether a backend that applies to this machine is installed, and this OS's default ones. */

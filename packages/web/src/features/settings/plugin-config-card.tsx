@@ -21,6 +21,9 @@
  * The draft registers under the Settings dialog's scope, so switching pages, closing the dialog
  * or picking another machine with a dirty card asks first; while the card's Save is in flight
  * the dialog does not close.
+ *
+ * On a plugin's own page (`layout: "page"`) the same form is laid out as a status page instead of
+ * a boxed card (plugin-group-page.tsx); what it commits and when is the same.
  */
 import { Fragment, useState } from "react";
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
@@ -45,6 +48,7 @@ import {
 
 import { ConfigField } from "./plugin-config-field";
 import { ConfigHeading } from "./plugin-config-heading";
+import { PluginGroupPage } from "./plugin-group-page";
 import { toastApiError } from "../../lib/toast-api-error";
 
 /** A card's draft: each member entry's typed fields, and the secrets the next Save clears. */
@@ -146,13 +150,22 @@ export interface PluginCardProps {
   onStored: (entry: PluginConfigEntry) => void;
   /** The server answered with every entry: the page takes them all. */
   onStoredAll: (entries: PluginConfigEntry[]) => void;
-  /** A group action's button: the page asks before it runs. */
-  onAction: (entry: PluginConfigEntry, action: string) => void;
+  /**
+   * A group action's button: the page asks before it runs, unless `ask` is false (a status page's
+   * "check again", which only reads).
+   */
+  onAction: (entry: PluginConfigEntry, action: string, ask?: boolean) => void;
   /** An entry's `switch` was turned on (and stored). */
   onSwitchedOn: (entry: PluginConfigEntry) => void;
+  /** `page`: laid out as a status page on its plugin's page rather than as a boxed card. */
+  layout?: "card" | "page";
+  /** On a plugin's page holding more than one group: each is headed by its own title. */
+  titled?: boolean;
 }
 
 export function PluginCard({
+  layout = "card",
+  titled = false,
   members,
   machine,
   busy,
@@ -337,6 +350,70 @@ export function PluginCard({
   };
 
   const children = members.slice(1);
+  const nested = (switchedOff(card, viewOf(card)) ? [] : children).map((child) =>
+    child.configuration.title === undefined ? (
+      <Fragment key={child.name}>{fields(child)}</Fragment>
+    ) : (
+      <div
+        key={child.name}
+        className="space-y-3 border-t border-gray-100 pt-3 dark:border-gray-800/60"
+      >
+        <ConfigHeading
+          entry={child}
+          draft={viewOf(child)}
+          nested
+          disabled={busy !== null}
+          onAction={(action) => onAction(child, action)}
+          locale={locale}
+        />
+        {fields(child)}
+      </div>
+    ),
+  );
+  const footer = (
+    <div className="flex flex-wrap justify-end gap-2">
+      <Button
+        size="sm"
+        disabled={!form.dirty || busy !== null}
+        onClick={() => {
+          form.reset();
+          setRefused({});
+        }}
+      >
+        {S.common.reset}
+      </Button>
+      <Button
+        size="sm"
+        variant="primary"
+        disabled={!form.dirty || unparsed.length > 0 || busy !== null}
+        onClick={() => void save()}
+      >
+        {busy === card.name ? S.common.saving : S.common.save}
+      </Button>
+    </div>
+  );
+
+  if (layout === "page") {
+    return (
+      <PluginGroupPage
+        entry={card}
+        live={!switchedOff(card, viewOf(card))}
+        titled={titled}
+        drawn={drawnFields(card, viewOf(card))}
+        control={(name, field) => control(card, name, field)}
+        disabled={busy !== null}
+        onAction={(action, ask) => onAction(card, action, ask)}
+        locale={locale}
+        after={
+          <>
+            {nested}
+            {footer}
+          </>
+        }
+      />
+    );
+  }
+
   return (
     <section
       data-plugin-config={card.name}
@@ -351,46 +428,8 @@ export function PluginCard({
         locale={locale}
       />
       {fields(card)}
-      {(switchedOff(card, viewOf(card)) ? [] : children).map((child) =>
-        child.configuration.title === undefined ? (
-          <Fragment key={child.name}>{fields(child)}</Fragment>
-        ) : (
-          <div
-            key={child.name}
-            className="space-y-3 border-t border-gray-100 pt-3 dark:border-gray-800/60"
-          >
-            <ConfigHeading
-              entry={child}
-              draft={viewOf(child)}
-              nested
-              disabled={busy !== null}
-              onAction={(action) => onAction(child, action)}
-              locale={locale}
-            />
-            {fields(child)}
-          </div>
-        ),
-      )}
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button
-          size="sm"
-          disabled={!form.dirty || busy !== null}
-          onClick={() => {
-            form.reset();
-            setRefused({});
-          }}
-        >
-          {S.common.reset}
-        </Button>
-        <Button
-          size="sm"
-          variant="primary"
-          disabled={!form.dirty || unparsed.length > 0 || busy !== null}
-          onClick={() => void save()}
-        >
-          {busy === card.name ? S.common.saving : S.common.save}
-        </Button>
-      </div>
+      {nested}
+      {footer}
     </section>
   );
 }

@@ -27,6 +27,12 @@
  * Values hydrate when the section mounts and every stored response is adopted as the new
  * truth; a card with unsaved edits keeps them against it. The plugin picks a change up through
  * its watch, so nothing here says "restart".
+ *
+ * The same page serves a plugin's own page in the Plugins group (`plugin`, plugin-page.tsx): there
+ * it draws only that plugin's settings groups, each as a status page (plugin-group-page.tsx), with
+ * no browser switch above them. Here, on plugin management, a group a plugin page draws is left
+ * out — every group of this server that names its plugin, and on another machine those whose
+ * plugin has a page here (`claimed`) — so each group is drawn in exactly one place.
  */
 import { useEffect, useRef, useState } from "react";
 import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
@@ -50,6 +56,7 @@ import {
   writePluginsIncompatibleOnly,
 } from "../../lib/plugins-incompatible-only";
 import { PluginCard } from "./plugin-config-card";
+import { entryPlugin } from "../../lib/plugin-pages";
 import { withLiveParts } from "./plugin-config-live";
 import { SandboxBackendPrompt } from "./sandbox-backend-prompt";
 import {
@@ -124,7 +131,17 @@ export function ConfigMachinePicker({
 /** The server's part of the page: the machine picker and the cards, under a rule. */
 const SERVER_PART = "space-y-4 border-t border-line-muted pt-4";
 
-export function PluginsSection({ focus }: { focus?: string } = {}) {
+export function PluginsSection({
+  focus,
+  claimed,
+  plugin,
+}: {
+  focus?: string;
+  /** On plugin management: the packages with a page of their own in the Plugins group. */
+  claimed?: ReadonlySet<string>;
+  /** On a plugin's page: its package — only its settings groups, as status pages. */
+  plugin?: string;
+} = {}) {
   const { locale } = useLocale();
   const localized = (en: string | undefined, zhText: string | undefined) =>
     en === undefined ? undefined : localizedText(locale, en, zhText);
@@ -189,8 +206,10 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
    * are read again every few seconds — only those: a draft being typed elsewhere on the page is
    * not replaced, and a group that finished gets its new notices and buttons the same way.
    */
-  const inProgress = (entries ?? []).some((e) =>
-    (e.notices ?? []).some((n) => n.tone === "progress"),
+  const inProgress = (entries ?? []).some(
+    (e) =>
+      (e.notices ?? []).some((n) => n.tone === "progress") ||
+      e.report?.version?.state === "preparing",
   );
   useEffect(() => {
     if (!inProgress) return;
@@ -205,11 +224,12 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
             (prev ?? []).map((e) => {
               const next = config.plugins.find((p) => p.name === e.name);
               if (next === undefined) return e;
-              const { notices: _n, actions: _a, ...rest } = e;
+              const { notices: _n, actions: _a, report: _r, ...rest } = e;
               return {
                 ...rest,
                 ...(next.notices !== undefined ? { notices: next.notices } : {}),
                 ...(next.actions !== undefined ? { actions: next.actions } : {}),
+                ...(next.report !== undefined ? { report: next.report } : {}),
               };
             }),
           );
@@ -233,8 +253,15 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
    * knows what happened, this page does not — and the groups it answers with replace ours,
    * because a setup that worked changes what the card says about itself.
    */
-  /** A group action's button: asks first, with the action's own title (see pendingAction). */
-  const askAction = (entry: PluginConfigEntry, id: string) => {
+  /**
+   * A group action's button: asks first, with the action's own title (see pendingAction) — unless
+   * the button says it need not (a status page's "check again", which only reads).
+   */
+  const askAction = (entry: PluginConfigEntry, id: string, ask = true) => {
+    if (!ask) {
+      void recheck(entry, id);
+      return;
+    }
     const action = entry.actions?.find((a) => a.id === id);
     setPendingAction({
       entry,
@@ -243,7 +270,11 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
     });
   };
 
-  const runAction = async (entry: PluginConfigEntry, action: string) => {
+  /**
+   * Runs an action on the machine and says what happened: `runAction` behind its confirmation, or
+   * `recheck` for a status page's "check again", which only reads and asks nothing first.
+   */
+  const perform = async (entry: PluginConfigEntry, action: string) => {
     setBusy(`${entry.name}\0${action}`);
     try {
       const res = await api.adminRunPluginConfigAction({ name: entry.name, action }, machine);
@@ -267,6 +298,9 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       setBusy(null);
     }
   };
+
+  const runAction = perform;
+  const recheck = perform;
 
   /**
    * The switch was turned on (and stored): if the machine reports no sandbox backend for its
@@ -339,35 +373,46 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       />
     ) : null;
 
-  // This browser's view of the Plugins page, ruled off from the server's settings below it.
-  const viewRow = (
-    <SettingsGroup>
-      <ToggleRow
-        label={S.settings.pluginsIncompatibleOnly}
-        checked={incompatibleOnly}
-        onChange={(on) => writePluginsIncompatibleOnly(on)}
-      />
-    </SettingsGroup>
-  );
+  // A plugin's page has no switch above its groups to rule them off from.
+  const partClass = plugin !== undefined ? "space-y-6" : SERVER_PART;
+
+  // This browser's view of the Plugins page, ruled off from the server's settings below it; a
+  // plugin's own page has none.
+  const viewRow =
+    plugin !== undefined ? null : (
+      <SettingsGroup>
+        <ToggleRow
+          label={S.settings.pluginsIncompatibleOnly}
+          checked={incompatibleOnly}
+          onChange={(on) => writePluginsIncompatibleOnly(on)}
+        />
+      </SettingsGroup>
+    );
 
   if (entries === null) {
     return (
       <SettingsSection>
         {viewRow}
-        {picker !== null && <div className={SERVER_PART}>{picker}</div>}
+        {picker !== null && <div className={partClass}>{picker}</div>}
       </SettingsSection>
     );
   }
 
   // A card per entry with no parent on the page; an entry whose parent is not listed stands
-  // on its own rather than disappearing.
+  // on its own rather than disappearing. Each lands on one page: its plugin's, or this one.
   const names = new Set(entries.map((e) => e.name));
-  const cards = entries.filter((e) => e.parent === undefined || !names.has(e.parent));
+  const cards = entries
+    .filter((e) => e.parent === undefined || !names.has(e.parent))
+    .filter((e) => {
+      const own = entryPlugin(e, entries);
+      if (plugin !== undefined) return own === plugin;
+      return own === undefined || (machine !== null && !(claimed?.has(own) ?? false));
+    });
   return (
     <SettingsSection>
       {viewRow}
       {(picker !== null || loadError !== null || cards.length > 0) && (
-        <div className={SERVER_PART}>
+        <div className={partClass}>
           {picker}
           {machine !== null && loadError !== null && (
             <NoticeStrip tone="attention" as="p" className="rounded-md px-3 py-2 text-xs">
@@ -375,9 +420,17 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
             </NoticeStrip>
           )}
           <FocusCard focus={focus} ready={entries.length > 0} />
+          {plugin !== undefined && machine !== null && loadError === null && cards.length === 0 && (
+            <p className="text-sm text-fg-muted">
+              {S.settings.pluginPage.noneOnMachine(nameOf(machine))}
+            </p>
+          )}
           {cards.map((card) => (
             <PluginCard
               key={card.name}
+              {...(plugin !== undefined
+                ? { layout: "page" as const, titled: cards.length > 1 }
+                : {})}
               members={[card, ...entries.filter((e) => e.parent === card.name)]}
               machine={machine}
               busy={busy}

@@ -658,6 +658,8 @@ export const zh = {
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",
+    /** The rail's last group: a page per plugin that has options. */
+    groupPlugins: "插件",
     /** Personal pages of the settings dialog. */
     profile: "个人资料",
     generalTitle: "通用",
@@ -715,8 +717,8 @@ export const zh = {
       tls: "TLS 握手失败",
       network: "无法连接",
     },
-    /** Admin-only sub-page (server-global): the options loaded plugins declare. */
-    pluginsTitle: "插件",
+    /** Admin-only sub-page (server-global): plugin management; each plugin's own options have a page in the Plugins group. */
+    pluginsTitle: "插件管理",
     /** An enum option this machine cannot honour, listed greyed out. */
     pluginOptionUnavailable: (title: string, reason: string) => `${title}（不支持：${reason}）`,
     /** A switch one of whose positions this machine cannot honour, under the switch. */
@@ -725,7 +727,35 @@ export const zh = {
     pluginPositionOn: "开启",
     pluginPositionOff: "关闭",
     pluginsInfo:
-      "开关下方是各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。顶部的开关只影响本浏览器在插件页列出哪些插件。",
+      "开关下方是服务端全局的插件管理：插件从哪里安装、沙箱，以及本服务端没有单独页面的插件的选项，表单按其 schema 生成。与插件本身一样是服务器全局的；保存后立即送达，无需重启。各插件自己的选项在左侧「插件」组里各有一页。顶部的开关只影响本浏览器在插件页列出哪些插件。",
+    /** A plugin's page in the Plugins group: its parts, the status page's blocks and words. */
+    pluginPage: {
+      /** The heading over the preconditions; its other end holds the one "check again". */
+      checks: "检查",
+      /** The heading over the switches and fields. */
+      options: "选项",
+      /** The heading over the fields a plugin marks as security settings. */
+      security: "安全设置",
+      /** A precondition's state: the mark's tooltip and accessible name. */
+      checkState: {
+        ok: "通过",
+        action: "需要处理",
+        unknown: "未知",
+        na: "不适用",
+      },
+      /** The version element's state word. */
+      versionState: {
+        installed: "已安装",
+        preparing: "准备中",
+        failed: "安装失败",
+        missing: "未安装",
+        unsupported: "此机器不支持",
+      },
+      /** The fold under a check or the version element. */
+      details: "详情",
+      /** The picked machine holds none of this plugin's settings. */
+      noneOnMachine: (machine: string) => `${machine} 上没有这个插件的选项。`,
+    },
     /** The page's own switch, above the server's cards: a display preference of this browser. */
     pluginsIncompatibleOnly: "只显示不兼容的插件",
     /** A list field's editor: the row buttons and the add row. */

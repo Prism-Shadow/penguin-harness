@@ -45,6 +45,7 @@ import type {
 } from "../api/types.js";
 import { Settings } from "@prismshadow/penguin-library-setting";
 import { maskApiKey } from "../services/project-config-service.js";
+import { pluginHostFrom, pluginPackageOf } from "./host.js";
 
 export type { PluginConfigField, PluginConfigNotice, PluginConfiguration } from "../api/types.js";
 
@@ -588,6 +589,12 @@ export function parsePluginConfiguration(
       }
       if (f.advanced) field.advanced = true;
     }
+    if (f.security !== undefined) {
+      if (typeof f.security !== "boolean") {
+        throw new Error(`${where}: configuration.properties.${name}.security must be a boolean`);
+      }
+      if (f.security) field.security = true;
+    }
     if (f.default !== undefined) {
       if (!valueFits(field, f.default) || valueViolation(name, field, f.default) !== undefined) {
         throw new Error(
@@ -817,6 +824,8 @@ export interface SettingsGroup {
   name: string;
   configuration: PluginConfiguration;
   parent?: string;
+  /** The module that declared it: what names the plugin package it belongs to. */
+  from?: string;
 }
 
 /** What a module reads: the group it declared, and a watch on it. */
@@ -847,6 +856,8 @@ export abstract class PluginConfigEntries {
 export interface PluginConfigStoreDeps {
   settings: Pick<Settings, "get" | "set">;
   groups: () => readonly SettingsGroup[];
+  /** The npm package of the plugin a module belongs to; undefined for the host's own modules. */
+  packageOf?: (module: string) => string | undefined;
 }
 
 export class PluginConfigStore {
@@ -916,11 +927,13 @@ export class PluginConfigStore {
 
   private entry(group: SettingsGroup): PluginConfigEntry {
     const { name, configuration } = group;
+    const plugin = group.from === undefined ? undefined : this.deps.packageOf?.(group.from);
     return {
       name,
       configuration,
       values: maskValues(configuration, { ...defaultsOf(configuration), ...this.stored(name) }),
       ...(group.parent !== undefined ? { parent: group.parent } : {}),
+      ...(plugin !== undefined ? { plugin } : {}),
     };
   }
 }
@@ -931,7 +944,7 @@ export class PluginConfigProvider {
   @Use() private readonly settings!: Settings;
   @Provide() pluginConfig!: PluginConfig;
   @Provide() pluginConfigEntries!: PluginConfigEntries;
-  setup({ contributions }: ClassCtx) {
+  setup({ contributions, resources }: ClassCtx) {
     const declared: Array<SettingsGroup & { order: number; index: number }> = [];
     for (const [index, c] of (contributions.groups ?? []).entries()) {
       const { parent, order, ...configuration } = c.data as unknown as SettingsGroupDecl;
@@ -941,6 +954,7 @@ export class PluginConfigProvider {
           name: c.id,
           configuration: parsed,
           ...(typeof parent === "string" ? { parent } : {}),
+          from: c.from,
           order: typeof order === "number" ? order : 100,
           index,
         });
@@ -950,12 +964,18 @@ export class PluginConfigProvider {
       }
     }
     declared.sort((a, b) => a.order - b.order || a.index - b.index);
-    const groups: SettingsGroup[] = declared.map(({ name, configuration, parent }) => ({
+    const groups: SettingsGroup[] = declared.map(({ name, configuration, parent, from }) => ({
       name,
       configuration,
       ...(parent !== undefined ? { parent } : {}),
+      ...(from !== undefined ? { from } : {}),
     }));
-    const store = new PluginConfigStore({ settings: this.settings, groups: () => groups });
+    const store = new PluginConfigStore({
+      settings: this.settings,
+      groups: () => groups,
+      // The host is claimed per read: the plugins of this generation are recorded after this setup.
+      packageOf: (module) => pluginPackageOf(pluginHostFrom(resources), module),
+    });
     this.pluginConfig = store;
     this.pluginConfigEntries = store;
   }

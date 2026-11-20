@@ -23,6 +23,13 @@ export type {
   PluginConfigSlots,
   SettingsGroupDecl,
 } from "./config.js";
+export type {
+  PluginStatusCheck,
+  PluginStatusReport,
+  PluginStatusSummary,
+  PluginStatusVersion,
+  SettingsGroupStatus,
+} from "./config-page.js";
 export type { Http, HttpSlots } from "../http/app.js";
 export type { WebShell, WebShellSlots } from "../http/routes/contributions.js";
 export type { PluginLibrary, PluginLibrarySlots } from "./library-module.js";

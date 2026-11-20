@@ -362,6 +362,13 @@ export * from "./components/actions/glyph-action/glyph-action";
 export * from "./components/data/fact-row/fact-row";
 export * from "./components/navigation/sub-page-bar/sub-page-bar";
 
+// A status page — a plugin's page in Settings: the strip at its head, the version element of a
+// program the subject installs beside itself (with its "Details" fold), and the checklist of its
+// preconditions.
+export * from "./components/layout/status-strip/status-strip";
+export * from "./components/feedback/installed-version/installed-version";
+export * from "./components/data/checklist/checklist";
+
 // Dates and times: the date, time, date-and-time and date-range fields, pickers after iOS's that
 // write the native inputs' formats (`YYYY-MM-DD`, `HH:mm`, `YYYY-MM-DDTHH:mm`).
 export { DateField } from "./components/forms/date-time/date-field";
