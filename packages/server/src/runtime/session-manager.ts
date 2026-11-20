@@ -73,8 +73,10 @@ import {
   isSessionMeta,
   ModelSwitchRefusedError,
   normalizeSessionSource,
+  parseInPlaceModelSwitch,
   parseUserSteeringText,
   tracesDir,
+  updatedModel,
   userText,
 } from "@prismshadow/penguin-core";
 import type {
@@ -515,6 +517,13 @@ function isDeliveredSteering(msg: AmspRecord): boolean {
   const p = msg.payload as { type?: string; role?: string; text?: string };
   if (msg.type !== "model_msg" || p.type !== "text" || p.role !== "user") return false;
   return typeof p.text === "string" && parseUserSteeringText(p.text) !== null;
+}
+
+/** Whether this main-stream message is an in-session switch's Trace handoff: a whole `[model_switch_from]` block naming `sessionId` itself. */
+function isInPlaceHandoff(msg: AmspRecord, sessionId: string): boolean {
+  const p = msg.payload as { type?: string; role?: string; text?: string };
+  if (msg.type !== "model_msg" || p.type !== "text" || p.role !== "user") return false;
+  return typeof p.text === "string" && parseInPlaceModelSwitch(p.text, sessionId) !== null;
 }
 
 function runSubagentCall(msg: AmspRecord): { toolCallId: string; prompt: string } | null {
@@ -2383,6 +2392,9 @@ export class SessionManager {
     // Inside a main-session compaction span: its requests are not the run's first request (the
     // engine writes no run input ahead of them).
     let compacting = false;
+    // A main-session session_update passed: the switch's Trace handoff that follows it is
+    // streamed now but written only when the next context's file opens (see pendingBootstrap).
+    let switched = false;
     try {
       for await (const msg of gen) {
         echo.before(msg);
@@ -2413,6 +2425,13 @@ export class SessionManager {
           if (isSessionMeta(msg)) {
             this.syncEntryModel(entry);
             entry.pendingBootstrap = [];
+          }
+          // A completed model switch's record: the runtime is on the target by then, so the
+          // entry and the row follow it here, at switch time — the next context's session_meta
+          // comes only with the next message, written when its file opens.
+          if (updatedModel(msg) !== undefined) {
+            this.syncEntryModel(entry);
+            switched = true;
           }
         } else if (isSessionMeta(msg)) {
           // Subagent registration is only a "side effect" — it must never interrupt the
@@ -2464,6 +2483,12 @@ export class SessionManager {
         if (!msg.origin || msg.origin.length === 0) {
           const bt = (msg.payload as { type?: string }).type;
           if (bt === "mcp_connect_begin" || bt === "mcp_connect_end" || bt === "tool_list_ready") {
+            entry.pendingBootstrap.push(msg);
+          }
+          // The handoff a switch opens the next context with lands in the Trace at that
+          // file's head, with its first message: held until then like the opener's records, so
+          // a reload before that message still folds it into the switch's marker.
+          if (switched && bt === "text" && isInPlaceHandoff(msg, entry.sessionId)) {
             entry.pendingBootstrap.push(msg);
           }
           if (bt === "compaction_begin") compacting = true;

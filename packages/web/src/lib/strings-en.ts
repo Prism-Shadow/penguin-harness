@@ -5593,6 +5593,8 @@ Scenarios:
     inProgress: "in progress",
     systemPrompt: "System prompt",
     toolDefs: (n: number) => `Tool definitions (${n})`,
+    /** A `session_update` row's summary: what the record is, ahead of the model it names. */
+    sessionUpdate: "Session update",
     exportFile: "Export",
     /** The round navigator the toolbar's rounds button opens: its title, and how many rounds it lists. */
     roundNav: "Turn index",

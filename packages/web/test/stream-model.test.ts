@@ -58,6 +58,12 @@
  * - A model switch that hands over by Trace path folds its `[model_switch_from]` handoff (naming
  *   this Session) into the model-change marker; a `/model` block naming another Session stays a
  *   Prompt.
+ * - A switch's `session_update` draws the model-change marker under the Session held (one per
+ *   record, several in a row included), and the context's same-model session_meta that follows
+ *   draws none; a Trace without the record still draws it from two metas. A nested child's
+ *   record, one naming no model, and one before any model is held change nothing. The hand-off
+ *   that follows it folds into its marker, live and from history; the Task after it is priced on
+ *   the target; it adds nothing to a Task's span.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -77,6 +83,7 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  sessionUpdate,
   taskBegin,
   taskEnd,
   thinkingMessage,
@@ -104,6 +111,7 @@ import {
   type BackgroundNoticeItem,
   type CompactionItem,
   type McpConnectItem,
+  type ModelChangeItem,
   type ReconnectItem,
   type StreamModel,
   type SubagentItem,
@@ -712,6 +720,169 @@ describe("approvals and events", () => {
     round(m, 3);
     finalizeHistory(m);
     expect(models(m)).toEqual([undefined, "a-1", "b-2"]);
+  });
+
+  describe("a switch's session_update", () => {
+    const A = { provider: "anthropic", modelId: "a-1" };
+    const B = { provider: "openai", modelId: "b-2" };
+    const metaOn = (to: typeof A, sessionId = "s1") =>
+      sessionMeta({ ...meta(sessionId).payload, provider: to.provider, model_id: to.modelId });
+    const update = (to: typeof A) => sessionUpdate({ provider: to.provider, model_id: to.modelId });
+    const markers = (model: StreamModel) =>
+      model.items.filter((i): i is ModelChangeItem => i.kind === "model_change");
+    /** A completed Task on the held model: its input, one request, its reply and usage. */
+    const round = (m: StreamModel, text: string, t: (s: number) => string): void => {
+      pushMessage(m, at(userText(text), t(1)));
+      pushMessage(m, at(requestBegin(), t(2)));
+      pushMessage(m, at(assistantText(`re: ${text}`), t(3)));
+      pushMessage(m, at(tokenUsage(counts(100), counts(100)), t(4)));
+      pushMessage(m, at(requestEnd("completed"), t(5)));
+    };
+    const first = (s: number) => `2026-11-19T08:00:0${s}.000Z`;
+    const second = (s: number) => `2026-11-19T09:00:0${s}.000Z`;
+    /** A Session on A that answered once, then switched to B through a compaction. */
+    const switched = (): StreamModel => {
+      const m = createStreamModel();
+      pushMessage(m, at(metaOn(A), first(0)));
+      round(m, "task 1", first);
+      pushMessage(
+        m,
+        compactionBegin({ reason: "manual", mode: "summarize", context: 100, turns: 1 }),
+      );
+      pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
+      pushMessage(m, at(update(B), "2026-11-19T08:30:00.000Z"));
+      return m;
+    };
+
+    it("draws the marker from the record, under the Session held, and the context's same-model session_meta that follows adds no second one", () => {
+      const m = switched();
+      expect(items(m).map((i) => i.kind)).toEqual([
+        "user_text",
+        "assistant_text",
+        "task_stats",
+        "compaction",
+        "model_change",
+      ]);
+      expect(markers(m)[0]).toEqual({
+        kind: "model_change",
+        id: expect.any(Number),
+        from: A,
+        to: B,
+        tsMs: Date.parse("2026-11-19T08:30:00.000Z"),
+      });
+      expect(m.contextModel).toEqual({ sessionId: "s1", ...B });
+
+      // The first message opens the next file: its task_begin, then the context's meta on B.
+      pushMessage(m, taskBegin());
+      pushMessage(m, metaOn(B));
+      round(m, "task 2", second);
+      expect(markers(m)).toHaveLength(1);
+    });
+
+    it("a Trace with several switches and no message between draws one marker for each", () => {
+      const m = switched();
+      const C = { provider: "zhipu", modelId: "glm-5" };
+      pushMessage(m, update(C));
+      expect(markers(m).map((i) => [i.from, i.to])).toEqual([
+        [A, B],
+        [B, C],
+      ]);
+      expect(m.contextModel).toEqual({ sessionId: "s1", ...C });
+    });
+
+    it("changes nothing from a nested child, nor when it names no model, nor before any model is held", () => {
+      const m = switched();
+      pushMessage(m, withOrigin(metaOn({ provider: "zhipu", modelId: "glm-5" }, "c1"), "c1"));
+      pushMessage(m, withOrigin(update({ provider: "deepseek", modelId: "ds-1" }), "c1"));
+      // A later setting the record may carry: no model, so no marker and no move.
+      pushMessage(m, sessionUpdate({}));
+      const child = items(m).find((i) => i.kind === "subagent") as SubagentItem;
+      expect(child.model.meta).toMatchObject({ provider: "zhipu", modelId: "glm-5" });
+      expect(markers(child.model)).toEqual([]);
+      expect(markers(m)).toHaveLength(1);
+      expect(m.contextModel).toEqual({ sessionId: "s1", ...B });
+
+      // A window holding no model yet has no Session to name: the context's meta says it.
+      const bare = createStreamModel();
+      pushMessage(bare, update(B));
+      expect(bare.contextModel).toBeNull();
+      pushMessage(bare, metaOn(B));
+      expect(items(bare)).toEqual([]);
+      expect(bare.contextModel).toEqual({ sessionId: "s1", ...B });
+    });
+
+    it("folds the [model_switch_from] hand-off that follows it into its marker, streamed at once or read back from the next file's head", () => {
+      const handoff = userText(
+        buildModelSwitchMessage({
+          sessionId: "s1",
+          tracePath: "/data/traces/s1_001.jsonl",
+          prevModelId: A.modelId,
+        }),
+      );
+      // Live: the switch streams the record, then the block.
+      const live = createStreamModel();
+      pushMessage(live, metaOn(A));
+      round(live, "task 1", first);
+      pushMessage(live, update(B));
+      pushMessage(live, handoff);
+      // History: the block sits at the next file's head, behind the context's meta.
+      const history = createStreamModel();
+      pushMessage(history, metaOn(A));
+      round(history, "task 1", first);
+      pushMessage(history, update(B));
+      pushMessage(history, taskBegin());
+      pushMessage(history, metaOn(B));
+      pushMessage(history, toolListReady([]));
+      pushMessage(history, handoff);
+
+      for (const m of [live, history]) {
+        finalizeHistory(m);
+        // No bubble and no Task of its own: one Task, settled above the marker.
+        expect(items(m).map((i) => i.kind)).toEqual([
+          "user_text",
+          "assistant_text",
+          "task_stats",
+          "model_change",
+        ]);
+        expect(markers(m)[0]).toMatchObject({
+          from: A,
+          to: B,
+          handover: { tracePath: "/data/traces/s1_001.jsonl" },
+        });
+      }
+    });
+
+    it("prices the Task after the switch on the target and the Task before it on the model it ran on", () => {
+      const m = switched();
+      pushMessage(m, taskBegin());
+      pushMessage(m, metaOn(B));
+      round(m, "task 2", second);
+      finalizeHistory(m);
+      const priced = items(m).flatMap((i) => (i.kind === "task_stats" ? [i.model] : []));
+      expect(priced).toEqual([A, B]);
+    });
+
+    it("adds no Task timing: a stopped Task it follows an hour later keeps its own span", () => {
+      const m = createStreamModel();
+      pushMessage(m, at(metaOn(A), first(0)));
+      // Stopped mid-reply: no request_end, so the Task's span runs to its last record.
+      pushMessage(m, at(userText("task 1"), first(1)));
+      pushMessage(m, at(requestBegin(), first(2)));
+      pushMessage(m, at(assistantText("half a reply"), first(3)));
+      pushMessage(m, at(tokenUsage(counts(100), counts(100)), first(3)));
+      pushMessage(m, at(abortEvent(), first(4)));
+      // The switch away from a context that never answered: no compaction, the record alone.
+      pushMessage(m, at(update(B), second(0)));
+      expect(items(m).map((i) => i.kind)).toEqual([
+        "user_text",
+        "assistant_text",
+        "abort",
+        "model_change",
+      ]);
+      finalizeHistory(m);
+      const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
+      expect(stats.stats!.elapsedDeltaMs).toBe(3_000);
+    });
   });
 
   it("compaction wall time is derived from the begin/end message timestamps", () => {

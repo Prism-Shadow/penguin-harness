@@ -62,6 +62,7 @@ import {
   isPartialPayload,
   isTaskRecord,
   normalizeSessionSource,
+  updatedModel,
 } from "@prismshadow/amsp";
 import {
   parseBackgroundTaskDoneMessage,
@@ -460,23 +461,25 @@ export interface CompactionItem extends RequestFailureFacts {
 }
 
 /**
- * The Session moved to another model between two contexts: derived from two consecutive
- * main-session `session_meta` records naming different (provider, model_id) pairs — an
- * in-session model switch opens its new context on the model the user picked, and nothing else
- * on the stream says so. Model ids rather than display names: the marker renders from the Trace
- * alone, and a model removed from the configuration since must still read.
+ * The Session moved to another model between two contexts: derived from a main-session
+ * `session_update` naming another (provider, model_id) pair than the model held — the record an
+ * in-session model switch leaves when it completes — or, for Traces written without one, from
+ * two consecutive main-session `session_meta` records naming different pairs. The context's own
+ * `session_meta` that follows a `session_update` names the model already held and adds no
+ * second marker. Model ids rather than display names: the marker renders from the Trace alone,
+ * and a model removed from the configuration since must still read.
  */
 export interface ModelChangeItem {
   kind: "model_change";
   id: number;
   from: { provider: string; modelId: string };
   to: { provider: string; modelId: string };
-  /** The timestamp of the `session_meta` that named the new model (ms). */
+  /** The timestamp of the record that named the new model (ms). */
   tsMs?: number;
   /**
    * The switch handed the history over by its Trace path instead of a summary: the
-   * `[model_switch_from]` handoff naming this Session that followed the meta (folded into this
-   * marker rather than shown as a message), with the file it named.
+   * `[model_switch_from]` handoff naming this Session that followed the marker's record (folded
+   * into this marker rather than shown as a message), with the file it named.
    */
   handover?: { tracePath?: string };
 }
@@ -609,9 +612,10 @@ export interface StreamModel {
    * The model the running context was opened on, and the Session its `session_meta` names (null
    * until one arrives, or a history window says which model it starts on). A Session's model
    * can change between contexts — each context's meta records its own — so this follows
-   * rotations, and a main-session meta naming another model than the one held pushes a
-   * model-change marker. The chat page moves its Session row to this model when the two
-   * disagree (see `sessionRowStale`).
+   * rotations, and moves on a main-session `session_update` (the model a completed switch left
+   * for the next context) under the Session already held; a record naming another model than
+   * the one held pushes a model-change marker. The chat page moves its Session row to this model
+   * when the two disagree (see `sessionRowStale`).
    */
   contextModel: { sessionId: string; provider: string; modelId: string } | null;
   /** `contextModel` as the open Task began: a switch only happens between Tasks, so this is the model the whole Task runs on (see `TaskStatsItem.model`). */
@@ -907,6 +911,26 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
     return;
   }
   if (isEventMessage(msg)) {
+    // session_update: a Session-level setting changed. Like session_meta it is no part of a
+    // Task — the Session writes it at a Task boundary, possibly long before the next Task — so
+    // it opens, touches and times none, and renders nothing of its own. The one setting it
+    // carries today, the model the Session's next context opens on, moves the held model the
+    // way a session_meta does, under the Session already held: a nested child's record changes
+    // nothing, and with no model held there is no Session to name, so the context's own
+    // session_meta says it.
+    if (msg.payload.type === "session_update") {
+      const next = updatedModel(msg);
+      const held = model.contextModel;
+      if (!model.nested && next !== undefined && held !== null) {
+        moveContextModel(
+          model,
+          held.sessionId,
+          { provider: next.provider, modelId: next.model_id },
+          msg.timestamp,
+        );
+      }
+      return;
+    }
     // A Retry's first request opens its Task here, before anything is timed against the
     // cut-short one — the same point a Prompt opens its own (see StreamModel.runEnded).
     if (startsRetryRun(model, msg)) startTask(model, msg.timestamp, nowMs);
@@ -923,28 +947,16 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
   // child, on which model); the main session takes the rest of its identity/config from the
   // Session DTO. A rewritten session_meta (file rotation) overwrites with the same values. On
   // the main session a meta naming another model than the one held means the Session switched
-  // models: a marker says so — never for a same-model rewrite, a nested child's meta, or the
-  // first meta of a model that was told nothing of the context it starts in.
+  // models (see moveContextModel).
   if (msg.type === "session_meta") {
     const p = msg.payload as SessionMetaPayload;
     model.agentState = p.agent_state;
-    const next = { provider: p.provider, modelId: p.model_id };
-    const held = model.contextModel;
-    if (
-      !model.nested &&
-      held !== null &&
-      (held.provider !== next.provider || held.modelId !== next.modelId)
-    ) {
-      const tsMs = tsOf(msg.timestamp);
-      model.items.push({
-        kind: "model_change",
-        id: nextId(model),
-        from: { provider: held.provider, modelId: held.modelId },
-        to: next,
-        ...(tsMs !== undefined ? { tsMs } : {}),
-      });
-    }
-    model.contextModel = { sessionId: p.session_id, ...next };
+    moveContextModel(
+      model,
+      p.session_id,
+      { provider: p.provider, modelId: p.model_id },
+      msg.timestamp,
+    );
   }
   if (msg.type === "session_meta" && model.nested) {
     const p = msg.payload as SessionMetaPayload;
@@ -956,6 +968,38 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
       source: normalizeSessionSource(p.source),
     };
   }
+}
+
+/**
+ * The model a record says the Session is on from here: a main-session `session_update` (the
+ * model the next context opens on) or a `session_meta` (the model a context opened on). When it
+ * names another model than the one held, the Session switched models and a marker says so —
+ * never for a same-model record (the meta that confirms a `session_update`, a rotation's
+ * rewrite, the same record served twice), a nested child's meta, or the first record of a model
+ * that was told nothing of the context it starts in.
+ */
+function moveContextModel(
+  model: StreamModel,
+  sessionId: string,
+  next: { provider: string; modelId: string },
+  timestamp: string,
+): void {
+  const held = model.contextModel;
+  if (
+    !model.nested &&
+    held !== null &&
+    (held.provider !== next.provider || held.modelId !== next.modelId)
+  ) {
+    const tsMs = tsOf(timestamp);
+    model.items.push({
+      kind: "model_change",
+      id: nextId(model),
+      from: { provider: held.provider, modelId: held.modelId },
+      to: next,
+      ...(tsMs !== undefined ? { tsMs } : {}),
+    });
+  }
+  model.contextModel = { sessionId, ...next };
 }
 
 /**

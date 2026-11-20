@@ -12,10 +12,12 @@ import {
   assistantText,
   compactionBegin,
   compactionEnd,
+  hookEvent,
   imageUrlMessage,
   requestBegin,
   requestEnd,
   sessionMeta,
+  sessionUpdate,
   taskBegin,
   taskEnd,
   thinkingMessage,
@@ -288,6 +290,44 @@ describe("buildContextBreakdown", () => {
       taskBegin(),
     ]);
     expect(b.contextClosed).toBe(true);
+  });
+
+  it("keeps the context closed when a stop hook's record follows the compaction", () => {
+    const b = buildContextBreakdown([
+      userText("hi"),
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 4 }),
+      compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+      hookEvent({ hook: "stop", name: "goal", output: { round: 2 } }),
+      taskEnd(),
+    ]);
+    expect(b.contextClosed).toBe(true);
+  });
+
+  it("reports contextClosed for a shard a completed switch left with its session_update pending", () => {
+    // No compaction: the switch left a context whose model could not be reached.
+    const b = buildContextBreakdown([
+      userText("hi"),
+      requestBegin(),
+      assistantText("hello"),
+      requestEnd("completed"),
+      taskEnd(),
+      sessionUpdate({ provider: "openai", model_id: "gpt-5.2" }),
+    ]);
+    expect(b.contextClosed).toBe(true);
+  });
+
+  it("reopens once a request_begin follows the closing point", () => {
+    const b = buildContextBreakdown([
+      userText("hi"),
+      compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 4 }),
+      compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+      sessionUpdate({ provider: "openai", model_id: "gpt-5.2" }),
+      userText("next"),
+      requestBegin(),
+      assistantText("sure"),
+      requestEnd("completed"),
+    ]);
+    expect(b.contextClosed).toBe(false);
   });
 });
 

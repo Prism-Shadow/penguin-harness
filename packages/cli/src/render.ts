@@ -738,6 +738,11 @@ export class StreamRenderer {
       this.handleNested(msg);
       return;
     }
+    // A session_update (a Session setting changed: today the model the next context opens on)
+    // prints nothing — the switch's "model: A → B" line is read from the Session it returns —
+    // and is no part of a Task: it lands at a Task boundary, possibly long before the next Task,
+    // so it must not start that Task's clock either.
+    if (isEventMessage(msg) && msg.payload.type === "session_update") return;
     // The timestamp of this task's first (non-session_meta) message = the start point for
     // the stats-line elapsed time. session_meta can predate this turn by a long time (a
     // session may sit idle for a day before the first question), so it is excluded,

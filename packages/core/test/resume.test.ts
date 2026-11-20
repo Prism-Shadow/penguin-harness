@@ -8,6 +8,9 @@
  * - Errors when the session doesn't exist / the workspace is missing / the model is no longer in the project config
  *   — unless the caller resumes only to switch away from that model (`allowUnreachableModel`), in
  *   which case the switch sends it nothing and hands the history over by Trace path.
+ * - A file whose completed switch's session_update is still pending resumes on its target, the
+ *   next context assembled fresh with the summary pending; a target gone from the config is
+ *   refused like any missing model.
  * - `groupHistoryToUniMessages` groups by adjacent same role; `GenerativeModel.setHistory` injects into MMSP.
  */
 import fs from "node:fs/promises";
@@ -29,6 +32,7 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  sessionUpdate,
   taskBegin,
   taskEnd,
   tokenUsage,
@@ -832,6 +836,57 @@ describe("agent.resumeSession after an in-session model switch", () => {
         "tool_list_ready",
         "text",
       ]);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a closed file whose switch is still pending resumes on its target: the next context is assembled fresh, the summary pending", async () => {
+    const agent = await createAgent({});
+    // The switch closed the original model's context with a manual pair and recorded its
+    // target behind it; no message came, so the next file was never opened.
+    const file = await writeTraceFile(tmpRoot, SID, [
+      ...closedFile(ORIGINAL, "manual"),
+      sessionUpdate(MODEL),
+    ]);
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      expect(session.provider).toBe(MODEL.provider);
+      expect(session.modelId).toBe(MODEL.model_id);
+      const meta = session.metaMessage.payload as { model_id: string; system_prompt: string };
+      expect(meta.model_id).toBe(MODEL.model_id);
+      // Opened here for the first time: the prompt is assembled now, not the left file's.
+      expect(meta.system_prompt).not.toBe("ORIGINAL SYSTEM PROMPT");
+      const state = engineStateOf(session);
+      expect(state?.pendingTraceRotation).toBe(true);
+      expect((state?.pendingSummary?.payload as { text: string }).text).toContain(
+        "the story so far",
+      );
+      expect(session.resumedHistory).toEqual([]);
+      expect(session.compactability()).toBe("just_compacted");
+      // Resuming writes nothing: the next file opens with the first message.
+      const located = await findLatestTraceFile(
+        tracesDir(tmpRoot, "default_project", "default_agent"),
+        SID,
+      );
+      expect(located!.path).toBe(file);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a pending switch to a model gone from the config is refused like any missing model, and resumes only to switch again", async () => {
+    const agent = await createAgent({});
+    const gone = { provider: "custom", model_id: "vanished-model" };
+    await writeTraceFile(tmpRoot, SID, [...closedFile(ORIGINAL, "manual"), sessionUpdate(gone)]);
+
+    await expect(agent.resumeSession({ sessionId: SID })).rejects.toThrow(
+      /is not in the Project config/,
+    );
+    const session = await agent.resumeSession({ sessionId: SID, allowUnreachableModel: true });
+    try {
+      expect(session.modelId).toBe(gone.model_id);
     } finally {
       session.dispose();
     }
