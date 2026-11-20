@@ -1,28 +1,37 @@
-# Eight model tools for each Project
+# Multimodal tools: the Project's models for text, images, video, speech and the web
 
 - **Date:** 2026-11-18
 - **Type:** feature
-- **Scope:** `core`, `server`, `cli`
+- **Scope:** `plugins`, `server`, `core`, `web`
 - **PR:** [#1597](https://github.com/Prism-Shadow/penguin-harness/pull/1597)
 
 [中文版](2026-11-18-project-model-tools.zh.md)
 
-Project owners can bind a model to text generation, image understanding, web search, page reading, image or video generation, speech synthesis, and transcription. Each binding uses that model's configured connection. The model library adds the new GPT-6.2, Gemini 4, Qwen4 and media models from MMSP.
+The built-in **Multimodal tools** plugin (`@penguinharness/multimodal-tools`) lets an Agent and the Web App use the Project's models for eight tools: text generation, image understanding, web search, page fetching, image, video and speech generation, and speech recognition. It is a plugin over the model-tool platform ([#1639](https://github.com/Prism-Shadow/penguin-harness/pull/1639)): the platform names no tool, and the plugin carries the commands, the routes, the Skill and the result files.
 
-The built-in Multimodal tools plugin contributes these eight actions and teaches the default Agent how to run them. An admin can turn the plugin off for one Project and turn it back on later. The Project keeps its bindings, generated files and usage history.
+## Bindings
 
-Use `penguin tools --help` to see which commands your Project’s plugins provide, and `penguin tools list` to inspect the bindings. Input and output paths refer to the machine running the CLI, including when the server is remote. For example, `penguin tools image "A penguin by the sea" --out penguin.png` saves a generated image, and `penguin tools stt meeting.wav` prints the transcript. Add `--detach` to start a long run, then use `penguin tools status` or `penguin tools cancel` with its ID.
+- The plugin declares seven tool-model bindings, one `[tools]` key per tool: `t2t`, `search`, `fetch`, `t2i`, `t2v`, `t2s` and `s2t`. An owner binds a configured model to each through `PATCH /api/projects/:projectId/models/tool-bindings`; a picker offers only the models a tool can use, judged by the client MMSP routes the model to and the modalities its registry lists.
+- Image understanding has no binding: it runs on the Project's vision model (`vision_model`), unchanged.
+- Transcript editing for dictation shares the `t2t` model. Whether it is on, and its prompt, are the plugin's per-Project settings, kept in the plugin's folder of the Project.
 
-`penguin tools usage` shows the model, operation, reported token counts and observed units. `penguin tools artifacts` lists generated files. From an Agent terminal, both commands default to the calling Session. Tool and transcript-editing requests carry that same Session ID to MMSP for provider cache routing.
+## `penguin tools`
 
-DeepSeek ASR is available through DeepSeek and TokenDance. In an existing Project, use **Add new models** in the model library to add the TokenDance preset. Choose the provider in Project settings and upload a 16-bit PCM WAV or an Ogg Opus recording. Penguin checks the format before calling the provider. Model connection tests send a short built-in speech sample to transcription models.
+- The tools are member commands of the plugin, run on the server for the caller's Project and Session: `penguin tools t2t|i2t|search|fetch|t2i|t2v|t2s|s2t`, plus `list`, `status <id>` and `cancel <id>`. Any member of the Project can run them.
+- A local file reaches a tool only through `--image` or `--audio`, read and sent by the terminal; generated files come back into `--out` (default: the current directory), never over an existing file.
+- A run in a Session that takes more than four minutes goes on in the Session and prints its id; `--detach` returns the id at once. `status` reports it and saves its files with `--out`; `cancel` stops it.
 
-Project tool models share a single `[tools]` table. The vision proxy uses `i2t`, and enabling transcript editing uses `t2t`. Existing bindings migrate on first read. The default chat model is selected separately. [Project tool model migration](2026-11-19-backward-compatibility.md)
+## Results and usage
 
-Project owners can edit the instructions for polishing voice transcripts and restore the built-in prompt at any time. For supported models, transcript editing asks the model to skip reasoning or use its lowest supported level.
+- What a tool generates belongs to its Session: it is stored under `<project>/.multimodal-tools/sessions/<session>/`, listed and downloaded through the plugin's routes under `/api/projects/:projectId/multimodal-tools/`, and removed once the Session is gone (a sweep at boot and once a day). A run with no Session stores nothing.
+- Every request goes through the platform's `ProjectModelRequests`: one `usage_records` row per request, under the purpose `@penguinharness/multimodal-tools:<tool>` (`…:polish` for transcript editing), billed to the calling Session and priced like a chat request.
 
-A dedicated image, video, speech or web tool can be assigned to its own operation. New chats use a model that supports conversation.
+## Tool models in the catalog
 
-The tool catalog also includes seller rates for transcription, speech synthesis, image and video generation, and web requests in their original billing units.
+- Twenty image, video, speech, transcription and web models join the catalog as ordinary rows priced as MMSP's registry prices them (the provider's billing units folded into MMSP's token buckets): Gemini 3.1 Flash (Lite) Image, Gemini 3.8 Flash (Lite) TTS, Gemini Omni 1.2 Flash, GPT Image 2.5 Flare, DeepSeek Search, Fetch, TTS and ASR (DeepSeek's and TokenDance's), Jina Search and Reader, Seedream 5.5, 5.0 Flash and 5.0 Lite, and Fish Audio Drama 3 and Transcribe 1. The Gemini image and speech rows are unpriced, as MMSP's registry leaves them. Existing Projects get them through **Add new models**.
+- A catalog row marked as a tool model reads `chatEligible: false` in `GET /models`, and the chat model picker no longer offers it.
 
-Jina Search and Reader use MMSP’s reference of US$0.05 per million reported input tokens on their official endpoints. Jina account plans determine the actual charge.
+## For plugin authors
+
+- `ProjectModelRequest`, the request a plugin hands to `ProjectModelRequests.stream`, is now declared in `@prismshadow/penguin-core`, so a plugin package can require the interface; the server re-exports it.
+- A binding's `accepts(model)` also receives `client` (the MMSP client a request goes to) and `input` / `output` (the modalities MMSP's registry lists for the model there).
