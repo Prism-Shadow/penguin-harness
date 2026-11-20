@@ -169,6 +169,7 @@ export abstract class SessionIndex {
   abstract markOrgClient(sessionIds: readonly string[]): void;
   abstract markHasTrace(sessionId: string): void;
   abstract markDriven(sessionId: string, at: string): void;
+  abstract markDrivenBy(sessionId: string, userId: string): void;
   abstract touchLastActive(sessionId: string, at: string): void;
   abstract findById(sessionId: string): SessionRow | null;
   abstract listByAgent(projectId: string, agentId: string): SessionRow[];

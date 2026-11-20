@@ -2588,6 +2588,7 @@ export class SessionManager {
     // leaves the marker blank (read as web): the child was spawned by this server's run, not
     // opened through the CLI, whatever opened its parent.
     const parentClient = this.deps.sessions.findById(entry.sessionId)?.client;
+    const rootRow = this.deps.sessions.findById(root);
     this.deps.sessions.insertOrIgnore({
       sessionId: childSid,
       projectId: entry.projectId,
@@ -2600,7 +2601,10 @@ export class SessionManager {
       approvalMode: "allow-all",
       // The root's policy at registration, so the child row stands on its own if it is ever
       // resumed directly; while registered it follows the root (see rootSessionOf).
-      sandbox: this.deps.sessions.findById(root)?.sandbox ?? null,
+      sandbox: rootRow?.sandbox ?? null,
+      // The person driving the root's run drives its subagents too: a `session-driver` plugin
+      // command the child's shell runs acts for them (plugin/cli-command-caller.ts).
+      drivenBy: rootRow?.drivenBy ?? null,
       title: null,
       ...(parentClient === "org" ? { client: "org" as const } : {}),
       // Its Trace exists by construction.

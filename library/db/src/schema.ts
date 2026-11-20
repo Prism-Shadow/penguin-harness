@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   fork_count    INTEGER NOT NULL DEFAULT 0,          -- monotonically allocated child-fork number for this source Session; never decremented when a fork is deleted
   sandbox       TEXT,                                -- the Session's sandbox policy snapshot (JSON SandboxSettings); NULL = legacy row, snapshotted at its next command
   last_active_at TEXT,                               -- last activity this server drove for the session (ISO; stamped once when a run starts and once when it ends, initialized to created_at); monotonic, never moves backwards; NULL only before openDatabase's one-time backfill
+  driven_by     TEXT,                                -- user id of the person who last started (or steered) a run in it, or the schedule creator a scheduled run is for; NULL = nobody recorded (a row from before the column, or one only the local API token / an API key drove)
   created_at    TEXT NOT NULL
 );                                            -- the Session's SOURCE (user/api/schedule/subagent/cli/company) is NOT stored: session_meta in the Trace is the single source of truth (see runtime/session-sources.ts); "client" is a different, DB-only axis (who created the row), read for the source only where the Trace records none ('org' → company)
 CREATE INDEX IF NOT EXISTS idx_sessions_agent_created ON sessions(project_id, agent_id, created_at DESC);

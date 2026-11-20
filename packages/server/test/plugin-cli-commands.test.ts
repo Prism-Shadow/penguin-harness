@@ -3,7 +3,15 @@ import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-cor
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import { PluginHost } from "../src/plugin/host.js";
-import { apiClient, createTestApp, loginAdmin, provisionUser, tokenClient } from "./helpers.js";
+import {
+  apiClient,
+  createTestApp,
+  loginAdmin,
+  provisionUser,
+  restartTestApp,
+  tokenClient,
+} from "./helpers.js";
+import type { TestApp } from "./helpers.js";
 import type { PluginCliCommandRunRequest } from "../src/api/types.js";
 import { validPluginCommands, runPluginCommands } from "../src/plugin/cli-commands.js";
 
@@ -479,6 +487,8 @@ describe("routes (e2e)", () => {
  * - Given a file the terminal sent for an option, the command reads it by the option's value and
  *   hands a file back, which the reply carries; a name with a directory part fails the run.
  * - Given two member runs at once, neither waits for the other.
+ * - Given a command that requires its plugin listed, a Project that does not list the package for
+ *   this machine is refused before the code runs; once the Project lists it, it runs.
  */
 describe("member commands, caller context and files", () => {
   let app: Awaited<ReturnType<typeof createTestApp>>;
@@ -488,6 +498,7 @@ describe("member commands, caller context and files", () => {
   /** What the first of two concurrent runs waits on, and the second opens. */
   const latch = { gate: Promise.resolve(), open: () => {} };
   const adminRan: string[] = [];
+  const listedRan: string[] = [];
 
   function toolsPlugin(): ModuleDef {
     const manifest = parseManifest({
@@ -516,12 +527,26 @@ describe("member commands, caller context and files", () => {
             access: "member",
           },
           { id: "acme.reset", key: "tools.reset", summary: { en: "Reset", zh: "重置" } },
+          {
+            id: "acme.listed",
+            key: "tools.listed",
+            summary: { en: "Only where enabled", zh: "仅在启用处" },
+            access: "member",
+            requiresProjectListing: true,
+          },
         ],
       },
       children: [],
     });
     const node = (command: CliCommandProgram) => command as any;
     const bind: Record<string, CliCommandCode> = {
+      "acme.listed": {
+        register: (command, ctx) => {
+          node(command).action(() => {
+            listedRan.push(ctx.caller?.projectId ?? "");
+          });
+        },
+      },
       "acme.whoami": {
         register: (command, ctx) => {
           node(command).action(() => {
@@ -711,5 +736,255 @@ describe("member commands, caller context and files", () => {
     const [a, b] = await Promise.all([first, second]);
     expect(((await a.json()) as { stdout: string }).stdout).toBe("first done\n");
     expect(((await b.json()) as { stdout: string }).stdout).toBe("second done\n");
+  });
+
+  it("runs a command that requires its plugin listed only where the Project lists it", async () => {
+    const store = app.deps.projectConfigService;
+    const before = await store.getPluginTables("default_project");
+    try {
+      await store.setPluginTables("default_project", { all: {}, machines: {} });
+      const refused = await runAs(admin, {
+        args: ["tools", "listed"],
+        projectId: "default_project",
+      });
+      expect(refused.status).toBe(403);
+      expect(((await refused.json()) as { error: { code: string } }).error.code).toBe(
+        "plugin_not_enabled",
+      );
+      expect(listedRan).toEqual([]);
+      await store.setPluginTables("default_project", {
+        all: { "@acme/tools": {} },
+        machines: {},
+      });
+      const ran = await runAs(member, { args: ["tools", "listed"], projectId: "default_project" });
+      expect(ran.status).toBe(200);
+      expect(listedRan).toEqual(["default_project"]);
+    } finally {
+      await store.setPluginTables("default_project", before);
+    }
+  });
+});
+
+/**
+ * `tokenCaller: "session-driver"`: whom the local API token — every Agent's credential, standing
+ * for the administrator — runs such a command as.
+ *
+ * - Given a Session a member last started a run in, an Agent's token call naming it runs the
+ *   command as that member, and an admin command of that kind refuses them; after a restart the
+ *   answer is the same.
+ * - Given a token call naming no Session, or a Session nobody is recorded as driving, or whose
+ *   driver can no longer open the Project, it refuses; a Session of another Project is not found.
+ * - Given a command without the opt-in, the token stays the administrator (PRFC-0024 v1.1); given
+ *   a person's own sign-in, the person runs it whoever drives the Session.
+ */
+describe("a session-driver command and the local API token", () => {
+  let t: TestApp;
+  let admin: ReturnType<typeof apiClient>;
+  let sessionId: string;
+  const ran: string[] = [];
+
+  function whoPlugin(): ModuleDef {
+    const manifest = parseManifest({
+      name: "AcmeWho",
+      requires: {},
+      provides: {},
+      contributes: {
+        "PluginCliCommandsProvider.commands": [
+          {
+            id: "who.me",
+            key: "who.me",
+            summary: { en: "Who runs this", zh: "谁在运行" },
+            access: "member",
+            tokenCaller: "session-driver",
+          },
+          {
+            id: "who.wipe",
+            key: "who.wipe",
+            summary: { en: "Admin only", zh: "仅管理员" },
+            tokenCaller: "session-driver",
+          },
+          {
+            id: "who.plain",
+            key: "who.plain",
+            summary: { en: "Who runs this, as v1.1", zh: "谁在运行（v1.1）" },
+            access: "member",
+          },
+        ],
+      },
+      children: [],
+    });
+    const node = (command: CliCommandProgram) => command as any;
+    const print = (id: string): CliCommandCode => ({
+      register: (command, ctx) => {
+        node(command).action(() => {
+          ran.push(id);
+          ctx.stdout.write(
+            `${JSON.stringify({ userId: ctx.caller?.userId, isAdmin: ctx.caller?.isAdmin })}\n`,
+          );
+        });
+      },
+    });
+    return {
+      manifest,
+      create: () => ({
+        api: {},
+        bind: {
+          "who.me": print("who.me"),
+          "who.wipe": print("who.wipe"),
+          "who.plain": print("who.plain"),
+        },
+      }),
+    };
+  }
+
+  const host = () => {
+    const h = new PluginHost();
+    h.use({ specifier: "@acme/who", modules: [whoPlugin()], replaces: [] });
+    return h;
+  };
+  const agent = () => tokenClient(t.app, t.deps.authService.localApiToken()!);
+  const run = (client: ReturnType<typeof apiClient>, body: Record<string, unknown>) =>
+    client.post("/api/cli/commands/run", {
+      package: "@acme/who",
+      language: "en",
+      prog: "penguin",
+      projectId: "default_project",
+      ...body,
+    });
+  const answer = async (res: Response) => {
+    expect(res.status).toBe(200);
+    return JSON.parse(((await res.json()) as { stdout: string }).stdout) as {
+      userId: string;
+      isAdmin: boolean;
+    };
+  };
+  const refusal = async (res: Response) => ({
+    status: res.status,
+    code: ((await res.json()) as { error: { code: string } }).error.code,
+  });
+  /** A Session needs a model its client can be built for; nothing is ever sent to it. */
+  const withModel = async (projectId: string) => {
+    const model = { provider: "custom", modelId: "chat-model" };
+    expect(
+      (
+        await admin.put(`/api/projects/${projectId}/models`, {
+          providers: {
+            custom: { clientType: "mmsp", baseUrl: "http://127.0.0.1:9/v1", apiKey: "sk-unused" },
+          },
+          models: [model],
+          defaultModel: model,
+        })
+      ).status,
+    ).toBe(200);
+  };
+  const newSession = async (projectId = "default_project") => {
+    const created = await admin.post(
+      `/api/projects/${projectId}/agents/default_agent/sessions`,
+      {},
+    );
+    expect(created.status).toBe(201);
+    return ((await created.json()) as { session: { sessionId: string } }).session.sessionId;
+  };
+  /** What the sessions route does when a signed-in person starts a run. */
+  const startedBy = (id: string, userId: string) =>
+    t.deps.tree
+      .api<{ note(sessionId: string, userId: string): void }>(
+        "SessionRuntimeModule",
+        "SessionDrivers",
+      )
+      .note(id, userId);
+
+  beforeAll(async () => {
+    t = await createTestApp({ plugins: host(), durableDatabase: true });
+    admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    await provisionUser(t.app, "mia");
+    expect(
+      (await admin.post("/api/projects/default_project/members", { userId: "mia" })).status,
+    ).toBe(201);
+    await withModel("default_project");
+    sessionId = await newSession();
+    startedBy(sessionId, "mia");
+  });
+
+  afterAll(() => t?.cleanup());
+
+  it("runs as the member who drives the Session, and refuses them an admin command", async () => {
+    expect(await answer(await run(agent(), { args: ["who", "me"], sessionId }))).toEqual({
+      userId: "mia",
+      isAdmin: false,
+    });
+    ran.length = 0;
+    expect(await refusal(await run(agent(), { args: ["who", "wipe"], sessionId }))).toEqual({
+      status: 403,
+      code: "admin_required",
+    });
+    expect(ran).toEqual([]);
+  });
+
+  it("refuses a token call that names no Session, before any code runs", async () => {
+    ran.length = 0;
+    expect(await refusal(await run(agent(), { args: ["who", "me"] }))).toEqual({
+      status: 403,
+      code: "session_required",
+    });
+    expect(ran).toEqual([]);
+  });
+
+  it("refuses a Session nobody is recorded as driving, never guessing its Project's owner", async () => {
+    const idle = await newSession();
+    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: idle }))).toEqual({
+      status: 403,
+      code: "driver_unknown",
+    });
+  });
+
+  it("does not borrow a person from a Session of another Project", async () => {
+    expect(
+      (await admin.post("/api/projects", { projectId: "elsewhere", name: "Elsewhere" })).status,
+    ).toBe(201);
+    await withModel("elsewhere");
+    const other = await newSession("elsewhere");
+    startedBy(other, "admin");
+    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: other }))).toEqual({
+      status: 404,
+      code: "session_not_found",
+    });
+  });
+
+  it("keeps the token the administrator for a command without the opt-in, and a person themself", async () => {
+    expect(await answer(await run(agent(), { args: ["who", "plain"], sessionId }))).toEqual({
+      userId: "admin",
+      isAdmin: true,
+    });
+    expect(await answer(await run(admin, { args: ["who", "me"], sessionId }))).toEqual({
+      userId: "admin",
+      isAdmin: true,
+    });
+  });
+
+  it("refuses a driver who can no longer open the Project", async () => {
+    const left = await newSession();
+    await provisionUser(t.app, "leo");
+    expect(
+      (await admin.post("/api/projects/default_project/members", { userId: "leo" })).status,
+    ).toBe(201);
+    startedBy(left, "leo");
+    expect((await admin.delete("/api/projects/default_project/members/leo")).status).toBeLessThan(
+      300,
+    );
+    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: left }))).toEqual({
+      status: 403,
+      code: "driver_unknown",
+    });
+  });
+
+  // Last: it replaces `t` with the app booted on the same root.
+  it("gives the same answer after a restart", async () => {
+    t = await restartTestApp(t, { plugins: host() });
+    admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    expect(await answer(await run(agent(), { args: ["who", "me"], sessionId }))).toEqual({
+      userId: "mia",
+      isAdmin: false,
+    });
   });
 });

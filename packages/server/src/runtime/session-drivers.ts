@@ -3,6 +3,11 @@
  * in it, remembered in memory, else the owner of its Project, read from the index. In memory on
  * purpose — it is a fact about the runs of this server's life: after a restart or a hot swap a
  * Session acts for its Project's owner until someone starts a run in it again.
+ *
+ * Each note is also recorded on the Session's index row (`driven_by`), which outlives a restart
+ * and never falls back to the owner: what a `session-driver` plugin command runs as
+ * (plugin/cli-command-caller.ts). driverOf keeps reading memory, so the browser's rule is
+ * unchanged.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Projects } from "@prismshadow/penguin-library-project";
@@ -18,6 +23,7 @@ export class SessionDriverRegistry implements SessionDrivers {
   private readonly noted = new Map<string, string>();
 
   note(sessionId: string, userId: string): void {
+    this.sessions.markDrivenBy(sessionId, userId);
     // Re-inserted, so the Map's order is the order of the latest notes.
     this.noted.delete(sessionId);
     this.noted.set(sessionId, userId);

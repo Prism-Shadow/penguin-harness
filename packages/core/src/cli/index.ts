@@ -57,6 +57,21 @@ export interface CliCommandData {
   access?: "admin" | "member";
   /** The local files it reads and returns, for the terminal to send and save (plugin commands). */
   files?: CliCommandFiles;
+  /**
+   * Runs only for a caller whose Project lists the command's plugin for this machine (its
+   * `[plugins]` or `[plugins.<machineId>]` table): a plugin a Project never enabled — loaded
+   * because another Project did — is refused there with 403 `plugin_not_enabled`.
+   */
+  requiresProjectListing?: boolean;
+  /**
+   * Whom a call with the server's local API token runs as — the token every Agent's shell
+   * carries, which stands for the built-in administrator. Absent: that administrator, as for any
+   * other credential. `"session-driver"`: the person who last started a run in the named Session,
+   * as the Session index records it; a token call that names no Session is refused with 403
+   * `session_required`, and one whose Session records no person who can still open its Project
+   * with 403 `driver_unknown`. A person's own sign-in is never replaced.
+   */
+  tokenCaller?: "session-driver";
 }
 
 /** One command as a collected contribution carries it: the data half plus the manifest's `id`. */
