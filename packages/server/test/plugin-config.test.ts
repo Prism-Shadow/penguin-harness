@@ -351,6 +351,59 @@ describe("/api/admin/plugin-config", () => {
   });
 });
 
+// Given a field carrying a flag a later host reads (a status page's `security`), this host
+// still loads the module's group with all its fields: the kernel refuses undeclared keys at a
+// contribution's top level only, so a key nested in a field is ignored, not fatal.
+describe("a settings field flagged for a later host", () => {
+  it("loads the group, with the flagged field, on this host", async () => {
+    const host = new PluginHost();
+    host.use({
+      specifier: "@acme/guard",
+      modules: [
+        {
+          manifest: parseManifest({
+            name: "AcmeGuard",
+            requires: {},
+            provides: {},
+            contributes: {
+              "PluginConfigProvider.groups": [
+                {
+                  id: "acme-guard",
+                  title: "Guard",
+                  properties: {
+                    allowMembers: {
+                      type: "boolean",
+                      title: "Allow members",
+                      security: true,
+                      default: false,
+                    },
+                    note: { type: "string", title: "Note" },
+                  },
+                },
+              ],
+            },
+            children: [],
+          }),
+          create: () => ({ api: {} }),
+        },
+      ],
+      replaces: [],
+    });
+    const t = await createTestApp({ plugins: host });
+    try {
+      const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+      const body = (await (
+        await admin.get("/api/admin/plugin-config")
+      ).json()) as PluginConfigResponse;
+      const group = body.plugins.find((p) => p.name === "acme-guard");
+      expect(Object.keys(group?.configuration.properties ?? {})).toEqual(["allowMembers", "note"]);
+      expect(group?.values).toEqual({ allowMembers: false });
+    } finally {
+      await t.cleanup();
+    }
+  });
+});
+
 describe("PluginConfigPage actions", () => {
   /** A page node over one sandbox card and a backend card drawn inside it. */
   function page(run: () => Promise<{ ok: boolean; message: string; settled?: Promise<void> }>) {

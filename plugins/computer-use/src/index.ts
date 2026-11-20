@@ -125,6 +125,8 @@ const probes = new Map<string, Probe>();
           },
           allowMembers: {
             type: "boolean",
+            // Drawn under the options' security heading, with a shield (plugin status pages).
+            security: true,
             title: "Allow members",
             titleZh: "允许成员使用",
             description:
@@ -135,6 +137,8 @@ const probes = new Map<string, Probe>();
           },
           physicalInput: {
             type: "boolean",
+            // Drawn under the options' security heading, with a shield (plugin status pages).
+            security: true,
             title: "Allow physical input",
             titleZh: "允许物理输入",
             description:
@@ -145,6 +149,8 @@ const probes = new Map<string, Probe>();
           },
           pauseWhileUserActive: {
             type: "boolean",
+            // Drawn under the options' security heading, with a shield (plugin status pages).
+            security: true,
             title: "Pause while the user is active",
             titleZh: "用户操作时暂停",
             description:
@@ -155,6 +161,8 @@ const probes = new Map<string, Probe>();
           },
           clipboardRead: {
             type: "boolean",
+            // Drawn under the options' security heading, with a shield (plugin status pages).
+            security: true,
             title: "Allow reading the clipboard",
             titleZh: "允许读取剪贴板",
             description:
@@ -164,6 +172,8 @@ const probes = new Map<string, Probe>();
           },
           notificationRead: {
             type: "boolean",
+            // Drawn under the options' security heading, with a shield (plugin status pages).
+            security: true,
             title: "Allow reading notifications",
             titleZh: "允许读取通知",
             description:
