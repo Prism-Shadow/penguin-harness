@@ -2045,6 +2045,7 @@ export const zh = {
         failed: "安装失败",
         missing: "未安装",
         unsupported: "此机器不支持",
+        unknown: "状态未知",
       },
       checkState: { ok: "通过", action: "需要处理", unknown: "未知", na: "不适用" },
     },

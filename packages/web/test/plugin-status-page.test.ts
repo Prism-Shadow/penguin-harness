@@ -11,7 +11,10 @@
  *   technology, says what was found, carries its own action, and keeps a tool's words folded
  *   until asked for; the one "check again" sits at the list's heading.
  * - An action the report places on an element is drawn there only; the others are the page's
- *   primary actions. "Check again" is handed over to run without asking; every other action asks.
+ *   primary actions; each button hands its action to the settings page, which decides whether
+ *   to ask (plugin-page-actions.test.ts). With no checks, "check again" is a primary action.
+ * - A state this page has no word for (a newer plugin's, through an older server) draws as not
+ *   known under the plugin's own value, never breaking the page.
  * - Fields marked as security settings sit under their own heading, apart from the options;
  *   advanced ones stay folded.
  * - While the group's switch is off, only the switch is drawn: no status, no checks.
@@ -76,8 +79,8 @@ const ENTRY: PluginConfigEntry = {
   notices: [{ tone: "muted", text: "Keep the Web App closed on this desktop." }],
 };
 
-/** Every action the page hands over, with whether it asks first. */
-let handed: Array<[string, boolean]> = [];
+/** Every action the page hands over. */
+let handed: string[] = [];
 
 function Page({ entry, locale = "en" }: { entry: PluginConfigEntry; locale?: "en" | "zh" }) {
   const [busy, setBusy] = useState<string | null>(null);
@@ -90,7 +93,7 @@ function Page({ entry, locale = "en" }: { entry: PluginConfigEntry; locale?: "en
     locale,
     onStored: () => {},
     onStoredAll: () => {},
-    onAction: (_entry, action, ask = true) => void handed.push([action, ask]),
+    onAction: (_entry, action) => void handed.push(action),
     onSwitchedOn: () => {},
   });
 }
@@ -151,9 +154,14 @@ describe("a plugin's status page", () => {
     expect(row("accessibility").querySelector("button:last-child")?.textContent).toBe(
       "Open System Settings",
     );
-    expect(row("accessibility").textContent).not.toContain("No D-Bus session bus");
-    await click(button("Details"));
-    expect(row("accessibility").textContent).toContain("No D-Bus session bus");
+    // Every row's fold reads "Details"; its name says which row it belongs to.
+    const fold = button("Details");
+    expect(fold.getAttribute("aria-label")).toBe("Details: Accessibility");
+    const panel = document.getElementById(fold.getAttribute("aria-controls")!)!;
+    expect(panel.textContent).toContain("No D-Bus session bus");
+    expect(panel.hidden).toBe(true);
+    await click(fold);
+    expect(panel.hidden).toBe(false);
     expect(heading("Checks").querySelector("button")?.textContent).toBe("Check again");
   });
 
@@ -170,19 +178,46 @@ describe("a plugin's status page", () => {
     );
   });
 
-  it("hands over check again without asking, and every other action asking first", async () => {
+  it("hands each button's action to the settings page", async () => {
     stubFetch();
     await mount(h(Page, { entry: ENTRY }));
     await click(button("Check again"));
     await click(button("Open System Settings"));
     await click(button("Export logs"));
     await click(button("Retry"));
-    expect(handed).toEqual([
-      ["check", false],
-      ["guide", true],
-      ["logs", true],
-      ["install", true],
-    ]);
+    expect(handed).toEqual(["check", "guide", "logs", "install"]);
+  });
+
+  it("keeps check again among the primary actions when the report has no checks", async () => {
+    stubFetch();
+    await mount(
+      h(Page, {
+        entry: {
+          ...ENTRY,
+          report: { version: { name: "acme-desktop", state: "preparing" }, recheck: "check" },
+        },
+      }),
+    );
+    expect(buttons("Check again")).toHaveLength(1);
+    expect(document.querySelector("[data-check]")).toBeNull();
+  });
+
+  it("draws a state it has no word for as not known, under the plugin's own value", async () => {
+    stubFetch();
+    const skewed = {
+      ...ENTRY,
+      report: {
+        summary: { state: "brewing", text: "Brewing" },
+        version: { name: "acme-desktop", state: "updating" },
+        checks: [{ id: "display", label: "Display", state: "blocked" }],
+      },
+    } as unknown as PluginConfigEntry;
+    await mount(h(Page, { entry: skewed }));
+    expect(document.querySelector("[data-version-state]")?.textContent).toContain("updating");
+    expect(row("display").querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(
+      "blocked",
+    );
+    expect(text()).toContain("Brewing");
   });
 
   it("puts security settings under their own heading, and keeps advanced fields folded", async () => {

@@ -4,9 +4,9 @@
  *
  * 1. the status strip — the version element of the program the plugin runs beside itself, the
  *    summary pill, and the plugin's primary actions (every action the report does not place);
- * 2. the checks — every precondition in one ruled list, the one 「重新检查」 at its heading's
- *    other end (run without asking first: it only reads), a row's own action on its row, details
- *    folded under it;
+ * 2. the checks — every precondition in one ruled list, the one "check again" at its heading's
+ *    other end (when the report has checks; otherwise it is one of the primary actions), a row's
+ *    own action on its row, details folded under it;
  * 3. the group's notices, as the card draws them, for a plugin that has not moved to the report;
  * 4. the options: the switches and fields, those the group marks `security` under their own
  *    heading with a shield, the `advanced` ones in their fold; then what the card puts last
@@ -14,7 +14,10 @@
  *
  * While the group's switch is off (as drafted) the page draws the switch alone: the status, the
  * checks and the notices concern the group in use. Every word a plugin sends comes in both
- * languages and is shown in the interface's; an action's description is its button's hint.
+ * languages and is shown in the interface's; an action's description is its button's hint. A
+ * state this page has no word for (a newer plugin's, read through an older server) shows the
+ * plugin's own value and draws as not known. Whether an action asks before it runs is the
+ * settings page's decision (plugins-section.tsx), not this layout's.
  */
 import type { ReactNode } from "react";
 import type {
@@ -43,21 +46,34 @@ import type { Locale } from "../../state/locale";
 import { AdvancedFold } from "./advanced-fold";
 import { ConfigNotices } from "./plugin-config-heading";
 
-/** The summary pill's tone: what the state means. */
+/**
+ * The summary pill's tone: what the state means. Work under way is the app's busy tone (the
+ * spinner's beside it), which resolves to the same ink as ready on purpose; the words part them.
+ */
 const SUMMARY_TONE: Readonly<Record<PluginStatusSummary["state"], ToneName>> = {
   ready: "success",
   attention: "attention",
-  progress: "info",
+  progress: "success",
   off: "neutral",
+  unknown: "neutral",
 };
 
-/** The actions a report places on its own elements; the rest are the page's primary actions. */
+/** A state's word from `words`, else the state as sent (a value this build has no word for). */
+const wordFor = (words: Readonly<Record<string, string>>, state: string): string =>
+  Object.hasOwn(words, state) ? words[state]! : state;
+
+/**
+ * The actions a report places on its own elements; the rest are the page's primary actions. The
+ * "check again" is placed only where it is drawn: at the checks' heading, so with no checks it
+ * stays a primary action.
+ */
 export function placedActions(report: PluginStatusReport | undefined): Set<string> {
   const placed = new Set<string>();
   if (report === undefined) return placed;
+  const checks = report.checks ?? [];
   if (report.version?.action !== undefined) placed.add(report.version.action);
-  if (report.recheck !== undefined) placed.add(report.recheck);
-  for (const check of report.checks ?? []) if (check.action !== undefined) placed.add(check.action);
+  if (report.recheck !== undefined && checks.length > 0) placed.add(report.recheck);
+  for (const check of checks) if (check.action !== undefined) placed.add(check.action);
   return placed;
 }
 
@@ -82,8 +98,7 @@ export function PluginGroupPage({
   /** One field's control, as the card draws it. */
   control: (name: string, field: PluginConfigField) => ReactNode;
   disabled: boolean;
-  /** Runs an action; `ask` false for the checks' "check again", which only reads. */
-  onAction: (action: string, ask: boolean) => void;
+  onAction: (action: string) => void;
   locale: Locale;
   /** What follows the options: nested groups, then Reset and Save. */
   after: ReactNode;
@@ -108,7 +123,7 @@ export function PluginGroupPage({
         size="sm"
         variant="secondary"
         disabled={disabled}
-        onClick={() => onAction(action.id, action.id !== report?.recheck)}
+        onClick={() => onAction(action.id)}
         {...(hint !== undefined ? { "data-tooltip": hint, "data-tooltip-extra": true } : {})}
       >
         {say(action.title, action.titleZh)}
@@ -134,7 +149,7 @@ export function PluginGroupPage({
               <InstalledVersion
                 name={version.name}
                 state={version.state}
-                stateLabel={words.versionState[version.state]}
+                stateLabel={wordFor(words.versionState, version.state)}
                 {...(version.version !== undefined ? { version: version.version } : {})}
                 {...(version.platform !== undefined ? { platform: version.platform } : {})}
                 {...(version.progress !== undefined ? { progress: version.progress } : {})}
@@ -151,16 +166,14 @@ export function PluginGroupPage({
           }
           summary={
             summary !== undefined ? (
-              <span className="pt-0.5">
-                <Pill
-                  tone={SUMMARY_TONE[summary.state]}
-                  {...(summary.hint !== undefined
-                    ? { tooltip: say(summary.hint, summary.hintZh) }
-                    : {})}
-                >
-                  {say(summary.text, summary.textZh)}
-                </Pill>
-              </span>
+              <Pill
+                tone={SUMMARY_TONE[summary.state] ?? "neutral"}
+                {...(summary.hint !== undefined
+                  ? { tooltip: say(summary.hint, summary.hintZh) }
+                  : {})}
+              >
+                {say(summary.text, summary.textZh)}
+              </Pill>
             ) : undefined
           }
           actions={primary.length > 0 ? primary.map((a) => button(a.id)) : undefined}
@@ -175,10 +188,14 @@ export function PluginGroupPage({
                 id={check.id}
                 label={say(check.label, check.labelZh)}
                 state={check.state}
-                stateLabel={words.checkState[check.state]}
+                stateLabel={wordFor(words.checkState, check.state)}
                 {...(check.text !== undefined ? { text: say(check.text, check.textZh) } : {})}
                 {...(check.details !== undefined
-                  ? { details: say(check.details, check.detailsZh), detailsLabel: words.details }
+                  ? {
+                      details: say(check.details, check.detailsZh),
+                      detailsLabel: words.details,
+                      detailsName: words.detailsAbout(say(check.label, check.labelZh)),
+                    }
                   : {})}
                 action={button(check.action)}
               />

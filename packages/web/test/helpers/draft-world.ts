@@ -112,8 +112,17 @@ export interface DraftWorld {
   healNext(): void;
 }
 
-/** `chatDefaults` is the Project's `[default_chat]` block the server answers with (none by default). */
-export function draftWorld(options: { chatDefaults?: ChatDefaultsDto } = {}): DraftWorld {
+/**
+ * `chatDefaults` is the Project's `[default_chat]` block the server answers with (none by default).
+ * `extra` answers what this world does not (another surface's routes, on any server), or passes
+ * with undefined.
+ */
+export function draftWorld(
+  options: {
+    chatDefaults?: ChatDefaultsDto;
+    extra?: (request: FetchRequest) => Response | Promise<Response> | undefined;
+  } = {},
+): DraftWorld {
   socketWorld.reset();
   /** Every Session by id, with the server that holds it (null = this one). */
   const sessions = new Map<string, { info: SessionInfo; machine: string | null }>();
@@ -247,6 +256,8 @@ export function draftWorld(options: { chatDefaults?: ChatDefaultsDto } = {}): Dr
       }
       return new Response(null, { status: 204 });
     }
+    const extra = options.extra?.(request);
+    if (extra !== undefined) return extra;
     return apiError(404, "not_found");
   };
 
@@ -328,6 +339,29 @@ export async function mountDraft() {
       },
     ],
     { initialEntries: ["/chat/new"] },
+  );
+  vi.stubGlobal("matchMedia", unmatchedQuery);
+  await mount(h(LocaleProvider, null, h(AuthProvider, null, h(RouterProvider, { router }))));
+  return router;
+}
+
+/**
+ * Mounts `element` inside the same frame — the Project, machines and Session-list providers, under
+ * the sign-in gate — for a surface that reads the Project's connected machines.
+ */
+export async function mountInWorld(element: ReturnType<typeof h>) {
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/",
+        element: h(
+          SignedIn,
+          null,
+          h(ProjectProvider, null, h(MachinesProvider, null, h(SessionsProvider, null, element))),
+        ),
+      },
+    ],
+    { initialEntries: ["/"] },
   );
   vi.stubGlobal("matchMedia", unmatchedQuery);
   await mount(h(LocaleProvider, null, h(AuthProvider, null, h(RouterProvider, { router }))));

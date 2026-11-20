@@ -727,7 +727,7 @@ export const zh = {
     pluginPositionOn: "开启",
     pluginPositionOff: "关闭",
     pluginsInfo:
-      "开关下方是服务端全局的插件管理：插件从哪里安装、沙箱，以及本服务端没有单独页面的插件的选项，表单按其 schema 生成。与插件本身一样是服务器全局的；保存后立即送达，无需重启。各插件自己的选项在左侧「插件」组里各有一页。顶部的开关只影响本浏览器在插件页列出哪些插件。",
+      "开关下方是服务端全局的插件管理：插件从哪里安装、沙盒，以及本服务端没有单独页面的插件的选项，表单按其 schema 生成。与插件本身一样是服务器全局的；保存后立即送达，无需重启。各插件自己的选项在左侧「插件」组里各有一页。顶部的开关只影响本浏览器在插件页列出哪些插件。",
     /** A plugin's page in the Plugins group: its parts, the status page's blocks and words. */
     pluginPage: {
       /** The heading over the preconditions; its other end holds the one "check again". */
@@ -750,11 +750,20 @@ export const zh = {
         failed: "安装失败",
         missing: "未安装",
         unsupported: "此机器不支持",
+        unknown: "状态未知",
       },
       /** The fold under a check or the version element. */
       details: "详情",
+      /** That fold's accessible name on a check's row: the row it belongs to. */
+      detailsAbout: (subject: string) => `详情：${subject}`,
       /** The picked machine holds none of this plugin's settings. */
       noneOnMachine: (machine: string) => `${machine} 上没有这个插件的选项。`,
+      /**
+       * The picked machine names no plugin on any of its groups: none of this plugin's, or a build
+       * older than the naming, which lists every plugin's options on the management page.
+       */
+      onAdminPage: (machine: string, page: string) =>
+        `${machine} 上没有标明属于这个插件的选项。版本较旧的机器不标明选项属于哪个插件，它的插件选项都列在「${page}」里。`,
     },
     /** The page's own switch, above the server's cards: a display preference of this browser. */
     pluginsIncompatibleOnly: "只显示不兼容的插件",

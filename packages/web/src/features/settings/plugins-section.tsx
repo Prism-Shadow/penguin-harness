@@ -38,11 +38,11 @@ import { useEffect, useRef, useState } from "react";
 import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { useLocale } from "../../state/locale";
+import { webLocale } from "@prismshadow/penguin-web-plugin";
 import { localizedText } from "../../lib/skill-use";
 import { apiErrorText } from "../../lib/api-error";
-import { useSessions } from "../../state/sessions";
-import { useProject } from "../../state/project";
+import { useSessionsIfAny } from "../../state/sessions";
+import { useProjectIfAny } from "../../state/project";
 import {
   THIS_SERVER_KEY,
   backendToOffer,
@@ -128,6 +128,9 @@ export function ConfigMachinePicker({
   );
 }
 
+const NO_MACHINES: readonly string[] = [];
+const NO_LABELS: ReadonlyMap<string, string> = new Map();
+
 /** The server's part of the page: the machine picker and the cards, under a rule. */
 const SERVER_PART = "space-y-4 border-t border-line-muted pt-4";
 
@@ -142,7 +145,8 @@ export function PluginsSection({
   /** On a plugin's page: its package — only its settings groups, as status pages. */
   plugin?: string;
 } = {}) {
-  const { locale } = useLocale();
+  // The language on screen, as the dictionary switch tells it (a remount follows every switch).
+  const locale = webLocale();
   const localized = (en: string | undefined, zhText: string | undefined) =>
     en === undefined ? undefined : localizedText(locale, en, zhText);
   /** Every entry as stored on the machine on screen; each card holds its own draft (PluginCard). */
@@ -157,13 +161,16 @@ export function PluginsSection({
     id: string;
     title: string;
   } | null>(null);
-  const { machineIds, machineLabels } = useSessions();
+  // The Project's connected machines; none outside the app's providers (a test, the gallery).
+  const sessions = useSessionsIfAny();
+  const machineIds = sessions?.machineIds ?? NO_MACHINES;
+  const machineLabels = sessions?.machineLabels ?? NO_LABELS;
   /** The machine whose settings the page shows and saves: null for this server. */
   const [machine, setMachine] = useState<string | null>(null);
   /** Why the picked machine's settings could not be read, when they could not. */
   const [loadError, setLoadError] = useState<string | null>(null);
   const nameOf = (id: string) => machineLabels.get(id) ?? id;
-  const projectId = useProject().currentProject?.projectId ?? null;
+  const projectId = useProjectIfAny()?.currentProject?.projectId ?? null;
   /** The backend package the install prompt offers, while it is open. */
   const [offered, setOffered] = useState<string[] | null>(null);
   const [installing, setInstalling] = useState(false);
@@ -248,18 +255,13 @@ export function PluginsSection({
   }, [entries, inProgress, machine]);
 
   /**
-   * Runs a group's action: what the deployment must DO once on the machine (the Windows
-   * sandbox's local accounts). The result's own words are what the person sees — the module
-   * knows what happened, this page does not — and the groups it answers with replace ours,
-   * because a setup that worked changes what the card says about itself.
+   * A group action's button: asks first, with the action's own title (see pendingAction) — except
+   * the action the group's own report names as its "check again", which only reads and runs at
+   * once. Decided here from the stored entry, never from what the button says about itself.
    */
-  /**
-   * A group action's button: asks first, with the action's own title (see pendingAction) — unless
-   * the button says it need not (a status page's "check again", which only reads).
-   */
-  const askAction = (entry: PluginConfigEntry, id: string, ask = true) => {
-    if (!ask) {
-      void recheck(entry, id);
+  const askAction = (entry: PluginConfigEntry, id: string) => {
+    if (entry.report?.recheck === id) {
+      void runAction(entry, id);
       return;
     }
     const action = entry.actions?.find((a) => a.id === id);
@@ -271,10 +273,12 @@ export function PluginsSection({
   };
 
   /**
-   * Runs an action on the machine and says what happened: `runAction` behind its confirmation, or
-   * `recheck` for a status page's "check again", which only reads and asks nothing first.
+   * Runs a group's action: what the deployment must DO once on the machine (the Windows
+   * sandbox's local accounts). The result's own words are what the person sees — the module
+   * knows what happened, this page does not — and the groups it answers with replace ours,
+   * because a setup that worked changes what the card says about itself.
    */
-  const perform = async (entry: PluginConfigEntry, action: string) => {
+  const runAction = async (entry: PluginConfigEntry, action: string) => {
     setBusy(`${entry.name}\0${action}`);
     try {
       const res = await api.adminRunPluginConfigAction({ name: entry.name, action }, machine);
@@ -298,9 +302,6 @@ export function PluginsSection({
       setBusy(null);
     }
   };
-
-  const runAction = perform;
-  const recheck = perform;
 
   /**
    * The switch was turned on (and stored): if the machine reports no sandbox backend for its
@@ -422,7 +423,10 @@ export function PluginsSection({
           <FocusCard focus={focus} ready={entries.length > 0} />
           {plugin !== undefined && machine !== null && loadError === null && cards.length === 0 && (
             <p className="text-sm text-fg-muted">
-              {S.settings.pluginPage.noneOnMachine(nameOf(machine))}
+              {/* A machine that names any group's plugin is new enough that this one has none there. */}
+              {entries.some((e) => e.plugin !== undefined)
+                ? S.settings.pluginPage.noneOnMachine(nameOf(machine))
+                : S.settings.pluginPage.onAdminPage(nameOf(machine), S.settings.pluginsTitle)}
             </p>
           )}
           {cards.map((card) => (

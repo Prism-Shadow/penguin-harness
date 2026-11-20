@@ -23,6 +23,7 @@ export type {
   PluginStatusSummary,
   PluginStatusVersion,
 } from "../api/types.js";
+import { normalizeReport } from "./status-report.js";
 import {
   PluginConfig,
   PluginConfigEntries,
@@ -165,11 +166,35 @@ export class PluginConfigPage {
     const withStatus = (entry: PluginConfigEntry): PluginConfigEntry => {
       const group = status.get(entry.name);
       const stored = pluginConfig.get(entry.name);
-      const notices = group?.notices(stored, entry.configuration) ?? [];
-      const actions = group?.actions?.() ?? [];
-      const unavailable = group?.unavailable?.() ?? [];
-      const backend = group?.backend?.();
-      const report = group?.report?.();
+      // A status contributor is a plugin's code: one that throws costs its own group what it
+      // would have said, never the page every other group is read on.
+      const failed: string[] = [];
+      const read = <T>(what: string, fn: () => T, fallback: T): T => {
+        try {
+          return fn();
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn(`[plugin-config] ${entry.name}: ${what}() threw: ${message}`);
+          failed.push(message);
+          return fallback;
+        }
+      };
+      const said = read("notices", () => group?.notices(stored, entry.configuration) ?? [], []);
+      const actions = read("actions", () => group?.actions?.() ?? [], []);
+      const unavailable = read("unavailable", () => group?.unavailable?.() ?? [], []);
+      const backend = read("backend", () => group?.backend?.(), undefined);
+      const report = normalizeReport(read("report", () => group?.report?.(), undefined));
+      const notices: PluginConfigNotice[] =
+        failed.length === 0
+          ? said
+          : [
+              ...said,
+              {
+                tone: "attention",
+                text: `This plugin's status could not be read: ${failed[0]}`,
+                textZh: `这个插件的状态读取失败：${failed[0]}`,
+              },
+            ];
       return {
         ...entry,
         ...(group?.derive !== undefined

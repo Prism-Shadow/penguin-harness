@@ -1,37 +1,41 @@
 /**
  * The version element: a program something installs and runs beside itself, as one segmented
  * capsule — its name, the version installed, the platform that build is for — then where it
- * stands as a mark and a word: installed, being prepared (a spinner, and a progress bar under the
- * capsule with the step in words), failed (the warning triangle in the attention ink, never red,
- * the reason in a line under it), not installed yet, or not supported on this machine. The button
- * the state offers (install, retry) follows the word; what only a careful reader wants (an install
- * directory, the whole error) folds under it behind "Details".
+ * stands as a mark and a word (`StatusMark`): installed, being prepared (a spinner, and a progress
+ * bar under the capsule with the step in words), failed (the warning triangle in the attention
+ * ink, never red, the reason in a line under it), not installed yet, not supported on this
+ * machine, or not known. The button the state offers (install, retry) follows the word; what only
+ * a careful reader wants (an install directory, the whole error) folds under it behind "Details"
+ * (`HelpFold`).
  *
- * The word is on screen beside its mark, so colour is never the only carrier; the mark's shape
- * differs per state. The capsule's segments are data (a name, a version, a platform), set in the
- * monospace face where they are code. Props only: every word is the caller's.
+ * The word is on screen beside its mark, so colour is never the only carrier, and the spinner is
+ * hidden from assistive technology so the state is announced once, by its word. A state this
+ * component does not know — a newer plugin's — is drawn as not known, under the word the caller
+ * gives. The capsule's segments are data (a name, a version, a platform), set in the monospace
+ * face where they are code. Props only: every word is the caller's.
  */
-import { useId, useState, type ReactNode } from "react";
-import { ICON_GAP, ICON_SIZE } from "../../../icon-scale";
-import { Chevron } from "../../icons/chevron/chevron";
-import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
+import type { ReactNode } from "react";
+import { ICON_GAP } from "../../../icon-scale";
+import type { ToneName } from "../../../tokens";
 import { ICONS } from "../../icons/icons";
 import { Spinner } from "../../icons/spinner/spinner";
-import { Fold } from "../../layout/fold/fold";
+import { HelpFold } from "../../overlays/info-popover/help-fold";
 import { ProgressBar } from "../progress-bar/progress-bar";
+import { StatusMark } from "../status-mark/status-mark";
 
 /** `preparing` = being downloaded or installed now; `missing` = not installed yet. */
 export type InstalledVersionState =
-  "installed" | "preparing" | "failed" | "missing" | "unsupported";
+  "installed" | "preparing" | "failed" | "missing" | "unsupported" | "unknown";
 
-/** Each state's mark; `preparing` turns a spinner instead. */
+/** Each settled state's mark; `preparing` turns a spinner instead. A mark with no tone recedes. */
 const MARK: Readonly<
-  Record<Exclude<InstalledVersionState, "preparing">, { glyph: string; ink: string }>
+  Record<Exclude<InstalledVersionState, "preparing">, { glyph: string; tone?: ToneName }>
 > = {
-  installed: { glyph: ICONS.checkCircle, ink: "text-tone-success-fg" },
-  failed: { glyph: ICONS.triangleAlert, ink: "text-tone-attention-fg" },
-  missing: { glyph: ICONS.arrowDownToLine, ink: "text-fg-subtle" },
-  unsupported: { glyph: ICONS.stopCircle, ink: "text-fg-subtle" },
+  installed: { glyph: ICONS.checkCircle, tone: "success" },
+  failed: { glyph: ICONS.triangleAlert, tone: "attention" },
+  missing: { glyph: ICONS.arrowDownToLine },
+  unsupported: { glyph: ICONS.stopCircle },
+  unknown: { glyph: ICONS.helpCircle },
 };
 
 export interface InstalledVersionProps {
@@ -40,7 +44,8 @@ export interface InstalledVersionProps {
   version?: string;
   /** The OS and CPU the installed build is for. */
   platform?: string;
-  state: InstalledVersionState;
+  /** One of `InstalledVersionState`; anything else is drawn as `unknown`. */
+  state: InstalledVersionState | (string & {});
   /** The state's word, beside its mark. */
   stateLabel: string;
   /** While preparing: how far, from 0 to 1; absent while the step has no amount. */
@@ -49,7 +54,7 @@ export interface InstalledVersionProps {
   text?: string;
   /** Folded under the element. */
   details?: ReactNode;
-  /** The fold's name ("Details"); needed with `details`. */
+  /** The fold's title on screen ("Details"); needed with `details`. */
   detailsLabel?: string;
   /** The button the state offers (install, retry). */
   action?: ReactNode;
@@ -69,6 +74,7 @@ export function InstalledVersion({
   detailsLabel,
   action,
 }: InstalledVersionProps) {
+  const settled = state === "preparing" ? null : (MARK[state as keyof typeof MARK] ?? MARK.unknown);
   return (
     <div data-version-state={state} className="min-w-0 space-y-1.5">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -87,19 +93,22 @@ export function InstalledVersion({
             </span>
           )}
         </span>
-        <span
-          className={`inline-flex shrink-0 items-center ${ICON_GAP.tight} text-xs text-fg-muted`}
-        >
-          {state === "preparing" ? (
-            <Spinner size="xs" tone="success" label={stateLabel} />
+        <span className="text-xs text-fg-muted">
+          {settled === null ? (
+            <span className={`inline-flex shrink-0 items-center ${ICON_GAP.tight}`}>
+              {/* The word below announces the state; the spinner stays out of the reading. */}
+              <span aria-hidden className="inline-flex">
+                <Spinner size="xs" tone="success" label={stateLabel} />
+              </span>
+              <span>{stateLabel}</span>
+            </span>
           ) : (
-            <GlyphIcon
-              d={MARK[state].glyph}
-              size={ICON_SIZE.inlineGlyph}
-              className={MARK[state].ink}
+            <StatusMark
+              glyph={settled.glyph}
+              label={stateLabel}
+              {...(settled.tone !== undefined ? { tone: settled.tone } : {})}
             />
           )}
-          <span>{stateLabel}</span>
         </span>
         {action}
       </div>
@@ -115,40 +124,10 @@ export function InstalledVersion({
         <p className="text-xs break-words text-fg-muted">{text}</p>
       )}
       {details !== undefined && details !== null && details !== "" && (
-        <DetailsFold label={detailsLabel ?? ""}>{details}</DetailsFold>
+        <HelpFold {...(detailsLabel !== undefined ? { title: detailsLabel } : { label: name })}>
+          <p className="break-words whitespace-pre-line">{details}</p>
+        </HelpFold>
       )}
-    </div>
-  );
-}
-
-/**
- * "Details", folded: a row naming itself with the fold chevron, and the body under it through
- * `Fold`. For words a careful reader wants and nobody else needs on screen.
- */
-export function DetailsFold({ label, children }: { label: string; children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const panelId = useId();
-  return (
-    <div>
-      <button
-        type="button"
-        aria-expanded={open}
-        {...(open ? { "aria-controls": panelId } : {})}
-        onClick={() => setOpen((v) => !v)}
-        className={`flex items-center whitespace-nowrap ${ICON_GAP.tight} rounded-sm text-xs text-fg-muted transition-colors duration-150 hover:text-fg`}
-      >
-        <Chevron open={open} size={ICON_SIZE.chevronDense} />
-        {label}
-      </button>
-      <Fold open={open}>
-        {/* pl-4 = the chevron's 12px plus the tight gap, so the body lines up under the label. */}
-        <div
-          id={panelId}
-          className="pt-1.5 pl-4 text-xs leading-relaxed break-words whitespace-pre-line text-fg-muted"
-        >
-          {children}
-        </div>
-      </Fold>
     </div>
   );
 }

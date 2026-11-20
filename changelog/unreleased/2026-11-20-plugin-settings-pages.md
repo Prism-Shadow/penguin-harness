@@ -28,5 +28,10 @@ then the options, with security settings under their own heading.
   only notices and actions look as they did.
 - A web half's Settings page may set `group: "plugin"` with `plugin: <package>` to join that
   plugin's page; its key still opens it. `plugin:<package>` opens a plugin page.
-- Shared UI: `InstalledVersion`, `DetailsFold`, `Checklist` / `ChecklistRow` and `StatusStrip`,
-  shown on the gallery's new **Status page** board. `PagedDialog` items may carry a `heading`.
+- A report from a plugin built against another version of the contract degrades rather than
+  breaks: a state this build does not know reads as unknown, a malformed field is dropped, and a
+  status contributor that throws costs only its own group, which says its status could not be
+  read.
+- Shared UI: `InstalledVersion`, `Checklist` / `ChecklistRow` and `StatusStrip`, shown on the
+  gallery's new **Status page** board. `HelpFold` exports its trigger as `HelpFoldToggle`
+  (which takes a full accessible `name`). `PagedDialog` items may carry a `heading`.

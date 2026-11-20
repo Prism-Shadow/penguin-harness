@@ -1,7 +1,7 @@
 /**
  * 状态页: a plugin's page in Settings, from the package — the version element in each state it
  * can stand in (installed, being prepared with and without an amount, failed with Retry, not
- * installed with Install, not supported here), the checklist in its four row states with a row's
+ * installed with Install, not supported here, not known), the checklist in its four row states with a row's
  * own action and its folded details, the one "check again" at the list's heading, and a whole
  * status strip with a summary pill and a primary action.
  */
@@ -40,6 +40,7 @@ export function StatusBoard() {
     { state: "failed", text: t.failedWhy, action: t.retry },
     { state: "missing", action: t.install },
     { state: "unsupported", text: t.unsupportedWhy },
+    { state: "unknown" },
   ];
   return (
     <>
@@ -130,11 +131,9 @@ export function StatusBoard() {
             />
           }
           summary={
-            <span className="pt-0.5">
-              <Pill tone="attention" tooltip={t.summaryHint}>
-                {t.summary}
-              </Pill>
-            </span>
+            <Pill tone="attention" tooltip={t.summaryHint}>
+              {t.summary}
+            </Pill>
           }
           actions={
             <Button size="sm" variant="secondary">

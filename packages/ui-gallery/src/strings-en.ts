@@ -2101,6 +2101,7 @@ export const en: GalleryStrings = {
         failed: "Install failed",
         missing: "Not installed",
         unsupported: "Not supported here",
+        unknown: "State unknown",
       },
       checkState: { ok: "OK", action: "Needs action", unknown: "Unknown", na: "Not applicable" },
     },

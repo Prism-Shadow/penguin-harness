@@ -655,11 +655,20 @@ export const en: Strings = {
         failed: "Install failed",
         missing: "Not installed",
         unsupported: "Not supported here",
+        unknown: "State unknown",
       },
       /** The fold under a check or the version element. */
       details: "Details",
+      /** That fold's accessible name on a check's row: the row it belongs to. */
+      detailsAbout: (subject: string) => `Details: ${subject}`,
       /** The picked machine holds none of this plugin's settings. */
       noneOnMachine: (machine: string) => `${machine} has no options for this plugin.`,
+      /**
+       * The picked machine names no plugin on any of its groups: none of this plugin's, or a build
+       * older than the naming, which lists every plugin's options on the management page.
+       */
+      onAdminPage: (machine: string, page: string) =>
+        `Nothing on ${machine} is marked as this plugin's options. A machine on an older build does not say which plugin its options belong to and lists them all under ${page}.`,
     },
     /** The page's own switch, above the server's cards: a display preference of this browser. */
     pluginsIncompatibleOnly: "Show only incompatible plugins",

@@ -6801,12 +6801,19 @@ export interface PluginConfigEntry {
    */
   backend?: PluginConfigBackend;
   /**
-   * The npm package of the plugin whose server module declared the group; absent for the host's
-   * own groups (the sandbox, plugin sources). The Settings dialog draws the group on that
-   * plugin's page.
+   * The plugin whose server module declared the group, by the specifier the plugin list names it
+   * with — an npm package name, or for a package installed from a directory, that directory's
+   * absolute path; absent for the host's own groups (the sandbox, plugin sources) and from a
+   * server older than this field. The Settings dialog draws the group on that plugin's page,
+   * keyed `plugin:<specifier>`; a specifier the plugin library does not list (a path) gets a page
+   * named by the group's own title.
    */
   plugin?: string;
-  /** What the group's status reports in the status page's shape; absent when it reports none. */
+  /**
+   * What the group's status reports in the status page's shape, checked on the way out (a state
+   * this build does not know reads as `unknown`, a field of the wrong type is dropped); absent
+   * when it reports none, or when its report could not be read.
+   */
   report?: PluginStatusReport;
 }
 
@@ -6827,8 +6834,12 @@ export interface PluginStatusReport {
 
 /** Where the plugin stands, in a word or two, drawn as a pill in its state's tone. */
 export interface PluginStatusSummary {
-  /** `ready` usable now; `attention` something needs a person; `progress` work under way; `off` switched off or not usable here. */
-  state: "ready" | "attention" | "progress" | "off";
+  /**
+   * `ready` usable now; `attention` something needs a person; `progress` work under way; `off`
+   * switched off or not usable here; `unknown` could not be told — also what a state this build
+   * does not know reads as (a newer plugin's), so a page never meets a state it cannot draw.
+   */
+  state: "ready" | "attention" | "progress" | "off" | "unknown";
   text: string;
   textZh?: string;
   /** What the word cannot say, on the pill's hover. */
@@ -6840,8 +6851,11 @@ export interface PluginStatusSummary {
 export interface PluginStatusVersion {
   /** The program's name as its maker spells it. */
   name: string;
-  /** `preparing` = being downloaded or installed now (`progress`, step in `text`); `missing` = not installed yet. */
-  state: "installed" | "preparing" | "failed" | "missing" | "unsupported";
+  /**
+   * `preparing` = being downloaded or installed now (`progress`, step in `text`); `missing` = not
+   * installed yet; `unknown` = could not be told, and what a state this build does not know reads as.
+   */
+  state: "installed" | "preparing" | "failed" | "missing" | "unsupported" | "unknown";
   version?: string;
   /** The OS and CPU the installed build is for ("linux-x64"). */
   platform?: string;
@@ -6863,7 +6877,10 @@ export interface PluginStatusCheck {
   /** What is checked, in a few words ("Display", "Accessibility"). */
   label: string;
   labelZh?: string;
-  /** `ok` holds; `action` needs a person; `unknown` could not be told yet; `na` does not apply on this machine. */
+  /**
+   * `ok` holds; `action` needs a person; `unknown` could not be told yet (and what a state this
+   * build does not know reads as); `na` does not apply on this machine.
+   */
   state: "ok" | "action" | "unknown" | "na";
   /** One line in the plugin's own words: what was found, or what to do. */
   text?: string;

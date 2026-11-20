@@ -14,7 +14,7 @@ export function StatusStrip({
 }: {
   /** The version element, or a line of state. */
   status?: ReactNode;
-  /** A summary pill, before the status. */
+  /** A summary pill, before the status; the strip aligns it with the status's first line. */
   summary?: ReactNode;
   /** The primary actions, on the other end. */
   actions?: ReactNode;
@@ -23,7 +23,10 @@ export function StatusStrip({
     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       {/* The pill keeps its own column, so the status's later lines start under its first. */}
       <div className="flex min-w-0 flex-1 flex-wrap items-start gap-x-3 gap-y-1.5 sm:flex-nowrap">
-        {summary !== undefined && summary !== null && <div className="shrink-0">{summary}</div>}
+        {/* pt-0.5: a pill's line sits a hair lower than the capsule's, so their words align. */}
+        {summary !== undefined && summary !== null && (
+          <div className="shrink-0 pt-0.5">{summary}</div>
+        )}
         <div className="min-w-0 flex-1">{status}</div>
       </div>
       {actions !== undefined && actions !== null && (

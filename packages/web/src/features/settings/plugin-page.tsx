@@ -6,8 +6,11 @@
  * (plugins-section.tsx, which keeps the machine picker, the action confirm and the re-reads), then
  * its admin-only contributed pages.
  *
- * Both parts present, each is a ruled section headed 「个人」 / 「服务器」; one part alone draws no
- * heading. Inside a part, a contributed page is titled by its own name only when the part holds
+ * Both parts present, each is a ruled section headed by the rail's Personal and Server group names;
+ * one part alone draws no heading. The settings groups are drawn whenever this server declares one
+ * for the plugin or the Project has a connected machine: the machine picker is how an admin reaches
+ * a group another machine declares for it, so a page that exists only through its web half (the
+ * browser's) still offers it. Inside a part, a contributed page is titled by its own name only when the part holds
  * more than one thing; a lone page's explanation then rides on the part's heading. A request that
  * named a part of the page (an old key of a contributed page, a settings group) scrolls it into
  * view once, when it is there.
@@ -18,6 +21,7 @@ import { GlyphIcon, ICON_GAP, ICON_SIZE, ICONS, Pill, RuledSection } from "@pris
 import { S } from "../../lib/strings";
 import { glyphOf } from "../../lib/nav-icons";
 import type { PluginPage, PluginSectionRef } from "../../lib/plugin-pages";
+import { useSessionsIfAny } from "../../state/sessions";
 import { SkillIcon } from "../skills";
 import { PluginsSection } from "./plugins-section";
 
@@ -129,7 +133,8 @@ export function PluginPageBody({
   anchor?: string;
 }) {
   const root = useAnchor(anchor);
-  const groups = isAdmin && page.groups.length > 0;
+  const machines = (useSessionsIfAny()?.machineIds.length ?? 0) > 0;
+  const groups = isAdmin && (page.groups.length > 0 || machines);
   const server = isAdmin ? page.server : [];
   const hasServer = groups || server.length > 0;
   const hasPersonal = page.personal.length > 0;

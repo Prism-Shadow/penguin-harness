@@ -150,11 +150,8 @@ export interface PluginCardProps {
   onStored: (entry: PluginConfigEntry) => void;
   /** The server answered with every entry: the page takes them all. */
   onStoredAll: (entries: PluginConfigEntry[]) => void;
-  /**
-   * A group action's button: the page asks before it runs, unless `ask` is false (a status page's
-   * "check again", which only reads).
-   */
-  onAction: (entry: PluginConfigEntry, action: string, ask?: boolean) => void;
+  /** A group action's button: the page decides whether to ask before it runs. */
+  onAction: (entry: PluginConfigEntry, action: string) => void;
   /** An entry's `switch` was turned on (and stored). */
   onSwitchedOn: (entry: PluginConfigEntry) => void;
   /** `page`: laid out as a status page on its plugin's page rather than as a boxed card. */
@@ -402,7 +399,7 @@ export function PluginCard({
         drawn={drawnFields(card, viewOf(card))}
         control={(name, field) => control(card, name, field)}
         disabled={busy !== null}
-        onAction={(action, ask) => onAction(card, action, ask)}
+        onAction={(action) => onAction(card, action)}
         locale={locale}
         after={
           <>

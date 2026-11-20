@@ -244,7 +244,9 @@ export function SettingsDialog({
       {current === "plugins" && (
         <PluginsSection
           {...(focus !== undefined ? { focus } : {})}
-          claimed={new Set(pages.map((page) => page.package))}
+          // Only a page that draws this server's groups claims a package: another machine's groups
+          // for a plugin whose page has none of its own stay reachable here too.
+          claimed={new Set(pages.filter((p) => p.groups.length > 0).map((p) => p.package))}
         />
       )}
       {current === "users" && <AdminUsersSection />}
