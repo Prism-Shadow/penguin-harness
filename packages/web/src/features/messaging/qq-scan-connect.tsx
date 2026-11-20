@@ -29,6 +29,7 @@ import { Button, toastError, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Modules of quiet zone around the code — four is what the QR spec asks for. */
 const QUIET_ZONE = 4;
@@ -103,6 +104,11 @@ export type QQScanStep =
        * server consumed it on that poll.
        */
       releaseTask: boolean;
+      /**
+       * The failed poll's error, kept beside its words so the toast offers its report; absent
+       * when the platform's own answer ended the scan.
+       */
+      error?: unknown;
     };
 
 /**
@@ -124,6 +130,7 @@ export function qqScanStep(attempt: QQScanAttempt, tally: QQScanTally): QQScanSt
           kind: "stop",
           notice: S.qq.scanFailed(apiErrorText(attempt.error)),
           releaseTask: true,
+          error: attempt.error,
         };
   }
   const { res } = attempt;
@@ -187,7 +194,7 @@ export function QQScanConnect({
         if (goneRef.current) return;
         taskRef.current = null;
         setPhase({ kind: "idle" });
-        toastError(S.qq.scanFailed(apiErrorText(e)));
+        toastApiError(e, { text: S.qq.scanFailed(apiErrorText(e)) });
       }
     },
     [sessionId],
@@ -240,7 +247,8 @@ export function QQScanConnect({
         // live: it is released here the way cancel and unmount release one, rather than left
         // holding its key until the sweep.
         if (step.releaseTask) void api.cancelQQScan(sessionId, taskId).catch(() => {});
-        toastError(step.notice);
+        if ("error" in step) toastApiError(step.error, { text: step.notice });
+        else toastError(step.notice);
       })();
     }, pollMs);
     return () => {

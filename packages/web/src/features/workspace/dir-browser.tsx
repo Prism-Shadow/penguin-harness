@@ -20,7 +20,6 @@ import type { ReactElement, ReactNode } from "react";
 import type { WorkspaceFileEntry } from "@prismshadow/penguin-server/api";
 import { FileBrowser, type FileBrowserPreview, type TreeToggle } from "@prismshadow/penguin-ui";
 import { filesApi, filesScopeKey, type FilesScope } from "../../api/workspace-files";
-import { apiErrorText } from "../../lib/api-error";
 import { formatBytes } from "../../lib/format";
 import { useReaderFind } from "../../lib/reader-find";
 import { S } from "../../lib/strings";
@@ -37,6 +36,7 @@ import {
   type Listings,
   type TreeRow,
 } from "../../lib/workspace-tree";
+import { failureNode } from "../../lib/failure";
 
 export interface DirBrowserProps {
   /** The directory, as the Files panel addresses one. */
@@ -52,6 +52,11 @@ export interface DirBrowserProps {
 }
 
 /** A directory read in the shared read-only FileBrowser: listed one level at a time through the Files panel's routes, a file previewed on the right. Nothing here writes. */
+/** The directory on screen, kept out of every report the browser offers (`<workspace>`). */
+function privacyOf(scope: FilesScope): { privatePaths: readonly string[] } {
+  return { privatePaths: scope.kind === "workspace" ? [scope.workspace] : [] };
+}
+
 export function DirBrowser(props: DirBrowserProps): ReactElement {
   // Keyed by the directory, so another one remounts the browser with nothing of the last.
   return <DirBrowserBody key={filesScopeKey(props.scope)} {...props} />;
@@ -79,7 +84,7 @@ function DirBrowserBody({
   const [listings, setListings] = useState<Listings>(() => new Map());
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [loadingDirs, setLoadingDirs] = useState<ReadonlySet<string>>(() => new Set());
-  const [listError, setListError] = useState<string | null>(null);
+  const [listError, setListError] = useState<ReactNode>(null);
   /** The directory whose subtree the tree should animate — the one just clicked. */
   const [toggled, setToggled] = useState<TreeToggle | null>(null);
   const [preview, setPreview] = useState<FileBrowserPreview | null>(null);
@@ -109,7 +114,7 @@ function DirBrowserBody({
         return entries;
       } catch (error) {
         if (!current()) return null;
-        setListError(apiErrorText(error));
+        setListError(failureNode(error, privacyOf(scope)));
         return null;
       } finally {
         if (current()) {
@@ -148,7 +153,7 @@ function DirBrowserBody({
         );
       } catch (error) {
         if (request !== previewRequest.current) return;
-        setPreview({ ...base, kind: shown, error: apiErrorText(error) });
+        setPreview({ ...base, kind: shown, error: failureNode(error, privacyOf(scope)) });
       }
     },
     [files],

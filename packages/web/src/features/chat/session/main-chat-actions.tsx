@@ -1,9 +1,9 @@
 import { useCallback, useState } from "react";
 import type { ModelRefDto } from "@prismshadow/penguin-server/api";
-import { toastError } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
+import { toastApiError, toastFailure } from "../../../lib/toast-api-error";
+import { toldFailure } from "../../../lib/failure";
 import { createStreamModel, finalizeHistory, pushMessage } from "../../../lib/amsp/stream-model";
 import { bucketCostUsd } from "../../../lib/amsp/task-stats";
 import type { StreamRenderContext } from "../message-stream";
@@ -79,14 +79,20 @@ export function useMainChatActions(scope: ReturnType<typeof useMainChatControls>
           position = match?.kind === "task_stats" ? match.forkPosition : undefined;
         }
         if (position === undefined) {
-          toastError(S.chat.forkSessionFailed);
+          // No fork position for the reply: the record the fork is cut at was not found.
+          toastFailure(
+            toldFailure(S.chat.forkSessionFailed, {
+              what: "a conversation could not be forked: its fork position was not found",
+              detail: null,
+            }),
+          );
           return;
         }
         const created = await api.forkSession(selected.sessionId, { position });
         addSession(created.session);
         navigate(`/chat/${created.session.sessionId}`);
       } catch (e) {
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
       }
     },
     [selected, addSession, navigate],

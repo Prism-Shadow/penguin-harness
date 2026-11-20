@@ -1,5 +1,5 @@
 /** Shared read contract only. Company owns its original store, hydration and provider. */
-import { createContext, useContext } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import type {
   MessagingChannel,
   OrgChannelItem,
@@ -48,7 +48,7 @@ export interface CompanyContextValue {
   setCurrentOrg: (key: string | null) => void;
   /** The open organization's channels; null until the first listing arrives. */
   channels: OrgChannelItem[] | null;
-  channelsError: string | null;
+  channelsError: ReactNode;
   /** Unread and @me summed over the channels the user belongs to — the sidebar's and the rail's badges. */
   channelUnread: number;
   channelMentions: number;
@@ -60,7 +60,7 @@ export interface CompanyContextValue {
   setDeskMessagingChannel: (sessionId: string, channel: MessagingChannel | null) => void;
   /** The open organization's employees, in chart order; null until the first read. */
   orgChart: OrgChartResponse | null;
-  orgChartError: string | null;
+  orgChartError: ReactNode;
   reloadOrgChart: () => Promise<void>;
   /** The ticket the detail dialog is showing; null when it is closed. */
   ticketDialog: TicketDialogTarget | null;

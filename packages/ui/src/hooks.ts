@@ -63,10 +63,14 @@
  * |                    | carousel, a product hero, a ranking; hosts: `Cover`,     |                                                       |
  * |                    | `CoverCard`, `ShowcaseCarousel`, `ProductHero`,          |                                                       |
  * |                    | `ShowcaseRanking`                                        |                                                       |
+ * | `ui-segmented`     | a segmented control: one choice among a few options laid | its options are direct children `<button>`, each saying whether it is on in `aria-pressed="true" \| "false"` |
+ * |                    | side by side; host: `Segmented`                          |                                                       |
+ * | `ui-action`        | the primary action that heads a navigation list (New     | on the row itself, a `<button>` or an `<a>`; while its page is the one open it is `[aria-current="page"]` |
+ * |                    | chat); hosts: `NavRow`, `RailItem`                       |                                                       |
  * | `ui-widget`        | a glanceable reading set apart from the prose: a         | `data-widget="weather" \| "clock" \| "countdown" \| "metrics" \| "chart" \| "resources"`; direct children `data-slot="head" \| "body" \| "foot"`; inside, `data-figure` marks a big numeral, `data-tile` a tile, `data-art` an illustration's svg; `data-offscreen` while scrolled away |
  * |                    | weather, clock, countdown, metrics, chart or resources   |                                                       |
  * |                    | tile in a reply; host: `WidgetSurface`                   |                                                       |
- * | `ui-edge`          | the edge of a box a person presses, types into or wrote: | a text field that failed validation carries `aria-invalid="true"` on itself or on its direct child `<input>` / `<textarea>`; a switch is `role="switch"`; a drawn checkbox or radio (not the native one) is an `aria-hidden` `<span>`; a host drawn round carries `rounded-full`, a capsule `rounded-[var(--ui-radius-pill)]` |
+ * | `ui-edge`          | the edge of a box a person presses, types into or wrote: | a text field that failed validation carries `aria-invalid="true"` on itself or on its direct child `<input>` / `<textarea>`; a switch is `role="switch"`; a drawn checkbox or radio (not the native one) is an `aria-hidden` `<span>`; a host drawn round carries `rounded-full`, a capsule `rounded-[var(--ui-radius-pill)]`; a `Button` names its variant, `data-variant="primary" \| "secondary" \| "danger"` |
  * |                    | a button with a fill or a line, a text field or a select |                                                       |
  * |                    | trigger, a checkbox's box, a radio's disc, a switch's    |                                                       |
  * |                    | track, the start page's pickers and the person's own     |                                                       |
@@ -77,9 +81,9 @@
  * |                    | `WorkspaceSelect`                                        |                                                       |
  * | `ui-start`         | the start page (/chat/new) as a whole; host:             | descendants carry `data-slot="brand" \| "title" \| "tagline" \| "version" \| "counts" \| "count" \| "composer" \| "examples" \| "folders" \| "folder" \| "rows" \| "row"`, a count's number `"figure"` and a row's closing chevron `"go"`; the open folder is `aria-expanded="true"` |
  * |                    | `StartDashboard`                                         |                                                       |
- * | `ui-library`       | the model library's groups and their model cards; host:  | descendants carry `data-slot="group" \| "head" \| "cards" \| "card" \| "name" \| "count" \| "tags" \| "price" \| "state"` (a group's head holds its `name` and `count`, a card its `name`), the bar folding the rest of the groups away `"fold"` and Add group `"add"`; a pinned group `data-pinned="true"` |
+ * | `ui-library`       | the model library's groups and their model cards; host:  | descendants carry `data-slot="group" \| "head" \| "cards" \| "card" \| "name" \| "count" \| "tags" \| "meta" \| "price" \| "state"` (a group's head holds its `name` and `count`, a card its `name`), the bar folding the rest of the groups away `"fold"` and Add group `"add"`; a pinned group `data-pinned="true"` |
  * |                    | `ModelsPage`                                             |                                                       |
- * | `ui-ledger`        | a reading of numbers set apart as a ledger; hosts:       | its readings are `data-slot="row"` (a label beside its figure) or `data-slot="tile"` (the two stacked), each holding a `data-slot="label"` and a `data-slot="figure"` |
+ * | `ui-ledger`        | a reading of numbers set apart as a ledger; hosts:       | its readings are `data-slot="row"` (a label beside its figure) or `data-slot="tile"` (the two stacked), each holding a `data-slot="label"` and a `data-slot="figure"`; a score label marks its change with `data-tone="muted" \| "success" \| "danger"` |
  * |                    | `SummaryCard`, `StatTile`, `BenchmarkCard`               |                                                       |
  * | `ui-empty`         | an empty state; host: `EmptyState`                       | `data-form="page" \| "slot"`; descendants carry `data-slot="art" \| "title" \| "description" \| "action"`; the page form's `art` holds one drawing per style, direct children `data-set="line" \| "doodle"` |
  * | `ui-run`           | the conversation's run indicator in the chat toolbar;    | `data-state="running"`; descendants carry `data-slot="mark" \| "label"` |
@@ -266,6 +270,9 @@
  * while a turn runs). The host writes the class and nothing else; a field that failed validation
  * already says so in `aria-invalid`. A tag or a count is not a host: a pill on a row is the row's
  * chrome. The base, Primer and Console leave it alone; Doodle draws each such edge as a pen line.
+ * A `Button` also names its variant (`data-variant`, 2026-11-17), which tells a filled button from
+ * a neutral and a destructive one for a pack that draws Material 3's filled, tonal and outlined
+ * buttons apart; no other built-in pack reads it.
  *
  * The five section hooks (2026-11-05) — `ui-start`, `ui-library`, `ui-ledger`, `ui-empty` and
  * `ui-run` — let a pack dress a whole section where tokens and the hooks above reach only its
@@ -307,6 +314,17 @@
  * built-in pack writes a recipe yet. A pack that draws its own boxes (Doodle's pen line) may draw
  * a card's, the carousel's, the hero's, the ranking's and a cover's edge; it never changes what a cover shows,
  * and never adds words or marks.
+ *
+ * `ui-segmented` and `ui-action` (2026-11-17) name two controls a pack could not reach: they are
+ * hooks of their own, and not two more hosts of `ui-edge`, so a pack written before them — a copy
+ * of Doodle's first edition among them — draws both exactly as it did. `ui-segmented` is the
+ * segmented control: the host writes the class on the control and nothing else, since each option
+ * already says whether it is on (`aria-pressed`); a pack may draw the track and the chosen option
+ * its own way, and keeps every option one size, on or off, so a choice moves no label. `ui-action`
+ * is the primary action that heads a navigation list — New chat, on the pinned sidebar (`NavRow`)
+ * and on the folded rail (`RailItem`): a row like its neighbours in the base, Primer and Console,
+ * and the one hero button where a pack says so. Doodle draws Material 3's connected button group
+ * and its extended FAB.
  */
 export const HOOKS = [
   "ui-glass",
@@ -334,6 +352,8 @@ export const HOOKS = [
   "ui-run",
   "ui-avatar",
   "ui-showcase",
+  "ui-segmented",
+  "ui-action",
 ] as const;
 
 export type HookName = (typeof HOOKS)[number];

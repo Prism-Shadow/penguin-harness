@@ -94,12 +94,13 @@ import {
   type InstalledPackage,
 } from "../../plugin/install.js";
 import { indexChannelLookup, type IndexChannel } from "../../plugin/registry.js";
+import { IndexSources } from "../../plugin/index-config.js";
 import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
 import { parsePluginArchive } from "../../services/plugin-archive.js";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
-import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
+import { Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import type { Machines } from "../../machines/service.js";
-import { MachinesRepo } from "../../db/repos/machines.js";
+import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
 
 /** How a channel install reports its download as it runs: bytes received, the total when known. */
 export type InstallProgress = (received: number, total: number | null) => void;
@@ -221,7 +222,8 @@ export interface InstalledPluginsDeps {
    * Links a local package directory into the prefix (`penguin plugin link`); absent in tests
    * that stand in `packages` and do not exercise links. npm's own link: `npm install <dir>`
    * records a `file:` dependency and puts the symlink in node_modules, so the link and its
-   * record are npm's to keep in step.
+   * record are npm's to keep in step. Whether the name may replace a package the build ships
+   * is the route's call — the link itself only sees npm's rules.
    */
   link?: (dir: string, overwrite: boolean) => Promise<InstalledPackage>;
 }
@@ -363,7 +365,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
   };
 
   /** A body asking for a directory link: `linkPluginDirectory`'s overwrite, off unless asked. */
-  const linkOptions = (body: Record<string, unknown>): { dir: string; overwrite: boolean } => {
+  const linkOptions = (
+    body: Record<string, unknown>,
+  ): { dir: string; overwrite: boolean; force: boolean } => {
     const dir = typeof body.dir === "string" ? body.dir.trim() : "";
     if (dir === "" || !path.isAbsolute(dir)) {
       throw new HttpError(
@@ -372,7 +376,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         "link needs the absolute path of a local package directory.",
       );
     }
-    return { dir, overwrite: body.overwrite === true };
+    return { dir, overwrite: body.overwrite === true, force: body.force === true };
   };
 
   /** npm's failure, as the answer: what it said, never a 500. */
@@ -644,7 +648,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     requireAdmin(c);
     const projectId = scope(c);
     const body = await readJson(c);
-    const { dir, overwrite } = linkOptions(body);
+    const { dir, overwrite, force } = linkOptions(body);
     if (deps.link === undefined) {
       throw new HttpError(400, "bad_request", "linking is not available on this server.");
     }
@@ -657,12 +661,12 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       }
       throw err;
     }
-    if ((await shippedNames()).includes(linked.name)) {
+    if ((await shippedNames()).includes(linked.name) && force !== true) {
       await deps.packages.remove(deps.root, linked.name);
       throw new HttpError(
         409,
         "plugin_shipped",
-        `${linked.name} ships with this server: a package under its name would replace it for every Project.`,
+        `${linked.name} ships with this server: a package under its name would replace it for every Project. Pass force (penguin plugin link --force) to replace it anyway — the build's own copy returns when this link is removed.`,
       );
     }
     const kinds = kindsOf(linked.name);
@@ -820,6 +824,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
 export class InstalledPluginRoutes {
   @Use() private readonly config!: Config;
   @Use() private readonly hmr!: Hmr;
+  @Use() private readonly sources!: IndexSources;
   @Use() private readonly reassembly!: Reassembly;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly access!: Access;
@@ -848,11 +853,10 @@ export class InstalledPluginRoutes {
       access: this.access,
       apply: (change) => this.reassembly.reassemble(change),
       packages: this.packages,
-      // The published index's github channels, for a name npm has no answer for; looked up
-      // only then, cached at the listing's cadence (indexChannelLookup).
-      channelOf: indexChannelLookup(this.config.pluginIndexUrl ?? null, {
-        proxy: this.config.pluginProxy ?? [],
-      }),
+      // The configured index sources' github channels, for a name npm has no answer for; looked
+      // up only then, cached at the listing's cadence (indexChannelLookup). The sources are
+      // read per lookup: the plugin-index settings group's document, changed without a restart.
+      channelOf: indexChannelLookup(() => this.sources.urls()),
       // The plugin list rides the same trip the model config takes to a Project's machines.
       syncFleet: (projectId) => void this.machines.syncConfigEverywhere(projectId),
       // `penguin plugin link`: the npm prefix is this server's own disk, so a local directory
