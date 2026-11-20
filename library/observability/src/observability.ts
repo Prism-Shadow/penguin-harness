@@ -359,6 +359,16 @@ export abstract class UsageStore {
   abstract deleteByProject(projectId: string): void;
 }
 
+/**
+ * What a standalone record's usage reports beyond its `token_usage` buckets: the thinking share
+ * of the output, which a request through ProjectModelRequests has from MMSP's usage and a chat
+ * turn's `token_usage` does not carry.
+ */
+export interface UsageDetail {
+  /** Thinking tokens, a part of the record's `output`; stored for the thinking rate to price. */
+  thoughts?: number;
+}
+
 /** UsageRecording: the mechanism UsageRecorder implements. */
 @Interface()
 export abstract class UsageRecording {
@@ -366,6 +376,7 @@ export abstract class UsageRecording {
     ctx: UsageContext,
     msg: AmspRecord<AmspPayload>,
     source?: "stream" | "standalone",
+    detail?: UsageDetail,
   ): Promise<void>;
 }
 

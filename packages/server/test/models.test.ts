@@ -939,6 +939,49 @@ describe("models preset & catalog enrichment", () => {
     }
   });
 
+  it("PUT pricing.thoughts: stored beside the buckets and read back through GET; omitting it clears it; a negative one 400", async () => {
+    const buckets = { cacheRead: 0.5, cacheWrite: 1.5, output: 12 };
+    const put = await api.put(url(), {
+      models: [
+        {
+          provider: "custom",
+          modelId: "video-model",
+          clientType: "openai",
+          pricing: { ...buckets, thoughts: 9 },
+        },
+      ],
+    });
+    expect(put.status).toBe(200);
+    expect(pick((await put.json()) as ModelsResponse, "custom", "video-model").pricing).toEqual({
+      ...buckets,
+      thoughts: 9,
+    });
+    const again = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(again, "custom", "video-model").pricing).toEqual({ ...buckets, thoughts: 9 });
+    expect(await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8")).toContain(
+      "thoughts = 9",
+    );
+
+    // A full-table PUT with the buckets alone prices thinking as output again.
+    const cleared = await api.put(url(), {
+      models: [{ provider: "custom", modelId: "video-model", clientType: "openai", pricing: buckets }],
+    });
+    expect(cleared.status).toBe(200);
+    expect(pick((await cleared.json()) as ModelsResponse, "custom", "video-model").pricing).toEqual(
+      buckets,
+    );
+
+    const bad = await api.put(url(), {
+      models: [
+        { provider: "custom", modelId: "video-model", pricing: { ...buckets, thoughts: -1 } },
+      ],
+    });
+    expect(bad.status).toBe(400);
+    expect(((await bad.json()) as { error: { message: string } }).error.message).toContain(
+      "models[0].pricing.thoughts",
+    );
+  });
+
   it("the same model_id can coexist under different providers (paired keys, neither overwrites the other)", async () => {
     // The gateway's copy was added by hand, before gateways stopped taking such rows.
     await storeRows(t.root, projectId, [

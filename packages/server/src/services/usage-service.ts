@@ -70,6 +70,8 @@ export interface PricingRates {
   cacheRead: number;
   cacheWrite: number;
   output: number;
+  /** The thinking rate of a model that bills thinking apart; absent, thinking is output at `output`. */
+  thoughts?: number;
 }
 
 /**
@@ -100,15 +102,37 @@ export type PricingLookup = (
  * reader could have seen.
  */
 
-/** The "model price" formula: the three buckets at the given rates (USD per million Tokens), in USD. */
-export function requestCostUsd(
-  counts: { cacheRead: number; cacheWrite: number; output: number },
-  rates: PricingRates,
-): number {
+/**
+ * Token counts as the price formula takes them: the three buckets, and how many of the output
+ * Tokens were thinking when the usage reported that apart (a request through
+ * ProjectModelRequests; a chat turn's usage does not, and leaves it out).
+ */
+export interface PricedCounts {
+  cacheRead: number;
+  cacheWrite: number;
+  output: number;
+  /** The thinking share of `output`; absent or 0 when not reported apart. */
+  thoughts?: number;
+}
+
+/**
+ * What the output bucket costs: thinking at the thinking rate where the model has one and the
+ * usage reported thinking apart, every other output Token at the output rate.
+ */
+function outputCostMicros(counts: PricedCounts, rates: PricingRates): number {
+  const thoughts = rates.thoughts === undefined ? 0 : Math.min(counts.thoughts ?? 0, counts.output);
+  return (counts.output - thoughts) * rates.output + thoughts * (rates.thoughts ?? 0);
+}
+
+/**
+ * The "model price" formula: the three buckets at the given rates (USD per million Tokens), in
+ * USD, the output bucket's thinking at the thinking rate where one applies.
+ */
+export function requestCostUsd(counts: PricedCounts, rates: PricingRates): number {
   return (
     (counts.cacheRead * rates.cacheRead +
       counts.cacheWrite * rates.cacheWrite +
-      counts.output * rates.output) /
+      outputCostMicros(counts, rates)) /
     1e6
   );
 }
@@ -120,14 +144,11 @@ export const ZERO_COST_PARTS: CostParts = { cacheRead: 0, cacheWrite: 0, output:
  * {@link requestCostUsd} kept bucket by bucket: each bucket's Tokens at its own rate, in USD.
  * Given the rates a cost was priced at, the parts add up to that cost.
  */
-export function requestCostParts(
-  counts: { cacheRead: number; cacheWrite: number; output: number },
-  rates: PricingRates,
-): CostParts {
+export function requestCostParts(counts: PricedCounts, rates: PricingRates): CostParts {
   return {
     cacheRead: (counts.cacheRead * rates.cacheRead) / 1e6,
     cacheWrite: (counts.cacheWrite * rates.cacheWrite) / 1e6,
-    output: (counts.output * rates.output) / 1e6,
+    output: outputCostMicros(counts, rates) / 1e6,
   };
 }
 

@@ -1378,6 +1378,27 @@ describe("project-config round trip", () => {
     });
   });
 
+  it("a thinking rate survives an upsert that changes another bucket", async () => {
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "video",
+      pricing: { cache_read: 1.5, cache_write: 1.5, output: 12, thoughts: 9 },
+    });
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "video",
+      pricing: { output: 10 },
+    });
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(getModel(loaded, { provider: "custom", model_id: "video" })?.pricing).toEqual({
+      unit: "usd_per_mtok",
+      cache_read: 1.5,
+      cache_write: 1.5,
+      output: 10,
+      thoughts: 9,
+    });
+  });
+
   it("setDefaultModel updates and persists a pair reference", async () => {
     await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
       provider: "custom",

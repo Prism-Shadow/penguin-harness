@@ -5,7 +5,7 @@
  *   characters from paste/IME input are stripped and never reach the form);
  * - DTO -> row edit state (toRow): provider and modelId are both plain entry
  *   fields with no prefix parsing; the loaded identity (original) is a paired
- *   reference;
+ *   reference; a stored thinking rate goes back with the prices (rowToEntry);
  * - Ownership of the default/vision-agent model pointers after save
  *   (nextPointers): always compared as pairs; renaming (either provider or
  *   model_id changes) moves the pointer along.
@@ -52,6 +52,7 @@ import {
   keyStatusText,
   nextPointers,
   rowRef,
+  rowToEntry,
   toRow,
   type RowState,
 } from "../src/features/models/models-page";
@@ -341,6 +342,16 @@ describe("toRow (DTO → row edit state)", () => {
     expect(fast.fastMode).toBe(true);
     const plain = toRow(dto({ provider: "custom", modelId: "local-qwen" }));
     expect(plain.fastMode).toBe(false);
+  });
+
+  it("a saved thinking rate goes back with the prices, so a save that replaces the table keeps it", () => {
+    const priced = { cacheRead: 0.5, cacheWrite: 2, output: 8 };
+    const thinking = rowToEntry(
+      toRow(dto({ provider: "custom", modelId: "video", pricing: { ...priced, thoughts: 6 } })),
+    );
+    expect(thinking.pricing).toEqual({ ...priced, thoughts: 6 });
+    const plain = rowToEntry(toRow(dto({ provider: "custom", modelId: "chat", pricing: priced })));
+    expect(plain.pricing).toEqual(priced);
   });
 });
 

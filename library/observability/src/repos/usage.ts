@@ -28,6 +28,8 @@ export interface UsageRecordInsert {
   status?: string;
   /** What a request outside a chat turn was for (`<package>:<operation>`); absent for a chat turn's. */
   purpose?: string;
+  /** The thinking share of `output`, where the usage reported it apart; absent when it did not. */
+  thoughts?: number;
 }
 
 /** Generic filter: date range + agent / model dimensions (cost center top bar switches by agent/model). */
@@ -52,6 +54,11 @@ export interface UsageModelSums {
   cacheRead: number;
   cacheWrite: number;
   output: number;
+  /**
+   * The thinking share of `output` over the rows that reported it apart (0 where none did): what
+   * a model's thinking rate prices.
+   */
+  thoughts: number;
   total: number;
   requests: number;
   /**
@@ -170,6 +177,7 @@ function peakExpr(tiers: readonly PeakTier[]): { sql: string; params: Record<str
 const SUM_COLUMNS = `COALESCE(SUM(cache_read), 0) AS cache_read,
                 COALESCE(SUM(cache_write), 0) AS cache_write,
                 COALESCE(SUM(output), 0) AS output,
+                COALESCE(SUM(thoughts), 0) AS thoughts,
                 COALESCE(SUM(total), 0) AS total,
                 COUNT(*) AS requests`;
 
@@ -181,6 +189,7 @@ function toSums(r: Record<string, unknown>): UsageModelSums {
     cacheRead: r.cache_read as number,
     cacheWrite: r.cache_write as number,
     output: r.output as number,
+    thoughts: r.thoughts as number,
     total: r.total as number,
     requests: r.requests as number,
   };
@@ -195,8 +204,8 @@ export class UsageRepo implements UsageStore {
       .prepare(
         `INSERT INTO usage_records
            (ts, date, project_id, agent_id, session_id, origin_session_id, provider, model_id,
-            cache_read, cache_write, output, total, status, purpose)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            cache_read, cache_write, output, total, status, purpose, thoughts)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         r.ts,
@@ -213,6 +222,7 @@ export class UsageRepo implements UsageStore {
         r.total,
         r.status ?? "completed",
         r.purpose ?? null,
+        r.thoughts ?? null,
       );
   }
 

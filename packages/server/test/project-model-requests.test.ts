@@ -5,7 +5,10 @@
  *
  * - Given a Session's tool request, the model sees the row's key and PenguinHarness's User-Agent,
  *   the events come back, and one usage row lands on that Session and its Agent with the
- *   request's purpose and buckets — so it is priced into the Session's cost.
+ *   request's purpose, buckets and thinking tokens — so it is priced into the Session's cost,
+ *   its thinking at the output rate on a model with no thinking rate.
+ * - Given a model that bills thinking at its own rate, the thinking tokens the request reported
+ *   are priced at that rate and the rest of its output at the output rate.
  * - Given a request with no Session, its row carries the Project only.
  * - Given a response MMSP rejects after it was paid for, the reader gets the error and the row
  *   still carries the reported usage.
@@ -23,12 +26,13 @@ import type { UniEvent } from "@prismshadow/mmsp";
 import { PluginHost } from "../src/plugin/host.js";
 import type { ProjectModelRequests } from "../src/services/project-model-requests.js";
 import type { AppEnv } from "../src/auth/middleware.js";
-import type { SessionCreateResponse } from "../src/api/types.js";
+import type { SessionCreateResponse, UsageResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin, type TestApp } from "./helpers.js";
 import { startMmspServer, textReply, type MmspServer } from "./fixtures/mmsp-server.js";
 
 const PROJECT = "default_project";
 const MODEL = { provider: "custom", modelId: "tool-model" };
+const THINKING_MODEL = { provider: "custom", modelId: "thinking-model" };
 const USAGE = { cached_tokens: 10, prompt_tokens: 200, thoughts_tokens: 30, response_tokens: 40 };
 
 /** A plugin whose one route runs a request through ProjectModelRequests and answers its text. */
@@ -101,6 +105,7 @@ interface UsageRow {
   cache_read: number;
   cache_write: number;
   output: number;
+  thoughts: number | null;
   status: string;
 }
 
@@ -112,7 +117,7 @@ describe("requests to a Project model outside a chat turn", () => {
   const rows = (): UsageRow[] =>
     t.deps.db
       .prepare(
-        "SELECT session_id, agent_id, purpose, cache_read, cache_write, output, status FROM usage_records WHERE purpose IS NOT NULL ORDER BY id",
+        "SELECT session_id, agent_id, purpose, cache_read, cache_write, output, thoughts, status FROM usage_records WHERE purpose IS NOT NULL ORDER BY id",
       )
       .all() as unknown as UsageRow[];
   const lastRow = (): UsageRow | undefined => rows().at(-1);
@@ -147,6 +152,7 @@ describe("requests to a Project model outside a chat turn", () => {
       providers: { custom: { clientType: "mmsp", baseUrl: mmsp.baseUrl, apiKey: "sk-tool-key" } },
       models: [
         { ...MODEL, pricing: { cacheRead: 1, cacheWrite: 2, output: 4 } },
+        { ...THINKING_MODEL, pricing: { cacheRead: 1, cacheWrite: 2, output: 4, thoughts: 3 } },
         { provider: "custom", modelId: "chat-model" },
       ],
       defaultModel: { provider: "custom", modelId: "chat-model" },
@@ -177,6 +183,7 @@ describe("requests to a Project model outside a chat turn", () => {
         cache_read: 10,
         cache_write: 200,
         output: 70,
+        thoughts: 30,
         status: "completed",
       },
     ]);
@@ -188,6 +195,24 @@ describe("requests to a Project model outside a chat turn", () => {
     );
     // (10 × 1 + 200 × 2 + 70 × 4) / 1e6
     expect(cost.bySession.get(sessionId)).toBeCloseTo(690 / 1e6, 12);
+  });
+
+  it("a model that bills thinking apart prices the reported thinking at its own rate", async () => {
+    const { sessionId: other } = (
+      (await (
+        await api.post(`/api/projects/${PROJECT}/agents/default_agent/sessions`, {})
+      ).json()) as SessionCreateResponse
+    ).session;
+    expect(await run({ sessionId: other, model: THINKING_MODEL, text: "think" })).toEqual({
+      text: "echo: think",
+    });
+    expect(lastRow()).toMatchObject({ session_id: other, output: 70, thoughts: 30 });
+    const usage = (await (
+      await api.get(`/api/projects/${PROJECT}/usage?groupBy=session`)
+    ).json()) as UsageResponse;
+    // (10 × 1 + 200 × 2 + 40 × 4 + 30 × 3) / 1e6: the 40 response tokens at the output rate, the
+    // 30 thinking tokens at the thinking rate.
+    expect(usage.groups.find((g) => g.key === other)?.cost).toBeCloseTo(660 / 1e6, 12);
   });
 
   it("a request with no Session is recorded on the Project alone", async () => {

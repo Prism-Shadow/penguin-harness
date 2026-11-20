@@ -57,8 +57,8 @@ export function formatModelRef(ref: ModelRef): string {
 }
 
 /**
- * Pricing for a single Model: three price buckets, in USD per million tokens.
- * Docs: /docs/configuration § "Project config".
+ * Pricing for a single Model: three price buckets, in USD per million tokens, and an optional
+ * thinking rate. Docs: /docs/configuration § "Project config".
  */
 export interface ModelPricing {
   /** Pricing unit tag; currently only `usd_per_mtok` (USD per million tokens). */
@@ -66,6 +66,13 @@ export interface ModelPricing {
   cache_read: number;
   cache_write: number;
   output: number;
+  /**
+   * The rate of thinking tokens, for a model that bills them apart from its other output.
+   * Absent: thinking is output, at `output`. Only usage that reports its thinking tokens apart
+   * is priced with it (the server's `usage_records.thoughts`); the rest prices all output at
+   * `output`.
+   */
+  thoughts?: number;
 }
 
 /**
@@ -1046,7 +1053,8 @@ export async function addModel(
   }
   // The three price buckets are merged field by field: an unspecified bucket keeps its existing
   // value (the same policy as context_window/credential); the unit is fixed to usd_per_mtok, and
-  // the complete pricing is written as long as any bucket is present.
+  // the complete pricing is written as long as any bucket is present. The thinking rate rides
+  // along the same way, and is written only when one is set.
   const mergedPricing: Partial<ModelPricing> = {
     ...existing?.pricing,
     ...entry.pricing,
@@ -1061,6 +1069,7 @@ export async function addModel(
       cache_read: mergedPricing.cache_read ?? 0,
       cache_write: mergedPricing.cache_write ?? 0,
       output: mergedPricing.output ?? 0,
+      ...(mergedPricing.thoughts !== undefined ? { thoughts: mergedPricing.thoughts } : {}),
     };
   }
   // Inline credential entry: fields not provided keep their existing value, cleared ones go.

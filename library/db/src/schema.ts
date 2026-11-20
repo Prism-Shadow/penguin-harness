@@ -111,7 +111,8 @@ CREATE TABLE IF NOT EXISTS usage_records (
   output            INTEGER NOT NULL,
   total             INTEGER NOT NULL,         -- from token_usage.request (one row per Request)
   status            TEXT NOT NULL DEFAULT 'completed', -- request outcome: completed=success (with tokens); others=failure (0 tokens, for success rate)
-  purpose           TEXT                      -- what a request outside a chat turn was for ('<package>:<operation>', ProjectModelRequests); NULL = a chat turn's (and the Session title's)
+  purpose           TEXT,                     -- what a request outside a chat turn was for ('<package>:<operation>', ProjectModelRequests); NULL = a chat turn's (and the Session title's)
+  thoughts          INTEGER                   -- the thinking share of `output`, where the usage reported it apart (ProjectModelRequests); NULL = not reported, all output priced at the output rate
 );                                            -- cost is not stored: computed at query time from current pricing
 CREATE INDEX IF NOT EXISTS idx_usage_project_date ON usage_records(project_id, date);
 CREATE INDEX IF NOT EXISTS idx_usage_session_ts ON usage_records(session_id, ts);  -- (session_id) alone was idx_usage_session (dropped on open): ts makes the last_active_at backfill's MAX(ts) a covering index scan instead of a random row lookup per usage record
