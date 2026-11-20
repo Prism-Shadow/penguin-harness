@@ -506,7 +506,7 @@ export const en: GalleryStrings = {
       dialogs: {
         title: "Dialogs",
         description:
-          "Modal, confirmation, paged dialog, drawer, bottom sheet, lightbox and command palette.",
+          "Modal, confirmation, paged dialog, drawer, bottom sheet, lightbox, command palette, and the surface that unfolds from its trigger.",
       },
       tooltips: {
         title: "Tooltips",
@@ -544,7 +544,7 @@ export const en: GalleryStrings = {
       avatars: {
         title: "Avatars",
         description:
-          "The user avatar at its sizes; the agent avatar in every theme's drawing across its colours; a stack of them.",
+          "The user avatar at its sizes; the agent avatar in every theme's drawing across its colours; a stack of them; the app icon shape.",
       },
       site: {
         title: "Public site",
@@ -919,6 +919,12 @@ export const en: GalleryStrings = {
       palettePlaceholder: "Type to filter commands…",
       paletteEmpty: "No matching commands",
       paletteHint: "↑↓ to select · Enter to run · Esc to close",
+      unfold: "Unfolding surface",
+      unfoldAside:
+        "Grows in place out of the icon that opens it, with no backdrop; the back arrow, Esc or a press outside folds it back into that icon. Inside a scroll area it stays within the visible part",
+      unfoldBack: "Back",
+      unfoldFolders: ["Work", "Study", "Play"],
+      unfoldItem: (n: number) => `App ${n}`,
     },
     tooltips: {
       attribute: "The data-tooltip attribute",
@@ -1284,6 +1290,11 @@ export const en: GalleryStrings = {
       pictureBroken: "Fails to load",
       stack: "Avatar stack",
       stackShown: (shown, total) => `${shown} of ${total} shown`,
+      appIcon: "App icon shape",
+      appIconAside:
+        "One rounded square for every app and folder; its corner scales with the icon, so a small icon is the same shape as a large one. Switch the theme to see each theme's corner",
+      appIconLetter: "Letter tile",
+      appIconFolder: "Folder",
       userNames: ["admin", "Demo admin"],
       agents: [
         { id: "docs-expert", name: "Docs Expert" },
