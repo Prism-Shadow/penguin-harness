@@ -24,7 +24,7 @@
  * start page, the model library, a ledger of figures, an empty state, the run indicator;
  * 2026-11-05), the twenty-fourth, `ui-avatar` (an Agent's default avatar, the mascot drawn in
  * every theme's style; 2026-11-04), the twenty-fifth, `ui-showcase` (the plugin market's
- * covers, cover cards, selected carousel, product hero and ranking, which a pack may draw its own
+ * covers, cover cards, selected carousel and product hero, which a pack may draw its own
  * boxes on; 2026-11-17), and the twenty-sixth and twenty-seventh, `ui-segmented` (the segmented
  * control) and `ui-action` (the primary action that heads a navigation list), which let a pack
  * draw Material 3's button group and FAB (2026-11-17). This suite holds the source to it:
@@ -55,7 +55,7 @@
  *   the foundation's layout motion turns into a track, is one of the three it knows (`open`,
  *   `closing`, `settled`) wherever a `data-fold` is written; the run indicator's state is
  *   `running` and an empty state's form `page` or `slot`; a showcase host names its root part
- *   (`card`, `cover`, `carousel`, `product-hero`, `ranking`), and the family's other parts are the ones its
+ *   (`card`, `cover`, `carousel`, `product-hero`), and the family's other parts are the ones its
  *   anatomy lists, wherever a `data-part` is written.
  */
 import { existsSync } from "node:fs";
@@ -233,9 +233,9 @@ const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
   "ui-run": ["RunStatus"],
   // An Agent's default avatar in every theme's style (2026-11-04): the one avatar component.
   "ui-avatar": ["AgentAvatar"],
-  // The plugin market's showcase (2026-11-17): a cover, a cover card, the selected carousel, a
-  // product page's hero and the ranking beside the grid, in the Web App and on the public sites.
-  "ui-showcase": ["Cover", "CoverCard", "ShowcaseCarousel", "ProductHero", "ShowcaseRanking"],
+  // The plugin market's showcase (2026-11-17): a cover, a cover card, the selected carousel and a
+  // product page's hero, in the Web App and on the public sites.
+  "ui-showcase": ["Cover", "CoverCard", "ShowcaseCarousel", "ProductHero"],
   // The segmented control, and the primary action that heads a navigation list, on the pinned
   // sidebar and on the folded rail (2026-11-17).
   "ui-segmented": ["Segmented"],
@@ -268,10 +268,10 @@ const CHART_PARTS = new Set(["grid", "axis", "series", "area", "bar", "point", "
 /** A glyph's one part (the duotone body under its line drawing), and its three sets. */
 const GLYPH_PARTS = new Set(["duo"]);
 /** The parts a showcase host's root names itself by. */
-const SHOWCASE_ROOTS = new Set(["card", "cover", "carousel", "product-hero", "ranking"]);
+const SHOWCASE_ROOTS = new Set(["card", "cover", "carousel", "product-hero"]);
 /**
- * The showcase family's anatomy: the hosts' roots, a generated cover's drawing and its tile, the
- * product page's parts beside the hero, and the ranking's place beside the grid.
+ * The showcase family's anatomy: the hosts' roots, a generated cover's drawing and its tile, and
+ * the product page's parts beside the hero.
  */
 const SHOWCASE_PARTS = new Set([
   ...SHOWCASE_ROOTS,
@@ -283,7 +283,6 @@ const SHOWCASE_PARTS = new Set([
   "prompt",
   "columns",
   "facts",
-  "split",
 ]);
 /**
  * The sets a drawing made in every style at once is drawn in: a glyph's three, the spinner's
@@ -534,7 +533,7 @@ describe("style hooks", () => {
         // A showcase host's root says which of the family it is, as a literal.
         if (names.has("ui-showcase") && (typeof part !== "string" || !SHOWCASE_ROOTS.has(part))) {
           problems.push(
-            `${at} .ui-showcase needs data-part="card|cover|carousel|product-hero|ranking", has ${String(part)}`,
+            `${at} .ui-showcase needs data-part="card|cover|carousel|product-hero", has ${String(part)}`,
           );
         }
         const set = element.attributes.get("data-set");
