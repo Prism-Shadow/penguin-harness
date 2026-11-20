@@ -268,7 +268,7 @@ test("the market writes a machine's server modules into this server's Project ta
   // Install: a package only the machine's index offers is listed for it, here.
   const tool = page.locator('[data-plugin="office-tool"]');
   await expect(tool).toContainText("Office");
-  await tool.locator(".market-plugin-actions button").first().click();
+  await tool.locator(".showcase-card-bar button").first().click();
   await page.getByRole("dialog").getByRole("button", { name: "Install", exact: true }).click();
   await expect.poll(() => listedFor("@example/office-tool")).toEqual([office]);
   expect(writes()).toEqual(["DELETE " + tables, "POST " + tables]);

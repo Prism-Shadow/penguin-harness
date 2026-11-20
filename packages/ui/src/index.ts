@@ -105,7 +105,9 @@ export * from "./components/overlays/report-dialog/report-dialog";
 // errors offer one, where reports open from, and the crash notice.
 export * from "./components/report/redact";
 export * from "./components/report/error-report";
-export * from "./components/report/seriousness";
+export * from "./components/report/reportable";
+export * from "./components/report/failure";
+export * from "./components/report/failure-text";
 export * from "./components/report/report-store";
 export * from "./components/report/report-host";
 export * from "./components/report/report-action";
@@ -361,14 +363,12 @@ export * from "./components/data/fact-row/fact-row";
 export * from "./components/navigation/sub-page-bar/sub-page-bar";
 
 // The showcase family, shared with the public sites (site.ts): the cover, the cover card and its
-// grid, the selected carousel and its turn-taking, a product page's parts, and the ranking beside
-// the grid.
+// grid, the selected carousel and its turn-taking, and a product page's parts.
 export * from "./components/showcase/cover";
 export * from "./components/showcase/cover-card";
 export * from "./components/showcase/carousel-rotation";
 export * from "./components/showcase/showcase-carousel";
 export * from "./components/showcase/product-page";
-export * from "./components/showcase/showcase-ranking";
 
 // Dates and times: the date, time, date-and-time and date-range fields, pickers after iOS's that
 // write the native inputs' formats (`YYYY-MM-DD`, `HH:mm`, `YYYY-MM-DDTHH:mm`).

@@ -13,6 +13,9 @@ export default defineConfig({
     "src/plugin/index.ts",
     // Display metadata shared by the server library and the browser marketplace.
     "src/plugin/category-manifest.ts",
+    // The published plugin index's readers: pure functions with no Node dependency, so the
+    // website's build reads the index by the server's rules without loading the SDK.
+    "src/plugin/index-document.ts",
     // A row's effective connection and credential rule: no Node dependency and no catalog
     // data, so the Web App bundles the same answers the server and the CLI compute.
     "src/state/model-connection.ts",

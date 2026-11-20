@@ -146,7 +146,14 @@ export type DesktopBrowserCommand =
   /** Chrome only. Reply: `{}`. Shows the tab in the user's Chrome (selects it, focuses its window). */
   | { op: "activate-tab"; tabId: number }
   /** Chrome only. Reply: `{}`. Sent every 20 s; the traffic keeps the MV3 service worker alive. */
-  | { op: "ping" };
+  | { op: "ping" }
+  /**
+   * Chrome only, for the built-in browser's import. Reply: `{ cookies: ChromeExtensionCookie[] }`,
+   * the cookies of the Chrome profile the extension runs in, read only after the user allows it
+   * on the extension's consent page. Refused `import_declined` when they do not: Deny, the page
+   * closed, or no answer within two minutes.
+   */
+  | { op: "read-cookies" };
 
 export interface DesktopBrowserCommandMessage {
   type: "desktop-browser-command";
@@ -174,6 +181,25 @@ export interface DesktopBrowserCookie {
   /** Unix seconds; absent = session cookie. */
   expirationDate?: number;
   sameSite?: "unspecified" | "no_restriction" | "lax" | "strict";
+}
+
+/**
+ * A cookie as the extension reads it from Chrome (`chrome.cookies.Cookie`, the fields an import
+ * uses). `domain` is as Chrome gives it and `hostOnly` is false for a domain cookie;
+ * `expirationDate` is Unix seconds, absent for a session cookie; `partitioned` marks a cookie
+ * kept for one top-level site.
+ */
+export interface ChromeExtensionCookie {
+  domain: string;
+  hostOnly: boolean;
+  name: string;
+  value: string;
+  path: string;
+  secure: boolean;
+  httpOnly: boolean;
+  sameSite: "unspecified" | "no_restriction" | "lax" | "strict";
+  expirationDate?: number;
+  partitioned?: boolean;
 }
 
 /**

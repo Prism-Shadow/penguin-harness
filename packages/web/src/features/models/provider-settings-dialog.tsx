@@ -46,7 +46,6 @@ import {
   Link,
   Modal,
   PasswordInput,
-  toastError,
   toastInfo,
   toastSuccess,
   useFormDraft,
@@ -76,6 +75,7 @@ import {
 
 import type { RowState } from "./models-page";
 import { toastApiError } from "../../lib/toast-api-error";
+import { toastDetectFailed, type DetectMiss } from "./detect-failure";
 
 /** A group's row as this dialog reads it: what it stores of its own. */
 type GroupRow = Pick<RowState, "clientType" | "originalBaseUrl">;
@@ -381,10 +381,10 @@ export function ProviderSettingsDialog({
 
   /** One probe of the draft's endpoint, shown in the dialog; resolves to what it found, or null. */
   const detect = async (mode: "manual" | "save"): Promise<ProbeFound | null> => {
-    const failed = () => {
+    const failed = (miss: DetectMiss) => {
       setDetectFailed(true);
       if (mode === "save") toastInfo(S.models.detectFellBack);
-      else toastError(S.models.detectFailedBody);
+      else toastDetectFailed(miss);
     };
     const seq = ++detectSeq.current;
     setDetecting(true);
@@ -393,13 +393,13 @@ export function ProviderSettingsDialog({
       const found = await probeGroupProtocol(projectId, id, group, draft);
       if (seq !== detectSeq.current) return null;
       if (found === null) {
-        failed();
+        failed("none");
         return null;
       }
       set(found);
       return found;
-    } catch {
-      if (seq === detectSeq.current) failed();
+    } catch (error) {
+      if (seq === detectSeq.current) failed({ error });
       return null;
     } finally {
       if (seq === detectSeq.current) setDetecting(false);

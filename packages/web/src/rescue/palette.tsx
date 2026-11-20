@@ -15,9 +15,9 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import type { HostCommand, HostCommandOffer } from "@prismshadow/penguin-server/api";
-import { CommandPalette, toastError, toastInfo, type PaletteAction } from "@prismshadow/penguin-ui";
+import { CommandPalette, toastInfo, type PaletteAction } from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
-import { apiErrorText } from "../lib/api-error";
+import { toastApiError } from "../lib/toast-api-error";
 import { setSafeMode, useSafeMode } from "./safe-mode";
 import { useAddedPaletteActions } from "../lib/palette-actions";
 import { offersNewWindow } from "../lib/desktop-window";
@@ -161,7 +161,7 @@ export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteActio
               label: S.commandPalette.newWindow,
               keywords: ["new window", "open window", "second window"],
               run: () => {
-                void api.openDesktopWindow().catch((err: unknown) => toastError(apiErrorText(err)));
+                void api.openDesktopWindow().catch((err: unknown) => toastApiError(err));
               },
             },
           ]
@@ -189,7 +189,7 @@ export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteActio
               .then(() => {
                 if (action.after) toastInfo(action.after());
               })
-              .catch((err) => toastError(apiErrorText(err)));
+              .catch((err) => toastApiError(err));
           },
         };
       }),

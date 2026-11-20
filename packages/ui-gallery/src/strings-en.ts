@@ -421,10 +421,10 @@ export const en: GalleryStrings = {
         "an icon each theme draws its own way: line (Primer), duotone line (Frost) or pixel art (Console)",
       "ui-avatar":
         "an agent's default avatar each theme draws its own way: one small egg-shaped penguin drawn in a thin brown line, on a rounded square (Primer), a circle (Frost), a cookie (Doodle) or in pixel art (Console)",
+      "ui-showcase":
+        "a cover-led showcase: a cover card, the selected carousel, a product page's hero",
       "ui-segmented": "a segmented control: one choice among a few options side by side",
       "ui-action": "the primary action that heads a navigation list: New chat",
-      "ui-showcase":
-        "a cover-led showcase: a cover card, the selected carousel, a ranking, a product page's hero",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],
@@ -586,7 +586,7 @@ export const en: GalleryStrings = {
       report: {
         title: "Report a problem",
         description:
-          "The Report entry of a serious error: the notice a crashed part of the page shows, an error toast and a could-not-load notice with the entry, and the report dialog.",
+          "The Report entry every failure offers: the notice a crashed part of the page shows, an error toast, an inline failure and a could-not-load notice with the entry, and the report dialog.",
       },
       attachments: {
         title: "Attachments",
@@ -596,7 +596,7 @@ export const en: GalleryStrings = {
       showcase: {
         title: "Showcase",
         description:
-          "The plugin market's shared modules: the generated cover in every hue and motif, a picture loading, loaded and failing, cover cards, the selected carousel, the ranking beside the grid and a product page's parts.",
+          "The plugin market's shared modules: the generated cover in every hue and motif, a picture loading, loaded and failing, cover cards, the selected carousel and a product page's parts.",
       },
       packs: {
         title: "Theme packs",
@@ -1166,12 +1166,14 @@ export const en: GalleryStrings = {
       legendHitRate: "Cache hit rate",
       legendParts: ["System prompt", "Tool definitions", "Messages", "Tool results"],
       trend: "Cost trend",
-      trendHint: "Fourteen days of cost as a line; hover a day.",
+      trendHint:
+        "Fourteen days of cost as a line; hover a day, or press Tab and step through the days with the arrow keys.",
       tokens: "Token usage",
       tokensHint:
-        "Daily tokens stacked by kind, with the cache-hit-rate curve over them; hover a legend entry to highlight one.",
+        "Daily tokens stacked by kind, with the cache-hit-rate curve over them; the curve breaks on the day with no cache traffic. Hover a legend entry to highlight one.",
       requests: "Requests and success rate",
-      requestsHint: "Daily requests stacked by agent, each with its success-rate line.",
+      requestsHint:
+        "Daily requests stacked by agent, each with its success-rate line. The second agent's line breaks on the days it was idle, and its one day between them is a point.",
       agents: ["docs-expert", "release-notes"],
       activity: "Activity sparkline",
       activityHint:
@@ -2235,14 +2237,23 @@ export const en: GalleryStrings = {
         'A part of the page that crashed while rendering leaves no blank: one line in the shape of "[Aborted]", with Reload and Report. The report holds the error, its stack and the component stack, personal paths taken out.',
       toast: "Error toast",
       toastHint:
-        "Only a serious error (a 500 the server did not name, an exception nobody expected) offers Report on its toast, which then stays longer; an expected error (validation, permission, offline) looks as it always did.",
-      fireSerious: "Serious error",
-      fireExpected: "Expected error",
+        "A failure's toast carries Report and stays longer; a refusal (a failed check, a name taken, no permission) reads as before, without it.",
+      fireSerious: "A failure",
+      fireExpected: "A refusal",
       seriousText: "Internal server error",
       expectedText: "You do not have access to this Project",
       loadFailed: "Could not load",
       loadFailedHint:
-        "The could-not-load notice adds Report beside Retry when the failure is a serious error.",
+        "A could-not-load notice carries Report beside Retry; one that was refused does not.",
+      inline: "Inline failures",
+      inlineHint:
+        "An inline failure in a form or a panel carries Report after its words; an input error does not.",
+      inlineLine: "The machine gpu-box did not answer",
+      inlineNotice: "Could not read the earlier Traces: internal server error",
+      inlineName: "Name",
+      inlineSaveFailed: "Could not save: internal server error",
+      inlineRefused: "That name is already taken",
+      inlineTold: "Failed at the “Connect” step",
       loadTitle: "Could not load the message history",
       retry: "Retry",
       dialog: "Report dialog",
@@ -2297,7 +2308,7 @@ export const en: GalleryStrings = {
       listView: "List",
       cards: "Cover cards",
       cardsHint:
-        "Short words, overlong words with the machine it came from, a card with tags, facts and two controls, one with none of them, and the placeholder while a list is read.",
+        "Short words, overlong words with the machine it came from, a card with tags, facts and two controls, one with none of them, the Web App market's card with its version chip and a bar of two text actions (the second one disabled, its reason on hover), and the placeholder while a list is read.",
       shortTitle: "Goal Mode",
       shortDescription: "Loop the session on an objective until it is done.",
       longTitle:
@@ -2309,6 +2320,11 @@ export const en: GalleryStrings = {
       fullDescription: "Product questions, sourced answers and a support workbench.",
       plainTitle: "Data Analysis",
       plainDescription: "Read a table, clean it, chart it and write up what it shows.",
+      barTitle: "Bento Slides",
+      barDescription: "From one sentence to a deck ready to present.",
+      barInstall: "Install",
+      barInstallNote: "On 2 agents",
+      barQuickHint: "Install it on this agent first",
       tagSelected: "Selected",
       tagCategory: "Office Productivity",
       tagBuiltin: "built in",
@@ -2320,6 +2336,8 @@ export const en: GalleryStrings = {
       carouselHint:
         "Three slides. It turns every 7 seconds and holds while the pointer is over it; keyboard focus or a picked thumbnail stops it until Play. Under the system's reduced-motion setting it never turns by itself, and the button reads Play.",
       carouselLabel: "Selected plugins",
+      carouselControlsCaption:
+        "Controls alone (the public site's featured plugin): the slide on show and its place in the count, no thumbnail rail, so no other cover loads until its slide comes up",
       eyebrow: "Selected",
       carouselLabels: {
         previous: "Previous",
@@ -2383,29 +2401,6 @@ export const en: GalleryStrings = {
         license: "License",
         package: "Package",
       },
-      ranking: "Ranking",
-      rankingHint:
-        "The ranking beside the grid: a right column where there is room, under the grid where there is not. Two boards to switch between; the top three ranks sit on a tinted chip, and a figure says itself in full on hover. Every row opens its plugin.",
-      rankingTitle: "Plugin rankings",
-      rankingNote: "Sample data",
-      rankingNoteHint: "These figures are sample data until real install counts are connected.",
-      rankingNoteCaption:
-        "While the figures are placeholders: a muted note at the heading's end, its reason on hover",
-      popular: "Popular",
-      rising: "Rising",
-      installCount: (n: string) => `${n} installs`,
-      weeklyCount: (n: string) => `${n} new installs this week`,
-      rankingNames: [
-        "Browser Automation",
-        "A2UI Interactive Answers",
-        "Humanizer",
-        "Firecrawl Search",
-        "Bento Slides",
-        "Agent Company",
-        "Goal Mode",
-        "PenguinHarness Q&A Assistant",
-        "Data Analysis",
-      ] as readonly string[],
     },
   },
 };
