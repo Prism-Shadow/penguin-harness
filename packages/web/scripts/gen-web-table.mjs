@@ -9,11 +9,12 @@
  * A plugin's web half is a dependency of this package whose package.json exports `./web`: an
  * entry under its `src/web/`, TypeScript source this package's Vite compiles with the app, whose
  * default export is `{ modules: [<@Module class>, …], api?: <its endpoint wrappers> }`. Beside its
- * package.json it keeps `tsconfig.web.json` (DOM and JSX, its `src/web/` only), which is handed to
- * the interface generator as one more `--project`: the plugin's web modules land in the app's own
- * table, read from the plugin's own directory in the workspace — a copy pnpm installed under
- * node_modules is not scanned — so the boot check judges them with the app's. web-root.ts boots
- * each listed module beside the app's own.
+ * package.json it keeps `tsconfig.web.json` (DOM and JSX, its `src/web/` only). The plugin's web
+ * modules land in the app's own table, so the boot check judges them with the app's: a workspace
+ * plugin's are read with the app's program, which the generated list leads to them, from the
+ * plugin's own directory; a plugin installed under node_modules, which that program never reads, is
+ * read through its `tsconfig.web.json`, handed to the interface generator as one more `--project`.
+ * web-root.ts boots each listed module beside the app's own.
  *
  *   node scripts/gen-web-table.mjs [--tests] [gen-ifaces flags such as --check]
  */
@@ -105,6 +106,17 @@ export function pluginWebEntries(webDir, { pluginsDir = null } = {}) {
   return entries;
 }
 
+/**
+ * The entries the interface generator must read through a project of their own: a plugin installed
+ * under node_modules, which the generator never reads from the app's program. A workspace plugin
+ * (linked from plugins/) is already in the app's program: the generated list imports it, and its
+ * files are outside node_modules, so they are read with the app's. Handing its tsconfig over as
+ * well would read every file twice, and the second read fails the generator.
+ */
+export function separateProjects(entries) {
+  return entries.filter((e) => e.tsconfig.split(path.sep).includes("node_modules"));
+}
+
 /** The generated list's source for `entries`. */
 export function pluginWebModuleSource(entries) {
   const lines = [
@@ -170,7 +182,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
   const entries = writePluginWebModules(webDir, {
     pluginsDir: path.resolve(webDir, "..", "..", "plugins"),
   });
-  const plugins = entries.map((e) => path.relative(webDir, e.tsconfig));
+  const plugins = separateProjects(entries).map((e) => path.relative(webDir, e.tsconfig));
   let status = genIfaces(webDir, ["tsconfig.app.json", ...plugins], "src/ifaces.json", flags);
   if (status === 0 && withTests) {
     status = genIfaces(webDir, ["tsconfig.json", ...plugins], "test/ifaces.json", flags);

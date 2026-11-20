@@ -134,7 +134,7 @@ describe("de-slop rules over packages/web/src", () => {
   it("scans every source root, and every listed file is still in the web app", () => {
     expectEveryRootScanned(SCAN);
     const gone = [...Object.keys(ALLOWLIST), ...TOKENS_ONLY].filter(
-      (rel) => !WEB.some((file) => file.rel === rel),
+      (rel) => !WEB.some((file) => relOf(file.id) === rel),
     );
     expect(
       gone,
