@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** refactor
 - **Scope:** `server`, `web`, `cli`, `core`, `plugins`, `docs`
+- **PR:** [#1656](https://github.com/Prism-Shadow/penguin-harness/pull/1656)
 
 [中文版](2026-11-19-browser-use-plugin.zh.md)
 
