@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Clean up temporary files as the user meets it (features/settings/storage-cleanup-dialog.tsx),
+ * Clean up temporary files as the user meets it (plugins/storage/src/web/storage-cleanup-dialog.tsx),
  * against the fetch fake answering the cleanup review and its removal.
  *
  * - Given a review, its groups show in the fixed order with the empty ones left out, what the
@@ -11,13 +11,15 @@
  *   exactly the chosen items go to the server with the reviewed age, and the dialog hands back to
  *   the page (which measures again) and closes.
  */
+// The face's host first: the page calls the app's `apiFetch` and toasts through it.
+import "../src/web-app/plugin-host";
 import { afterEach, describe, expect, it } from "vitest";
 import { createElement as h } from "react";
-import type { StorageCleanupItem } from "@prismshadow/penguin-server/api";
-import { StorageCleanupDialog } from "../src/features/settings/storage-cleanup-dialog";
-import { formatSize } from "../src/features/settings/storage-format";
+import type { StorageCleanupItem } from "../../../plugins/storage/src/types";
+import { StorageCleanupDialog } from "../../../plugins/storage/src/web/storage-cleanup-dialog";
+import { formatSize } from "../../../plugins/storage/src/web/storage-format";
 import { LocaleProvider } from "../src/state/locale";
-import { S } from "../src/lib/strings";
+import { S } from "../../../plugins/storage/src/web/strings";
 import { button, click, dialogs, mount, unmountAll, waitFor } from "./helpers/dom";
 import { apiError, json, stubFetch, type FakeFetch } from "./helpers/fetch";
 
@@ -123,12 +125,12 @@ describe("the cleanup review dialog", () => {
   it("removes exactly the chosen items once confirmed, then hands back to the page and closes", async () => {
     const calls = await open();
     await click(box("Quarterly report"));
-    await click(button(S.common.delete));
+    await click(button(S.storage.delete));
     // The confirm is up; nothing has gone yet.
     expect(fetch.requests.filter((r) => r.method === "POST")).toHaveLength(0);
     const confirm = dialogs().at(-1)!;
     const yes = [...confirm.querySelectorAll("button")].find(
-      (b) => b.textContent === S.common.delete,
+      (b) => b.textContent === S.storage.delete,
     )!;
     await click(yes);
     await waitFor(() => calls.length > 0);

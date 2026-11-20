@@ -7,7 +7,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Context } from "hono";
-import { isValidId } from "@prismshadow/penguin-core";
+import { isValidId } from "@prismshadow/penguin-core/plugin";
 import { HttpError, badRequest } from "./errors.js";
 
 export { badRequest };

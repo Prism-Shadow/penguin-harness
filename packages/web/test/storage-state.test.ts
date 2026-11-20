@@ -1,5 +1,5 @@
 /**
- * The Storage page's usage (features/settings/storage-state.ts), driven through the real endpoint
+ * The Storage page's usage (plugins/storage/src/web/storage-state.ts), driven through the real endpoint
  * wrappers against the fetch fake.
  *
  * - Given a measurement under way, the page asks again every poll interval until an answer says
@@ -10,13 +10,15 @@
  * - Given a poll that fails, the numbers on screen stay, and the page asks again later.
  * - Given the first read failing, the page has no numbers and says why.
  */
+// The face's host first: the page calls the app's `apiFetch` and toasts through it.
+import "../src/web-app/plugin-host";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { StorageUsage } from "@prismshadow/penguin-server/api";
+import type { StorageUsage } from "../../../plugins/storage/src/types";
 import {
   STORAGE_POLL_MS,
   STORAGE_POLL_RETRY_MS,
   createStorageStore,
-} from "../src/features/settings/storage-state";
+} from "../../../plugins/storage/src/web/storage-state";
 import { apiError, json, stubFetch, type FakeFetch } from "./helpers/fetch";
 
 const ZERO = {
@@ -37,6 +39,7 @@ function usage(bytes: number, measuring: boolean): StorageUsage {
     bytes,
     categories: { ...ZERO, traces: bytes },
     projects: [],
+    reveal: false,
   };
 }
 

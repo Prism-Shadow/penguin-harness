@@ -1,23 +1,24 @@
 // @vitest-environment jsdom
 /**
- * The Storage page as it reads (features/settings/storage-section.tsx), against the fetch fake
- * answering who is signed in and the usage.
+ * The Storage page as it reads (the storage plugin's web half, storage-section.tsx), against the
+ * fetch fake answering the usage.
  *
  * - Given an admin's usage (it carries the whole data root), the page heads with This server,
  *   its folder is the data root, and the Projects of other users are one row with their count.
- * - Given a member's usage, the page heads with My Projects and lists each Project's folder; in a
- *   browser there is no button to show a folder, while the desktop shell's own window has one per
- *   folder, which asks the server to show that Project's folder.
- * - Given Archived chats' Open, the page hands over to the dialog's switch.
+ * - Given a member's usage, the page heads with My Projects and lists each Project's folder; where
+ *   the server says the caller may not show a folder (a browser) there is no button for it, and
+ *   where it may (the desktop shell's own window) there is one per folder, which asks the server
+ *   to show that Project's folder.
+ * - Given Archived chats' Open, the page asks the dialog for that page.
  */
+// The face's host first: the page calls the app's `apiFetch` and toasts through it.
+import "../src/web-app/plugin-host";
 import { afterEach, describe, expect, it } from "vitest";
 import { createElement as h } from "react";
-import type { MeResponse, StorageUsage } from "@prismshadow/penguin-server/api";
-import { StorageSection } from "../src/features/settings/storage-section";
-import { AuthProvider } from "../src/state/auth";
+import type { StorageUsage } from "../../../plugins/storage/src/types";
+import { StorageSection } from "../../../plugins/storage/src/web/storage-section";
 import { LocaleProvider } from "../src/state/locale";
-import { S } from "../src/lib/strings";
-import { ADMIN_ME } from "./helpers/admin-settings";
+import { S } from "../../../plugins/storage/src/web/strings";
 import { button, click, hasButton, mount, unmountAll, waitFor } from "./helpers/dom";
 import { apiError, json, stubFetch, type FakeFetch } from "./helpers/fetch";
 
@@ -50,6 +51,7 @@ const MEMBER: StorageUsage = {
   bytes: 3 * GB,
   categories: { ...ZERO, traces: 3 * GB },
   projects: [project("docs", 2 * GB), project("notes", 1 * GB)],
+  reveal: false,
 };
 
 const ADMIN: StorageUsage = {
@@ -65,20 +67,15 @@ const ADMIN: StorageUsage = {
 
 let fetch: FakeFetch;
 
-async function open(usage: StorageUsage, me: MeResponse = ADMIN_ME) {
+async function open(usage: StorageUsage) {
   fetch = stubFetch((request) => {
-    if (request.path === "/api/me") return json(me);
     if (request.path === "/api/me/storage") return json(usage);
     if (request.path === "/api/me/storage/reveal") return new Response(null, { status: 204 });
     return apiError(404, "not_found");
   });
   const handed: string[] = [];
   const { container } = await mount(
-    h(
-      LocaleProvider,
-      null,
-      h(AuthProvider, null, h(StorageSection, { onOpenArchived: () => handed.push("archived") })),
-    ),
+    h(LocaleProvider, null, h(StorageSection, { openPage: (key: string) => handed.push(key) })),
   );
   await waitFor(() => container.querySelector("h3") !== null);
   return { container, handed };
@@ -108,7 +105,7 @@ describe("the Storage page", () => {
     expect(hasButton(S.storage.reveal)).toBe(false);
     await unmountAll();
 
-    await open(MEMBER, { ...ADMIN_ME, desktopMode: true, sessionVia: "desktop" });
+    await open({ ...MEMBER, reveal: true });
     await waitFor(() => hasButton(S.storage.reveal));
     const reveal = [...document.querySelectorAll("button")].filter(
       (b) => b.getAttribute("aria-label") === S.storage.reveal,
@@ -119,7 +116,7 @@ describe("the Storage page", () => {
     expect(asked.map((r) => r.body)).toEqual([{ projectId: "docs" }]);
   });
 
-  it("hands over to the dialog's switch from Archived chats' Open", async () => {
+  it("asks the dialog for Archived chats from that row's Open", async () => {
     const { handed } = await open(MEMBER);
     await click(button(S.storage.open));
     expect(handed).toEqual(["archived"]);

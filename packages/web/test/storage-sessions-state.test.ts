@@ -1,6 +1,6 @@
 /**
  * The conversation list behind Clean up old chats and Manage chats
- * (features/settings/storage-sessions-state.ts), driven through the real endpoint wrappers
+ * (plugins/storage/src/web/storage-sessions-state.ts), driven through the real endpoint wrappers
  * against the fetch fake, which answers as the storage list and the archive batch delete do.
  *
  * - Given the filters, every one rides on the list request, and none that is unset does.
@@ -10,13 +10,15 @@
  *   the list at once, and the list is read again; the rows not chosen stay.
  * - Given a delete the server refuses, the rows stay and the failure is reported.
  */
+// The face's host first: the page calls the app's `apiFetch` and toasts through it.
+import "../src/web-app/plugin-host";
 import { afterEach, describe, expect, it } from "vitest";
-import type { StorageSessionRow } from "@prismshadow/penguin-server/api";
+import type { StorageSessionRow } from "../../../plugins/storage/src/types";
 import {
   ALL_SESSIONS,
   OLD_SESSIONS,
   createSessionsStore,
-} from "../src/features/settings/storage-sessions-state";
+} from "../../../plugins/storage/src/web/storage-sessions-state";
 import { apiError, json, stubFetch, type FakeFetch } from "./helpers/fetch";
 
 function row(sessionId: string, running = false): StorageSessionRow {

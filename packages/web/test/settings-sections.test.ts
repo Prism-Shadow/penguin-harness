@@ -35,7 +35,6 @@ const APP_PAGES: Record<HostSettingsSectionKey, true> = {
   appearance: true,
   shortcuts: true,
   archived: true,
-  storage: true,
   account: true,
   proxy: true,
   uploads: true,

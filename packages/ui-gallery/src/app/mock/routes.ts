@@ -120,10 +120,6 @@ import type {
   SessionProcessesResponse,
   SessionResponse,
   SessionsArchiveResponse,
-  StorageCleanupResult,
-  StorageCleanupReview,
-  StorageSessionsResponse,
-  StorageUsage,
   SessionsBatchResponse,
   SessionsResponse,
   SessionTracesResponse,
@@ -175,6 +171,12 @@ import {
   storageUsage,
 } from "./storage-demo";
 import { payloadOf } from "./types";
+import type {
+  StorageCleanupResult,
+  StorageCleanupReview,
+  StorageSessionsResponse,
+  StorageUsage,
+} from "@penguinharness/storage/types";
 import type { AmspRecord } from "./types";
 
 type Ctx = RequestContext;

@@ -533,119 +533,6 @@ export const en: Strings = {
       `These machines can't be reached right now, so their archived chats aren't listed: ${machines.join(", ")}`,
   },
 
-  storage: {
-    thisServer: "This server",
-    myProjects: "My Projects",
-    used: (size: string): string => `${size} used`,
-    notMeasured: "—",
-    usageLabel: "Storage used",
-    measuredAt: (when: string): string => `Measured ${when}`,
-    measuring: "Measuring…",
-    refresh: "Refresh",
-    measureFailed: (reason: string): string => `The last measurement did not finish: ${reason}`,
-    loadFailed: (reason: string): string => `Could not read the storage usage: ${reason}`,
-    categories: {
-      traces: "Traces",
-      agentState: "Agent State",
-      workspaces: "Temporary workspaces",
-      scratchpads: "Scratchpads",
-      caches: "Caches",
-      logs: "Logs",
-      plugins: "Plugins",
-      other: "Other",
-    },
-    byProject: "By Project",
-    noProjects: "No Projects you can open",
-    otherProjects: (n: number): string =>
-      n === 1 ? "1 Project of other users" : `${n} Projects of other users`,
-    byFolder: "By folder",
-    copyPath: "Copy path",
-    reveal: "Show in folder",
-    serverFiles: "Server files",
-    cleanup: "Clean up",
-    cleanTemp: "Clean up temporary files",
-    cleanTempHint: "Scratchpads, orphaned temporary workspaces and caches",
-    cleanOld: "Clean up old chats",
-    cleanOldHint: "Delete archived chats that have had no activity for a long time",
-    manageSessions: "Manage chats",
-    manageSessionsHint: "See chats by size or last activity, and delete the ones you choose",
-    archived: "Archived chats",
-    archivedHint: "Restore or delete archived chats",
-    review: "Review",
-    open: "Open",
-    selectAll: "Select all",
-    deselectAll: "Deselect all",
-    count: (n: number): string => (n === 1 ? "1 item" : `${n} items`),
-    select: (title: string): string => `Select ${title}`,
-    selected: (n: number, size: string): string => `${n} selected, ${size}`,
-    actionFailed: (reason: string): string => `That did not finish: ${reason}`,
-    temp: {
-      idleBefore: "Idle scratchpads: last active more than",
-      idleAfter: "days ago",
-      idleDays: "Idle days",
-      reviewing: "Measuring and reviewing, this can take a moment…",
-      orphanScratchpads: "Scratchpads of deleted chats",
-      deletedChat: "Deleted chat",
-      hiddenChat: "Another user's chat",
-      idleScratchpads: "Scratchpads of idle chats",
-      idleScratchpadsNote:
-        "Images and files attached in these chats stop showing, and a continued chat can no longer find its plans and attachments.",
-      workspaces: "Orphaned temporary workspaces",
-      agentCaches: "Agent caches",
-      agentCachesNote: "The Agent installs them again the next time it needs them.",
-      serverCaches: "Server caches",
-      empty: "Nothing to clean up",
-      reviewFailed: (reason: string): string => `Could not review: ${reason}`,
-      confirmTitle: (n: number): string => (n === 1 ? "Delete 1 item?" : `Delete ${n} items?`),
-      confirmBody: (n: number, size: string): string =>
-        n === 1
-          ? `The chosen item will be deleted permanently, freeing about ${size}.`
-          : `The ${n} chosen items will be deleted permanently, freeing about ${size}.`,
-      summary: (removed: number, size: string, skipped: number, failed: number): string =>
-        [
-          removed > 0
-            ? `Deleted ${removed === 1 ? "1 item" : `${removed} items`}, freed ${size}`
-            : "",
-          skipped > 0
-            ? skipped === 1
-              ? "1 item is in use or gone and was skipped"
-              : `${skipped} items are in use or gone and were skipped`
-            : "",
-          failed > 0
-            ? failed === 1
-              ? "1 item could not be deleted"
-              : `${failed} items could not be deleted`
-            : "",
-        ]
-          .filter((part) => part !== "")
-          .join(". "),
-    },
-    chats: {
-      agentFilter: "Agent",
-      allAgents: "All Agents",
-      listingFilter: "Archive",
-      listing: { all: "All", archived: "Archived", active: "Not archived" },
-      olderBefore: "Last active more than",
-      olderAfter: "days ago",
-      olderDays: "Days since last activity",
-      olderAny: "Any",
-      sortFilter: "Sort",
-      sort: { size: "Size", age: "Last activity" },
-      group: "Chats",
-      archived: "Archived",
-      running: "Running",
-      truncated: (n: number): string => `Only the first ${n} are listed`,
-      empty: "No chats match",
-      loadFailed: (reason: string): string => `Could not read the chats: ${reason}`,
-      confirmTitle: (n: number): string => (n === 1 ? "Delete chat?" : `Delete ${n} chats?`),
-      confirmBody: (n: number, size: string): string =>
-        n === 1
-          ? `The chosen chat will be deleted permanently with its Trace, scratchpad and subagents, freeing about ${size}.`
-          : `The ${n} chosen chats will be deleted permanently with their Traces, scratchpads and subagents, freeing about ${size}.`,
-      deleted: (n: number): string => (n === 1 ? "Deleted 1 chat" : `Deleted ${n} chats`),
-    },
-  },
-
   tracePanel: {
     empty: "No traces yet",
     emptyHint: "This session has not produced a Trace file yet",
@@ -676,9 +563,6 @@ export const en: Strings = {
     archivedTitle: "Archived chats",
     archivedInfo:
       "Chats that are not in the sidebar: the ones you archived, and the ones a program opened (the API, scheduled tasks, penguin run) until you unarchive them. An archived chat shows only its title and time; unarchived, it returns to the sidebar and later runs leave it there.",
-    storageTitle: "Storage",
-    storageInfo:
-      "What the data root holds, and a cleanup of what can be regenerated: scratchpads, orphaned temporary workspaces and caches; Traces go with their chats. The measurement lives only in the server's memory and the page says when it was taken; a chat deleted elsewhere does not change the numbers here until you press Refresh.",
     /** The Shortcuts page's "?": what follows the platform, where bindings live, and the browser's own claims. */
     shortcutsInfo:
       "Shortcuts follow the platform: ⌘ on macOS, Ctrl elsewhere. A change applies at once in every tab of this browser; the account's other browsers and the desktop app pick it up the next time they load. Bindings are stored per account and per platform, so a Mac and a Windows machine each keep their own. A browser tab cannot receive the chords the browser itself reserves (Ctrl+W / ⌘W, for example), so those work in the desktop app only; a chord the browser also uses (Ctrl+P / ⌘P prints) takes over that browser function in a browser tab. The list marks both.",

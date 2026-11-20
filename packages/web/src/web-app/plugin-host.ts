@@ -9,11 +9,17 @@
  * dock store — so a plugin's request goes through this app's transport, and a suite's socket
  * stand-in or the gallery's network swap catches it like any of the app's.
  */
+import { webLocale } from "@prismshadow/penguin-web-plugin";
 import { provideWebHost } from "@prismshadow/penguin-web-plugin/host";
 import { ApiError, apiFetch } from "../api/client";
 import { apiErrorText } from "../lib/api-error";
 import { failureNode, failureOf } from "../lib/failure";
-import { formatDateTime } from "../lib/format";
+import {
+  formatBytes,
+  formatDateTime,
+  formatRelativeLong,
+  formatRelativeShort,
+} from "../lib/format";
 import { requestSettingsPage } from "../lib/settings-request";
 import { toastApiError } from "../lib/toast-api-error";
 import { toneDot, toneInk, toneSurface } from "../lib/tone";
@@ -31,6 +37,10 @@ provideWebHost({
   isTabShown,
   currentDockScope,
   formatDateTime,
+  // In the language on screen, which the face is told of with every dictionary switch.
+  formatRelativeShort: (iso) => formatRelativeShort(iso, webLocale()),
+  formatRelativeLong: (iso) => formatRelativeLong(iso, webLocale()),
+  formatBytes,
   toneInk,
   toneSurface,
   toneDot,

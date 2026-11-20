@@ -103,6 +103,7 @@ import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sess
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
 import { InputEcho } from "./input-echo.js";
+import type { SessionActivity } from "./session-activity.js";
 import { goalPluginNotInstalled, hasGoalHookPackage } from "./goal-plugin.js";
 import { withPromptHooks } from "./prompt-hooks.js";
 import type { Approvals, PendingApproval } from "./approvals.js";
@@ -801,7 +802,7 @@ export class SessionManager {
    * being deleted. A subagent child runs inside its root's runtime, so it is in use while its
    * root is. A Session that is not loaded is not in use, and nothing loads it without a Task
    * starting through the lock — so a caller that asks this and acts in the same synchronous
-   * step (the storage cleanup's check-then-rename) cannot be overtaken by a Task.
+   * step (a removal's check-then-rename, SessionActivity) cannot be overtaken by a Task.
    */
   sessionInUse(sessionId: string): boolean {
     if (this.deletingSessions.has(sessionId)) return true;
@@ -2841,8 +2842,6 @@ export abstract class Sessions extends Interface<
     | "pendingInputs"
     | "pendingBootstrap"
     | "activeCountForAgent"
-    | "sessionInUse"
-    | "agentInUse"
     | "invalidateAgentRuntimes"
     | "invalidateProjectRuntimes"
     | "assertCanAcceptTask"
@@ -2943,6 +2942,7 @@ export class SessionsModule {
   @Provide() manager!: Sessions;
   @Provide() sessionService!: SessionServiceIface;
   @Provide() env!: SessionEnv;
+  @Provide() activity!: SessionActivity;
   setup() {
     const { config, settings, authState } = this;
     const log = (line: string) => this.log.line(line);
@@ -3101,6 +3101,10 @@ export class SessionsModule {
     this.manager = manager;
     this.sessionService = sessionService;
     this.env = env;
+    this.activity = {
+      sessionInUse: (sessionId) => manager.sessionInUse(sessionId),
+      agentInUse: (projectId, agentId) => manager.agentInUse(projectId, agentId),
+    };
   }
 
   /**

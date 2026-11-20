@@ -1,5 +1,5 @@
 /**
- * The review behind Clean up temporary files (features/settings/storage-cleanup-state.ts),
+ * The review behind Clean up temporary files (plugins/storage/src/web/storage-cleanup-state.ts),
  * driven through the real endpoint wrappers against the fetch fake.
  *
  * - Given a review, what the server picks is chosen to begin with, and the size chosen follows
@@ -10,9 +10,14 @@
  * - Given the choice removed, exactly the chosen ids go to the server with the age they were
  *   reviewed at, and the answer comes back whole; nothing chosen sends nothing.
  */
+// The face's host first: the page calls the app's `apiFetch` and toasts through it.
+import "../src/web-app/plugin-host";
 import { afterEach, describe, expect, it } from "vitest";
-import type { StorageCleanupItem } from "@prismshadow/penguin-server/api";
-import { chosenBytes, createCleanupStore } from "../src/features/settings/storage-cleanup-state";
+import type { StorageCleanupItem } from "../../../plugins/storage/src/types";
+import {
+  chosenBytes,
+  createCleanupStore,
+} from "../../../plugins/storage/src/web/storage-cleanup-state";
 import { json, stubFetch, type FakeFetch } from "./helpers/fetch";
 
 const MB = 1024 ** 2;

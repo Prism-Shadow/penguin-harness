@@ -25,6 +25,7 @@ if [ "${SKIP_BUILD:-0}" != "1" ]; then
     && pnpm --filter @prismshadow/penguin-core build \
     && pnpm --filter @prismshadow/penguin-server build \
     && pnpm --filter @penguinharness/browser-automation build \
+    && pnpm --filter @penguinharness/storage build \
     && pnpm --filter @prismshadow/penguin-web build) || { echo "BUILD FAILED"; exit 1; }
 fi
 

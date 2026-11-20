@@ -105,6 +105,16 @@ export interface SettingsSectionData {
   order: number;
 }
 
+/** What the Settings dialog hands a contributed page. */
+export interface SettingsPageProps {
+  /**
+   * Goes to another page of the same dialog — by key, the app's own (`archived`) or a contributed
+   * one — through the dialog's leave guard, as the rail does. A page the viewer may not open
+   * falls back to their first.
+   */
+  openPage: (key: string) => void;
+}
+
 /** `SettingsModule.sections`, code half. */
 export interface SettingsSectionCode {
   /** The page's name on the rail and over the pane, read at render time. */
@@ -112,7 +122,7 @@ export interface SettingsSectionCode {
   /** The page's explanation behind the "?" beside its heading, when it has one. */
   info?: () => string;
   /** The page. */
-  Body: ComponentType;
+  Body: ComponentType<SettingsPageProps>;
 }
 
 // ------------------------------------------------------------------ ChatModule

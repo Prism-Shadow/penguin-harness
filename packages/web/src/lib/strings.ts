@@ -635,119 +635,6 @@ export const zh = {
       `这些机器暂时连不上，其上的已归档对话未列出：${machines.join("、")}`,
   },
 
-  /** Settings › Personal › Storage (features/settings/storage-*.tsx). */
-  storage: {
-    /** The first section's title: the whole data root for an admin, the viewer's Projects for a member. */
-    thisServer: "本机",
-    myProjects: "我的 Project",
-    used: (size: string): string => `已用 ${size}`,
-    /** The size before anything has been measured. */
-    notMeasured: "—",
-    /** The bar's and its legend's accessible name. */
-    usageLabel: "空间占用",
-    measuredAt: (when: string): string => `测量于 ${when}`,
-    measuring: "正在测量…",
-    refresh: "刷新",
-    /** One muted line under the bar: why the last measurement did not finish. */
-    measureFailed: (reason: string): string => `上次测量没有完成：${reason}`,
-    loadFailed: (reason: string): string => `无法读取空间占用：${reason}`,
-    categories: {
-      traces: "轨迹",
-      agentState: "Agent State",
-      workspaces: "临时工作区",
-      scratchpads: "草稿区",
-      caches: "缓存",
-      logs: "日志",
-      plugins: "插件",
-      other: "其他",
-    },
-    byProject: "按 Project",
-    noProjects: "没有可以进入的 Project",
-    /** An admin's one row for the Projects of other users: how many, never their names. */
-    otherProjects: (n: number): string => `其他用户的 Project（${n} 个）`,
-    byFolder: "按文件夹",
-    copyPath: "复制路径",
-    reveal: "在文件夹中显示",
-    /** An admin's fold over the data root's top-level entries that are not Projects. */
-    serverFiles: "服务端文件",
-    cleanup: "清理",
-    cleanTemp: "清理临时文件",
-    cleanTempHint: "草稿区、孤立的临时工作区与缓存",
-    cleanOld: "清理旧对话",
-    cleanOldHint: "永久删除很久没有活动的已归档对话",
-    manageSessions: "管理对话",
-    manageSessionsHint: "按大小或最近活动查看对话，永久删除选中的",
-    archived: "已归档对话",
-    archivedHint: "恢复或删除已归档的对话",
-    review: "审阅",
-    open: "打开",
-    /** Both review dialogs: the list's words, the footer, and the delete. */
-    selectAll: "全选",
-    deselectAll: "取消全选",
-    count: (n: number): string => `${n} 项`,
-    select: (title: string): string => `选择「${title}」`,
-    selected: (n: number, size: string): string => `已选 ${n} 项，${size}`,
-    actionFailed: (reason: string): string => `操作没有完成：${reason}`,
-    /** The Clean up temporary files dialog. */
-    temp: {
-      /** The idle-age field sits in this sentence, between its two halves. */
-      idleBefore: "闲置的草稿区：最近活动早于",
-      idleAfter: "天",
-      idleDays: "闲置天数",
-      reviewing: "正在测量并审阅，可能需要一会儿…",
-      orphanScratchpads: "已删除对话的草稿区",
-      /** A scratchpad row whose chat is gone: it has no title, and its folder's name is an id. */
-      deletedChat: "已删除的对话",
-      /** An idle scratchpad row in a Project the admin cannot open: its title is not theirs to read. */
-      hiddenChat: "其他用户的对话",
-      idleScratchpads: "闲置对话的草稿区",
-      idleScratchpadsNote:
-        "删除后这些对话里附带的图片与文件不再显示，继续对话时模型也找不到它的计划与附件。",
-      workspaces: "孤立的临时工作区",
-      agentCaches: "Agent 缓存",
-      agentCachesNote: "Agent 下次需要时会重新安装。",
-      serverCaches: "服务端缓存",
-      empty: "没有可以清理的文件",
-      reviewFailed: (reason: string): string => `无法审阅：${reason}`,
-      confirmTitle: (n: number): string => `删除 ${n} 项？`,
-      confirmBody: (n: number, size: string): string =>
-        `所选的 ${n} 项将被永久删除，释放约 ${size}。`,
-      /** The toast after a cleanup: what went and what it freed, then what was left and why. */
-      summary: (removed: number, size: string, skipped: number, failed: number): string =>
-        [
-          removed > 0 ? `已删除 ${removed} 项，释放了 ${size}` : "",
-          skipped > 0 ? `${skipped} 项正在使用或已不在，已跳过` : "",
-          failed > 0 ? `${failed} 项没能删除` : "",
-        ]
-          .filter((part) => part !== "")
-          .join("。"),
-    },
-    /** The Clean up old chats and Manage chats dialog. */
-    chats: {
-      agentFilter: "Agent",
-      allAgents: "全部 Agent",
-      listingFilter: "归档",
-      listing: { all: "全部", archived: "已归档", active: "未归档" },
-      /** The last-active field sits in this sentence, between its two halves; blank means any time. */
-      olderBefore: "最近活动早于",
-      olderAfter: "天",
-      olderDays: "最近活动早于的天数",
-      olderAny: "不限",
-      sortFilter: "排序",
-      sort: { size: "大小", age: "最近活动" },
-      group: "对话",
-      archived: "已归档",
-      running: "正在运行",
-      truncated: (n: number): string => `只列出了前 ${n} 条`,
-      empty: "没有符合条件的对话",
-      loadFailed: (reason: string): string => `无法读取对话：${reason}`,
-      confirmTitle: (n: number): string => (n === 1 ? "删除对话？" : `删除 ${n} 个对话？`),
-      confirmBody: (n: number, size: string): string =>
-        `所选的 ${n} 个对话连同它们的 Trace、草稿区与子会话将被永久删除，释放约 ${size}。`,
-      deleted: (n: number): string => `已删除 ${n} 个对话`,
-    },
-  },
-
   /** The Trace dock panel (the current conversation's Trace files). */
   tracePanel: {
     empty: "暂无轨迹",
@@ -780,10 +667,6 @@ export const zh = {
     archivedTitle: "已归档对话",
     archivedInfo:
       "这里是不在左侧列表里的对话：你归档的，以及由程序开启、你还没有取消归档的（API、定时任务和 penguin run 开启的对话）。归档的对话只显示标题和时间；取消归档后它回到左侧列表，之后的运行也不会再把它移走。",
-    /** Settings › Personal › Storage, and the "?" beside its heading. */
-    storageTitle: "存储空间",
-    storageInfo:
-      "这里显示数据根的空间占用，并清理可以再生的文件：草稿区、孤立的临时工作区与缓存；轨迹随对话一起删除。测量结果只保存在服务端的内存里，页面写明测量时刻；在别处删除对话不会更新这里的数字，按「刷新」重新测量。",
     /** The Shortcuts page's "?": what follows the platform, where bindings live, and the browser's own claims. */
     shortcutsInfo:
       "快捷键随平台：macOS 用 ⌘，其余平台用 Ctrl。改动即刻生效，本浏览器的其他标签页同步跟随；本账号的其他浏览器与桌面应用在下次加载时取得。按账号并按平台分别保存，Mac 与 Windows 各有一套。浏览器自身保留的组合（如 Ctrl+W / ⌘W）在浏览器标签页里收不到，只在桌面应用里生效；浏览器本身也用的组合（如打印的 Ctrl+P / ⌘P）在浏览器标签页里会取代它的那个功能。两者都在列表中标出。",

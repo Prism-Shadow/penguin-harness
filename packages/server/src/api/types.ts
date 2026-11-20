@@ -2060,9 +2060,6 @@ export interface ArchivedSessionsBatchResponse {
   missing: string[];
 }
 
-// The Storage page (`/api/me/storage*`): its own module.
-export type * from "./storage-types.js";
-
 /**
  * One page request inside POST /api/projects/:p/sessions/batch — the same knobs the
  * Agent-level list takes, carried per entry so one call can stand in for a whole sidebar

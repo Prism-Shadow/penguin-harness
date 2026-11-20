@@ -42,7 +42,6 @@ import { GeneralSection } from "./general-section";
 import { AppearanceSection } from "./appearance-section";
 import { ShortcutsSection } from "./shortcuts-section";
 import { ArchivedSessionsSection } from "./archived-sessions-section";
-import { StorageSection } from "./storage-section";
 import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
 import { UploadsSection } from "./uploads-section";
@@ -63,8 +62,6 @@ const SECTION_ICONS: Record<HostSettingsSectionKey, string> = {
   shortcuts: ICONS.keyboard,
   /** The archive box the sidebar row's archive action wears: archived chats. */
   archived: ICONS.archive,
-  /** A drive: what the data root holds. */
-  storage: ICONS.hardDrive,
   /** Single person: the signed-in account. */
   account: ICONS.user,
   /** Globe: outbound traffic. */
@@ -125,7 +122,6 @@ export function SettingsDialog({
     appearance: S.settings.appearanceTitle,
     shortcuts: S.settings.shortcutsTitle,
     archived: S.settings.archivedTitle,
-    storage: S.settings.storageTitle,
     account: S.settings.accountTitle,
     proxy: S.settings.proxyTitle,
     uploads: S.settings.uploadLimitsTitle,
@@ -143,7 +139,6 @@ export function SettingsDialog({
   const sectionInfo: Partial<Record<HostSettingsSectionKey, string>> = {
     shortcuts: S.settings.shortcutsInfo,
     archived: S.settings.archivedInfo,
-    storage: S.settings.storageInfo,
     proxy: S.settings.proxyInfo,
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
     company: S.settings.companyModeServerInfo,
@@ -151,8 +146,8 @@ export function SettingsDialog({
     plugins: S.settings.pluginsInfo,
   };
 
-  // Every way to another page goes through the same guard: the rail, and a page's own link to
-  // another (the Storage page's Archived chats row).
+  // Every way to another page goes through the same guard: the rail, and a contributed page's
+  // own link to another (`openPage`).
   const select = (key: SettingsSectionKey) => {
     if (key !== current) void guardLeave(() => setActive(key), SETTINGS_SCOPE);
   };
@@ -193,7 +188,6 @@ export function SettingsDialog({
       {current === "appearance" && <AppearanceSection />}
       {current === "shortcuts" && <ShortcutsSection />}
       {current === "archived" && <ArchivedSessionsSection />}
-      {current === "storage" && <StorageSection onOpenArchived={() => select("archived")} />}
       {current === "account" && <AccountSection />}
       {current === "proxy" && <ProxySection />}
       {current === "uploads" && <UploadsSection />}
@@ -203,7 +197,9 @@ export function SettingsDialog({
         <PluginsSection {...(pluginFocus !== undefined ? { focus: pluginFocus } : {})} />
       )}
       {current === "users" && <AdminUsersSection />}
-      {ContributedBody !== undefined && <ContributedBody />}
+      {ContributedBody !== undefined && (
+        <ContributedBody openPage={(key) => select(key as SettingsSectionKey)} />
+      )}
     </PagedDialog>
   );
 }

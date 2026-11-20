@@ -84,6 +84,12 @@ export interface WebHost {
   /** The conversation the docks belong to now. */
   currentDockScope(): string;
   formatDateTime(iso: string): string;
+  /** How long ago `iso` was, in the language on screen, in a row's few characters ("3d"). */
+  formatRelativeShort(iso: string): string;
+  /** The same in words, as a sentence says it ("3 days ago"). */
+  formatRelativeLong(iso: string): string;
+  /** A byte count in the app's units ("4.9GB"). */
+  formatBytes(bytes: number): string;
   toneInk: Readonly<Record<Tone, string>>;
   toneSurface: Readonly<Record<Tone, string>>;
   toneDot: Readonly<Record<Tone, string>>;
@@ -175,4 +181,16 @@ export function currentDockScope(): string {
 
 export function formatDateTime(iso: string): string {
   return need("formatDateTime")(iso);
+}
+
+export function formatRelativeShort(iso: string): string {
+  return need("formatRelativeShort")(iso);
+}
+
+export function formatRelativeLong(iso: string): string {
+  return need("formatRelativeLong")(iso);
+}
+
+export function formatBytes(bytes: number): string {
+  return need("formatBytes")(bytes);
 }

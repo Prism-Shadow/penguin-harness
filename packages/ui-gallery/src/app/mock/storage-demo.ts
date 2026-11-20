@@ -10,8 +10,8 @@
  * store's own conversations — so a deleted one is gone from it — beside a dozen in the other two
  * Projects, which the batch delete forgets the same way.
  */
+import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import type {
-  SessionInfo,
   StorageAgentUsage,
   StorageBytes,
   StorageCategory,
@@ -23,7 +23,7 @@ import type {
   StorageSessionRow,
   StorageSessionsResponse,
   StorageUsage,
-} from "@prismshadow/penguin-server/api";
+} from "@penguinharness/storage/types";
 import type { DemoStore } from "./store";
 
 const MB = 1024 ** 2;
@@ -364,6 +364,8 @@ export function storageUsage(store: DemoStore): StorageUsage {
     bytes: total(mine),
     categories: mine,
     projects,
+    // The demo is not the desktop shell: there is no file manager to show a folder in.
+    reveal: false,
     server: {
       root: "/home/demo/.penguin/data",
       bytes: total(all),
