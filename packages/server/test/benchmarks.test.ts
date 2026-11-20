@@ -117,9 +117,10 @@ describe("benchmarks api", () => {
     ).toBe(201);
   });
 
-  it("returns an empty list when unconfigured", async () => {
+  it("returns an empty list when unconfigured, naming the folder a new one would go in", async () => {
     expect((await (await owner.get(base)).json()) as BenchmarksResponse).toEqual({
       benchmarks: [],
+      dir: benchmarksDir(t.root, projectId),
     });
   });
 
@@ -588,6 +589,7 @@ describe("benchmarks api", () => {
     expect(first.benchmarks).toEqual([
       {
         id: "report-writing-v1",
+        dir,
         title: "Report writing",
         description: "Old",
         runs: 2,
@@ -673,6 +675,7 @@ describe("benchmarks api", () => {
     expect([`${before}.1`, `${after}.1`]).toContain(benchmark.version);
     expect(benchmark).toEqual({
       id: "report-writing-v1",
+      dir: path.join(benchmarksDir(t.root, projectId), "report-writing-v1"),
       title: "Report writing",
       description: "Hard cases for the report writer",
       runs: 2,
