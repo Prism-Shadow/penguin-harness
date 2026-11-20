@@ -15,6 +15,15 @@ The built-in **Multimodal tools** plugin (`@penguinharness/multimodal-tools`) le
 - Image understanding has no binding: it runs on the Project's vision model (`vision_model`), unchanged.
 - Transcript editing for dictation shares the `t2t` model. Whether it is on, and its prompt, are the plugin's per-Project settings, kept in the plugin's folder of the Project.
 
+## Enabled in every Project
+
+- The plugin is preinstalled. Its card says `preinstall: true`, and a built-in plugin with server modules whose card says so runs for every Project without a `[plugins]` listing, so its bindings and routes are there as soon as the server ships it. This holds until preinstalled built-in modules are listed in Project config ([#1642](https://github.com/Prism-Shadow/penguin-harness/pull/1642)), which then takes over and lets an administrator stop the module.
+
+## Connection test
+
+- **Test connection** on a model a binding accepts sends that binding's own request instead of the chat prompt: half a second of a generated tone (16 kHz PCM WAV) to a speech recognizer, the project's site (`https://penguin.ooo/`) to a page reader, a one-result query to a search model, "OK." to a speech model, one 1K square image to an image model, and one 4-second 360p clip to a video model, which may take up to three minutes. Each is the cheapest request of its kind, sent without the chat prompt's thinking level, output cap or fast mode. A chat model is still tested with the chat prompt.
+- A binding names its request in its code half (`testRequest()` beside `accepts(model)`); the platform sends the request of the first binding in load order that names one and accepts the model.
+
 ## `penguin tools`
 
 - The tools are member commands of the plugin, run on the server for the caller's Project and Session: `penguin tools t2t|i2t|search|fetch|t2i|t2v|t2s|s2t`, plus `list`, `status <id>` and `cancel <id>`. Any member of the Project can run them.

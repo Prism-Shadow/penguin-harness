@@ -15,7 +15,8 @@
  *   HttpModule.routes                    the Web App's routes (routes.ts)
  *
  * Results belong to Sessions and live in the Project directory (store.ts), swept once their
- * Session is gone. Installing the plugin on an Agent brings its server module along (PRFC-0031).
+ * Session is gone. The card's `preinstall: true` makes the server module run for every Project, and
+ * each binding names the request the models page's connection test sends (test-requests.ts).
  */
 import { Bind, Component, Use } from "@prismshadow/penguin-core/plugin";
 import type { ClassCtx, Plugin } from "@prismshadow/penguin-core/plugin";
