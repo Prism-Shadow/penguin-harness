@@ -3,8 +3,9 @@
  * previewed. The generated cover in every hue with every motif, each with a shipped plugin's own
  * icon; the four motifs with the logo on the tile (a plugin without an icon); a cover's states —
  * a picture still on its way (the field in the picture's tone), one that loaded, one that failed
- * (the generated cover takes over); cover cards in their grid: short words, overlong words, the
- * full foot, a foot without controls, and the placeholder; the selected carousel with three
+ * (the generated cover takes over); cover cards in their grid: short words, overlong words with
+ * the machine they came from, the full foot, a foot without controls, the Web App market's card
+ * (its version chip and its bar of text actions), and the placeholder; the selected carousel with three
  * slides, with its thumbnail rail and with its controls alone; and a product page's parts. The
  * public sites' rendering of the same modules is the 公开站点 board's.
  *
@@ -178,6 +179,7 @@ export function ShowcaseBoard() {
             cover={<Cover seed="agent-company" hue="amber" logo={LOGO} />}
             title={t.longTitle}
             titleHint="@penguinharness/agent-company"
+            origin={t.origin}
             description={t.longDescription}
           />
           <CoverCard
@@ -222,6 +224,23 @@ export function ShowcaseBoard() {
                 <span className="shrink-0 font-mono">v0.2.18</span>
               </MetaLine>
             }
+          />
+          <CoverCard
+            cover={
+              <Cover
+                seed="use-bento-slides"
+                hue="orange"
+                icon={plugIcon(ICONS_BY_PLUGIN.bento)}
+                logo={LOGO}
+              />
+            }
+            title={t.barTitle}
+            description={t.barDescription}
+            version="v0.3.1"
+            bar={[
+              { key: "install", label: t.barInstall, note: t.barInstallNote },
+              { key: "quick", label: t.quickStart, hint: t.barQuickHint, disabled: true },
+            ]}
           />
           <CoverCardSkeleton />
         </ShowcaseGrid>
