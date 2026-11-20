@@ -2,7 +2,7 @@
 
 - **Date:** 2026-11-19
 - **Type:** feature
-- **Scope:** `web`, `ui`
+- **Scope:** `web`
 - **PR:** [#1618](https://github.com/Prism-Shadow/penguin-harness/pull/1618)
 
 [中文版](2026-11-19-machine-plugin-market.zh.md)
@@ -15,6 +15,6 @@ For an administrator, the plugin market read every machine of the Project: its p
 - A library plugin installed from a machine's card went to an Agent on that machine, and quick start opened a draft on it.
 - Each machine's answers were kept for the tab without paths or MCP setup. A machine out of reach kept its cards, and a note under the title named it, with Retry after a failed read. Its Agent installs waited for it to reconnect; its server modules did not.
 - A detail link naming a machine that no longer had the plugin opened this server's card.
-- The shared cover card gained an `origin` line under the title, which the market used for the machine's name.
+- A machine's card named its machine on the shared cover card's `origin` line, under the title (the line itself is part of [the showcase family](2026-11-17-market-showcase-ui.md)).
 
 The App Center half of this change shipped separately; see [the App Center across machines](2026-11-19-app-center-machines.md).
