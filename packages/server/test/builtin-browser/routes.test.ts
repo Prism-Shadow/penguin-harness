@@ -952,22 +952,30 @@ describe("import, history and data", () => {
     hasCookies: true,
     hasHistory: true,
   };
+  /** The sites the last cookie read was asked for. */
+  let askedDomains: string[] | undefined;
   const importer: Importer = {
     listImportSources: async () => [chrome],
-    readCookies: async (_source, opts) => ({
-      cookies: [
-        {
-          url: "https://www.amazon.com/",
-          name: "session-id",
-          value: "v",
-          domain: ".amazon.com",
-          secure: true,
-        },
-      ],
-      found: 5,
-      skipped: 4,
-      warnings: [`filtered to ${(opts.domains ?? []).join(",")}`],
-    }),
+    readCookies: async (_source, opts) => {
+      askedDomains = opts.domains;
+      return {
+        cookies: [
+          {
+            url: "https://www.amazon.com/",
+            name: "session-id",
+            value: "v",
+            domain: ".amazon.com",
+            secure: true,
+          },
+        ],
+        found: 5,
+        skips: [
+          { reason: "app_bound", count: 3 },
+          { reason: "expired", count: 1 },
+        ],
+        notes: [],
+      };
+    },
     readHistory: async () => ({
       entries: [
         {
@@ -978,7 +986,7 @@ describe("import, history and data", () => {
           source: "chrome",
         },
       ],
-      warnings: [],
+      notes: [],
     }),
   };
 
@@ -990,11 +998,23 @@ describe("import, history and data", () => {
     expect(sources.sources).toEqual([chrome]);
     const res = await h.call("POST", "/import", { sourceId: "chrome", domains: ["amazon.com"] });
     const result = await json<BuiltinBrowserImportResult>(res);
+    expect(askedDomains).toEqual(["amazon.com"]);
+    // Every skip keeps its reason, and the reasons add up to the skipped count.
     expect(result).toEqual({
       sourceId: "chrome:Default",
-      cookies: { found: 5, imported: 1, skipped: 4, failed: 0 },
+      browserName: "Google Chrome",
+      cookies: {
+        found: 5,
+        imported: 1,
+        skipped: 4,
+        failed: 0,
+        skips: [
+          { reason: "app_bound", count: 3 },
+          { reason: "expired", count: 1 },
+        ],
+      },
       history: { found: 1, imported: 1 },
-      warnings: ["filtered to amazon.com"],
+      notes: [],
     });
     expect(h.shell.cookies.map((c) => c.name)).toEqual(["session-id"]);
     const history = await json<{ entries: unknown[] }>(

@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { systemConfigPath } from "../src/state/paths.js";
+import { agentDir, systemConfigPath } from "../src/state/paths.js";
 import {
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
@@ -98,10 +98,7 @@ describe("workspace key", () => {
 describe("temporary Workspace detection", () => {
   it("recognizes an Agent's own workspaces/ directory", async () => {
     const tmp = path.join(
-      root,
-      DEFAULT_PROJECT_ID,
-      "agents",
-      DEFAULT_AGENT_ID,
+      agentDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
       "workspaces",
       "tmp-1234abcd",
     );
@@ -110,7 +107,7 @@ describe("temporary Workspace detection", () => {
   });
 
   it("treats a user directory — including one elsewhere under the Agent — as persistent", async () => {
-    const stateSubdir = path.join(root, DEFAULT_PROJECT_ID, "agents", DEFAULT_AGENT_ID, "traces");
+    const stateSubdir = path.join(agentDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID), "traces");
     await fs.mkdir(stateSubdir, { recursive: true });
     expect(await isTemporaryWorkspace(root, DEFAULT_PROJECT_ID, workspace)).toBe(false);
     expect(await isTemporaryWorkspace(root, DEFAULT_PROJECT_ID, stateSubdir)).toBe(false);
@@ -174,10 +171,7 @@ describe("resolveSessionMemory", () => {
   /** Path of the temporary Workspace the SDK would allocate for a Session given no Workspace. */
   function tempWorkspacePath(): string {
     return path.join(
-      root,
-      DEFAULT_PROJECT_ID,
-      "agents",
-      DEFAULT_AGENT_ID,
+      agentDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
       "workspaces",
       "tmp-cafebabe",
     );

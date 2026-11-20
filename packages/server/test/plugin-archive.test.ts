@@ -201,7 +201,7 @@ describe("plugin import and export", () => {
       (g) => g.plugins,
     );
   const projectConfig = () =>
-    fs.readFile(path.join(t.root, "default_project", ".project_config.toml"), "utf8");
+    fs.readFile(path.join(t.root, "projects", "default_project", ".project_config.toml"), "utf8");
 
   it("imports a workbench-only package into the library", async () => {
     const admin = await boot();

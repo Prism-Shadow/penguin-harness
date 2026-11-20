@@ -52,7 +52,7 @@ async function writeTrace(
   sessionId: string,
   messages: AmspRecord[],
 ): Promise<void> {
-  const dir = path.join(root, PROJECT, "agents", agentId, "traces", "2026-07-09");
+  const dir = path.join(root, "projects", PROJECT, "agents", agentId, "traces", "2026-07-09");
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(
     path.join(dir, `${sessionId}_001.jsonl`),

@@ -3,7 +3,7 @@
  * in-memory mirror keyed by storage key, so every test uses its own user id.
  *
  * - The new chat starts on the Project's default Agent while it names a listed Agent, else
- *   default_agent wherever it sits, else the first Agent, else none.
+ *   default_agent wherever it sits, else the first Agent, else none — never on the system Agent.
  * - Preparing the draft parks typed text with its selections, then leaves only the model
  *   carry-over and staged skills in the active slot: a text-less draft's other selections are
  *   released, a slot holding nothing it keeps is emptied, and an empty slot is left alone.
@@ -33,6 +33,11 @@ describe("newChatAgentId", () => {
 
   it("ignores a default that no longer names an Agent of the Project", () => {
     expect(newChatAgentId(agents, { agentId: "deleted_agent" })).toBe("default_agent");
+  });
+
+  it("never starts on the system Agent, even as the Project's default", () => {
+    const system = { ...agent("system_agent"), system: true } as AgentSummary;
+    expect(newChatAgentId([system, ...agents], { agentId: "system_agent" })).toBe("default_agent");
   });
 
   it("falls back to the first Agent without default_agent, and to null for an empty list", () => {

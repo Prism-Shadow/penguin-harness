@@ -15,8 +15,8 @@
  * cross in the danger tone by default; a caller whose failure is another thing's state (a machine
  * out of reach) passes that thing's glyph instead, in the subtle ink.
  *
- * When the failure is a defect rather than the person's to fix (`isSeriousError`), the caller
- * passes a `report`, and 「[报告问题]」 stands beside the press.
+ * When the load failed rather than was refused (`isReportable`), the caller passes a `report`,
+ * and 「[报告问题]」 stands beside the press.
  *
  * Props only: every word is the caller's, and so is what the press does.
  */
@@ -38,7 +38,7 @@ export interface LoadFailedProps {
   /** One line: what could not be loaded, or where things stand. */
   title: string;
   /** Under the title, muted: the failure in words, or what happens next; null for none. */
-  description?: string | null;
+  description?: ReactNode;
   /**
    * The mark: a registry glyph's path for the thing whose state this is (a machine), drawn in the
    * subtle ink. Omitted, the cross in the danger tone: the load itself failed.
@@ -50,7 +50,7 @@ export interface LoadFailedProps {
   action?: LoadFailedAction | null;
   /** The raw technical detail, folded under its own title and set in mono; null for none. */
   details?: { title: string; text: string } | null;
-  /** A serious failure's report, opened from 「[报告问题]」 beside the press; null for none. */
+  /** A failure's report, opened from 「[报告问题]」 beside the press; null for a refusal. */
   report?: ErrorReport | (() => ErrorReport) | null;
 }
 

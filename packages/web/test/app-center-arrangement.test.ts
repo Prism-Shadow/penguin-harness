@@ -17,12 +17,25 @@
  * - Ungrouping puts a folder's apps in its place; the stored layout round-trips the grid.
  * - A drop on a tile's leading or trailing quarter goes beside it, the middle half into it; where
  *   nothing can go into it, the halves decide.
+ *
+ * Machines' apps (an administrator's App Center lists them after this server's):
+ * - A machine's app is keyed by its machine as well: two machines whose Agents share an id and a
+ *   workbench are two tiles, and this server's own keys stay what they were.
+ * - A stored app is awaited — kept though the grid cannot show it — only while its machine is
+ *   listed and has not answered, or while the machines are not known yet; an app of a machine the
+ *   list no longer names is not, nor is one of this server's.
+ * - Arranging the tiles on screen keeps an awaited app after the item it followed, inside its
+ *   folder when that is still there, first when nothing it followed is left; a folder taken apart
+ *   leaves its awaited apps at the top level after its own, and does not come back.
  */
 import { describe, expect, it } from "vitest";
 import type { AppCenterLayout, AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import {
+  appAwaited,
+  appKeyOf,
   arrange,
   canStep,
+  keepUnseenApps,
   dissolveFolder,
   layoutOf,
   makeFolder,
@@ -256,5 +269,100 @@ describe("dropOnTile", () => {
   it("splits in halves where nothing can go into the tile", () => {
     expect(dropOnTile(rect, 135, false)).toEqual({ side: "before" });
     expect(dropOnTile(rect, 145, false)).toEqual({ side: "after" });
+  });
+});
+
+describe("machines' apps", () => {
+  const onMachine = (machineId: string, id: string) => ({ ...shortcut(id), machineId });
+
+  it("keys a machine's app by its machine, so the same Agent and workbench on two machines are two tiles", () => {
+    const grid = arrange(
+      [shortcut("desk"), onMachine("m1", "desk"), onMachine("m2", "desk")],
+      null,
+    );
+    expect(outline(grid)).toEqual(["a1/desk", "m1:a1/desk", "m2:a1/desk"]);
+    expect(appKeyOf(shortcut("desk"))).toBe("a1/desk");
+  });
+
+  it("awaits an app only while its machine is listed and has not answered, or the machines are not known", () => {
+    const machines = [
+      { machineId: "m1", answered: false },
+      { machineId: "m2", answered: true },
+    ];
+    expect(appAwaited("m1:a1/desk", machines)).toBe(true);
+    // Answered: the app is on the grid, or it is gone from that machine.
+    expect(appAwaited("m2:a1/desk", machines)).toBe(false);
+    // A machine the list no longer names took its apps with it.
+    expect(appAwaited("m3:a1/desk", machines)).toBe(false);
+    expect(appAwaited("m3:a1/desk", null)).toBe(true);
+    expect(appAwaited("a1/desk", null)).toBe(false);
+  });
+
+  const awaited = (key: string) => key.startsWith("m1:");
+
+  it("keeps an awaited app after the tile it followed when the tiles on screen move", () => {
+    const previous = stored([
+      { type: "app", app: "a1/one" },
+      { type: "app", app: "m1:a1/desk" },
+      { type: "app", app: "a1/two" },
+      { type: "app", app: "a1/three" },
+    ]);
+    // The grid had no m1 tile: the viewer moved "three" to the front.
+    const next = stored([
+      { type: "app", app: "a1/three" },
+      { type: "app", app: "a1/one" },
+      { type: "app", app: "a1/two" },
+    ]);
+    expect(keepUnseenApps(next, previous, awaited).items).toEqual([
+      { type: "app", app: "a1/three" },
+      { type: "app", app: "a1/one" },
+      { type: "app", app: "m1:a1/desk" },
+      { type: "app", app: "a1/two" },
+    ]);
+  });
+
+  it("keeps an awaited app first when it led, and in its folder after the app it followed there", () => {
+    const previous = stored([
+      { type: "app", app: "m1:a1/lead" },
+      { type: "folder", id: "f1", name: "Work", apps: ["a1/one", "m1:a1/desk", "a1/two"] },
+      { type: "app", app: "a1/three" },
+    ]);
+    const next = stored([
+      { type: "app", app: "a1/three" },
+      { type: "folder", id: "f1", name: "Work", apps: ["a1/two", "a1/one"] },
+    ]);
+    expect(keepUnseenApps(next, previous, awaited).items).toEqual([
+      { type: "app", app: "m1:a1/lead" },
+      { type: "app", app: "a1/three" },
+      { type: "folder", id: "f1", name: "Work", apps: ["a1/two", "a1/one", "m1:a1/desk"] },
+    ]);
+  });
+
+  it("leaves the awaited apps of a folder taken apart at the top level, after its own", () => {
+    const previous = stored([
+      { type: "folder", id: "f1", name: "Work", apps: ["a1/one", "m1:a1/desk", "a1/two"] },
+      { type: "app", app: "a1/three" },
+    ]);
+    const next = stored([
+      { type: "app", app: "a1/one" },
+      { type: "app", app: "a1/two" },
+      { type: "app", app: "a1/three" },
+    ]);
+    expect(keepUnseenApps(next, previous, awaited).items).toEqual([
+      { type: "app", app: "a1/one" },
+      { type: "app", app: "a1/two" },
+      { type: "app", app: "m1:a1/desk" },
+      { type: "app", app: "a1/three" },
+    ]);
+  });
+
+  it("stores the grid as it is when nothing was stored before, or nothing is awaited", () => {
+    const next = stored([{ type: "app", app: "a1/one" }]);
+    expect(keepUnseenApps(next, null, awaited)).toEqual(next);
+    const previous = stored([
+      { type: "app", app: "m2:a1/gone" },
+      { type: "app", app: "a1/one" },
+    ]);
+    expect(keepUnseenApps(next, previous, awaited)).toEqual(next);
   });
 });

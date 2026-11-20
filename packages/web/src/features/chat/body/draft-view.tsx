@@ -39,7 +39,15 @@
  * always survive.
  */
 import { browserState, adoptBrowserSession } from "../../builtin-browser";
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { useLocation, useNavigate } from "react-router";
 import type {
   AgentModelConfigDto,
@@ -59,6 +67,7 @@ import { S } from "../../../lib/strings";
 import { UNCONFINED, draftSandboxAfter, type PermissionPick } from "../../../lib/permission-level";
 
 import { apiErrorText } from "../../../lib/api-error";
+import { failureNode } from "../../../lib/failure";
 import { rememberSessionMachine } from "../../../lib/session-machines";
 import { cachedMachineAgents, rememberMachineAgents } from "../../../lib/machine-cache";
 import { machineLink, remoteAgentsEmpty, type MachineLink } from "../../../lib/machine-link";
@@ -66,10 +75,18 @@ import { machineLink, remoteAgentsEmpty, type MachineLink } from "../../../lib/m
 import { useMachines } from "../../../state/machines";
 import { useAuth } from "../../../state/auth";
 import { useProject } from "../../../state/project";
+import { isConversationAgent } from "../../../lib/builtin-agents";
 import { useSessions } from "../../../state/sessions";
 import { ChatInput } from "../chat-input";
 import type { ComposerControl } from "../chat-input";
 import { goalPluginGate } from "../goal-plugin-gate";
+import {
+  offered,
+  promptHooksField,
+  saveSessionPromptModes,
+  usePromptModes,
+  type ComposerSwitches,
+} from "../prompt-modes";
 import { discardUnstartedSession } from "../unstarted-session";
 import { APPROVAL_MODES } from "../approval-mode";
 import { adoptDockScope, currentDockScope, setDockConversation } from "../../dock";
@@ -163,7 +180,7 @@ export function DraftView({
    */
   const [remoteAgents, setRemoteAgents] = useState<AgentSummary[]>([]);
   /** Why a connected machine's list may be empty: still asking, or its answer was a failure. */
-  const [remoteAgentsFailure, setRemoteAgentsFailure] = useState<string | null>(null);
+  const [remoteAgentsFailure, setRemoteAgentsFailure] = useState<ReactNode>(null);
   const { add, remove } = useSessions();
   // The draft key includes a user dimension (#68 cross-account leakage). RequireAuth
   // guarantees the user is logged in here; on the off chance there's no user (the
@@ -205,8 +222,11 @@ export function DraftView({
   const [workspaceMachine, setWorkspaceMachine] = useState<string | null>(
     cached.workspace === undefined ? null : (cached.machineId ?? null),
   );
-  /** The Agents actually offerable for this draft: the target machine's, or this one's. */
-  const agents = workspaceMachine === null ? localAgents : remoteAgents;
+  /** The Agents actually offerable for this draft: the target machine's, or this one's — never the system Agent, which holds no conversation. */
+  const agents = useMemo(
+    () => (workspaceMachine === null ? localAgents : remoteAgents).filter(isConversationAgent),
+    [workspaceMachine, localAgents, remoteAgents],
+  );
   /**
    * The workspace's machine as the Machines page sees it — connected, coming back, stopped —
    * from the one live account of the machines, so this composer and that page never disagree:
@@ -235,6 +255,7 @@ export function DraftView({
   // chat-defaults response carries, so the button shows what the Session would start with.
   const [sandboxPick, setSandboxPick] = useState<Partial<SessionSandbox>>(cached.sandbox ?? {});
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(cached.modelRef ?? null);
+  const [promptHooks, setPromptHooks] = useState<string[]>(cached.promptHooks ?? []);
   const textRef = useRef(cached.text ?? "");
   // A restored prompt can match an example. Typing only clears that match once.
   const [exampleText, setExampleText] = useState<string | null>(cached.text ?? null);
@@ -508,6 +529,12 @@ export function DraftView({
    */
   const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
   const resolvedAgentId = selectedAgent?.agentId ?? null;
+  // The composer's switches the draft's Agent offers, and the ones on (prompt-modes.ts).
+  const promptModes = usePromptModes(projectId, resolvedAgentId, workspaceMachine);
+  const switches = useMemo<ComposerSwitches>(
+    () => ({ modes: promptModes, on: offered(promptHooks, promptModes), onChange: setPromptHooks }),
+    [promptModes, promptHooks],
+  );
   useEffect(() => {
     setAgentThinkingLevel(null);
     if (!resolvedAgentId) return;
@@ -583,6 +610,7 @@ export function DraftView({
     if (workspaceMachine !== null) data.machineId = workspaceMachine;
     if (agentId) data.agentId = agentId;
     if (modelRef) data.modelRef = modelRef;
+    if (promptHooks.length > 0) data.promptHooks = promptHooks;
     if (skillsRef.current.length > 0) data.skills = skillsRef.current;
     // Carried through every write, so a reload finds the prefill still marked as composed
     // rather than resuming it as if it had been typed here.
@@ -601,6 +629,7 @@ export function DraftView({
     approvalMode,
     sandboxPick,
     modelRef,
+    promptHooks,
   ]);
 
   // The timer and unmount cleanup read persistNow via a ref to always get the **latest version**: a stale closure would write back outdated options.
@@ -738,7 +767,13 @@ export function DraftView({
         rememberMachineAgents(projectId, workspaceMachine, answered);
         if (!cancelled) setRemoteAgents(answered);
       } catch (err) {
-        if (!cancelled) setRemoteAgentsFailure(apiErrorText(err));
+        if (cancelled) return;
+        setRemoteAgentsFailure(
+          failureNode(err, {
+            text: S.machines.composer.failed(apiErrorText(err)),
+            what: "a machine's Agents could not be listed",
+          }),
+        );
       }
     })();
     return () => {
@@ -803,8 +838,13 @@ export function DraftView({
         createdId = created.session.sessionId;
         // The first task can use the draft's pages as soon as it starts.
         await adoptBrowserSession(browserScope, createdId);
-        const res = await api.postTask(createdId, { input, ...(goal ? { goal } : {}) });
+        const res = await api.postTask(createdId, {
+          input,
+          ...(goal ? { goal } : promptHooksField(switches.on)),
+        });
         await adoptBrowserSession(createdId, res.sessionId);
+        // The switches hold for the conversation, so the new Session keeps them on.
+        if (userId) saveSessionPromptModes(userId, res.sessionId, switches.on);
         // postTask answers with the CURRENT id: a Session with no Trace whose process
         // restarted in between self-heals into a new one. Everything recorded a moment ago
         // under the id we created is then about a Session that no longer answers to it, and
@@ -855,6 +895,8 @@ export function DraftView({
       // temporary one here is "" both times, and a send that kept the old machine would create
       // the Session on this server.
       workspaceMachine,
+      switches,
+      userId,
       add,
       remove,
       discardDraft,
@@ -930,6 +972,7 @@ export function DraftView({
         {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
         {...(cached.goal === true ? { initialGoal: true } : {})}
         goalPlugin={goalPlugin}
+        switches={switches}
         onSkillsChange={onSkillsChange}
         initialText={cached.text ?? ""}
         onTextChange={onTextChange}
@@ -941,7 +984,11 @@ export function DraftView({
           agents={agents}
           selected={selectedAgent}
           onSelect={selectAgent}
-          empty={remoteAgentsEmpty(remoteLink, remoteAgentsFailure)}
+          empty={
+            remoteLink === "connected" && remoteAgentsFailure !== null
+              ? remoteAgentsFailure
+              : remoteAgentsEmpty(remoteLink, null)
+          }
           machineId={workspaceMachine}
         />
         <WorkspaceSelect

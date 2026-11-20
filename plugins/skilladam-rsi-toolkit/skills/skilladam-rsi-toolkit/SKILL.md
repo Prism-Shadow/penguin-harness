@@ -1,7 +1,7 @@
 ---
 name: skilladam-rsi-toolkit
 description: "Evolve a reusable Markdown Skill with SkillAdam from execution trajectories and feedback using an Evolving Issue Tracker (EIT) and a variance-adaptive edit budget."
-version: 2026.11.17.1
+version: 2026.11.20.1
 ---
 
 # SkillAdam

@@ -108,7 +108,9 @@ describe("built-in Agent provisioning", () => {
     // (plugins marked `preinstall: false`, e.g. use-claude-code, stay manual-install only).
     const skillsOf = async (agentId: string) =>
       (
-        await fs.readdir(path.join(t.root, projectId, "agents", agentId, "agent_state", "skills"))
+        await fs.readdir(
+          path.join(t.root, "projects", projectId, "agents", agentId, "agent_state", "skills"),
+        )
       ).sort();
     expect(await skillsOf("default_agent")).toEqual(
       loadPreinstalledPlugins()
@@ -118,6 +120,7 @@ describe("built-in Agent provisioning", () => {
     // The preinstalled plugins' hook packages land beside the skills, and no other plugin's.
     const hooksDir = path.join(
       t.root,
+      "projects",
       projectId,
       "agents",
       "default_agent",
@@ -138,7 +141,15 @@ describe("built-in Agent provisioning", () => {
     // The default AGENTS.md is empty: it carries no preset guidance (delegation and task
     // conventions live in the default template's Suggested workbenches section).
     const defaultMd = await fs.readFile(
-      path.join(t.root, projectId, "agents", "default_agent", "agent_state", "AGENTS.md"),
+      path.join(
+        t.root,
+        "projects",
+        projectId,
+        "agents",
+        "default_agent",
+        "agent_state",
+        "AGENTS.md",
+      ),
       "utf8",
     );
     expect(defaultMd).toBe("");

@@ -56,6 +56,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { isConversationAgent } from "../../lib/builtin-agents";
 import { formatScore } from "../../lib/format";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -65,6 +66,7 @@ import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import {
   DEFAULT_TEST_REPETITIONS,
   MAX_RUNS,
+  benchmarkFolder,
   evaluateTail,
   optimizeTail,
   rsiOptimizeTail,
@@ -233,6 +235,7 @@ export function UseBenchmarkModal({
   const evaluateParams: EvaluateParams = {
     targetAgentId: testAgentId,
     benchmarkId: benchmark.id,
+    benchmarkDir: benchmarkFolder(benchmark),
     runs: runsValue ?? benchmark.runs ?? 1,
     ...testedRuntime,
   };
@@ -245,6 +248,7 @@ export function UseBenchmarkModal({
     skill: optimizerSkill,
     targetAgentId: testAgentId,
     benchmarkId: benchmark.id,
+    benchmarkDir: benchmarkFolder(benchmark),
     testRepetitions: repetitionsValue ?? DEFAULT_TEST_REPETITIONS,
     ...testedRuntime,
   };
@@ -282,7 +286,7 @@ export function UseBenchmarkModal({
     onClose();
   };
 
-  const agentOptions = agents.map((a) => (
+  const agentOptions = agents.filter(isConversationAgent).map((a) => (
     <option key={a.agentId} value={a.agentId}>
       {agentDisplayName(a)}
     </option>

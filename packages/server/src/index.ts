@@ -41,6 +41,8 @@ import { attachExtensionWebSocket } from "./builtin-browser/extension-ws.js";
 import type { ExtensionGate } from "./builtin-browser/extension-ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
+import { migrateDataRoot as migrateRootLayout } from "./layout/migrate-data-root.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { Errors } from "@prismshadow/penguin-library-observability";
@@ -60,6 +62,8 @@ async function main(): Promise<void> {
   server.readConfig();
   await server.ensureSoleInstance();
   server.listen();
+  // The data root's layout, before anything reads a Project of it: the lock is held from here.
+  await server.migrateDataRoot();
   // Reconcile only after this process owns the root (the lock was acquired in listen):
   // a start that lost the ownership race exits at ensureSoleInstance before touching the
   // root, so a reconciling copy can never interleave with a live server's push — the
@@ -216,6 +220,37 @@ class PenguinServer {
     );
     console.error(`Existing instance: http://localhost:${existing.port}/`);
     process.exit(EXIT_ALREADY_RUNNING);
+  }
+
+  /**
+   * The data root's one-time layout migration (core's state/layout-migration/, PRFC-0034):
+   * Project folders into `projects/`, Benchmarks into the Evaluation Center's data folder. Run
+   * once the listener is up — the lock is this process's then (onListening) — and before the
+   * platform, so before every route, runtime, file watcher and the plugin loader; meanwhile the
+   * port answers the starting response. web.db is opened for it alone, to rewrite the paths it
+   * stores, and closed again. The platform runs the same migration before it builds anything,
+   * which finds nothing left to do here (layout/migrate-data-root.ts).
+   *
+   * A migration that stops ends the start: its sentence (a Project called `projects`, a folder
+   * that cannot be moved) is printed as an `Error:` line, which the desktop app's start dialog
+   * and a machine's start failure show, and the process exits without serving.
+   */
+  async migrateDataRoot(): Promise<void> {
+    await this.bound;
+    let failure: unknown = null;
+    const db = openDatabase(this.config.dbPath);
+    try {
+      await migrateRootLayout(this.config.root, db, (line) => console.log(line));
+    } catch (err) {
+      failure = err;
+    } finally {
+      db.close();
+    }
+    if (failure === null) return;
+    const name = failure instanceof Error ? failure.name : "Error";
+    console.error(`${name}: ${failure instanceof Error ? failure.message : String(failure)}`);
+    this.cleanupInstanceFiles();
+    process.exit(EXIT_LAYOUT_MIGRATION);
   }
 
   /**
@@ -629,6 +664,9 @@ const EXIT_ALREADY_RUNNING = 3;
 
 /** Exit code for a Node below the floor (core's node-floor.ts): a plain failure. */
 const EXIT_NODE_BELOW_FLOOR = 1;
+
+/** Exit code for a data root whose layout migration stopped (layout/migrate-data-root.ts). */
+const EXIT_LAYOUT_MIGRATION = 4;
 
 /** Port announcement (PENGUIN_PORT_FILE): tmp + rename, so a polling reader never sees a partial write. */
 function writePortFile(file: string, port: number): void {

@@ -78,6 +78,7 @@ function BenchmarkHarness() {
   if (!open) return null;
   return h(ImportBenchmarkModal, {
     projectId: PROJECT_ID,
+    benchmarksDir: `/data/projects/${PROJECT_ID}/agents/system_agent/app/data/benchmark`,
     agents: [{ agentId: AGENT_ID } as AgentSummary],
     onClose: () => setOpen(false),
     onImported: () => setOpen(false),
@@ -222,7 +223,7 @@ describe("Benchmark import examples", () => {
     await waitFor(() => whereIs(router) === "/chat/new");
     const text = loadDraft(draftKey(ADMIN_ME.user.userId, PROJECT_ID)).text as string;
     expect(text).toContain(SOURCE);
-    expect(text).toContain("<app_data_dir>/benchmarks/<id>/");
+    expect(text).toContain("agents/system_agent/app/data/benchmark/<id>/");
     expect(text).not.toContain("penguin benchmark");
   });
 });

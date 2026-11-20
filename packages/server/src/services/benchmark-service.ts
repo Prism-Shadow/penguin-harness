@@ -1,5 +1,6 @@
 /**
- * Benchmark score reading: walks the Project's `benchmarks/<id>/`, reads the manifest
+ * Benchmark score reading: walks the Project's Benchmark folder `<dir>/<id>/` (the Evaluation
+ * Center's data folder, core's benchmark-dirs.ts: `resolveBenchmarksDir`), reads the manifest
  * `benchmark_config.toml` (core's readBenchmarkManifest: title, description, per-case run count
  * `runs`, the build `status` — `draft` while the Benchmark is still being written, `failed` when
  * its calibration never produced a result to freeze, `published` otherwise — and, when the file
@@ -30,11 +31,11 @@ import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   BenchmarkManifestError,
-  benchmarksDir,
   checkBenchmarkManifest,
   nextDateVersion,
   placeBenchmark,
   readBenchmarkManifest,
+  resolveBenchmarksDir,
   writeBenchmarkManifest,
   type BenchmarkManifest,
 } from "@prismshadow/penguin-core";
@@ -328,14 +329,22 @@ export class BenchmarkService implements Benchmarks {
   }
   @Use() private readonly workspaceFiles!: WorkspaceFiles;
 
+  /**
+   * The folder the Project's Benchmarks are in: the Evaluation Center's data folder, or the old
+   * `benchmarks/` of a Project whose `system_agent` is the user's own Agent (compat C1).
+   */
+  private dir(projectId: string): Promise<string> {
+    return resolveBenchmarksDir(this.root, projectId);
+  }
+
   async list(projectId: string): Promise<BenchmarksResponse> {
-    const dir = benchmarksDir(this.root, projectId);
+    const dir = await this.dir(projectId);
     let items: Array<{ name: string; isDir: boolean }>;
     try {
       const entries = await fs.readdir(dir, { withFileTypes: true });
       items = entries.map((e) => ({ name: e.name, isDir: e.isDirectory() }));
     } catch {
-      return { benchmarks: [] }; // Doesn't exist when unconfigured.
+      return { benchmarks: [], dir }; // Doesn't exist when unconfigured.
     }
     const benchmarks: BenchmarkSummary[] = [];
     for (const item of items.filter((i) => i.isDir).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -350,17 +359,17 @@ export class BenchmarkService implements Benchmarks {
       if (manifest === null) continue;
       benchmarks.push(await this.summarize(benchDir, item.name, manifest));
     }
-    return { benchmarks };
+    return { benchmarks, dir };
   }
 
   /**
-   * Every id `create` refuses as taken, as names only: each entry under `benchmarks/`. Unlike
+   * Every id `create` refuses as taken, as names only: each entry of the Benchmark folder. Unlike
    * `list`, this includes a directory with no manifest (the debris of one deleted
    * mid-evaluation), and it reads no manifest and no scoreboard.
    */
   async takenIds(projectId: string): Promise<string[]> {
     try {
-      return await fs.readdir(benchmarksDir(this.root, projectId));
+      return await fs.readdir(await this.dir(projectId));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw error;
@@ -368,7 +377,7 @@ export class BenchmarkService implements Benchmarks {
   }
 
   /**
-   * Creates `benchmarks/<id>/` in the layout the evaluation Skills read: `benchmark_config.toml`
+   * Creates `<id>/` in the Benchmark folder, in the layout the evaluation Skills read: `benchmark_config.toml`
    * (id, title, description, runs, status `published`, the day's first version, origin `manual`),
    * `scoreboard.yaml` with an empty evaluations list, and per case `statement/README.md`
    * (`# <title>`, then the statement) and `rubric/README.md` (the rubric verbatim). An existing
@@ -377,9 +386,10 @@ export class BenchmarkService implements Benchmarks {
    * a later write fails.
    */
   async create(projectId: string, input: BenchmarkCreateInput): Promise<BenchmarkSummary> {
-    const dir = benchmarksDir(this.root, projectId);
+    const dir = await this.dir(projectId);
     const benchDir = path.join(dir, input.id);
-    await fs.mkdir(dir, { recursive: true });
+    // The levels of an app's folders are this user's alone, as the workbench host makes them.
+    await fs.mkdir(dir, { recursive: true, mode: 0o700 });
     try {
       // A non-recursive mkdir is the existence check: it fails atomically on a directory
       // that is already there, so two creates of one id cannot both proceed.
@@ -431,12 +441,12 @@ export class BenchmarkService implements Benchmarks {
   }
 
   /**
-   * Removes `benchmarks/<id>/` whole — cases, config and scoreboard. Only a real directory
+   * Removes `<id>/` of the Benchmark folder whole — cases, config and scoreboard. Only a real directory
    * counts as existing: a symlink there is not followed, so nothing outside the Project's own
    * benchmarks directory can be deleted through this route.
    */
   async remove(projectId: string, benchmarkId: string): Promise<void> {
-    const benchDir = path.join(benchmarksDir(this.root, projectId), benchmarkId);
+    const benchDir = path.join(await this.dir(projectId), benchmarkId);
     let isDirectory = false;
     try {
       isDirectory = (await fs.lstat(benchDir)).isDirectory();
@@ -450,7 +460,7 @@ export class BenchmarkService implements Benchmarks {
   }
 
   /**
-   * Writes the package an uploaded zip holds as `benchmarks/<id>/` (benchmark-archive.ts says what
+   * Writes the package an uploaded zip holds as `<id>/` of the Benchmark folder (benchmark-archive.ts says what
    * is refused and why). What lands is the package as a new copy: its cases byte for byte; its
    * manifest, written with its id, with the origin rewritten to `zip` and the time of this import,
    * or to `git` with the repository folder `options.origin` names for a package fetched from one
@@ -468,9 +478,10 @@ export class BenchmarkService implements Benchmarks {
     options: BenchmarkImportOptions,
   ): Promise<BenchmarkSummary> {
     const { manifest: packaged, caseFiles } = readBenchmarkArchive(archive);
-    const dir = benchmarksDir(this.root, projectId);
+    const dir = await this.dir(projectId);
     const benchDir = path.join(dir, packaged.id);
-    await fs.mkdir(dir, { recursive: true });
+    // The levels of an app's folders are this user's alone, as the workbench host makes them.
+    await fs.mkdir(dir, { recursive: true, mode: 0o700 });
     if (!options.overwrite && (await occupied(benchDir))) throw benchmarkExists(packaged.id);
     const running = options.overwrite ? await runningTrial(benchDir) : null;
     if (running !== null) {
@@ -536,7 +547,7 @@ export class BenchmarkService implements Benchmarks {
    * directory counts: a symlink is not followed.
    */
   async exportArchive(projectId: string, benchmarkId: string): Promise<BenchmarkArchive> {
-    const benchDir = path.join(benchmarksDir(this.root, projectId), benchmarkId);
+    const benchDir = path.join(await this.dir(projectId), benchmarkId);
     let isDirectory = false;
     try {
       isDirectory = (await fs.lstat(benchDir)).isDirectory();
@@ -583,7 +594,7 @@ export class BenchmarkService implements Benchmarks {
   }
 
   async listCases(projectId: string, benchmarkId: string): Promise<BenchmarkCasesResponse> {
-    const baseDir = benchmarksDir(this.root, projectId);
+    const baseDir = await this.dir(projectId);
     const benchDir = path.join(baseDir, benchmarkId);
     let entries: Array<{ name: string; isDirectory(): boolean }>;
     let realBaseDir: string;
@@ -653,7 +664,7 @@ export class BenchmarkService implements Benchmarks {
     caseId: string,
     material: CaseMaterial,
   ): Promise<string> {
-    const benchDir = path.join(benchmarksDir(this.root, projectId), benchmarkId);
+    const benchDir = path.join(await this.dir(projectId), benchmarkId);
     const caseDir = path.join(benchDir, caseId);
     const materialRoot = path.join(caseDir, material);
     try {
@@ -751,6 +762,7 @@ export class BenchmarkService implements Benchmarks {
 
     return {
       id,
+      dir: benchDir,
       ...described,
       caseCount,
       evaluations,

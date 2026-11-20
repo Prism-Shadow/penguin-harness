@@ -13,11 +13,11 @@ The demo that this Skill's quick start runs. A fresh agent has to turn short not
 | Parameters | 1 subset × 5 demonstrations × 4 proposals, seed 0; selection on all six cases |
 | Budget | at most (1 + 4) × 6 × 1 = 30 Target executions and 4 proposer calls |
 
-If `PROJECT_DIR/benchmarks/house-style-brief/` exists, reuse it unchanged when it is published and its case ids and statements match this file, and say so; otherwise stop and ask. Name the Target you used in the report.
+If `PROJECT_DIR/agents/system_agent/app/data/benchmark/house-style-brief/` exists, reuse it unchanged when it is published and its case ids and statements match this file, and say so; otherwise stop and ask. Name the Target you used in the report.
 
 ## Write the Benchmark
 
-Write it under `PROJECT_DIR/benchmarks/house-style-brief/`, beside `agents/`. `benchmark_config.toml`, with today's date in the version:
+Write it under `PROJECT_DIR/agents/system_agent/app/data/benchmark/house-style-brief/`, the Evaluation Center's data folder, outside the Target. `benchmark_config.toml`, with today's date in the version:
 
 ```toml
 id = "house-style-brief"

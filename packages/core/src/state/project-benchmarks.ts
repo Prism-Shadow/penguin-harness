@@ -4,13 +4,14 @@
  * They are written once, when the Project is created — the server's Project creation, and the
  * one-time bootstrap of `default_project` — and nothing later re-reads or re-writes them: a
  * deleted one stays deleted, and a Project created before a Benchmark shipped never gets it.
- * Loading or initializing an Agent, default_agent included, never touches `benchmarks/`.
+ * Loading or initializing an Agent, default_agent included, never touches the Benchmark folder
+ * (the Evaluation Center's data folder, benchmark-dirs.ts).
  *
  * A directory already under an id is left alone, whatever it holds: a `default_project` adopted
  * from a data root the CLI made, or one whose web.db was re-created over an existing data root,
  * keeps its own and is given only the ids that are missing.
  *
- * Each Benchmark is written into a temporary directory under `benchmarks/.seeding/` and renamed
+ * Each Benchmark is written into a temporary directory under the folder's `.seeding/` and renamed
  * into place (placeBenchmark, which the server's zip import writes through too), so a write that
  * fails part-way leaves no half-written Benchmark under its id; the error reaches the caller,
  * whose Project creation then rolls the Project back.
@@ -23,9 +24,9 @@ import {
   type BuiltinBenchmark,
 } from "./builtin-benchmarks.js";
 import { EXAMPLE_BENCHMARK_ID, writeExampleBenchmark } from "./example-benchmark.js";
-import { benchmarksDir } from "./paths.js";
+import { benchmarksDir } from "./benchmark-dirs.js";
 
-/** Where a Benchmark is written under `benchmarks/` before it is renamed into place. */
+/** Where a Benchmark is written under the Benchmark folder before it is renamed into place. */
 const STAGING_DIR = ".seeding";
 
 async function exists(p: string): Promise<boolean> {
@@ -59,7 +60,7 @@ export interface PlaceBenchmarkOptions {
 }
 
 /**
- * The last placement asked for per `benchmarks/` directory, settled either way: the next one
+ * The last placement asked for per Benchmark folder, settled either way: the next one
  * starts after it. Two that overlap race each other's renames — one can move the other's fresh
  * copy aside and fail to put its own old one back, which then stays under `.seeding/` for good —
  * and one finishing removes `.seeding/` while the next is about to stage in it.
@@ -67,7 +68,7 @@ export interface PlaceBenchmarkOptions {
 const placing = new Map<string, Promise<void>>();
 
 /**
- * Writes the Benchmark `id` into `dir`, a Project's `benchmarks/`: `write` fills a temporary
+ * Writes the Benchmark `id` into `dir`, a Project's Benchmark folder: `write` fills a temporary
  * directory under `.seeding/`, which is then renamed to `<dir>/<id>`. A write that fails part-way
  * leaves nothing under the id, and the staging directory goes as soon as it is empty.
  *
@@ -182,7 +183,8 @@ export async function provisionProjectBenchmarks(
   builtins?: readonly BuiltinBenchmark[],
 ): Promise<void> {
   const dir = benchmarksDir(root, projectId);
-  await fs.mkdir(dir, { recursive: true });
+  // The folders of an app's data are this user's alone, as the workbench host makes them.
+  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
   const seeds: BenchmarkSeed[] = [
     { id: EXAMPLE_BENCHMARK_ID, write: writeExampleBenchmark },
     ...(builtins ?? (await readBuiltinBenchmarks())).map((bench) => ({

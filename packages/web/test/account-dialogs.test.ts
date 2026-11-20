@@ -8,18 +8,22 @@
  *   is named under the confirmation as soon as it is typed.
  * - Cancel with anything typed asks first: "keep editing" keeps the dialog and the typing,
  *   "discard" closes it. An untouched dialog closes at once.
+ * - A refused password is named under its field and offers no report; a save the server could
+ *   not complete is named there too, with 「[报告问题]」 after it, which opens its report.
  * - Add user waits for an id that keeps the naming rule and a password; a broken id is named
  *   under its box as it is typed.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
+import { closeReport, reportStore } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
 import { ChangePasswordDialog } from "../src/components/account/change-password-dialog";
 import { AdminUsersSection } from "../src/features/admin/admin-users-page";
 import { AuthProvider } from "../src/state/auth";
-import { adminSettingsServer } from "./helpers/admin-settings";
+import { ADMIN_ME, adminSettingsServer } from "./helpers/admin-settings";
+import { apiError, json, stubFetch } from "./helpers/fetch";
 import {
   button,
   click,
@@ -79,6 +83,40 @@ describe("changing one's password", () => {
     await click(button("Cancel"));
     expect(hasButton("Discard changes")).toBe(false);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("names a refused password under its field alone, and a failed save with Report after it", async () => {
+    // Two saves: the first is refused for the current password, the second fails on the server.
+    const saves = [
+      apiError(400, "password_mismatch", "Current password is incorrect."),
+      apiError(500, "internal", "database is locked"),
+    ];
+    stubFetch((request) =>
+      request.path === "/api/me"
+        ? json(ADMIN_ME)
+        : request.path === "/api/me/password" && saves.length > 0
+          ? saves.shift()!
+          : apiError(404, "not_found"),
+    );
+    await mount(h(AuthProvider, null, h(ChangePasswordDialog, { open: true, onClose: vi.fn() })));
+    await waitFor(() => document.querySelector('input[type="password"]') !== null);
+    await type(field("Current password"), "old-secret");
+    await type(field("New password"), "n3w-Secret!");
+    await type(field("Confirm new password"), "n3w-Secret!");
+    /** What is said under the current password, through the field's own description. */
+    const underCurrent = () =>
+      document.getElementById(field("Current password").getAttribute("aria-describedby") ?? "");
+
+    await click(button("Save"));
+    await waitFor(() => underCurrent() !== null);
+    expect(underCurrent()!.textContent).not.toBe("");
+    expect(underCurrent()!.querySelector("[data-report-issue]")).toBeNull();
+
+    await click(button("Save"));
+    await waitFor(() => underCurrent()?.querySelector("[data-report-issue]") != null);
+    await click(underCurrent()!.querySelector("[data-report-issue]")!);
+    expect(reportStore.getState().open?.facts).toContainEqual(["Error code", "internal"]);
+    closeReport();
   });
 });
 

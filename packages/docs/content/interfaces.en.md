@@ -330,7 +330,7 @@ interface MCPServerConfig {
 const environment = new Environment({
   workspaceDir,
   toolConfig,
-  sessionScratchpadDir, // e.g. <dataRoot>/<project>/agents/<agent>/scratchpad/<sessionId>
+  sessionScratchpadDir, // e.g. <dataRoot>/projects/<project>/agents/<agent>/scratchpad/<sessionId>
 });
 ```
 

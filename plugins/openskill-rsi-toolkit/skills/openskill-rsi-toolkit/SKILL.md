@@ -1,7 +1,7 @@
 ---
 name: openskill-rsi-toolkit
 description: "Learn reusable Skills with OpenSkill by retrieving domain knowledge, refining Skills with independent virtual tests without target-task supervision, and exporting the last valid revision."
-version: 2026.11.17.1
+version: 2026.11.20.1
 ---
 
 # OpenSkill

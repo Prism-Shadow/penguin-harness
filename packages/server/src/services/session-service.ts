@@ -32,6 +32,8 @@ import {
   agentsDir,
   createAgent,
   isSessionMeta,
+  listProjectDirs,
+  isSystemAgent,
   normalizeSessionSource,
 } from "@prismshadow/penguin-core";
 import type {
@@ -63,6 +65,7 @@ import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { matchesWorkspaceGroup } from "./workspace-group.js";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { aboveSandboxCeiling } from "./sandbox-ceiling.js";
+import { refuseSystemAgentSessions } from "./system-agent.js";
 
 /** A stored policy's network level as the composer names it. */
 function networkOf(policy: SandboxSettings): SessionSandbox["network"] {
@@ -786,7 +789,9 @@ export class SessionService {
    * vendor nobody named. Omitting both falls back to the Project's default reference
    * (400 prompting to configure a model first if there is none). `workspace` is already
    * validated by the route guard. The new Session is added to the active table
-   * (idle).
+   * (idle). The system Agent runs none (409 `system_agent_no_sessions`): every surface that
+   * opens a Session — the Web App, the CLI, AMSP, schedules, organizations, workbenches — comes
+   * through here.
    */
   async createSession(args: {
     projectId: string;
@@ -823,6 +828,12 @@ export class SessionService {
         "modelId and provider must be given together as a (provider, modelId) pair: specify both, or neither to use the Project's default model.",
       );
     }
+    const root = this.deps.root;
+    await refuseSystemAgentSessions(
+      { isSystemAgent: (projectId, agentId) => isSystemAgent(root, projectId, agentId) },
+      args.projectId,
+      args.agentId,
+    );
     // Checked before anything is created: a refused pick must not leave a Session behind.
     const sandbox = this.snapshotSandbox(args);
     let modelId: string;
@@ -975,7 +986,7 @@ export class SessionService {
    * Startup adoption sweep: walks the whole trace tree once per boot and adopts every
    * unmanaged Session (a Trace with no index row — legacy CLI-direct runs) as a
    * `client: "cli"` row, so lists stay pure-SQLite afterwards. Enumerates
-   * `<root>/<project>/agents/<agent>/` directories directly — legacy Traces can live
+   * `<root>/projects/<project>/agents/<agent>/` directories directly — legacy Traces can live
    * under Projects the DB has never seen — and reuses the existing discovery/adoption
    * path per Agent (mtime-gated TraceIndexService reconcile, then registration-time
    * facts; adoption reads no file itself). Idempotent (insertOrIgnore), so re-running —
@@ -984,7 +995,7 @@ export class SessionService {
    */
   async adoptUnmanagedTraceSessions(): Promise<number> {
     let adopted = 0;
-    for (const projectId of await listChildDirs(this.deps.root)) {
+    for (const { id: projectId } of await listProjectDirs(this.deps.root)) {
       const agentIds = await listChildDirs(agentsDir(this.deps.root, projectId));
       for (const agentId of agentIds) {
         // A dot-directory (`.deleting/`, where a deleted Agent's files wait) is never an Agent.

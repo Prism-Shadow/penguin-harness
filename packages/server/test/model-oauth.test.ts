@@ -559,7 +559,10 @@ describe("model-oauth routes", () => {
     expect(JSON.stringify(models)).not.toContain("sk-oauth-minted-key-9911");
 
     // Stored once, for the group — not once per model.
-    const cfg = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const cfg = await readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(cfg.match(/sk-oauth-minted-key-9911/g)).toHaveLength(1);
 
     expect(
@@ -656,7 +659,10 @@ describe("model-oauth routes", () => {
     for (const m of body.models.filter((row) => row.provider === "tokendance")) {
       expect(m.effective.apiKeySource, m.modelId).toBe(m.modelId === "glm-5.3" ? "model" : "none");
     }
-    const cfg = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const cfg = await readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(cfg).not.toContain("sk-oauth-minted-key-9911");
     expect(cfg).toContain("sk-td-own-row-0017");
   });

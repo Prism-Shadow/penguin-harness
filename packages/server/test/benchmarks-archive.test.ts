@@ -678,7 +678,7 @@ describe("benchmark packages", () => {
       expect(res.status).toBe(status);
       expect(((await res.json()) as { error: { code: string } }).error.code).toBe(code);
       expect(await fs.readdir(dir)).toEqual([]);
-      expect(await exists(path.join(t.root, projectId, "escape.md"))).toBe(false);
+      expect(await exists(path.join(t.root, "projects", projectId, "escape.md"))).toBe(false);
       expect(await exists(path.join(t.root, "escape.md"))).toBe(false);
     });
   });

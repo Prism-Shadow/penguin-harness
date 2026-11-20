@@ -9,7 +9,7 @@
  * Benchmark is the merge of every machine holding it: a row names the machine its round was read
  * from when there is more than one, and a case's files come from the machine that listed it.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { BenchmarkCaseSummary, BenchmarkEvaluation } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
@@ -40,7 +40,6 @@ import {
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import type { MergedBenchmark, MergedCase, MergedEvaluation } from "../../lib/benchmark-merge";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
 import { toneInk } from "../../lib/tone";
 import { useLocale } from "../../state/locale";
@@ -60,9 +59,15 @@ import {
   type EvaluationSeries,
 } from "./benchmark-metrics";
 
-import { askCaseExamples, askCaseTail, type AskCaseParams } from "./benchmark-prompts";
+import {
+  askCaseExamples,
+  askCaseTail,
+  benchmarkFolder,
+  type AskCaseParams,
+} from "./benchmark-prompts";
 
 import { EvaluationDetailModal } from "./evaluation-detail-modal";
+import { failureNode } from "../../lib/failure";
 
 /** A score series' paint: palette slot i, or the neutral for the evaluations with no label. */
 const scoreSeriesPaint = (s: EvaluationSeries, i: number): ChartPaint =>
@@ -285,6 +290,7 @@ function EvaluationRow({
  */
 function caseAskParams(
   benchmarkId: string,
+  benchmarkDir: string,
   caseId: string,
   evaluations: readonly BenchmarkEvaluation[],
 ): AskCaseParams {
@@ -292,6 +298,7 @@ function caseAskParams(
   const scored = newest?.cases.find((c) => c.case === caseId);
   return {
     benchmarkId,
+    benchmarkDir,
     caseId,
     latest:
       newest !== undefined && scored !== undefined
@@ -319,7 +326,7 @@ function CasesSection({
   onOpenCase,
 }: {
   cases: BenchmarkCaseSummary[] | null;
-  error: string | null;
+  error: ReactNode;
   onOpenCase: (caseId: string) => void;
 }) {
   const [page, setPage] = useState(0);
@@ -383,7 +390,7 @@ export function BenchmarkDetail({
   const pictureOf = (ev: MergedEvaluation) => avatarSrc(ev.agentId ?? "", ev.machineId);
   const description = benchmarkDescription(bm, locale);
   const [caseStatements, setCaseStatements] = useState<MergedCase[] | null>(null);
-  const [caseError, setCaseError] = useState<string | null>(null);
+  const [caseError, setCaseError] = useState<ReactNode>(null);
   const [openCaseId, setOpenCaseId] = useState<string | null>(null);
   const machinesKey = bm.machineIds.map((machineId) => machineId ?? "").join(",");
   /** Which evaluation's dialog is open, as a position in scoreboard order. */
@@ -406,7 +413,9 @@ export function BenchmarkDetail({
         if (cases !== null) {
           setCaseStatements(cases);
           setCaseError(null);
-        } else if (error !== null) setCaseError(apiErrorText(error));
+        } else if (error !== null) {
+          setCaseError(failureNode(error, { what: "a Benchmark's cases could not be read" }));
+        }
       }),
     // The machines are part of what the read asks; the key keeps a re-render from re-asking.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -479,6 +488,7 @@ export function BenchmarkDetail({
       {openEvaluation && (
         <EvaluationDetailModal
           benchmarkId={bm.id}
+          benchmarkDir={benchmarkFolder(bm)}
           evaluation={openEvaluation}
           avatarSrc={pictureOf(openEvaluation)}
           caseTitles={caseTitles}
@@ -518,7 +528,7 @@ export function BenchmarkDetail({
           description={S.benchmark.askCaseDescription}
           question={S.benchmark.askCaseExamples.explain.prompt}
           examples={askCaseExamples()}
-          tail={askCaseTail(caseAskParams(bm.id, openCase.id, evaluations))}
+          tail={askCaseTail(caseAskParams(bm.id, benchmarkFolder(bm), openCase.id, evaluations))}
         />
       )}
     </div>

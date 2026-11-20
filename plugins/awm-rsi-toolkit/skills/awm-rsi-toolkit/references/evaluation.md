@@ -4,15 +4,15 @@ How this toolkit measures a Target Agent on a Benchmark without any other plugin
 
 ## Paths
 
-Resolve every path from the Environment's `App Data Dir`; never search for the Project:
+Resolve every path from the Environment's `App Data Dir`, and the Benchmark's folder from the request that names it; never search for the Project:
 
 ```text
 PROJECT_DIR  = <app_data_dir>
 PROJECT_ID   = basename of PROJECT_DIR
-PENGUIN_HOME = dirname of PROJECT_DIR
+PROJECTS_DIR = dirname of PROJECT_DIR      # the folder holding the Project; not the data root
 TARGET       = PROJECT_DIR/agents/<test_agent_id>
 STATE        = TARGET/agent_state
-BENCHMARK    = PROJECT_DIR/benchmarks/<benchmark_id>
+BENCHMARK    = <benchmark_dir>             # the BENCHMARK_DIR the request names; when it names none, PROJECT_DIR/agents/system_agent/app/data/benchmark/<benchmark_id>
 CASE         = BENCHMARK/<case_id>       # statement/README.md is public; rubric/README.md is private
 SCOREBOARD   = BENCHMARK/scoreboard.yaml
 ```
@@ -33,6 +33,7 @@ run: <1_based_run_index>
 expected_version: <agent_state_version>
 test_agent_id: <test_agent_id>
 benchmark_id: <benchmark_id>
+benchmark_dir: <BENCHMARK>
 provider: <provider>
 model_id: <model_id>
 ```
@@ -81,8 +82,6 @@ You evaluate exactly one cell. Do not spawn another worker, do not write `SCOREB
 ```bash
 PROJECT_DIR="<app_data_dir>"
 PROJECT_ID="$(basename "$PROJECT_DIR")"
-PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
-export PENGUIN_HOME
 penguin run \
   --message "Read README.md in the current Workspace and complete the task exactly as specified there." \
   --provider "<provider>" --model-id "<model_id>" --project-id "$PROJECT_ID" \
@@ -90,8 +89,8 @@ penguin run \
   --approve allow-all
 ```
 
-   (Never pass `--source`: it is retired; every Session `penguin run` creates is a CLI Session and lands in the Web App's Background folder.) Use the exact requested Agent, Project, Workspace and model pair; never fall back to a Project default. Retry a launch only when unchanged Workspace and Trace evidence proves the Target did not start, each retry with a new diagnosis and a specific correction. Return `evaluation_failed` when no safe repair remains or it is unclear whether the Target started.
-3. **Harbor cases.** If the statement's `## How this case is run` section names the Harbor framework, links the benchmark repository at a 40-character commit and gives the `harbor run` launch, run that launch instead of step 2, from the root of a checkout at that commit, following the repository README section the statement links (fetching, concurrency, retries, `result.json`, credentials). The trial must run the Target, not a stock agent: derive `PROJECT_ID` and `PENGUIN_HOME` as in step 2, pick a job name not used before (`<case_id>-run<run>-<UTC timestamp>`), pack the State into `BENCHMARK/.jobs/<job>.agent-state.tar.gz` (create `.jobs/` when missing) with `tar --exclude=./.vault.toml --exclude=./memory --exclude=./schedule -czf <archive> -C "STATE" .`, and insert `--ak agent_state_tar=<archive> --ak host_penguin_home="$PENGUIN_HOME" --ak host_project_id="$PROJECT_ID"` and, when the checkout holds the install bundle the README describes, `--ak install_bundle=<that file>` before `--agent-setup-timeout-multiplier`, with `--job-name <job> -o "BENCHMARK/.jobs"`; remove the archive after the run. The verifier's reward × 100 is the score; `result.json`'s `agent_result.cost_usd` the cost; `agent_execution` start/finish the duration; `harbor:<trial directory name>` the session id. The one configuration value you look up is the model's API host, through the repository's helper, as that section says.
+   (Never pass `--source`: it is retired; every Session `penguin run` creates is a CLI Session and lands in the Web App's Background folder. Set no `PENGUIN_HOME`: the `penguin` on your PATH reaches the server running this Session through its environment.) Use the exact requested Agent, Project, Workspace and model pair; never fall back to a Project default. Retry a launch only when unchanged Workspace and Trace evidence proves the Target did not start, each retry with a new diagnosis and a specific correction. Return `evaluation_failed` when no safe repair remains or it is unclear whether the Target started.
+3. **Harbor cases.** If the statement's `## How this case is run` section names the Harbor framework, links the benchmark repository at a 40-character commit and gives the `harbor run` launch, run that launch instead of step 2, from the root of a checkout at that commit, following the repository README section the statement links (fetching, concurrency, retries, `result.json`, credentials). The trial must run the Target, not a stock agent: derive `PROJECT_ID` as in step 2 and `PROJECTS_DIR` as Paths says, pick a job name not used before (`<case_id>-run<run>-<UTC timestamp>`), pack the State into `BENCHMARK/.jobs/<job>.agent-state.tar.gz` (create `.jobs/` when missing) with `tar --exclude=./.vault.toml --exclude=./memory --exclude=./schedule -czf <archive> -C "STATE" .`, and insert `--ak agent_state_tar=<archive> --ak host_penguin_home="$PROJECTS_DIR" --ak host_project_id="$PROJECT_ID"` and, when the checkout holds the install bundle the README describes, `--ak install_bundle=<that file>` before `--agent-setup-timeout-multiplier`, with `--job-name <job> -o "BENCHMARK/.jobs"`; remove the archive after the run. The verifier's reward × 100 is the score; `result.json`'s `agent_result.cost_usd` the cost; `agent_execution` start/finish the duration; `harbor:<trial directory name>` the session id. The one configuration value you look up is the model's API host, through the repository's helper, as that section says.
 4. After the run, verify that the State `version`, `model.thinking_level` and both material snapshots are unchanged (`version_changed` / `benchmark_invalid` otherwise). Bind exactly one root Trace whose Workspace, Agent State path, provider and model match this request (`evaluation_failed` if there is no unique match); read the actual `provider` / `model_id` from its `session_meta`. A Harbor case binds its trial instead: the actual pair is the key of `agent_result.model_usage`, and a trial the README says has no score is `evaluation_failed`.
 5. Score against the private Rubric from the Workspace, the bound root Trace and its directly referenced child Traces only. A wrong, missing or malformed answer is scored behavior (`status: ok`); a launcher, binding or scoring failure is not. `duration_ms` is the root Session's; `cost` only from usage or cost already recorded in those Traces, else `null`.
 6. Return the YAML as the only worker-authored text, without fences. Scored:

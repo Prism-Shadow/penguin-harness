@@ -32,8 +32,8 @@ The agent that fans out the cells performs steps 1–10 once, before its first `
 2. **The checkout's place,** named by the pinned commit:
 
    ```bash
-   PROJECT_DIR="<app_data_dir>"
-   CHECKOUT_ROOT="$PROJECT_DIR/benchmarks/.harbor"
+   BENCHMARK_DIR="<the Benchmark's folder, as SKILL.md's Prepare resolves it>"
+   CHECKOUT_ROOT="$(dirname "$BENCHMARK_DIR")/.harbor"   # beside the Project's Benchmarks, shared by all of them
    CHECKOUT="$CHECKOUT_ROOT/<last path segment of REPO>-$SHA"   # e.g. penguin-harness-benchmark-<40 hex>
    ```
 
@@ -84,7 +84,7 @@ Send every cell the same `provider` and `model_id` (`SKILL.md`, "For the caller"
 A cell whose trial Docker could not give a network was not measured: run it once more at lower concurrency, and never count it as a score of 0 (the README's rule). Such a cell returns `evaluation_failed`, and its trial records Docker's error in `exception_info`; this prints a file name when it does:
 
 ```bash
-JOB="$(ls -dt "$PROJECT_DIR/benchmarks/<benchmark_id>/.jobs/<case_id>-run<run>-"*/ | head -n 1)"
+JOB="$(ls -dt "$BENCHMARK_DIR/.jobs/<case_id>-run<run>-"*/ | head -n 1)"
 grep -rlE --include=result.json 'non-overlapping IPv4 address pool|address pools have been fully subnetted' "$JOB"
 ```
 
@@ -92,7 +92,7 @@ Then halve the limit, down to one, and put the cell first among the unstarted ce
 
 ## B. One cell: one Harbor trial
 
-Prepare as `SKILL.md` says — the request, the required files, `status`, the version check, the configured `thinking_level`, the Statement and Rubric snapshots, the Rubric total — but create no Workspace and copy nothing. Read the statement's values as "What the statement gives" says. Resolve `PROJECT_DIR`, `PROJECT_ID` and `PENGUIN_HOME` exactly as `SKILL.md`'s Run step does, and `CHECKOUT` as §A does; when `$CHECKOUT/.penguin-ready` is missing, go through §A from its lock step. Read the run rules (§A.7) unless this Session already has. Then:
+Prepare as `SKILL.md` says — the request, the required files, `status`, the version check, the configured `thinking_level`, the Statement and Rubric snapshots, the Rubric total — but create no Workspace and copy nothing. Read the statement's values as "What the statement gives" says. Resolve `PROJECT_DIR` and `PROJECT_ID` exactly as `SKILL.md`'s Run step does, `BENCHMARK_DIR` as its Prepare step does, and `CHECKOUT` as §A does; set `PROJECTS_DIR="$(dirname "$PROJECT_DIR")"`, the folder that holds the Project (the repository's helper and adapter call it the host Penguin home and read `$PROJECTS_DIR/$PROJECT_ID/.project_config.toml`, which is this Project's own config — it is not the data root); when `$CHECKOUT/.penguin-ready` is missing, go through §A from its lock step. Read the run rules (§A.7) unless this Session already has. Then:
 
 1. **The task.** Require `$CHECKOUT/$TASK_PATH/$TASK/task.toml`; otherwise return `benchmark_invalid`.
 2. **The thinking level.** The adapter takes `low`, `medium`, `high`, `xhigh` or `max`. A Test Agent configured with any other level cannot be evaluated here: return `evaluation_failed`.
@@ -100,14 +100,14 @@ Prepare as `SKILL.md` says — the request, the required files, `status`, the ve
 
    ```bash
    HOST="$(cd "$CHECKOUT" && uvx --from harbor==<HARBOR_VERSION> python agents/agent_host.py \
-     --host-penguin-home "$PENGUIN_HOME" --host-project-id "$PROJECT_ID" -m "<provider>/<model_id>")"
+     --host-penguin-home "$PROJECTS_DIR" --host-project-id "$PROJECT_ID" -m "<provider>/<model_id>")"
    ```
 
    When it prints nothing or fails, return `evaluation_failed`. Do not read the configuration yourself, and do not take the host from `penguin config model list`: its endpoint column is empty for a model that uses its provider's default endpoint.
 4. **The Test Agent's State,** packed so the container runs the requested Agent rather than a stock one. The archive carries what makes the Agent what it is — its config, `AGENTS.md`, Skills, hooks and tools — and leaves out its vault, its memory and its schedules:
 
    ```bash
-   JOBS_DIR="$PROJECT_DIR/benchmarks/<benchmark_id>/.jobs"
+   JOBS_DIR="$BENCHMARK_DIR/.jobs"
    JOB_NAME="<case_id>-run<run>-$(date -u +%Y%m%dT%H%M%SZ)"
    STATE_TAR="$JOBS_DIR/$JOB_NAME.agent-state.tar.gz"
    mkdir -p "$JOBS_DIR"
@@ -118,7 +118,7 @@ Prepare as `SKILL.md` says — the request, the required files, `status`, the ve
    `$JOBS_DIR/$JOB_NAME` must not exist yet: Harbor resumes an existing job directory instead of running a new trial, so pick a new timestamp when it does.
 5. **The PenguinHarness version.** `PENGUIN_VERSION` is the `version` field of `penguin version --json`, the release number; the container installs `@prismshadow/penguin-cli` at that version, from npm or from the install bundle (step 7).
 6. **The shared network,** only when the statement's launch has the overlay line: require `docker network inspect penguin-bench` to succeed, creating the network as §A.9 says when it does not. A launch without the line runs without it: the trial makes a network of its own.
-7. **Launch** the statement's command, in the foreground, from the checkout. Fill in its placeholders — `<provider>/<model_id>` with the request's pair, `<level>` with the configured `thinking_level`, `<penguin version>` with `$PENGUIN_VERSION`, `<model provider API host>` with `$HOST`, `<job name>` with `$JOB_NAME` and `<jobs dir>` with `$JOBS_DIR` — and insert `--ak agent_state_tar="$STATE_TAR" --ak host_penguin_home="$PENGUIN_HOME" --ak host_project_id="$PROJECT_ID"` and, when `$BUNDLE` (the path §A.10 names for this `$PENGUIN_VERSION`) is a file, `--ak install_bundle="$BUNDLE"`, before `--agent-setup-timeout-multiplier`. Change nothing else. A worker never builds the bundle itself: without the file, leave that line out and the container installs from the network. Without the time-budget, host and overlay lines, it reads:
+7. **Launch** the statement's command, in the foreground, from the checkout. Fill in its placeholders — `<provider>/<model_id>` with the request's pair, `<level>` with the configured `thinking_level`, `<penguin version>` with `$PENGUIN_VERSION`, `<model provider API host>` with `$HOST`, `<job name>` with `$JOB_NAME` and `<jobs dir>` with `$JOBS_DIR` — and insert `--ak agent_state_tar="$STATE_TAR" --ak host_penguin_home="$PROJECTS_DIR" --ak host_project_id="$PROJECT_ID"` and, when `$BUNDLE` (the path §A.10 names for this `$PENGUIN_VERSION`) is a file, `--ak install_bundle="$BUNDLE"`, before `--agent-setup-timeout-multiplier`. Change nothing else. A worker never builds the bundle itself: without the file, leave that line out and the container installs from the network. Without the time-budget, host and overlay lines, it reads:
 
    ```bash
    cd "$CHECKOUT"
@@ -128,7 +128,7 @@ Prepare as `SKILL.md` says — the request, the required files, `status`, the ve
      --ak thinking=<thinking_level> --ak penguin_version="$PENGUIN_VERSION" \
      --ak run_timeout=<RUN_TIMEOUT> --ak max_turns=<MAX_TURNS> \
      --ak agent_state_tar="$STATE_TAR" \
-     --ak host_penguin_home="$PENGUIN_HOME" --ak host_project_id="$PROJECT_ID" \
+     --ak host_penguin_home="$PROJECTS_DIR" --ak host_project_id="$PROJECT_ID" \
      --ak install_bundle="$BUNDLE" \
      --agent-setup-timeout-multiplier 2.5 -k 1 -n 1 --job-name "$JOB_NAME" -o "$JOBS_DIR" -y
    rm -f "$STATE_TAR"
@@ -136,7 +136,7 @@ Prepare as `SKILL.md` says — the request, the required files, `status`, the ve
 
    When the statement has them, its `--ak time_budget_note='…' \`, `--allow-agent-host "$HOST" \` and `--extra-docker-compose <overlay> \` lines stay where it puts them, word for word, before the inserted options. A trial takes from a few minutes to an hour — an image pull or build, the adapter's install, the run itself up to `RUN_TIMEOUT`, then the verifier — so wait for the command to finish.
 
-The adapter, not you, reads the requested model's entry, its saved API key included, from `$PENGUIN_HOME/$PROJECT_ID/.project_config.toml`, and copies it into the task container alone, outside the trial directory. Never pass a key with `--ae`, in an environment variable or anywhere on the command line: Harbor writes the agent's environment into the job's `config.json`. When Harbor reports that the model is not configured or has no saved key, return `evaluation_failed`: external configuration is required, and the user saves the key for that model on the Models page.
+The adapter, not you, reads the requested model's entry, its saved API key included, from `$PROJECTS_DIR/$PROJECT_ID/.project_config.toml` (this Project's `$PROJECT_DIR/.project_config.toml`), and copies it into the task container alone, outside the trial directory. Never pass a key with `--ae`, in an environment variable or anywhere on the command line: Harbor writes the agent's environment into the job's `config.json`. When Harbor reports that the model is not configured or has no saved key, return `evaluation_failed`: external configuration is required, and the user saves the key for that model on the Models page.
 
 Retries follow the README's rule: a trial is run again only when its Test Agent never ran — its `result.json` has no `agent_execution.started_at`, or `agent_result.metadata.status` is `server_failed` or `config_failed`, or `agent_result.metadata.requests` is 0. Then apply a specific repair first — pull the image, free disk space, raise `--agent-setup-timeout-multiplier` — and launch under a new job name; when no repair is left, or the repair is the user's (a model without a saved key), return `evaluation_failed`. A trial whose Test Agent ran is never run again, whatever it scored. A trial Docker could not give a network is not retried here: return `evaluation_failed`, and the caller retries it at lower concurrency (§A, "Running the cells").
 
@@ -152,4 +152,4 @@ The trial's `verifier/` output and the task's `tests/` and `solution/` folders a
 
 ## D. Afterwards
 
-Harbor removes the trial's containers itself. Keep `$JOBS_DIR/$JOB_NAME/`: the Test Agent's Traces (`agent/penguin/traces/`) and the verifier's output stay there for whoever later explains the score. Remove only the State archive. Checkouts under `benchmarks/.harbor/` stay as well; one is removed by hand, if ever, while no evaluation runs. So does the `penguin-bench` network: another evaluation may be using it.
+Harbor removes the trial's containers itself. Keep `$JOBS_DIR/$JOB_NAME/`: the Test Agent's Traces (`agent/penguin/traces/`) and the verifier's output stay there for whoever later explains the score. Remove only the State archive. Checkouts under `$CHECKOUT_ROOT` stay as well; one is removed by hand, if ever, while no evaluation runs. So does the `penguin-bench` network: another evaluation may be using it.

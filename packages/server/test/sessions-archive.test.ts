@@ -271,7 +271,7 @@ describe("POST /api/projects/:projectId/sessions/archive", () => {
   });
 
   it("archives the temporary Workspaces' conversations for `temp`, and no named Workspace's", async () => {
-    const agentWorkspaces = path.join(t.root, projectId, "agents", AGENT, "workspaces");
+    const agentWorkspaces = path.join(t.root, "projects", projectId, "agents", AGENT, "workspaces");
     const auto = await seed(path.join(agentWorkspaces, "tmp-0000abcd"));
     const testWorkspace = await seed(path.join(agentWorkspaces, "eval-case-1"));
     const named = await seed("/tmp/wsarch-named");

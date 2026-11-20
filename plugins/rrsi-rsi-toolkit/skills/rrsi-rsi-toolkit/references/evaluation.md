@@ -9,10 +9,9 @@ Use the experiment's supplied absolute paths, originally resolved from the Organ
 ```text
 PROJECT_DIR  = <supplied_project_dir>
 PROJECT_ID   = basename of PROJECT_DIR
-PENGUIN_HOME = dirname of PROJECT_DIR
 TARGET       = PROJECT_DIR/agents/<test_agent_id>
 STATE        = TARGET/agent_state
-BENCHMARK    = PROJECT_DIR/benchmarks/<benchmark_id>
+BENCHMARK    = <supplied_benchmark_dir>    # the BENCHMARK_DIR the Organizer's request named
 CASE         = BENCHMARK/<case_id>       # statement/README.md is public; rubric/README.md is private
 SCOREBOARD   = BENCHMARK/scoreboard.yaml
 OUT          = <experiment directory supplied by the coordinator>
@@ -40,6 +39,7 @@ thinking_level: <fixed_target_thinking_level>
 harness_record: <absolute OUT/versions/vN.json path>
 output_dir: <absolute OUT path>
 project_dir: <absolute PROJECT_DIR path>
+benchmark_dir: <absolute BENCHMARK path>
 ```
 
 Independent cases of one frozen version may run in parallel within capacity; two versions of the same Target never run at the same time. Follow a Harbor launch when the Benchmark's instructions name Harbor; do not depend on a particular Markdown heading. Run independent cells in the background, at most four at a time unless the user named another limit (never above eight), and retry once at lower concurrency when Docker cannot allocate a network.
@@ -114,8 +114,6 @@ You evaluate one requested execution unit. Do not spawn another evaluation worke
 ```bash
 PROJECT_DIR="<supplied_project_dir>"
 PROJECT_ID="$(basename "$PROJECT_DIR")"
-PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
-export PENGUIN_HOME
 penguin run \
   --message "Read README.md in the current Workspace and complete the task exactly as specified there." \
   --provider "<provider>" --model-id "<model_id>" --project-id "$PROJECT_ID" \
@@ -124,7 +122,7 @@ penguin run \
   --approve allow-all
 ```
 
-   This command is the State-only launch. In source mode, replace the PATH-resolved `penguin` with the recorded absolute candidate entry (for example, `node <candidate>/packages/cli/dist/penguin.js`), and set PENGUIN_HOME to a fresh target data root prepared as `initialization.md` describes. Load the version's frozen State there, use the configured model connection, and bind the resulting Trace to that runtime State path. Before invoking the candidate CLI, run `unset PENGUIN_API_URL PENGUIN_API_TOKEN PENGUIN_SESSION_ID` in that shell; otherwise inherited connection settings override PENGUIN_HOME and route the call back to the coordinator's server. Never fall back to a stock CLI when the candidate entry fails.
+   This command is the State-only launch; it sets no `PENGUIN_HOME`, since the `penguin` on your PATH reaches the coordinator's server through its environment. In source mode, replace the PATH-resolved `penguin` with the recorded absolute candidate entry (for example, `node <candidate>/packages/cli/dist/penguin.js`), and set PENGUIN_HOME to a fresh target data root prepared as `initialization.md` describes. Load the version's frozen State there, use the configured model connection, and bind the resulting Trace to that runtime State path. Before invoking the candidate CLI, run `unset PENGUIN_API_URL PENGUIN_API_TOKEN PENGUIN_SESSION_ID` in that shell; otherwise inherited connection settings override PENGUIN_HOME and route the call back to the coordinator's server. Never fall back to a stock CLI when the candidate entry fails.
 
    Never pass `--source`: it is retired. Use the requested Agent, Project, Workspace and model pair. Return `evaluation_failed` for a launch or execution failure, retaining its evidence. The coordinator handles retries under the phase-specific rule above; confirm the previous process has ended before resuming a missing trial, and never rerun a completed result or an execution whose state is still unclear.
 3. **Harbor cases.** Run the Benchmark's documented launch from a checkout of its specified 40-character commit, following its repository instructions for task layout, grouping, environment, scoring and credentials. Pack the frozen State without credentials, runtime memory or schedules, with the State contents at the archive root; do not pass a snapshot with an enclosing `agent_state/` directory. Pass it as `--ak agent_state_tar=<archive>` and pass the fixed thinking level through `--ak thinking=<thinking_level>`. Use the coordinator's configured host Project for model connection setup. For a source candidate, also pass its recorded `--ak install_bundle=<candidate bundle>` (or the adapter's equivalent custom-build option); match the bundle's package/Node versions and never substitute a release bundle. A State-only run may use the fixed release bundle. Give every job a unique name and retain its installation metadata and trial directory. Convert the verifier reward using the Benchmark's normalization; read dollar cost from `agent_result.cost_usd`, tokens as above, duration from `agent_execution`, and use `harbor:<trial directory name>` as session id.

@@ -18,7 +18,13 @@ import type { ProtocolClientType } from "./protocol-client-types";
 import type { ModelGroupSort } from "../features/models/model-sort";
 import type { StartPageSiteId } from "./browser-start-sites";
 import { EVOLUTION_DEMO } from "./evolution-demo";
-import type { AgentAuthor, SemanticIdSuggestReason } from "@prismshadow/penguin-server/api";
+import type {
+  AgentAuthor,
+  BuiltinBrowserCookieSkip,
+  BuiltinBrowserImportNote,
+  SemanticIdSuggestReason,
+} from "@prismshadow/penguin-server/api";
+import type { ImportExtensionRoute } from "./browser-import-route";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -750,6 +756,74 @@ export const zh = {
       (c.failed > 0 ? `，失败 ${c.failed}` : ""),
     importHistoryResult: (h: { found: number; imported: number }): string =>
       `历史记录：已导入 ${h.imported} / ${h.found} 条`,
+    /** Under the counts: why that many cookies were skipped; `browser` is the source's name. */
+    importSkip: ({ reason, count: n }: BuiltinBrowserCookieSkip, browser: string): string => {
+      switch (reason) {
+        case "app_bound":
+          return `${n} 个受 ${browser} 的应用绑定加密保护，只有 ${browser} 自己能读取。`;
+        case "dpapi":
+          return `${n} 个的密钥 Windows 未能解开。`;
+        case "keychain":
+          return `${n} 个的密钥钥匙串未放行；在 macOS 询问时选择「允许」，再导入一次。`;
+        case "keyring":
+          return `${n} 个的密钥未能从桌面密钥环取得。`;
+        case "undecryptable":
+          return `${n} 个无法解密。`;
+        case "partitioned":
+          return `${n} 个是只属于某个站点或容器的分区 Cookie。`;
+        case "expired":
+          return `${n} 个已过期。`;
+      }
+    },
+    /** Anything else the import reports. */
+    importNote: (note: BuiltinBrowserImportNote, browser: string): string => {
+      const store = (which: "cookies" | "history") =>
+        which === "cookies" ? " Cookie 库" : "历史记录";
+      switch (note.code) {
+        case "no_cookie_store":
+          return "这个个人资料没有 Cookie 库。";
+        case "no_history":
+          return "这个来源没有可导入的历史记录。";
+        case "store_busy":
+          return `${browser} 正占用它的${store(note.store)}，关闭 ${browser} 后再导入。`;
+        case "store_unreadable":
+          return `无法读取 ${browser} 的${store(note.store)}。`;
+        case "cookies_not_set":
+          return (
+            `${note.count} 个 Cookie 未能写入内置浏览器` +
+            (note.errors.length > 0 ? `：${note.errors.join("；")}` : "。")
+          );
+      }
+    },
+    /** The group the user's connected Chrome extension is listed under, and its row's hint. */
+    importExtensionGroup: "经 Chrome 扩展",
+    importExtensionHint:
+      "读取扩展所在的 Chrome 个人资料的 Cookie，导入前要在 Chrome 中选择「允许」。",
+    /** The import button while the extension waits for the user's answer in Chrome. */
+    importWaitingChrome: "等待 Chrome 确认…",
+    /**
+     * Windows, a Chrome profile's cookies chosen: why most of them will be skipped, and the way
+     * round it the extension's state leaves.
+     */
+    importAppBoundHint: (route: ImportExtensionRoute): string =>
+      route === "not_paired"
+        ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取：在「设置 › 浏览器」中连接你的 Chrome 后可经扩展导入，或直接在浏览器面板中登录。"
+        : route === "disconnected"
+          ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取：让你的 Chrome 连上 PenguinHarness Browser 扩展后可经扩展导入，或直接在浏览器面板中登录。"
+          : route === "connected"
+            ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取，可改选下方的「经 Chrome 扩展」导入。"
+            : "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取，可直接在浏览器面板中登录。",
+    /** After app-bound skips: how to get those cookies, given the extension's state. */
+    importAppBoundAdvice: (route: ImportExtensionRoute): string =>
+      route === "connected"
+        ? "选择「经 Chrome 扩展」再导入一次即可取回它们，也可以直接在浏览器面板中登录。"
+        : route === "not_paired"
+          ? "在「设置 › 浏览器」中连接你的 Chrome 后，可经扩展导入它们；也可以直接在浏览器面板中登录。"
+          : route === "disconnected"
+            ? "让你的 Chrome 连上 PenguinHarness Browser 扩展后，可经扩展导入它们；也可以直接在浏览器面板中登录。"
+            : "可以直接在浏览器面板中登录这些网站。",
+    /** The outcome's way back to the form with the extension chosen. */
+    importUseExtension: "经 Chrome 扩展导入",
     importFailed: (reason: string): string => `导入失败：${reason}`,
     /** The clear-browsing-data confirmation. */
     clearTitle: "清除浏览数据",
@@ -1407,8 +1481,8 @@ export const zh = {
     /** The windowed app's title bar. */
     windowClose: "关闭，回到应用中心",
     windowFullScreen: "全屏打开",
-    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
-    machinesNote: "机器上 Agent 的应用不在这里，请从它们的 Agent 设置页进入。",
+    /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
+    machinesOffline: (names: string) => `暂时无法连接：${names}。已缓存的内容仍可查看。`,
     aiCreateTitle: "用 AI 创建应用",
     aiCreateDescription: "选定的 Agent 会做一个 Workbench，并让它出现在应用中心。",
     aiCreatePlaceholder: "描述你想要的应用，例如：一个记录每日待办的看板",
@@ -2319,6 +2393,18 @@ export const zh = {
       `确认删除 ${machine} 上的 Agent「${name}」？它在那台机器上的目录（含全部 Trace）将被递归删除，不可恢复。`,
     deleteAgent: "删除 Agent",
     builtinUndeletable: "内置 Agent 不可被删除",
+    /** The system Agent (lib/builtin-agents.ts): its name and one line, never read from its file. */
+    systemName: "系统",
+    systemDescription: "系统应用的所有者：模型库、插件市场、机器管理、成本中心与评估中心。",
+    /** The pill after its name on the Agents page, and what the pill means. */
+    systemTag: "系统",
+    systemTagHint: "系统 Agent 拥有系统应用；它不对话、不装插件，也不能删除或导出。",
+    /** Its settings page's Plugins tab: the system apps it owns, listed read-only. */
+    systemAppsDesc: "系统 Agent 拥有的系统应用。它们随平台提供，从应用中心打开。",
+    systemAppsEmpty: "还没有系统应用。",
+    /** The Agents page's notice to the owner: an Agent of theirs holds the id reserved for the system Agent. */
+    systemIdHeld: (name: string): string =>
+      `Agent「${name}」占用了系统 Agent 的保留 id。导出它，以另一个 id 导入，再删除它；系统 Agent 会在下次加载时补齐。`,
     /** The Agents page's section of organization employees, and its "?" (what an employee is here). */
     employeesSection: "公司模式员工",
     employeesSectionInfo:
@@ -2638,7 +2724,7 @@ export const zh = {
     aiAddTail: (projectId: string): string =>
       [
         "请使用 penguin-config 技能完成上面的配置：",
-        "- 下面每条命令都要带 `--root <数据根目录>`，即环境信息中 App Data Dir 的上级目录。命令的环境里没有这个值，不带 `--root` 会配置到另一个数据根目录，本 Project 什么也拿不到。",
+        "- 下面每条命令都要带 `--root <数据根目录>`：环境信息中的 App Data Dir 为 `<数据根目录>/projects/<project id>`，数据根目录即它往上两级的目录。命令的环境里没有这个值，不带 `--root` 会配置到另一个数据根目录，本 Project 什么也拿不到。",
         `- 每个模型执行一次 \`penguin config model add --provider <分组名> --model-id <上游模型 id> --project-id ${projectId} --root <数据根目录> [--base-url <端点>] [--client-type openai] [--api-key <key>] [--context-window <n>] [--price-cache-read <n> --price-cache-write <n> --price-output <n>]\`：\`--provider\` 必填，\`--model-id\` 用网关自己的模型 id；OpenAI 兼容端点加 \`--client-type openai --base-url <端点>\`。`,
         "- 来源是网页时先抓取页面：优先加我点名的模型，没有点名就选最常用的，最多 10 个左右。",
         "- 需要 API key 而我没给时只问我一次；我不提供就把 key 留空，并告诉我到模型库页补填。",
@@ -3181,7 +3267,7 @@ export const zh = {
     aiAddTail: (agentId: string, projectId: string): string =>
       [
         `请使用 penguin-config 技能，把上面的密钥写进智能体 ${agentId} 的保险柜（Project ${projectId}）：`,
-        "- 下面每条命令都要带 `--root <数据根目录>`，即环境信息中 App Data Dir 的上级目录。命令的环境里没有这个值，不带 `--root` 会写到另一个数据根目录，这个智能体的保险柜仍然是空的。",
+        "- 下面每条命令都要带 `--root <数据根目录>`：环境信息中的 App Data Dir 为 `<数据根目录>/projects/<project id>`，数据根目录即它往上两级的目录。命令的环境里没有这个值，不带 `--root` 会写到另一个数据根目录，这个智能体的保险柜仍然是空的。",
         `- 每个密钥执行一次 \`penguin config vault set --key <键名> --value <值> --agent-id ${agentId} --project-id ${projectId} --root <数据根目录>\`；只需创建键名时，值先填占位符 TODO，并告诉我该键的用途与申请地址。`,
         "- 不要在回复里复述任何值，不要读取 .vault.toml。",
         `- 最后运行 \`penguin config vault list --agent-id ${agentId} --project-id ${projectId} --root <数据根目录>\` 列出键名。`,
@@ -5147,6 +5233,8 @@ Benchmark：
     goalBudgetInvalid: "无效预算：应为正数，可带 k/m 后缀（500k、2m）",
     goalBudgetSave: "保存预算",
     goalRemove: "退出目标模式",
+    /** The remove label of a composer switch's chip (a plugin's mode, e.g. Plan mode). */
+    switchOff: (title: string): string => `关闭${title}`,
     /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
     goalPluginMissing: "目标模式需要 goal 插件：安装到此 Agent 后即可发起目标。",
     goalPluginInstall: "安装到此 Agent",
@@ -5704,7 +5792,8 @@ Benchmark：
     rangeCustom: "自定义",
     chartRequestsByAgent: "各 Agent 请求与成功率",
     chartRequestsByModel: "各模型请求与成功率",
-    legendSuccessRate: "成功率",
+    legendRequestCount: "请求数（左轴）",
+    legendSuccessRate: "成功率（右轴）",
     chartTokenTrend: "Token 变化",
     chartCostTrend: "成本变化",
     legendOther: (n: number): string => `其他 ${n} 项`,
@@ -5936,6 +6025,7 @@ Benchmark：
     /** The evaluation dialog's Ask AI tail: this evaluation's facts, and what to read before answering. */
     askEvaluationTail: (p: {
       benchmarkId: string;
+      benchmarkDir: string;
       time: string;
       label: string;
       version: number | string;
@@ -5950,7 +6040,8 @@ Benchmark：
       cases: { id: string; score: string; cost: string; duration: string; sessionIds: string[] }[];
     }): string =>
       "请解释下面这次 Benchmark 评估的结果。只做阅读与分析：不要修改这套 Benchmark，也不要修改被测智能体。\n\n" +
-      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，记分板为 \`benchmarks/${p.benchmarkId}/scoreboard.yaml\`）\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR：\`${p.benchmarkDir}\`（记分板为 \`${p.benchmarkDir}/scoreboard.yaml\`）\n` +
       `- 评估时间：${p.time}\n` +
       `- 系列标签：${p.label}\n` +
       `- 被测版本：v${p.version}\n` +
@@ -5994,14 +6085,16 @@ Benchmark：
     /** The case dialog's Ask AI tail: the two READMEs to read, and this case's latest run results. */
     askCaseTail: (p: {
       benchmarkId: string;
+      benchmarkDir: string;
       caseId: string;
       latest: { time: string; score: string; runs: { score: string; sessionId: string }[] } | null;
     }): string =>
       "请解释下面这道 Benchmark 题目考的是什么、怎样才算答好。题目创建即冻结，只做阅读与分析，不要修改这套 Benchmark。\n\n" +
-      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR：\`${p.benchmarkDir}\`\n` +
       `- case_id：\`${p.caseId}\`\n` +
-      `- 题干：\`benchmarks/${p.benchmarkId}/${p.caseId}/statement/README.md\`\n` +
-      `- 评分细则：\`benchmarks/${p.benchmarkId}/${p.caseId}/rubric/README.md\`\n` +
+      `- 题干：\`${p.benchmarkDir}/${p.caseId}/statement/README.md\`\n` +
+      `- 评分细则：\`${p.benchmarkDir}/${p.caseId}/rubric/README.md\`\n` +
       (p.latest === null
         ? "- 这套 Benchmark 还没有评估记录。\n"
         : `- 最近一次评估（${p.latest.time}）在这道题上的平均分 ${p.latest.score}\n` +
@@ -6043,7 +6136,7 @@ Benchmark：
       },
     },
     /** The fixed tail after the draft: the `benchmark-design` inputs and the layout it writes. */
-    aiCreateTail: (targetAgentId: string): string =>
+    aiCreateTail: (targetAgentId: string, benchmarksDir: string): string =>
       "请使用 `benchmark-design` Skill，作为 Builder 为下面的被测智能体设计并校准一套 Benchmark，不要修改被测智能体本身。\n\n" +
       `- test_agent_id：\`${targetAgentId}\`\n` +
       "- benchmark_id：上文已指定则沿用，否则按场景取一个简短的语义化 id（仅字母、数字、`_` 和 `-`）\n" +
@@ -6051,7 +6144,7 @@ Benchmark：
       "- 出题手法：隐藏的先验条件、模糊或不完整的输入、互相冲突的材料、严格的交付格式；不要靠堆行数、堆规则来加难度\n" +
       "- desired_baseline_score：`<50`（上文另有要求时以上文为准）\n" +
       "- pilot_iteration_limit：`4`（上文另有要求时以上文为准）\n\n" +
-      "Benchmark 与 Agent 平级：在 Project 的 `benchmarks/<benchmark_id>/` 下（不在被测智能体目录内）创建 `benchmark_config.toml`" +
+      `Benchmark 与 Agent 平级：它的目录 BENCHMARK_DIR 为 \`${benchmarksDir}/<benchmark_id>/\`，在评估中心的数据目录里（不在被测智能体目录内）。在其中创建 \`benchmark_config.toml\`` +
       '（id 与目录名相同、title、description、version 为当天的日期版本 `"YYYY.MM.DD.1"`、status、runs = 1，以及 `kind = "agent"` 的 `[origin]` 表；不记录被测智能体）、' +
       "每题一个 `CASE-NNN-<slug>/`（`statement/README.md` 为题干，`rubric/README.md` 为评分细则，每题满分 100 分，细则不得泄露到题干）" +
       "以及 `scoreboard.yaml`（初始为 `evaluations: []`；每条 evaluation 记录被测的 `agent_id`、`version`、成对的 `provider` / `model_id` 与 `thinking_level`）。" +
@@ -6060,7 +6153,7 @@ Benchmark：
     // New Benchmark, manual mode: the form.
     manualCreateTitle: "手动创建 Benchmark",
     manualCreateIntro:
-      "填好标题、题干与评分细则后，目录结构会按技能约定写入 Project 的 benchmarks/ 下；Benchmark 与 Agent 平级，之后可以用它评测任意智能体。",
+      "填好标题、题干与评分细则后，目录结构会按技能约定写入评估中心的数据目录；Benchmark 与 Agent 平级，之后可以用它评测任意智能体。",
     idField: "Benchmark id",
     idHint: "目录名即标识：仅字母、数字、_ 和 -，例如 report-writing-v1",
     /** The id field's generation clause: a Benchmark is named by its title, not a display name. */
@@ -6120,13 +6213,15 @@ Benchmark：
     evaluateTail: (p: {
       targetAgentId: string;
       benchmarkId: string;
+      benchmarkDir: string;
       runs: number;
       provider: string;
       modelId: string;
     }): string =>
       "请使用 `agent-evaluation` Skill，在这套已冻结的 Benchmark 上评估被测智能体。\n\n" +
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
-      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR：\`${p.benchmarkDir}\`\n` +
       `- runs：\`${p.runs}\`\n` +
       `- provider：\`${p.provider}\`\n` +
       `- model_id：\`${p.modelId}\`\n\n` +
@@ -6159,6 +6254,7 @@ Benchmark：
     optimizeTail: (p: {
       targetAgentId: string;
       benchmarkId: string;
+      benchmarkDir: string;
       runs: number;
       provider: string;
       modelId: string;
@@ -6167,7 +6263,8 @@ Benchmark：
     }): string =>
       "请使用 `agent-optimization` Skill，针对已冻结的 Benchmark 优化被测智能体。\n\n" +
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
-      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR：\`${p.benchmarkDir}\`\n` +
       `- runs：\`${p.runs}\`\n` +
       `- provider：\`${p.provider}\`\n` +
       `- model_id：\`${p.modelId}\`\n` +
@@ -6212,13 +6309,15 @@ Benchmark：
       skill: string;
       targetAgentId: string;
       benchmarkId: string;
+      benchmarkDir: string;
       testRepetitions: number;
       provider: string;
       modelId: string;
     }): string =>
       `请使用 \`${p.skill}\` 技能，从这套 Benchmark 出发对被测智能体运行它的方法。\n\n` +
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
-      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR：\`${p.benchmarkDir}\`\n` +
       `- test_repetitions：\`${p.testRepetitions}\`\n` +
       `- provider：\`${p.provider}\`\n` +
       `- model_id：\`${p.modelId}\`\n\n` +
@@ -6266,11 +6365,11 @@ Benchmark：
       reference: (s: string): string => `找到这个 Benchmark，并把它作为包导入：${s}。`,
     },
     /** The fixed tail: the benchmark-design Skill's import procedure when the Agent has it, then the rules for one that does not — the package format, the fetch pinned to a commit, where the copy goes and what it is written with. */
-    importPromptTail: (projectId: string): string =>
+    importPromptTail: (projectId: string, benchmarksDir: string): string =>
       [
         "若有 `benchmark-design` 技能，先读 `reference/package.md` 的导入说明。仓库来源先用 `git ls-remote` 将分支或标签固定到 40 位提交号，只获取所选包；本地 zip 先解压到临时目录。",
         '检查包内的 `benchmark_config.toml`（`status = "published"`）及各个 `CASE-*/statement/README.md`、`CASE-*/rubric/README.md`。读完所有文件，拒绝符号链接、可执行文件及无关内容。',
-        `在 Project \`${projectId}\` 的 \`<app_data_dir>/benchmarks/<id>/\` 中直接复制清单和各个 \`CASE-*/\`，保留包的 id、版本与题目；不要复制上游的 \`scoreboard.yaml\` 或 \`.jobs/\`。新建 \`scoreboard.yaml\`，内容为 \`evaluations: []\`。`,
+        `在 Project \`${projectId}\` 的 Benchmark 目录 BENCHMARK_DIR，即 \`${benchmarksDir}/<id>/\` 中直接复制清单和各个 \`CASE-*/\`，保留包的 id、版本与题目；不要复制上游的 \`scoreboard.yaml\` 或 \`.jobs/\`。新建 \`scoreboard.yaml\`，内容为 \`evaluations: []\`。`,
         '更新清单的 `[origin]`：仓库来源用 `kind = "git"`，记录 `url`、`ref`（提交号）、`path` 和 `imported_at`；本地来源用 `kind = "zip"` 与导入时间。目标目录已存在时先问我，未经同意不得覆盖；仍在评估的目录不得替换。',
         "核对复制后的清单和题数，报告 id、标题、版本、题数与路径。导入不运行评估。",
       ].join("\n"),
@@ -7063,13 +7162,13 @@ Benchmark：
     },
   },
   /**
-   * The problem report (the UI package's `ReportStrings`): 「[报告问题]」 after a serious error, the
+   * The problem report (the UI package's `ReportStrings`): 「[报告问题]」 after a failure, the
    * report dialog it opens, and the notice a crashed part of the page shows.
    */
   report: {
     action: "报告问题",
     title: "报告问题",
-    lead: "这类错误多半是 PenguinHarness 的缺陷。提交到 GitHub 能帮助改进这个开源项目。",
+    lead: "这可能是 PenguinHarness 的缺陷，也可能来自网络、模型服务或所连的机器。如果你认为问题出在 PenguinHarness，欢迎到 GitHub 提交 issue，帮助改进这个开源项目。",
     check: "报告已去掉密钥、Token 与个人路径一类的内容，发送前仍请检查有没有不想公开的信息。",
     label: "报告",
     copy: "复制",
@@ -7154,6 +7253,8 @@ Benchmark：
       unknown_plugin: "该插件不在插件库中。",
       goal_plugin_not_installed:
         "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装，并确认其钩子包已启用。",
+      prompt_hook_not_installed:
+        "这个 Agent 已没有该开关所需的钩子包，或钩子已关闭。请关闭这个开关，或重新安装对应插件。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
       hook_too_large: "该钩子包过大，超出了导入限制。",
       workbench_too_large: "该工作台的源码过大，超出了导出限制。",
@@ -7243,6 +7344,8 @@ Benchmark：
       browser_unavailable:
         "浏览器现在不可用：内置浏览器需要打开 PenguinHarness 桌面应用，你的 Chrome 需要连上 PenguinHarness Browser 扩展。",
       source_not_found: "找不到这个浏览器配置文件。",
+      import_declined: "你没有在 Chrome 中允许这次导入。",
+      extension_outdated: "Chrome 中的 PenguinHarness Browser 扩展版本过旧，请更新后重试。",
       shell_unreachable: "无法联系桌面应用。",
       timeout: "操作超时，请重试。",
     },

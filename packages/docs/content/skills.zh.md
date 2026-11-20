@@ -254,6 +254,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `use-bento-slides` | 创建和编辑 Bento 演示文稿：单文件 `.bento.html` 幻灯片，文件内容为 JSON，支持素材到图表的映射、morph 过渡和状态幻灯片 |
 | | `humanizer` | 去除任何语言文字中的 AI 写作痕迹，改写成书籍、报纸和百科全书的语体（不预装：需要时从插件库安装） |
 | | `goal` | [目标模式](/goal-mode)背后的 stop 钩子：让 Session 持续朝着目标推进，直到完成、受阻或 Token 预算耗尽（预装） |
+| | `plan` | 计划模式：输入框 **+** 菜单里的开关。开着时，每条消息后面都附上一段提示，请 Agent 先和你讨论目标、可选做法与取舍，方向谈定后再动手；不限制任何工具（预装） |
 | | `continual-learning` | Task 运行超过 30 轮才结束时，把 Task 的精简摘录交给后台子 Agent，由它把有长期价值的发现沉淀到 Agent 的 Skill 中（不预装） |
 | | `trace-lookup` | 在会话的 Trace 文件里查回更早的内容：先搜出某个细节所在的行，再只读这几行；用于压缩摘要或模型切换指向 Agent 所接续的上一段上下文的 Trace 时（新初始化的 `default_agent` 预装；已有的 Agent 从插件库安装） |
 | | `agent-company` | [公司模式](/company-mode)的完整工具包，包含七个 Skill：`company-setup`（与用户一起创建组织：一次问一个问题、给出摘要供确认，然后执行 `penguin org create`；从不招聘，也不提交工单）、`company-employee`（每个工位 Session 和工单 Session 都要遵循的协议：触发块、工单看板、阻塞、重负载或不可逆的工作先向董事会请示、频道礼仪、预算）、`company-ceo`（把使命拆解为工单、招聘、划分 Workspace、审查、向董事会汇报）、`company-hr`（日历排班、招聘与离职、评估）、`company-finance`（预算、每日审计、告警与暂停）、`company-research`（科研组织的作者与审稿人：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环、只保留能提升指标的改动，每个结论都交给一个设法推翻它的审稿人）和 `company-mirror`（数字分身公司：每位真实同事对应一个分身，绑定到这位同事的机器人，只传话、不开工单）。不预装：组织在创建 CEO、招聘员工时会安装它；需要能创建组织的 Agent 则从插件库安装 |
@@ -353,6 +354,7 @@ npm 标准字段：
 | `category` | `rsi`、`office-productivity`、`software-development`、`ai-app-development` 之一，Agent 运行沙箱后端用 `sandbox`；缺失或未知的分类归入「其他」 |
 | `icon` | 包内一个 SVG 的路径；没有时取包根目录的 `icon.svg`，再没有就显示拼图块。SVG 必须是不含脚本、事件、链接和外部引用的纯图形，且不超过 64 KiB，否则不显示 |
 | `preinstall` | 设为 `false` 的插件不进入 `default_agent` 的预装集合，只能从插件库手动安装 |
+| `composerMode` | 设为 `true` 时，装有该插件的 Agent 在对话输入框的 **+** 菜单里多出一个以卡片标题命名的开关：开着时，用户每发一条消息都会运行钩子包里 `"trigger": "host"` 的 `user_prompt` 命令，其 context 紧随这条消息。钩子包没有这样的命令时忽略 |
 | `quickStart` | 插件页「快速开始」预填进新对话草稿的演示：`{ prompt: "…", promptZh: "…", skills: ["…"], goal: true }`——一条发出后就能看到插件工作的提示词、要预选的本插件 Skill，以及草稿是否以目标模式打开。页面从不代为发送；不填时，快速开始预选第一个 Skill |
 | `references` | 原始论文或上游实现的链接，官网的插件页会列出 |
 

@@ -14,6 +14,7 @@ import type { Profile } from "./app-identity.js";
 import { embeddedCliEntry } from "./launcher.js";
 import { osProxyEnv } from "./os-proxy.js";
 import { choosePort, readPreferredPort, rememberPreferredPort } from "./port-memory.js";
+import { ServerStartError, startFailureReason } from "./start-failure.js";
 import { appOriginFor, parsePortFile } from "./util.js";
 
 export interface EmbeddedServer {
@@ -58,10 +59,21 @@ function bundledShellEnv(): Record<string, string> {
   return fs.existsSync(sh) ? { PENGUIN_BUNDLED_SHELL: sh } : {};
 }
 
-async function waitForPortFile(file: string, exited: () => boolean): Promise<number> {
+async function waitForPortFile(
+  file: string,
+  exited: () => boolean,
+  stderr: () => string,
+): Promise<number> {
   const deadline = Date.now() + PORT_FILE_TIMEOUT_MS;
   for (;;) {
-    if (exited()) throw new Error("The embedded server exited before announcing its port.");
+    if (exited()) {
+      // The last of its output may still be on the way when the exit lands.
+      await delay(200);
+      const reason = startFailureReason(stderr());
+      if (reason === null)
+        throw new Error("The embedded server exited before announcing its port.");
+      throw new ServerStartError(`The embedded server stopped while starting:\n\n${reason}`);
+    }
     try {
       const port = parsePortFile(fs.readFileSync(file, "utf8"));
       if (port !== null) return port;
@@ -153,13 +165,22 @@ export async function startEmbeddedServer(opts: {
     },
   });
   child.stdout?.on("data", (chunk: Buffer) => opts.log(String(chunk), "stdout"));
-  child.stderr?.on("data", (chunk: Buffer) => opts.log(String(chunk), "stderr"));
+  // The tail of what it said on stderr: why it stopped, should it stop before it announces.
+  let stderrTail = "";
+  child.stderr?.on("data", (chunk: Buffer) => {
+    opts.log(String(chunk), "stderr");
+    stderrTail = (stderrTail + String(chunk)).slice(-8192);
+  });
   let exited = false;
   child.on("exit", () => {
     exited = true;
   });
 
-  const port = await waitForPortFile(opts.portFile, () => exited);
+  const port = await waitForPortFile(
+    opts.portFile,
+    () => exited,
+    () => stderrTail,
+  );
   rememberPreferredPort(opts.preferredPortFile, port);
   const origin = appOriginFor(port);
   await waitForHttp(origin, () => exited);
