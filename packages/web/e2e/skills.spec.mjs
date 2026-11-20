@@ -1,6 +1,6 @@
 /**
  * End-to-end test for the plugin library (locale zh-CN):
- * - the sidebar nav shows "插件市场" ("Plugins"), and the page renders the library's plugin
+ * - the App Center shows the "插件市场" ("Plugins") system app, and the page renders the library's plugin
  *   cards across group sections (a collapsible group header: category name + plugin count,
  *   **no icon**; the group name follows the UI language — when the server ships a Chinese
  *   group name it's "Agent 自进化 / 办公效率 / 软件开发 / AI 应用开发", falling back to
@@ -109,11 +109,12 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   });
   expect(created.ok(), "create helper agent").toBeTruthy();
 
-  // —— Plugin library page: sidebar nav entry + cards in category sections, open on entry ——
+  // —— Plugin library page: the App Center's system app + cards in category sections, open on entry ——
   await page.goto(`${BASE}/chat`);
-  const navLink = page.getByRole("link", { name: "插件市场" });
-  await expect(navLink).toBeVisible();
-  await navLink.click();
+  await page.getByRole("link", { name: "应用中心" }).click();
+  const tile = page.getByRole("button", { name: "插件市场，系统应用" });
+  await expect(tile).toBeVisible();
+  await tile.click();
   await expect(page).toHaveURL(/\/plugins$/);
   const sectionHeader = page.getByRole("button", { name: SECTION_HEADER });
   await expect(sectionHeader).toBeVisible();

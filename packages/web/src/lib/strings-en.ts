@@ -1287,6 +1287,8 @@ export const en: Strings = {
     /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
     tileName: (title: string, agent: string, state: string | null) =>
       state === null ? `${title}, ${agent}` : `${title}, ${agent}, ${state}`,
+    systemTileName: (title: string) => `${title}, system app`,
+    workbenchesEmptyTitle: "No apps from agents yet",
     folderTip: (name: string, count: number) => `${name}, ${count} ${count === 1 ? "app" : "apps"}`,
     folderName: (name: string, count: number) =>
       `${name}, folder, ${count} ${count === 1 ? "app" : "apps"}`,
@@ -2249,6 +2251,8 @@ export const en: Strings = {
     systemAppsDesc:
       "The system apps this agent owns. They come with the platform and open from the App Center.",
     systemAppsEmpty: "No system apps yet.",
+    systemAppTag: "System app",
+    systemAppCount: (n: number) => `${n} ${n === 1 ? "system app" : "system apps"}`,
     systemIdHeld: (name: string): string =>
       `Agent "${name}" holds the id reserved for the system agent. Export it, import it under another id, then delete it; the system agent is added the next time the agents load.`,
     employeesSection: "Company employees",

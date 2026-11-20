@@ -61,7 +61,9 @@
  *
  * The frame is the app's own shape at the route level: a memory data router whose root holds
  * the leave guard (`NavigationGuard`), a sidebar link and the Project and Session-list providers,
- * with the auth provider and the one discard prompt (`UnsavedPrompt`) around it. Beside the
+ * with the auth provider, the shell's page table (none unless the test gives one) and the one
+ * discard prompt (`UnsavedPrompt`) around it. The signed-in user is the server's administrator
+ * unless `serverAdmin` is false. Beside the
  * mounted page, a conversation page at `/chat/:sessionId` is where a hand-off to a new chat
  * lands. The Session list opens the user's event stream, which jsdom has no `EventSource` for:
  * a silent one stands in (nothing in these suites is pushed over it). jsdom has no `matchMedia`
@@ -116,6 +118,8 @@ import { MachinesProvider } from "../../src/state/machines";
 import { SessionsProvider } from "../../src/state/sessions";
 import { NavigationGuard } from "../../src/lib/unsaved/navigation-guard";
 import { UnsavedPrompt } from "../../src/lib/unsaved/unsaved-prompt";
+import { PagesContext } from "../../src/lib/web-app-pages";
+import type { WebAppPage } from "../../src/web-app/page-table";
 import { ADMIN_ME } from "./admin-settings";
 import { mount } from "./dom";
 import { SignedIn } from "./signed-in";
@@ -351,6 +355,8 @@ export function agentServer(
     older?: boolean;
     /** The signed-in user's role in the Project (by default its owner). */
     role?: "owner" | "member";
+    /** Whether the signed-in user is the server's administrator (by default they are). */
+    serverAdmin?: boolean;
     /** The Skills this server's Agent already has installed (by default none). */
     skills?: string[];
     /** The keys the Agent's API holds; a DELETE of one removes it. */
@@ -607,7 +613,13 @@ export function agentServer(
       const own = machineAnswer(request);
       if (own !== null) return own;
     }
-    if (path === "/api/me") return json(ADMIN_ME);
+    if (path === "/api/me") {
+      return json(
+        options.serverAdmin === false
+          ? { ...ADMIN_ME, user: { ...ADMIN_ME.user, isAdmin: false } }
+          : ADMIN_ME,
+      );
+    }
     if (path === "/api/plugins") {
       return json({ groups: [{ id: "all", title: "All", plugins: libraryOf(request.machine) }] });
     }
@@ -1299,11 +1311,17 @@ export async function mountAgentApp(
     route = "/agents/:agentId",
     at,
     extra = [],
+    pages = [],
   }: {
     route?: string;
     at: string;
     /** More pages beside the one under test, at their own routes (where it navigates to). */
     extra?: Array<{ path: string; element: ReactElement }>;
+    /**
+     * The app's page table, as the shell holds it (by default none): what the App Center, the nav
+     * and the system Agent's settings read the system apps from (test/helpers/system-app-pages.ts).
+     */
+    pages?: readonly WebAppPage[];
   },
 ) {
   const router = createMemoryRouter(
@@ -1342,8 +1360,18 @@ export async function mountAgentApp(
   );
   vi.stubGlobal("EventSource", SilentEventSource);
   vi.stubGlobal("matchMedia", unmatchedQuery);
+  const table = { pages, pending: false, quickStarts: [], refresh: async () => null };
   await mount(
-    h(LocaleProvider, null, h(AuthProvider, null, h(RouterProvider, { router }), h(UnsavedPrompt))),
+    h(
+      LocaleProvider,
+      null,
+      h(
+        AuthProvider,
+        null,
+        h(PagesContext.Provider, { value: table }, h(RouterProvider, { router })),
+        h(UnsavedPrompt),
+      ),
+    ),
   );
   return router;
 }

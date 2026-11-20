@@ -6,7 +6,8 @@
  * - An app tile opens the app. While the app builds, its icon is dimmed under a turning ring and
  *   it does not open (its menu's open rows are disabled too); it turns live by itself when the
  *   build ends. An app whose last load failed is the dimmed tile with a warning mark: it still
- *   opens, and its menu shows the error.
+ *   opens, and its menu shows the error. A system app's tile is always ready; its hint says it is
+ *   a system app instead of naming an Agent.
  * - A folder tile shows the first four of its apps' icons in a 2×2 square and opens the folder.
  * - What a drag would do is marked here: a line in the gap beside the tile, or a ring around the
  *   icon it would go into. Neither moves anything. The tile's `data-drop` names the mark it wears.
@@ -22,6 +23,7 @@ import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import {
   ContextMenu,
+  GlyphAppIcon,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
@@ -31,7 +33,7 @@ import {
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { skillTileColor } from "../skills";
-import type { GridApp, GridFolder, Side } from "./arrangement";
+import type { GridApp, GridFolder, LocatedShortcut, Side } from "./arrangement";
 
 /** Edge of a tile's icon, in px: the phone home screen's size, large enough to read a glyph in. */
 export const ICON_PX = 56;
@@ -62,17 +64,19 @@ export interface TileDragProps {
 /**
  * The app's own icon — an image from the URL the server serves it at (`ImageIcon`: an `<img>`, or
  * a mask in the text colour for a monochrome SVG) — else, and whenever that image fails to load,
- * a square in the id's colour with the title's first letter.
+ * a square in the id's colour with the title's first letter. A system app wears its page's glyph
+ * on the App Center's icon shape (the UI package's `GlyphAppIcon`).
  */
 export function TileIcon({
   shortcut,
   title,
   size = ICON_PX,
 }: {
-  shortcut: AppCenterShortcut;
+  shortcut: LocatedShortcut;
   title: string;
   size?: number;
 }) {
+  if (shortcut.system !== undefined) return <GlyphAppIcon d={shortcut.system.glyph} size={size} />;
   const round = size >= ICON_PX ? "rounded-xl" : "rounded-md";
   const letter = (
     <span
@@ -148,11 +152,15 @@ export function AppTile({
   const building = shortcut.build === "building";
   const failed = shortcut.build === "failed";
   const state = building ? S.appCenter.building : failed ? S.appCenter.broken : null;
-  const tip = building
-    ? S.appCenter.buildingTip(title, owner)
-    : failed
-      ? S.appCenter.failedTip(title, owner)
-      : S.appCenter.tileTip(title, owner);
+  // A system app is always ready, and the platform's rather than an Agent's: it says so instead.
+  const system = shortcut.system !== undefined;
+  const tip = system
+    ? S.appCenter.systemTileName(title)
+    : building
+      ? S.appCenter.buildingTip(title, owner)
+      : failed
+        ? S.appCenter.failedTip(title, owner)
+        : S.appCenter.tileTip(title, owner);
   return (
     <li
       className="relative"
@@ -168,7 +176,9 @@ export function AppTile({
             ref={target.ref}
             {...target.props}
             type="button"
-            aria-label={S.appCenter.tileName(title, owner, state)}
+            aria-label={
+              system ? S.appCenter.systemTileName(title) : S.appCenter.tileName(title, owner, state)
+            }
             aria-disabled={building || shortcut.unavailable || undefined}
             data-tooltip={tip}
             data-tooltip-extra

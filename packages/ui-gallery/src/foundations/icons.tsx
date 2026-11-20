@@ -1,20 +1,24 @@
 /**
  * Foundations › Icons: every icon of the shared registry (read from its source, see
  * lib/icon-registry.ts) drawn by the package's own renderer, `GlyphIcon`, grouped by the file that
- * declares it, after the size rungs of `ICON_SIZE`, and then the marks drawn as components. Each
- * registry glyph and each mark is drawn in every icon set and the theme shows its own, so
+ * declares it, after the size rungs of `ICON_SIZE`, and then the app icons (a system app's glyph
+ * on the App Center's icon shape, at the sizes it is drawn at) and the marks drawn as components.
+ * Each registry glyph and each mark is drawn in every icon set and the theme shows its own, so
  * switching the theme switches the set: Primer's line drawings, Frost's line drawings with their
  * duotone bodies, Console's pixel drawings. A path declared under several names shows once,
  * marked with its count; a fragment the entries are composed from is not a glyph and stays a line.
  */
 import type { ReactElement } from "react";
 import {
+  APP_ICON_PX,
   CheckIcon,
   Chevron,
   ChevronDown,
   CloseIcon,
   DownloadIcon,
+  GlyphAppIcon,
   GlyphIcon,
+  ICONS,
   PlusIcon,
   UploadIcon,
 } from "@prismshadow/penguin-ui";
@@ -32,6 +36,10 @@ const MARKS: readonly { key: string; mark: ReactElement }[] = [
   { key: "close", mark: <CloseIcon size={16} /> },
   { key: "chevron", mark: <Chevron open={false} size={16} /> },
 ];
+
+/** The system apps' glyphs, as the App Center draws them, and the sizes an app icon is drawn at. */
+const APP_GLYPHS = [ICONS.chip, ICONS.puzzle, ICONS.server, ICONS.barChart, ICONS.trophy];
+const APP_ICON_SIZES = [APP_ICON_PX, 36, 20, 16];
 
 export function IconsBoard() {
   const { S } = useGallery();
@@ -88,6 +96,19 @@ export function IconsBoard() {
           </BoardGroup>
         );
       })}
+      <BoardGroup title={S.foundations.appIcons} aside={S.foundations.appIconsAside}>
+        <div className="gf-icon-sizes">
+          {APP_GLYPHS.map((d) => (
+            <GlyphAppIcon key={d} d={d} />
+          ))}
+          {APP_ICON_SIZES.map((px) => (
+            <span key={px} className="gf-icon-size">
+              <GlyphAppIcon d={ICONS.chip} size={px} />
+              <span className="gf-caption gf-mono">{px}</span>
+            </span>
+          ))}
+        </div>
+      </BoardGroup>
       <BoardGroup title={S.foundations.iconMarks} aside={MARKS.length}>
         <div className="gf-icon-grid">
           {MARKS.map(({ key, mark }) => (

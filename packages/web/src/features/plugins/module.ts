@@ -1,4 +1,7 @@
-/** The plugins page; package details open in its modal. */
+/**
+ * The plugins page, a system app (an App Center tile, lib/system-apps.ts); package details open
+ * in its modal.
+ */
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import { PluginsPage } from "./plugins-page";
 
@@ -10,13 +13,14 @@ import { PluginsPage } from "./plugins-page";
         key: "plugins",
         path: "/plugins",
         frame: "shell",
-        nav: "main",
+        nav: "none",
         admin: false,
         released: true,
         order: 40,
         title: "Plugins",
         titleZh: "插件市场",
         icon: "puzzle",
+        app: { order: 20 },
       },
     ],
   },

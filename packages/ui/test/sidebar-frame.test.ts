@@ -4,10 +4,7 @@
  *
  * - Given fixed entries (New chat and the favourites), the frame stands them between the
  *   switcher and the scroll area, never inside the element that scrolls; the scroll area holds
- *   exactly what it is given. (That a scroll leaves them in place and draws a line at the
- *   boundary without moving anything, how far apart the rows stand across that boundary, and
- *   how a short column gives way are measured in a real engine:
- *   packages/ui-gallery/e2e/sidebar-favorites.spec.mjs.)
+ *   exactly what it is given.
  * - Given no fixed entries, the column keeps an empty gap under the switcher, and no fixed nav.
  * - The fold folds through the shared `Fold`; with nothing to fold it draws nothing at all, and
  *   with a drop target it is ringed only while a drag it would take is over it.
