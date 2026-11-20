@@ -964,7 +964,9 @@ describe("models preset & catalog enrichment", () => {
 
     // A full-table PUT with the buckets alone prices thinking as output again.
     const cleared = await api.put(url(), {
-      models: [{ provider: "custom", modelId: "video-model", clientType: "openai", pricing: buckets }],
+      models: [
+        { provider: "custom", modelId: "video-model", clientType: "openai", pricing: buckets },
+      ],
     });
     expect(cleared.status).toBe(200);
     expect(pick((await cleared.json()) as ModelsResponse, "custom", "video-model").pricing).toEqual(
