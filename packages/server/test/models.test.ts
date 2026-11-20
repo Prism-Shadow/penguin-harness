@@ -1050,10 +1050,14 @@ describe("default_project presets", () => {
       baseUrl: "https://or-proxy.example/v1",
       apiKeyMasked: "sk-o…0018",
     });
-    // Its models follow its endpoint and carry the protocol it lacks; other groups get theirs.
+    // Its models follow its endpoint and carry the protocol it lacks (a row that pins its own, an
+    // image or speech model on OpenRouter, keeps it); other groups get theirs.
     for (const row of body.models.filter((m) => m.provider === "openrouter")) {
       expect(row.credential, row.modelId).toBeUndefined();
-      expect(row.clientType, row.modelId).toBe(catalogGroupConnection("openrouter")!.client_type);
+      expect(row.clientType, row.modelId).toBe(
+        catalogEntryFor("openrouter", row.modelId)?.clientType ??
+          catalogGroupConnection("openrouter")!.client_type,
+      );
       expect(row.effective.baseUrl, row.modelId).toBe("https://or-proxy.example/v1");
     }
     expect(body.providers.tokendance).toBeDefined();
