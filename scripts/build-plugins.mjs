@@ -48,13 +48,16 @@ import {
   readPnpmLock,
 } from "./lib/locked-prefix.mjs";
 import { readVendoredPackages, thirdPartyNotices } from "./lib/third-party-notices.mjs";
+import { offlineCandidates, stageOfflineArchives } from "./lib/offline-archives.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLUGINS_SRC = path.join(ROOT, "plugins");
+/** The market's own index: a repo package it lists that the build does not ship is carried offline. */
+const BUILTIN_INDEX = path.join(ROOT, "packages", "server", "src", "plugin", "builtin-index.json");
 const CACHE = path.join(ROOT, "node_modules", ".cache", "penguin-plugins");
 const COMPLETE = ".complete";
 /** Folded into the cache key: bump when what this script WRITES changes, not only what it reads. */
-const PACK_FORMAT = 14;
+const PACK_FORMAT = 15;
 /** The prefix's own manifest: npm needs one above `node_modules`, and it is ours, never a package's. */
 const PREFIX_MANIFEST = { name: "penguin-builtin-plugins", private: true, version: "0.0.0" };
 /**
@@ -210,9 +213,15 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
   const importers = plugins.map((p) => path.relative(ROOT, p.dir).split(path.sep).join("/"));
   const closure = lockedClosure(lock, importers, NATIVE_DEPENDENCIES, TARGET_PLATFORMS);
   const builtinNames = new Set(plugins.map((p) => p.name));
+  // Listed in the market but not shipped: carried as offline archives (scripts/lib/offline-archives.mjs).
+  const offline = await offlineCandidates({
+    pluginsSrc: PLUGINS_SRC,
+    indexFile: BUILTIN_INDEX,
+    shipped: builtinNames,
+  });
   const h = createHash("sha256").update(`pack ${PACK_FORMAT}\0`);
   h.update(lockCacheInput(lock, closure)).update("\0");
-  for (const plugin of plugins) {
+  for (const plugin of [...plugins, ...offline]) {
     h.update(plugin.name).update("\0");
     await sourceHash(plugin.dir, h);
   }
@@ -313,6 +322,19 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
         }
         log(`${closure.size} locked third-party packages: verified`);
       }
+      await stageOfflineArchives({
+        out,
+        candidates: offline,
+        build: (plugin) => run("pnpm", ["--filter", plugin.name, "run", "build"], ROOT),
+        pack: async (dir, into) => {
+          const before = new Set(await fsp.readdir(into));
+          run("pnpm", ["pack", "--pack-destination", into], dir);
+          const made = (await fsp.readdir(into)).find((f) => f.endsWith(".tgz") && !before.has(f));
+          if (made === undefined) throw new Error(`pnpm pack left no tarball in ${dir}`);
+          return path.join(into, made);
+        },
+        log,
+      });
       // npm installs a package's files with the mode it pleases, and a vendored program
       // arrives without its exec bit — which no consumer of the prefix can guess back.
       for (const rel of await walk(out)) {

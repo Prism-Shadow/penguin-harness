@@ -311,7 +311,20 @@ export function selectIndexChannel(
  */
 export function indexChannelLookup(
   readUrls: () => readonly string[],
-  { fetchImpl = fetch, ttlMs = INDEX_CACHE_TTL_MS, now = Date.now } = {},
+  {
+    fetchImpl = fetch,
+    ttlMs = INDEX_CACHE_TTL_MS,
+    now = Date.now,
+    attempts,
+    timeoutMs,
+  }: {
+    fetchImpl?: typeof fetch;
+    ttlMs?: number;
+    now?: () => number;
+    /** Per address (httpPluginRegistry): an install's lookup tries once, briefly — it already waited on npm. */
+    attempts?: number;
+    timeoutMs?: number;
+  } = {},
 ): (
   name: string,
   version?: string,
@@ -344,6 +357,8 @@ export function indexChannelLookup(
         try {
           const fromSource = await httpPluginRegistry([url, ...pluginProxyMirrors(url, mirrors)], {
             fetchImpl,
+            ...(attempts !== undefined ? { attempts } : {}),
+            ...(timeoutMs !== undefined ? { timeoutMs } : {}),
           }).index();
           const fresh = fromSource.filter((entry) => !registered.has(entry.name));
           for (const entry of fresh) registered.add(entry.name);

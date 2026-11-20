@@ -19,6 +19,8 @@ export abstract class PluginPackages {
   abstract install(root: string, source: string): Promise<InstalledPackage>;
   /** An uploaded package's files, relative path → bytes (checked by the caller). */
   abstract installFiles(root: string, files: Record<string, Uint8Array>): Promise<InstalledPackage>;
+  /** A package tarball already on this machine, verified by the caller (an offline archive). */
+  abstract installTarball(root: string, file: string, name: string): Promise<InstalledPackage>;
   abstract remove(root: string, name: string): Promise<void>;
 }
 
@@ -51,6 +53,17 @@ export abstract class PluginModules {
     actor: ModuleActor | null,
     ask: "install" | "explicit",
     agentId?: string,
+  ): Promise<PluginModuleAction[]>;
+  /**
+   * A member's ask for a package that is not on this server yet (05 「插件库」 「安装模型」): a
+   * request for the administrator, whose enable installs it on the server first. A standing
+   * request is left as it is.
+   */
+  abstract askForPackage(
+    projectId: string,
+    pkg: string,
+    actor: ModuleActor,
+    agentId: string | null,
   ): Promise<PluginModuleAction[]>;
   /** The ledger, joined with each module's state. */
   abstract requests(): Promise<PluginModuleRequestsResponse>;
