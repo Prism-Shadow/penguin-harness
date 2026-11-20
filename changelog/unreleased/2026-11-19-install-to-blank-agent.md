@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** feat
 - **Scope:** `web`
+- **PR:** [#1659](https://github.com/Prism-Shadow/penguin-harness/pull/1659)
 
 [中文版](2026-11-19-install-to-blank-agent.zh.md)
 
