@@ -1,13 +1,11 @@
 /**
  * Where the Benchmarks and Leaderboards pages read penguin-harness-benchmark from.
  *
- * A build clones the repository afresh, so a deploy always shows the repository as it is. The
- * clone is shallow and sparse: `packages/`, `experiments/` and `leaderboards/`, and from the large
- * `data/` only each benchmark's README.md and each task's instruction.md; the rest of `data/` is
- * listed from git (`dataFiles`) without being downloaded.
- * The dev server reuses the last clone while it is fresh (see `fresh`). PENGUIN_BENCHMARK_REPO names a local
- * checkout to read instead, with no network (developing both repositories, or a machine that
- * cannot reach GitHub). The clone lives in this package's node_modules cache, never in git.
+ * A build fetches the index afresh. Each pinned data repository gets one sparse checkout with
+ * READMEs and task instructions. Other files are listed from the Git tree. Older index revisions
+ * keep their data in the index checkout. The dev server reuses a fresh clone (see `fresh`).
+ * PENGUIN_BENCHMARK_REPO selects an offline index checkout, with data in its sibling repositories
+ * or the cache in this package's node_modules.
  */
 import { execFileSync } from "node:child_process";
 import {
@@ -115,16 +113,16 @@ function clone() {
 }
 
 /**
- * Every file under the checkout's `data/`, as paths from the repository root. A git checkout
+ * Every file under the prefix, as paths from the repository root. A git checkout
  * answers from its tree, which lists the files a sparse clone never downloaded; a plain folder
  * (a test fixture, an exported copy) is walked.
  */
-export function dataFiles(repo) {
+export function dataFiles(repo, prefix = "data") {
   if (existsSync(join(repo, ".git"))) {
     try {
       const out = execFileSync(
         "git",
-        ["-C", repo, "ls-tree", "-r", "--name-only", "HEAD", "--", "data"],
+        ["-C", repo, "ls-tree", "-r", "--name-only", "HEAD", "--", ...(prefix ? [prefix] : [])],
         {
           encoding: "utf8",
           maxBuffer: 64 * 1024 * 1024,
@@ -136,9 +134,38 @@ export function dataFiles(repo) {
       // Not a usable repository after all: fall back to what is on disk.
     }
   }
-  const root = join(repo, "data");
+  const root = join(repo, prefix);
   if (!existsSync(root)) return [];
   return readdirSync(root, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
-    .map((entry) => relative(repo, join(entry.parentPath, entry.name)).split(sep).join("/"));
+    .map((entry) => relative(repo, join(entry.parentPath, entry.name)).split(sep).join("/"))
+    .filter((path) => !path.startsWith(".git/"));
+}
+
+/** A pinned dataset checkout for the file browser. Only README and instruction text is downloaded. */
+export function pinnedDataRepo(repository, commit) {
+  const dest = join(CACHE_DIR, "data", repository, commit);
+  if (existsSync(join(dest, ".git"))) return dest;
+  const git = (args) =>
+    execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const local = process.env.PENGUIN_BENCHMARK_REPO;
+  const sibling = local && join(dirname(resolve(local)), repository.split("/")[1]);
+  if (sibling && !existsSync(join(sibling, ".git"))) return undefined;
+  mkdirSync(dirname(dest), { recursive: true });
+  const temp = mkdtempSync(join(dirname(dest), "fetch-"));
+  try {
+    git(["init", "-q", temp]);
+    git(["-C", temp, "config", "core.longpaths", "true"]);
+    git(["-C", temp, "remote", "add", "origin", sibling || `https://github.com/${repository}.git`]);
+    git(["-C", temp, "sparse-checkout", "set", "--no-cone", "README.md", "instruction.md"]);
+    git(["-C", temp, "fetch", "--depth=1", "--filter=blob:none", "--no-tags", "origin", commit]);
+    git(["-C", temp, "checkout", "--detach", "-q", "FETCH_HEAD"]);
+    renameSync(temp, dest);
+  } catch (error) {
+    // Another site build may have published the same immutable checkout.
+    if (!existsSync(join(dest, ".git"))) throw error;
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+  return dest;
 }

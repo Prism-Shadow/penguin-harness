@@ -78,7 +78,7 @@ export interface BenchmarkTask {
   statement: string;
   /** The rubric's README.md (Markdown). */
   rubric: string;
-  /** The task's folder under `data/`, when it has one. */
+  /** The task's data folder, when provided by the package. */
   data?: TaskData;
 }
 
@@ -93,7 +93,7 @@ export interface TaskData {
 }
 
 export interface BenchmarkData {
-  /** `data/<benchmark-id>/` on GitHub. */
+  /** The dataset folder on GitHub. */
   url: string;
   /** Its README.md (Markdown). */
   readme?: string;

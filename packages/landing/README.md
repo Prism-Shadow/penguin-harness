@@ -31,7 +31,7 @@ Without the gallery running, a frame keeps its placeholder. A frame is lazy (it 
 
 ### Plugins, Benchmarks and Leaderboards
 
-These pages read their source files at build time and keep no copy here (`scripts/hub/`, served to the pages by the `virtual:penguin-hub` module of `scripts/hub-plugin.ts`): the packages under the repository's `plugins/`, and a shallow clone of [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark) in `node_modules/.cache/penguin-hub/`: `packages/`, `experiments/` and `leaderboards/`, and from the large `data/` only each benchmark's `README.md` and each task's `instruction.md` (the other data files are listed from git, not downloaded). A build clones it afresh; `dev` reuses the last clone. To build offline or against a local checkout:
+At build time, `scripts/hub/` reads the local `plugins/` and the `packages/`, `experiments/` and `leaderboards/` directories in [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark). The file browser follows the data revision linked by each Case, reads README and instruction files, and lists other files from the Git tree. It caches each data revision in `node_modules/.cache/penguin-hub/`. For an offline preview, keep the data checkouts beside the local index or use a previously cached revision.
 
 ```bash
 PENGUIN_BENCHMARK_REPO=/path/to/penguin-harness-benchmark pnpm --filter @prismshadow/penguin-landing dev

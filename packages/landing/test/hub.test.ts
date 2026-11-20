@@ -19,6 +19,7 @@
  * - Given a benchmark with a data folder, when it is read, then each task carries its rubric and
  *   finds its data folder by the link in its statement or by its id without the CASE prefix, and a
  *   task with neither has no data.
+ * - Given Cases sharing a task in a separate repository, both show its pinned instructions and files.
  * - Given a leaderboard value averaging two experiments of three attempts each, when it is read,
  *   then its score is the mean of their summaries, its std the sample std of the per-attempt
  *   composites, and its cost, time and tokens the sums of one run; when the attempts do not line
@@ -34,11 +35,13 @@
  * - Given a run's time or token count that rounds up to the next unit, when it is shown, then it
  *   is shown in that unit (1.0 h, not 60 min; 1.0M, not 1000K).
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { basename, dirname, join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadHub } from "../scripts/hub/hub.mjs";
+import { CACHE_DIR } from "../scripts/hub/source.mjs";
 import { facetCounts, facetSplits, filterItems } from "../src/lib/hub/filter";
 import type { Facet } from "../src/lib/hub/filter";
 import { formatCompact, formatDuration } from "../src/lib/hub/text";
@@ -328,6 +331,59 @@ describe("the hub readers", () => {
     });
     expect(byId["CASE-003-third"]!.data?.files).toEqual(["task.toml"]);
     expect(byId["t2"]!.data).toBeUndefined();
+  });
+
+  it("reads the pinned task files when two Cases share an external Harbor task", () => {
+    const dataset = tree({
+      "scenario/README.md": "Training data",
+      "scenario/tasks/shared/instruction.md": "Work through the training tasks.",
+      "scenario/tasks/shared/task.toml": "",
+      "scenario/tasks/shared/environment/input.csv": "x,y",
+    });
+    const git = (...args: string[]) =>
+      execFileSync("git", ["-C", dataset, ...args], { encoding: "utf8" }).trim();
+    git("init", "-q");
+    git("add", ".");
+    git(
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.org",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "-qm",
+      "Dataset",
+    );
+    const commit = git("rev-parse", "HEAD");
+    writeFileSync(join(dataset, "scenario/tasks/shared/instruction.md"), "Unpublished edits");
+    const repository = `test/${basename(dataset)}`;
+    const cache = join(CACHE_DIR, "data", repository);
+    roots.push(cache);
+    const datasetUrl = `https://github.com/${repository}/tree/${commit}/scenario`;
+    const taskUrl = `${datasetUrl}/tasks/shared`;
+    const statement = `[Adapter](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/${commit}/agents)\n[Task](${taskUrl})`;
+    const index = repo({
+      "packages/bench-a/t1/statement/README.md": statement,
+      "packages/bench-a/t2/statement/README.md": statement,
+    });
+    vi.stubEnv("PENGUIN_BENCHMARK_REPO", index);
+    try {
+      const bench = loadHub({ repo: index, pluginsDir: tree({}) }).details.benchmark["bench-a"]!;
+      expect(bench.data).toMatchObject({ url: datasetUrl, readme: "Training data", fileCount: 4 });
+      for (const task of bench.tasks) {
+        expect(task.data).toMatchObject({
+          url: taskUrl,
+          instruction: "Work through the training tasks.",
+          files: ["environment/input.csv", "instruction.md", "task.toml"],
+        });
+      }
+      expect(existsSync(join(cache, commit, "scenario/tasks/shared/environment/input.csv"))).toBe(
+        false,
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("averages a value's experiments, takes the std across attempt composites and sums one run", () => {
