@@ -22,7 +22,7 @@
   - 审批模式取给定的值，为新建对话可选的四种之一。
 
   `status(userId, sessionId)` 返回 `{ status, title, pendingApprovals }`，`status` 为 `running`、`completed` 或 `failed`；Session 已不在或此人读不到时为 null。
-- **只读视图**。`ProjectModels`（`getModels`）与 `ProjectMachines`（`projectApis`）是门面上新增的接口，宿主的 `Access`、`WorkspaceFiles` 与 `MachineApi` 类型一并导出。内核按结构匹配依赖，所以插件也可以在自己的包里声明同样的视图。
+- **只读视图**。`AgentSkills`（`installedSkills(projectId, agentId)`：一个 Agent 已装 Skill 的名称；Project 没有该 Agent 时 404 `agent_not_found`）是新增的宿主节点。`ProjectModels`（`getModels`）与 `ProjectMachines`（`projectApis`）是门面上新增的接口，宿主的 `Access`、`WorkspaceFiles` 与 `MachineApi` 类型一并导出。内核按结构匹配依赖，所以插件也可以在自己的包里声明同样的视图。
 - **门面上的函数**。
   - `containedFile` 与 `uiFileResponse` 提供包自己的页面文件。`containedFile` 拒绝越界的路径与任何链接，不论链接指向文件夹内外。
   - `unzipBounded`、`assertSafeEntryPath`、`assertDistinctPaths`、`specialEntries`、`CONTROL_CHARACTER` 与压缩包上限是服务端自己的 zip 防护。

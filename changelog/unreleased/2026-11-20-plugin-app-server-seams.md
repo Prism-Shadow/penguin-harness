@@ -22,7 +22,7 @@ The server gained the generic seams a system app provided by a plugin needs: its
   - the approval mode is the one given, one of the four a new chat offers.
 
   `status(userId, sessionId)` answers `{ status, title, pendingApprovals }`, where `status` is `running`, `completed` or `failed`, or null for a Session that is gone or that the person cannot read.
-- **Read views.** `ProjectModels` (`getModels`) and `ProjectMachines` (`projectApis`) are new interfaces on the face, and the host's `Access`, `WorkspaceFiles` and `MachineApi` types are exported beside them. The kernel matches a requirement by structure, so a plugin may declare the same views in its own package.
+- **Read views.** `AgentSkills` (`installedSkills(projectId, agentId)`: the names of an Agent's installed Skills, 404 `agent_not_found` for an Agent the Project lacks) is a new host node. `ProjectModels` (`getModels`) and `ProjectMachines` (`projectApis`) are new interfaces on the face, and the host's `Access`, `WorkspaceFiles` and `MachineApi` types are exported beside them. The kernel matches a requirement by structure, so a plugin may declare the same views in its own package.
 - **Values on the face.**
   - `containedFile` and `uiFileResponse` serve a package's own page files. `containedFile` refuses a path that climbs out and any link, inside the folder or out of it.
   - `unzipBounded`, `assertSafeEntryPath`, `assertDistinctPaths`, `specialEntries`, `CONTROL_CHARACTER` and the archive limits are the server's own zip guards.

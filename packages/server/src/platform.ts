@@ -157,6 +157,7 @@ import { StartPageModule } from "./http/routes/start-page.js";
 import { AppData, SystemAgentAppData } from "./services/app-data.js";
 import { AppSeeds, HostAppSeeds } from "./services/app-seeds.js";
 import { AgentTasks, HostAgentTasks } from "./services/agent-tasks.js";
+import { AgentSkills, InstalledAgentSkills } from "./services/agent-skills.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "./terminal/manager.js";
@@ -492,9 +493,10 @@ export class TracesModule {}
     AgentService,
     MemoryService,
     BenchmarkService,
+    InstalledAgentSkills,
     AgentRoutes,
   ],
-  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks],
+  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks, AgentSkills],
 })
 export class AgentsModule {}
 

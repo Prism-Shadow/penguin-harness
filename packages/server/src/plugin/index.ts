@@ -68,6 +68,7 @@ export type {
   AgentTaskState,
   AgentTaskStatus,
 } from "../services/agent-tasks.js";
+export type { AgentSkills } from "../services/agent-skills.js";
 export type { AppSeedData, AppSeeds, AppSeedsSlots } from "../services/app-seeds.js";
 export type {
   SemanticIdKindData,

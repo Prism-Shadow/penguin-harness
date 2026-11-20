@@ -24,6 +24,7 @@ description: PenguinHarness 的插件是什么、插件包遵循的格式与校�
 | `AppData` | `dataPaths(projectId, appId) → Promise<{ dataDir, cacheDir, stateDir }>` | 应用在一个 Project 中自己的文件夹：系统 Agent 以应用 id 为键的 agent 级文件夹（`agents/system_agent/app/{data,cache}/<appId>/`，状态文件夹在 `run/` 下），交出前即已建好。处理器用 Node 的 `fs` 读写。id 不是单个普通路径段时 `400`，服务端没有该 Project 时 `404` `project_not_found`，该 Project 的 `system_agent` 是用户自己的 Agent 时 `409` `system_agent_held`。 |
 | `AgentTasks` | `start({ userId, projectId, agentId, prompt, approvalMode, skills?, model?, thinkingLevel?, title? }) → Promise<{ sessionId }>`、`status(userId, sessionId) → Promise<{ status, title, pendingApprovals } \| null>` | 以某个人的名义发起的 Agent 任务，步骤与 Web App 的「发送」相同：此人进不了该 Project 或 Agent 不存在时 `404`，系统 Agent `409` `system_agent_no_sessions`，新建临时 Workspace，Skill 以 `[use_skills]` 块放在正文之前，本轮的驱动者为此人，来源为 `user`（出现在其侧栏，带审批角标与完成通知），审批模式取给定的值。`status` 为 `running`、`completed` 或 `failed`，并给出任务在等的审批数；Session 已不在或此人读不到时为 `null`。发起任务的路由先检查 `requireHuman`。 |
 | `Access` | `requireProjectAccess`、`requireProjectOwner`、`canAccess` 等 | 谁能看到、谁拥有一个 Project。 |
+| `AgentSkills` | `installedSkills(projectId, agentId) → Promise<string[]>` | 一个 Agent 已装 Skill 的名称，按名称排序：即它的 `skills/<name>/` 中含 SKILL.md 的文件夹。Project 没有该 Agent 时 `404` `agent_not_found`。 |
 | `ProjectModels` | `getModels(projectId)` | Project 的模型（密钥已遮蔽）与默认模型。 |
 | `ProjectMachines` | `projectApis(projectId)` | Project 使用的机器，各带别名，连接时另带一个访问其 API 的客户端；同机器代理一样，只为管理员读取。 |
 | `WorkspaceFiles` | `list`、`read`、`resolvePath` 等 | Workspace 的文件，沿用服务端对链接与大小的防护。 |

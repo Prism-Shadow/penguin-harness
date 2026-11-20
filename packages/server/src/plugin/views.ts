@@ -10,7 +10,8 @@
  *                    connected (the machines service has it); a route reads it for an
  *                    administrator only, as the machine proxy does
  *
- * `Access` (who may see or own a Project) is the host's own interface, exported beside these.
+ * `Access` (who may see or own a Project) is the host's own interface, and `AgentSkills` (the
+ * Skills installed on an Agent, services/agent-skills.ts) a host node of its own, exported beside these.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { ModelsResponse } from "@prismshadow/penguin-library-model";
