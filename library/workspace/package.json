@@ -1,0 +1,52 @@
+{
+  "name": "@prismshadow/penguin-library-workspace",
+  "version": "0.2.18",
+  "description": "The workspace domain: the WorkspaceFiles mechanism and its service (the Files panel's list / read / write / create / move / delete / search over a Workspace's directory) and the API vocabulary they speak. One package, no server dependencies \u2014 the server imports these; nothing here imports the server.",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "library/workspace"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./contract": {
+      "types": "./dist/contract.d.ts",
+      "import": "./dist/contract.js"
+    },
+    "./workspace-files-service": {
+      "types": "./dist/workspace-files-service.d.ts",
+      "import": "./dist/workspace-files-service.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-http": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "tsup": "^8"
+  },
+  "private": true
+}

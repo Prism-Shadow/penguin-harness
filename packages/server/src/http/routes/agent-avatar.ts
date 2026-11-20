@@ -1,5 +1,5 @@
 /**
- * An Agent's own avatar (services/agent-avatar.ts):
+ * An Agent's own avatar (the agent domain library's agent-avatar):
  *   GET /api/projects/:p/agents/:a/avatar   the picture; cached for good, since the URL a list
  *                                           hands out carries its revision (`?rev=<avatarRev>`)
  *   PUT /api/projects/:p/agents/:a/avatar   { avatar: dataUrl | null } → { avatarRev? }
@@ -13,9 +13,13 @@ import type { AgentAvatarResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { Access } from "@prismshadow/penguin-library-project";
-import { parseAvatarDataUrl } from "../../services/avatar-file.js";
-import type { AvatarImage } from "../../services/avatar-file.js";
-import { agentAvatarRev, readAgentAvatar, writeAgentAvatar } from "../../services/agent-avatar.js";
+import { parseAvatarDataUrl } from "@prismshadow/penguin-library-agent/avatar-file";
+import type { AvatarImage } from "@prismshadow/penguin-library-agent/avatar-file";
+import {
+  agentAvatarRev,
+  readAgentAvatar,
+  writeAgentAvatar,
+} from "@prismshadow/penguin-library-agent/agent-avatar";
 import { HttpError } from "../errors.js";
 import { badRequest, readJson, requireValidId } from "../validate.js";
 

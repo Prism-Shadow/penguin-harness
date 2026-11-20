@@ -141,8 +141,10 @@
   },
   "devDependencies": {
     "@prismshadow/penguin-hmr": "workspace:*",
+    "@prismshadow/penguin-library-agent": "workspace:*",
     "@prismshadow/penguin-library-agent-api": "workspace:*",
     "@prismshadow/penguin-library-auth": "workspace:*",
+    "@prismshadow/penguin-library-benchmark": "workspace:*",
     "@prismshadow/penguin-library-db": "workspace:*",
     "@prismshadow/penguin-library-http": "workspace:*",
     "@prismshadow/penguin-library-machine": "workspace:*",
@@ -155,6 +157,7 @@
     "@prismshadow/penguin-library-setting": "workspace:*",
     "@prismshadow/penguin-library-trace": "workspace:*",
     "@prismshadow/penguin-library-workbench": "workspace:*",
+    "@prismshadow/penguin-library-workspace": "workspace:*",
     "@prismshadow/penguin-theme-pack": "workspace:*",
     "@prismshadow/penguin-ui": "workspace:*",
     "@types/mdast": "^4.0.4",

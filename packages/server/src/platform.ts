@@ -97,7 +97,7 @@ import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-ser
 import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
 import { TraceService } from "./services/trace-service.js";
-import { WorkspaceFilesService } from "./services/workspace-files-service.js";
+import { WorkspaceFilesService } from "@prismshadow/penguin-library-workspace/workspace-files-service";
 import { RevealService } from "./services/reveal-path.js";
 import { ProjectAccess } from "./services/project-access.js";
 import { ProjectNotifier } from "./services/project-events.js";
@@ -109,12 +109,12 @@ import {
 import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
 import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
-import { AgentConfigService } from "./services/agent-config-service.js";
+import { AgentConfigServiceProvider } from "./services/agent-config-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { AgentRoutes } from "./services/agent-routes.js";
 import { AgentService } from "./services/agent-service.js";
-import { MemoryService } from "./services/memory-service.js";
-import { BenchmarkService } from "./services/benchmark-service.js";
+import { MemoryServiceProvider } from "./services/memory-service.js";
+import { BenchmarkServiceProvider } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
 import { SandboxSettings } from "./sandbox/settings-store.js";
@@ -476,11 +476,11 @@ export class TracesModule {}
 
 @Module({
   children: [
-    AgentConfigService,
+    AgentConfigServiceProvider,
     SnapshotService,
     AgentService,
-    MemoryService,
-    BenchmarkService,
+    MemoryServiceProvider,
+    BenchmarkServiceProvider,
     AgentRoutes,
   ],
   exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks],

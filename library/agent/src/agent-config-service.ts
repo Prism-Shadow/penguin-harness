@@ -1,0 +1,635 @@
+/**
+ * Agent config read/write (config is an editable file).
+ *
+ * system_config.yaml is edited via yaml's `parseDocument`: only the keys provided in
+ * the request are updated, the rest of the file (including comments) is preserved
+ * as-is; AGENTS.md is overwritten in full.
+ * The vault (agent_state/.vault.toml) is read/written via core's loadAgentVault/saveAgentVault;
+ * plaintext values only ever hit disk, and are always masked in responses.
+ */
+import fs from "node:fs/promises";
+import { isMap, isScalar, parseDocument, parse as parseYaml } from "yaml";
+import type { Document } from "yaml";
+import {
+  AGENT_AUTHORS,
+  agentAuthorOf,
+  DEFAULT_COMPACTION_HANDOFF_NOTE,
+  DEFAULT_COMPACTION_MAX_ROUNDS,
+  DEFAULT_COMPACTION_REMINDER,
+  DEFAULT_MEMORY_PROMPT,
+  DEFAULT_MEMORY_WORKSPACE_PROMPT,
+  DEFAULT_SCHEDULES_PROMPT,
+  DEFAULT_SKILLS_PROMPT,
+  DEFAULT_VAULT_PROMPT,
+  KERNEL_VERSION,
+  LEGACY_SKILLS_SECTION,
+  LEGACY_VAULT_SECTION,
+  agentsMdPath,
+  applyKernelUpdate,
+  atomicWriteFile,
+  isKernelOutdated,
+  agentStateDir,
+  agentStateVersion,
+  hasSchedulesPlaceholder,
+  hasSkillsPlaceholder,
+  hasVaultPlaceholder,
+  insertSchedulesPlaceholder,
+  insertSkillsPlaceholder,
+  insertVaultPlaceholder,
+  VAULT_VALUE_MAX_LENGTH,
+  isValidVaultKey,
+  loadAgentVault,
+  resetSystemConfigToDefaults,
+  resolveMCPServer,
+  saveAgentVault,
+  systemConfigPath,
+  THINKING_LEVEL_NAMES,
+} from "@prismshadow/penguin-core";
+import type {
+  AgentAuthor,
+  MCPServerConfig,
+  ThinkingLevelName,
+  ToolDefinitionConfig,
+} from "@prismshadow/penguin-core";
+import type {
+  AgentConfigDto,
+  AgentConfigUpdateRequest,
+  AgentKernelUpdateResponse,
+  AgentModelConfigDto,
+  AgentCompactionConfigDto,
+  AgentMemoryConfigDto,
+  AgentHooksConfigDto,
+  AgentSchedulesConfigDto,
+  AgentSkillsConfigDto,
+  AgentVaultConfigDto,
+  VaultEntryInfo,
+  VaultResponse,
+  VaultUpdateRequest,
+  AgentConfigView,
+} from "./types.js";
+export type { AgentConfigView };
+import { HttpError } from "@prismshadow/penguin-library-http";
+import {
+  badRequest,
+  optionalBoolean,
+  optionalEnum,
+  optionalNumber,
+  optionalString,
+} from "@prismshadow/penguin-library-http/validate";
+
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { AgentPaths } from "./ports.js";
+import type { AgentConfig } from "./contract.js";
+
+const COMPACTION_MODES = ["summarize", "discard"] as const;
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {};
+}
+
+/**
+ * Sets the top-level `author` in place. A key the file already has keeps its position; a new
+ * one goes right after `description` (else `name`), where a reader looks for who the Agent is,
+ * or last when the file has neither.
+ */
+function setAuthor(doc: Document, author: AgentAuthor): void {
+  const map = doc.contents;
+  if (!isMap(map) || map.has("author")) {
+    doc.setIn(["author"], author);
+    return;
+  }
+  const keyIndex = (key: string) =>
+    map.items.findIndex((pair) => isScalar(pair.key) && pair.key.value === key);
+  const anchor = Math.max(keyIndex("description"), keyIndex("name"));
+  const pair = doc.createPair("author", author);
+  if (anchor < 0) map.items.push(pair);
+  else map.items.splice(anchor + 1, 0, pair);
+}
+
+/**
+ * API key masking: length <=12 -> `***`, otherwise `first4…last4`; plaintext is
+ * never sent to the client. The 12-char threshold: `first4…last4` exposes 8
+ * characters, which for a 9-12 character short secret would leak more than half of
+ * it, so those are masked in full instead. Pure, so it lives here.
+ */
+export function maskApiKey(key: string): string {
+  if (key.length <= 12) return "***";
+  return `${key.slice(0, 4)}…${key.slice(-4)}`;
+}
+
+@Component()
+export class AgentConfigService implements AgentConfig {
+  @Use() private readonly paths!: AgentPaths;
+  private get root(): string {
+    return this.paths.root;
+  }
+
+  /** Whether the Agent exists (determined by the presence of system_config.yaml, matching the CLI's convention). */
+  async exists(projectId: string, agentId: string): Promise<boolean> {
+    try {
+      await fs.access(systemConfigPath(this.root, projectId, agentId));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async requireExists(projectId: string, agentId: string): Promise<void> {
+    if (!(await this.exists(projectId, agentId))) {
+      throw new HttpError(404, "agent_not_found", "Agent does not exist.");
+    }
+  }
+
+  /**
+   * Read list-card metadata: name / description + tool count (sum of tools.builtin
+   * and tools.mcpServers entries; MCP counted per server). Silently falls back to
+   * empty / 0 if the file is corrupt.
+   */
+  async readCardMeta(
+    projectId: string,
+    agentId: string,
+  ): Promise<{
+    name?: string;
+    description?: string;
+    author: AgentAuthor;
+    toolCount: number;
+    version: number;
+    kernelOutdated: boolean;
+  }> {
+    try {
+      const raw = await fs.readFile(systemConfigPath(this.root, projectId, agentId), "utf8");
+      const parsed = asRecord(parseYaml(raw));
+      const tools = asRecord(parsed.tools);
+      const countOf = (v: unknown): number => (Array.isArray(v) ? v.length : 0);
+      return {
+        ...(typeof parsed.name === "string" ? { name: parsed.name } : {}),
+        ...(typeof parsed.description === "string" ? { description: parsed.description } : {}),
+        author: agentAuthorOf(parsed),
+        toolCount: countOf(tools.builtin) + countOf(tools.mcpServers),
+        version: agentStateVersion({ version: parsed.version as number | undefined }),
+        kernelOutdated: isKernelOutdated(
+          typeof parsed.kernel_version === "string" ? parsed.kernel_version : null,
+        ),
+      };
+    } catch {
+      // A corrupt config carries no readable stamp either: reported outdated, like a pre-stamp one.
+      return { author: "user", toolCount: 0, version: 1, kernelOutdated: true };
+    }
+  }
+
+  /** Structured config view (matching the edit form's shape) + raw text + AGENTS.md + State path. */
+  async getConfig(projectId: string, agentId: string): Promise<AgentConfigView> {
+    await this.requireExists(projectId, agentId);
+    const yamlPath = systemConfigPath(this.root, projectId, agentId);
+    const systemConfigYaml = await fs.readFile(yamlPath, "utf8");
+    const parsed = asRecord(parseYaml(systemConfigYaml));
+    const model = asRecord(parsed.model);
+    const compaction = asRecord(parsed.compaction);
+    const memory = asRecord(parsed.memory);
+    const vault = asRecord(parsed.vault);
+    const skills = asRecord(parsed.skills);
+    const schedules = asRecord(parsed.schedules);
+    const hooks = asRecord(parsed.hooks);
+    const tools = asRecord(parsed.tools);
+
+    let agentsMd = "";
+    try {
+      agentsMd = await fs.readFile(agentsMdPath(this.root, projectId, agentId), "utf8");
+    } catch {
+      // Treat a missing AGENTS.md as an empty file (it normally exists after initialization).
+    }
+
+    const modelDto: AgentModelConfigDto = {
+      ...(typeof model.max_tokens === "number" ? { maxTokens: model.max_tokens } : {}),
+      ...(typeof model.thinking_level === "string"
+        ? { thinkingLevel: model.thinking_level as ThinkingLevelName }
+        : {}),
+      ...(typeof model.timeoutMs === "number" ? { timeoutMs: model.timeoutMs } : {}),
+    };
+    const compactionDto: AgentCompactionConfigDto = {
+      ...(typeof compaction.max_context_length === "number"
+        ? { maxContextLength: compaction.max_context_length }
+        : {}),
+      ...(typeof compaction.max_session_turns === "number"
+        ? { maxSessionTurns: compaction.max_session_turns }
+        : {}),
+      ...(compaction.mode === "summarize" || compaction.mode === "discard"
+        ? { mode: compaction.mode }
+        : {}),
+      ...(typeof compaction.prompt === "string" ? { prompt: compaction.prompt } : {}),
+      // Effective values, not the literal YAML: a file written before these keys existed runs
+      // on the built-in defaults, and an empty box would read as the blank that sends none.
+      maxRounds:
+        typeof compaction.max_rounds === "number"
+          ? compaction.max_rounds
+          : DEFAULT_COMPACTION_MAX_ROUNDS,
+      reminder:
+        typeof compaction.reminder === "string" ? compaction.reminder : DEFAULT_COMPACTION_REMINDER,
+      handoffNote:
+        typeof compaction.handoff_note === "string"
+          ? compaction.handoff_note
+          : DEFAULT_COMPACTION_HANDOFF_NOTE,
+    };
+    // Memory's effective state, not the literal YAML: core treats anything but an explicit
+    // `false` as on and falls back to the built-in prompts, so a config predating the section
+    // reports the values its Sessions actually run with (whether anything reaches the prompt
+    // still depends on the template carrying {{MEMORY}}, which the Memory tab reports
+    // separately).
+    const memoryDto: AgentMemoryConfigDto = {
+      enabled: memory.enabled !== false,
+      prompt: typeof memory.prompt === "string" ? memory.prompt : DEFAULT_MEMORY_PROMPT,
+      workspacePrompt:
+        typeof memory.workspace_prompt === "string"
+          ? memory.workspace_prompt
+          : DEFAULT_MEMORY_WORKSPACE_PROMPT,
+    };
+    // Effective values like memory's, plus template facts computed from the stored template:
+    // whether the section placeholder is present, and — skills/vault only — whether the
+    // template still carries the legacy hardcoded section verbatim (the migration case;
+    // detection retires with core's LEGACY_* constants).
+    const systemPrompt = typeof parsed.system_prompt === "string" ? parsed.system_prompt : "";
+    const vaultDto: AgentVaultConfigDto = {
+      enabled: vault.enabled !== false,
+      prompt: typeof vault.prompt === "string" ? vault.prompt : DEFAULT_VAULT_PROMPT,
+      templateHasPlaceholder: hasVaultPlaceholder(systemPrompt),
+      legacySectionPresent: systemPrompt.includes(LEGACY_VAULT_SECTION),
+    };
+    const skillsDto: AgentSkillsConfigDto = {
+      enabled: skills.enabled !== false,
+      prompt: typeof skills.prompt === "string" ? skills.prompt : DEFAULT_SKILLS_PROMPT,
+      templateHasPlaceholder: hasSkillsPlaceholder(systemPrompt),
+      legacySectionPresent: systemPrompt.includes(LEGACY_SKILLS_SECTION),
+    };
+    const schedulesDto: AgentSchedulesConfigDto = {
+      enabled: schedules.enabled !== false,
+      prompt: typeof schedules.prompt === "string" ? schedules.prompt : DEFAULT_SCHEDULES_PROMPT,
+      templateHasPlaceholder: hasSchedulesPlaceholder(systemPrompt),
+    };
+    // The hook switch has no prompt half and no template fact: hook packages are scripts run
+    // at the loop's hook points, never text in the context.
+    const hooksDto: AgentHooksConfigDto = { enabled: hooks.enabled !== false };
+    // Kernel stamp: reported literally (null = predates the mechanism), with the current
+    // generation and the outdated verdict beside it, so the client renders the update hint
+    // without knowing core's KERNEL_VERSION.
+    const kernelVersion = typeof parsed.kernel_version === "string" ? parsed.kernel_version : null;
+    const config: AgentConfigDto = {
+      ...(typeof parsed.name === "string" ? { name: parsed.name } : {}),
+      ...(typeof parsed.description === "string" ? { description: parsed.description } : {}),
+      author: agentAuthorOf(parsed),
+      version: agentStateVersion({ version: parsed.version as number | undefined }),
+      kernelVersion,
+      kernelLatest: KERNEL_VERSION,
+      kernelOutdated: isKernelOutdated(kernelVersion),
+      systemPrompt,
+      ...(typeof parsed.max_turns === "number" ? { maxTurns: parsed.max_turns } : {}),
+      ...(Object.keys(modelDto).length > 0 ? { model: modelDto } : {}),
+      ...(Object.keys(compactionDto).length > 0 ? { compaction: compactionDto } : {}),
+      memory: memoryDto,
+      vault: vaultDto,
+      skills: skillsDto,
+      schedules: schedulesDto,
+      hooks: hooksDto,
+      toolsBuiltin: Array.isArray(tools.builtin) ? (tools.builtin as ToolDefinitionConfig[]) : [],
+      mcpServers: Array.isArray(tools.mcpServers) ? (tools.mcpServers as MCPServerConfig[]) : [],
+    };
+    return {
+      agentsMd,
+      systemConfigYaml,
+      config,
+      stateDir: agentStateDir(this.root, projectId, agentId),
+    };
+  }
+
+  /**
+   * PUT accepts any subset: only the provided keys are updated (parseDocument
+   * preserves comments and untouched content); agentsMd is overwritten in full.
+   * Numeric validation: >0 or -1; thinkingLevel / mode are validated as enums.
+   */
+  async updateConfig(
+    projectId: string,
+    agentId: string,
+    req: AgentConfigUpdateRequest,
+  ): Promise<void> {
+    await this.requireExists(projectId, agentId);
+    // Finish all config validation and document changes before writing to disk
+    // (if validation fails, AGENTS.md is not written either, avoiding a partial update).
+    if (req.config !== undefined) {
+      await this.applyConfigUpdate(projectId, agentId, req.config);
+    }
+    if (req.agentsMd !== undefined) {
+      await atomicWriteFile(agentsMdPath(this.root, projectId, agentId), req.agentsMd, {
+        followSymlinks: true,
+      });
+    }
+  }
+
+  /**
+   * Writes `author` into the Agent's config only when the file has none, in place like a PUT
+   * (comments and formatting kept). Answers whether it wrote: false when the file already
+   * names an author, whatever its value, and when there is no config to write into — the file
+   * is never created, nor rewritten when it does not parse.
+   */
+  async stampMissingAuthor(
+    projectId: string,
+    agentId: string,
+    author: AgentAuthor,
+  ): Promise<boolean> {
+    const yamlPath = systemConfigPath(this.root, projectId, agentId);
+    let raw: string;
+    try {
+      raw = await fs.readFile(yamlPath, "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw err;
+    }
+    const doc = parseDocument(raw);
+    if (doc.errors.length > 0 || !isMap(doc.contents) || doc.contents.has("author")) return false;
+    setAuthor(doc, author);
+    await atomicWriteFile(yamlPath, doc.toString(), { followSymlinks: true });
+    return true;
+  }
+
+  /**
+   * Overwrites system_config.yaml with the current code defaults (core's
+   * resetSystemConfigToDefaults) — same semantics as updating an installed skill:
+   * only the identity fields (name / description / author / version) survive; the system
+   * prompt, max_turns, model/compaction settings and the tool list (incl. MCP
+   * servers) become the current defaults. AGENTS.md, skills and the vault are
+   * untouched.
+   */
+  async resetConfig(projectId: string, agentId: string): Promise<void> {
+    await this.requireExists(projectId, agentId);
+    await resetSystemConfigToDefaults(this.root, projectId, agentId);
+  }
+
+  /**
+   * Smart-merges the config up to the current defaults generation (core's applyKernelUpdate):
+   * a settings tab still carrying a recorded generation's default follows the new defaults,
+   * a tab the user changed is kept whole and reported; the config is stamped with the new
+   * kernel version.
+   * The destructive full-refresh alternative stays resetConfig.
+   */
+  async kernelUpdate(projectId: string, agentId: string): Promise<AgentKernelUpdateResponse> {
+    await this.requireExists(projectId, agentId);
+    return applyKernelUpdate(this.root, projectId, agentId);
+  }
+
+  private async applyConfigUpdate(
+    projectId: string,
+    agentId: string,
+    config: NonNullable<AgentConfigUpdateRequest["config"]>,
+  ): Promise<void> {
+    const yamlPath = systemConfigPath(this.root, projectId, agentId);
+    const doc = parseDocument(await fs.readFile(yamlPath, "utf8"));
+    AgentConfigService.applyConfigFields(doc, config);
+    await atomicWriteFile(yamlPath, doc.toString(), { followSymlinks: true });
+  }
+
+  /** A config write's checks and edits on `doc`: each provided key is checked (400) and set. */
+  static applyConfigFields(
+    doc: Document,
+    config: NonNullable<AgentConfigUpdateRequest["config"]>,
+  ): void {
+    const cfg = config as unknown as Record<string, unknown>;
+    const setIfProvided = (path: string[], value: unknown): void => {
+      if (value !== undefined) doc.setIn(path, value);
+    };
+
+    setIfProvided(["name"], optionalString(cfg, "name", { maxLen: 100, label: "name" }));
+    setIfProvided(
+      ["description"],
+      optionalString(cfg, "description", { maxLen: 2000, label: "description" }),
+    );
+    const author = optionalEnum(cfg, "author", AGENT_AUTHORS);
+    if (author !== undefined) setAuthor(doc, author);
+    setIfProvided(
+      ["system_prompt"],
+      optionalString(cfg, "systemPrompt", { label: "systemPrompt" }),
+    );
+    setIfProvided(
+      ["max_turns"],
+      optionalNumber(cfg, "maxTurns", { integer: true, positiveOrMinusOne: true }),
+    );
+
+    if (cfg.model !== undefined) {
+      const model = asRecord(cfg.model);
+      setIfProvided(
+        ["model", "max_tokens"],
+        optionalNumber(model, "maxTokens", { integer: true, positiveOrMinusOne: true }),
+      );
+      setIfProvided(
+        ["model", "thinking_level"],
+        optionalEnum(model, "thinkingLevel", THINKING_LEVEL_NAMES),
+      );
+      setIfProvided(
+        ["model", "timeoutMs"],
+        optionalNumber(model, "timeoutMs", { integer: true, positiveOrMinusOne: true }),
+      );
+    }
+    if (cfg.compaction !== undefined) {
+      const compaction = asRecord(cfg.compaction);
+      setIfProvided(
+        ["compaction", "max_context_length"],
+        optionalNumber(compaction, "maxContextLength", { integer: true, positiveOrMinusOne: true }),
+      );
+      setIfProvided(
+        ["compaction", "max_session_turns"],
+        optionalNumber(compaction, "maxSessionTurns", { integer: true, positiveOrMinusOne: true }),
+      );
+      setIfProvided(["compaction", "mode"], optionalEnum(compaction, "mode", COMPACTION_MODES));
+      setIfProvided(["compaction", "prompt"], optionalString(compaction, "prompt"));
+      setIfProvided(
+        ["compaction", "max_rounds"],
+        optionalNumber(compaction, "maxRounds", { integer: true, nonNegative: true }),
+      );
+      setIfProvided(["compaction", "reminder"], optionalString(compaction, "reminder"));
+      setIfProvided(["compaction", "handoff_note"], optionalString(compaction, "handoffNote"));
+    }
+    if (cfg.memory !== undefined) {
+      // The toggle only decides whether Memory reaches the context and whether Workspace
+      // directories are prepared; existing Memory files are never touched by it.
+      const memory = asRecord(cfg.memory);
+      setIfProvided(["memory", "enabled"], optionalBoolean(memory, "enabled"));
+      setIfProvided(["memory", "prompt"], optionalString(memory, "prompt"));
+      setIfProvided(["memory", "workspace_prompt"], optionalString(memory, "workspacePrompt"));
+    }
+    // The vault / skills / schedules toggles only decide whether the section reaches the
+    // context: vault values still enter subprocess environments, installed skills stay
+    // invocable, and the scheduler keeps firing tasks.
+    if (cfg.vault !== undefined) {
+      const vault = asRecord(cfg.vault);
+      setIfProvided(["vault", "enabled"], optionalBoolean(vault, "enabled"));
+      setIfProvided(["vault", "prompt"], optionalString(vault, "prompt"));
+    }
+    if (cfg.skills !== undefined) {
+      const skills = asRecord(cfg.skills);
+      setIfProvided(["skills", "enabled"], optionalBoolean(skills, "enabled"));
+      setIfProvided(["skills", "prompt"], optionalString(skills, "prompt"));
+    }
+    if (cfg.schedules !== undefined) {
+      const schedules = asRecord(cfg.schedules);
+      setIfProvided(["schedules", "enabled"], optionalBoolean(schedules, "enabled"));
+      setIfProvided(["schedules", "prompt"], optionalString(schedules, "prompt"));
+    }
+    // The hook switch is the one section that governs behavior rather than the context: with
+    // it off a new Session assembles no hooks, while the packages stay installed on disk.
+    if (cfg.hooks !== undefined) {
+      setIfProvided(["hooks", "enabled"], optionalBoolean(asRecord(cfg.hooks), "enabled"));
+    }
+    if (cfg.toolsBuiltin !== undefined) {
+      doc.setIn(["tools", "builtin"], validateToolsBuiltin(cfg.toolsBuiltin));
+    }
+    if (cfg.mcpServers !== undefined) {
+      doc.setIn(["tools", "mcpServers"], validateMcpServers(cfg.mcpServers));
+    }
+  }
+
+  /**
+   * Inserts a feature's section placeholder into the Agent's prompt template — the explicit
+   * adoption path mirroring the Memory tab's endpoint; nothing ever inserts automatically.
+   * For skills/vault the insert is migration-first (core's helpers): a stored template still
+   * carrying the legacy hardcoded section verbatim gets it replaced in place by the
+   * placeholder, otherwise the placeholder is inserted before `# Environment`. Idempotent;
+   * returns the refreshed config view (the route picks out the feature's DTO).
+   */
+  async insertTemplatePlaceholder(
+    projectId: string,
+    agentId: string,
+    feature: "vault" | "skills" | "schedules",
+  ): Promise<AgentConfigView> {
+    const view = await this.getConfig(projectId, agentId);
+    const insert = {
+      vault: insertVaultPlaceholder,
+      skills: insertSkillsPlaceholder,
+      schedules: insertSchedulesPlaceholder,
+    }[feature];
+    const next = insert(view.config.systemPrompt);
+    if (next === view.config.systemPrompt) return view;
+    await this.updateConfig(projectId, agentId, { config: { systemPrompt: next } });
+    return this.getConfig(projectId, agentId);
+  }
+
+  /** Read the Agent vault (agent_state/.vault.toml): values are always masked, plaintext is never sent to the client. */
+  async getVault(projectId: string, agentId: string): Promise<VaultResponse> {
+    await this.requireExists(projectId, agentId);
+    const vault = await loadAgentVault(this.root, projectId, agentId);
+    const entries: VaultEntryInfo[] = Object.entries(vault).map(([key, value]) => ({
+      key,
+      valueMasked: maskApiKey(value),
+    }));
+    return { entries };
+  }
+
+  /**
+   * PUT replaces the whole vault table (same semantics as models): keys absent from
+   * the body are deleted; omitting value keeps the existing value (a new key must
+   * provide a value). Key names are validated against shell environment variable
+   * naming rules (same rule as core); deleting everything removes the whole
+   * .vault.toml file.
+   */
+  async updateVault(
+    projectId: string,
+    agentId: string,
+    req: VaultUpdateRequest,
+  ): Promise<VaultResponse> {
+    await this.requireExists(projectId, agentId);
+    const prev = await loadAgentVault(this.root, projectId, agentId);
+
+    const seen = new Set<string>();
+    const nextVault: Record<string, string> = {};
+    for (const entry of req.entries) {
+      if (!isValidVaultKey(entry.key)) {
+        throw badRequest(
+          `Invalid vault key name: ${entry.key} (letters, digits and underscores only, and must not start with a digit).`,
+        );
+      }
+      if (seen.has(entry.key)) {
+        throw badRequest(`entries contains a duplicate key: ${entry.key}.`);
+      }
+      seen.add(entry.key);
+      const prevValue = prev[entry.key];
+      if (entry.value !== undefined) {
+        // Values are injected into the child process environment: an oversized value would
+        // make exec spawn fail (E2BIG), so we reject it on write (same limit as core).
+        if (entry.value.length > VAULT_VALUE_MAX_LENGTH) {
+          throw badRequest(
+            `Vault value too long: ${entry.key} (limit ${VAULT_VALUE_MAX_LENGTH} characters).`,
+          );
+        }
+        nextVault[entry.key] = entry.value;
+      } else if (prevValue !== undefined) {
+        nextVault[entry.key] = prevValue;
+      } else {
+        throw badRequest(`New key ${entry.key} must provide a value.`);
+      }
+    }
+
+    await saveAgentVault(this.root, projectId, agentId, nextVault);
+    return this.getVault(projectId, agentId);
+  }
+}
+
+function validateToolsBuiltin(value: unknown): ToolDefinitionConfig[] {
+  if (!Array.isArray(value)) throw badRequest("toolsBuiltin must be an array.");
+  return value.map((item, i) => {
+    const t = asRecord(item);
+    if (typeof t.name !== "string" || t.name.length === 0) {
+      throw badRequest(`toolsBuiltin[${i}].name must be a non-empty string.`);
+    }
+    if (typeof t.description !== "string") {
+      throw badRequest(`toolsBuiltin[${i}].description must be a string.`);
+    }
+    if (t.permission !== undefined && t.permission !== "r" && t.permission !== "rw") {
+      throw badRequest(`toolsBuiltin[${i}].permission must be one of r / rw.`);
+    }
+    if (t.forModel !== undefined && t.forModel !== "vision" && t.forModel !== "text-only") {
+      throw badRequest(`toolsBuiltin[${i}].forModel must be one of vision / text-only.`);
+    }
+    optionalBoolean(t, "call_description", `toolsBuiltin[${i}].call_description`);
+    optionalNumber(t, "timeoutMs", {
+      integer: true,
+      positiveOrMinusOne: true,
+      label: `toolsBuiltin[${i}].timeoutMs`,
+    });
+    optionalNumber(t, "maxOutputLength", {
+      integer: true,
+      positiveOrMinusOne: true,
+      label: `toolsBuiltin[${i}].maxOutputLength`,
+    });
+    return t as unknown as ToolDefinitionConfig;
+  });
+}
+
+function validateMcpServers(value: unknown): MCPServerConfig[] {
+  if (!Array.isArray(value)) throw badRequest("mcpServers must be an array.");
+  const seen = new Set<string>();
+  return value.map((item, i) => {
+    const s = asRecord(item);
+    if (typeof s.name !== "string" || s.name.length === 0) {
+      throw badRequest(`mcpServers[${i}].name must be a non-empty string.`);
+    }
+    if (s.config === null || typeof s.config !== "object" || Array.isArray(s.config)) {
+      throw badRequest(`mcpServers[${i}].config must be an object.`);
+    }
+    // Provenance a plugin's install wrote: kept through the edit, so reinstalling or
+    // uninstalling that plugin still finds its entry.
+    if (s.plugin !== undefined && typeof s.plugin !== "string") {
+      throw badRequest(`mcpServers[${i}].plugin must be a string.`);
+    }
+    // Transport-level validation through the core resolver — the single source of truth
+    // with the runtime: a precise 400 at save time beats a warn-and-skip at the next
+    // Session start.
+    try {
+      resolveMCPServer(s as unknown as MCPServerConfig);
+    } catch (err) {
+      throw badRequest(`mcpServers[${i}]: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (seen.has(s.name)) {
+      throw badRequest(`mcpServers[${i}]: duplicate server name "${s.name}".`);
+    }
+    seen.add(s.name);
+    return s as unknown as MCPServerConfig;
+  });
+}

@@ -67,6 +67,14 @@
     "./attribution": {
       "types": "./dist/attribution.d.ts",
       "import": "./dist/attribution.js"
+    },
+    "./skill-import-limits": {
+      "types": "./dist/skill-import-limits.d.ts",
+      "import": "./dist/skill-import-limits.js"
+    },
+    "./zip-entries": {
+      "types": "./dist/zip-entries.d.ts",
+      "import": "./dist/zip-entries.js"
     }
   },
   "scripts": {
@@ -77,7 +85,8 @@
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-library-auth": "workspace:*",
-    "hono": "^4.13.11"
+    "hono": "^4.13.11",
+    "fflate": "^0.8.3"
   },
   "devDependencies": {
     "tsup": "^8.3.0",

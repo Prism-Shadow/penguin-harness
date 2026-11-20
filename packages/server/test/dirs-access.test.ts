@@ -27,12 +27,12 @@ import type {
   DirAccessResponse,
   ErrorBody,
 } from "../src/api/types.js";
-import { DesktopService } from "../src/services/desktop-service.js";
+import { DesktopService } from "@prismshadow/penguin-library-setting/desktop-service";
 import {
   FOLDER_ACCESS_TIMEOUT_MS,
   parseFolderAccessResultMessage,
   wireShellUpdatePort,
-} from "../src/services/desktop-update-port.js";
+} from "@prismshadow/penguin-library-setting/desktop-update-port";
 import { FakePort } from "./builtin-browser/fake-shell.js";
 import {
   apiClient,
