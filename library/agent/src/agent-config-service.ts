@@ -68,8 +68,8 @@ import type {
   VaultEntryInfo,
   VaultResponse,
   VaultUpdateRequest,
+  AgentConfigView,
 } from "./types.js";
-import type { AgentConfigView } from "./types.js";
 export type { AgentConfigView };
 import { HttpError } from "@prismshadow/penguin-library-http";
 import {
