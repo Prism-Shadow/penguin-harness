@@ -19,25 +19,14 @@
  * A deployment's list is the builtin registry plus the published index (see
  * NIGHTLY_INDEX_URL), merged in http/routes/plugins.ts.
  */
+import type { PluginIndexEntry } from "../api/types.js";
 import {
   indexChannelOf,
   newestPerName,
   parsePluginIndex,
   type IndexChannel,
   type IndexDocumentEntry,
-} from "./index-document.js";
-export {
-  compareSemver,
-  indexChannelOf,
-  isSemver,
-  newestPerName,
-  NIGHTLY_INDEX_URL,
-  parsePluginIndex,
-  withoutIcon,
-  type IndexChannel,
-  type IndexDocumentEntry,
-} from "./index-document.js";
-import type { PluginIndexEntry } from "../api/types.js";
+} from "@prismshadow/penguin-core/plugin-index";
 import builtinIndex from "./builtin-index.json" with { type: "json" };
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -53,6 +42,20 @@ import safeRegex from "safe-regex";
 import { indexMirrorRules } from "./mirror-settings.js";
 import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
+
+// The index document's readers are core's, shared with the website's build; the registry's
+// callers keep reaching them here.
+export {
+  compareSemver,
+  indexChannelOf,
+  isSemver,
+  newestPerName,
+  NIGHTLY_INDEX_URL,
+  parsePluginIndex,
+  withoutIcon,
+  type IndexChannel,
+  type IndexDocumentEntry,
+} from "@prismshadow/penguin-core/plugin-index";
 
 /** One source of plugin index entries; `source` identifies it for display and errors. */
 export interface PluginRegistry {
@@ -503,7 +506,6 @@ export function httpPluginRegistry(
  * (Settings → Plugins → Plugin mirrors, plugin/mirror-settings.ts) — which third-party
  * services to lean on is a service choice a user makes, applied through that group's
  * watch, not a constant here.
-
  */
 
 /** Wall-clock reader, injectable so a cache's TTL is deterministic in tests. */

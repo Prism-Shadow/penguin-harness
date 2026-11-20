@@ -50,10 +50,10 @@ import {
   isSemver,
   mergeIndexes,
   newestPerName,
+  NIGHTLY_INDEX_URL,
   parsePluginIndex,
   selectIndexChannel,
 } from "../src/plugin/registry.js";
-import { NIGHTLY_INDEX_URL } from "../src/plugin/index-document.js";
 import { indexUrlsOf } from "../src/plugin/index-config.js";
 import type { IndexDocumentEntry, PluginRegistry } from "../src/plugin/registry.js";
 import { pluginRegistryRoutes } from "../src/http/routes/plugins.js";
