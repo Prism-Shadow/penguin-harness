@@ -15,7 +15,8 @@
  * Input the plugin itself sent (a `press`, physical input) also counts as input to the system; the
  * caller tells it apart (cli.ts).
  */
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
 import { systemOnly } from "./launch-name.js";
 
@@ -33,14 +34,15 @@ export type ExecFile = (
   file: string,
   args: readonly string[],
   env: Record<string, string>,
+  timeoutMs?: number,
 ) => Promise<string>;
 
-const run: ExecFile = (file, args, env) =>
+const run: ExecFile = (file, args, env, timeoutMs = 4_000) =>
   new Promise((resolve, reject) => {
     execFile(
       file,
       [...args],
-      { env, timeout: 4_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
+      { env, timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
       (err, stdout, stderr) =>
         err ? reject(Object.assign(err, { stderr: String(stderr) })) : resolve(String(stdout)),
     );
@@ -73,10 +75,8 @@ xss.XScreenSaverQueryInfo(d, x11.XDefaultRootWindow(d), info)
 print(info.contents.idle)
 `;
 
-/** GetLastInputInfo's age, in milliseconds, on stdout. */
-const WIN_PS = `$ErrorActionPreference = 'Stop'
-Add-Type -TypeDefinition @'
-using System; using System.Runtime.InteropServices;
+/** The C# behind GetLastInputInfo's age, compiled once per PowerShell by Add-Type. */
+const WIN_TYPE = `using System; using System.Runtime.InteropServices;
 public static class PenguinIdle {
   [StructLayout(LayoutKind.Sequential)] public struct LastInput { public uint Size; public uint Time; }
   [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LastInput info);
@@ -85,9 +85,95 @@ public static class PenguinIdle {
     if (!GetLastInputInfo(ref info)) return -1;
     return (long)unchecked((uint)Environment.TickCount - info.Time);
   }
-}
+}`;
+
+/** One run of PowerShell: compile, then print GetLastInputInfo's age in milliseconds. */
+const WIN_PS = `$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @'
+${WIN_TYPE}
 '@
 [PenguinIdle]::Ms()`;
+
+/** The PowerShell every Windows reading goes through. */
+function powershellOf(env: Readonly<Record<string, string | undefined>>): string {
+  const root = env.SystemRoot ?? env.SYSTEMROOT ?? "C:\\Windows";
+  return path.win32.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+}
+
+/**
+ * Windows: one PowerShell kept running for this service, which compiled the reader once and
+ * answers each `[PenguinIdle]::Ms()` with a line — a PowerShell start and an Add-Type compile per
+ * input command would cost seconds. Lines answer requests in order; a request that timed out
+ * still owns the line that answers it, so the order never slips.
+ */
+export class WindowsIdle {
+  private proc: ChildProcessWithoutNullStreams | null = null;
+  private waiting: Array<(line: string | Error) => void> = [];
+  private buffer = "";
+  private warm = false;
+
+  constructor(private readonly env: Record<string, string>) {}
+
+  private start(): ChildProcessWithoutNullStreams {
+    const proc = spawn(
+      powershellOf(this.env),
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", "-"],
+      { env: this.env, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] },
+    );
+    proc.stdout.setEncoding("utf8");
+    proc.stdout.on("data", (chunk: string) => {
+      this.buffer += chunk;
+      for (let at = this.buffer.indexOf("\n"); at >= 0; at = this.buffer.indexOf("\n")) {
+        const line = this.buffer.slice(0, at).trim();
+        this.buffer = this.buffer.slice(at + 1);
+        // A number on its own line (behind a prompt, should the host print one) answers.
+        const answer = /^(?:PS [^>]*> *)?(-?\d+)$/.exec(line)?.[1];
+        if (answer !== undefined) this.waiting.shift()?.(answer);
+      }
+    });
+    proc.stderr.resume();
+    const gone = () => {
+      if (this.proc === proc) this.proc = null;
+      this.warm = false;
+      for (const answer of this.waiting.splice(0)) answer(new Error("PowerShell exited"));
+    };
+    proc.on("exit", gone);
+    proc.on("error", gone);
+    proc.unref();
+    const type = Buffer.from(WIN_TYPE, "utf16le").toString("base64");
+    proc.stdin.write(
+      `Add-Type -TypeDefinition ([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${type}')))\n`,
+    );
+    this.proc = proc;
+    return proc;
+  }
+
+  /** GetLastInputInfo's age in milliseconds; the first answer waits for the compile. */
+  read(): Promise<number> {
+    const proc = this.proc ?? this.start();
+    const timeoutMs = this.warm ? 3_000 : 20_000;
+    return new Promise((resolve, reject) => {
+      let done = false;
+      const timer = setTimeout(() => {
+        done = true;
+        reject(new Error(`PowerShell did not answer within ${timeoutMs / 1000} s`));
+      }, timeoutMs);
+      this.waiting.push((line) => {
+        clearTimeout(timer);
+        if (done) return;
+        if (line instanceof Error) return reject(line);
+        this.warm = true;
+        resolve(Number(line));
+      });
+      proc.stdin.write("[PenguinIdle]::Ms()\n");
+    });
+  }
+
+  stop(): void {
+    this.proc?.kill();
+    this.proc = null;
+  }
+}
 
 const unknown = (reason: string): IdleReading => ({ seconds: null, source: null, reason });
 
@@ -108,7 +194,22 @@ export interface IdleOptions {
   env: Readonly<Record<string, string | undefined>>;
   exec?: ExecFile;
   trusted?: (file: string) => Promise<boolean>;
+  /** Windows: the service's long-running PowerShell (WindowsIdle); absent, one run per reading. */
+  windows?: { read(): Promise<number> };
 }
+
+/** The variables a Windows reader is given. */
+export const WINDOWS_READER_ENV = [
+  "SystemRoot",
+  "SYSTEMROOT",
+  "windir",
+  "TEMP",
+  "TMP",
+  "USERPROFILE",
+  "LOCALAPPDATA",
+  "APPDATA",
+  "PATH",
+];
 
 /** The input idle time of this desktop session, or why it is unknown. */
 export async function readIdle(opts: IdleOptions): Promise<IdleReading> {
@@ -129,10 +230,18 @@ export async function readIdle(opts: IdleOptions): Promise<IdleReading> {
       return { seconds: Number(ns) / 1e9, source: "HIDIdleTime" };
     }
     if (opts.platform === "win32") {
-      const root = env.SystemRoot ?? env.SYSTEMROOT ?? "C:\\Windows";
-      const ps = path.win32.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+      if (opts.windows !== undefined) {
+        try {
+          const ms = await opts.windows.read();
+          if (Number.isFinite(ms) && ms >= 0) {
+            return { seconds: ms / 1000, source: "GetLastInputInfo" };
+          }
+        } catch {
+          // The long-running PowerShell failed: one run of its own below.
+        }
+      }
       const out = await exec(
-        ps,
+        powershellOf(env),
         // Encoded: a script with quotes and a here-string survives no command-line quoting.
         [
           "-NoProfile",
@@ -142,17 +251,8 @@ export async function readIdle(opts: IdleOptions): Promise<IdleReading> {
           "-EncodedCommand",
           Buffer.from(WIN_PS, "utf16le").toString("base64"),
         ],
-        pass([
-          "SystemRoot",
-          "SYSTEMROOT",
-          "windir",
-          "TEMP",
-          "TMP",
-          "USERPROFILE",
-          "LOCALAPPDATA",
-          "APPDATA",
-          "PATH",
-        ]),
+        pass(WINDOWS_READER_ENV),
+        20_000,
       );
       const ms = Number(out.trim().split(/\s+/).at(-1));
       if (!Number.isFinite(ms) || ms < 0) return unknown("GetLastInputInfo did not answer");

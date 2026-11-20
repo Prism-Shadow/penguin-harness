@@ -62,6 +62,35 @@ describe("the input idle time", () => {
     expect(Buffer.from(encoded, "base64").toString("utf16le")).toContain("GetLastInputInfo");
   });
 
+  it("asks the service's long-running PowerShell first on Windows, and runs one of its own if it fails", async () => {
+    const sys = system({ "powershell.exe": "900\r\n" });
+    const winEnv = { SystemRoot: "C:\\Windows" };
+    expect(
+      await readIdle({
+        platform: "win32",
+        env: winEnv,
+        exec: sys.exec,
+        trusted: everywhere,
+        windows: { read: async () => 4200 },
+      }),
+    ).toEqual({ seconds: 4.2, source: "GetLastInputInfo" });
+    expect(sys.runs).toEqual([]);
+    expect(
+      await readIdle({
+        platform: "win32",
+        env: winEnv,
+        exec: sys.exec,
+        trusted: everywhere,
+        windows: {
+          read: async () => {
+            throw new Error("PowerShell did not answer within 20 s");
+          },
+        },
+      }),
+    ).toEqual({ seconds: 0.9, source: "GetLastInputInfo" });
+    expect(sys.runs).toHaveLength(1);
+  });
+
   it("reads X11's idle time with xprintidle when installed, else Python over libXss", async () => {
     const withTool = system({ xprintidle: "4200\n" });
     expect(

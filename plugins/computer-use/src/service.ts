@@ -31,7 +31,7 @@ import type { AgentDesktopProgram, RunOutput } from "./runner.js";
 import { SelfTree } from "./self-target.js";
 import { mkdirPrivate, stateRootOf, sweepStateDirs } from "./state.js";
 import { MIRRORS_GROUP, SOURCES_GROUP, registriesOf, settingsOf } from "./settings.js";
-import { readIdle } from "./idle.js";
+import { readIdle, WINDOWS_READER_ENV, WindowsIdle } from "./idle.js";
 import type { IdleReading } from "./idle.js";
 import type { ComputerUseSettings } from "./settings.js";
 
@@ -160,6 +160,8 @@ export class ComputerUseService {
   private releaseTimer: ReturnType<typeof setTimeout> | null = null;
   /** Until when input on this desktop may be this plugin's own (a press, physical input), ms. */
   private ownInputUntil = 0;
+  /** Windows: the long-running PowerShell that reads the input idle time (idle.ts). */
+  private windowsIdle: WindowsIdle | null = null;
   private readers: SettingsReaders | null = null;
   private current: InstallState = { kind: "missing" };
   private installing: Promise<void> | null = null;
@@ -239,6 +241,8 @@ export class ComputerUseService {
   async stop(): Promise<void> {
     const running = this.installing;
     this.installAbort?.abort();
+    this.windowsIdle?.stop();
+    this.windowsIdle = null;
     if (running !== null) await running.catch(() => {});
     await sweepLeftovers(installDirOf(this.root, this.pin));
   }
@@ -246,7 +250,19 @@ export class ComputerUseService {
   /** The person at this computer's input idle time, or why it is unknown (idle.ts). */
   idle(): Promise<IdleReading> {
     if (this.idleImpl !== undefined) return this.idleImpl();
-    return readIdle({ platform: this.platform, env: this.env });
+    if (this.platform === "win32" && this.windowsIdle === null) {
+      const env: Record<string, string> = {};
+      for (const name of WINDOWS_READER_ENV) {
+        const value = this.env[name];
+        if (value !== undefined && value !== "") env[name] = value;
+      }
+      this.windowsIdle = new WindowsIdle(env);
+    }
+    return readIdle({
+      platform: this.platform,
+      env: this.env,
+      ...(this.windowsIdle !== null ? { windows: this.windowsIdle } : {}),
+    });
   }
 
   /** Input this plugin itself sent (a press, physical input) ended now: idle time it resets is ours. */
