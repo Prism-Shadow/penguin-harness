@@ -1,9 +1,12 @@
 /**
  * The App Center: a Project's home screen of workbench shortcuts, and the one manifest key behind
- * it. A workbench asks to be shown with `penguin.appCenter` in its own package.json, beside
+ * it. A workbench says how it is shown with `penguin.appCenter` in its own package.json, beside
  * `penguin.version` and `penguin.modules`:
  *
- *   "appCenter": { "show": true, "title"?: "…", "titleZh"?: "…", "icon"?: "ui/icon.svg", "tab"?: "<key>" }
+ *   "appCenter": { "show"?: false, "title"?: "…", "titleZh"?: "…", "icon"?: "ui/icon.svg", "tab"?: "<key>" }
+ *
+ * Every workbench is shown unless it says `show: false`: one with no `appCenter`, or one without
+ * `show`, is shown (SHOWN_UNLESS_SAID), so an app an Agent wrote without the key is found.
  *
  * The files are the truth. The shortcut list is read from the manifests, each folder's last load
  * status (`.build/status.json`) and whether a load of it is under way, never by loading a
@@ -42,6 +45,14 @@ import {
 
 const TITLE_MAX = 60;
 const TABS_KEY = "WebModule.sessionTabs";
+
+/**
+ * What a workbench that does not say `show` gets: shown. This also puts every workbench written
+ * before the default changed, and so without the key, in the App Center (compat C2 option a,
+ * pending the user's choice). `false` restores the earlier rule, where only `show: true` made a
+ * shortcut.
+ */
+const SHOWN_UNLESS_SAID = true;
 
 /** A tab as the manifest writes it, read without the load's checks: what a shortcut's defaults need. */
 interface ManifestTab {
@@ -126,9 +137,10 @@ async function checkDeclaration(
   value: unknown,
   tabs: readonly ManifestTab[],
 ): Promise<Checked> {
-  if (!isRecord(value)) return { problem: 'it must be an object such as { "show": true }' };
+  if (!isRecord(value)) return { problem: 'it must be an object such as { "show": false }' };
   const { show, title, titleZh, icon, tab } = value;
-  if (typeof show !== "boolean") return { problem: '"show" must be true or false' };
+  if (show !== undefined && typeof show !== "boolean")
+    return { problem: '"show" must be true or false' };
   const titled = titleProblem("title", title) ?? titleProblem("titleZh", titleZh);
   if (titled !== null) return { problem: titled };
   let file: IconImage | null = null;
@@ -144,7 +156,7 @@ async function checkDeclaration(
   }
   return {
     appCenter: {
-      show,
+      show: show ?? SHOWN_UNLESS_SAID,
       ...(typeof title === "string" ? { title } : {}),
       ...(typeof titleZh === "string" ? { titleZh } : {}),
       ...(typeof icon === "string" ? { icon } : {}),
@@ -174,8 +186,19 @@ async function readDeclaration(
   const penguin = isRecord(pkg) && isRecord(pkg["penguin"]) ? pkg["penguin"] : null;
   if (penguin === null) return { manifest: { name, tabs: [], hint: null }, icon: null };
   const tabs = manifestTabs(penguin);
-  if (penguin["appCenter"] === undefined)
-    return { manifest: { name, tabs, hint: null }, icon: null };
+  // No declaration reads as the default, shown. The manifest reports that effective value, so the
+  // row's switch reads what the App Center does.
+  if (penguin["appCenter"] === undefined) {
+    return {
+      manifest: {
+        name,
+        tabs,
+        ...(SHOWN_UNLESS_SAID ? { appCenter: { show: true } } : {}),
+        hint: null,
+      },
+      icon: null,
+    };
+  }
   const checked = await checkDeclaration(dir, penguin["appCenter"], tabs);
   if ("problem" in checked) {
     const hint =
@@ -290,7 +313,7 @@ async function inView(view: ShortcutView, dir: string, manifest: AppCenterManife
 
 /**
  * One Agent's shortcuts, by title: every folder under `base` with a package.json whose
- * declaration holds up and says `show: true`, and whose own switch is on (one turned off serves
+ * declaration holds up and is shown (not `show: false`), and whose own switch is on (one turned off serves
  * nothing, so it has no tile; the caller leaves out an Agent whose Agent-wide switch is off). `building` says whether a load of a folder is under
  * way or queued in this process; the caller keeps that, this module keeps no state.
  */

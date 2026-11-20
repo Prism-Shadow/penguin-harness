@@ -336,8 +336,15 @@ describe("workbench switches", { timeout: 30_000 }, () => {
       const { base, dir } = await offDemo();
       const listed = await listing(base);
       expect(listed.enabled).toBe(true);
+      // Its manifest declares no App Center entry, which reads as shown.
       expect(listed.workbenches).toEqual([
-        { ...idle("demo", false), name: "Demo", version: "1.0.0", uiRev: expect.any(String) },
+        {
+          ...idle("demo", false),
+          name: "Demo",
+          version: "1.0.0",
+          uiRev: expect.any(String),
+          appCenter: { show: true },
+        },
       ]);
       // A load emits into `.build/`: there is none.
       await expect(fs.stat(path.join(dir, ".build"))).rejects.toThrow();

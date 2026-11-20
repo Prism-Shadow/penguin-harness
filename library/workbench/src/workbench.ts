@@ -35,7 +35,11 @@ export interface WorkbenchInfo {
    * — pages under `ui/` that no tab shows, say. Never a failure: `error` is that.
    */
   hints: string[];
-  /** What the current package.json declares for the App Center; absent when nothing, or nothing valid (a hint says why). */
+  /**
+   * What the current package.json declares for the App Center, with `show` as it takes effect: a
+   * manifest that declares nothing, or no `show`, reads `show: true`. Absent when the declaration
+   * does not hold up (a hint says why), and from a server that predates the default.
+   */
   appCenter?: WorkbenchAppCenter;
   /**
    * The icon that declaration names, shown in the App Center or not: the same `IconRef` its
@@ -93,11 +97,12 @@ export interface WorkbenchTab {
 }
 
 /**
- * How a workbench asks to appear in its Project's App Center: `penguin.appCenter` in its own
- * package.json, beside `penguin.version` and `penguin.modules`. Absent, or `show: false`, the
- * workbench has no shortcut there.
+ * How a workbench appears in its Project's App Center: `penguin.appCenter` in its own
+ * package.json, beside `penguin.version` and `penguin.modules`. Only `show: false` keeps it off;
+ * absent, or without `show`, the workbench has a shortcut there.
  */
 export interface WorkbenchAppCenter {
+  /** As read, the effective value; the manifest may leave it out, which reads `true`. */
   show: boolean;
   /** At most 60 characters; the first tab's title, else the package name, when absent. */
   title?: string;
@@ -113,7 +118,7 @@ export interface WorkbenchAppCenter {
   tab?: string;
 }
 
-/** One tile of the App Center: a workbench whose manifest asks to be shown. */
+/** One tile of the App Center: a workbench whose manifest does not keep it off. */
 export interface AppCenterShortcut {
   agentId: string;
   agentName: string;
