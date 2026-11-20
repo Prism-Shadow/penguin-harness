@@ -385,7 +385,8 @@ input:focus {
 }
 
 .page section > .plain,
-.page section > p {
+.page section > p,
+.page.consent > p {
   margin-top: 6px;
 }
 

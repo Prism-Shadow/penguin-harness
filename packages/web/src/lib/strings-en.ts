@@ -636,6 +636,64 @@ export const en: Strings = {
       (c.failed > 0 ? `, ${c.failed} failed` : ""),
     importHistoryResult: (h: { found: number; imported: number }): string =>
       `History: ${h.imported} of ${h.found} entries imported`,
+    importSkip: ({ reason, count: n }, browser) => {
+      switch (reason) {
+        case "app_bound":
+          return `${n} protected by ${browser}'s app-bound encryption, which only ${browser} itself can read.`;
+        case "dpapi":
+          return `${n} whose key Windows would not unlock.`;
+        case "keychain":
+          return `${n} whose key the Keychain did not release; allow the access when macOS asks, then import again.`;
+        case "keyring":
+          return `${n} whose key the desktop keyring could not provide.`;
+        case "undecryptable":
+          return `${n} that could not be decrypted.`;
+        case "partitioned":
+          return `${n} partitioned to a single site or container.`;
+        case "expired":
+          return `${n} expired.`;
+      }
+    },
+    importNote: (note, browser) => {
+      const store = (which: "cookies" | "history") =>
+        which === "cookies" ? "cookie store" : "history";
+      switch (note.code) {
+        case "no_cookie_store":
+          return "This profile has no cookie store.";
+        case "no_history":
+          return "This source has no history to import.";
+        case "store_busy":
+          return `${browser} is holding its ${store(note.store)} open; close ${browser} and import again.`;
+        case "store_unreadable":
+          return `The ${store(note.store)} of ${browser} could not be read.`;
+        case "cookies_not_set":
+          return (
+            `${note.count} cookies could not be set in the built-in browser` +
+            (note.errors.length > 0 ? `: ${note.errors.join("; ")}` : ".")
+          );
+      }
+    },
+    importExtensionGroup: "Through the Chrome extension",
+    importExtensionHint:
+      "Reads the cookies of the Chrome profile the extension runs in; Chrome asks you to allow it first.",
+    importWaitingChrome: "Waiting for Chrome…",
+    importAppBoundHint: (route) =>
+      route === "not_paired"
+        ? "On Windows, only Chrome can read most of its cookies: connect your Chrome in Settings › Browser to import them through the extension, or sign in inside the Browser panel."
+        : route === "disconnected"
+          ? "On Windows, only Chrome can read most of its cookies: once your Chrome's PenguinHarness Browser extension is connected, import them through it, or sign in inside the Browser panel."
+          : route === "connected"
+            ? "On Windows, only Chrome can read most of its cookies; choose the Chrome extension below to import them through it."
+            : "On Windows, only Chrome can read most of its cookies; sign in inside the Browser panel instead.",
+    importAppBoundAdvice: (route) =>
+      route === "connected"
+        ? "Import again through the Chrome extension to bring them over, or sign in inside the Browser panel."
+        : route === "not_paired"
+          ? "Connect your Chrome in Settings › Browser to import them through the extension, or sign in inside the Browser panel."
+          : route === "disconnected"
+            ? "Once your Chrome's PenguinHarness Browser extension is connected, import them through it, or sign in inside the Browser panel."
+            : "Sign in to those sites inside the Browser panel instead.",
+    importUseExtension: "Import through the Chrome extension",
     importFailed: (reason: string): string => `Import failed: ${reason}`,
     clearTitle: "Clear browsing data",
     clearBody:
@@ -1276,9 +1334,9 @@ export const en: Strings = {
     /** The windowed app's title bar. */
     windowClose: "Close, back to the App Center",
     windowFullScreen: "Open full screen",
-    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
-    machinesNote:
-      "Workbenches of agents on machines are not listed here. Open them from the agent's settings.",
+    /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
+    machinesOffline: (names: string) =>
+      `Currently unreachable: ${names}. Cached items are still visible.`,
     aiCreateTitle: "Create an app with AI",
     aiCreateDescription: "The agent you pick builds a workbench and puts it in the App Center.",
     aiCreatePlaceholder: "Describe the app you want, such as a board for daily to-dos",
@@ -2182,6 +2240,17 @@ export const en: Strings = {
       `Delete agent "${name}" on ${machine}? Its directory there (including all Traces) will be removed recursively and cannot be recovered.`,
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
+    systemName: "System",
+    systemDescription:
+      "Owns the system apps: Models, Plugins, Machines, Cost Center and Evaluation Center.",
+    systemTag: "System",
+    systemTagHint:
+      "The system agent owns the system apps. It does not chat or take plugins, and cannot be deleted or exported.",
+    systemAppsDesc:
+      "The system apps this agent owns. They come with the platform and open from the App Center.",
+    systemAppsEmpty: "No system apps yet.",
+    systemIdHeld: (name: string): string =>
+      `Agent "${name}" holds the id reserved for the system agent. Export it, import it under another id, then delete it; the system agent is added the next time the agents load.`,
     employeesSection: "Company employees",
     employeesSectionInfo:
       "These agents are employees of an organization and work in company mode. You can still chat with them and change their settings here; one can be deleted only after it leaves its organization in company mode.",
@@ -4855,6 +4924,8 @@ Scenarios:
       "Invalid budget: use a positive number with an optional k/m suffix (500k, 2m)",
     goalBudgetSave: "Save budget",
     goalRemove: "Exit goal mode",
+    /** The remove label of a composer switch's chip (a plugin's mode, e.g. Plan mode). */
+    switchOff: (title: string): string => `Turn off ${title}`,
     /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
     goalPluginMissing: "Goal mode needs the goal plugin: install it on this Agent to start a goal.",
     goalPluginInstall: "Install on this Agent",
@@ -5428,7 +5499,8 @@ Scenarios:
     rangeCustom: "Custom",
     chartRequestsByAgent: "Requests & success rate by agent",
     chartRequestsByModel: "Requests & success rate by model",
-    legendSuccessRate: "Success rate",
+    legendRequestCount: "Requests (left axis)",
+    legendSuccessRate: "Success rate (right axis)",
     chartTokenTrend: "Token trend",
     chartCostTrend: "Cost trend",
     legendOther: (n: number): string => `Other (${n})`,
@@ -6781,7 +6853,7 @@ Scenarios:
   report: {
     action: "Report",
     title: "Report a problem",
-    lead: "An error like this is most likely a defect in PenguinHarness. Reporting it on GitHub helps improve this open-source project.",
+    lead: "This may be a defect in PenguinHarness, or it may come from the network, a model provider or a connected machine. If you think PenguinHarness is at fault, filing an issue on GitHub helps improve this open-source project.",
     check:
       "Keys, tokens and personal paths are taken out of the report; still check it for anything private before you send it.",
     label: "Report",
@@ -6868,6 +6940,8 @@ Scenarios:
       unknown_plugin: "This plugin is not in the plugin library.",
       goal_plugin_not_installed:
         "Goal mode needs the goal plugin — install it on this agent from the plugin library, and switch its hook package on.",
+      prompt_hook_not_installed:
+        "This agent no longer has the hook package a switch needs, or its hooks are off. Turn the switch off, or install its plugin again.",
       skill_too_large: "This skill directory exceeds the import limits.",
       hook_too_large: "This hook package exceeds the import limits.",
       workbench_too_large: "This workbench's source exceeds the export limits.",
@@ -6972,6 +7046,9 @@ Scenarios:
       browser_unavailable:
         "The browser is not available right now: the built-in browser needs the PenguinHarness desktop app open, and your Chrome needs the PenguinHarness Browser extension connected.",
       source_not_found: "That browser profile was not found.",
+      import_declined: "The import was not allowed in Chrome.",
+      extension_outdated:
+        "The PenguinHarness Browser extension in Chrome is too old for this. Update it and try again.",
       shell_unreachable: "The desktop app could not be reached.",
       timeout: "That took too long. Try again.",
     },

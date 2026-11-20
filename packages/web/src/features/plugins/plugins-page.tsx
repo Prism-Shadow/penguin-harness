@@ -54,11 +54,11 @@ import {
   Skeleton,
   SkeletonCard,
   TodoNotice,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { isConversationAgent } from "../../lib/builtin-agents";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
@@ -134,7 +134,8 @@ import {
   type LibraryUsage,
   type PluginStatus,
 } from "./plugin-status";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError, toastFailure } from "../../lib/toast-api-error";
+import { toldFailure } from "../../lib/failure";
 
 const NO_INSTALLS: AgentInstalls = { skills: new Map(), hooks: new Map(), mcp: new Map() };
 
@@ -203,7 +204,7 @@ export function PluginsPage() {
     EVERY_VISIT,
   );
   const groups = library.value?.groups ?? null;
-  const error = groups === null ? library.error : null;
+  const error = groups === null ? library.failure : null;
   // A return to the same Project is a new visit, not permission for an old reply: a write that
   // answers in a later visit is not taken (its Project's list is read again on entry anyway).
   const projectVisit = useRef({ projectId, generation: 0 });
@@ -423,7 +424,13 @@ export function PluginsPage() {
       installedPlugins.accept(installedPluginsKey(target.projectId, null), next);
       const row = next.plugins.find((p) => p.specifier === specifier);
       if (install && row?.error !== undefined) {
-        toastError(S.plugins.deploymentFailedToast(specifier, row.error));
+        toastFailure(
+          toldFailure(S.plugins.deploymentFailedToast(specifier, row.error), {
+            what: "a plugin failed to load after it was installed",
+            facts: [["Plugin", specifier]],
+            detail: row.error,
+          }),
+        );
       } else {
         toastSuccess(install ? S.plugins.deploymentInstalledToast(specifier) : S.common.saved);
       }
@@ -453,9 +460,9 @@ export function PluginsPage() {
    * one list in the Agents page's order, keyed so that two servers' Agents of one id stay two
    * (lib/agent-location.ts). A machine out of reach keeps its Agents as it last listed them —
    * its rows held, its installs counted as last seen — so a machine that blinks changes no row
-   * and no count.
+   * and no count. The system Agent takes no plugin and is never one of them.
    */
-  const placed = mixAgents(agents, machineLists);
+  const placed = mixAgents(agents, machineLists).filter((row) => isConversationAgent(row.agent));
   const targets: InstallTarget[] = placed.map(({ agent, on }) =>
     on === null
       ? { key: agent.agentId, agent, machine: null }
@@ -620,7 +627,16 @@ export function PluginsPage() {
         const failed = outcome.kind === "removed" ? outcome.failed : [];
         if (failed.length > 0) {
           const named = failed.map((f) => S.agentPlugins.failedPart(f.name, f.error));
-          toastError(S.agentPlugins.uninstallPartly(plugin.name, named.join(S.todo.listSeparator)));
+          toastFailure(
+            toldFailure(
+              S.agentPlugins.uninstallPartly(plugin.name, named.join(S.todo.listSeparator)),
+              {
+                what: "a plugin's parts could not all be removed",
+                facts: [["Plugin", plugin.name]],
+                detail: failed.map((f) => `${f.name}: ${f.error}`).join("\n"),
+              },
+            ),
+          );
         } else {
           toastSuccess(
             `${S.plugins.uninstalledToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
@@ -693,9 +709,10 @@ export function PluginsPage() {
     const outcome = bulkOutcome(labels, results);
     if (outcome.allOk) toastSuccess(S.todo.bulkDone(outcome.ok));
     else {
-      toastError(
-        `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(firstFailure(results))}`,
-      );
+      const failure = firstFailure(results);
+      toastApiError(failure, {
+        text: `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(failure)}`,
+      });
     }
     // Runs after a partial failure too — some Agent moved, and the gate has to see it. Guarded,
     // because `reloadAgents` rejects on a failed list read and the busy flag disables every
@@ -716,10 +733,11 @@ export function PluginsPage() {
    * written, never sent, so nothing runs (and no token is spent) until the person sends it. The
    * prompt goes in per UI language, overwriting the draft body (any typed-but-unsent text is
    * parked as a draft conversation first, draft-sessions.ts), with the demo's skills
-   * pre-selected and goal mode on when the demo is a goal. handoffAgentId must be cleared: a
-   * leftover handoff target would forward the demo to a different Agent.
+   * pre-selected, goal mode on when the demo is a goal, and the plugin's composer switch on when
+   * it has one. handoffAgentId must be cleared: a leftover handoff target would forward the demo
+   * to a different Agent.
    */
-  const openQuickStart = (quickStart: QuickStartItem) => {
+  const openQuickStart = (quickStart: QuickStartItem, plugin: PluginItem) => {
     const agentId = currentAgent?.agentId;
     if (!agentId) return;
     if (userId && projectId) {
@@ -728,7 +746,7 @@ export function PluginsPage() {
       // the Project's new-chat defaults (new-chat.ts).
       prepareNewChatDraft(userId, projectId);
       const key = draftKey(userId, projectId);
-      const { skills: _skills, goal: _goal, ...rest } = loadDraft(key);
+      const { skills: _skills, goal: _goal, promptHooks: _promptHooks, ...rest } = loadDraft(key);
       saveDraft(key, {
         ...rest,
         agentId,
@@ -737,6 +755,9 @@ export function PluginsPage() {
           ? { skills: quickStart.skills }
           : {}),
         ...(quickStart.goal === true ? { goal: true as const } : {}),
+        ...(plugin.composerMode === true && quickStart.goal !== true
+          ? { promptHooks: [plugin.name] }
+          : {}),
         handoffAgentId: undefined,
       });
     }
@@ -752,7 +773,7 @@ export function PluginsPage() {
   const quickStartLibrary = (plugin: PluginItem) => {
     const demo = libraryQuickStart(plugin);
     if (demo === null || !currentAgent) return;
-    if (pluginComplete(plugin, installed.get(currentAgent.agentId))) openQuickStart(demo);
+    if (pluginComplete(plugin, installed.get(currentAgent.agentId))) openQuickStart(demo, plugin);
     else setPendingQuickStart(plugin);
   };
 
@@ -765,7 +786,7 @@ export function PluginsPage() {
     setQuickStartInstalling(false);
     setPendingQuickStart(null);
     const demo = libraryQuickStart(plugin);
-    if (ok && demo !== null) openQuickStart(demo);
+    if (ok && demo !== null) openQuickStart(demo, plugin);
   };
 
   const rows = pluginRows(groups ?? [], moduleParts(deployment, index ?? [], view));

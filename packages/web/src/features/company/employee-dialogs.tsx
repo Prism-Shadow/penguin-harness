@@ -19,7 +19,7 @@
  * session pins only that session, which then no longer follows the config; the dialog says so
  * when the current desk is pinned.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import type {
   AgentModelConfigDto,
@@ -49,7 +49,7 @@ import {
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
+import { isConversationAgent } from "../../lib/builtin-agents";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatMoney } from "../../lib/format";
 import { useCompany } from "./company-state";
@@ -76,6 +76,7 @@ import {
   thinkingLevelLabel,
 } from "../model-picker";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */
 const DEFAULT_EMPLOYEE_PLUGINS = ["agent-company", "agent-development"];
@@ -159,9 +160,9 @@ function HireForm({
   const { currency } = useTheme();
   const company = useCompany();
 
-  /** Agents of the Project not yet in the organization. */
+  /** Agents of the Project not yet in the organization; never the system Agent, which takes no work. */
   const employed = new Set(employees.map((e) => e.agentId));
-  const candidates = agents.filter((a) => !employed.has(a.agentId));
+  const candidates = agents.filter((a) => isConversationAgent(a) && !employed.has(a.agentId));
 
   // Where the form opens: an existing Agent when there is one to pick, else a new one.
   const [opening] = useState<HireDraft>(() => ({
@@ -792,7 +793,7 @@ function EmployeeProfileForm({
   /** The typed name against the stored one; trimmed before comparing, as Save stores it. */
   const form = useFormDraft(employee.givenName ?? "", { normalize: (value) => value.trim() });
   const name = form.draft;
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<ReactNode>(undefined);
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
@@ -804,7 +805,7 @@ function EmployeeProfileForm({
       onChanged();
       done?.();
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an employee's profile could not be saved" }));
     } finally {
       setBusy(false);
     }
@@ -916,7 +917,7 @@ function DeskRenewForm({
   const form = useFormDraft(employee.workspace, { normalize: (value) => value.trim() });
   const workspace = form.draft;
   /** What the server refused about the workspace; cleared by the next keystroke. */
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<ReactNode>(undefined);
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const plan = deskRenewPlan(employee.workspace, workspace);
@@ -938,7 +939,7 @@ function DeskRenewForm({
       setError(
         e instanceof ApiError && e.code === "invalid_workspace"
           ? S.company.chart.workspaceInvalid
-          : apiErrorText(e),
+          : failureNode(e, { what: "an employee's workspace could not be changed" }),
       );
       setBusy(false);
       return;

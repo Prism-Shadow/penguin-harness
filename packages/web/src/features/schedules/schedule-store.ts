@@ -35,11 +35,11 @@
  * of them. A machine's schedule events reach the store through this server's relay, as that
  * machine's.
  */
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import type { ProjectScheduleItem } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import type { UserEventHandler } from "../../state/user-events";
+import { failureNode } from "../../lib/failure";
 
 interface Entry {
   projectId: string;
@@ -47,8 +47,11 @@ interface Entry {
   machineId: string | null;
   /** Null until this Project has answered once; a refetch keeps the list it already has. */
   items: ProjectScheduleItem[] | null;
-  /** Last failure text, cleared by the next success. The panel shows it only while `items` is null. */
-  error: string | null;
+  /**
+   * Last failure, as the panel says it (with 「[报告问题]」 for a failure), cleared by the next
+   * success. The panel shows it only while `items` is null.
+   */
+  error: ReactNode;
   /** This Project's request: concurrent readers share it, another Project gets its own. */
   inflight: Promise<void> | null;
   /** Mounted readers of this Project (retainSchedules); zero means nothing on screen shows this list. */
@@ -120,11 +123,11 @@ export function scheduleItemsAcross(
   ];
 }
 
-/** This Project's last failure text on that server, or null. */
+/** This Project's last failure on that server, or null. */
 export function scheduleError(
   projectId: string | null,
   machineId: string | null = null,
-): string | null {
+): ReactNode {
   return peek(projectId, machineId)?.error ?? null;
 }
 
@@ -148,7 +151,7 @@ export function refreshSchedules(
       entry.error = null;
     } catch (e) {
       // The list it already has stays: a refetch failing is not news that the tasks are gone.
-      entry.error = apiErrorText(e);
+      entry.error = failureNode(e, { what: "a Project's scheduled tasks could not be listed" });
     } finally {
       entry.inflight = null;
     }
@@ -242,7 +245,7 @@ export function useProjectSchedules(
   refreshKey: string,
   /** The server the reader shows: a machine's own id, or null for this one. */
   machineId: string | null = null,
-): { items: ProjectScheduleItem[] | null; error: string | null } {
+): { items: ProjectScheduleItem[] | null; error: ReactNode } {
   useSyncExternalStore(subscribeSchedules, schedulesVersion, schedulesVersion);
   // Held for as long as this reader is mounted, and deliberately not keyed on `refreshKey`:
   // moving between two conversations of one Project must not release the entry and take it again.

@@ -26,6 +26,8 @@ import {
   agentsMdPath,
   BUILTIN_AGENT_IDS,
   createAgent as coreCreateAgent,
+  provisionSystemAgent,
+  SYSTEM_AGENT_ID,
   installPlugin,
   installSkill,
   McpServerNameTakenError,
@@ -51,6 +53,7 @@ import type { AgentAuthor, AgentDeletionInfo, PluginUpdateRef } from "../api/typ
 import { resolveLibraryPlugins } from "./plugin-library.js";
 import type { PluginLibrary } from "../plugin/library-module.js";
 import { resolveDirectorySkills } from "./directory-skills.js";
+import { refuseReservedAgentId } from "./system-agent.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
@@ -113,9 +116,17 @@ const MOVE_RETRIES = 4;
 const MOVE_RETRY_STEP_MS = 100;
 const MOVE_BUSY = new Set(["EBUSY", "EPERM", "EACCES"]);
 
-/** Refuses deleting a built-in Agent: they are provisioned with the Project. */
-export function refuseBuiltinDeletion(agentId: string): void {
-  if (BUILTIN_AGENT_IDS.includes(agentId)) {
+/**
+ * Refuses deleting a built-in Agent: they are provisioned with the Project. An Agent the user
+ * named `system_agent` before the system Agent existed is theirs to delete (core
+ * state/system-agent.ts).
+ */
+export async function refuseBuiltinDeletion(
+  agentConfig: Pick<AgentConfig, "isBuiltinAgent">,
+  projectId: string,
+  agentId: string,
+): Promise<void> {
+  if (await agentConfig.isBuiltinAgent(projectId, agentId)) {
     throw new HttpError(
       409,
       "cannot_delete_builtin_agent",
@@ -155,6 +166,8 @@ export interface AgentListItem {
   memoryCount: number;
   /** The content revision of the Agent's own picture (agent-avatar.ts); absent when it has none. */
   avatarRev?: string;
+  /** Present on the system Agent only (core state/system-agent.ts). */
+  system?: true;
 }
 
 /** What a new Agent starts with, besides its id. Every field is optional. */
@@ -191,6 +204,8 @@ export class AgentService implements AgentLifecycle {
   private readonly limiter = new FsLimiter(PURGE_SLOTS);
   /** Ends this generation's removals when it is disposed; the next one resumes them from disk. */
   private readonly stopping = new AbortController();
+  /** A system Agent being provisioned, by Project, so two lists at once write it once. */
+  private readonly provisioning = new Map<string, Promise<void>>();
 
   setup(ctx: ClassCtx) {
     ctx.effect(() => this.stopping.abort());
@@ -198,9 +213,11 @@ export class AgentService implements AgentLifecycle {
 
   /**
    * Union of DB index ∪ directory scan; unmanaged directory Agents are backfilled into the DB.
-   * Only what `AgentConfig.exists` accepts is listed — the rule every route checks.
+   * Only what `AgentConfig.exists` accepts is listed — the rule every route checks. A Project
+   * made before the system Agent existed is given it first (see `ensureSystemAgent`).
    */
   async listAgents(projectId: string): Promise<AgentListItem[]> {
+    await this.ensureSystemAgent(projectId);
     const known = new Map(this.agents.list(projectId).map((r) => [r.agentId, r]));
 
     let entries: string[] = [];
@@ -276,6 +293,38 @@ export class AgentService implements AgentLifecycle {
         };
       }),
     );
+  }
+
+  /**
+   * Gives a Project made before the system Agent existed its system Agent, the first time its
+   * Agents are listed after the upgrade (PRFC-0033): core writes it from the preset Project
+   * creation uses and never touches an Agent already holding the id (compat C1). Its index row
+   * sorts right after the other built-in Agents, as a new Project's does. A Project that has the
+   * Agent costs one `stat`. A write that fails (an unwritable folder) leaves the list as it is
+   * and is tried again at the next listing: the system Agent must not be what fails every card.
+   */
+  private ensureSystemAgent(projectId: string): Promise<void> {
+    const running = this.provisioning.get(projectId);
+    if (running) return running;
+    const run = (async () => {
+      if (await this.agentConfig.exists(projectId, SYSTEM_AGENT_ID)) return;
+      if (!(await provisionSystemAgent({ root: this.root, projectId }))) return;
+      const builtins = this.agents
+        .list(projectId)
+        .filter((row) => BUILTIN_AGENT_IDS.includes(row.agentId))
+        .map((row) => Date.parse(row.createdAt))
+        .filter((time) => Number.isFinite(time));
+      const after = builtins.length > 0 ? Math.max(...builtins) + 1 : Date.now();
+      this.agents.insertOrIgnore({
+        projectId,
+        agentId: SYSTEM_AGENT_ID,
+        createdAt: new Date(after).toISOString(),
+      });
+    })()
+      .catch(() => undefined)
+      .finally(() => this.provisioning.delete(projectId));
+    this.provisioning.set(projectId, run);
+    return run;
   }
 
   /**
@@ -556,7 +605,7 @@ export class AgentService implements AgentLifecycle {
    * stats are unaffected); the caller drops the Agent's other index rows.
    */
   async deleteAgent(projectId: string, agentId: string): Promise<AgentDeletionInfo> {
-    refuseBuiltinDeletion(agentId);
+    await refuseBuiltinDeletion(this.agentConfig, projectId, agentId);
     const deletionId = await this.moveAside(projectId, agentId);
     this.agents.delete(projectId, agentId);
     // Its workbenches' runtime files (sockets, locks) sit apart, at a short path (core's runDir).
@@ -695,7 +744,8 @@ export class AgentService implements AgentLifecycle {
   /**
    * Create an Agent: the id is chosen by the creator (a semantic id, checked for
    * duplicates against both the DB and the directory within the Project — a 409
-   * if taken, which naturally also blocks built-in Agent ids) → initialize State →
+   * if taken, which naturally also blocks built-in Agent ids, and 409 `agent_id_reserved` for
+   * the system Agent's id where the Project does not have it yet) → initialize State →
    * write name/description (name defaults to the id) → install the seed plugins.
    *
    * `pluginNames` are library plugin names picked at creation; they go through the same
@@ -735,6 +785,7 @@ export class AgentService implements AgentLifecycle {
     if (taken) {
       throw new HttpError(409, "agent_exists", `Agent id is already taken: ${agentId}.`);
     }
+    refuseReservedAgentId(agentId);
     const displayName = name ?? agentId;
     // Both sources are resolved before a single file is written, so a name that has since left the
     // library or the directory fails while the Agent still does not exist. Directory Skills are

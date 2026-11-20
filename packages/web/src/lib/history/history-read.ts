@@ -31,8 +31,8 @@ const FRESH_READS = 2;
 
 /** The server's error event, in the page's words. */
 /**
- * The server's error event as the page's API error: its code kept (so whether it is a defect is
- * judged as any answer is — `isSeriousError`), its words the app's own for that code.
+ * The server's error event as the page's API error: its code kept (so whether it offers a report is
+ * judged as any answer is — `isReportable`), its words the app's own for that code.
  */
 function streamFailure(error: HistoryStreamError): ApiError {
   const answer = new ApiError(0, error.code, error.message, undefined, error.details);

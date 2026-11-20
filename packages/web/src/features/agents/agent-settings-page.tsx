@@ -8,7 +8,8 @@
  * tools table + the MCP Server form, mcp-servers-section.tsx), Plugins (plugins-tab.tsx: four
  * sub-pages — the Agent's plugins, its Skills, its hook packages and its workbenches),
  * Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule (schedules-tab.tsx), API (api-tab.tsx:
- * the Agent's public API, kept by this server).
+ * the Agent's public API, kept by this server). The system Agent's page has only a read-only
+ * Overview and the Plugins tab's system apps (system-agent-settings.tsx).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
  * server-side).
  *
@@ -28,7 +29,7 @@
  * the Overview tab's first field changes it (agent-avatar-field.tsx), saved on its own the moment
  * a crop is confirmed rather than with the tab's Save.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import type {
@@ -73,7 +74,6 @@ import {
 
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { scopeKey, scoped, scopedValue, type Scoped } from "../../lib/project-scope";
 import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
@@ -98,6 +98,7 @@ import {
 } from "./tools-form";
 
 import { PluginsTab } from "./plugins-tab";
+import { SystemAgentApps, SystemAgentOverview } from "./system-agent-settings";
 import {
   PLUGIN_PARAM,
   SUBPAGE_TABS,
@@ -115,6 +116,7 @@ import { AgentExportDialog } from "./agent-export-dialog";
 import { AgentImportDialog } from "./agent-import-dialog";
 import { ThinkingLevelSelect, effectiveThinkingLevel } from "../model-picker";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 type TabKey =
   | "overview"
@@ -173,7 +175,6 @@ export function AgentSettingsPage() {
   // tab holds unsaved edits the app's leave guard asks before it happens, and the tab on screen
   // never runs ahead of the address it would leave.
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab: TabKey = resolveTabKey(searchParams.get("tab"), TABS, "overview", SUBPAGE_TABS);
   const subPage = resolvePluginsSubPage(searchParams.get("tab"));
   /** The machine the Agent lives on (`?machine=`); null for this server. */
   const machineId = machineInSearch(searchParams);
@@ -184,6 +185,10 @@ export function AgentSettingsPage() {
   const pageScope = scopeKey(projectId, agentId, machineId);
   const [dataRead, setDataRead] = useState<Scoped<AgentConfigResponse> | null>(null);
   const data = scopedValue(dataRead, pageScope);
+  /** The system Agent has only its read-only overview and its system apps (system-agent-settings.tsx). */
+  const system = data?.config.system === true;
+  const tabs = system ? TABS.filter((t) => t.key === "overview" || t.key === "plugins") : TABS;
+  const tab: TabKey = resolveTabKey(searchParams.get("tab"), tabs, "overview", SUBPAGE_TABS);
   const machines = useMachines();
   /** Whether that machine can be asked right now; null for this server, which always can. */
   const link = machineId === null ? null : machineLink(machines.state, machines.settled, machineId);
@@ -238,7 +243,7 @@ export function AgentSettingsPage() {
     [setSearchParams],
   );
   // Only the initial config load failure renders inline (the page can't show without it); saves/imports report via toast.
-  const [errorRead, setErrorRead] = useState<Scoped<string> | null>(null);
+  const [errorRead, setErrorRead] = useState<Scoped<ReactNode> | null>(null);
   const error = scopedValue(errorRead, pageScope);
 
   const load = useCallback(
@@ -255,7 +260,11 @@ export function AgentSettingsPage() {
       api
         .getAgentConfig(projectId, agentId, machineId)
         .then((res) => setDataRead(scoped(scope, res)))
-        .catch((e: unknown) => setErrorRead(scoped(scope, apiErrorText(e))));
+        .catch((e: unknown) =>
+          setErrorRead(
+            scoped(scope, failureNode(e, { what: "an Agent's settings could not be loaded" })),
+          ),
+        );
     },
     [projectId, agentId, machineId, reachable],
   );
@@ -369,7 +378,7 @@ export function AgentSettingsPage() {
        this page's snapshot-import control used to grow the document from below the fold. */
     <PageFrame width="sm" className="no-scrollbar relative">
       <PageHeader
-        title={data.config.name ?? agentId}
+        title={system ? S.agent.systemName : (data.config.name ?? agentId)}
         media={<AgentAvatar id={agentId} size={AGENT_AVATAR_PREVIEW_PX} src={picture} />}
         back={{ label: S.agent.backToList, onClick: () => navigate("/agents") }}
         // The id is data: mono on the small rung. A block keeps its line box at its own
@@ -385,8 +394,8 @@ export function AgentSettingsPage() {
       {/* The kernel update action lives in the Overview tab's Kernel section, so the trail
           from the Agents list has to cross the tab strip to reach it. */}
       <Tabs
-        items={TABS.map((t) =>
-          t.key === "overview" && data.config.kernelOutdated
+        items={tabs.map((t) =>
+          t.key === "overview" && data.config.kernelOutdated && !system
             ? { ...t, badge: S.agent.kernelOutdatedHint }
             : t,
         )}
@@ -397,7 +406,8 @@ export function AgentSettingsPage() {
       />
       <AgentLocationContext.Provider value={machineId}>
         <div className="py-4">
-          {tab === "overview" && (
+          {tab === "overview" && system && <SystemAgentOverview data={data} />}
+          {tab === "overview" && !system && (
             <OverviewTab
               data={data}
               agentId={agentId}
@@ -420,7 +430,8 @@ export function AgentSettingsPage() {
               <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
             </div>
           )}
-          {tab === "plugins" && (
+          {tab === "plugins" && system && <SystemAgentApps />}
+          {tab === "plugins" && !system && (
             <PluginsTab
               key={`${projectId}:${machineId ?? ""}:${agentId}`}
               agentId={agentId}
