@@ -4,7 +4,7 @@
  * desktop-browser protocol the way the desktop shell's builtin-browser.ts does — one reply per
  * command, tab events pushed as its guests change. Its CDP answers come from a handler each test
  * supplies. The host's App-booting browser suites hand its port to a test app through
- * `shellPortNode` (packages/server/test/builtin-browser/plugin.ts).
+ * `browserPlugin(port)` (packages/server/test/builtin-browser/plugin.ts).
  */
 import type {
   BuiltinBrowserTab,

@@ -102,7 +102,8 @@ export interface BrowserText {
      * Why the browser cannot be driven, and what to do: the built-in browser lives in the desktop
      * app, which must be open; the user's own Chrome needs the extension paired, connected and
      * allowed on the server; `module_not_running`: the server runs no browser at all (its plugin's
-     * server module is stopped). Undefined: no server could be reached at all.
+     * server module is stopped); `server_too_old`: the server predates the browser. Undefined: no
+     * server could be reached at all.
      */
     unavailableHint(reason: string | undefined): string;
     /** `not_supported`: what only the built-in browser has (import, history), asked of the user's Chrome. */
@@ -266,6 +267,8 @@ export const browserEn: BrowserText = {
         return "The user's Chrome is not connected. Ask the user to open Chrome with the PenguinHarness Browser extension enabled, or to pair it again in the Browser panel.";
       if (reason === "module_not_running")
         return "The agent browser is off on this server: its browser-automation plugin's server module is not running. Ask the user to have an administrator turn it on under Settings › Plugins.";
+      if (reason === "server_too_old")
+        return "This server has no agent browser: it predates it. Ask the user to update PenguinHarness on the server.";
       if (reason === "extension_disabled")
         return "An admin has turned off Chrome extension connections on this server, so the user's Chrome cannot be driven.";
       return "The browser is driven through a running PenguinHarness server, and none was reached: open the desktop app, or point --server or PENGUIN_API_URL at the server.";
@@ -462,6 +465,8 @@ export const browserZh: BrowserText = {
         return "该用户的 Chrome 未连接。请用户打开装有 PenguinHarness Browser 扩展的 Chrome 并确认扩展已启用，或在浏览器面板中重新配对。";
       if (reason === "module_not_running")
         return "本服务器上的 Agent 浏览器已关闭：browser-automation 插件的服务端模块没有运行。请用户让管理员在「设置 › 插件」中启用它。";
+      if (reason === "server_too_old")
+        return "该服务器没有 Agent 浏览器：它的版本早于这项功能。请用户更新服务器上的 PenguinHarness。";
       if (reason === "extension_disabled")
         return "管理员已在本服务器上关闭 Chrome 扩展连接，无法驱动该用户的 Chrome。";
       return "浏览器要经由正在运行的 PenguinHarness 服务器驱动，但没有连上任何服务器：请打开桌面应用，或用 --server 或 PENGUIN_API_URL 指向该服务器。";

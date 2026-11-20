@@ -24,6 +24,7 @@
  * is not opened for them.
  */
 import type { DatabaseSync } from "node:sqlite";
+import pkg from "../../package.json" with { type: "json" };
 import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/plugin";
 import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/plugin";
 import type { Hono } from "hono";
@@ -60,13 +61,12 @@ import { BuiltinBrowser } from "./service.js";
 import type { BrowserShellPort } from "./shell-link.js";
 
 /**
- * The version a paired extension is told it paired with: this build's, which tsup.config.ts
- * stamps from core's package.json (core's `VERSION`, what `buildInfo()` reports; a builtin plugin
- * is built and shipped with the platform it runs on). Read from core's root entry instead, the
- * bundle would carry the whole SDK. The sources under test run unstamped.
+ * The version a paired extension is told it paired with: this package's, which a release sets with
+ * every other package's (core's `VERSION`, what `buildInfo()` reports, among them) — a builtin
+ * plugin is built and shipped with the platform it runs on. Read from core's root entry instead,
+ * the bundle would carry the whole SDK.
  */
-declare const __PENGUIN_VERSION__: string | undefined;
-const SERVER_VERSION = typeof __PENGUIN_VERSION__ === "string" ? __PENGUIN_VERSION__ : "dev";
+const SERVER_VERSION = pkg.version;
 
 /** The desktop shell's message port as the built-in browser reaches it; null outside the shell. */
 @Interface()

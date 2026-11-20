@@ -2,10 +2,12 @@
 /**
  * Stages the builtin plugin prefix a server run from this checkout loads from:
  * `packages/server/plugins/`, the `<installation>/plugins` base of an entry under
- * `packages/server/{src,dist}/` (packages/server/src/plugin/loader.ts, `pluginBases`). The desktop
- * build and a release stage theirs with scripts/build-plugins.mjs; a dev server and the web e2e
- * run had none, so a preinstalled plugin's server module — the agent browser's, in
- * browser-automation — was missing from every server started here.
+ * `packages/server/{src,dist}/`, and the prefix every other checkout entry falls back to — the
+ * CLI's source behind `pnpm penguin`, the dev-linked CLI (packages/server/src/plugin/
+ * workspace-prefix.ts). The desktop build and a release stage theirs with
+ * scripts/build-plugins.mjs; a checkout had none, so a preinstalled plugin's server module — the
+ * agent browser's, in browser-automation — was missing from every server started here. `pnpm
+ * build`, the dev prestep and the web e2e runner run it.
  *
  * Which plugins: the code plugins whose card says `preinstall: true` (PRFC-0030), the ones every
  * Project lists, so a workspace server behaves like an installed one. Each is copied as npm would

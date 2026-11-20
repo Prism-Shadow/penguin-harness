@@ -20,7 +20,13 @@ export default defineConfig({
       "@prismshadow/penguin-server/api": server("api/types.ts"),
     },
   },
+  // The server's margins, which these suites had there (packages/server/vitest.config.ts): the
+  // driver, link and route suites run on timers and real sockets, and a loaded Windows or macOS
+  // runner needs the room and the retry.
   test: {
     environment: "node",
+    testTimeout: process.platform === "win32" ? 30_000 : 5_000,
+    hookTimeout: process.platform === "win32" ? 30_000 : 10_000,
+    retry: process.platform === "win32" ? 2 : process.platform === "darwin" ? 1 : 0,
   },
 });

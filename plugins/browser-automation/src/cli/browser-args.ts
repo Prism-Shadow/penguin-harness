@@ -40,8 +40,9 @@ export interface CommonOpts {
 // ---------------------------------------------------------------------------
 
 export async function connect(opts: CommonOpts, t: BrowserMessages): Promise<ServerClient> {
+  let client: ServerClient;
   try {
-    return new ServerClient(
+    client = new ServerClient(
       await resolveConnection({ server: opts.server, autoStart: false }, t),
       t,
     );
@@ -51,6 +52,44 @@ export async function connect(opts: CommonOpts, t: BrowserMessages): Promise<Ser
       throw new BrowserCliError("browser_unavailable", t.browser.unavailableHint(undefined));
     }
     throw err;
+  }
+  // Every subcommand: a browser route answering 404 may mean the server runs no browser at all.
+  const request = client.request.bind(client);
+  client.request = async <T>(method: string, apiPath: string, body?: unknown): Promise<T> => {
+    try {
+      return await request<T>(method, apiPath, body);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404 && apiPath.startsWith("/api/builtin-browser")) {
+        const reason = await missingBrowser(request);
+        if (reason !== null) throw new BrowserCliError("browser_unavailable", t.browser.unavailableHint(reason));
+      }
+      throw err;
+    }
+  };
+  return client;
+}
+
+/**
+ * Why a server has no browser routes, or null when it has them (the 404 was the route's own, a tab
+ * or a Chrome it does not know). The browser's routes are its plugin's server module: a server
+ * that answers its status route 404 is not running that module — stopped, or listed in none of its
+ * Projects — when it lists the plugin modules it runs (`/api/contributions`' `modules`), and is too
+ * old to have the browser when it does not.
+ */
+async function missingBrowser(
+  request: <T>(method: string, apiPath: string) => Promise<T>,
+): Promise<"module_not_running" | "server_too_old" | null> {
+  try {
+    await request("GET", "/api/builtin-browser/status");
+    return null;
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 404) return null;
+  }
+  try {
+    const contributions = await request<{ modules?: unknown }>("GET", "/api/contributions");
+    return Array.isArray(contributions.modules) ? "module_not_running" : "server_too_old";
+  } catch {
+    return "server_too_old";
   }
 }
 

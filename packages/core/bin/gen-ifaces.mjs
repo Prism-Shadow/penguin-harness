@@ -14,8 +14,9 @@
  * which is what a package whose program is its own sources wants. A plugin package that compiles
  * against its host's SOURCES (a shipped plugin reaching the server's face through tsconfig
  * `paths`, since depending on the server package would be a cycle) names its own `src`: the
- * host's classes stay the host's, and an interface the plugin requires is still written into its
- * table as a copy, under the host's own key.
+ * host's classes stay the host's, and each host interface one of its modules requires or provides
+ * is written into its table as a copy under the host's own key — the copy the loader compares
+ * with the running platform's table when it loads the plugin.
  *
  * Published with @prismshadow/penguin-core as the `penguin-gen-ifaces` bin, so a package
  * outside this repository builds its table the way the shipped plugins do; inside the repo,
@@ -1206,7 +1207,19 @@ for (const project of projects) {
       );
       return "?";
     }
-    return `${moduleNameOf(decl.getSourceFile().fileName)}#${sym.getName()}`;
+    // An interface reached from source outside --sources (a plugin built against its host's
+    // sources) is not projected as the package's own, so it is written in as a copy: the copy is
+    // what the loader compares with the host's own table when it loads the plugin.
+    const declFile = decl.getSourceFile();
+    if (
+      sourceRoots.length > 0 &&
+      !declFile.isDeclarationFile &&
+      !declFile.fileName.includes("/node_modules/") &&
+      !projectsFile(declFile)
+    ) {
+      return keyOf(sym, decl);
+    }
+    return `${moduleNameOf(declFile.fileName)}#${sym.getName()}`;
   };
   /** The component a bare `@Use()` field is wired to: the one its type names, if any. */
   const componentOfType = (typeNode) => {
@@ -1319,6 +1332,11 @@ for (const project of projects) {
     }
     manifestOwner.set(meta.name, `${file}\0${className}`);
     manifests[m.name] = m;
+  }
+  // The copies the manifests asked for above (and what their signatures reach in turn).
+  while (pending.length > 0) {
+    const { symbol, decl, key } = pending.shift();
+    table[key] = ifaceOf(symbol, decl);
   }
   for (const { symbol, decl, owner, sf } of slotCompanions) {
     const ownerExp = checker

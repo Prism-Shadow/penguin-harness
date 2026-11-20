@@ -59,6 +59,7 @@ import { checkoutFacts, originUrl } from "./build-git-stamp.mjs";
 import { compilePushBundle, pushBundleOptions } from "./push-bundle.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
 import { buildBuiltinPlugins } from "./build-plugins.mjs";
+import { shippedCliPackages } from "./gen-cli-modules.mjs";
 import { archiveName, packArchive, prefixPackages } from "./asset-archives.mjs";
 import { typescriptPayload } from "./typescript-payload.mjs";
 import { libraryPayload } from "./library-payload.mjs";
@@ -270,6 +271,17 @@ async function compileEntry(entry, outfile) {
   // The platform and the CLI each import their generated interface table; make sure both
   // are current.
   const { execFileSync } = await import("node:child_process");
+  // So are the tables the CLI's shipped modules boot against (a plugin's `cli-ifaces.json`,
+  // which the CLI bundle inlines): each is written by its plugin's own build, rerun here so a
+  // push never carries the one an earlier build left.
+  const windows = process.platform === "win32";
+  for (const name of shippedCliPackages(path.join(ROOT, "packages", "cli"))) {
+    execFileSync(windows ? "pnpm.cmd" : "pnpm", ["--filter", name, "run", "build"], {
+      cwd: ROOT,
+      stdio: "inherit",
+      shell: windows,
+    });
+  }
   for (const pkg of ["server", "cli"]) {
     // The CLI's generated table also names the server's command classes (its children come
     // in through the server's `cli` subpath), so the CLI scan covers the server project too —

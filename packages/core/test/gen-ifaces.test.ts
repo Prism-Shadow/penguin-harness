@@ -14,7 +14,8 @@
  *   reference, its contributions would silently vanish from the table.
  * - Given a package whose program reaches another package's sources (a plugin compiled against
  *   its host's face through tsconfig paths), built with `--sources src`, its table holds its own
- *   modules and plugin declaration and none of the other package's classes.
+ *   modules and plugin declaration and none of the other package's classes, and a copy, under
+ *   the host's key, of the host interface its module requires.
  * - Given the same program built without `--sources`, the other package's default export is not
  *   taken for this package's plugin declaration: the build passes and the declaration is its own.
  */
@@ -211,9 +212,14 @@ describe("a package whose program reaches another package's sources", () => {
     dirs.push(root);
     const files: Record<string, string> = {
       "host/package.json": JSON.stringify({ name: "@example/host", version: "1.0.0" }),
-      "host/src/face.ts": `${HEADER}
+      "host/src/face.ts": `${HEADER}import { Interface } from "@prismshadow/penguin-core/plugin";
 @Component({})
 export class HostService {}
+
+@Interface()
+export abstract class HostClock {
+  abstract now(): number;
+}
 
 export default { modules: [HostService] } satisfies Plugin;
 `,
@@ -222,11 +228,13 @@ export default { modules: [HostService] } satisfies Plugin;
         compilerOptions: { target: "es2022", module: "nodenext", noLib: true, types: [] },
         include: ["src"],
       }),
-      "demo/src/index.ts": `${HEADER}import { HostService } from "../../host/src/face.js";
+      "demo/src/index.ts": `${HEADER}import { Use } from "@prismshadow/penguin-core/plugin";
+import { HostService, type HostClock } from "../../host/src/face.js";
 
 @Component({})
 export class DemoPlugin {
   host = HostService;
+  @Use() clock!: HostClock;
 }
 
 export default { modules: [DemoPlugin] } satisfies Plugin;
@@ -247,12 +255,17 @@ export default { modules: [DemoPlugin] } satisfies Plugin;
   const table = () => JSON.parse(fs.readFileSync(path.join(root, "demo", "ifaces.json"), "utf8"));
 
   it(
-    "with --sources src, keeps the other package's classes out of its table",
+    "with --sources src, keeps the other package's classes out and copies the interface it requires",
     () => {
       const run = generate("--sources", "src");
+      expect(run.stderr).not.toMatch(/error/);
       expect(run.status).toBe(0);
       expect(Object.keys(table().modules)).toEqual(["DemoPlugin"]);
       expect(table().plugin).toEqual({ modules: ["DemoPlugin"], replaces: [] });
+      expect(table().modules.DemoPlugin.requires.clock).toMatchObject({
+        iface: "@example/host#HostClock",
+      });
+      expect(table().ifaces).toHaveProperty(["@example/host#HostClock"]);
     },
     SPAWN_BUDGET,
   );

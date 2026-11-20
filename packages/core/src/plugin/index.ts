@@ -3,8 +3,9 @@
  *
  * Types, plus the five decorators — the same ones the harness's own modules are written
  * with (core kernel/decorators.ts: no imports, so a plugin's bundle carries them and
- * nothing else of the SDK) — and `sessionShell`, which a plugin reads from the host's copy
- * (see below). The host that drives a plugin lives in whatever embeds this SDK (for the
+ * nothing else of the SDK) — `sessionShell`, which a plugin reads from the host's copy
+ * (see below), and `atomicWriteFile`, the Harness's state-file writer, which a plugin's bundle
+ * carries (it reaches nothing beyond Node's fs). The host that drives a plugin lives in whatever embeds this SDK (for the
  * harness, `@prismshadow/penguin-server/plugin`); a plugin reaches THAT with `import type`
  * only and stays a self-contained library that happens to satisfy an interface.
  *

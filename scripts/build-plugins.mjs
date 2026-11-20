@@ -54,7 +54,7 @@ const PLUGINS_SRC = path.join(ROOT, "plugins");
 const CACHE = path.join(ROOT, "node_modules", ".cache", "penguin-plugins");
 const COMPLETE = ".complete";
 /** Folded into the cache key: bump when what this script WRITES changes, not only what it reads. */
-const PACK_FORMAT = 14;
+const PACK_FORMAT = 15;
 /** The prefix's own manifest: npm needs one above `node_modules`, and it is ours, never a package's. */
 const PREFIX_MANIFEST = { name: "penguin-builtin-plugins", private: true, version: "0.0.0" };
 /**
@@ -141,7 +141,8 @@ function run(name, args, cwd) {
  */
 async function sourceHash(dir, into) {
   const icons = ["svg", "png", "webp", "avif", "jpg", "jpeg", "gif"].map((ext) => `icon.${ext}`);
-  for (const rel of ["package.json", ...icons, "README.md", "tsup.config.ts"]) {
+  const tsconfigs = (await fsp.readdir(dir)).filter((f) => /^tsconfig.*\.json$/.test(f)).sort();
+  for (const rel of ["package.json", ...icons, "README.md", "tsup.config.ts", ...tsconfigs]) {
     const file = path.join(dir, rel);
     if (fs.existsSync(file))
       into
@@ -162,6 +163,34 @@ async function sourceHash(dir, into) {
         .update("\0")
         .update(await fsp.readFile(path.join(sub, rel)))
         .update("\0");
+    }
+  }
+  await bundleInputsHash(dir, into);
+}
+
+/**
+ * What a plugin's bundle read from outside its own directory. A plugin that compiles against its
+ * host's sources (browser-automation reaches the server's face, library code and core through
+ * tsconfig paths) bundles files no hash of its directory sees, so an edit to one of them would
+ * otherwise be served from the cache. Its build writes esbuild's metafile (`dist/metafile-*.json`),
+ * which names every input; each is hashed by content. A first build has no metafile yet, so the
+ * next run misses once more and settles; an input that is gone hashes as such.
+ */
+async function bundleInputsHash(dir, into) {
+  const dist = path.join(dir, "dist");
+  if (!fs.existsSync(dist)) return;
+  for (const meta of (await fsp.readdir(dist)).filter((f) => /^metafile-.*\.json$/.test(f)).sort()) {
+    let inputs;
+    try {
+      inputs = Object.keys(JSON.parse(await fsp.readFile(path.join(dist, meta), "utf8")).inputs ?? {});
+    } catch {
+      into.update(`${meta}\0unreadable\0`);
+      continue;
+    }
+    for (const input of inputs.sort()) {
+      const file = path.resolve(dir, input);
+      into.update(`input:${input}\0`);
+      into.update(fs.existsSync(file) ? await fsp.readFile(file) : "missing").update("\0");
     }
   }
 }

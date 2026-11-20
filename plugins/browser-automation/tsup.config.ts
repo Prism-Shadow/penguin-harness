@@ -1,12 +1,5 @@
-import { readFileSync } from "node:fs";
 import { defineConfig } from "tsup";
-
-/** Core's version, which `buildInfo().version` reports; stamped into the server half (module.ts). */
-const coreVersion = (
-  JSON.parse(
-    readFileSync(new URL("../../packages/core/package.json", import.meta.url), "utf8"),
-  ) as { version: string }
-).version;
+import { ESM_CJS_BANNER } from "../../scripts/esm-cjs-banner.mjs";
 
 /**
  * The server half (`.`): one ESM file the plugin loader imports from the builtin prefix. A
@@ -16,8 +9,12 @@ const coreVersion = (
  * Node's built-ins stay imports, and ws's two optional native accelerators, which it loads
  * inside a try and runs without.
  *
+ * The metafile lists every file the bundle read, inside this package or not: the builtin prefix's
+ * cache hashes them (scripts/build-plugins.mjs), so an edit to the host code bundled here rebuilds
+ * the prefix.
+ *
  * The web half (`./web`) and the CLI half (`./cli`) are source the Web App's and the CLI's own
- * builds compile; nothing here builds them.
+ * builds compile from the workspace; nothing here builds them.
  */
 export default defineConfig({
   entry: { index: "src/index.ts" },
@@ -28,12 +25,9 @@ export default defineConfig({
   dts: false,
   clean: true,
   sourcemap: true,
+  metafile: true,
   noExternal: [/.*/],
-  define: { __PENGUIN_VERSION__: JSON.stringify(coreVersion) },
   external: ["bufferutil", "utf-8-validate"],
-  // ws is CommonJS and requires Node's built-ins; in an ESM bundle those requires need a real
-  // `require`, which an ES module does not have.
-  banner: {
-    js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);',
-  },
+  // ws is CommonJS and requires Node's built-ins: the shared ESM/CJS banner declares `require`.
+  banner: { js: ESM_CJS_BANNER },
 });

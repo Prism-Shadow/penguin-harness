@@ -45,6 +45,7 @@ import type {
 } from "@prismshadow/penguin-core/kernel";
 import { moduleDefOf } from "@prismshadow/penguin-core/kernel";
 import { pluginsPrefix } from "./install.js";
+import { workspacePrefixManifest } from "./workspace-prefix.js";
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
 
 import { readManifest } from "../hmr/manifest.js";
@@ -158,7 +159,8 @@ export async function readPluginClosure(
  *   2. `<assets>/plugins` — the BUILTIN plugins the committed hot push carried
  *      (scripts/build-plugins.mjs), i.e. the plugins of the revision that is running.
  *   3. `<installation>/plugins` — the builtin plugins the build shipped (the desktop app
- *      stages them beside `skills/`), for a deployment nothing was ever pushed to.
+ *      stages them beside `skills/`), for a deployment nothing was ever pushed to; in a
+ *      workspace checkout, then its one staged prefix (plugin/workspace-prefix.ts).
  *   4. the installation entry — a plugin installed globally beside the program.
  *
  * A prefix marked `builtin` is one the harness ships, not one the operator installed.
@@ -198,10 +200,13 @@ export function pluginBases(root: string | undefined, assetsDir: string | null):
   }
   const entry = process.argv[1];
   if (typeof entry === "string" && entry.length > 0) {
-    bases.push({
-      file: path.join(path.dirname(entry), "..", "plugins", "package.json"),
-      builtin: true,
-    });
+    const installation = path.join(path.dirname(entry), "..", "plugins", "package.json");
+    bases.push({ file: installation, builtin: true });
+    // A checkout's entries share one staged prefix (plugin/workspace-prefix.ts).
+    const workspace = workspacePrefixManifest(entry);
+    if (workspace !== null && path.resolve(workspace) !== path.resolve(installation)) {
+      bases.push({ file: workspace, builtin: true });
+    }
     bases.push({ file: entry, builtin: false, program: true });
   }
   return bases;

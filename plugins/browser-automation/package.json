@@ -33,9 +33,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "dist",
-    "src/web",
-    "src/cli",
+    "dist/index.js",
     "skills",
     "icon.svg",
     "ifaces.json",
