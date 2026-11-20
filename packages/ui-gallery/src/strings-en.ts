@@ -1004,7 +1004,7 @@ export const en: GalleryStrings = {
       pillText: "3 updates",
       statusMarks: "Status marks",
       statusMarksHint:
-        "The glyph carries the tone; the word stays in muted ink, never coloured. Hover says what the status means for this thing. A status that asks nothing of the reader takes no tone: its glyph recedes.",
+        "The glyph carries the tone; the word stays in muted ink, never coloured. Hover says what the status means for this thing. A status that asks nothing of the reader takes no tone: its glyph recedes. Where there is no room for the word (a cover card's facts line) the glyph stands alone; the word leads the hover sentence and is still read out to assistive technology.",
       statusMarkSamples: {
         success: "Installed",
         attention: "Update",
