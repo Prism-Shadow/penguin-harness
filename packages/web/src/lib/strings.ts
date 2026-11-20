@@ -3551,10 +3551,10 @@ export const zh = {
     showAllResults: "在全部中查看",
     /** A plugin the market's curation selects: the carousel's eyebrow and a card's tag. */
     selected: "精选",
-    /** The selected carousel's accessible name. */
+    /** The cards / list switch: its name, and each icon button's name and hover words. */
     layoutLabel: "插件布局",
-    cardsLayout: "卡片",
-    listLayout: "列表",
+    cardsLayout: "卡片视图",
+    listLayout: "列表视图",
     /** The first tab of the market: every plugin, whatever the grouping. */
     tabAll: "全部",
     /** The sort select: its accessible name and its options. */

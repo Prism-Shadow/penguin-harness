@@ -3335,10 +3335,10 @@ export const en: Strings = {
     showAllResults: "Show all results",
     /** A plugin the market's curation selects: the carousel's eyebrow and a card's tag. */
     selected: "Selected",
-    /** The selected carousel's accessible name. */
+    /** The cards / list switch: its name, and each icon button's name and hover words. */
     layoutLabel: "Plugin layout",
-    cardsLayout: "Cards",
-    listLayout: "List",
+    cardsLayout: "Card view",
+    listLayout: "List view",
     /** The first tab of the market: every plugin, whatever the grouping. */
     tabAll: "All",
     /** The sort select: its accessible name and its options. */

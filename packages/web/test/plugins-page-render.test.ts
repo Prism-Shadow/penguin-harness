@@ -302,8 +302,9 @@ describe("the market’s versioned actions", () => {
     expect(buttonWords(ready).slice(-2)).toEqual(["Installed on 1 Agent", "Quick start"]);
     expect(ready).toContain(en.plugins.quickStartHint);
     expect(ready).toContain('class="showcase-card-version">v0.2.13</span>');
+    // Another Agent has it: the count alone, never Install beside it; the demo waits.
     const other = card(libraryRow, false, { ...current, installed, usage, currentAgentId: "bob" });
-    expect(buttonWords(other).slice(-2)).toEqual(["Install Installed on 1 Agent", "Quick start"]);
+    expect(buttonWords(other).slice(-2)).toEqual(["Installed on 1 Agent", "Quick start"]);
     expect(other).toContain(en.plugins.quickStartAfterInstall);
   });
   it("distinguishes a running server plugin from a shipped or downloaded package", () => {
@@ -316,7 +317,7 @@ describe("the market’s versioned actions", () => {
       expect(buttonWords(card(libraryRow, true, props)).at(-2)).toBe("Install");
       const usage = { usedBy: ["alice", "bob"], behind: [], lastSeen: [] };
       expect(buttonWords(card(libraryRow, true, { ...props, usage })).at(-2)).toBe(
-        "Install Installed on 2 Agents",
+        "Installed on 2 Agents",
       );
     }
   });

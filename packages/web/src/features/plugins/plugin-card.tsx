@@ -764,8 +764,13 @@ export function PluginCard(props: PluginCardProps) {
     const agentPackage = plugin !== undefined && agentInstallable(plugin);
     const updateAgent = currentId !== undefined && behind.includes(currentId);
     const download = !agentPackage && mod?.state === "none" && !local?.libraryOnly;
-    const count = usage?.usedBy.length ?? 0;
-    const agentInstalls = count > 0 ? S.plugins.marketAgentInstalls(count) : undefined;
+    // How many Agents carry it, across the Project: the install action's one state. Installed
+    // anywhere, it is that count, which opens "manage installs", where the Agents still without
+    // it (the current one too) are one click away; installed nowhere, it is Install. The action
+    // is one line and names one state, never Install beside a count. Until this server has said
+    // what its own Agents hold, it is Install, held: a count of the machines' Agents alone is one
+    // the first answer would overturn.
+    const count = props.pending === true ? 0 : (usage?.usedBy.length ?? 0);
     const serverInstalled = mod?.state === "active" || mod?.state === "pending";
     const badgeVersion = local?.version ?? version;
     const installLabel = () => {
@@ -773,15 +778,12 @@ export function PluginCard(props: PluginCardProps) {
       // The badge keeps the local version. Name the destination only when it differs.
       if (downloadUpdate && release !== undefined) return S.plugins.updatePackageTo(release);
       if (updateAgent) return S.skills.updateAction;
-      if (agentPackage) return onAgent && agentInstalls ? agentInstalls : S.skills.install;
+      if (agentPackage) return count > 0 ? S.plugins.marketAgentInstalls(count) : S.skills.install;
       if (serverInstalled) return S.plugins.marketServerInstalled;
       if (mod && mod.state !== "none" && !agentPackage) return S.plugins.status[status];
       return S.skills.install;
     };
     const action = installLabel();
-    const note = [agentInstalls, serverInstalled ? S.plugins.marketServerInstalled : undefined]
-      .filter((label) => label && label !== action)
-      .join(" · ");
     const needAgent =
       !props.canQuickStart || (currentId !== undefined && props.unknown?.has(currentId));
     return (
@@ -807,7 +809,6 @@ export function PluginCard(props: PluginCardProps) {
           onOpen={() => setDetailOpen(true)}
           install={{
             label: action,
-            note,
             disabled:
               props.pending === true ||
               props.busy ||
@@ -818,7 +819,7 @@ export function PluginCard(props: PluginCardProps) {
                 props.onModuleApply(true, mod?.shipped ? undefined : release);
               else if (agentPackage) {
                 if (updateAgent) setPendingUpdate([currentId!]);
-                else if (currentId === undefined || onAgent || needAgent) setInstallOpen(true);
+                else if (currentId === undefined || count > 0 || needAgent) setInstallOpen(true);
                 else if (installNeedsConfirm(plugin, installed.get(currentId)))
                   setPendingStdio(currentId);
                 else void props.onToggleInstall(currentId, plugin, true);
