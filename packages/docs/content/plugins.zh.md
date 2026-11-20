@@ -11,6 +11,20 @@ description: PenguinHarness 的插件是什么、插件包遵循的格式与校�
 
 这些都是插件，同一份格式覆盖所有情况。不同的是包的内容装上后落在哪里：它投给 `PluginLibraryModule` 的贡献——Skill、钩子、MCP Server、Workbench、卡片——装上后进 Agent 的 Agent State，只带这些的包不需要代码入口（`goal` 插件是完整示例）；默认导出里列出的服务端模块——例如沙盒后端——装上后进服务端的模块树。一个包可以两者都有。
 
+## 应用窗口中的页面
+
+服务端模块经 `WebModule.pages` 为 Web App 贡献页面。以 iframe 渲染（`renderer: { iframe: { src } }`，`src` 由模块自己的路由提供）、带 `title` 与 `app: { order }` 的页面是系统 Agent 的系统应用：它的图块在应用中心，点开后与 Agent 的应用一样在应用中心的窗口中运行——最小化后继续运行，全屏以无窗口外框的整页绘制同一个文档，关闭即结束。
+
+- **地址**：窗口为 `/apps?app=system_agent/<页面键>`。页面自己的位置记在 `at`，即应用内的路径与查询串（URL 编码）。iframe 的 `src` 以片段（`#/<路径>?<查询串>`）带上初始位置。不带 `at` 的地址（例如点图块）让运行中的窗口回到页面当前所在的位置。
+- **旧地址**：页面的 `path` 及其下的每个地址都打开窗口，并替换历史记录中的当前项：`/reports/r1?tab=a` 即 `/apps?app=system_agent/reports&at=%2Fr1%3Ftab%3Da`。
+- **消息**（`postMessage`，同源）：
+  - `{ type: "penguin:location", at }` 双向。页面在内部每次换位置都发它，宿主替换 `at` 而不新增历史记录，所以页面应以 `history.replaceState` 而非 `pushState` 换位置；宿主一侧的地址改变时（后退、前进、粘贴地址），宿主向页面发同样的消息，页面不重载即前往该处。
+  - `{ type: "penguin:navigate", to }` 请宿主前往 `to`，须是本应用不在 `/api/` 下的路径，例如 `/chat/<sessionId>`；窗口随之最小化并继续运行。
+  - 宿主只接受来自自己窗口中那个 iframe 的消息；页面也应只接受来自 `window.parent` 的消息。
+- **上下文**：iframe 的根元素带 `lang`（`zh-CN` 或 `en`）与 `data-project-id`，界面语言或当前 Project 改变时随即更新；它们与宿主写进每个工作台页面的主题并列。iframe 自己不绘制底色。
+
+不带 `app` 的贡献 iframe 页面在它的 `path` 上以整页打开，iframe 的规则相同。安全模式不绘制任何服务端贡献，这样的应用因此不出现。
+
 ## 校验格式
 
 没有哪一步靠「跑一遍插件包」来判断它是什么：表说了算。两处检查读这张表和它周围的包，读到的是同一份生成的文件，所以结论一致：

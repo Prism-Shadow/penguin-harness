@@ -11,6 +11,20 @@ A plugin package is an npm package whose `package.json` carries npm's own fields
 
 All of these are plugins, and one format covers them all. What differs is where a package's contents land when installed: its contributions to `PluginLibraryModule` — Skills, hooks, MCP servers, workbenches, a card — land in an agent's Agent State, and a package carrying only those needs no code entry point (`goal` is the worked example); the server modules its default export lists — a sandbox backend, for example — land in the server's module tree. One package can carry both.
 
+## A page in the App Center's window
+
+A server module contributes Web App pages through `WebModule.pages`. A page drawn by an iframe (`renderer: { iframe: { src } }`, with `src` served by the module's own route) that carries a `title` and `app: { order }` is a system app of the system Agent. Its tile sits in the App Center, and it opens in the App Center's window like an agent's app: minimize keeps it running, full screen draws the same document with no window around it, and Close ends it.
+
+- **Address.** The window is `/apps?app=system_agent/<page key>`. The page keeps its own location in `at`: the path and query inside the app, URL-encoded. The frame's `src` carries the starting location as its fragment (`#/<path>?<query>`). An address with no `at`, such as the tile, brings a running window back where its page is.
+- **Old addresses.** The page's `path`, and every address under it, open the window and replace the history entry: `/reports/r1?tab=a` becomes `/apps?app=system_agent/reports&at=%2Fr1%3Ftab%3Da`.
+- **Messages** (`postMessage`, same origin):
+  - `{ type: "penguin:location", at }` goes both ways. The page posts it whenever it moves inside itself, and the host replaces `at` without adding a history entry, so the page should move with `history.replaceState` rather than `pushState`. The host posts it when its own address moves (Back, Forward, a pasted address), and the page goes there without reloading.
+  - `{ type: "penguin:navigate", to }` asks the host to go to `to`, a path of this app outside `/api/`, such as `/chat/<sessionId>`. The window is minimized and keeps running.
+  - The host takes a message only from its window's own frame. A page should take one only from `window.parent`.
+- **Context.** The frame's root element carries `lang` (`zh-CN` or `en`) and `data-project-id`, updated when the interface language or the current Project changes. They sit beside the theme the host writes into every workbench page. The frame paints no background of its own.
+
+A contributed iframe page without `app` opens as a page at its `path`, framed the same way. Safe mode draws no server contribution, so the app is absent there.
+
 ## Checking the format
 
 Nothing loads a plugin package to find out what it is: the table says it. Two checks read that table and the package around it, and they agree because they read the same generated file.

@@ -32,8 +32,9 @@ const OrgProposalsPage = () => null;
  *   company-mode proposals page is drawn by the proposals page, inside company mode and from
  *   the root alike.
  * - The shell receives company's provider and the update badges' owner for the signed-in
- *   session, the five layers in their mount order, and the user event handlers of company, the
- *   built-in browser and schedules in their dispatch order.
+ *   session, the five layers beside the columns in their mount order, the App Center's windows
+ *   over the page area, and the user event handlers of company, the built-in browser and
+ *   schedules in their dispatch order.
  * - The sidebar receives the Project switcher and the session list for development mode,
  *   company's mode with its switcher, channels, roadmaps and desks, the to-do dots and the
  *   balance on their anchors, and company's unread count on the contributed proposals page's row
@@ -89,6 +90,7 @@ import { builtinBrowserUserEvents } from "../src/features/builtin-browser/browse
 import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
 import { SettingsLayer } from "../src/features/settings/settings-layer";
 import { DockScope } from "../src/features/dock/dock-scope";
+import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
 import { PinnedBalanceBadge } from "../src/features/models/group-balance";
 import { ProjectSwitcher } from "../src/features/projects/project-switcher";
 import {
@@ -204,11 +206,12 @@ describe("the booted page table", () => {
     expect(pages.find((p) => p.path === "/org/*")?.Component).toBe(OrgRoutes);
   });
 
-  it("mounts the terminal and the workflow app pages outside the shell", () => {
+  it("mounts the terminal, the workflow app pages and a system app's full page outside the shell", () => {
     expect(pages.filter((p) => p.frame === "bare").map((p) => p.path)).toEqual([
       "/terminal",
       "/app/:projectId/:agentId/:workbenchId",
       "/app/:projectId/:agentId/:workbenchId/:tabKey",
+      "/app/:projectId/system_agent/:appKey",
     ]);
   });
 
@@ -330,13 +333,19 @@ describe("the booted shell slots", () => {
     expect(new Set(codes).size).toBe(2);
   });
 
-  it("mounts the five layers in their order, the dock's scope last", () => {
-    expect(codeByOrder(layers)).toEqual([
+  it("mounts five layers beside the columns in their order, the dock's scope last", () => {
+    expect(codeByOrder(layers.filter((layer) => layer.data.area !== "page"))).toEqual([
       TerminalDockRuntime,
       ShortcutRuntime,
       SettingsLayer,
       BuiltinBrowserLayer,
       DockScope,
+    ]);
+  });
+
+  it("mounts the App Center's windows over the page area, so they outlive its page", () => {
+    expect(codeByOrder(layers.filter((layer) => layer.data.area === "page"))).toEqual([
+      AppCenterWindows,
     ]);
   });
 
