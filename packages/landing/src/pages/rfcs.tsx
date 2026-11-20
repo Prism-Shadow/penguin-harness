@@ -10,7 +10,7 @@ import { buildRfcIndex } from "../lib/rfcs";
 import type { RfcEntry, RfcStatus } from "../lib/rfcs";
 import { S } from "../lib/strings";
 
-const documents = import.meta.glob("../../../rfcs/*.md", {
+const documents = import.meta.glob("../../../../rfcs/*.md", {
   query: "?raw",
   import: "default",
   eager: true,
