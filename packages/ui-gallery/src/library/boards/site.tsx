@@ -325,7 +325,7 @@ export function SiteBoard() {
             onChange={setLayout}
             labels={{ group: sc.layoutLabel, cards: sc.cardView, list: sc.listView }}
           />
-          <ShowcaseGrid layout={layout}>
+          <ShowcaseGrid layout={layout} data-testid="site-market-grid">
             <CoverCard
               href="#"
               onOpen={stay}
