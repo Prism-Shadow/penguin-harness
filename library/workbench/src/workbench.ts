@@ -49,6 +49,13 @@ export interface WorkbenchInfo {
    * predates the switches, which the Web reads as "no switch to show".
    */
   enabled?: boolean;
+  /**
+   * Whether this installation is listed in its Agent's sidebar: false while a
+   * `.hidden-from-sidebar` marker sits in its folder. The marker belongs to the installation, so
+   * every member of the Project sees the same list. Absent from a server that predates the
+   * setting, which the Web reads as "no switch to show".
+   */
+  showInSidebar?: boolean;
 }
 
 /** How the Web App draws a contributed tab: a page of the workbench, or a renderer it carries. */

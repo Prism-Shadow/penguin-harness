@@ -1257,6 +1257,8 @@ export const en: Strings = {
     /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
     showInAppCenterHint:
       "When on, this workbench appears as an app on the App Center page: every member of the Project sees its icon there and opens it with one click, without starting a chat first. Turning it off only takes the shortcut off the App Center; the workbench, its data and its versions are untouched. Flipping the switch rewrites penguin.appCenter.show in the workbench's package.json and is recorded as a version.",
+    /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
+    showInSidebar: "Show in the sidebar",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "Open",
     /** The row's "⋯" button, which holds its other actions. */
