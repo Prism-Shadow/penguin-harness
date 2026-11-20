@@ -46,11 +46,15 @@ import {
   ConfirmModal,
   EntityCard,
   EntityCardAction,
+  GlyphIcon,
+  ICON_SIZE,
   ICONS,
   Modal,
   Pill,
   Skeleton,
 } from "@prismshadow/penguin-ui";
+import type { InstallStage } from "../../api/endpoints";
+import { toneInk } from "../../lib/tone";
 import * as api from "../../api/endpoints";
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
@@ -172,11 +176,26 @@ export interface PluginCardProps {
   busy: boolean;
   /** The install under way is a channel download: bytes received so far, the total when known. */
   progress?: { received: number; total: number | null } | null;
+  /** The step the install under way has reached, as its stream says (api/endpoints.ts). */
+  stage?: InstallStage | null;
   /** Another row's is: one at a time, so this one is held rather than queued. */
   blocked: boolean;
+  /** The last server install of this row failed: why, said under the card with what to do next. */
+  failure?: string | null;
+  onDismissFailure?: () => void;
+  /** The failure's next steps: the Plugin Sources settings, and the zip import. */
+  onOpenSources?: () => void;
+  onImportFile?: () => void;
+  /** Uninstalls it from the server (admin; the page confirms first, naming the Agents that lose it). */
+  onServerUninstall?: () => void;
+  /**
+   * An Install in the Agent dialog of a plugin that is not on the server yet: the page installs it
+   * on the server first (an admin) or asks an admin to (a member), then on the Agent.
+   */
+  onInstallBeforeServer?: (key: string) => Promise<void>;
+  /** The Agent dialog's row whose install-before-server is running, and the words it shows. */
+  agentBusy?: { key: string; label: string } | null;
   onQuickStart: (plugin: PluginItem) => void;
-  /** Deletes a package an admin installed on the server (the card has asked first). */
-  onDeletePlugin: ((plugin: PluginItem) => Promise<void>) | null;
   /** `key` names an install target (see {@link InstallTarget}). */
   onToggleInstall: (key: string, plugin: PluginItem, on: boolean) => Promise<boolean>;
   onUpdateOutdated: (name: string, keys: string[]) => Promise<void>;
@@ -202,9 +221,6 @@ export function PluginCard(props: PluginCardProps) {
   // Agent pending an uninstall confirmation (null = none): uninstalling deletes the installed
   // files, local edits included.
   const [pendingUninstall, setPendingUninstall] = useState<string | null>(null);
-  // Delete-from-server waiting for its confirmation, and running.
-  const [pendingDelete, setPendingDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   // Agent pending the stdio confirm (null = none): installing runs a command on this server.
   const [pendingStdio, setPendingStdio] = useState<string | null>(null);
   // Agent whose Set up form is open (null = none).
@@ -239,6 +255,17 @@ export function PluginCard(props: PluginCardProps) {
     setPendingUpdate(null);
   };
 
+  // Where the package stands on this server, by kind (05 「插件库」 「安装模型」): built in (the build
+  // ships it — never uninstalled from the server), on the server (an admin put it there, or a
+  // Project lists its module), or not here yet.
+  const builtIn =
+    row.module?.shipped === true || (plugin !== undefined && plugin.source !== "installed");
+  const onServer =
+    !builtIn &&
+    (plugin?.source === "installed" || (row.module !== undefined && row.module.state !== "none"));
+  /** Not on the server yet, and the build's offline archive says it carries Agent content. */
+  const preServerAgent =
+    plugin === undefined && !builtIn && row.module?.entry?.offline?.library === true;
   const archiveUrl = pluginArchiveUrl(row);
   const exportPlugin = async (url: string) => {
     try {
@@ -299,51 +326,60 @@ export function PluginCard(props: PluginCardProps) {
         />,
       );
     }
-    if (plugin !== undefined) {
+    // The two installs, each with its own control (05 「插件库」 「安装模型」): the Agent's — any
+    // member, for a plugin with Agent content, even before it is on the server when the build
+    // carries it offline — and the server's.
+    if (plugin !== undefined || preServerAgent) {
       out.push(
         <EntityCardAction
-          key="manage"
-          glyph={INSTALL_ICON}
-          label={S.skills.manageInstall}
-          name={`${S.skills.manageInstall} ${plugin.name}`}
+          key="agent"
+          glyph={ICONS.robot}
+          label={S.plugins.installModel.installAgent}
+          name={`${S.plugins.installModel.installAgent} ${row.name}`}
           words={words}
+          disabled={!onServer && props.blocked}
           onClick={() => setInstallOpen(true)}
         />,
       );
     }
     const mod = row.module;
-    if (mod !== undefined && props.isAdmin) {
-      // Not listed: Install. Listed: Remove — and, in the all-machines view of a module listed
-      // for some machines only, Install too, which asks every machine to run it.
-      const verbs: boolean[] = [
-        ...(mod.state === "none" ? [true] : []),
-        ...(mod.state !== "none" ? [false] : []),
-      ];
-      for (const install of verbs) {
-        // A channel download reports itself: the percent while the total is known, a pulse
-        // before that. npm's own fetches stay "installing" — npm reports no progress here.
-        const total = props.progress?.total ?? null;
-        const percent =
-          props.progress != null && total !== null && total > 0
-            ? Math.floor((props.progress.received / total) * 100)
-            : null;
+    const words_ = S.plugins.installModel;
+    // A download reports itself: the percent while the total is known, a pulse before that;
+    // the other steps say which one the stream reached. npm's own fetches stay "installing".
+    const total = props.progress?.total ?? null;
+    const percent =
+      props.progress != null && total !== null && total > 0
+        ? Math.floor((props.progress.received / total) * 100)
+        : null;
+    const stepWords =
+      props.progress != null
+        ? S.plugins.downloading(percent)
+        : props.stage?.stage === "loading"
+          ? words_.loading
+          : props.stage?.stage === "installing" && props.stage.source === "offline"
+            ? words_.fromOffline
+            : words_.installing;
+    /** A member's server control: held, saying why. */
+    const memberHold = props.isAdmin ? {} : { disabled: true, hint: words_.adminOnly };
+    if (builtIn) {
+      // Shipped with the build: never uninstalled from the server. A server module of it is
+      // enabled or disabled for this Project (its listing), by an admin.
+      if (mod !== undefined && props.isAdmin) {
+        const install = mod.state === "none";
         const label = install
           ? props.busy
-            ? props.progress != null
-              ? S.plugins.downloading(percent)
-              : S.plugins.installing
-            : S.plugins.install
-          : S.plugins.uninstall;
-        // A removal another Project still needs says why it cannot run, as its marked hint.
+            ? stepWords
+            : words_.enableModule
+          : words_.disableModule;
         const blockedWhy = install ? undefined : mod.removeBlocked;
         out.push(
           <EntityCardAction
             key={install ? "module-install" : "module-remove"}
-            glyph={install ? INSTALL_ICON : ICONS.trash}
+            glyph={ICONS.server}
             label={label}
             name={`${label} ${row.name}`}
             {...(blockedWhy !== undefined ? { hint: blockedWhy } : {})}
-            words={words}
+            words={props.busy ? "always" : words}
             busy={props.busy}
             aria-describedby={
               !install && mod.shared === true ? `${sharedId}-tag ${sharedId}-hint` : undefined
@@ -353,24 +389,35 @@ export function PluginCard(props: PluginCardProps) {
           />,
         );
       }
-    }
-    // An admin's package of Skills or hooks leaves the server from its dialog; a server module's
-    // Remove above does the same for one with modules.
-    if (
-      where === "footer" &&
-      props.isAdmin &&
-      plugin?.source === "installed" &&
-      props.onDeletePlugin !== null
-    ) {
+    } else if (!onServer && mod !== undefined) {
+      const label = props.busy ? stepWords : words_.installServer;
       out.push(
         <EntityCardAction
-          key="delete"
+          key="server-install"
+          glyph={ICONS.server}
+          label={label}
+          name={`${label} ${row.name}`}
+          // Under way, the step is said in words at every width: a spinner alone says nothing.
+          words={props.busy ? "always" : words}
+          busy={props.busy}
+          disabled={props.blocked}
+          onClick={() => props.onModuleApply(true)}
+          {...memberHold}
+        />,
+      );
+    } else if (onServer) {
+      const label = words_.uninstallServer;
+      out.push(
+        <EntityCardAction
+          key="server-uninstall"
           glyph={ICONS.trash}
-          label={S.plugins.deletePlugin}
-          name={`${S.plugins.deletePlugin} ${plugin.package}`}
+          label={label}
+          name={`${label} ${row.name}`}
           words={words}
-          disabled={deleting}
-          onClick={() => setPendingDelete(true)}
+          busy={props.busy}
+          disabled={props.blocked || props.onServerUninstall === undefined}
+          onClick={() => props.onServerUninstall?.()}
+          {...memberHold}
         />,
       );
     }
@@ -414,14 +461,25 @@ export function PluginCard(props: PluginCardProps) {
       title={rowTitle(row, locale)}
       titleHint={row.module?.specifier ?? row.name}
       description={description}
-      {...(row.module?.unsatisfied !== undefined
+      {...(props.failure != null
         ? {
-            note:
-              row.module.state === "disabled"
-                ? row.module.unsatisfied
-                : S.plugins.runsPartly(row.module.unsatisfied),
+            note: (
+              <InstallFailureNote
+                reason={props.failure}
+                onOpenSources={props.onOpenSources}
+                onImportFile={props.isAdmin ? props.onImportFile : undefined}
+                onDismiss={props.onDismissFailure}
+              />
+            ),
           }
-        : {})}
+        : row.module?.unsatisfied !== undefined
+          ? {
+              note:
+                row.module.state === "disabled"
+                  ? row.module.unsatisfied
+                  : S.plugins.runsPartly(row.module.unsatisfied),
+            }
+          : {})}
       meta={[
         version !== undefined && (
           <span key="version" className="shrink-0 font-mono">
@@ -465,41 +523,81 @@ export function PluginCard(props: PluginCardProps) {
           onClose={() => setDetailOpen(false)}
         />
       )}
-      {plugin !== undefined && installOpen && (
+      {installOpen && (plugin !== undefined || preServerAgent) && (
         <Modal
           open
-          title={S.skills.manageInstallTitle(title)}
+          title={S.plugins.installModel.installAgentTitle(title)}
           onClose={() => setInstallOpen(false)}
         >
+          {/* How the Agent installs relate to the server, said before any click. */}
+          {!builtIn && (
+            <p className="mb-2 text-xs text-fg-muted">
+              {onServer
+                ? S.plugins.installModel.onServer
+                : props.isAdmin
+                  ? S.plugins.installModel.notOnServerAdmin
+                  : S.plugins.installModel.notOnServerMember}
+            </p>
+          )}
           <div className="space-y-1">
             {targets.length === 0 && (
               <p className="py-1.5 text-xs text-gray-400">{S.common.loading}</p>
             )}
-            {targets.map((t) => (
-              <InstallRow
-                key={t.key}
-                agentId={t.agent.agentId}
-                name={agentDisplayName(t.agent)}
-                avatarSrc={avatarSrc(t.agent.agentId, t.machine?.machineId ?? null)}
-                machine={t.machine?.label ?? null}
-                installed={usage?.usedBy.includes(t.key) ?? false}
-                outdated={behind.includes(t.key)}
-                mcp={pluginMcpState(plugin, installed.get(t.key))}
-                held={heldRow(t, props.unknown, props.failed)}
-                isOwner={props.isOwner}
-                onToggle={(on) => {
-                  // Install runs directly, unless it brings a stdio server: that runs a command on
-                  // the Agent's server, so it confirms first. Uninstall deletes the installed
-                  // files, so it confirms too.
-                  if (!on) setPendingUninstall(t.key);
-                  else if (installNeedsConfirm(plugin, installed.get(t.key))) {
-                    setPendingStdio(t.key);
-                  } else void props.onToggleInstall(t.key, plugin, true);
-                }}
-                onUpdate={() => setPendingUpdate([t.key])}
-                onSetUp={() => setSetUpAgent(t.key)}
-              />
-            ))}
+            {plugin === undefined &&
+              targets.map((t) => (
+                <InstallRow
+                  key={t.key}
+                  agentId={t.agent.agentId}
+                  name={agentDisplayName(t.agent)}
+                  avatarSrc={avatarSrc(t.agent.agentId, t.machine?.machineId ?? null)}
+                  machine={t.machine?.label ?? null}
+                  installed={false}
+                  outdated={false}
+                  mcp={null}
+                  // Before the server has it, only this server's Agents can take it: a machine's
+                  // Agent installs from that machine's own server.
+                  held={
+                    t.machine !== null
+                      ? { reason: S.plugins.installModel.machineFirst, off: true, busy: false }
+                      : props.agentBusy != null && props.agentBusy.key !== t.key
+                        ? { reason: props.agentBusy.label, off: false, busy: false }
+                        : null
+                  }
+                  {...(props.agentBusy?.key === t.key ? { busyLabel: props.agentBusy.label } : {})}
+                  isOwner={props.isOwner}
+                  onToggle={(on) => {
+                    if (on) void props.onInstallBeforeServer?.(t.key);
+                  }}
+                  onUpdate={() => {}}
+                  onSetUp={() => {}}
+                />
+              ))}
+            {plugin !== undefined &&
+              targets.map((t) => (
+                <InstallRow
+                  key={t.key}
+                  agentId={t.agent.agentId}
+                  name={agentDisplayName(t.agent)}
+                  avatarSrc={avatarSrc(t.agent.agentId, t.machine?.machineId ?? null)}
+                  machine={t.machine?.label ?? null}
+                  installed={usage?.usedBy.includes(t.key) ?? false}
+                  outdated={behind.includes(t.key)}
+                  mcp={pluginMcpState(plugin, installed.get(t.key))}
+                  held={heldRow(t, props.unknown, props.failed)}
+                  isOwner={props.isOwner}
+                  onToggle={(on) => {
+                    // Install runs directly, unless it brings a stdio server: that runs a command on
+                    // the Agent's server, so it confirms first. Uninstall deletes the installed
+                    // files, so it confirms too.
+                    if (!on) setPendingUninstall(t.key);
+                    else if (installNeedsConfirm(plugin, installed.get(t.key))) {
+                      setPendingStdio(t.key);
+                    } else void props.onToggleInstall(t.key, plugin, true);
+                  }}
+                  onUpdate={() => setPendingUpdate([t.key])}
+                  onSetUp={() => setSetUpAgent(t.key)}
+                />
+              ))}
           </div>
         </Modal>
       )}
@@ -535,28 +633,6 @@ export function PluginCard(props: PluginCardProps) {
               <StdioInstallBody plugin={plugin} machine={machineOf(pendingUpdate)} />
             )}
           </div>
-        </ConfirmModal>
-      )}
-      {plugin !== undefined && pendingDelete && props.onDeletePlugin !== null && (
-        <ConfirmModal
-          open
-          title={S.plugins.deleteConfirmTitle(plugin.package)}
-          confirmLabel={S.plugins.deletePlugin}
-          cancelLabel={S.common.cancel}
-          busy={deleting}
-          onClose={() => setPendingDelete(false)}
-          onConfirm={() => {
-            setDeleting(true);
-            void props.onDeletePlugin!(plugin).finally(() => {
-              setDeleting(false);
-              setPendingDelete(false);
-              setDetailOpen(false);
-            });
-          }}
-        >
-          <p className="text-sm text-gray-600 dark:text-gray-300">
-            {S.plugins.deleteConfirmBody(plugin.package)}
-          </p>
         </ConfirmModal>
       )}
       {plugin !== undefined && pendingUninstall !== null && (
@@ -676,6 +752,7 @@ export function InstallRow({
   outdated,
   mcp,
   held = null,
+  busyLabel,
   isOwner,
   onToggle,
   onUpdate,
@@ -693,6 +770,8 @@ export function InstallRow({
   mcp: { missingKeys: string[]; signIn: boolean } | null;
   /** Why the row cannot act right now; null when it can. */
   held?: RowHold | null;
+  /** The row's install is running: its button holds, saying which step it is at. */
+  busyLabel?: string;
   isOwner: boolean;
   onToggle: (on: boolean) => void;
   onUpdate: () => void;
@@ -783,9 +862,10 @@ export function InstallRow({
           aria-label={`${S.skills.install} ${who}`}
           onClick={() => onToggle(true)}
           {...hold}
-          {...(held?.busy === true ? { "aria-busy": true } : {})}
+          {...(busyLabel !== undefined ? { disabled: true } : {})}
+          {...(held?.busy === true || busyLabel !== undefined ? { "aria-busy": true } : {})}
         >
-          {S.skills.install}
+          {busyLabel ?? S.skills.install}
         </Button>
       )}
     </div>
@@ -793,17 +873,75 @@ export function InstallRow({
 }
 
 /**
- * The body of a server module's install or removal confirm: what it does to the server, naming
- * the plugin (the compact confirm card renders no title), then — in small, quiet type, not a
- * warning box — what it costs the runs in progress.
+ * Why a server install failed, under the card that was clicked, with what to do next instead of a
+ * dead end (05 「插件库」 「安装从不卡住」): another registry or mirror in Plugin Sources, or a zip
+ * import (an admin's). Attention ink with its mark, never red text; it stays until dismissed or
+ * the next attempt.
  */
-export function ModuleApplyBody({ install, name }: { install: boolean; name: string }) {
+export function InstallFailureNote({
+  reason,
+  onOpenSources,
+  onImportFile,
+  onDismiss,
+}: {
+  reason: string;
+  onOpenSources?: (() => void) | undefined;
+  onImportFile?: (() => void) | undefined;
+  onDismiss?: (() => void) | undefined;
+}) {
+  const words = S.plugins.installModel;
+  return (
+    <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1" data-testid="install-failure">
+      <span className={`inline-flex min-w-0 items-baseline gap-1 ${toneInk.attention}`}>
+        <GlyphIcon
+          d={ICONS.triangleAlert}
+          size={ICON_SIZE.inlineGlyph}
+          className="shrink-0 self-center"
+        />
+        <span className="min-w-0 break-words">{words.failedNote(reason)}</span>
+      </span>
+      {onOpenSources !== undefined && (
+        <Button variant="link" size="sm" onClick={onOpenSources}>
+          {words.sourcesSettings}
+        </Button>
+      )}
+      {onImportFile !== undefined && (
+        <Button variant="link" size="sm" onClick={onImportFile}>
+          {words.importFromFile}
+        </Button>
+      )}
+      {onDismiss !== undefined && (
+        <Button variant="link" size="sm" onClick={onDismiss}>
+          {words.dismiss}
+        </Button>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The body of a server install's confirm, or of a built-in module's enable or disable: what it
+ * does, naming the plugin (the compact confirm card renders no title), then — in small, quiet
+ * type, not a warning box — what it costs the runs in progress.
+ */
+export function ModuleApplyBody({
+  mode,
+  name,
+}: {
+  mode: "install" | "enable" | "disable";
+  name: string;
+}) {
+  const words = S.plugins.installModel;
   return (
     <div className="space-y-2 text-sm">
       <p>
-        {install ? S.plugins.applyConfirmInstallBody(name) : S.plugins.applyConfirmRemoveBody(name)}
+        {mode === "install"
+          ? S.plugins.applyConfirmInstallBody(name)
+          : mode === "enable"
+            ? words.enableBody(name)
+            : words.disableBody(name)}
       </p>
-      <p className="text-xs text-fg-muted">{S.plugins.applyConfirmWarning(install)}</p>
+      <p className="text-xs text-fg-muted">{S.plugins.applyConfirmWarning(mode !== "disable")}</p>
     </div>
   );
 }

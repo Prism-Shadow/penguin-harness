@@ -3173,7 +3173,7 @@ export const en: Strings = {
   plugins: {
     builtin: "built in",
     builtinHint:
-      "Ships with this build: installing it downloads nothing, and it loads only once you install it.",
+      "Ships with this build and cannot be uninstalled from the server: enabling it downloads nothing, and it loads only once you enable it.",
     installedRestart: "restart to load",
     stateFailed: "failed to load",
     /** A module plugin the running build cannot run at all: it needs a module or interface this build lacks. */
@@ -3203,6 +3203,65 @@ export const en: Strings = {
      * (`said`): enabled, asked of the admin, stopped by the admin, failed to start, or — on a
      * machine whose build does not ship it — to be installed for that machine.
      */
+    /**
+     * The two installs of a plugin and their controls (05 「插件库」 「安装模型」): the server's
+     * and an Agent's, with what each does said before the click.
+     */
+    installModel: {
+      enableTitle: (name: string) => `Enable the server module of ${name}`,
+      enableBody: (name: string) =>
+        `The server module of ${name} will be enabled for this Project. It ships with the build: nothing is downloaded.`,
+      disableTitle: (name: string) => `Disable the server module of ${name}`,
+      disableBody: (name: string) =>
+        `The server module of ${name} will be disabled for this Project; while another Project enables it, it keeps running.`,
+      installAgentTitle: (name: string) => `Install ${name} on Agents`,
+      machineFirst: "Install it on that machine first, from its Plugins page",
+      installServer: "Install on server",
+      uninstallServer: "Uninstall from server",
+      enableModule: "Enable server module",
+      disableModule: "Disable server module",
+      adminOnly: "Only an admin can change the server",
+      installAgent: "Install on Agent",
+      notOnServerAdmin:
+        "It is not on the server yet: installing it on the first Agent installs it on the server first, shared by every Project.",
+      notOnServerMember:
+        "It is not on the server yet: Install asks an admin to install it on the server; once it is there, install it on the Agent.",
+      onServer: "Uninstalling it from the server uninstalls it from every Agent.",
+      installing: "Installing…",
+      fromOffline: "Installing from the offline archive…",
+      loading: "Loading module…",
+      uninstallTitle: (name: string) => `Uninstall ${name} from the server`,
+      uninstallBody: (name: string, agents: number) =>
+        agents === 0
+          ? `${name} will be uninstalled from the server. No Agent has it.`
+          : `${name} will be uninstalled from the server and from ${agents} ${agents === 1 ? "Agent" : "Agents"}.`,
+      uninstallCopies:
+        "Their copies are deleted, local edits included, and so are the workbenches' data and history.",
+      holdersLoading: "Looking for the Agents that have it…",
+      moreAgents: (n: number) => `${n} more ${n === 1 ? "Agent" : "Agents"}`,
+      sharedRefused: (projects: string) =>
+        `The plugin table of ${projects} lists it for every machine: remove it from the Project's config first, then uninstall it from the server.`,
+      uninstalledToast: (name: string, agents: number) =>
+        agents === 0
+          ? `Uninstalled ${name} from the server`
+          : `Uninstalled ${name} from the server and from ${agents} ${agents === 1 ? "Agent" : "Agents"}`,
+      uninstalledPartly: (name: string, parts: string) =>
+        `Uninstalled ${name} from the server; these parts could not be deleted: ${parts}`,
+      machineKeepsCopies: (machine: string) =>
+        `${machine} runs an older server: its Agents keep their copies.`,
+      failedNote: (reason: string) => `Install failed: ${reason}`,
+      sourcesSettings: "Plugin sources",
+      importFromFile: "Import from file",
+      dismiss: "Dismiss",
+      requestedToast: (name: string) =>
+        `Asked an admin to install ${name} on the server; once it is there, install it on the Agent`,
+      offlineToast: (name: string) =>
+        `Installed ${name} from the offline archive the build carries`,
+      loadingToast: (name: string) => `Installed ${name}; its server module is still starting`,
+      requestNotOnServer:
+        "Not on the server yet: install it on the server from the Plugins page, then enable it.",
+      openPlugins: "Open Plugins",
+    },
     moduleInstall: {
       enabled: (said: string) => `${said}. Its server module is enabled.`,
       requested: (said: string) =>
@@ -3331,7 +3390,8 @@ export const en: Strings = {
     /** In place of the description of a package that carries none. */
     noDescription: "No description",
     /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
-    libraryBuiltinHint: "Ships with this build; install it to an agent to use it there.",
+    libraryBuiltinHint:
+      "Ships with this build and cannot be uninstalled from the server; install it on an agent to use it there.",
     pluginCount: (n: number): string => (n === 1 ? "1 plugin" : `${n} plugins`),
     searchPlaceholder: "Search plugins",
     /** Sections of the plugin detail dialog: the description (and the package's README), then the files it installs. */

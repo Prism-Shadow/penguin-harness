@@ -3390,7 +3390,7 @@ export const zh = {
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on Agents as a whole. */
   plugins: {
     builtin: "内置",
-    builtinHint: "随本次构建自带：安装它不需要下载，但仍需你点安装才会加载。",
+    builtinHint: "随本次构建自带，不能从服务端卸载：启用它不需要下载，但仍需你点启用才会加载。",
     installedRestart: "待重启",
     stateFailed: "加载失败",
     /** A module plugin the running build cannot run at all: it needs a module or interface this build lacks. */
@@ -3414,6 +3414,68 @@ export const zh = {
      * (`said`): enabled, asked of the admin, stopped by the admin, failed to start, or — on a
      * machine whose build does not ship it — to be installed for that machine.
      */
+    /**
+     * The two installs of a plugin and their controls (05 「插件库」 「安装模型」): the server's
+     * and an Agent's, with what each does said before the click.
+     */
+    installModel: {
+      enableTitle: (name: string) => `启用 ${name} 的服务端模块`,
+      enableBody: (name: string) =>
+        `将为本 Project 启用 ${name} 的服务端模块。它随构建自带，不需要下载。`,
+      disableTitle: (name: string) => `停用 ${name} 的服务端模块`,
+      disableBody: (name: string) =>
+        `将为本 Project 停用 ${name} 的服务端模块；仍有其他 Project 启用它时，它继续运行。`,
+      installAgentTitle: (name: string) => `把 ${name} 安装到 Agent`,
+      machineFirst: "先在插件页为这台机器安装它",
+      installServer: "安装到服务端",
+      uninstallServer: "从服务端卸载",
+      enableModule: "启用服务端模块",
+      disableModule: "停用服务端模块",
+      /** A member's server control: held, saying why. */
+      adminOnly: "只有管理员能改动服务端",
+      installAgent: "安装到 Agent",
+      /** The Agent dialog's first line: how it relates to the server. */
+      notOnServerAdmin: "它还不在服务端：装到第一个 Agent 时会先安装到服务端，所有 Project 共用。",
+      notOnServerMember:
+        "它还不在服务端：点「安装」会请管理员把它安装到服务端，装好后你再把它装到 Agent。",
+      onServer: "从服务端卸载会同时从所有 Agent 卸载。",
+      /** Progress on the clicked control. */
+      installing: "安装中…",
+      fromOffline: "从离线包安装…",
+      loading: "加载模块…",
+      /** The server-uninstall confirm. */
+      uninstallTitle: (name: string) => `从服务端卸载 ${name}`,
+      uninstallBody: (name: string, agents: number) =>
+        agents === 0
+          ? `将从服务端卸载 ${name}。没有 Agent 装有它。`
+          : `将从服务端卸载 ${name}，并同时从 ${agents} 个 Agent 卸载。`,
+      uninstallCopies: "这些 Agent 上的副本会被删除，包括本地改动，以及 Workbench 的数据与历史。",
+      holdersLoading: "正在查找装有它的 Agent…",
+      moreAgents: (n: number) => `还有 ${n} 个 Agent`,
+      sharedRefused: (projects: string) =>
+        `${projects} 的插件表为所有机器列入了它：先在 Project 配置中移除，再从服务端卸载。`,
+      uninstalledToast: (name: string, agents: number) =>
+        agents === 0
+          ? `已从服务端卸载 ${name}`
+          : `已从服务端卸载 ${name}，并从 ${agents} 个 Agent 卸载`,
+      uninstalledPartly: (name: string, parts: string) =>
+        `已从服务端卸载 ${name}；以下部件未能删除：${parts}`,
+      /** A machine too old for the cascade: its Agents keep their copies. */
+      machineKeepsCopies: (machine: string) =>
+        `${machine} 的服务端版本较旧，那里的 Agent 保留了各自的副本。`,
+      /** The failure note under the card, with what to do next. */
+      failedNote: (reason: string) => `安装失败：${reason}`,
+      sourcesSettings: "插件源设置",
+      importFromFile: "从文件导入",
+      dismiss: "关闭",
+      /** What an install from the Agent dialog did, when the plugin was not on the server. */
+      requestedToast: (name: string) => `已请管理员把 ${name} 安装到服务端，装好后即可装到 Agent`,
+      offlineToast: (name: string) => `已从随构建携带的离线包安装 ${name}`,
+      loadingToast: (name: string) => `已安装 ${name}，它的服务端模块仍在启动`,
+      /** The administrator's request row for a package not on the server yet. */
+      requestNotOnServer: "尚未安装到服务端：先在插件页把它安装到服务端，再启用。",
+      openPlugins: "打开插件页",
+    },
     moduleInstall: {
       enabled: (said: string) => `${said}。它的服务端模块已启用。`,
       requested: (said: string) => `${said}。它的服务端模块需要管理员启用，已发出请求。`,
@@ -3528,7 +3590,7 @@ export const zh = {
     /** In place of the description of a package that carries none. */
     noDescription: "暂无描述",
     /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
-    libraryBuiltinHint: "随本次构建自带；安装到 Agent 即可在那里使用。",
+    libraryBuiltinHint: "随本次构建自带，不能从服务端卸载；安装到 Agent 即可在那里使用。",
     /** Plugin count in the group header (small text to the right of the category name). */
     pluginCount: (n: number): string => `${n} 个插件`,
     /** Search box of the create dialog's plugin picker. */

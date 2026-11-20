@@ -66,10 +66,10 @@ async function openInstalls(machines: FakeMachine[]) {
   await mountAgentApp(h(PluginsPage), { route: "/plugins", at: "/plugins" });
   await waitFor(() =>
     [...document.querySelectorAll("button")].some(
-      (b) => b.getAttribute("aria-label") === `${en.skills.manageInstall} charts`,
+      (b) => b.getAttribute("aria-label") === `${en.plugins.installModel.installAgent} charts`,
     ),
   );
-  await click(button(`${en.skills.manageInstall} charts`));
+  await click(button(`${en.plugins.installModel.installAgent} charts`));
   return server;
 }
 

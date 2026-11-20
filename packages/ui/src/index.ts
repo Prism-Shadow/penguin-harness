@@ -358,6 +358,8 @@ export * from "./components/data/meta-line/meta-line";
 export * from "./components/feedback/status-mark/status-mark";
 export * from "./components/actions/glyph-action/glyph-action";
 export * from "./components/data/fact-row/fact-row";
+// What a destructive action reaches, in its confirm: named up to a limit, the rest counted.
+export * from "./components/data/impact-list/impact-list";
 export * from "./components/navigation/sub-page-bar/sub-page-bar";
 
 // Dates and times: the date, time, date-and-time and date-range fields, pickers after iOS's that
