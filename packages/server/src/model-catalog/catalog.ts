@@ -250,14 +250,19 @@ export interface ModelProviderInfo {
 
 /** A single built-in model's catalog entry (`modelId` is the upstream id; paired with `provider` it forms the catalog's unique key). */
 export interface ModelCatalogEntry {
-  /** Dedicated tool model, selected through project capabilities. */
-  capability?: "search" | "fetch" | "image" | "video" | "tts" | "stt";
   modelId: string;
   displayName: string;
   /** Provider id (one of MODEL_PROVIDERS). */
   provider: string;
   contextWindow?: number;
   pricing?: ModelPricing;
+  /**
+   * A model for the tools plugins offer (an image, speech or web model, bound through a Project's
+   * `[tools]` table), not for conversation: the chat model pickers never offer it (ModelInfo's
+   * `chatEligible`). It has no context window, and its `pricing` prices the buckets MMSP folds the
+   * provider's billing units into (MMSP-RFC-0003 §3.2), so a bucket may be 0.
+   */
+  tool?: true;
   /**
    * Fraction off the list price the seller is currently running (0.5 = 50% off), applied to
    * every bucket. `pricing` stays the LIST price whatever promotion is live, so a lapsed
@@ -346,6 +351,7 @@ const QWEN_TOKEN_PLAN_BASE_URL =
 const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
+const TOKENDANCE_DEEPSEEK_BASE_URL = "https://tokendance.space/gateway/deepseek";
 /** TokenDance's Anthropic Messages base: the SDK appends /v1/messages itself, so no /v1 here. */
 const TOKENDANCE_MESSAGES_BASE_URL = "https://tokendance.space/gateway";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
@@ -3709,304 +3715,200 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "ant-messages",
     baseUrl: "https://api.atria-asi.ai",
   },
-  // Official MMSP 0.5.7–0.5.10 release models and their supported project tool endpoints.
-  {
-    provider: "google",
-    modelId: "gemini-4-hydrogen",
-    displayName: "Gemini 4 Hydrogen",
-    contextWindow: 1048576,
-    pricing: usd(0.075, 1.5, 7.5),
-    supportsVision: true,
-  },
-  {
-    provider: "google",
-    modelId: "gemini-4-carbon",
-    displayName: "Gemini 4 Carbon",
-    contextWindow: 1048576,
-    pricing: usd(0.2, 4, 20),
-    supportsVision: true,
-  },
+  // --- Tool models: what plugins' tools bind (images, video, speech, transcription, web search
+  // and page fetching), kept out of the chat pickers (`tool`). Each is priced as MMSP's registry
+  // prices it (0.5.10, read 2026-11-19): MMSP folds the provider's billing units — an image's
+  // output tokens, a search, a second of audio, a character — into its token buckets
+  // (MMSP-RFC-0003 §3.2), so the bill is the reported usage times these rates. A row MMSP prices
+  // nowhere is unpriced; the thinking of a video model bills at its output rate here, MMSP's
+  // separate thoughts rate having no bucket in this catalog yet.
   {
     provider: "google",
     modelId: "gemini-3.1-flash-lite-image",
     displayName: "Gemini 3.1 Flash Lite Image",
-    capability: "image",
     supportsVision: true,
+    tool: true,
   },
   {
     provider: "google",
     modelId: "gemini-3.1-flash-image",
     displayName: "Gemini 3.1 Flash Image",
-    capability: "image",
     supportsVision: true,
+    tool: true,
   },
   {
     provider: "google",
     modelId: "gemini-3.8-flash-tts",
     displayName: "Gemini 3.8 Flash TTS",
-    capability: "tts",
     supportsVision: false,
+    tool: true,
   },
   {
     provider: "google",
     modelId: "gemini-3.8-flash-lite-tts",
     displayName: "Gemini 3.8 Flash Lite TTS",
-    capability: "tts",
     supportsVision: false,
+    tool: true,
   },
   {
+    // $1.50 input and $12 per 1M video output tokens (5,792 a second at 720p); thinking bills $9.
     provider: "google",
     modelId: "gemini-omni-1.2-flash",
     displayName: "Gemini Omni 1.2 Flash",
-    capability: "video",
-    contextWindow: 131072,
+    pricing: usd(1.5, 1.5, 12),
     supportsVision: true,
+    tool: true,
   },
   {
-    provider: "openai",
-    modelId: "gpt-6.2-astra",
-    displayName: "GPT-6.2 Astra",
-    contextWindow: 1050000,
-    pricing: usd(0.4, 10, 40),
-    supportsVision: true,
-  },
-  {
-    provider: "openai",
-    modelId: "gpt-6.2-sol",
-    displayName: "GPT-6.2 Sol",
-    contextWindow: 1050000,
-    pricing: usd(0.1, 2.5, 10),
-    supportsVision: true,
-  },
-  {
-    provider: "openai",
-    modelId: "gpt-6.1-terra",
-    displayName: "GPT-6.1 Terra",
-    contextWindow: 1050000,
-    pricing: usd(0.05, 1.25, 5),
-    supportsVision: true,
-  },
-  {
+    // $5 text input, $1.25 cached, $30 per 1M image output tokens.
     provider: "openai",
     modelId: "gpt-image-2.5-flare",
     displayName: "GPT Image 2.5 Flare",
-    capability: "image",
+    pricing: usd(1.25, 5, 30),
     supportsVision: false,
+    tool: true,
   },
   {
+    // ¥0.005 a search that returns results, counted as 1,000 prompt tokens.
     provider: "deepseek",
     modelId: "deepseek-search",
     displayName: "DeepSeek Search",
-    capability: "search",
+    pricing: cny(5, 5, 0),
     supportsVision: false,
+    tool: true,
   },
   {
+    // ¥0.005 a fetch that returns Markdown, counted as 1,000 prompt tokens.
     provider: "deepseek",
     modelId: "deepseek-fetch",
     displayName: "DeepSeek Fetch",
-    capability: "fetch",
+    pricing: cny(5, 5, 0),
     supportsVision: false,
+    tool: true,
   },
   {
+    // ¥3 per 10,000 billed characters (a Han character counts two): the characters are the prompt tokens.
     provider: "deepseek",
     modelId: "deepseek-tts",
     displayName: "DeepSeek TTS",
-    capability: "tts",
+    pricing: cny(300, 300, 0),
     supportsVision: false,
+    tool: true,
   },
   {
+    // ¥0.78 per hour of audio, by the second: the seconds are the prompt tokens.
     provider: "deepseek",
     modelId: "deepseek-asr",
     displayName: "DeepSeek ASR",
-    capability: "stt",
+    pricing: cny(216.666667, 216.666667, 0),
     supportsVision: false,
+    tool: true,
   },
   {
+    // $0.05 per 1M of the tokens Jina bills (Search on s.jina.ai).
     provider: "jina",
     modelId: "jina-search",
     displayName: "Jina Search",
-    capability: "search",
+    pricing: usd(0.05, 0.05, 0),
     supportsVision: false,
+    tool: true,
   },
   {
+    // $0.05 per 1M of the tokens Jina bills (Reader on r.jina.ai).
     provider: "jina",
     modelId: "jina-fetch",
     displayName: "Jina Reader",
-    capability: "fetch",
+    pricing: usd(0.05, 0.05, 0),
     supportsVision: false,
+    tool: true,
   },
   {
+    // $0.02 an image (1K, 4,096 output tokens), four times that for 2K.
     provider: "openrouter",
     modelId: "bytedance-seed/seedream-5-5",
-    displayName: "Seedream 5 5",
-    capability: "image",
+    displayName: "Seedream 5.5",
+    pricing: usd(0, 0, 4.790419),
     supportsVision: false,
+    tool: true,
     clientType: "openai-image",
     baseUrl: "https://openrouter.ai/api/v1",
   },
   {
+    // $0.018 an image whatever its size.
     provider: "openrouter",
     modelId: "bytedance-seed/seedream-5-0-flash",
-    displayName: "Seedream 5 0 Flash",
-    capability: "image",
+    displayName: "Seedream 5.0 Flash",
+    pricing: usd(0, 0, 4.311377),
     supportsVision: false,
+    tool: true,
     clientType: "openai-image",
     baseUrl: "https://openrouter.ai/api/v1",
   },
   {
+    // $10 per 1M bytes of input text.
     provider: "openrouter",
     modelId: "fish-audio/drama-3",
     displayName: "Fish Audio Drama 3",
-    capability: "tts",
+    pricing: usd(10, 10, 0),
     supportsVision: false,
+    tool: true,
     clientType: "openai-speech",
     baseUrl: "https://openrouter.ai/api/v1",
   },
   {
+    // $0.0001 a second of audio: the seconds, rounded up, are the prompt tokens.
     provider: "openrouter",
     modelId: "fish-audio/transcribe-1",
     displayName: "Fish Audio Transcribe 1",
-    capability: "stt",
+    pricing: usd(100, 100, 0),
     supportsVision: false,
+    tool: true,
     clientType: "openai-transcription",
     baseUrl: "https://openrouter.ai/api/v1",
   },
   {
-    provider: "openrouter",
-    modelId: "google/gemini-4-carbon",
-    displayName: "Gemini 4 Carbon",
-    contextWindow: 1048576,
-    pricing: usd(0.2, 4, 20),
-    supportsVision: true,
-    clientType: "openai-responses",
-    baseUrl: "https://openrouter.ai/api/v1",
-  },
-  {
-    provider: "openrouter",
-    modelId: "google/gemini-4-hydrogen",
-    displayName: "Gemini 4 Hydrogen",
-    contextWindow: 1048576,
-    pricing: usd(0.075, 1.5, 7.5),
-    supportsVision: true,
-    clientType: "openai-responses",
-    baseUrl: "https://openrouter.ai/api/v1",
-  },
-  {
-    provider: "openrouter",
-    modelId: "inclusionai/ling-3.2-flash:free",
-    displayName: "Ling 3.2 Flash (free)",
-    contextWindow: 1048576,
-    pricing: usd(0, 0, 0),
-    supportsVision: true,
-    clientType: "openai-responses",
-    baseUrl: "https://openrouter.ai/api/v1",
-  },
-  {
-    provider: "openrouter",
-    modelId: "openai/gpt-6.2-astra",
-    displayName: "GPT-6.2 Astra",
-    contextWindow: 1050000,
-    pricing: usd(0.4, 10, 40),
-    supportsVision: true,
-    clientType: "openai-responses",
-    baseUrl: "https://openrouter.ai/api/v1",
-  },
-  {
-    provider: "openrouter",
-    modelId: "openai/gpt-6.2-sol",
-    displayName: "GPT-6.2 Sol",
-    contextWindow: 1050000,
-    pricing: usd(0.1, 2.5, 10),
-    supportsVision: true,
-    clientType: "openai-responses",
-    baseUrl: "https://openrouter.ai/api/v1",
-  },
-  {
-    provider: "openrouter",
-    modelId: "openai/gpt-6.1-terra",
-    displayName: "GPT-6.1 Terra",
-    contextWindow: 1050000,
-    pricing: usd(0.05, 1.25, 5),
-    supportsVision: true,
-    clientType: "openai-responses",
-    baseUrl: "https://openrouter.ai/api/v1",
-  },
-  {
-    provider: "openrouter",
-    modelId: "qwen/qwen4-max",
-    displayName: "Qwen4 Max",
-    contextWindow: 1000000,
-    pricing: usd(0.075, 1.5, 4.5),
-    supportsVision: true,
-    clientType: "openai-responses",
-    baseUrl: "https://openrouter.ai/api/v1",
-  },
-  {
-    provider: "openrouter",
-    modelId: "tencent/hy4-flash",
-    displayName: "Hy4 Flash",
-    contextWindow: 1048576,
-    pricing: usd(0.003, 0.07, 0.281),
-    supportsVision: true,
-    clientType: "openai-responses",
-    baseUrl: "https://openrouter.ai/api/v1",
-  },
-  {
-    provider: "tokendance",
-    modelId: "qwen4-max",
-    displayName: "Qwen4 Max",
-    contextWindow: 1000000,
-    pricing: usd(0.071429, 1.428571, 4.285714),
-    supportsVision: true,
-    clientType: "openai-responses",
-    baseUrl: "https://tokendance.space/gateway/v1",
-  },
-  {
+    // ¥0.005 a search that returns results, counted as 1,000 prompt tokens.
     provider: "tokendance",
     modelId: "deepseek-search",
     displayName: "DeepSeek Search",
-    capability: "search",
+    pricing: cny(5, 5, 0),
     supportsVision: false,
+    tool: true,
     clientType: "deepseek-webtool",
-    baseUrl: "https://tokendance.space/gateway/deepseek",
+    baseUrl: TOKENDANCE_DEEPSEEK_BASE_URL,
   },
   {
+    // ¥0.005 a fetch that returns Markdown, counted as 1,000 prompt tokens.
     provider: "tokendance",
     modelId: "deepseek-fetch",
     displayName: "DeepSeek Fetch",
-    capability: "fetch",
+    pricing: cny(5, 5, 0),
     supportsVision: false,
+    tool: true,
     clientType: "deepseek-webtool",
-    baseUrl: "https://tokendance.space/gateway/deepseek",
+    baseUrl: TOKENDANCE_DEEPSEEK_BASE_URL,
   },
   {
+    // ¥0.00011 a second of audio (TokenDance's items rate, MMSP 0.5.12's registry, read 2026-11-19).
+    provider: "tokendance",
+    modelId: "deepseek-asr",
+    displayName: "DeepSeek ASR",
+    pricing: cny(110, 110, 0),
+    supportsVision: false,
+    tool: true,
+    clientType: "deepseek-transcription",
+    baseUrl: TOKENDANCE_DEEPSEEK_BASE_URL,
+  },
+  {
+    // ¥0.22 an image, over the 16,384 output tokens of its default 2048x2048.
     provider: "tokendance",
     modelId: "seedream-5.0-lite",
     displayName: "Seedream 5.0 Lite",
-    capability: "image",
+    pricing: cny(0, 0, 13.427734),
     supportsVision: false,
+    tool: true,
     clientType: "openai-image",
     baseUrl: "https://tokendance.space/gateway/v1",
-  },
-  {
-    provider: "qwen-pay-as-you-go",
-    modelId: "qwen4-max",
-    displayName: "Qwen4 Max",
-    contextWindow: 1000000,
-    pricing: usd(0.071429, 1.428571, 4.285714),
-    supportsVision: true,
-    clientType: "openai-chat",
-    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-  },
-  {
-    provider: "qwen-token-plan",
-    modelId: "qwen4-max",
-    displayName: "Qwen4 Max",
-    contextWindow: 1000000,
-    pricing: usd(0.071429, 1.428571, 4.285714),
-    supportsVision: true,
-    clientType: "openai-chat",
-    baseUrl: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
   },
 ];
 

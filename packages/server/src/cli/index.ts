@@ -15,6 +15,7 @@ export * from "./i18n.js";
 export * from "./approval.js";
 export * from "./agents.js";
 export * from "./auth-session.js";
+export * from "./console-input.js";
 export {
   type Connection,
   connectionLabel,
@@ -35,7 +36,6 @@ export * from "./server-session.js";
 export * from "./company.js";
 export * from "./browser.js";
 export * from "./browser-output.js";
-export { registerModelToolTransport } from "./model-tool-client.js";
 export * from "./commands/browser.js";
 export * from "./commands/agent.js";
 export * from "./commands/cost.js";
@@ -92,6 +92,8 @@ export type {
   OrganizationDetail,
   OrganizationsResponse,
   PluginCliCommandInfo,
+  PluginCliCommandInputFile,
+  PluginCliCommandOutputFile,
   PluginCliCommandRunRequest,
   PluginCliCommandRunResponse,
   PluginCliCommandsResponse,

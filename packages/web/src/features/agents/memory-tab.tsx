@@ -32,7 +32,15 @@
  * with unsaved edits asks first. A reload of the tab's data moves what they are compared with
  * and keeps what is being typed.
  */
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type RefObject,
+  type ReactNode,
+} from "react";
 
 import type {
   MemoryFileInfo,
@@ -79,7 +87,6 @@ import {
 
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { formatBytes, formatRelativeDate } from "../../lib/format";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
@@ -96,6 +103,7 @@ import {
 } from "./memory-transfer";
 import { toastApiError } from "../../lib/toast-api-error";
 import { downloadArchive } from "../../lib/archive-download";
+import { failureNode } from "../../lib/failure";
 
 /** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
 const DESKTOP_QUERY = "(min-width: 1024px)";
@@ -194,7 +202,7 @@ export function MemoryTab({
   const [memoryDir, setMemoryDir] = useState("");
   const [groups, setGroups] = useState<ScopeGroup[] | null>(null);
   // Tab-level error is the initial load failure only; actions report via toast.
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [switchBusy, setSwitchBusy] = useState(false);
   const collapseKey =
     userId && projectId ? collapsedStoreKey(userId, projectId, agentKey(machineId, agentId)) : null;
@@ -297,7 +305,7 @@ export function MemoryTab({
         ),
       );
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an Agent's memory could not be loaded" }));
     }
   }, [projectId, agentId, machineId, collapseKey]);
 

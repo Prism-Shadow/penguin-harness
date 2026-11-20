@@ -4,10 +4,10 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
-import { toastError, toastSuccess } from "@prismshadow/penguin-ui";
+import { toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
+import { toastApiError } from "../../../lib/toast-api-error";
 import { configuredCompactionLimit } from "../../../lib/context";
 import { humanizeTokens } from "../../../lib/format";
 
@@ -105,7 +105,7 @@ export function useAgentConfig(
           selectedAgentMachine,
         );
       } catch (e) {
-        toastError(apiErrorText(e));
+        toastApiError(e);
         throw e;
       }
       setCompactionLimit(configuredCompactionLimit(maxContextLength));

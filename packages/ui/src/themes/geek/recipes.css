@@ -270,12 +270,13 @@
 }
 /* Folds: the leading mark is the fold — ▸ closed, ▾ open, in the row's state ink (subtle when
    settled, danger on error). While the row runs its spinner stays; the
-   chevrons go. */
+   chevrons go. A settled row that needs attention (`data-attention`) keeps its own mark after
+   the fold: its tooltip is the only place that says why. */
 :root[data-theme="geek"] .ui-activity :is([data-slot="toggle"], [data-slot="toggle-end"]) {
   display: none;
 }
 :root[data-theme="geek"]
-  .ui-activity:has([data-slot="toggle"]):not([data-state="running"])
+  .ui-activity:has([data-slot="toggle"]):not([data-state="running"], [data-attention])
   [data-slot="mark"]
   > * {
   display: none;
@@ -472,4 +473,34 @@
 }
 :root[data-theme="geek"] .ui-avatar > [data-variant="pixel"] {
   display: inline;
+}
+
+/* Page change (--ui-page-exit, played by theme.css's view transition): the destination lies
+   beneath the outgoing page, and clearing the solid part of the outgoing page's mask lets
+   four-pixel squares of different coverage (art/page-pixels.svg) dissolve in place. */
+@keyframes ui-page-dissolve {
+  from,
+  to {
+    z-index: var(--layer-raised);
+    mix-blend-mode: normal;
+    background-color: var(--ui-shell-main-bg);
+    mask-image: linear-gradient(currentColor 0 0), url("./art/page-pixels.svg");
+    mask-size:
+      100% 100%,
+      16px 16px;
+  }
+  from {
+    color: black;
+    opacity: 1;
+  }
+  30% {
+    opacity: 0.96;
+  }
+  55% {
+    color: transparent;
+  }
+  to {
+    color: transparent;
+    opacity: 0;
+  }
 }

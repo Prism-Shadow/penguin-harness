@@ -18,7 +18,8 @@
  *   `client_type = "openai"` reads as openai-chat; a file written before MMSP's names and group
  *   connections is rewritten once on its first read into the shape a new Project is written in
  *   (OpenCode Go's and Penguin Go's included), then served from the cache; a model the catalog
- *   dropped still loads and stays usable; one model_id under two providers is two rows.
+ *   dropped still loads and stays usable; one model_id under two providers is two rows; a
+ *   catalog tool model (image, speech, web) reads as not chat-eligible.
  * - PUT persists a custom model's vision flag and max_tokens (clearing and rejecting bad values),
  *   falls back to OPENAI_API_KEY for the openai protocol, requires a provider, refuses an id a
  *   vendor group cannot route when the request introduces it (unless its group names a
@@ -97,7 +98,7 @@ import type {
   SessionCreateResponse,
   UsageResponse,
 } from "../src/api/types.js";
-import { UsageRepo } from "../src/db/repos/usage.js";
+import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
@@ -971,6 +972,13 @@ describe("models preset & catalog enrichment", () => {
     const again = (await (await api.get(url())).json()) as ModelsResponse;
     expect(again.models.map(pairKey).sort()).toEqual(body.models.map(pairKey).sort());
   });
+
+  it("a preset tool model (image, speech, web) reads as not chat-eligible, and every chat preset as eligible", async () => {
+    const body = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(body, "deepseek", "deepseek-search").chatEligible).toBe(false);
+    expect(pick(body, "openai", "gpt-image-2.5-flare").chatEligible).toBe(false);
+    expect(pick(body, "deepseek", "deepseek-v4-pro").chatEligible).toBeUndefined();
+  });
 });
 
 describe("default_project presets", () => {
@@ -1042,12 +1050,13 @@ describe("default_project presets", () => {
       baseUrl: "https://or-proxy.example/v1",
       apiKeyMasked: "sk-o…0018",
     });
-    // Its models follow its endpoint and carry the protocol it lacks; other groups get theirs.
+    // Its models follow its endpoint and carry the protocol it lacks (a row that pins its own, an
+    // image or speech model on OpenRouter, keeps it); other groups get theirs.
     for (const row of body.models.filter((m) => m.provider === "openrouter")) {
       expect(row.credential, row.modelId).toBeUndefined();
       expect(row.clientType, row.modelId).toBe(
-        MODEL_CATALOG.find((m) => m.provider === "openrouter" && m.modelId === row.modelId)!
-          .clientType,
+        catalogEntryFor("openrouter", row.modelId)?.clientType ??
+          catalogGroupConnection("openrouter")!.client_type,
       );
       expect(row.effective.baseUrl, row.modelId).toBe("https://or-proxy.example/v1");
     }

@@ -1,9 +1,9 @@
 # Multimodal tools
 
-Use the Project’s models for writing text, understanding images, web search, fetching a page, generating an image or video, transcribing audio, and reading text aloud. New Projects have **Multimodal tools** enabled. Manage it on the Project’s Plugins page. Select a provider and model for each action you need in the Project’s model settings. Run `penguin tools list --json` to inspect the available actions and bindings.
+Use the Project's models to write text, read an image, search the web, fetch a page, generate an image, a video or speech, and transcribe a recording. An Agent runs them with `penguin tools …` through the plugin's `multimodal-tools` Skill; the Web App uses the same tools for dictation and reading replies aloud.
 
-The plugin also carries Image Studio and the `multimodal-tools` Skill. New default Agents receive it at creation. Add the plugin from the Agent’s plugin library to use its instructions on another Agent. Its [command examples](skills/multimodal-tools/SKILL.md) cover saving a generated file to the workspace, following or cancelling a run, and finding its Session’s outputs.
+Each tool runs on the model bound to it in the Project's model settings (image understanding uses the Project's vision model). Run `penguin tools list` to see which tools have a model. Every request is recorded with the Project's usage and priced like a chat request, under the Session that made it.
 
-Turning off the server plugin for a Project removes its eight actions there. The Project keeps its selected models, Sessions, previous outputs and usage records for when you turn it back on.
+What a tool generates belongs to its Session: it is saved in the Project directory, and removed once the Session is gone. Local files reach a tool only through `--image` and `--audio`, and generated files are saved into `--out`. The Skill's [command examples](skills/multimodal-tools/SKILL.md) cover following, saving and cancelling a long run.
 
-Open **Image Studio** from the App Center or the Agent's tabs. Describe an image, select its aspect ratio and choose **Generate image**. Each brief opens a Session of this Agent. The Agent runs the project's image CLI, and the studio fetches the actual image artifacts registered to that Session. Reopen a brief from History to view or download its images. A cancelled or failed run remains in History with its status.
+Installing the plugin on an Agent also brings its server module, which serves the commands and the Web App's routes.

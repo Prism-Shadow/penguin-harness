@@ -622,11 +622,11 @@ Each `ModelEntry` has these fields:
 | `pricing` | Three price buckets (unit `usd_per_mtok`, USD per million tokens): `cache_read` / `cache_write` / `output` |
 | `api_key` / `base_url` | The model's own key and endpoint, both optional; when blank, the model uses its group's (the key only when it reaches the model's endpoint), then its client's environment variables: the key with no base URL or the client's default endpoint, the base URL with none (see [Set API keys](#set-api-keys)) |
 
-The file also holds `default_model`, optionally `tools.i2t`, the proxy vision model, and each group's settings in `[providers.<group>]` (see [Group settings](#group-settings) and [Project config](/configuration#project-config)). A new Project's file already holds the settings of every built-in group the catalog gives an endpoint or protocol. File shape (illustrative):
+The file also holds `default_model`, optionally `vision_model`, the proxy vision model, and each group's settings in `[providers.<group>]` (see [Group settings](#group-settings) and [Project config](/configuration#project-config)). A new Project's file already holds the settings of every built-in group the catalog gives an endpoint or protocol. File shape (illustrative):
 
 ```toml
 default_model = { provider = "deepseek", model_id = "deepseek-flash" }
-tools.i2t = { provider = "google", model_id = "gemini-3.1-pro-preview" }
+vision_model = { provider = "google", model_id = "gemini-3.1-pro-preview" }
 
 [providers.tokendance]
 base_url = "https://tokendance.space/gateway/v1"

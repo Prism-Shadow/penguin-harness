@@ -33,7 +33,7 @@ const A = "default_agent";
 const BASE = `/api/projects/${P}/agents/${A}/workbenches`;
 const HOST_KEY = "@prismshadow/penguin-server#WorkbenchHost";
 const MAIN_KEY = "@prismshadow/penguin-server#WorkbenchMain";
-const RECORD_KEY = "@prismshadow/penguin-server#WorkbenchRecord";
+const RECORD_KEY = "@prismshadow/penguin-library-workbench#WorkbenchRecord";
 
 const PACKAGE = JSON.stringify({
   name: "Follow",
@@ -248,7 +248,9 @@ describe("WorkbenchHost.subscribe", { timeout: 30_000 }, () => {
     const table = JSON.parse(await fs.readFile(tableFile, "utf8")) as IfaceTable;
     expect(table.ifaces[HOST_KEY]!.methods).toHaveProperty("subscribe");
     delete table.ifaces[HOST_KEY]!.methods["subscribe"];
+    expect(table.types).toHaveProperty(RECORD_KEY);
     delete table.types[RECORD_KEY];
+    expect(table.types).not.toHaveProperty(RECORD_KEY);
     await fs.writeFile(tableFile, JSON.stringify(table));
     const typesFile = path.join(dir, ".harness", "plugin.d.ts");
     const types = (await fs.readFile(typesFile, "utf8"))

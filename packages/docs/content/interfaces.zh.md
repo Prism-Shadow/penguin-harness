@@ -409,7 +409,7 @@ interface SubagentHandle {
 
 ```ts
 interface VisionDescriberService {
-  modelId: string | null;          // null when the Project has no tools.i2t — the tool ends with a failed explanation
+  modelId: string | null;          // null when the Project has no vision_model — the tool ends with a failed explanation
   createLLM?: () => LLMInterface;  // one-shot LLM for the vision model (no tools, no system prompt)
 }
 ```

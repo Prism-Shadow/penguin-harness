@@ -4,12 +4,13 @@
  * typed input, and an install in flight holds the dialog open. Examples only fill the source;
  * the folded prompt becomes a new chat draft when requested.
  */
-import { useState, type ChangeEvent } from "react";
+import { useState, type ChangeEvent, type ReactNode } from "react";
 
 import type { PluginInstallOutcome } from "@prismshadow/penguin-server/api";
 import {
   Button,
   ConfirmModal,
+  FailureText,
   FieldLabel,
   HiddenFileInput,
   InfoPopover,
@@ -23,11 +24,12 @@ import {
   useFormDraft,
   useGuardedClose,
   useSaving,
+  type Failure,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
+import { failureOf } from "../../lib/failure";
 import { toneInk } from "../../lib/tone";
 import { AiExamples, PromptFold, useAiBridge } from "../ai-create";
 import {
@@ -86,10 +88,13 @@ export function installedToastText(outcome: PluginInstallOutcome): string {
     : S.plugins.importedToast(outcome.name, outcome.version);
 }
 
-/** What one install from the npm or the link tab came to: installed, or the server's refusal to show. */
+/**
+ * What one install from the npm or the link tab came to: installed, or why not to show — the
+ * server's refusal, or a failure with its report.
+ */
 export type DirectInstallResult =
   | { kind: "installed"; outcome: PluginInstallOutcome | null }
-  | { kind: "refused"; message: string };
+  | { kind: "refused"; failure: Failure };
 
 /**
  * Installs what the npm or the link tab holds through the Project's plugin route. A value that
@@ -106,15 +111,18 @@ export async function installFromTab(
     const res = await api.installPlugin(projectId, specifier);
     return { kind: "installed", outcome: res.installed ?? null };
   } catch (e) {
-    return { kind: "refused", message: apiErrorText(e) };
+    return { kind: "refused", failure: failureOf(e, { what: "a plugin install failed" }) };
   }
 }
 
-/** What one zip upload came to: installed, a question about replacing another version, or a refusal to show. */
+/**
+ * What one zip upload came to: installed, a question about replacing another version, or why not
+ * to show — a refusal, or a failure with its report.
+ */
 export type PluginUploadResult =
   | { kind: "installed"; outcome: PluginInstallOutcome | null }
   | { kind: "replace"; question: ReplaceQuestion }
-  | { kind: "refused"; message: string };
+  | { kind: "refused"; failure: Failure };
 
 /** Posts one zip to the import route and reads the answer (the 409's question from its message). */
 export async function uploadPluginArchive(
@@ -135,7 +143,7 @@ export async function uploadPluginArchive(
         : null;
     return question !== null
       ? { kind: "replace", question }
-      : { kind: "refused", message: apiErrorText(e) };
+      : { kind: "refused", failure: failureOf(e, { what: "a plugin archive install failed" }) };
   }
 }
 
@@ -172,11 +180,11 @@ export function ImportPluginTabs({
   const typed = form.draft;
   const source = form.draft.source;
   const [installing, setInstalling] = useState(false);
-  const [directError, setDirectError] = useState<string | null>(null);
+  const [directError, setDirectError] = useState<ReactNode>(null);
   const [uploading, setUploading] = useState(false);
   // An install or an upload in flight holds the dialog's close until it answers.
   useSaving(installing || uploading, PLUGIN_IMPORT_SCOPE);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<ReactNode>(null);
   // Non-null shows the replace confirm (the upload answered 409 plugin_exists).
   const [replacing, setReplacing] = useState<{
     dataBase64: string;
@@ -193,7 +201,7 @@ export function ImportPluginTabs({
     const result = await installFromTab(projectId, from, typed[from]);
     setInstalling(false);
     if (result?.kind === "installed") onLanded(result.outcome, typed[from].trim());
-    else if (result?.kind === "refused") setDirectError(result.message);
+    else if (result?.kind === "refused") setDirectError(<FailureText failure={result.failure} />);
   };
 
   const upload = async (dataBase64: string, overwrite: boolean, fallbackName: string) => {
@@ -208,7 +216,7 @@ export function ImportPluginTabs({
       setReplacing({ dataBase64, question: result.question });
     } else {
       setReplacing(null);
-      setUploadError(result.message);
+      setUploadError(<FailureText failure={result.failure} />);
     }
   };
 

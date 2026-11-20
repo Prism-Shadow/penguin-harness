@@ -10,6 +10,16 @@
  * Also handles Project create / list / delete, member authorization, and initial
  * Project provisioning at signup.
  */
+import type {
+  ProjectRole,
+  Access,
+  AgentIndex,
+  Members,
+  ProjectConfigStore,
+  ProjectLifecycle,
+  Projects,
+} from "@prismshadow/penguin-library-project";
+import type { Users, UserDraftsStore } from "@prismshadow/penguin-library-auth";
 import fs from "node:fs/promises";
 import {
   DEFAULT_PROJECT_ID,
@@ -18,10 +28,10 @@ import {
   provisionProjectBenchmarks,
   type BuiltinBenchmark,
 } from "@prismshadow/penguin-core";
-import type { MemberInfo, ProjectRole, ProjectSummary } from "../api/types.js";
+import type { MemberInfo, ProjectSummary } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import type { ProjectRow } from "../db/repos/projects.js";
-import type { UserRow } from "../db/repos/users.js";
+import type { ProjectRow } from "@prismshadow/penguin-library-project/repos/projects";
+import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
 import type { SessionManager } from "../runtime/session-manager.js";
 import {
   PROJECT_ID_MAX_LENGTH,
@@ -30,23 +40,12 @@ import {
   SEMANTIC_ID_RULE,
 } from "./ids.js";
 import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
-import { pluginHostFrom } from "../plugin/host.js";
-import type { Config, Hmr, Paths, Reassembly } from "../hmr/capabilities.js";
-import type {
-  Access,
-  AgentIndex,
-  Members,
-  ProjectConfigStore,
-  ProjectLifecycle,
-  Projects,
-} from "../mechanisms/projects.js";
-import type { Users } from "../mechanisms/identity.js";
-import type { Schedules, SessionIndex } from "../mechanisms/sessions.js";
-import type { ErrorLog, UsageStore } from "../mechanisms/observability.js";
-import type { TraceIndex } from "../mechanisms/traces.js";
-import type { OrgCache } from "../mechanisms/organization.js";
-import type { AgentApi } from "../mechanisms/agent-api.js";
-import type { UserDraftsStore } from "../mechanisms/account-data.js";
+import type { Config, Paths } from "../hmr/capabilities.js";
+import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-session";
+import type { ErrorLog, UsageStore } from "@prismshadow/penguin-library-observability";
+import type { TraceIndex } from "@prismshadow/penguin-library-trace";
+import type { OrgCache } from "@prismshadow/penguin-library-organization";
+import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;
@@ -63,8 +62,6 @@ async function dirExists(path: string): Promise<boolean> {
 @Component()
 export class ProjectService implements ProjectLifecycle {
   @Use() private readonly paths!: Paths;
-  @Use() private readonly hmr!: Hmr;
-  @Use() private readonly reassembly!: Reassembly;
   private get root(): string {
     return this.paths.root;
   }
@@ -174,7 +171,6 @@ export class ProjectService implements ProjectLifecycle {
       // with it by the rollback below).
       await this.projectConfig.seedPresetPromotions(projectId);
       await this.provisionProjectDefaults(projectId);
-      await this.loadProjectPlugins(projectId);
     } catch (err) {
       this.projects.delete(projectId);
       await fs
@@ -363,17 +359,6 @@ export class ProjectService implements ProjectLifecycle {
       throw new HttpError(404, "member_not_found", `This Project has no member: ${targetUserId}.`);
     }
     this.members.delete(projectId, targetUserId);
-  }
-
-  /** A new Project can ask for a factory plugin that all earlier Projects had turned off. */
-  private async loadProjectPlugins(projectId: string): Promise<void> {
-    const { all } = await this.projectConfig.getPluginTables(projectId);
-    const host = pluginHostFrom(this.hmr.resources);
-    const loaded = host.entries();
-    const skipped = host.skipped();
-    if (Object.keys(all).some((name) => !loaded.has(name) && !skipped.has(name))) {
-      await this.reassembly.reassemble();
-    }
   }
 
   /**

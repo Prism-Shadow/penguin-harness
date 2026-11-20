@@ -420,7 +420,9 @@ export const en: GalleryStrings = {
       "ui-glyph":
         "an icon each theme draws its own way: line (Primer), duotone line (Frost) or pixel art (Console)",
       "ui-avatar":
-        "an agent's default avatar each theme draws its own way: one small egg-shaped penguin drawn in a thin brown line, on a rounded square (Primer), a circle (Frost, Doodle) or in pixel art (Console)",
+        "an agent's default avatar each theme draws its own way: one small egg-shaped penguin drawn in a thin brown line, on a rounded square (Primer), a circle (Frost), a cookie (Doodle) or in pixel art (Console)",
+      "ui-segmented": "a segmented control: one choice among a few options side by side",
+      "ui-action": "the primary action that heads a navigation list: New chat",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],
@@ -582,7 +584,7 @@ export const en: GalleryStrings = {
       report: {
         title: "Report a problem",
         description:
-          "The Report entry of a serious error: the notice a crashed part of the page shows, an error toast and a could-not-load notice with the entry, and the report dialog.",
+          "The Report entry every failure offers: the notice a crashed part of the page shows, an error toast, an inline failure and a could-not-load notice with the entry, and the report dialog.",
       },
       attachments: {
         title: "Attachments",
@@ -1157,12 +1159,14 @@ export const en: GalleryStrings = {
       legendHitRate: "Cache hit rate",
       legendParts: ["System prompt", "Tool definitions", "Messages", "Tool results"],
       trend: "Cost trend",
-      trendHint: "Fourteen days of cost as a line; hover a day.",
+      trendHint:
+        "Fourteen days of cost as a line; hover a day, or press Tab and step through the days with the arrow keys.",
       tokens: "Token usage",
       tokensHint:
-        "Daily tokens stacked by kind, with the cache-hit-rate curve over them; hover a legend entry to highlight one.",
+        "Daily tokens stacked by kind, with the cache-hit-rate curve over them; the curve breaks on the day with no cache traffic. Hover a legend entry to highlight one.",
       requests: "Requests and success rate",
-      requestsHint: "Daily requests stacked by agent, each with its success-rate line.",
+      requestsHint:
+        "Daily requests stacked by agent, each with its success-rate line. The second agent's line breaks on the days it was idle, and its one day between them is a point.",
       agents: ["docs-expert", "release-notes"],
       activity: "Activity sparkline",
       activityHint:
@@ -1907,7 +1911,9 @@ export const en: GalleryStrings = {
       navHint:
         "The current row takes the solid fill and is the current page; a glyph is decoration beside a label that already says it. A dialog's rail scrolls sideways on a phone.",
       navLabel: "Agent settings",
-      navRail: "A rail: glyph, label and a trailing count; the last row has nowhere to go yet",
+      navRail:
+        "A rail: its primary action first, then glyph, label and a trailing count; the last row has nowhere to go yet",
+      navPrimary: "New chat",
       navDense: "Dense, inside a panel",
       navRows: {
         overview: "Overview",
@@ -2221,14 +2227,23 @@ export const en: GalleryStrings = {
         'A part of the page that crashed while rendering leaves no blank: one line in the shape of "[Aborted]", with Reload and Report. The report holds the error, its stack and the component stack, personal paths taken out.',
       toast: "Error toast",
       toastHint:
-        "Only a serious error (a 500 the server did not name, an exception nobody expected) offers Report on its toast, which then stays longer; an expected error (validation, permission, offline) looks as it always did.",
-      fireSerious: "Serious error",
-      fireExpected: "Expected error",
+        "A failure's toast carries Report and stays longer; a refusal (a failed check, a name taken, no permission) reads as before, without it.",
+      fireSerious: "A failure",
+      fireExpected: "A refusal",
       seriousText: "Internal server error",
       expectedText: "You do not have access to this Project",
       loadFailed: "Could not load",
       loadFailedHint:
-        "The could-not-load notice adds Report beside Retry when the failure is a serious error.",
+        "A could-not-load notice carries Report beside Retry; one that was refused does not.",
+      inline: "Inline failures",
+      inlineHint:
+        "An inline failure in a form or a panel carries Report after its words; an input error does not.",
+      inlineLine: "The machine gpu-box did not answer",
+      inlineNotice: "Could not read the earlier Traces: internal server error",
+      inlineName: "Name",
+      inlineSaveFailed: "Could not save: internal server error",
+      inlineRefused: "That name is already taken",
+      inlineTold: "Failed at the “Connect” step",
       loadTitle: "Could not load the message history",
       retry: "Retry",
       dialog: "Report dialog",

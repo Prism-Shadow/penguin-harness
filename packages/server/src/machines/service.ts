@@ -24,6 +24,7 @@
  * `elsewhere` rather than hidden: adopting it costs a row, while re-installing costs a
  * 30 MB transfer to reach the same place.
  */
+import type { ServerEvent, Access, Projects } from "@prismshadow/penguin-library-project";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -51,7 +52,6 @@ import type {
   MachineSocketFact,
   MachineUseRefusal,
   MachinesCheckoutImage,
-  ServerEvent,
 } from "../api/types.js";
 import { readServerLock } from "../lock.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
@@ -121,7 +121,7 @@ import { machineApi } from "./machine-api.js";
 import type { MachineApi } from "./machine-api.js";
 import { ADOPTED_AT_HEADER } from "../runtime/session-sources.js";
 import { startRemoteServer, stopRemoteServer } from "./server-control.js";
-import type { MachineRow } from "../db/repos/machines.js";
+import type { MachineRow } from "@prismshadow/penguin-library-machine/machine";
 import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
@@ -141,14 +141,13 @@ import type { HandshakeReading } from "./handshake.js";
 import { machineSessionForward } from "./session-forward.js";
 import type { MachineSessionForward } from "./session-forward.js";
 import { HttpError } from "../http/errors.js";
-import type { Access, Projects } from "../mechanisms/projects.js";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { MachinesRepo } from "../db/repos/machines.js";
+import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
 import type { DatabaseSync } from "node:sqlite";
 import type { Channels, Db, Hmr, Paths, ResourceGroups } from "../hmr/capabilities.js";
-import type { Auth, Users } from "../mechanisms/identity.js";
-import type { Traces } from "../mechanisms/traces.js";
+import type { Auth, Users } from "@prismshadow/penguin-library-auth";
+import type { Traces } from "@prismshadow/penguin-library-trace";
 import type { LiveStreams } from "../auth/live-streams.js";
 import { streamRevocation } from "../http/sse.js";
 import type { SseRevocation } from "../http/sse.js";
@@ -198,7 +197,8 @@ function localModelsOf(config: ProjectConfig): LocalModels {
     models: config.models,
     ...(config.providers !== undefined ? { providers: config.providers } : {}),
     ...(config.default_model !== undefined ? { defaultModel: config.default_model } : {}),
-    ...(config.tools?.i2t !== undefined ? { visionModel: config.tools?.i2t } : {}),
+    ...(config.vision_model !== undefined ? { visionModel: config.vision_model } : {}),
+    ...(config.tools !== undefined ? { toolModels: config.tools } : {}),
     ...(config.name !== undefined ? { name: config.name } : {}),
   };
 }
@@ -2992,7 +2992,7 @@ export class MachinesService {
         ref?.provider === entry.provider && ref.model_id === entry.modelId;
       for (const [pointer, ref] of [
         ["Default model", config?.default_model],
-        ["Vision model", config?.tools?.i2t],
+        ["Vision model", config?.vision_model],
       ] as const) {
         if (names(ref)) {
           say(

@@ -1,7 +1,17 @@
 {
   "name": "@penguinharness/multimodal-tools",
   "version": "0.2.18",
-  "description": "Use project models for writing text, understanding images, web search, page retrieval, image and video generation, speech recognition and speech synthesis.",
+  "type": "module",
+  "description": "Generate text, read images, search and fetch the web, generate images, video and speech, and transcribe recordings with the Project's models, through penguin tools.",
+  "keywords": [
+    "penguin-plugin",
+    "skills",
+    "multimodal",
+    "web-search",
+    "image",
+    "video",
+    "speech"
+  ],
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",
@@ -11,6 +21,16 @@
     "type": "git",
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
     "directory": "plugins/multimodal-tools"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
@@ -26,30 +46,17 @@
     "access": "public"
   },
   "scripts": {
-    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup src/index.ts --format esm --target node24 --out-dir dist --clean",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"
   },
   "devDependencies": {
+    "@prismshadow/mmsp": "^0.5.10",
     "@prismshadow/penguin-core": "workspace:*",
-    "vitest": "^4.1.12",
-    "tsup": "^8.3.0"
-  },
-  "keywords": [
-    "penguin-plugin",
-    "skills",
-    "multimodal",
-    "web-search",
-    "image",
-    "video",
-    "speech"
-  ],
-  "type": "module",
-  "main": "./dist/index.js",
-  "exports": {
-    ".": {
-      "import": "./dist/index.js"
-    },
-    "./package.json": "./package.json"
+    "@prismshadow/skills": "workspace:*",
+    "commander": "^13.0.0",
+    "hono": "^4.13.11",
+    "tsup": "^8.3.0",
+    "vitest": "^4.1.12"
   }
 }

@@ -9,8 +9,8 @@
  * - `penguin --help` lists the top-level commands in that order, each described by its
  *   summary in the invocation's language; `penguin server --help` lists the commands whose
  *   keys sit under `server`, and keeps the options `server` registers itself.
- * - Commands with local grammar keep the host summary. Project model tools obtain their help
- *   from the current Project, including which operations its plugins contribute.
+ * - Every command's own `--help` opens with its summary: no code half replaces the
+ *   description the host wrote from the entry.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cliCommandKeyFault } from "@prismshadow/penguin-core/cli";
@@ -37,7 +37,6 @@ const KEYS = [
   "server.status",
   "server.stop",
   "session",
-  "tools",
   "update",
   "version",
 ];
@@ -135,43 +134,13 @@ describe("help lists the collected commands", () => {
     expect(out).toContain("--host <host>");
   });
 
-  it("each command with local grammar opens --help with its summary", async () => {
+  it("every command's own --help opens with its summary", async () => {
     process.env.PENGUIN_LANG = "en";
-    for (const command of (await bootBuiltinCommands()).filter((c) => c.key !== "tools")) {
+    for (const command of await bootBuiltinCommands()) {
       const { code, out } = await run([...command.key.split("."), "--help"]);
       expect(code).toBe(0);
       expect(out).toContain(`Usage: penguin ${command.key.split(".").join(" ")}`);
       expect(flat(out)).toContain(flat(command.summary.en));
-    }
-  });
-
-  it("reads help for the current project's model tools through both help entry points", async () => {
-    vi.stubEnv("PENGUIN_LANG", "en");
-    vi.stubEnv("PENGUIN_PROJECT_ID", "selected");
-    vi.stubEnv("PENGUIN_API_URL", "https://help.example.test");
-    vi.stubEnv("PENGUIN_API_TOKEN", "test-token");
-    const seen: string[][] = [];
-    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
-      expect(String(url)).toBe("https://help.example.test/api/projects/selected/capabilities/cli");
-      const body = JSON.parse(String(init.body)) as { args: string[] };
-      seen.push(body.args);
-      return Response.json({
-        kind: "message",
-        stdout: "Project-specific help",
-        stderr: "",
-        exitCode: 0,
-      });
-    });
-    try {
-      expect(await run(["tools", "--help"])).toEqual({ code: 0, out: "Project-specific help" });
-      expect(await run(["help", "tools", "tts"])).toEqual({
-        code: 0,
-        out: "Project-specific help",
-      });
-      expect(seen).toEqual([["--help"], ["tts", "--help"]]);
-    } finally {
-      vi.unstubAllGlobals();
-      vi.unstubAllEnvs();
     }
   });
 });

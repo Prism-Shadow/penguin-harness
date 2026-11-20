@@ -200,12 +200,6 @@ describe("plugin import and export", () => {
     ((await (await client.get("/api/plugins")).json()) as PluginLibraryResponse).groups.flatMap(
       (g) => g.plugins,
     );
-  const listed = async (client: ReturnType<typeof apiClient>) =>
-    (
-      (await (
-        await client.get("/api/projects/default_project/plugins/installed")
-      ).json()) as InstalledPluginsResponse
-    ).plugins;
   const projectConfig = () =>
     fs.readFile(path.join(t.root, "default_project", ".project_config.toml"), "utf8");
 
@@ -230,7 +224,6 @@ describe("plugin import and export", () => {
 
   it("installs a plugin of Skills from an admin's zip into the library, listed in no Project", async () => {
     const admin = await boot();
-    const before = await listed(admin);
     const res = await importZip(admin, notesPackage());
     expect(res.status).toBe(201);
     const body = (await res.json()) as InstalledPluginsResponse;
@@ -240,7 +233,7 @@ describe("plugin import and export", () => {
       library: true,
       modules: false,
     });
-    expect(body.plugins).toEqual(before);
+    expect(body.plugins).toEqual([]);
     expect(await projectConfig()).not.toContain("@acme/notes");
 
     const notes = (await library(admin)).find((p) => p.name === "notes");
@@ -270,17 +263,18 @@ describe("plugin import and export", () => {
 
   it("lists a package of server modules from a zip for this machine alone", async () => {
     const admin = await boot();
-    const before = await listed(admin);
     const res = await importZip(admin, await modulePackage());
     expect(res.status).toBe(201);
     const body = (await res.json()) as InstalledPluginsResponse;
     expect(body.installed).toMatchObject({ name: "@acme/sandbox-x", modules: true });
-    expect(body.plugins.filter((plugin) => plugin.specifier !== "@acme/sandbox-x")).toEqual(before);
-    expect(body.plugins.find((plugin) => plugin.specifier === "@acme/sandbox-x")).toMatchObject({
-      everywhere: false,
-      machines: [body.machineId],
-      here: true,
-    });
+    expect(body.plugins).toEqual([
+      expect.objectContaining({
+        specifier: "@acme/sandbox-x",
+        everywhere: false,
+        machines: [body.machineId],
+        here: true,
+      }),
+    ]);
     expect(await projectConfig()).toContain(`[plugins.${body.machineId}]\n"@acme/sandbox-x"`);
     // The registry lists it from its own package — its npm fields, then its card — so its card
     // and its export have a row.

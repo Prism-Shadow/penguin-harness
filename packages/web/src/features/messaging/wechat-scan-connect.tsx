@@ -35,6 +35,7 @@ import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { QrCode } from "./qq-scan-connect";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /**
  * Consecutive poll failures ridden out before the code comes down. The interval fires
@@ -76,6 +77,11 @@ export type WeChatScanStep =
        * server consumed it on that poll.
        */
       releaseTask: boolean;
+      /**
+       * The failed poll's error, kept beside its words so the toast offers its report; absent
+       * when the platform's own answer ended the scan.
+       */
+      error?: unknown;
     };
 
 /**
@@ -97,6 +103,7 @@ export function wechatScanStep(attempt: WeChatScanAttempt, tally: WeChatScanTall
           notice: S.wechat.scanFailed(apiErrorText(attempt.error)),
           tone: "error",
           releaseTask: true,
+          error: attempt.error,
         };
   }
   const { res } = attempt;
@@ -190,7 +197,7 @@ export function WeChatScanConnect({
         if (goneRef.current) return;
         taskRef.current = null;
         setPhase({ kind: "idle" });
-        toastError(S.wechat.scanFailed(apiErrorText(e)));
+        toastApiError(e, { text: S.wechat.scanFailed(apiErrorText(e)) });
       }
     },
     [sessionId],
@@ -250,6 +257,7 @@ export function WeChatScanConnect({
         // live: it is released here the way cancel and unmount release one.
         if (step.releaseTask) void api.cancelWeChatScan(sessionId, taskId).catch(() => {});
         if (step.tone === "info") toastInfo(step.notice);
+        else if ("error" in step) toastApiError(step.error, { text: step.notice });
         else toastError(step.notice);
       })();
     }, pollMs);
@@ -284,7 +292,7 @@ export function WeChatScanConnect({
       // asking again, and leaving the rejected digits in the box would read as accepted.
       setVerifyCode("");
     } catch (e) {
-      toastError(S.wechat.scanFailed(apiErrorText(e)));
+      toastApiError(e, { text: S.wechat.scanFailed(apiErrorText(e)) });
     } finally {
       setVerifying(false);
     }

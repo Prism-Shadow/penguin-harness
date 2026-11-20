@@ -1,30 +1,18 @@
 /**
- * An action's failure, said in a toast: the words `apiErrorText` gives the error, and — only when
- * the error is a defect rather than the person's to fix (`isSeriousError`: the server's
- * converged 500, an unnamed 5xx, an exception the app did not expect) — 「[报告问题]」 with its
- * problem report. An expected failure (validation, sign-in, permission, not found, a conflict,
- * the network gone) reads exactly as a plain `toastError` does.
- *
- * The report is built when it is opened, but names the page the failure happened on and when.
+ * A failure said in a toast: its words and, for every failure but a refusal, 「[报告问题]」 with
+ * its problem report (lib/failure.tsx). A refusal (validation, sign-in, permission, not found, a
+ * conflict, a limit) reads exactly as a plain `toastError` does; `toastError(text)` itself is for
+ * a check the page made before any request.
  */
-import {
-  currentReportRoute,
-  exceptionReport,
-  isSeriousError,
-  toastError,
-} from "@prismshadow/penguin-ui";
-import { apiErrorText } from "./api-error";
+import { toastError } from "@prismshadow/penguin-ui";
+import type { Failure } from "@prismshadow/penguin-ui";
+import { failureOf } from "./failure";
+import type { FailureContext } from "./failure";
 
-export function toastApiError(err: unknown, ctx?: { modelId?: string }): void {
-  const text = apiErrorText(err, ctx);
-  if (!isSeriousError(err)) {
-    toastError(text);
-    return;
-  }
-  const route = currentReportRoute();
-  const atMs = Date.now();
-  toastError(text, {
-    report: () =>
-      exceptionReport(err, { what: "an action failed with an unexpected error", route, atMs }),
-  });
+export function toastApiError(err: unknown, ctx?: FailureContext): void {
+  toastFailure(failureOf(err, ctx));
+}
+
+export function toastFailure(failure: Failure): void {
+  toastError(failure.text, failure.report === null ? undefined : { report: failure.report });
 }

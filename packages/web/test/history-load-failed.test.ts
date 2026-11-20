@@ -15,8 +15,8 @@
  * - Given a machine whose server is stopped (nothing is bringing it back), the transcript says
  *   so by its alias, and Go to Machines opens the Machines page.
  * - Given a conversation on this server, the read's own error is shown with a Retry; when the read
- *   failed on a defect (the server's converged 500), Report stands beside Retry, and not for an
- *   expected failure (the network gone).
+ *   failed (the server's converged 500, the network gone), Report stands beside Retry, and not
+ *   when it was refused (a conversation that is not there).
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
@@ -284,13 +284,17 @@ describe("a conversation's history that could not be read", () => {
 
   it.each<[string, unknown, boolean]>([
     ["the server's converged 500", { name: "ApiError", status: 500, code: "internal" }, true],
-    ["the network gone", { name: "ApiError", status: 0, code: "network_error" }, false],
-  ])("for a read that failed on %s, offers Report beside Retry: %s", async (_, cause, offered) => {
-    server("waiting");
-    const modules = await fresh();
-    await open(modules, vi.fn(), cause);
-    await waitFor(() => visibleText().includes(modules.en.chat.historyLoadFailed));
-    expect(hasButton(modules.en.report.action)).toBe(offered);
-    expect(hasButton(modules.en.common.retry)).toBe(true);
-  });
+    ["the network gone", { name: "ApiError", status: 0, code: "network_error" }, true],
+    ["a refusal", { name: "ApiError", status: 404, code: "session_not_found" }, false],
+  ])(
+    "for a read that ended on %s, offers Report beside Retry only for a failure: %s",
+    async (_, cause, offered) => {
+      server("waiting");
+      const modules = await fresh();
+      await open(modules, vi.fn(), cause);
+      await waitFor(() => visibleText().includes(modules.en.chat.historyLoadFailed));
+      expect(hasButton(modules.en.report.action)).toBe(offered);
+      expect(hasButton(modules.en.common.retry)).toBe(true);
+    },
+  );
 });
