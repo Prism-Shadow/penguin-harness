@@ -16,7 +16,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { NIGHTLY_INDEX_URL, parsePluginIndex } from "../../../server/src/plugin/index-document.ts";
+import { NIGHTLY_INDEX_URL, parsePluginIndex } from "@prismshadow/penguin-core/plugin-index";
 import { EMBEDDED_MARKET_DOC, parseMarketDocument } from "./market.mjs";
 import { CACHE_DIR } from "./source.mjs";
 
@@ -24,7 +24,7 @@ import { CACHE_DIR } from "./source.mjs";
 export const MARKET_DOCUMENT_URL =
   "https://github.com/Prism-Shadow/penguin-harness-community/raw/refs/heads/main/assets/plugins/market.json";
 
-/** The published plugin index: the server's NIGHTLY_INDEX_URL (packages/server/src/plugin/registry.ts). */
+/** The published plugin index: the same address the server reads (core's NIGHTLY_INDEX_URL). */
 export const PLUGIN_INDEX_URL = NIGHTLY_INDEX_URL;
 
 /** Where the fetched copies are kept. */

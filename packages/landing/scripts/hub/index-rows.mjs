@@ -10,7 +10,7 @@
  * Its page id follows the market's asset folders: the bare name for a `@penguinharness/` package,
  * `<scope>__<name>` for any other scoped one.
  */
-import { indexChannelOf, newestPerName } from "../../../server/src/plugin/index-document.ts";
+import { indexChannelOf, newestPerName } from "@prismshadow/penguin-core/plugin-index";
 import { readAuthor } from "./read.mjs";
 
 /** A page id: one path segment the route shells can be written under. */

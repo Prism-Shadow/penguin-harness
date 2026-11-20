@@ -11,4 +11,4 @@ The featured plugin stays above search and filters, including in a shared catego
 
 Search, filter by category, sort by name, update date or selection, and open the same product page from either view. Bundled plugin covers ship with the site. Other images come from the community repository.
 
-The website and the App read the same official plugin directory and pick the same release for each package. External workbenches with a pinned GitHub archive now have a download link on their detail page. A failed refresh keeps the last valid catalog available.
+The website and the App read the same official plugin directory and pick the same release for each package. The site's build reads it with the server's own readers, through core's `@prismshadow/penguin-core/plugin-index` ([plugin-index-core](2026-11-19-plugin-index-core.md)). External workbenches with a pinned GitHub archive now have a download link on their detail page. A failed refresh keeps the last valid catalog available.
