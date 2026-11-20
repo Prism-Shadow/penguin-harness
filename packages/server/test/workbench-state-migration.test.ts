@@ -508,7 +508,9 @@ describe(
     it.each(installs)("updates the moved workbench, keeping its data: %s", async (_, install) => {
       const { agentId, dir, route } = await newAgent();
       const support = await oldSupport(dir);
+      await fs.writeFile(path.join(dir, "workbenches", "support", ".hidden-from-sidebar"), "");
       await install(route, agentId);
+      expect((await listOf(route)).find((w) => w.id === "support")?.showInSidebar).toBe(false);
       expect(await fs.readFile(path.join(support, "state.json"), "utf8")).toBe(STATE);
       expect(await fs.stat(path.join(support, "index.ts"))).toBeTruthy();
       await expectLinked(dir);

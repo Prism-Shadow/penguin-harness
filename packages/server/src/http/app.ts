@@ -15,14 +15,14 @@ import {
 } from "../auth/middleware.js";
 import { AMSP_PREFIX, amspAllowOrigin } from "../amsp/cors.js";
 import { HttpError, handleError } from "./errors.js";
-import { originRule } from "./public-origin.js";
+import { originRule } from "@prismshadow/penguin-library-http/public-origin";
 import { ownOriginPrefixes } from "./own-origin.js";
 import { adoptGroup } from "./foreign-groups.js";
 import { upgradeDispatch } from "./upgrade-endpoints.js";
 import type { WebSocketUpgrade } from "./upgrade-endpoints.js";
-import { attributedProjectId } from "./attribution.js";
-import { jsonCompression } from "./json-compression.js";
-import { jsonValidators } from "./json-validators.js";
+import { attributedProjectId } from "@prismshadow/penguin-library-http/attribution";
+import { jsonCompression } from "@prismshadow/penguin-library-http/json-compression";
+import { jsonValidators } from "@prismshadow/penguin-library-http/json-validators";
 import { bodyLimitBytes } from "@prismshadow/penguin-library-setting/attachment-limits";
 import { isAgentImport, MAX_PACKAGE_BYTES } from "../services/agent-zip.js";
 import { declined } from "../hmr/hono-seam.js";
