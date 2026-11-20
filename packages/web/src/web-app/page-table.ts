@@ -32,7 +32,7 @@ export interface PageData {
   icon?: string;
   /**
    * The key of the page this one sits under: the nav draws it as an indented row below that
-   * page (web-app/sidebar/nav-state.ts). One level only — see parentedPagesOf.
+   * page (lib/nav-pages.ts). One level only — see parentedPagesOf.
    */
   parent?: string;
   /**
