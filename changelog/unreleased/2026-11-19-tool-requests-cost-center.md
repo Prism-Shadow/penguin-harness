@@ -9,7 +9,8 @@
 
 Tool requests are the requests a plugin makes for its tools through `ProjectModelRequests`, such
 as an image, a transcription or a search. Their `usage_records` rows carry a `purpose`, and the
-Cost Center reads them from that one ledger.
+Cost Center reads them from that one ledger. A tool request's thinking tokens are part of its
+output and cost at the model's output rate, as a chat turn's do. No model prices thinking apart.
 
 - The Token figures in the summary cards and the Token trend count chat turns only. A tool
   request's Tokens are MMSP's billing units (a search counts as 1,000), so they stay out of these
