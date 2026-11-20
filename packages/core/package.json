@@ -25,6 +25,10 @@
       "types": "./dist/plugin/index.d.ts",
       "import": "./dist/plugin/index.js"
     },
+    "./plugin-index": {
+      "types": "./dist/plugin/index-document.d.ts",
+      "import": "./dist/plugin/index-document.js"
+    },
     "./cli": {
       "types": "./dist/cli/index.d.ts",
       "import": "./dist/cli/index.js"
