@@ -3,6 +3,7 @@
 - **Date:** 2026-11-20
 - **Type:** process
 - **Scope:** `tooling`, `ci`
+- **PR:** [#1671](https://github.com/Prism-Shadow/penguin-harness/pull/1671)
 
 [中文版](2026-11-20-external-builtin-plugins.zh.md)
 
