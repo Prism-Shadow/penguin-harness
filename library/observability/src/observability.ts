@@ -19,6 +19,7 @@ import type {
   UsageRecordInsert,
   UsageSeriesGranularity,
   UsageSeriesModelSums,
+  UsageToolModelSums,
   PeakTier,
 } from "./repos/usage.js";
 import type {
@@ -190,7 +191,8 @@ export interface UsageResponse {
   /**
    * Per-Agent counts per bucket, aligned index-for-index with `series`, sorted
    * by total requests descending. Unaffected by the agent filter — the by-Agent
-   * chart draws the whole breakdown — but affected by date/model filters.
+   * chart draws the whole breakdown — but affected by date/model filters. A tool
+   * request made with no Session is no Agent's and is left out.
    */
   byAgentSeries: UsageAgentSeries[];
   /**
@@ -199,9 +201,14 @@ export interface UsageResponse {
    * chart draws the whole breakdown — but affected by date/agent filters.
    */
   byModelSeries: UsageModelSeries[];
+  /**
+   * Tool requests over the selected range, one row per purpose, costliest first; affected by the
+   * agent/model filters. Empty when there were none.
+   */
+  tools: UsageToolRow[];
   /** Server-side error capture stats (affected by date/agent filters; unaffected by model filter). */
   errors: UsageErrors;
-  /** List of Agent ids that have appeared in this Project (for the filter dropdown; unaffected by current filters). */
+  /** List of Agent ids that have appeared in this Project (for the filter dropdown; unaffected by current filters; a Session-less request's empty id is not one). */
   agentIds: string[];
   /** List of Model paired references that have appeared in this Project (for the filter dropdown). */
   models: ModelRefDto[];
@@ -235,11 +242,32 @@ export interface UsageErrorItem {
 }
 
 export interface UsageBucket {
+  /** Tokens of chat turns (and Session titles); a tool request's are not counted (see `toolRequests`). */
   total: number;
+  /** Every request, tool requests included. */
   requests: number;
-  /** Cost converted using current pricing at query time (USD); a partial sum when uncosted Models are included, null if none has pricing. */
+  /** Cost converted using current pricing at query time (USD); a partial sum when uncosted Models are included, null if none has pricing. Tool requests included. */
   cost: number | null;
   /** Whether any Model has no pricing (its usage isn't included in cost; counted once pricing is added later). */
+  hasUncosted: boolean;
+  /**
+   * Of `requests`, those a plugin made through ProjectModelRequests (rows with a `purpose`): an
+   * image, a transcription, a search. Their Tokens are MMSP's units (a search counts as 1,000), so
+   * they are listed by count and cost rather than added to `total`.
+   */
+  toolRequests: number;
+  /** Of `cost`, what the tool requests cost; null when none of them is priced. */
+  toolCost: number | null;
+}
+
+/** The tool requests of one purpose over the queried range (the Cost Center's list of tool requests). */
+export interface UsageToolRow {
+  /** What they were for: `<package>:<operation>`, as the plugin named it. */
+  purpose: string;
+  requests: number;
+  /** Their cost at current pricing (USD); null when none is priced. */
+  cost: number | null;
+  /** Whether some ran on a model without pricing. */
   hasUncosted: boolean;
 }
 
@@ -265,6 +293,7 @@ export interface UsageGroupRow {
 
 export interface UsageSeriesPoint {
   bucket: string;
+  /** The Token buckets (`cacheRead` … `total`) are chat turns' only; requests and cost count tool requests too. */
   cacheRead: number;
   cacheWrite: number;
   output: number;
@@ -349,6 +378,11 @@ export abstract class UsageStore {
     f?: UsageFilter,
     tiers?: readonly PeakTier[],
   ): UsageSeriesModelSums[];
+  abstract toolsByModel(
+    projectId: string,
+    f?: UsageFilter,
+    tiers?: readonly PeakTier[],
+  ): UsageToolModelSums[];
   abstract agentSeries(
     projectId: string,
     granularity: UsageSeriesGranularity,

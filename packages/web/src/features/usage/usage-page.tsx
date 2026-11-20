@@ -7,6 +7,10 @@
  * control for it (controls have no external title — the explanation is
  * written into the dropdown options themselves);
  * three summary cards (today / last 7 days / cumulative, each stat on its own row);
+ * the Token figures count chat turns only: a tool request a plugin made (an image, a
+ * transcription, a search) is a request and a cost like any other, but its Tokens are MMSP's
+ * units, so the cards carry its count and cost on a row of its own and a "Tool requests" card
+ * below the charts lists them by what they were for — both only while the range has any;
  * a 2x2 grid of time-series charts over the shared range and precision —
  * requests + success rate broken down by Agent and, beside it, the same by
  * Model (requests stacked on the left axis, one rate line per entity on a
@@ -28,7 +32,12 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
-import type { ModelRefDto, UsageBucket, UsageResponse } from "@prismshadow/penguin-server/api";
+import type {
+  ModelRefDto,
+  UsageBucket,
+  UsageResponse,
+  UsageToolRow,
+} from "@prismshadow/penguin-server/api";
 import {
   Card,
   CardHeader,
@@ -44,7 +53,7 @@ import { S } from "../../lib/strings";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
 import { formatMoney, humanizeTokens } from "../../lib/format";
-import { catalogEntryFor } from "@prismshadow/penguin-server/model-catalog";
+import { catalogEntryFor, providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
 import { useOpenedInProject } from "../../lib/use-opened-in-project";
 import { useProject } from "../../state/project";
@@ -98,16 +107,20 @@ function SummaryRow({
 /**
  * Usage summary card: a title + Token / request count / cost each on their own row. It carries
  * the `ui-ledger` hook, its rows the `row` slot, each a `label` beside its `figure`, so a theme
- * may set the three cards apart as a ledger of their own.
+ * may set the three cards apart as a ledger of their own. `showTools` adds the row of tool
+ * requests (their count and cost, both already inside Requests and Cost); the page passes the
+ * same answer to all three cards so their rows stay level.
  */
 function SummaryCard({
   title,
   bucket,
   currency,
+  showTools,
 }: {
   title: string;
   bucket: UsageBucket;
   currency: "USD" | "CNY";
+  showTools: boolean;
 }) {
   return (
     <Card className="ui-ledger">
@@ -115,6 +128,13 @@ function SummaryCard({
       <div className="space-y-1">
         <SummaryRow label={S.usage.tokens} value={humanizeTokens(bucket.total)} />
         <SummaryRow label={S.usage.requests} value={String(bucket.requests)} muted />
+        {showTools && (
+          <SummaryRow
+            label={S.usage.toolRequestsIncluded}
+            value={`${bucket.toolRequests} · ${formatMoney(bucket.toolCost, currency)}`}
+            muted
+          />
+        )}
         {/* The unpriced-records asterisk sits on the word "cost" (superscript), keeping the number clean and readable; see the footer for the explanation */}
         <SummaryRow
           label={S.common.cost}
@@ -123,6 +143,52 @@ function SummaryCard({
         />
       </div>
     </Card>
+  );
+}
+
+/**
+ * A purpose (`<package>:<operation>`) as a row names it: the operation, and the package it came
+ * from without its npm scope.
+ */
+export function toolPurposeLabel(purpose: string): { operation: string; source: string } {
+  const cut = purpose.lastIndexOf(":");
+  if (cut <= 0) return { operation: purpose, source: "" };
+  const pkg = purpose.slice(0, cut);
+  return { operation: purpose.slice(cut + 1), source: pkg.slice(pkg.lastIndexOf("/") + 1) };
+}
+
+/** The tool requests by purpose, one ruled line each: what they were for, how many, and their cost. */
+function ToolRequestsList({ tools, currency }: { tools: UsageToolRow[]; currency: "USD" | "CNY" }) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-left text-xs text-gray-500 dark:text-gray-400">
+          <th className="pb-1 font-normal">{S.usage.toolColumn}</th>
+          <th className="pb-1 text-right font-normal">{S.usage.requests}</th>
+          <th className="pb-1 text-right font-normal">{S.common.cost}</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+        {tools.map((t) => {
+          const { operation, source } = toolPurposeLabel(t.purpose);
+          return (
+            <tr key={t.purpose} title={t.purpose}>
+              <td className="max-w-0 truncate py-1.5 pr-3">
+                <span className="text-gray-900 dark:text-gray-100">{operation}</span>
+                {source && (
+                  <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">{source}</span>
+                )}
+              </td>
+              <td className="py-1.5 text-right font-mono tabular-nums">{t.requests}</td>
+              <td className="py-1.5 text-right font-mono tabular-nums">
+                {formatMoney(t.cost, currency)}
+                {t.hasUncosted && <sup className="ml-px">*</sup>}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -296,6 +362,25 @@ export function UsagePage() {
 
   // Model filter candidates and the currently selected item's index (the option value uses the index, avoiding concatenating an id as the key).
   const modelOptions = data?.models ?? [];
+  // A model is named by its catalog name; where two providers sell one name, the provider joins
+  // it, so the filter and the requests chart never show two identical labels.
+  const modelName = (ref: ModelRefDto) =>
+    catalogEntryFor(ref.provider, ref.modelId)?.displayName ?? ref.modelId;
+  const refs = new Map<string, ModelRefDto>();
+  for (const ref of [...modelOptions, ...(data?.byModelSeries ?? [])]) {
+    refs.set(`${ref.provider}\u0000${ref.modelId}`, ref);
+  }
+  const nameCount = new Map<string, number>();
+  for (const ref of refs.values()) {
+    const name = modelName(ref);
+    nameCount.set(name, (nameCount.get(name) ?? 0) + 1);
+  }
+  const modelLabel = (ref: ModelRefDto) => {
+    const name = modelName(ref);
+    return (nameCount.get(name) ?? 0) > 1
+      ? S.models.modelInGroup(name, providerInfo(ref.provider)?.label ?? ref.provider)
+      : name;
+  };
   const selectedModelIndex = modelFilter
     ? modelOptions.findIndex(
         (m) => m.provider === modelFilter.provider && m.modelId === modelFilter.modelId,
@@ -307,7 +392,11 @@ export function UsagePage() {
   const hasUncostedRows =
     (summary?.today.hasUncosted ?? false) ||
     (summary?.last7d.hasUncosted ?? false) ||
-    (summary?.total.hasUncosted ?? false);
+    (summary?.total.hasUncosted ?? false) ||
+    (data?.tools ?? []).some((t) => t.hasUncosted);
+  const showTools =
+    summary !== undefined &&
+    [summary.today, summary.last7d, summary.total].some((b) => b.toolRequests > 0);
 
   // One compaction for the whole page (see the file header): every chart draws
   // these buckets, and every per-entity series is re-indexed through the same
@@ -322,7 +411,7 @@ export function UsagePage() {
     ...compactCounts(s, plotted.kept),
   }));
   const modelEntities: EntityCounts[] = (data?.byModelSeries ?? []).map((s) => ({
-    label: catalogEntryFor(s.provider, s.modelId)?.displayName ?? s.modelId,
+    label: modelLabel(s),
     ...compactCounts(s, plotted.kept),
   }));
   return (
@@ -363,7 +452,7 @@ export function UsagePage() {
                 <option value="">{S.usage.filterAllModels}</option>
                 {modelOptions.map((m, i) => (
                   <option key={`${m.provider}:${m.modelId}`} value={String(i)}>
-                    {catalogEntryFor(m.provider, m.modelId)?.displayName ?? m.modelId}
+                    {modelLabel(m)}
                   </option>
                 ))}
               </Select>
@@ -433,9 +522,24 @@ export function UsagePage() {
       {/* Summary cards (today / last 7 days / cumulative) */}
       {data ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <SummaryCard title={S.usage.today} bucket={data.summary.today} currency={currency} />
-          <SummaryCard title={S.usage.last7d} bucket={data.summary.last7d} currency={currency} />
-          <SummaryCard title={S.usage.total} bucket={data.summary.total} currency={currency} />
+          <SummaryCard
+            title={S.usage.today}
+            bucket={data.summary.today}
+            currency={currency}
+            showTools={showTools}
+          />
+          <SummaryCard
+            title={S.usage.last7d}
+            bucket={data.summary.last7d}
+            currency={currency}
+            showTools={showTools}
+          />
+          <SummaryCard
+            title={S.usage.total}
+            bucket={data.summary.total}
+            currency={currency}
+            showTools={showTools}
+          />
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -493,6 +597,13 @@ export function UsagePage() {
         </div>
       ) : (
         <Skeleton className="h-64" />
+      )}
+
+      {/* Tool requests over the selected range, by what they were for (only while there are any) */}
+      {data && data.tools.length > 0 && (
+        <ChartCard title={S.usage.toolRequests}>
+          <ToolRequestsList tools={data.tools} currency={currency} />
+        </ChartCard>
       )}
 
       {/* Errors (a single full-width panel: stats + a recent-errors table) */}

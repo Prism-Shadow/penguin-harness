@@ -45,6 +45,11 @@ export interface UsageFilter {
   modelId?: string;
   /** Restrict to these sessions (company mode attributes cost by the sessions an organization owns); an empty list matches nothing. */
   sessionIds?: readonly string[];
+  /**
+   * Only the rows of a Session: the per-Agent and per-Session views. A tool request made with no
+   * Session is stored with an empty Agent and Session and counts toward the Project's totals alone.
+   */
+  withSession?: boolean;
 }
 
 /** Raw Token sums for a single Model (paired reference) — the smallest unit for cost conversion. */
@@ -61,6 +66,12 @@ export interface UsageModelSums {
   thoughts: number;
   total: number;
   requests: number;
+  /**
+   * Whether these are the sums of tool requests (rows with a `purpose`: a plugin's requests through
+   * ProjectModelRequests) rather than of chat turns. Every aggregation splits on it: the Cost Center
+   * counts the Tokens of chat turns only and lists tool requests by count and cost.
+   */
+  tool: boolean;
   /**
    * Which tier of a time-based price these Tokens ran in, decided from each record's own `ts`.
    *
@@ -86,6 +97,12 @@ export interface PeakTier {
 /** Raw Token sums by group key x Model. */
 export interface UsageGroupModelSums extends UsageModelSums {
   key: string;
+}
+
+/** Raw Token sums of tool requests by purpose x Model. */
+export interface UsageToolModelSums extends UsageModelSums {
+  /** What the requests were for: `<package>:<operation>`. */
+  purpose: string;
 }
 
 /** Time-series bucket x Model sums, with the success-rate counts folded in. */
@@ -174,6 +191,9 @@ function peakExpr(tiers: readonly PeakTier[]): { sql: string; params: Record<str
   return { sql: `CASE ${branches.join(" ")} ELSE 1 END`, params };
 }
 
+/** The split every aggregation groups by besides its own keys (see UsageModelSums.tool). */
+const TOOL_EXPR = "(purpose IS NOT NULL)";
+
 const SUM_COLUMNS = `COALESCE(SUM(cache_read), 0) AS cache_read,
                 COALESCE(SUM(cache_write), 0) AS cache_write,
                 COALESCE(SUM(output), 0) AS output,
@@ -192,6 +212,7 @@ function toSums(r: Record<string, unknown>): UsageModelSums {
     thoughts: r.thoughts as number,
     total: r.total as number,
     requests: r.requests as number,
+    tool: r.tool !== 0,
   };
 }
 
@@ -261,6 +282,7 @@ export class UsageRepo implements UsageStore {
       conds.push("model_id = :modelId");
       params.modelId = f.modelId;
     }
+    if (f.withSession === true) conds.push("session_id <> ''");
     if (f.sessionIds !== undefined) {
       if (f.sessionIds.length === 0) {
         conds.push("0");
@@ -288,9 +310,9 @@ export class UsageRepo implements UsageStore {
     const peak = peakExpr(tiers);
     const rows = this.db
       .prepare(
-        `SELECT provider, model_id, ${peak.sql} AS peak, ${SUM_COLUMNS}
+        `SELECT provider, model_id, ${peak.sql} AS peak, ${TOOL_EXPR} AS tool, ${SUM_COLUMNS}
          FROM usage_records WHERE ${where}
-         GROUP BY provider, model_id, peak`,
+         GROUP BY provider, model_id, peak, tool`,
       )
       .all({ ...params, ...peak.params });
     return rows.map(toSums);
@@ -308,9 +330,10 @@ export class UsageRepo implements UsageStore {
     const peak = peakExpr(tiers);
     const rows = this.db
       .prepare(
-        `SELECT ${col} AS key, provider, model_id, ${peak.sql} AS peak, ${SUM_COLUMNS}
+        `SELECT ${col} AS key, provider, model_id, ${peak.sql} AS peak, ${TOOL_EXPR} AS tool,
+                ${SUM_COLUMNS}
          FROM usage_records WHERE ${where}
-         GROUP BY ${col}, provider, model_id, peak`,
+         GROUP BY ${col}, provider, model_id, peak, tool`,
       )
       .all({ ...params, ...peak.params });
     return rows.map((r) => ({ key: r.key as string, ...toSums(r) }));
@@ -333,11 +356,12 @@ export class UsageRepo implements UsageStore {
     const peak = peakExpr(tiers);
     const rows = this.db
       .prepare(
-        `SELECT ${expr} AS key, provider, model_id, ${peak.sql} AS peak, ${SUM_COLUMNS},
+        `SELECT ${expr} AS key, provider, model_id, ${peak.sql} AS peak, ${TOOL_EXPR} AS tool,
+                ${SUM_COLUMNS},
                 COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS completed,
                 COALESCE(SUM(CASE WHEN status <> 'aborted' THEN 1 ELSE 0 END), 0) AS denominator
          FROM usage_records WHERE ${where}
-         GROUP BY key, provider, model_id, peak`,
+         GROUP BY key, provider, model_id, peak, tool`,
       )
       .all({ ...params, ...peak.params });
     return rows.map((r) => ({
@@ -346,6 +370,27 @@ export class UsageRepo implements UsageStore {
       completed: r.completed as number,
       denominator: r.denominator as number,
     }));
+  }
+
+  /**
+   * Tool requests' sums (rows with a `purpose`) by purpose x paired reference, and by price tier
+   * where one applies: the Cost Center's list of tool requests.
+   */
+  toolsByModel(
+    projectId: string,
+    f: UsageFilter = {},
+    tiers: readonly PeakTier[] = [],
+  ): UsageToolModelSums[] {
+    const { where, params } = this.conds(projectId, f);
+    const peak = peakExpr(tiers);
+    const rows = this.db
+      .prepare(
+        `SELECT purpose, provider, model_id, ${peak.sql} AS peak, 1 AS tool, ${SUM_COLUMNS}
+         FROM usage_records WHERE ${where} AND purpose IS NOT NULL
+         GROUP BY purpose, provider, model_id, peak`,
+      )
+      .all({ ...params, ...peak.params });
+    return rows.map((r) => ({ purpose: r.purpose as string, ...toSums(r) }));
   }
 
   /** Per-Agent counts per time bucket (the by-Agent requests chart's series; the denominator excludes aborted). */
@@ -374,11 +419,11 @@ export class UsageRepo implements UsageStore {
     }));
   }
 
-  /** Distinct agent_id values seen for this Project (for filter dropdowns). */
+  /** Distinct agent_id values seen for this Project (for filter dropdowns); a Session-less request's empty one is no Agent. */
   distinctAgentIds(projectId: string): string[] {
     const rows = this.db
       .prepare(
-        "SELECT DISTINCT agent_id AS v FROM usage_records WHERE project_id = ? ORDER BY agent_id",
+        "SELECT DISTINCT agent_id AS v FROM usage_records WHERE project_id = ? AND agent_id <> '' ORDER BY agent_id",
       )
       .all(projectId);
     return rows.map((r) => r.v as string);

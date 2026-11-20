@@ -5763,6 +5763,11 @@ Benchmark：
     total: "累计",
     tokens: "Token",
     requests: "Requests",
+    /** The summary row of the requests a plugin made for its tools (counted in Requests and Cost, not in Token). */
+    toolRequestsIncluded: "其中工具请求",
+    /** The card listing tool requests by what they were for. */
+    toolRequests: "工具请求",
+    toolColumn: "工具",
     /** The range picker's name: it has no visible title in the header's row of filters. */
     rangeDates: "起止日期",
     colCacheRead: "缓存命中",
