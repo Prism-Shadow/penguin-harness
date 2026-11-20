@@ -13,6 +13,10 @@
  *   trail's sentence: the App Center's nav entry carries the same dot, and the page clears it
  *   (lib/system-app-notes.ts). A folder holding such an app wears the dot too, with the
  *   sentences of the apps inside, so the trail never ends at a closed folder.
+ * - An app that is running behind the grid (its window minimized) has a short bar under its
+ *   icon, as a taskbar marks a running app, and its name and hint say so; a click brings its
+ *   window back, even while it builds. A folder holding one has the same bar, and says how many.
+ *   A system app never runs: it opens as its own page, not in a window.
  * - A folder tile shows the first four of its apps' icons in a 2×2 square and opens the folder.
  * - What a drag would do is marked here: a line in the gap beside the tile, or a ring around the
  *   icon it would go into. Neither moves anything. The tile's `data-drop` names the mark it wears.
@@ -37,7 +41,7 @@ import {
   UpdateDot,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
+import { toneDot, toneInk } from "../../lib/tone";
 import { skillTileColor } from "../skills";
 import type { GridApp, GridFolder, LocatedShortcut, Side } from "./arrangement";
 
@@ -110,6 +114,17 @@ function DropLine({ side }: { side: Side }) {
   );
 }
 
+/** The bar under an icon whose app (or one of whose apps) is running; the tile says it in words. */
+function RunningMark() {
+  return (
+    <span
+      aria-hidden
+      data-running=""
+      className={`pointer-events-none absolute -bottom-2 left-1/2 h-[3px] w-3.5 -translate-x-1/2 rounded-full ${toneDot.busy}`}
+    />
+  );
+}
+
 /** The ring around an icon square that the dragged app would go into. */
 function IntoRing() {
   return (
@@ -153,6 +168,7 @@ export function AppTile({
   drag,
   mark,
   lifted,
+  running,
   menuItems,
   onOpen,
   note = null,
@@ -166,6 +182,8 @@ export function AppTile({
   mark: TileMark;
   /** This tile is the one being dragged. */
   lifted: boolean;
+  /** The app is running, its window minimized: a click brings that window back. */
+  running: boolean;
   menuItems: (close: () => void) => ReactNode;
   onOpen: () => void;
 }) {
@@ -173,17 +191,30 @@ export function AppTile({
   const owner = [shortcut.agentName, shortcut.machineLabel].filter(Boolean).join(" · ");
   const building = shortcut.build === "building";
   const failed = shortcut.build === "failed";
-  const state = building ? S.appCenter.building : failed ? S.appCenter.broken : null;
+  /**
+   * Whether a click does nothing: an app out of reach never opens, and a building one opens only
+   * when it is already running, with a window to bring back.
+   */
+  const closed = shortcut.unavailable === true || (building && !running);
+  const state = running
+    ? S.appCenter.running
+    : building
+      ? S.appCenter.building
+      : failed
+        ? S.appCenter.broken
+        : null;
   // A system app is always ready, and the platform's rather than an Agent's: it says so instead.
   const system = shortcut.system !== undefined;
   const tip = withNote(
     system
       ? S.appCenter.systemTileName(title)
-      : building
-        ? S.appCenter.buildingTip(title, owner)
-        : failed
-          ? S.appCenter.failedTip(title, owner)
-          : S.appCenter.tileTip(title, owner),
+      : running
+        ? S.appCenter.runningTip(title, owner)
+        : building
+          ? S.appCenter.buildingTip(title, owner)
+          : failed
+            ? S.appCenter.failedTip(title, owner)
+            : S.appCenter.tileTip(title, owner),
     note,
   );
   const name = withNote(
@@ -206,15 +237,15 @@ export function AppTile({
             {...target.props}
             type="button"
             aria-label={name}
-            aria-disabled={building || shortcut.unavailable || undefined}
+            aria-disabled={closed || undefined}
             data-tooltip={tip}
             data-tooltip-extra
             onClick={() => {
               // A press-and-hold that opened the menu must not also open the app.
               if (target.consumeLongPressClick()) return;
-              if (!building && !shortcut.unavailable) onOpen();
+              if (!closed) onOpen();
             }}
-            className={`${TILE_BUTTON} ${building ? "cursor-default" : ""} ${
+            className={`${TILE_BUTTON} ${closed ? "cursor-default" : ""} ${
               failed || shortcut.unavailable ? "opacity-60" : ""
             } ${lifted ? "opacity-40" : ""}`}
           >
@@ -237,6 +268,7 @@ export function AppTile({
                 </span>
               )}
               {note !== null && <TileDot />}
+              {running && <RunningMark />}
               {mark === "into" && <IntoRing />}
             </span>
             <TileName>{title}</TileName>
@@ -258,6 +290,7 @@ export function FolderTile({
   drag,
   mark,
   lifted,
+  running,
   menuItems,
   onOpen,
   notes = [],
@@ -270,6 +303,8 @@ export function FolderTile({
   drag: TileDragProps;
   mark: TileMark;
   lifted: boolean;
+  /** How many of its apps are running, their windows minimized. */
+  running: number;
   menuItems: (close: () => void) => ReactNode;
   onOpen: () => void;
 }) {
@@ -284,8 +319,11 @@ export function FolderTile({
             {...target.props}
             type="button"
             aria-haspopup="dialog"
-            aria-label={S.todo.joined([S.appCenter.folderName(folder.name, count), ...notes])}
-            data-tooltip={S.todo.joined([S.appCenter.folderTip(folder.name, count), ...notes])}
+            aria-label={S.todo.joined([
+              S.appCenter.folderName(folder.name, count, running),
+              ...notes,
+            ])}
+            data-tooltip={S.todo.joined([S.appCenter.folderTip(folder.name, count, running), ...notes])}
             data-tooltip-extra
             onClick={() => {
               if (target.consumeLongPressClick()) return;
@@ -311,6 +349,7 @@ export function FolderTile({
                 />
               ))}
               {notes.length > 0 && <TileDot />}
+              {running > 0 && <RunningMark />}
               {mark === "into" && <IntoRing />}
             </span>
             <TileName>{folder.name}</TileName>
