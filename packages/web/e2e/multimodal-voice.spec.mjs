@@ -198,6 +198,8 @@ test("a reply plays the audio the plugin answers with, and stops on a second pre
   await page.getByRole("button", { name: "Read aloud" }).first().click();
   const stop = page.getByRole("button", { name: "Stop reading" }).first();
   await expect(stop).toBeVisible();
+  // The control reads "Stop reading" from the press on; the request follows the binding's re-read.
+  await expect.poll(() => reads.length).toBe(1);
   expect(reads).toEqual([{ sessionId, text: expect.stringContaining("Command finished") }]);
   await stop.click();
   await expect(page.getByRole("button", { name: "Read aloud" }).first()).toBeVisible();
