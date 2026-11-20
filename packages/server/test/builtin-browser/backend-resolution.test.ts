@@ -43,8 +43,7 @@ import {
   waitFor,
 } from "../helpers.js";
 import type { TestApp } from "../helpers.js";
-import { FakeShell, tab } from "./plugin.js";
-import { browserPlugin } from "./plugin.js";
+import { browserPlugin, FakeShell, tab } from "./plugin.js";
 
 let t: TestApp | null = null;
 afterEach(async () => {

@@ -16,8 +16,7 @@ import {
   loginAdmin,
   provisionUser,
 } from "../helpers.js";
-import { FakeShell, tab } from "./plugin.js";
-import { browserPlugin } from "./plugin.js";
+import { browserPlugin, FakeShell, tab } from "./plugin.js";
 
 async function until(ready: () => boolean, what: string): Promise<void> {
   for (let i = 0; i < 500; i++) {
