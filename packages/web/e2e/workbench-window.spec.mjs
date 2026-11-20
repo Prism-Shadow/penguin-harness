@@ -124,7 +124,8 @@ const dockAt = (page, position) =>
   page.locator(`[data-testid="dock"][data-position="${position}"][data-open="true"]`);
 const KEY = "default_agent/window-demo";
 const row = (page) => page.locator(`[data-app-row="${KEY}"]`);
-const appWindow = (page) => page.getByRole("region", { name: "Clear" });
+/** The app's window: named by its App Center title, which the manifest declares. */
+const appWindow = (page) => page.getByRole("region", { name: "Window demo" });
 
 async function openChat(page) {
   await provisionAndLogin(page.request, U, P);
@@ -193,7 +194,7 @@ test("the sidebar's row opens the app's window over the conversation, minimize k
   await appWindow(page).getByRole("button", { name: "最小化", exact: true }).click();
   await expect(page).toHaveURL(`${BASE}/chat/${sessionId}`);
   await expect(page.getByText(REPLY)).toBeVisible();
-  await expect(row(page)).toHaveAttribute("aria-label", "Clear，运行中");
+  await expect(row(page)).toHaveAttribute("aria-label", "Window demo，运行中");
 
   await row(page).click();
   await expect(
@@ -298,7 +299,7 @@ test("a workbench hidden from the sidebar leaves the list, and its row's Open, A
     await expect(
       settings.frameLocator("iframe[title='Clear']").getByRole("heading", { name: "Board" }),
     ).toBeVisible();
-    await settings.getByRole("button", { name: "关闭", exact: true }).click();
+    await appWindow(settings).getByRole("button", { name: "关闭", exact: true }).click();
     await expect(settings).toHaveURL(`${BASE}/agents/default_agent?tab=workbenches`);
 
     await page.goto(`${BASE}/apps`);
