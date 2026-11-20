@@ -48,6 +48,7 @@ const BenchmarkPage = hubPage(() => import("./pages/hub/benchmark"), "BenchmarkP
 const LeaderboardsPage = hubPage(() => import("./pages/hub/leaderboards"), "LeaderboardsPage");
 const LeaderboardPage = hubPage(() => import("./pages/hub/leaderboard"), "LeaderboardPage");
 const RfcsPage = hubPage(() => import("./pages/rfcs"), "RfcsPage");
+const RfcDocPage = hubPage(() => import("./pages/rfc-doc"), "RfcDocPage");
 
 const BlogPostPage = lazy(() =>
   import("./pages/blog-post").then((page) => ({ default: page.BlogPostPage })),
@@ -127,6 +128,7 @@ export function AppRouter() {
               ["/leaderboards", LeaderboardsPage],
               ["/leaderboards/:id", LeaderboardPage],
               ["/rfcs", RfcsPage],
+              ["/rfcs/:id", RfcDocPage],
             ] as const
           ).map(([path, Page]) => (
             <Route

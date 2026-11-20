@@ -2,8 +2,8 @@
  * The RFC index's reading of the documents' provenance markers.
  *
  * - A landed document (its marker names where it landed, or says it is native to this repository)
- *   links into the repository's own copy of each language version.
- * - A document carried by an open design PR links to that PR and carries no repository links.
+ *   links its in-site page, carrying the raw document the page renders.
+ * - A document carried by an open design PR links to that PR and carries no in-site page.
  * - A document whose marker names nothing is drafting: the row shows without a link.
  * - An open design PR carrying a revision newer than the landed version is recorded as the
  *   entry's open revision.
@@ -87,9 +87,9 @@ describe("buildRfcIndex", () => {
     expect(entry.status).toBe("landed");
     expect(entry.title).toBe("PRFC-0001 Module");
     expect(entry.number).toBe("PRFC-0001");
-    expect(entry.en?.href).toBe(
-      "https://github.com/Prism-Shadow/penguin-harness/blob/main/rfcs/PRFC-0001-module.md",
-    );
+    expect(entry.en?.href).toBe("/rfcs/PRFC-0001-module");
+    expect(entry.en?.file).toBe("PRFC-0001-module.md");
+    expect(entry.en?.raw).toContain("# PRFC-0001 Module");
     expect(entry.zh).toBeUndefined();
   });
 
@@ -101,9 +101,7 @@ describe("buildRfcIndex", () => {
     expect(index.map((entry) => entry.number)).toEqual(["PRFC-0001", "PRFC-0021"]);
     expect(index[0].status).toBe("landed");
     expect(index[0].titleZh).toBe("PRFC-0001 模块");
-    expect(index[0].zh?.href).toBe(
-      "https://github.com/Prism-Shadow/penguin-harness/blob/main/rfcs/PRFC-0001-module.zh.md",
-    );
+    expect(index[0].zh?.href).toBe("/rfcs/PRFC-0001-module.zh");
     expect(index[1].status).toBe("landed");
   });
 

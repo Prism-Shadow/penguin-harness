@@ -1,8 +1,8 @@
 /**
- * The RFC index page: the repository's design RFCs (PRFCs) as one docs-style index — the table
- * of all RFCs (number, title, status), the surface's conventions, and the directory's files.
- * The documents are read at build time and the body is composed as Markdown, rendered through
- * the shared site prose so it looks like a docs page; the page keeps no copy of the documents.
+ * The RFC index page: the repository's design RFCs (PRFCs) as one docs-style section — the left
+ * rail lists the index and every RFC, the body is the table of all RFCs (number, title, status),
+ * the surface's conventions, and the directory's files. Each row's title links the document's
+ * in-site page; the documents are read at build time and the page keeps no copy of them.
  */
 import { useMemo } from "react";
 import {
@@ -17,19 +17,12 @@ import {
 } from "@prismshadow/penguin-ui/site";
 import type { ReactNode } from "react";
 import type { SiteMarkdownComponents } from "@prismshadow/penguin-ui/site";
+import { RfcSidebar } from "../components/rfc-sidebar";
 import { useDocumentMeta } from "../lib/document-meta";
-import { buildRfcIndex } from "../lib/rfcs";
+import { rfcEntries } from "../lib/rfcs";
 import type { RfcEntry, RfcStatus } from "../lib/rfcs";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
-
-const documents = import.meta.glob("../../../../rfcs/*.md", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
-
-const entries = buildRfcIndex(documents);
 
 const statusLabel = (status: RfcStatus): string =>
   status === "landed"
@@ -58,7 +51,7 @@ const MD_COMPONENTS: SiteMarkdownComponents = {
   a: ({ href, children }) => <MdLink href={href}>{children}</MdLink>,
 };
 
-/** The page's body as Markdown: the table of all RFCs, then the notes and the surface's sections. */
+/** The index page's body as Markdown: the table of all RFCs, then the notes and the sections. */
 function rfcIndexMarkdown(locale: string): string {
   const row = (entry: RfcEntry): string => {
     const doc = locale === "zh" ? (entry.zh ?? entry.en) : (entry.en ?? entry.zh);
@@ -74,7 +67,7 @@ function rfcIndexMarkdown(locale: string): string {
     "",
     `| ${S.rfcs.colRfc} | ${S.rfcs.colTitle} | ${S.rfcs.colStatus} |`,
     "| --- | --- | --- |",
-    ...entries.map(row),
+    ...rfcEntries.map(row),
     "",
     ...S.rfcs.notes.map((note) => `- ${note}`),
     "",
@@ -100,7 +93,8 @@ export function RfcsPage() {
   const { activeId, pinTo } = useActiveTocEntry(toc);
 
   return (
-    <div className="anim-rise px-4 py-10 sm:px-6 lg:px-10 xl:grid xl:grid-cols-[minmax(0,1fr)_13rem] xl:gap-10">
+    <div className="anim-rise px-4 py-10 sm:px-6 lg:px-10 xl:grid xl:grid-cols-[13rem_minmax(0,1fr)_13rem] xl:gap-8">
+      <RfcSidebar />
       <article className="mx-auto w-full max-w-3xl xl:mx-0">
         <header>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -114,7 +108,9 @@ export function RfcsPage() {
               />
             </div>
           </div>
-          <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-400">{S.rfcs.description}</p>
+          <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-400">
+            {S.rfcs.description}
+          </p>
         </header>
         <SiteMarkdown
           variant="doc"

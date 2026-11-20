@@ -1,17 +1,26 @@
 /**
  * The RFC index: the repository's rfcs/ surface, read at build time, one entry per PRFC document
  * pair. Each document's status comes from the marker under its title — the Source block a landed
- * document carries, or the design PR a draft names. The index keeps no copy of the documents'
- * bodies; the page links into the repository instead, so it follows the directory without a
- * second list to maintain.
+ * document carries, or the design PR a draft names. The site renders each document as its own
+ * page; the index links there and keeps no second copy of the documents' content.
  */
 import { REPO_URL } from "./links";
 
 /** Where an RFC stands: landed in the repository, carried by an open design PR, or still a draft. */
 export type RfcStatus = "landed" | "open" | "drafting";
 
-/** One language version of a document, as the reader reaches it. */
+/** One language version of a document: the in-site page that renders it, and the raw document. */
 export interface RfcDocument {
+  /** The in-site route of this version, e.g. `/rfcs/PRFC-0001-module` for the English page. */
+  href: string;
+  /** The document's file name in the repository's RFC directory. */
+  file: string;
+  /** The raw Markdown, title and provenance marker included. */
+  raw: string;
+}
+
+/** A landing page linking outside the site: an open design PR carrying a revision or a draft. */
+export interface ExternalDocument {
   href: string;
 }
 
@@ -23,11 +32,11 @@ export interface RfcEntry {
   title: string;
   titleZh?: string;
   status: RfcStatus;
-  /** The English and Chinese documents; absent while drafting (the row names it without a link). */
+  /** The English and Chinese in-site pages; absent while drafting (the row names it without a link). */
   en?: RfcDocument;
   zh?: RfcDocument;
   /** An open design PR carrying a revision newer than this landed version, if its marker names one. */
-  openRevision?: RfcDocument;
+  openRevision?: ExternalDocument;
 }
 
 interface ParsedDocument {
@@ -77,11 +86,17 @@ export function parseRfcDocument(file: string, raw: string): ParsedDocument | nu
   };
 }
 
-function repositoryHref(file: string): string {
+/** A document's copy in the repository, linked from its in-site page. */
+export function repositoryHref(file: string): string {
   return `${REPO_URL}/blob/main/rfcs/${file}`;
 }
 
-/** Build the index from the rfcs/ directory's raw documents: pairs merged, sorted by number. */
+/**
+ * Build the index from the rfcs/ directory's raw documents: pairs merged, sorted by number. Each
+ * version's href names the in-site page that renders it — `/rfcs/<id>` for the English document,
+ * `/rfcs/<id>.zh` for the Chinese one. A drafting document shows without a link; an open one
+ * links to the design PR carrying it instead.
+ */
 export function buildRfcIndex(documents: Record<string, string>): RfcEntry[] {
   const pairs = new Map<string, { en?: ParsedDocument; zh?: ParsedDocument }>();
   for (const [path, raw] of Object.entries(documents)) {
@@ -95,11 +110,14 @@ export function buildRfcIndex(documents: Record<string, string>): RfcEntry[] {
   const entries: RfcEntry[] = [];
   for (const [id, { en, zh }] of pairs) {
     const status = en?.status ?? zh?.status ?? "drafting";
-    const hrefFor = (doc?: ParsedDocument): RfcDocument | undefined => {
-      if (!doc) return undefined;
-      // A landed document links into the repository's own copy; a draft links to the PR carrying it.
-      if (status === "landed") return { href: repositoryHref(doc.file) };
-      return doc.prHref ? { href: doc.prHref } : undefined;
+    const linked = (doc?: ParsedDocument): RfcDocument | undefined => {
+      if (!doc || status === "drafting") return undefined;
+      if (status === "open") {
+        return doc.prHref
+          ? { href: doc.prHref, file: doc.file, raw: doc.raw }
+          : undefined;
+      }
+      return { href: inSiteHref(doc.id, doc.zh), file: doc.file, raw: doc.raw };
     };
     const openRevisionHref = en?.openRevisionHref ?? zh?.openRevisionHref;
     entries.push({
@@ -108,10 +126,38 @@ export function buildRfcIndex(documents: Record<string, string>): RfcEntry[] {
       title: en?.title ?? zh!.title,
       titleZh: zh?.title,
       status,
-      en: hrefFor(en ?? (status === "landed" ? undefined : zh)),
-      zh: hrefFor(zh ?? (status === "landed" ? undefined : en)),
+      en: linked(en),
+      zh: linked(zh),
       openRevision: openRevisionHref ? { href: openRevisionHref } : undefined,
     });
   }
   return entries.sort((a, b) => a.number.localeCompare(b.number) || a.id.localeCompare(b.id));
+}
+
+function inSiteHref(id: string, zh: boolean): string {
+  return zh ? `/rfcs/${id}.zh` : `/rfcs/${id}`;
+}
+
+/** The rfcs/ directory's raw documents, read at build time. */
+const documents = import.meta.glob("../../../../rfcs/*.md", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+}) as Record<string, string>;
+
+/** The index the RFC pages render: every document pair, sorted by number. */
+export const rfcEntries = buildRfcIndex(documents);
+
+/** Look up one language version's raw document by its in-site id (with or without the .zh suffix). */
+export function rfcDocumentOf(
+  id: string,
+): { doc: ParsedDocument; raw: string } | null {
+  const zh = id.endsWith(".zh");
+  const file = `${zh ? id.slice(0, -3) : id}${zh ? ".zh.md" : ".md"}`;
+  const raw = Object.entries(documents).find(
+    ([path]) => path.slice(path.lastIndexOf("/") + 1) === file,
+  )?.[1];
+  if (raw === undefined) return null;
+  const doc = parseRfcDocument(file, raw);
+  return doc ? { doc, raw } : null;
 }

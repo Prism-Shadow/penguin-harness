@@ -632,7 +632,11 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     /** The tab title and description while the page is open. */
     title: "Design RFCs (PRFC)",
     description:
-      "Every PenguinHarness design decision is recorded as a PRFC document: this is the index of all RFCs — each row's title links into the document in the selected language.",
+      "Every PenguinHarness design decision is recorded as a PRFC document: this is the index of all RFCs, rendered in site — each row's title links the document's page in the selected language.",
+    indexLabel: "RFC index",
+    notFound: "That RFC does not exist.",
+    backToIndex: "Back to the RFC index",
+    github: "GitHub",
     copyMarkdown: "Copy Markdown",
     copied: "Copied",
     toc: "On this page",

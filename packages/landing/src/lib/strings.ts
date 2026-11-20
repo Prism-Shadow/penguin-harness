@@ -628,7 +628,11 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     /** The tab title and description while the page is open. */
     title: "设计 RFC（PRFC）",
     description:
-      "PenguinHarness 的每个设计决定都记录为一份 PRFC 文档：这里是全部 RFC 的索引，每行的标题链进所选语言版本的正文。",
+      "PenguinHarness 的每个设计决定都记录为一份 PRFC 文档：这里是全部 RFC 的索引，站内逐篇渲染，每行的标题链进所选语言版本的页面。",
+    indexLabel: "RFC 索引",
+    notFound: "找不到这份 RFC。",
+    backToIndex: "返回 RFC 索引",
+    github: "GitHub",
     copyMarkdown: "复制 Markdown",
     copied: "已复制",
     toc: "本页目录",
