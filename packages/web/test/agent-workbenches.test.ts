@@ -8,8 +8,10 @@
  *   Version history lists the versions and a restore asks first, and Remove asks first — a
  *   cancel writes nothing, a confirmation removes only that workbench and refreshes the list,
  *   which then says the Agent has no workbench.
- * - Only Enable and More settings are actions on the row. Clicking its name leaves the page alone.
- * - The two adjacent menu checkboxes save independently. Failed changes roll back in place.
+ * - The row's switches carry their words. The App Center switch commits on click, from the switch
+ *   or from its words; a refused write leaves it where the file says.
+ * - The More menu's first row is the same App Center setting, checkable: picking it writes at once
+ *   and the row's switch follows.
  * - The row leads with the workbench's own App Center icon when it has one, else no image.
  */
 import { createElement as h } from "react";
@@ -77,8 +79,7 @@ async function more(item: string) {
   await click(button(`${en.workbenches.more} Support`));
   await click(menuItem(item));
 }
-const moreButton = () => button(`${en.workbenches.more} Support`);
-const row = () => moreButton().closest("li")!;
+const appCenterSwitch = () => switchNamed(`${en.workbenches.showInAppCenter} Support`);
 it("opens the selected workbench on its owning Agent", async () => {
   const { router } = await open([
     {
@@ -88,7 +89,7 @@ it("opens the selected workbench on its owning Agent", async () => {
       renderer: { iframe: { src: "/support" } },
     },
   ]);
-  await more(en.workbenches.openAction);
+  await click(button(`${en.workbenches.open} Support`));
   expect(whereIs(router)).toBe("/chat/new");
   expect(router.state.location.state).toMatchObject({
     agentId: AGENT_ID,
@@ -129,41 +130,52 @@ it("asks before removing from the More menu: a cancel deletes nothing, a confirm
   await waitFor(() => !hasButton(`${en.workbenches.more} Support`));
   expect(document.body.textContent).toContain(en.agentPlugins.workbenchesEmpty);
 });
-it("keeps Enable and More settings on the row and opens no files by clicking the name", async () => {
+it("names both switches beside them, and flips the App Center one from its words; a refused write leaves it where the file says", async () => {
   const { server } = await open();
-  expect([...row().querySelectorAll("button")]).toEqual([
-    switchNamed(en.workbenches.enableOne("Support")),
-    moreButton(),
-  ]);
-  await click([...row().querySelectorAll("span")].find((node) => node.textContent === "Support")!);
-  expect(document.querySelector('[role="dialog"]')).toBeNull();
-  expect(server.writes()).toHaveLength(0);
-});
-it("saves the two adjacent visibility choices independently and rolls a refused change back", async () => {
-  const { server } = await open();
-  await click(moreButton());
-  const chat = menuItem(en.workbenches.showInChat);
-  const app = menuItem(en.workbenches.showInAppCenter);
-  expect(chat.nextElementSibling).toBe(app);
-  expect([chat, app].map((item) => item.getAttribute("aria-checked"))).toEqual(["true", "false"]);
+  const words = () => appCenterSwitch().closest("label")!;
+  expect(words().textContent).toBe(en.workbenches.showInAppCenter);
+  expect(switchNamed(en.workbenches.enableOne("Support")).closest("label")?.textContent).toBe(
+    en.workbenches.enableLabel,
+  );
+  expect(appCenterSwitch().getAttribute("aria-checked")).toBe("false");
+
   server.refuseNext(409, "workbench_manifest_invalid", "package.json is not valid JSON");
-  await click(app);
-  await waitFor(() => app.getAttribute("aria-disabled") !== "true");
-  expect(app.getAttribute("aria-checked")).toBe("false");
-  await click(chat);
-  await waitFor(() => chat.getAttribute("aria-disabled") !== "true");
-  await click(app);
-  await waitFor(() => app.getAttribute("aria-disabled") !== "true");
-  await click(moreButton());
-  await click(moreButton());
-  expect(menuItem(en.workbenches.showInChat).getAttribute("aria-checked")).toBe("false");
-  expect(menuItem(en.workbenches.showInAppCenter).getAttribute("aria-checked")).toBe("true");
-  expect(server.writes().map((request) => [request.path.split("/").at(-1), request.body])).toEqual([
-    ["app-center", { show: true }],
-    ["chat-tabs", { show: false }],
-    ["app-center", { show: true }],
-  ]);
+  await click(appCenterSwitch());
+  await waitFor(() => !appCenterSwitch().disabled);
+  expect(appCenterSwitch().getAttribute("aria-checked")).toBe("false");
+
+  // The words beside the switch flip it as well.
+  await click(words());
+  await waitFor(() => appCenterSwitch().getAttribute("aria-checked") === "true");
+  await waitFor(() => !appCenterSwitch().disabled);
+  await click(words());
+  await waitFor(() => appCenterSwitch().getAttribute("aria-checked") === "false");
+  expect(
+    server
+      .writes()
+      .filter((request) => request.path.endsWith("/app-center"))
+      .map((request) => request.body),
+  ).toEqual([{ show: true }, { show: true }, { show: false }]);
 });
+it("shows the workbench in the App Center from the More menu's checkable row, and the row's switch follows", async () => {
+  const { server } = await open();
+  const menuRow = async () => {
+    await click(button(`${en.workbenches.more} Support`));
+    return menuItem(en.workbenches.showInAppCenter);
+  };
+  expect((await menuRow()).getAttribute("aria-checked")).toBe("false");
+  await click(menuItem(en.workbenches.showInAppCenter));
+  await waitFor(() => appCenterSwitch().getAttribute("aria-checked") === "true");
+  await waitFor(() => !appCenterSwitch().disabled);
+  expect(
+    server
+      .writes()
+      .filter((request) => request.path.endsWith("/app-center"))
+      .map((request) => [request.method, request.body]),
+  ).toEqual([["PATCH", { show: true }]]);
+  expect((await menuRow()).getAttribute("aria-checked")).toBe("true");
+});
+const row = () => appCenterSwitch().closest("li")!;
 it("leads the row with the workbench's own App Center icon", async () => {
   await open([], { icon: { url: "/api/icons/support.png?rev=1", tint: false } });
   expect(row().querySelector("img")?.getAttribute("src")).toBe("/api/icons/support.png?rev=1");

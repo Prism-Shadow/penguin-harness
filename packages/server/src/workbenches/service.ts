@@ -98,8 +98,7 @@ import { loadTypeScript } from "../plugin/typescript.js";
 import { openUiRuntime, requireUiRuntime, type UiRuntime, type WebFiles } from "./ui-runtime.js";
 import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
 import {
-  HIDDEN_FROM_CHAT,
-  listFolderIds,
+  HIDDEN_FROM_SIDEBAR,
   isSafeRelPath,
   isSwitchedOff,
   isTempName,
@@ -389,30 +388,21 @@ export class WorkbenchService implements Workbenches {
     });
   }
 
-  async list(projectId: string, agentId: string, view?: "chat"): Promise<WorkbenchInfo[]> {
+  async list(projectId: string, agentId: string): Promise<WorkbenchInfo[]> {
     await this.migrate(projectId, agentId);
     this.watch(projectId, agentId);
     const base = workbenchesDir(this.paths.root, projectId, agentId);
-    const ids = await listFolderIds(base);
+    const folders = await listFolders(base);
     const all = !(await isSwitchedOff(base));
     const out: WorkbenchInfo[] = [];
-    const alive = new Set<string>();
-    for (const id of ids) {
-      const dir = path.join(base, id);
-      if (view === "chat" && (await isSwitchedOff(dir, HIDDEN_FROM_CHAT))) {
-        // Its window may be open in the App Center. Leave its runtime alone and skip its source.
-        alive.add(key(projectId, agentId, id));
-        continue;
-      }
-      const folder = await readFolder(dir, id);
-      if (!folder) continue;
-      alive.add(key(projectId, agentId, id));
+    for (const folder of folders) {
       const { info, unloaded } = await this.settle(projectId, agentId, folder, all);
       // A marker written by hand is only seen here: what it unloaded is news to open pages.
       if (unloaded) this.notify(projectId, agentId, info);
       out.push(info);
     }
     // Folders that went away drop their instances.
+    const alive = new Set(folders.map((f) => key(projectId, agentId, f.id)));
     for (const [k, l] of this.loaded) {
       if (k.startsWith(`${projectId}/${agentId}/`) && !alive.has(k)) {
         this.forget(projectId, agentId, l.folder.id);
@@ -719,16 +709,34 @@ export class WorkbenchService implements Workbenches {
     return readAppCenterIcon(dir, workbenchId);
   }
 
-  async setChatVisibility(
+  async sidebar(projectId: string, agentId: string): Promise<AppCenterShortcut[]> {
+    await this.migrate(projectId, agentId);
+    // An edit made while the list is shown loads, and the load is announced.
+    this.watch(projectId, agentId);
+    const base = workbenchesDir(this.paths.root, projectId, agentId);
+    // With the Agent-wide switch off none of its workbenches runs, so none has a row.
+    if (await isSwitchedOff(base)) return [];
+    const agentName = (await this.agentConfig.readCardMeta(projectId, agentId)).name ?? agentId;
+    return agentShortcuts(
+      projectId,
+      { agentId, agentName },
+      base,
+      (workbenchId) => this.building(key(projectId, agentId, workbenchId)),
+      "sidebar",
+    );
+  }
+
+  async setSidebar(
     projectId: string,
     agentId: string,
     workbenchId: string,
     show: boolean,
   ): Promise<WorkbenchInfo> {
     const folder = await this.folder(projectId, agentId, workbenchId);
-    await writeSwitch(folder.dir, show, HIDDEN_FROM_CHAT);
+    await writeSwitch(folder.dir, show, HIDDEN_FROM_SIDEBAR);
     const all = await this.agentEnabled(projectId, agentId);
     const { info, loaded } = await this.settle(projectId, agentId, folder, all);
+    // A marker changes no source, so nothing reloads: the answer is the news open pages need.
     if (!loaded) this.notify(projectId, agentId, info);
     return info;
   }
@@ -886,7 +894,7 @@ export class WorkbenchService implements Workbenches {
       loadedAt: l.loadedAt,
       error: l.error,
       hints: hintsOf(l),
-      showInChat: !(await isSwitchedOff(l.folder.dir, HIDDEN_FROM_CHAT)),
+      showInSidebar: !(await isSwitchedOff(l.folder.dir, HIDDEN_FROM_SIDEBAR)),
       enabled: true,
       ...(l.appCenter.appCenter !== undefined ? { appCenter: l.appCenter.appCenter } : {}),
       ...(icon !== undefined ? { icon: appCenterIconRef(projectId, agentId, id, icon) } : {}),
@@ -912,7 +920,7 @@ export class WorkbenchService implements Workbenches {
       loadedAt: null,
       error: null,
       hints: [],
-      showInChat: !(await isSwitchedOff(folder.dir, HIDDEN_FROM_CHAT)),
+      showInSidebar: !(await isSwitchedOff(folder.dir, HIDDEN_FROM_SIDEBAR)),
       enabled,
       ...(appCenter !== undefined ? { appCenter } : {}),
       ...(icon !== undefined

@@ -10,7 +10,7 @@
  * - Given `?tab=skills`, the plugin's Skill carries the mark naming Charts and the user's own
  *   Skill carries none; pressing the mark lands on the Plugins sub-page with Charts' row marked
  *   and focused, and no detail open.
- * - Given a Skill, a hook package or a workbench, its files action opens a
+ * - Given a Skill, a hook package or a workbench, a click on its row (not on its name) opens a
  *   dialog titled with the part over the part's own folder in the Agent State, its lead file
  *   listed and previewed; every read names that folder, and nothing is written.
  * - Given the owner uninstalls a Skill a plugin installed, the confirmation also says which plugin
@@ -46,7 +46,6 @@ import {
   dialogs,
   field,
   hasButton,
-  menuItem,
   pressScrim,
   switchNamed,
   type,
@@ -163,7 +162,7 @@ describe("the kind sub-pages of the Plugins tab", () => {
       shows: "A board of charts.",
     },
   ])(
-    "opens a $kind's own files read-only",
+    "opens a $kind's own files read-only from a click on its row",
     async ({ tab, ready, row, body, folder, files, lead, shows }) => {
       const workspace = `/data/agents/${AGENT_ID}/${folder}`;
       const { server } = await openAgentPlugins({
@@ -171,15 +170,10 @@ describe("the kind sub-pages of the Plugins tab", () => {
         ready: () => hasButton(ready),
         files: { [workspace]: files },
       });
-      if (tab === "workbenches") {
-        await click(button(ready));
-        await click(menuItem(en.workbenches.viewFiles));
-      } else {
-        const description = [...rowOf(row).querySelectorAll("span")].find(
-          (span) => span.children.length === 0 && span.textContent === body,
-        )!;
-        await click(description);
-      }
+      const description = [...rowOf(row).querySelectorAll("span")].find(
+        (span) => span.children.length === 0 && span.textContent === body,
+      )!;
+      await click(description);
       await waitFor(() => dialogs().length === 1 && topDialog().textContent!.includes(shows));
 
       const title = document.getElementById(topDialog().getAttribute("aria-labelledby")!);
@@ -236,7 +230,7 @@ describe("the kind sub-pages of the Plugins tab", () => {
   });
 
   it("keeps a machine's Agent on its machine when another sub-page is pressed", async () => {
-    const { router, server } = await openAgentPlugins({
+    const { router } = await openAgentPlugins({
       machines: [GPU],
       at: `${PAGE}?machine=gpu1&tab=skills`,
       ready: () => hasButton(`${en.skills.uninstall} notes`),
@@ -244,14 +238,6 @@ describe("the kind sub-pages of the Plugins tab", () => {
     await click(subPageButton(en.agentPlugins.subPages.workbenches));
     expect(whereIs(router)).toBe(`${PAGE}?machine=gpu1&tab=workbenches`);
     await waitFor(() => hasButton(`${en.workbenches.more} Board`));
-    await click(button(`${en.workbenches.more} Board`));
-    expect(() => menuItem(en.workbenches.showInAppCenter)).toThrow();
-    await click(menuItem(en.workbenches.showInChat));
-    expect(server.writes().at(-1)).toMatchObject({
-      machine: "gpu1",
-      path: `${AGENT_PATH}/workbenches/board/chat-tabs`,
-      body: { show: false },
-    });
   });
 
   it("asks before another sub-page replaces an edited skills prompt, and keep editing stays", async () => {
@@ -270,19 +256,12 @@ describe("the kind sub-pages of the Plugins tab", () => {
   it("switches one workbench off by itself, and greys every switch while Enable workbenches is off", async () => {
     const { server } = await openAgentPlugins({
       at: `${PAGE}?tab=workbenches`,
-      ready: () => hasButton(`${en.workbenches.more} Board`),
+      ready: () => hasButton(`${en.workbenches.open} Board`),
     });
-    const more = () => button(`${en.workbenches.more} Board`);
-    await click(more());
-    expect(menuItem(en.workbenches.viewPlugin("Charts"))).toBeDefined();
-    expect(menuItem(en.workbenches.openAction)).toBeDefined();
-    await click(more());
+    expect(markOf(rowOf("Board"))).not.toBeNull();
+    expect(markOf(rowOf("Todo"))).toBeNull();
     await click(switchNamed(en.workbenches.enableOne("Board")));
-    await click(more());
-    expect(() => menuItem(en.workbenches.openAction)).toThrow();
-    expect(() => menuItem(en.workbenches.reload)).toThrow();
-    expect(menuItem(en.workbenches.viewFiles)).toBeDefined();
-    await click(more());
+    await waitFor(() => !hasButton(`${en.workbenches.open} Board`));
     expect(server.writes().map((r) => [r.method, r.path, r.body])).toEqual([
       ["PUT", `${AGENT_PATH}/workbenches/board/enabled`, { enabled: false }],
     ]);
@@ -309,9 +288,6 @@ describe("the kind sub-pages of the Plugins tab", () => {
     });
     expect(() => switchNamed(en.workbenches.enableAll)).toThrow();
     expect(() => switchNamed(en.workbenches.enableOne("Board"))).toThrow();
-    await click(button(`${en.workbenches.more} Board`));
-    expect(() => menuItem(en.workbenches.showInChat)).toThrow();
-    expect(() => menuItem(en.workbenches.showInAppCenter)).toThrow();
   });
 
   it("says an Agent has no hook package, and keeps Import hook", async () => {

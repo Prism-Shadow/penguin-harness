@@ -112,7 +112,7 @@ export abstract class WorkbenchHost {
 @Interface()
 export abstract class Workbenches {
   /** Every workbench of the Agent, disabled ones included; the ones that run are loaded when stale. */
-  abstract list(projectId: string, agentId: string, view?: "chat"): Promise<WorkbenchInfo[]>;
+  abstract list(projectId: string, agentId: string): Promise<WorkbenchInfo[]>;
   /** The Agent-wide switch: false while `.disabled` sits beside the workbench folders. */
   abstract agentEnabled(projectId: string, agentId: string): Promise<boolean>;
   /**
@@ -227,14 +227,23 @@ export abstract class Workbenches {
     agentId: string,
     workbenchId: string,
   ): Promise<IconImage | null>;
-  /** Change this installation's visibility in Chat without disabling the running workbench. */
-  abstract setChatVisibility(
+  /**
+   * The rows of one Agent's sidebar list: the App Center's reading with the sidebar's filter, a
+   * shortcut for every workbench that runs, has a tab and carries no `.hidden-from-sidebar`
+   * marker, by title. Nothing is loaded or compiled; the Agent's folder is watched from then on.
+   */
+  abstract sidebar(projectId: string, agentId: string): Promise<AppCenterShortcut[]>;
+  /**
+   * Writes (`show: false`) or removes the installation's `.hidden-from-sidebar` marker. It is no
+   * part of the source, so writing it records no version and does not reload the workbench; the
+   * workbench as it then stands is answered and announced.
+   */
+  abstract setSidebar(
     projectId: string,
     agentId: string,
     workbenchId: string,
     show: boolean,
   ): Promise<WorkbenchInfo>;
-
   /**
    * Rewrites `penguin.appCenter.show` in the workbench's package.json, and nothing else of it,
    * then reloads the workbench — which records the edit as a version like any other.

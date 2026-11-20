@@ -15,8 +15,18 @@
  * - A member who is not the owner is refused either switch (403 `owner_required`), a body
  *   without a boolean is 400, an unknown workbench is 404, and none of them changes anything.
  *
- * - Given a workbench hidden from Chat, reading its chat listing skips its source, while an
- *   explicit open still serves its tabs and the same workbench of a second Agent stays visible.
+ * The sidebar setting (PATCH …/workbenches/:id/sidebar) and the sidebar list (GET
+ * …/workbenches?view=sidebar), read from the files without loading anything:
+ * - Given an Agent's workbenches, the list has a row (the App Center tile's shape) for each one
+ *   that runs and has a tab, declared for the App Center or not, with its declared title; one
+ *   with a `.hidden-from-sidebar` marker, one without a tab and one switched off have none, and
+ *   listing compiles nothing. With the Agent-wide switch off the list is empty.
+ * - Given a loaded workbench, a member's `show: false` writes the marker, the row says so and the
+ *   list drops it, without a reload or a version, and the Project hears it; `show: true` removes
+ *   the marker and the list has it again. A body without a boolean is 400 and an unknown
+ *   workbench 404, and neither writes a marker.
+ * - Given the marker on a workbench a plugin installed, a reinstall of the plugin keeps it, and
+ *   removing the workbench takes it away: installed again, the workbench is listed.
  *
  * A loaded workbench (one load shared by the group, and one more each time a switch turns it
  * back on):
@@ -33,9 +43,11 @@ import { strToU8, unzipSync, zipSync } from "fflate";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agentStateDir } from "@prismshadow/penguin-core";
 import type {
+  AppCenterShortcut,
   ServerEvent,
   WorkbenchesResponse,
   WorkbenchInfo,
+  WorkbenchSidebarResponse,
   WorkbenchVersion,
 } from "../src/api/types.js";
 import { userChannelKey } from "../src/http/routes/events.js";
@@ -198,39 +210,110 @@ describe("workbench switches", { timeout: 30_000 }, () => {
     loadedAt: null,
     error: null,
     enabled,
-    showInChat: true,
+    showInSidebar: true,
   });
 
-  it("skips a hidden installation before loading its source and still serves the app directly", async () => {
-    const first = await newAgent();
-    const second = await newAgent();
-    for (const agent of [first, second])
-      await writeFiles(path.join(agent.folders, "desk"), DEMO_FILES);
-    const change = (show: boolean) => owner.patch(`${first.base}/desk/chat-tabs`, { show });
-    expect((await change(false)).status).toBe(200);
-    // On a cold start Chat must not compile this installation. Change its revision while the
-    // server has no watcher for this new Agent. Only opening the app should run the build.
-    const cold = await newAgent();
-    const dir = path.join(cold.folders, "desk");
-    await fs.cp(path.join(first.folders, "desk"), dir, { recursive: true });
-    await fs.rm(path.join(dir, ".build"), { recursive: true, force: true });
-    expect((await listing(cold.base + "?view=chat")).workbenches).toEqual([]);
-    await expect(fs.stat(path.join(dir, ".build"))).rejects.toThrow();
-    expect((await listing(second.base + "?view=chat")).workbenches[0]).toMatchObject({
-      id: "desk",
-      showInChat: true,
-    });
-    expect((await owner.get(cold.base + "/desk/ui/index.html")).status).toBe(200);
-    expect((await listing(cold.base)).workbenches[0]).toMatchObject({
-      showInChat: false,
-      enabled: true,
-    });
-    expect((await change(true)).status).toBe(200);
-    expect((await listing(first.base + "?view=chat")).workbenches[0]?.tabs[0]?.key).toBe("board");
-    expect((await owner.patch(first.base + "/desk/chat-tabs", { show: "no" })).status).toBe(400);
-    expect((await owner.patch(first.base + "/missing/chat-tabs", { show: false })).status).toBe(
-      404,
+  /** The sidebar list of the Agent whose workbench routes are at `base`. */
+  const sidebarOf = async (base: string, client = owner): Promise<AppCenterShortcut[]> => {
+    const res = await client.get(`${base}?view=sidebar`);
+    expect(res.status, await res.clone().text()).toBe(200);
+    return ((await res.json()) as WorkbenchSidebarResponse).apps;
+  };
+  const hiddenMarker = (dir: string) => path.join(dir, ".hidden-from-sidebar");
+  const exists = (file: string) =>
+    fs.stat(file).then(
+      () => true,
+      () => false,
     );
+
+  describe("the sidebar setting", () => {
+    it("lists each workbench that runs and has a tab, skips the hidden, tabless and switched off ones, and compiles nothing", async () => {
+      const { agentId, base, folders } = await newAgent();
+      const dirs = {
+        desk: path.join(folders, "desk"),
+        quiet: path.join(folders, "quiet"),
+        headless: path.join(folders, "headless"),
+        off: path.join(folders, "off"),
+      };
+      // Declared off the App Center, with a title of its own: the sidebar lists it all the same.
+      await writeFiles(dirs.desk, {
+        ...DEMO_FILES,
+        "package.json": packageJson({ appCenter: { show: false, title: "Desk board" } }),
+      });
+      await writeFiles(dirs.quiet, DEMO_FILES);
+      await fs.writeFile(hiddenMarker(dirs.quiet), "");
+      await writeFiles(dirs.headless, {
+        ...DEMO_FILES,
+        "package.json": JSON.stringify({
+          name: "Headless",
+          version: "1.0.0",
+          type: "module",
+          penguin: { modules: [{ name: "Workbench", provides: { main: MAIN_KEY }, children: [] }] },
+        }),
+      });
+      await writeFiles(dirs.off, DEMO_FILES);
+      await fs.writeFile(path.join(dirs.off, ".disabled"), "");
+
+      expect(await sidebarOf(base)).toEqual([
+        {
+          agentId,
+          agentName: agentId,
+          workbenchId: "desk",
+          title: "Desk board",
+          path: `/app/${PROJECT}/${agentId}/desk`,
+          tab: "board",
+          build: "ready",
+        },
+      ]);
+      for (const dir of Object.values(dirs))
+        await expect(fs.stat(path.join(dir, ".build"))).rejects.toThrow();
+      const tiles = (await (await owner.get(`/api/projects/${PROJECT}/app-center`)).json()) as {
+        shortcuts: AppCenterShortcut[];
+      };
+      expect(tiles.shortcuts.filter((s) => s.agentId === agentId)).toEqual([]);
+
+      await turn(`${base}/enabled`, false);
+      expect(await sidebarOf(base)).toEqual([]);
+    });
+
+    it("refuses a body without a boolean and an unknown workbench, and writes no marker", async () => {
+      const { base, folders } = await newAgent();
+      const dir = path.join(folders, "desk");
+      await writeFiles(dir, DEMO_FILES);
+      expect(await errorCode(member.patch(`${base}/desk/sidebar`, { show: "no" }))).toEqual([
+        400,
+        "bad_request",
+      ]);
+      expect((await member.patch(`${base}/missing/sidebar`, { show: false })).status).toBe(404);
+      expect(await exists(hiddenMarker(dir))).toBe(false);
+      await expect(fs.stat(path.join(folders, "missing"))).rejects.toThrow();
+    });
+
+    it("keeps the marker through a reinstall of the plugin, and loses it with the workbench", async () => {
+      const { agentId, base, folders } = await newAgent();
+      const plugins = `/api/projects/${PROJECT}/agents/${agentId}/plugins`;
+      const dir = path.join(folders, "desk");
+      expect((await owner.post(plugins, { names: ["desk"] })).status).toBe(201);
+      // Off first, so nothing here loads it: the row is read from the folder.
+      await turn(`${base}/desk/enabled`, false);
+      const hide = await owner.patch(`${base}/desk/sidebar`, { show: false });
+      expect(hide.status, await hide.clone().text()).toBe(200);
+      expect(((await hide.json()) as { workbench: WorkbenchInfo }).workbench).toMatchObject({
+        ...idle("desk", false),
+        showInSidebar: false,
+      });
+
+      expect((await owner.post(plugins, { names: ["desk"] })).status).toBe(201);
+      expect(await exists(hiddenMarker(dir))).toBe(true);
+      expect((await listing(base)).workbenches).toEqual([
+        expect.objectContaining({ id: "desk", showInSidebar: false }),
+      ]);
+
+      expect((await owner.delete(`${base}/desk`)).status).toBe(204);
+      expect((await owner.post(plugins, { names: ["desk"] })).status).toBe(201);
+      expect(await exists(hiddenMarker(dir))).toBe(false);
+      expect((await sidebarOf(base)).map((app) => app.workbenchId)).toEqual(["desk"]);
+    });
   });
 
   describe("a workbench switched off", () => {
@@ -400,6 +483,48 @@ describe("workbench switches", { timeout: 30_000 }, () => {
       };
       servesTab(workbench);
       expect(await call("/hello")).toBe("on");
+    });
+
+    it("leaves the sidebar for a member's write without a reload or a version, and comes back", async () => {
+      const history = async () =>
+        (
+          (await (await owner.get(`${base}/live/history`)).json()) as {
+            versions: WorkbenchVersion[];
+          }
+        ).versions;
+      const before = await history();
+      const { loadedAt } = (await listing(base)).workbenches.find((w) => w.id === "live")!;
+      const heard: ServerEvent[] = [];
+      const stop = t.deps.channels.get(userChannelKey(ownerId)).subscribe((evt) => {
+        if (evt.event === "server_event") heard.push(JSON.parse(evt.data) as ServerEvent);
+      });
+      try {
+        const res = await member.patch(`${base}/live/sidebar`, { show: false });
+        expect(res.status, await res.clone().text()).toBe(200);
+        const { workbench } = (await res.json()) as { workbench: WorkbenchInfo };
+        servesTab(workbench);
+        expect(workbench).toMatchObject({ showInSidebar: false, loadedAt });
+        expect(await exists(hiddenMarker(dir))).toBe(true);
+        expect(await sidebarOf(base, member)).toEqual([]);
+        expect(heard).toContainEqual({
+          type: "workbench_updated",
+          projectId: PROJECT,
+          agentId,
+          workbench,
+        });
+      } finally {
+        stop();
+      }
+      expect(await history()).toEqual(before);
+
+      const shown = await member.patch(`${base}/live/sidebar`, { show: true });
+      expect(shown.status).toBe(200);
+      expect(((await shown.json()) as { workbench: WorkbenchInfo }).workbench).toMatchObject({
+        showInSidebar: true,
+        loadedAt,
+      });
+      expect(await exists(hiddenMarker(dir))).toBe(false);
+      expect((await sidebarOf(base)).map((app) => app.workbenchId)).toEqual(["live"]);
     });
 
     it("unloads everything with the Agent-wide switch, keeps a rollback from loading, and loads only the ones switched on again", async () => {

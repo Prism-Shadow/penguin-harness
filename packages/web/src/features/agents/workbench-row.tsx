@@ -1,5 +1,24 @@
-/** The identity and settings menu of one installed workbench. */
+/**
+ * The pieces of a workbench's row (the Plugins tab's Workbenches sub-page, agent-workbenches.tsx)
+ * that say what they do: the workbench's mark, its switches with their words beside them, and the
+ * "More" menu that holds the row's less frequent actions.
+ *
+ * - The mark is the workbench's own App Center icon when its manifest names one that reads clean
+ *   (an image the server serves; a monochrome one drawn in the tile's ink), else its plugin's
+ *   icon on the tile, else the anvil tile.
+ * - A switch sits in a `<label>` whose words flip it too ("Enable", "Show in the App Center"); a
+ *   longer hint — what showing in the App Center means, and what the switch does to the
+ *   package.json — is the label's tooltip.
+ * - "More" is the portaled `Dropdown` with the `Menu` family's rows, as every row menu in the
+ *   app: first, on a row that has it, "Show in the App Center" as a checkable row — the same
+ *   setting as the row's switch (`AppCenterControl`), so picking it writes at once — then a rule,
+ *   Reload (while the workbench runs), Version history and Export, then Remove in the danger
+ *   tone. Opening focuses the first row, the arrow keys move, Enter picks, and Esc closes this
+ *   menu only and hands focus back to its button. A pick closes the menu; the menu acts through
+ *   the rows' owner: Remove still asks there first.
+ */
 import { useState } from "react";
+import type { ReactNode } from "react";
 import type { IconRef, WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import {
   Dropdown,
@@ -11,12 +30,9 @@ import {
   Menu,
   MenuItem,
   MenuSeparator,
+  Switch,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { useAgentLocation } from "../../lib/agent-location";
-import { useInstantSetting } from "../../lib/instant-setting";
 import { S } from "../../lib/strings";
-import { useProject } from "../../state/project";
 import { SkillTile } from "../skills";
 
 /** Edge of the row's mark, in px: the tile every settings row leads with. */
@@ -46,16 +62,70 @@ export function WorkbenchMark({
   );
 }
 
+/** A switch with its word beside it, in one `<label>`, so a click on the word flips it too. */
+export function LabelledSwitch({
+  text,
+  hint,
+  disabled,
+  children,
+}: {
+  text: string;
+  /** What the switch does, beyond its word: the label's tooltip. */
+  hint?: string;
+  disabled: boolean;
+  /** The switch. */
+  children: ReactNode;
+}) {
+  return (
+    <label
+      {...(hint !== undefined ? { "data-tooltip": hint, "data-tooltip-extra": true } : {})}
+      className={`mr-2 flex items-center gap-1.5 text-xs text-fg-muted ${
+        disabled ? "cursor-not-allowed" : "cursor-pointer"
+      }`}
+    >
+      {text}
+      {children}
+    </label>
+  );
+}
+
+/** One workbench's App Center setting, as a control shows it. */
+export interface AppCenterControl {
+  checked: boolean;
+  disabled: boolean;
+  onChange: (show: boolean) => void;
+}
+
+/** The App Center switch, its words beside it; a click on either flips it. */
+export function AppCenterToggle({
+  title,
+  checked,
+  disabled,
+  onChange,
+}: AppCenterControl & {
+  /** The row's title, for the switch's accessible name. */
+  title: string;
+}) {
+  return (
+    <LabelledSwitch
+      text={S.workbenches.showInAppCenter}
+      hint={S.workbenches.showInAppCenterHint}
+      disabled={disabled}
+    >
+      <Switch
+        checked={checked}
+        disabled={disabled}
+        onChange={onChange}
+        aria-label={`${S.workbenches.showInAppCenter} ${title}`}
+      />
+    </LabelledSwitch>
+  );
+}
+
 export function WorkbenchRowMenu({
   title,
   disabled,
-  workbench,
-  agentId,
-  hasTabs,
-  onSwitched,
-  onOpen,
-  onFiles,
-  source,
+  appCenter,
   onReload,
   onHistory,
   onExport,
@@ -64,13 +134,8 @@ export function WorkbenchRowMenu({
   /** The row's title, for the button's and the menu's accessible name. */
   title: string;
   disabled: boolean;
-  workbench: WorkbenchInfo;
-  agentId: string;
-  hasTabs: boolean;
-  onSwitched: (workbench: WorkbenchInfo) => void;
-  onOpen?: (() => void) | undefined;
-  onFiles: () => void;
-  source?: { title: string; show: () => void } | undefined;
+  /** The row's App Center setting, drawn as the menu's first, checkable row; absent on a machine's Agent. */
+  appCenter?: AppCenterControl | undefined;
   /** Absent while the workbench does not run: there is nothing to reload. */
   onReload?: (() => void) | undefined;
   onHistory: () => void;
@@ -79,33 +144,6 @@ export function WorkbenchRowMenu({
   onRemove: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const { currentProject } = useProject();
-  const machineId = useAgentLocation();
-  const chatTabs = useInstantSetting(workbench.showInChat !== false, async (show: boolean) => {
-    if (!currentProject) return;
-    const result = await api.setWorkbenchChatVisibility(
-      currentProject.projectId,
-      agentId,
-      workbench.id,
-      show,
-      machineId,
-    );
-    onSwitched(result.workbench);
-  });
-  const appCenter = useInstantSetting(workbench.appCenter?.show === true, async (show: boolean) => {
-    if (!currentProject) return;
-    const result = await api.setWorkbenchAppCenter(
-      currentProject.projectId,
-      agentId,
-      workbench.id,
-      show,
-      machineId,
-    );
-    onSwitched(result.workbench);
-  });
-  const hasChat = hasTabs && workbench.showInChat !== undefined;
-  const hasAppCenter = machineId === null;
-  const saving = chatTabs.busy || appCenter.busy;
   const label = `${S.workbenches.more} ${title}`;
   /** A row closes the menu, handing focus back to its button, then acts. */
   const pick = (run: () => void) => () => {
@@ -134,47 +172,17 @@ export function WorkbenchRowMenu({
       }
     >
       <Menu label={label} density="sm" className="py-1">
-        {hasChat && (
-          <MenuItem
-            glyph={ICONS.appWindow}
-            label={S.workbenches.showInChat}
-            checked={chatTabs.value}
-            aria-disabled={saving}
-            onSelect={() => {
-              if (!saving) void chatTabs.set(!chatTabs.value);
-            }}
-          />
-        )}
-        {hasAppCenter && (
-          <MenuItem
-            glyph={ICONS.tiles}
-            label={S.workbenches.showInAppCenter}
-            checked={appCenter.value}
-            aria-disabled={saving}
-            onSelect={() => {
-              if (!saving) void appCenter.set(!appCenter.value);
-            }}
-          />
-        )}
-        {(hasChat || hasAppCenter) && <MenuSeparator />}
-        {onOpen && (
-          <MenuItem
-            glyph={ICONS.arrowUpRight}
-            label={S.workbenches.openAction}
-            onSelect={pick(onOpen)}
-          />
-        )}
-        <MenuItem
-          glyph={ICONS.folderOpen}
-          label={S.workbenches.viewFiles}
-          onSelect={pick(onFiles)}
-        />
-        {source && (
-          <MenuItem
-            glyph={ICONS.puzzle}
-            label={S.workbenches.viewPlugin(source.title)}
-            onSelect={pick(source.show)}
-          />
+        {appCenter !== undefined && (
+          <>
+            <MenuItem
+              glyph={ICONS.tiles}
+              label={S.workbenches.showInAppCenter}
+              checked={appCenter.checked}
+              disabled={appCenter.disabled}
+              onSelect={pick(() => appCenter.onChange(!appCenter.checked))}
+            />
+            <MenuSeparator />
+          </>
         )}
         {onReload !== undefined && (
           <MenuItem glyph={ICONS.refresh} label={S.workbenches.reload} onSelect={pick(onReload)} />

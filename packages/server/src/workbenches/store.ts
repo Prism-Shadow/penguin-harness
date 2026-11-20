@@ -8,7 +8,7 @@
  *   <agentStateDir>/workbenches/<id>/.harness/      the types it was written against (harness-types.ts)
  *   <agentStateDir>/workbenches/<id>/.build/        its emitted code, per revision (compile.ts)
  *   <agentStateDir>/workbenches/<id>/.disabled      present: this workbench is switched off
- *   <agentStateDir>/workbenches/<id>/.hidden-from-chat  present: omit its tabs from Chat
+ *   <agentStateDir>/workbenches/<id>/.hidden-from-sidebar  present: not in its Agent's sidebar
  *   <agentStateDir>/workbenches/.disabled           present: every workbench of the Agent is
  *
  * The folder's source is every file except `state.json` (the state is the workbench's data,
@@ -34,10 +34,18 @@ export const UI_DIR = "ui";
  */
 export const DISABLED_MARKER = ".disabled";
 
-/** A per-installation preference, outside the versioned source like the enable switch. */
-export const HIDDEN_FROM_CHAT = ".hidden-from-chat";
+/**
+ * An empty file in a workbench's folder that keeps it off its Agent's sidebar list. It belongs to
+ * this installation, not to the source: a dot entry like {@link DISABLED_MARKER}, so every member
+ * of the Project sees the same list, a plugin update or an archive import keeps it, and it goes
+ * with the folder.
+ */
+export const HIDDEN_FROM_SIDEBAR = ".hidden-from-sidebar";
 
-/** Whether `dir` (a workbench's folder, or the folder of all of them) holds the off marker. */
+/**
+ * Whether `dir` (a workbench's folder, or the folder of all of them) holds the off marker, or the
+ * named marker ({@link HIDDEN_FROM_SIDEBAR}).
+ */
 export async function isSwitchedOff(dir: string, marker = DISABLED_MARKER): Promise<boolean> {
   return fs.lstat(path.join(dir, marker)).then(
     () => true,
@@ -45,7 +53,10 @@ export async function isSwitchedOff(dir: string, marker = DISABLED_MARKER): Prom
   );
 }
 
-/** Removes the off marker from `dir`, or writes it there (creating `dir` when it is missing). */
+/**
+ * Removes the off marker (or the named one) from `dir` when `on`, or writes it there, creating
+ * `dir` when it is missing; one already there is left as it is.
+ */
 export async function writeSwitch(
   dir: string,
   on: boolean,
@@ -212,23 +223,17 @@ export async function readLoadedSource(folder: WorkbenchFolder): Promise<SourceF
   return revisionOf(files) === folder.revision ? files : null;
 }
 
-export async function listFolderIds(base: string): Promise<string[]> {
+export async function listFolders(base: string): Promise<WorkbenchFolder[]> {
   let entries: import("node:fs").Dirent[];
   try {
     entries = await fs.readdir(base, { withFileTypes: true });
   } catch {
     return [];
   }
-  return entries
-    .filter((entry) => entry.isDirectory() && isWorkbenchId(entry.name))
-    .map((entry) => entry.name)
-    .sort((a, b) => a.localeCompare(b));
-}
-
-export async function listFolders(base: string): Promise<WorkbenchFolder[]> {
   const out: WorkbenchFolder[] = [];
-  for (const id of await listFolderIds(base)) {
-    const folder = await readFolder(path.join(base, id), id);
+  for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!e.isDirectory() || !isWorkbenchId(e.name)) continue;
+    const folder = await readFolder(path.join(base, e.name), e.name);
     if (folder) out.push(folder);
   }
   return out;
