@@ -66,13 +66,12 @@ const landedWithUnmerged = landedEn
   .replace("PRFC-0001 Module", "PRFC-0003 Plugin")
   .replace("PRFC-0001-module.md", "PRFC-0003-plugin.md")
   .replace("PRFC-0001-module.zh.md", "PRFC-0003-plugin.zh.md")
-  .concat(
-    [
-      "",
-      "> **Unmerged revision**: the open design PR [#279](https://github.com/Prism-Shadow/penguin-harness-design/pull/279) carries one unmerged revision against this document.",
-    ].join("\n"),
-  )
-  .replace("PRFC-0001", "PRFC-0003");
+  .replace("PRFC-0001", "PRFC-0003")
+  .replace(
+    "\n\n## Motivation",
+    // The marker lives in the header, under the Source block — as the real PRFC-0003 carries it.
+    "\n> **Unmerged revision**: the open design PR [#279](https://github.com/Prism-Shadow/penguin-harness-design/pull/279) carries one unmerged revision against this document.\n\n## Motivation",
+  );
 
 const drafting = [
   "# PRFC-0006 A Draft",
