@@ -93,7 +93,7 @@ const GPU_HELPER = {
 const MACHINE_HELPER = `${AGENT_ID} ${en.chat.machineTag("gpu-box")}`;
 
 // Installed counts now appear on the first text action. Detailed status is in the plugin details.
-const COUNT = '[data-plugin="charts"] .market-plugin-actions button:first-child';
+const COUNT = '[data-plugin="charts"] .showcase-card-bar button:first-child';
 const textOf = (selector: string) => document.querySelector(selector)?.textContent?.trim() ?? null;
 const counts = () => watchText(COUNT, (node) => node.textContent?.trim() ?? "");
 const PICKER = `button[aria-label="${en.plugins.viewMachine}"]`;

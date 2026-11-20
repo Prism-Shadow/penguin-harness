@@ -287,7 +287,7 @@ describe("the market’s versioned actions", () => {
     };
     const html = card(row, true, current);
     expect(buttonWords(html).slice(-2)).toEqual(["Update to v1.1.0", "Quick start"]);
-    expect(html).toContain('class="market-plugin-version">v1.0.0</span>');
+    expect(html).toContain('class="showcase-card-version">v1.0.0</span>');
     expect(html).toContain(en.plugins.quickStartAfterInstall);
   });
   it("only enables a demo on the Agent that carries it", () => {
@@ -301,7 +301,7 @@ describe("the market’s versioned actions", () => {
     const ready = card(libraryRow, false, { ...current, installed, usage });
     expect(buttonWords(ready).slice(-2)).toEqual(["Installed on 1 Agent", "Quick start"]);
     expect(ready).toContain(en.plugins.quickStartHint);
-    expect(ready).toContain('class="market-plugin-version">v0.2.13</span>');
+    expect(ready).toContain('class="showcase-card-version">v0.2.13</span>');
     const other = card(libraryRow, false, { ...current, installed, usage, currentAgentId: "bob" });
     expect(buttonWords(other).slice(-2)).toEqual(["Install Installed on 1 Agent", "Quick start"]);
     expect(other).toContain(en.plugins.quickStartAfterInstall);

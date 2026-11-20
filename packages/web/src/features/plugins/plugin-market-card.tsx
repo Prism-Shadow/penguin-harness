@@ -1,6 +1,11 @@
+/**
+ * The plugin market's card: the UI package's `CoverCard` with its version chip and its bar of two
+ * text actions, install and quick start. In the list layout the card leads with the plugin's icon
+ * instead of its cover. This module only maps a plugin's facts onto the card; the look is the
+ * showcase family's (showcase.css), the same card the public catalog draws.
+ */
 import type { ReactNode } from "react";
 import { CoverCard } from "@prismshadow/penguin-ui";
-import "./plugin-market-card.css";
 
 interface MarketAction {
   label: string;
@@ -39,32 +44,18 @@ export function MarketPluginCard({
 }: MarketPluginCardProps) {
   return (
     <CoverCard
-      className="market-plugin-card"
       data-plugin={name}
-      data-market-layout={layout}
       aria-label={title}
       cover={layout === "cover" ? cover : icon}
       title={title}
       titleHint={detailsLabel}
       description={description}
       onOpen={onOpen}
-    >
-      {version && <span className="market-plugin-version">v{version}</span>}
-      <div className="market-plugin-actions">
-        {[install, quick].map((action, index) => (
-          <button
-            type="button"
-            key={index}
-            disabled={action.disabled}
-            aria-label={[action.label, action.note, title].filter(Boolean).join(" · ")}
-            data-tooltip={action.hint}
-            onClick={action.onClick}
-          >
-            {action.label}
-            {action.note && <small>{action.note}</small>}
-          </button>
-        ))}
-      </div>
-    </CoverCard>
+      {...(version ? { version: `v${version}` } : {})}
+      bar={[
+        { key: "install", ...install },
+        { key: "quick", ...quick },
+      ]}
+    />
   );
 }

@@ -299,7 +299,7 @@ describe("the Plugins sub-page of an Agent's settings", () => {
     const before = asked();
     await click(button(en.agentPlugins.openMarket));
     await waitFor(() => whereIs(router) === "/plugins");
-    const count = '[data-plugin="notes-kit"] .market-plugin-actions button:first-child';
+    const count = '[data-plugin="notes-kit"] .showcase-card-bar button:first-child';
     await waitFor(
       () =>
         document.querySelector(count)?.textContent?.trim() === en.plugins.marketAgentInstalls(1),
