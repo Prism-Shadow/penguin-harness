@@ -3,6 +3,7 @@
 - **Date:** 2026-11-20
 - **Type:** feature
 - **Scope:** `web`, `ui`, `server`, `ui-gallery`
+- **PR:** [#1670](https://github.com/Prism-Shadow/penguin-harness/pull/1670)
 
 [English](2026-11-20-plugin-settings-pages.md)
 
