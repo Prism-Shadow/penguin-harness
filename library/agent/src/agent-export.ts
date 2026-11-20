@@ -19,9 +19,8 @@ import type { AgentArchiveQuery } from "./types.js";
 import { HttpError, badRequest } from "@prismshadow/penguin-library-http";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-trace";
-import { STATE_FILE } from "./agent-vocab.js";
+import { STATE_FILE, isGitEntry, isLeftOut } from "./agent-vocab.js";
 import { MAX_ENTRIES, MAX_PACKAGE_BYTES, MAX_UNPACKED_BYTES } from "./agent-zip.js";
-import { isGitEntry, isLeftOut } from "./agent-vocab.js";
 
 export interface AgentExportDeps {
   root: string;
