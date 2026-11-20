@@ -56,9 +56,10 @@ import {
   type ThemeContract,
   type ThemePackManifest,
 } from "@prismshadow/penguin-theme-pack";
-// The clean baseline's rule table, the one the UI package's de-slop suite runs over the built-in
-// packs: an import is held to it with no hit allowed. Inlined by the build (tsup.config.ts).
-import { PACK_RULES, packRuleHits } from "@prismshadow/penguin-ui/pack-rules";
+// The clean baseline's rule table is a port: the assembler passes the UI package's table (the one
+// its de-slop suite runs over the built-in packs), so the library carries no dependency on the
+// app's UI bundle — an injected copy of it is not guaranteed to sit beside this package's own
+// node_modules on every install layout.
 import { HttpError } from "@prismshadow/penguin-library-http";
 import type { ThemePackDto, WebFiles } from "./types.js";
 
@@ -91,6 +92,8 @@ export interface ThemeStoreDeps {
   /** The Web App's files this server serves, where the built-in packs travel. */
   webFiles: () => WebFiles;
   now: () => Date;
+  /** The clean baseline: what a rule says and how a pack's stylesheets are held to it. */
+  cleanliness: ThemeContract["cleanliness"];
 }
 
 const notFound = (id: string) =>
@@ -245,7 +248,7 @@ export class ThemeStore {
     }
     return {
       ...contractOfBase(manifest, new TextDecoder().decode(tokens)),
-      cleanliness: { hits: packRuleHits, says: PACK_RULES },
+      cleanliness: this.deps.cleanliness,
     };
   }
 

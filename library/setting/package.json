@@ -90,8 +90,7 @@
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-library-db": "workspace:*",
     "@prismshadow/penguin-library-http": "workspace:*",
-    "@prismshadow/penguin-theme-pack": "workspace:*",
-    "@prismshadow/penguin-ui": "workspace:*"
+    "@prismshadow/penguin-theme-pack": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24",
