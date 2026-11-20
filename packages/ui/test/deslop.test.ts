@@ -246,6 +246,14 @@ describe("the cleanliness rules over every pack folder (R1, R2, R5–R11)", () =
     expect(probe(`${x} .row { color: blue; } ${x}.dark .row { color: red; }`)).toEqual([]);
     expect(probe(`${x} .row:hover { transition: color 150ms; }`)).toEqual(["R11"]);
     expect(probe(`${x} .ui-live { animation-duration: 1s; }`)).toEqual([]);
+    // A wait's blocks are its drawing: a pack may mask, overlay and move them, and nothing else.
+    const wait = `${x} .ui-waiting [data-skeleton]`;
+    expect(probe(`${wait} { mask-image: url("w.svg"); animation: draw 2s; }`)).toEqual([]);
+    expect(probe(`${wait}::after { content: ""; border-right: 1px solid; }`)).toEqual([]);
+    expect(probe(`${x} .ui-waiting::before { content: ""; background: url("w.svg"); }`)).toEqual([
+      "R1",
+      "R5",
+    ]);
     expect(probe(`${x} { --ui-canvas: #fff; }`)).toEqual([]);
     expect(probe("@keyframes x-wobble { from { padding: 1px; } }")).toEqual([]);
   });

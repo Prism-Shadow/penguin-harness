@@ -11,6 +11,8 @@
  *   it adds nothing and moves nothing: the same blocks, pending and shown.
  * - Given its forms, `rows` draws the rows asked for, `page` a title line over a body, and the
  *   caller's own blocks replace both.
+ * - Given any form, the host carries the waiting hook round its blocks, pending and shown, so a
+ *   theme pack draws the wait its own way inside the space the blocks hold.
  */
 import { act, createElement, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -107,5 +109,16 @@ describe("a wait's forms", () => {
     expect(page!.querySelectorAll("[data-skeleton]")).toHaveLength(2);
     expect(custom!.querySelectorAll("[data-skeleton]")).toHaveLength(1);
     expect([rows, page, custom].map((el) => el!.dataset.form)).toEqual(["rows", "page", "custom"]);
+  });
+
+  it("stands as the theme's waiting hook round its blocks, pending and shown", async () => {
+    await mount(createElement(Waiting, null, createElement(Skeleton), createElement(Skeleton)));
+    const hooked = () => document.querySelector<HTMLElement>(".ui-waiting");
+    expect(hooked()).toBe(host());
+    expect(hooked()!.querySelectorAll("[data-skeleton]")).toHaveLength(2);
+    await advance(WAITING_DELAY_MS);
+    expect(hooked()).toBe(host());
+    expect(hooked()!.dataset.state).toBe("shown");
+    expect(hooked()!.querySelectorAll("[data-skeleton]")).toHaveLength(2);
   });
 });

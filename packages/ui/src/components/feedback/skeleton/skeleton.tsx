@@ -7,7 +7,8 @@
  * A region that is loading puts them inside `Waiting` (waiting.tsx), which holds them back for the
  * first moments of a wait and announces it; a shape on its own (a row's pending detail, an earlier
  * page of a transcript) shows at once. Their breathing is the theme's, on `[data-skeleton]` in
- * theme.css, so it follows the theme's live timing and stops under reduced motion.
+ * theme.css, so it follows the theme's live timing and stops under reduced motion; inside a wait a
+ * theme pack may draw them its own way (the `ui-waiting` hook).
  */
 import type { ReactNode } from "react";
 

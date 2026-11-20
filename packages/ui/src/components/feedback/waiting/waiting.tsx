@@ -14,8 +14,10 @@
  *   shows, so a screen reader hears nothing of a quick load; the blocks are hidden from it.
  * - **The theme's.** The host carries the `ui-waiting` hook with its state and its form, and its
  *   blocks are the `Skeleton` shapes (`data-skeleton`). theme.css hides the host while pending,
- *   brings it in on the theme's entrance and lets the blocks breathe on the theme's live timing
- *   (Console steps them). Reduced motion shows it at once and holds the blocks still.
+ *   brings it in on the theme's entrance and lets the blocks breathe on the theme's live timing;
+ *   a pack draws its own wait inside the blocks instead (Console types the lines out behind a
+ *   cursor, Doodle scribbles them in pencil), each block keeping its box. Reduced motion still
+ *   waits out the delay, then shows the wait with no entrance and its drawing at rest.
  *
  * A wait starts when the host mounts, so a caller renders it in place of what is loading and
  * unmounts it when the data lands. A caller that already holds the data (a revisited tab, a

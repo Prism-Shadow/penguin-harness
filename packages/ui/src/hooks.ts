@@ -318,8 +318,12 @@
  * list stands while its data is on the way. The host holds its shape from the first frame and
  * shows nothing for the first moments of a wait (`pending`), so a quick load never flashes a
  * placeholder; then it is `shown`. The foundation hides it while pending, brings it in on the
- * theme's entrance and lets its blocks breathe on the live timing; a pack may draw the blocks and
- * that entrance its own way, and keeps the host's size, so nothing moves when the content lands.
+ * theme's entrance and lets its blocks breathe on the live timing, which is the wait Primer and
+ * Frost show. A pack may draw the blocks and that entrance its own way — a mask, a pseudo-element
+ * and motion on the blocks are its to use — and keeps each block's box, so nothing moves when the
+ * content lands, and its drawing at rest is the finished one, which is what reduced motion shows.
+ * Console types each line out behind a block cursor, in steps; Doodle scribbles each as a pencil
+ * wave that draws itself (2026-11-20).
  */
 export const HOOKS = [
   "ui-glass",

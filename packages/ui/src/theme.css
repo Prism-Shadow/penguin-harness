@@ -454,9 +454,9 @@
     animation: var(--ui-page-enter) var(--ui-page-duration) ease-in-out both;
   }
 
-  /* The neutral page pair a theme may name for --ui-page-enter / --ui-page-exit. A theme's own
-     page motion is a keyframe in its pack's recipes (Console's dissolve, Doodle's hop), so an
-     exported pack carries it. */
+  /* The neutral page pair a pack may name for --ui-page-enter / --ui-page-exit. No built-in
+     theme moves a page (each sets --ui-page-duration to 0); a pack's own page motion is a
+     keyframe in its recipes, so an exported pack carries it. */
   @keyframes ui-page-fade-in {
     from {
       opacity: 0;
@@ -478,7 +478,9 @@
      not drawn, so it holds its space from the first frame and a load that answers inside the delay
      never shows it; once `shown` it comes in on the theme's entrance, opacity only, since a
      placeholder has nowhere to come from. The placeholder blocks breathe on the theme's live
-     timing — smoothly in Primer and Frost, in steps in Console — inside a wait or on their own. */
+     timing, inside a wait or on their own: that is the wait Primer and Frost show. A pack draws
+     its own wait inside the blocks of a `ui-waiting` host (Console types its lines behind a
+     cursor, Doodle scribbles them) and keeps each block's box. */
   .ui-waiting[data-state="pending"] {
     visibility: hidden;
   }
@@ -639,8 +641,11 @@
   animation: none;
 }
 /* A wait still waits its delay before it shows — the delay is not motion — and then is simply
-   there, its blocks still. */
-:root[data-motion="reduced"] :is(.ui-waiting, [data-skeleton]) {
+   there, its blocks still: a pack's drawing at rest, which a recipe makes the finished one
+   (Console's lines whole with no cursor, Doodle's strokes drawn). */
+:root[data-motion="reduced"] :is(.ui-waiting, [data-skeleton]),
+:root[data-motion="reduced"] .ui-waiting [data-skeleton]::before,
+:root[data-motion="reduced"] .ui-waiting [data-skeleton]::after {
   animation: none;
 }
 /* The `ui-activity` recipes animate the running row (Frost's halo), a slot inside it (Frost's
@@ -686,7 +691,9 @@
   :is(.hourglass-turn, .compact-squeeze) {
     animation: none;
   }
-  :is(.ui-waiting, [data-skeleton]) {
+  :is(.ui-waiting, [data-skeleton]),
+  .ui-waiting [data-skeleton]::before,
+  .ui-waiting [data-skeleton]::after {
     animation: none;
   }
   :is(.ui-activity, .ui-activity *),
