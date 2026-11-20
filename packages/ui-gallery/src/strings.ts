@@ -535,7 +535,8 @@ export const zh = {
       },
       dialogs: {
         title: "对话框",
-        description: "模态对话框、确认框、分页对话框、抽屉、底部面板、图片放大与命令面板。",
+        description:
+          "模态对话框、确认框、分页对话框、抽屉、底部面板、图片放大、命令面板，以及从触发它的图标原地展开的面板。",
       },
       tooltips: {
         title: "悬停提示",
@@ -563,7 +564,8 @@ export const zh = {
       },
       avatars: {
         title: "头像",
-        description: "用户头像的各个尺寸；智能体头像在每套主题下的画法与整套颜色；头像组。",
+        description:
+          "用户头像的各个尺寸；智能体头像在每套主题下的画法与整套颜色；头像组；应用图标的形状。",
       },
       site: {
         title: "公开站点",
@@ -913,6 +915,12 @@ export const zh = {
       palettePlaceholder: "输入以筛选命令…",
       paletteEmpty: "没有匹配的命令",
       paletteHint: "↑↓ 选择 · Enter 执行 · Esc 关闭",
+      unfold: "原地展开的面板",
+      unfoldAside:
+        "从触发它的图标原地展开，没有遮罩；返回箭头、Esc 或点击面板以外的地方会收回到原图标。在滚动区域里，面板始终留在可见范围之内",
+      unfoldBack: "返回",
+      unfoldFolders: ["工作", "学习", "娱乐"] as readonly string[],
+      unfoldItem: (n: number) => `应用 ${n}`,
     },
     tooltips: {
       attribute: "data-tooltip 属性",
@@ -1240,6 +1248,11 @@ export const zh = {
       pictureBroken: "图片读不出来",
       stack: "头像组",
       stackShown: (shown: number, total: number) => `共 ${total} 个，显示 ${shown} 个`,
+      appIcon: "应用图标的形状",
+      appIconAside:
+        "所有应用与分组共用一个圆角方形；圆角随图标缩放，小图标与大图标是同一个形状。切换主题可看到各主题的圆角",
+      appIconLetter: "首字母方块",
+      appIconFolder: "分组",
       userNames: ["admin", "演示管理员"] as readonly string[],
       agents: [
         { id: "docs-expert", name: "Docs Expert" },

@@ -20,7 +20,7 @@ import { useLocation, useNavigate } from "react-router";
 import type { AppCenterShortcut, IconRef } from "@prismshadow/penguin-server/api";
 import { useLocale } from "../state/locale";
 import { useProject } from "../state/project";
-import { WINDOW_ENTRY_STATE, windowInFront, windowSearch } from "./app-window-address";
+import { windowEntryState, windowInFront, windowSearch } from "./app-window-address";
 import { APP_CENTER_PATH } from "./app-center-path";
 import { localizedText } from "./skill-use";
 
@@ -102,22 +102,25 @@ export function useRunningApps(): readonly RunningApp[] {
 
 /**
  * Brings an app's window to the front over the main area, from wherever the viewer is: a running
- * app's comes back as it was left, one not running opens if the App Center lists it. The step is
- * a new history entry, so the window's minimize (or Back) returns to the page it came from.
+ * app's comes back as it was left, one not running opens if the App Center lists it. From a page,
+ * the step is a new history entry that names the page, so the window's minimize (or Back)
+ * returns to it; from another window in front, that window's entry is replaced and keeps where
+ * it was opened over, so leaving one window for another never stacks windows up in history.
  */
 export function useRestoreApp(): (key: string) => void {
   const navigate = useNavigate();
   const location = useLocation();
   const front = windowInFront(location);
+  const here = location.pathname + location.search;
+  const state: unknown = location.state;
   return useCallback(
     (key: string) => {
       if (key === front) return;
-      void navigate(
-        { pathname: APP_CENTER_PATH, search: windowSearch(key) },
-        { state: WINDOW_ENTRY_STATE },
-      );
+      const to = { pathname: APP_CENTER_PATH, search: windowSearch(key) };
+      if (front !== null) void navigate(to, { replace: true, state });
+      else void navigate(to, { state: windowEntryState(here) });
     },
-    [navigate, front],
+    [navigate, front, here, state],
   );
 }
 

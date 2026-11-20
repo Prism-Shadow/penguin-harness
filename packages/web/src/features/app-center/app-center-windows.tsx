@@ -18,6 +18,7 @@ import { useLocation, useNavigate } from "react-router";
 import { AppWindow } from "@prismshadow/penguin-ui";
 import { APP_CENTER_PATH } from "../../lib/app-center-path";
 import { leaveWindow, windowInFront } from "../../lib/app-window-address";
+import { openFullPage } from "../../lib/host-history";
 import {
   closeAllApps,
   closeApp,
@@ -54,8 +55,8 @@ export function AppCenterWindows() {
               title={localizedText(locale, app.shortcut.title, app.shortcut.titleZh)}
               onMinimize={leave}
               onFullScreen={() =>
-                void navigate(app.shortcut.path, {
-                  state: { returnTo: `${APP_CENTER_PATH}${location.search}` },
+                openFullPage(navigate, app.shortcut.path, `${APP_CENTER_PATH}${location.search}`, {
+                  fromWindow: true,
                 })
               }
               onClose={() => {

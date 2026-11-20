@@ -11,7 +11,8 @@
  * - With three workbenches of a fresh account's Agent: a real pointer drag of one tile onto the
  *   middle of another rings the target while it hovers and makes a folder on release, which
  *   opens as a panel over the grid; the menu moves a tile backward; the arrangement outlives a
- *   reload; restoring the default order asks first and then clears it.
+ *   reload; restoring the default order asks first and then clears it. After several pages of
+ *   navigation inside a grouped app, its close button still returns directly to its tile.
  * - The header's New folder makes a folder of the apps checked in its dialog, under the name
  *   typed there, at the first checked app's place.
  * - A system app's tile opens its own page, where the nav keeps the App Center lit, Benchmark
@@ -142,7 +143,9 @@ test.beforeAll(async ({ browser }) => {
         dataBase64: zip({
           [`${id}/package.json`]: JSON.stringify(manifest(title)),
           [`${id}/index.ts`]: INDEX,
-          [`${id}/ui/index.html`]: `<!doctype html><html><body><h1>${title}</h1></body></html>`,
+          [`${id}/ui/index.html`]: `<!doctype html><html><body><h1>${title}</h1>
+            <a href="#read">Read</a><a href="#review">Review</a><a href="#saved">Saved</a>
+            </body></html>`,
         }).toString("base64"),
       },
     });
@@ -155,7 +158,7 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
-  await setAccountPrefs(page.request, { lang: "en" });
+  await setAccountPrefs(page.request, { lang: "en", themeId: "doodle" });
   await page.goto(`${BASE}/apps`);
   const grid = page.getByRole("list", { name: "App Center" });
   const tile = (name) => grid.getByRole("button", { name: new RegExp(`^${name},`) });
@@ -187,11 +190,63 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   await expect.poll(names).toEqual(["New folder", "Beta"]);
 
   const folder = grid.getByRole("button", { name: /^New folder, folder, 2 apps/ });
+  // Inspect the two ends of the actual CSS transitions without racing the display refresh.
+  const slow = await page.addStyleTag({
+    content:
+      "[data-unfold-surface][data-layout-motion], [data-unfold-surface] [data-layout-motion] { transition-duration: 2s; }",
+  });
   await folder.click();
-  const panel = page.getByRole("dialog", { name: "New folder" });
+  const panel = page.getByRole("region", { name: "New folder" });
+  const positions = await panel.evaluate((node) => {
+    const animations = node.getAnimations({ subtree: true });
+    for (const part of animations) {
+      part.pause();
+      part.currentTime = 0;
+    }
+    const trigger = document.querySelector(`[aria-controls="${node.id}"]`);
+    const bounds = (el) => {
+      const { x, y, width } = el.getBoundingClientRect();
+      const radius =
+        (parseFloat(getComputedStyle(el).borderTopLeftRadius) * width) / el.offsetWidth;
+      return [x, y, width, radius].map(Math.round);
+    };
+    const pairs = [...trigger.querySelectorAll("[data-unfold-source]")].map((mini) => {
+      const slot = [...node.querySelectorAll("[data-unfold-art]")].find(
+        (el) => el.dataset.unfoldArt === mini.dataset.unfoldSource,
+      );
+      return [
+        bounds(mini.querySelector("[data-app-icon-shape]")),
+        bounds(slot.firstElementChild.querySelector("[data-app-icon-shape]")),
+      ];
+    });
+    for (const part of animations) part.finish();
+    return pairs;
+  });
+  for (const [preview, icon] of positions) {
+    expect(icon).toEqual(preview);
+    // The projected corner matches the preview and leaves a straight side on the 20px tile.
+    expect(icon[3]).toBeLessThanOrEqual(icon[2] / 4);
+  }
+  await slow.evaluate((style) => style.remove());
   await expect(panel.getByRole("button", { name: /^Alpha,/ })).toBeVisible();
   await expect(panel.getByRole("button", { name: /^Gamma,/ })).toBeVisible();
+  await panel.getByRole("button", { name: /^Gamma,/ }).click();
+  const window = page.getByRole("region", { name: "Gamma" });
+  const inside = window.frameLocator("iframe");
+  await expect(inside.getByRole("heading", { name: "Gamma" })).toBeVisible();
+  for (const name of ["Read", "Review", "Saved"]) await inside.getByRole("link", { name }).click();
+  // Browser Back navigates the app's pages. The host's close leaves the whole app in one step.
+  await page.evaluate(() => history.back());
+  await expect.poll(() => inside.locator("body").evaluate(() => location.hash)).toBe("#review");
+  await window.getByRole("button", { name: "Close, back to the App Center" }).click();
+  await expect(panel.getByRole("button", { name: /^Gamma,/ })).toBeFocused();
+
   await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await expect(folder).toBeFocused();
+  await folder.press("Enter");
+  await page.goBack();
+  await expect(folder).toHaveAttribute("aria-expanded", "false");
   await expect(panel).toBeHidden();
 
   // The folder moves one step backward from its menu.

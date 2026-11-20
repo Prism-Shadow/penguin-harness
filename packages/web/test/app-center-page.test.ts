@@ -23,7 +23,7 @@
  *   forward and backward move one too. Each arrangement is stored as the viewer's layout, and a
  *   write the server refuses puts the grid back to what is stored.
  * - A folder is renamed and ungrouped from its menu; "Move to…" makes one from the keyboard; an
- *   app dragged out of the open folder onto its backdrop leaves the folder. A folder keeps its
+ *   app dragged out of the open folder onto the home grid leaves the folder. A folder keeps its
  *   one app, and goes once the last app leaves it.
  * - The header's New folder opens a dialog: the name starts as "New folder", selected, and
  *   Create waits for a checked app; the folder is made of the checked apps at the first one's
@@ -249,15 +249,15 @@ const checkedApps = () =>
     .filter((box) => box.checked)
     .map((box) => spoken(box.closest("label")!.querySelector(".truncate")!));
 
-/** Drags an app of the open folder out onto the folder's backdrop. */
+/** Drags an app of the open folder out onto the home grid. */
 async function dragOut(id: string): Promise<void> {
-  const scrim = document.querySelector(".ui-scrim")!;
+  const home = grid()!;
   await act(async () => {
-    topDialog().querySelector(`li[data-app="${id}"]`)!.dispatchEvent(dragEvent("dragstart"));
+    item(id).dispatchEvent(dragEvent("dragstart"));
   });
   await act(async () => {
-    scrim.dispatchEvent(dragEvent("dragover", 5));
-    scrim.dispatchEvent(dragEvent("drop", 5));
+    home.dispatchEvent(dragEvent("dragover", 5));
+    home.dispatchEvent(dragEvent("drop", 5));
   });
   await settle();
 }
@@ -301,6 +301,7 @@ it("opens an app windowed over the grid, and its close returns to the grid", asy
   await click(button(en.appCenter.windowClose));
   expect(whereIs(router)).toBe("/apps");
   expect(grid()?.closest("[data-window]")?.hasAttribute("inert")).toBe(false);
+  expect(document.activeElement).toBe(tileButton(key("board")));
 });
 
 it("minimizes an app to its tile, still running, and its tile brings back the same window", async () => {
@@ -551,8 +552,11 @@ it("makes a folder from the keyboard with Move to…, and opens it as a panel ov
   expect(order()).toEqual([`folder:${en.appCenter.newFolder}`]);
 
   await click(folderButton(en.appCenter.newFolder));
-  const panel = topDialog();
-  // The dialog is named by its heading, the folder's name.
+  const trigger = folderButton(en.appCenter.newFolder);
+  const panel = document.getElementById(trigger.getAttribute("aria-controls")!)!;
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(panel.parentElement).toBe(grid()!.parentElement);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(document.getElementById(panel.getAttribute("aria-labelledby")!)?.textContent).toBe(
     en.appCenter.newFolder,
   );
@@ -560,7 +564,7 @@ it("makes a folder from the keyboard with Move to…, and opens it as a panel ov
     [...panel.querySelectorAll("li[data-app]")].map((li) => (li as HTMLElement).dataset["app"]),
   ).toEqual([key("board"), key("notes")]);
 
-  // Dragged out onto the backdrop, an app leaves the folder, which keeps its one app.
+  // Dragged out onto the home grid, an app leaves the folder, which keeps its one app.
   await dragOut(key("notes"));
   expect(order()).toEqual([`folder:${en.appCenter.newFolder}`, key("notes")]);
   expect(document.querySelector(".ui-scrim")).toBeNull();
@@ -569,6 +573,47 @@ it("makes a folder from the keyboard with Move to…, and opens it as a panel ov
   await click(folderButton(en.appCenter.newFolder));
   await dragOut(key("board"));
   expect(order()).toEqual([key("board"), key("notes")]);
+});
+
+it("returns a windowed app to its folder and closes the folder back to its trigger", async () => {
+  const { router } = await open([workbench("notes")], {
+    layout: { v: 1, items: [{ type: "folder", id: "study", name: "Study", apps: [key("notes")] }] },
+  });
+  const trigger = folderButton("Study");
+  await click(trigger);
+  await click(tileButton(key("notes")));
+  await click(button(en.appCenter.windowClose));
+  expect(whereIs(router)).toBe("/apps?folder=study");
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+
+  await rightClick(tileButton(key("notes")));
+  await pressEscape();
+  expect(menu()).toBeNull();
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  await pressEscape();
+  expect(whereIs(router)).toBe("/apps");
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(trigger);
+});
+
+it("opens a second folder directly and leaves focus in the newly opened group", async () => {
+  await open([workbench("board"), workbench("notes")], {
+    layout: {
+      v: 1,
+      items: [
+        { type: "folder", id: "first", name: "Work", apps: [key("board")] },
+        { type: "folder", id: "second", name: "Study", apps: [key("notes")] },
+      ],
+    },
+  });
+  await click(folderButton("Work"));
+  await click(folderButton("Study"));
+  expect(folderButton("Work").getAttribute("aria-expanded")).toBe("false");
+  const second = folderButton("Study");
+  expect(second.getAttribute("aria-expanded")).toBe("true");
+  expect(document.activeElement?.id).toBe(second.getAttribute("aria-controls"));
+  await pressEscape();
+  expect(document.activeElement).toBe(second);
 });
 
 it("makes a folder of the apps checked in the header's New folder, at the first one's place", async () => {

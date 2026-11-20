@@ -119,6 +119,8 @@ export * from "./components/overlays/paged-dialog/paged-dialog";
 export * from "./components/overlays/drawer/drawer";
 export * from "./components/overlays/drawer/sheet";
 export * from "./components/overlays/lightbox/lightbox";
+// A surface that unfolds in place from its trigger, as a launcher's folder does.
+export * from "./components/overlays/unfold-surface/unfold-surface";
 // The unsaved-changes guard: the registry every dirty form and every save in flight joins, the
 // hooks that join it and guard a dialog's close, and the host that draws the one discard prompt
 // and the unload guard.
