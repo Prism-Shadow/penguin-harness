@@ -4,7 +4,8 @@
  *
  * - Given agent-desktop missing or failed, the version element offers Install (Retry) on itself,
  *   and a failure says where the download comes from, with the raw error only in details.
- * - Given an install in progress, the version element is preparing with its progress.
+ * - Given an install in progress, the version element is preparing with its progress, and no
+ *   summary repeats it.
  * - Given agent-desktop installed, the version and platform show, the checks come labelled in
  *   both languages (a failing one marked for action, on macOS with Open System Settings on it),
  *   the idle-time row among them, and the block has its single recheck.
@@ -62,7 +63,8 @@ describe("the status page's report", () => {
       startedAt: 0,
     }).report!();
     expect(report.version).toMatchObject({ state: "preparing", progress: 0.25 });
-    expect(report.summary?.state).toBe("progress");
+    // The version element says it is preparing: no summary saying it again.
+    expect(report.summary).toBeUndefined();
   });
 
   it("labels the checks in both languages, with the idle row and one recheck", () => {

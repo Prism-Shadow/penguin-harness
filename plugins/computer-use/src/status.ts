@@ -50,7 +50,7 @@ export interface SettingsGroupStatus {
  */
 export interface PluginStatusReport {
   summary?: {
-    state: "ready" | "attention" | "progress" | "off";
+    state: "ready" | "attention" | "progress" | "off" | "unknown";
     text: string;
     textZh?: string;
     hint?: string;
@@ -58,7 +58,7 @@ export interface PluginStatusReport {
   };
   version?: {
     name: string;
-    state: "installed" | "preparing" | "failed" | "missing" | "unsupported";
+    state: "installed" | "preparing" | "failed" | "missing" | "unsupported" | "unknown";
     version?: string;
     platform?: string;
     /** 0..1, while preparing only. */
@@ -303,13 +303,10 @@ export function computerUseStatus(
           detailsZh: result.unavailable,
         });
       }
-      const summary: NonNullable<PluginStatusReport["summary"]> =
+      // While installing, the version element says so: no summary, or 准备中 shows twice.
+      const summary: PluginStatusReport["summary"] =
         version.state === "preparing"
-          ? {
-              state: "progress",
-              text: "Installing agent-desktop.",
-              textZh: "正在安装 agent-desktop。",
-            }
+          ? undefined
           : !usable || checks.some((c) => c.state === "action")
             ? {
                 state: "attention",
@@ -321,14 +318,14 @@ export function computerUseStatus(
                   : "安装 agent-desktop 之前电脑操作无法运行。",
               }
             : result === null
-              ? { state: "progress", text: "Checking this machine…", textZh: "正在检查这台机器…" }
+              ? { state: "unknown", text: "Checking this machine…", textZh: "正在检查这台机器…" }
               : {
                   state: "ready",
                   text: "Ready: Agents can use Computer Use.",
                   textZh: "就绪：Agent 可以使用电脑操作。",
                 };
       return {
-        summary,
+        ...(summary !== undefined ? { summary } : {}),
         version,
         ...(checks.length > 0 ? { checks } : {}),
         ...(usable ? { recheck: "check" } : {}),
