@@ -22,6 +22,10 @@ run with files. No tool or operation is named in the platform; the tools themsel
   `@prismshadow/penguin-server/plugin`): the key and its name in English and Chinese, plus an
   `accepts(model)` code half that says which configured models can serve it. Plugin modules read a
   Project's choice through the `ToolModelBindings` interface.
+- `accepts(model)` sees each model's provider, id, client type and vision mark, and also `client`
+  (the MMSP client a request to it goes to) and `input` / `output` (the modalities MMSP's registry
+  lists for the model there), so a plugin can tell an image or speech model without carrying MMSP's
+  registry.
 - `GET /api/projects/:projectId/models/tool-bindings` lists the declared bindings with each one's
   model and candidates (any member); `PATCH` binds or unbinds one key (the owner). A change is
   published to the Project's users as `tool_bindings_changed`.
@@ -38,6 +42,9 @@ run with files. No tool or operation is named in the platform; the tools themsel
   `usage_records` row per request, attributed to the Session and Agent when there is one. The row
   carries the request's purpose (`<package>:<operation>`) in the new `purpose` column, and is priced
   like any other request.
+- The request a plugin hands to `ProjectModelRequests.stream`, `ProjectModelRequest`, is declared in
+  `@prismshadow/penguin-core` and re-exported by the server, so a plugin package, which compiles
+  against core alone, can require the interface.
 - A request recorded beside a Session's own no longer disturbs the Session's request bookkeeping.
 
 ## Plugin CLI commands
