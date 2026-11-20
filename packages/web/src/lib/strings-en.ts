@@ -2537,7 +2537,7 @@ export const en: Strings = {
     aiAddTail: (projectId: string): string =>
       [
         "Use the penguin-config skill for the configuration above:",
-        "- Every command below carries `--root <data root>`, the parent directory of the App Data Dir in your Environment section. Your command environment does not name that root, so a command without `--root` configures a different one and nothing reaches this Project.",
+        "- Every command below carries `--root <data root>`: the App Data Dir in your Environment section is `<data root>/projects/<project id>`, so the data root is the directory two levels above it. Your command environment does not name that root, so a command without `--root` configures a different one and nothing reaches this Project.",
         `- Run \`penguin config model add --provider <group> --model-id <upstream id> --project-id ${projectId} --root <data root> [--base-url <endpoint>] [--client-type openai] [--api-key <key>] [--context-window <n>] [--price-cache-read <n> --price-cache-write <n> --price-output <n>]\` once per model: \`--provider\` is mandatory, \`--model-id\` takes the gateway's own model id, and an OpenAI-compatible endpoint gets \`--client-type openai --base-url <endpoint>\`.`,
         "- When the source is a web page, fetch it first: add the models I named, or the most popular ones when I named none, about 10 at most.",
         "- When an API key is needed and I did not give one, ask me once; if I do not provide it, leave the key empty and tell me to fill it in on the Models page.",
@@ -3017,7 +3017,7 @@ export const en: Strings = {
     aiAddTail: (agentId: string, projectId: string): string =>
       [
         `Use the penguin-config skill to write the secrets above into the vault of agent ${agentId} (Project ${projectId}):`,
-        "- Every command below carries `--root <data root>`, the parent directory of the App Data Dir in your Environment section. Your command environment does not name that root, so a command without `--root` writes into a different one and this agent's vault stays empty.",
+        "- Every command below carries `--root <data root>`: the App Data Dir in your Environment section is `<data root>/projects/<project id>`, so the data root is the directory two levels above it. Your command environment does not name that root, so a command without `--root` writes into a different one and this agent's vault stays empty.",
         `- Run \`penguin config vault set --key <NAME> --value <value> --agent-id ${agentId} --project-id ${projectId} --root <data root>\` once per secret; when only the key name is wanted, store the placeholder value TODO and tell me what the key is for and where to apply for it.`,
         "- Never repeat a value back in your reply, and never read .vault.toml.",
         `- Finish with \`penguin config vault list --agent-id ${agentId} --project-id ${projectId} --root <data root>\` to list the key names.`,
@@ -5724,6 +5724,7 @@ Scenarios:
     },
     askEvaluationTail: (p: {
       benchmarkId: string;
+      benchmarkDir: string;
       time: string;
       label: string;
       version: number | string;
@@ -5738,7 +5739,8 @@ Scenarios:
       cases: { id: string; score: string; cost: string; duration: string; sessionIds: string[] }[];
     }): string =>
       "Explain the result of the Benchmark evaluation below. Read and analyze only: change neither this Benchmark nor the tested agent.\n\n" +
-      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`; the scoreboard is \`benchmarks/${p.benchmarkId}/scoreboard.yaml\`)\n` +
+      `- benchmark_id: \`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR: \`${p.benchmarkDir}\` (the scoreboard is \`${p.benchmarkDir}/scoreboard.yaml\`)\n` +
       `- Evaluated at: ${p.time}\n` +
       `- Series label: ${p.label}\n` +
       `- Tested version: v${p.version}\n` +
@@ -5785,14 +5787,16 @@ Scenarios:
     },
     askCaseTail: (p: {
       benchmarkId: string;
+      benchmarkDir: string;
       caseId: string;
       latest: { time: string; score: string; runs: { score: string; sessionId: string }[] } | null;
     }): string =>
       "Explain what the Benchmark case below tests and what a strong answer looks like. A case is frozen once it exists: read and analyze only, and do not change this Benchmark.\n\n" +
-      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`)\n` +
+      `- benchmark_id: \`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR: \`${p.benchmarkDir}\`\n` +
       `- case_id: \`${p.caseId}\`\n` +
-      `- Statement: \`benchmarks/${p.benchmarkId}/${p.caseId}/statement/README.md\`\n` +
-      `- Rubric: \`benchmarks/${p.benchmarkId}/${p.caseId}/rubric/README.md\`\n` +
+      `- Statement: \`${p.benchmarkDir}/${p.caseId}/statement/README.md\`\n` +
+      `- Rubric: \`${p.benchmarkDir}/${p.caseId}/rubric/README.md\`\n` +
       (p.latest === null
         ? "- This Benchmark has no evaluations yet.\n"
         : `- The latest evaluation (${p.latest.time}) averaged ${p.latest.score} on this case\n` +
@@ -5834,7 +5838,7 @@ Scenarios:
           "Write cases for the code-review agent: each a small multi-file repository whose defects hide in an unstated call order, a time-zone or encoding assumption and a concurrency precondition, with a stale comment or two and a test that passes without covering them — score recall, false positives and the verification steps.",
       },
     },
-    aiCreateTail: (targetAgentId: string): string =>
+    aiCreateTail: (targetAgentId: string, benchmarksDir: string): string =>
       "Use the `benchmark-design` Skill: as the Builder, design and calibrate a Benchmark for the Test Agent below without changing that agent itself.\n\n" +
       `- test_agent_id: \`${targetAgentId}\`\n` +
       "- benchmark_id: keep the one named above if any; otherwise derive a short semantic id (letters, digits, `_` and `-` only)\n" +
@@ -5842,7 +5846,7 @@ Scenarios:
       "- techniques: hidden preconditions, vague or incomplete input, sources that contradict each other, strict deliverables; no difficulty from piling on rows or rules\n" +
       "- desired_baseline_score: `<50` (the draft above wins when it names one)\n" +
       "- pilot_iteration_limit: `4` (the draft above wins when it names one)\n\n" +
-      "A Benchmark sits beside agents, not under one: create `benchmarks/<benchmark_id>/` under the Project (never inside the tested agent's directory) with " +
+      `A Benchmark sits beside agents, not under one: its folder BENCHMARK_DIR is \`${benchmarksDir}/<benchmark_id>/\`, in the Evaluation Center's data folder (never inside the tested agent's directory). Create it with ` +
       '`benchmark_config.toml` (id equal to the directory name, title, description, version set to today\'s date version `"YYYY.MM.DD.1"`, status, runs = 1 and an `[origin]` table with `kind = "agent"`; it records no agent), ' +
       "one `CASE-NNN-<slug>/` per case (`statement/README.md` is the statement, `rubric/README.md` the scoring rubric, 100 points per case, nothing from the rubric leaking into the statement) " +
       "and `scoreboard.yaml` (initially `evaluations: []`; every evaluation records the tested `agent_id`, its `version`, the paired `provider` / `model_id` and the `thinking_level`). " +
@@ -5851,7 +5855,7 @@ Scenarios:
       "freeze the final revision, append the Formal Baseline to scoreboard.yaml, and finish by reporting the Benchmark id, the baseline score and the per-case scores.",
     manualCreateTitle: "Create a Benchmark manually",
     manualCreateIntro:
-      "Fill in the title, the statements and the rubrics; the directory layout the Skills expect is written under the Project's benchmarks/. A Benchmark sits beside agents, so it can then evaluate any of them.",
+      "Fill in the title, the statements and the rubrics; the directory layout the Skills expect is written into the Evaluation Center's data folder. A Benchmark sits beside agents, so it can then evaluate any of them.",
     idField: "Benchmark id",
     idHint:
       "The directory name is the identifier: letters, digits, _ and - only, e.g. report-writing-v1",
@@ -5913,13 +5917,15 @@ Scenarios:
     evaluateTail: (p: {
       targetAgentId: string;
       benchmarkId: string;
+      benchmarkDir: string;
       runs: number;
       provider: string;
       modelId: string;
     }): string =>
       "Use the `agent-evaluation` Skill to evaluate the Test Agent on this frozen Benchmark.\n\n" +
       `- test_agent_id: \`${p.targetAgentId}\`\n` +
-      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, beside the agents)\n` +
+      `- benchmark_id: \`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR: \`${p.benchmarkDir}\`\n` +
       `- runs: \`${p.runs}\`\n` +
       `- provider: \`${p.provider}\`\n` +
       `- model_id: \`${p.modelId}\`\n\n` +
@@ -5957,6 +5963,7 @@ Scenarios:
     optimizeTail: (p: {
       targetAgentId: string;
       benchmarkId: string;
+      benchmarkDir: string;
       runs: number;
       provider: string;
       modelId: string;
@@ -5965,7 +5972,8 @@ Scenarios:
     }): string =>
       "Use the `agent-optimization` Skill to improve the Test Agent against its frozen Benchmark.\n\n" +
       `- test_agent_id: \`${p.targetAgentId}\`\n` +
-      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, beside the agents)\n` +
+      `- benchmark_id: \`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR: \`${p.benchmarkDir}\`\n` +
       `- runs: \`${p.runs}\`\n` +
       `- provider: \`${p.provider}\`\n` +
       `- model_id: \`${p.modelId}\`\n` +
@@ -5995,13 +6003,15 @@ Scenarios:
       skill: string;
       targetAgentId: string;
       benchmarkId: string;
+      benchmarkDir: string;
       testRepetitions: number;
       provider: string;
       modelId: string;
     }): string =>
       `Use the \`${p.skill}\` Skill to run its method on the Test Agent, starting from this Benchmark.\n\n` +
       `- test_agent_id: \`${p.targetAgentId}\`\n` +
-      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`)\n` +
+      `- benchmark_id: \`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR: \`${p.benchmarkDir}\`\n` +
       `- test_repetitions: \`${p.testRepetitions}\`\n` +
       `- provider: \`${p.provider}\`\n` +
       `- model_id: \`${p.modelId}\`\n\n` +
@@ -6047,11 +6057,11 @@ Scenarios:
       localPath: (s: string): string => `Import the Benchmark package under this local path: ${s}.`,
       reference: (s: string): string => `Find and import this Benchmark as a package: ${s}.`,
     },
-    importPromptTail: (projectId: string): string =>
+    importPromptTail: (projectId: string, benchmarksDir: string): string =>
       [
         "If the `benchmark-design` Skill is available, read the import instructions in `reference/package.md`. For a repository, use `git ls-remote` to pin the branch or tag to a 40-character commit and fetch the selected package. Extract a local zip into a temporary directory first.",
         'Check `benchmark_config.toml` (`status = "published"`) and every `CASE-*/statement/README.md` and `CASE-*/rubric/README.md`. Read all files; refuse symlinks, executables and unrelated content.',
-        `Copy the manifest and \`CASE-*/\` folders directly into Project \`${projectId}\`'s \`<app_data_dir>/benchmarks/<id>/\`, preserving the package's id, version and cases. Do not copy its \`scoreboard.yaml\` or \`.jobs/\`. Create \`scoreboard.yaml\` containing \`evaluations: []\`.`,
+        `Copy the manifest and \`CASE-*/\` folders directly into Project \`${projectId}\`'s Benchmark folder BENCHMARK_DIR, \`${benchmarksDir}/<id>/\`, preserving the package's id, version and cases. Do not copy its \`scoreboard.yaml\` or \`.jobs/\`. Create \`scoreboard.yaml\` containing \`evaluations: []\`.`,
         'Update `[origin]`: for a repository, set `kind = "git"` and record `url`, `ref` (the commit), `path` and `imported_at`; for a local source, set `kind = "zip"` and the import time. Ask me before overwriting an existing directory. Never replace a Benchmark while it is being evaluated.',
         "Verify the copied manifest and case count, then report the id, title, version, case count and path. Importing does not run an evaluation.",
       ].join("\n"),

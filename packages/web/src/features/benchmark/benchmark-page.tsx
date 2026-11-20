@@ -60,7 +60,11 @@ import {
   matchesBenchmarkQuery,
   sparklineSeries,
 } from "./benchmark-metrics";
-import { benchmarkCreateExamples, benchmarkCreateTail } from "./benchmark-prompts";
+import {
+  benchmarkCreateExamples,
+  benchmarkCreateTail,
+  benchmarksFolder,
+} from "./benchmark-prompts";
 import { ImportBenchmarkModal } from "./benchmark-import-modal";
 import { benchmarkRoute } from "./benchmark-route";
 import { useBenchmarksAcross } from "./benchmark-sources";
@@ -619,7 +623,9 @@ export function BenchmarkPage() {
         // `[use_skills]` block names them on send: the designer's own, and the evaluator it has
         // to delegate every trial evaluation to. An agent that lacks one keeps its list short.
         skills={BENCHMARK_DESIGN_SKILLS}
-        {...(aiTarget !== "" ? { tail: benchmarkCreateTail(aiTarget) } : {})}
+        {...(aiTarget !== ""
+          ? { tail: benchmarkCreateTail(aiTarget, benchmarksFolder(listed.dir)) }
+          : {})}
         intro={
           <Select
             size="sm"
@@ -645,6 +651,7 @@ export function BenchmarkPage() {
       {importOpen && (
         <ImportBenchmarkModal
           projectId={projectId}
+          benchmarksDir={benchmarksFolder(listed.dir)}
           agents={agents}
           onClose={() => setImportOpen(false)}
           // The list is read again whole: an overwrite replaced a card, and machines merge in.

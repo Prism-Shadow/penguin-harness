@@ -59,7 +59,12 @@ import {
   type EvaluationSeries,
 } from "./benchmark-metrics";
 
-import { askCaseExamples, askCaseTail, type AskCaseParams } from "./benchmark-prompts";
+import {
+  askCaseExamples,
+  askCaseTail,
+  benchmarkFolder,
+  type AskCaseParams,
+} from "./benchmark-prompts";
 
 import { EvaluationDetailModal } from "./evaluation-detail-modal";
 import { failureNode } from "../../lib/failure";
@@ -285,6 +290,7 @@ function EvaluationRow({
  */
 function caseAskParams(
   benchmarkId: string,
+  benchmarkDir: string,
   caseId: string,
   evaluations: readonly BenchmarkEvaluation[],
 ): AskCaseParams {
@@ -292,6 +298,7 @@ function caseAskParams(
   const scored = newest?.cases.find((c) => c.case === caseId);
   return {
     benchmarkId,
+    benchmarkDir,
     caseId,
     latest:
       newest !== undefined && scored !== undefined
@@ -481,6 +488,7 @@ export function BenchmarkDetail({
       {openEvaluation && (
         <EvaluationDetailModal
           benchmarkId={bm.id}
+          benchmarkDir={benchmarkFolder(bm)}
           evaluation={openEvaluation}
           avatarSrc={pictureOf(openEvaluation)}
           caseTitles={caseTitles}
@@ -520,7 +528,7 @@ export function BenchmarkDetail({
           description={S.benchmark.askCaseDescription}
           question={S.benchmark.askCaseExamples.explain.prompt}
           examples={askCaseExamples()}
-          tail={askCaseTail(caseAskParams(bm.id, openCase.id, evaluations))}
+          tail={askCaseTail(caseAskParams(bm.id, benchmarkFolder(bm), openCase.id, evaluations))}
         />
       )}
     </div>

@@ -164,6 +164,9 @@ import type { AmspRecord } from "./types";
 
 type Ctx = RequestContext;
 
+/** Where the demo Project keeps its Benchmarks: the Evaluation Center's data folder, as a server names it. */
+const GALLERY_BENCHMARKS_DIR = `/home/demo/.penguin/data/projects/${IDS.project}/agents/system_agent/app/data/benchmark`;
+
 const record = (body: unknown): Record<string, unknown> =>
   typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
 
@@ -2516,7 +2519,8 @@ const caseFileContent = (ctx: Ctx, material: CaseMaterial) => {
 
 router
   .get("/api/projects/:projectId/benchmarks", ({ store }): BenchmarksResponse => ({
-    benchmarks: store.f.benchmarks,
+    benchmarks: store.f.benchmarks.map((b) => ({ ...b, dir: `${GALLERY_BENCHMARKS_DIR}/${b.id}` })),
+    dir: GALLERY_BENCHMARKS_DIR,
   }))
   .get("/api/projects/:projectId/benchmarks/:benchmarkId/cases", (ctx): BenchmarkCasesResponse => ({
     cases: ctx.store.f.benchmarkCases[benchmarkOf(ctx).id] ?? [],
