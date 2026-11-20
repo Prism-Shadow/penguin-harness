@@ -66,10 +66,15 @@ export default defineConfig({
     server: {
       deps: {
         // The setting domain library (an externalized node_modules package) imports the
-        // theme-pack, whose package export is its TypeScript source; left external, the
-        // run's Node loader reaches it and refuses the extension. Inlining the library lets
-        // vite transform the chain the way it transforms this package's own imports.
-        inline: [/@prismshadow\/penguin-library-setting/, /@prismshadow\/penguin-theme-pack/],
+        // theme-pack and the UI package's pack rules, whose package exports are TypeScript
+        // sources; left external, the run's Node loader reaches them and refuses the
+        // extension. Inlining the libraries lets vite transform the chain the way it
+        // transforms this package's own imports.
+        inline: [
+          /@prismshadow\/penguin-library-setting/,
+          /@prismshadow\/penguin-theme-pack/,
+          /@prismshadow\/penguin-ui/,
+        ],
       },
     },
     environment: "node",
