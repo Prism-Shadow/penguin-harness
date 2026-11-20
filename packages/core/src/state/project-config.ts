@@ -17,7 +17,8 @@
  * `provider` and `model_id` as two independent fields, with the `(provider, model_id)` pair as
  * the unique key — string concatenation like `<provider>/<id>` is forbidden anywhere in the
  * pipeline. `model_id` is the upstream request id, sent to MMSP unchanged; `default_model` /
- * `tools.i2t` are paired `{ provider, model_id }` references (a TOML inline table).
+ * `vision_model` are paired `{ provider, model_id }` references (a TOML inline table), and so is
+ * every entry of the `[tools]` table.
  *
  * A caller always supplies the **complete pair**: `provider` is never guessed from the builtin
  * catalog and never derived from whichever configured entry happens to carry the same
@@ -25,7 +26,6 @@
  * lookup, because resolving it would silently point credentials and pricing at a vendor the
  * caller never named.
  */
-import { migrateToolModels, TOOL_MODEL_KEYS, type ToolModels } from "./tool-models.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
@@ -57,8 +57,8 @@ export function formatModelRef(ref: ModelRef): string {
 }
 
 /**
- * Pricing for a single Model: three price buckets, in USD per million tokens.
- * Docs: /docs/configuration § "Project config".
+ * Pricing for a single Model: three price buckets, in USD per million tokens, and an optional
+ * thinking rate. Docs: /docs/configuration § "Project config".
  */
 export interface ModelPricing {
   /** Pricing unit tag; currently only `usd_per_mtok` (USD per million tokens). */
@@ -66,6 +66,13 @@ export interface ModelPricing {
   cache_read: number;
   cache_write: number;
   output: number;
+  /**
+   * The rate of thinking tokens, for a model that bills them apart from its other output.
+   * Absent: thinking is output, at `output`. Only usage that reports its thinking tokens apart
+   * is priced with it (the server's `usage_records.thoughts`); the rest prices all output at
+   * `output`.
+   */
+  thoughts?: number;
 }
 
 /**
@@ -201,6 +208,14 @@ export interface ProviderConnection {
 export type ProviderTable = Record<string, ProviderConnection>;
 
 /**
+ * `[tools]`: the models bound to the tools plugins offer outside a chat turn, keyed by the
+ * binding's key — `t2i = { provider = "…", model_id = "…" }`. An open table: a plugin declares
+ * the bindings it reads (the server's `ToolModelBindingsProvider.bindings` slot) and core
+ * reads none of them. Every entry is a paired reference to a configured model.
+ */
+export type ToolModelTable = Record<string, ModelRef>;
+
+/**
  * Project-level config.
  * Docs: /docs/configuration § "Project config".
  */
@@ -209,11 +224,18 @@ export interface ProjectConfig {
   name?: string;
   /** Paired reference to the default Model; must point to an entry in `models`. */
   default_model?: ModelRef;
-  /** Model bindings shared by tool commands, image reading and transcript editing. */
-  tools?: ToolModels;
-  voice_polish_enabled?: boolean;
-  /** Optional Project instructions applied only to transcript editing. */
-  voice_polish_prompt?: string;
+  /**
+   * The vision model used by read_file to read images on behalf of a session model (when a session
+   * model with `vision=false` reads an image, it's handed to this model to describe and the tool
+   * returns text); must point to an entry in `models` (a paired reference). Unconfigured by
+   * default — models that don't support images won't be able to read images.
+   */
+  vision_model?: ModelRef;
+  /**
+   * The tool-model bindings (`[tools]`, see ToolModelTable); absent = none bound. Loaded
+   * tolerantly (parseToolModelTable).
+   */
+  tools?: ToolModelTable;
   /**
    * New-chat defaults block; absent by default (`defaultProjectConfig` never includes it —
    * absent = the pre-existing behavior). Loaded tolerantly: invalid values drop per key.
@@ -278,7 +300,7 @@ export function defaultProjectConfig(): ProjectConfig {
 const OLD_FORMAT_HINT =
   "No migration since the product hasn't shipped yet: delete this config file and rebuild it with `penguin config model add/default`.";
 
-/** Validates the default_model / tools.i2t fields: must be a { provider, model_id } paired reference. */
+/** Validates the default_model / vision_model fields: must be a { provider, model_id } paired reference. */
 function parseRefField(file: string, name: string, value: unknown): ModelRef | undefined {
   if (value === undefined) return undefined;
   const ref = value as { provider?: unknown; model_id?: unknown };
@@ -539,8 +561,7 @@ export function hoistProviderConnections(table: Record<string, unknown>): boolea
 export function migrateProjectConfigTable(table: Record<string, unknown>): boolean {
   const legacy = migrateLegacyClientTypes(table);
   const hoisted = hoistProviderConnections(table);
-  const tools = migrateToolModels(table);
-  return legacy || hoisted || tools;
+  return legacy || hoisted;
 }
 
 /**
@@ -565,6 +586,22 @@ export function parseProviderTable(value: unknown): ProviderTable | undefined {
     const createdAt = presentString(member.created_at);
     if (createdAt !== undefined) connection.created_at = createdAt;
     if (Object.keys(connection).length > 0) out[id] = connection;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Leniently parses the `[tools]` table: a value that is not a table reads as absent, and a
+ * member that is not a `{ provider, model_id }` pair is dropped — a binding a plugin wrote
+ * badly must never block reading the model table. Undefined when no member remains. Exported
+ * for the server, which narrows its cached parse the same way.
+ */
+export function parseToolModelTable(value: unknown): ToolModelTable | undefined {
+  if (!isTable(value)) return undefined;
+  const out: ToolModelTable = {};
+  for (const [key, member] of Object.entries(value)) {
+    if (key.trim() === "" || !isModelRefShape(member)) continue;
+    out[key] = { provider: member.provider, model_id: member.model_id };
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }
@@ -774,13 +811,8 @@ export function projectConfigFromTable(
   parsed: Record<string, unknown>,
 ): ProjectConfig {
   const defaultModel = parseRefField(file, "default_model", parsed.default_model);
-  const toolModels: ToolModels = {};
-  if (isTable(parsed.tools)) {
-    for (const key of TOOL_MODEL_KEYS) {
-      const ref = parseRefField(file, `tools.${key}`, parsed.tools[key]);
-      if (ref) toolModels[key] = ref;
-    }
-  }
+  const visionModel = parseRefField(file, "vision_model", parsed.vision_model);
+  const tools = parseToolModelTable(parsed.tools);
   const defaultChat = parseDefaultChat(parsed.default_chat);
   const commandPolicy = parseCommandPolicy(parsed.command_policy);
   const plugins = parsePluginTables(parsed.plugins);
@@ -788,13 +820,8 @@ export function projectConfigFromTable(
   return {
     ...(parsed.name !== undefined ? { name: parsed.name as string } : {}),
     ...(defaultModel !== undefined ? { default_model: defaultModel } : {}),
-    ...(Object.keys(toolModels).length ? { tools: toolModels } : {}),
-    ...(typeof parsed.voice_polish_enabled === "boolean"
-      ? { voice_polish_enabled: parsed.voice_polish_enabled }
-      : {}),
-    ...(typeof parsed.voice_polish_prompt === "string" && parsed.voice_polish_prompt.trim()
-      ? { voice_polish_prompt: parsed.voice_polish_prompt }
-      : {}),
+    ...(visionModel !== undefined ? { vision_model: visionModel } : {}),
+    ...(tools !== undefined ? { tools } : {}),
     ...(defaultChat !== undefined ? { default_chat: defaultChat } : {}),
     ...(commandPolicy !== undefined ? { command_policy: commandPolicy } : {}),
     ...(plugins !== undefined ? { plugins } : {}),
@@ -844,13 +871,25 @@ function isModelRefShape(v: unknown): v is ModelRef {
   return typeof o.provider === "string" && typeof o.model_id === "string";
 }
 
+/** A non-empty table whose every member is a paired reference (the `[tools]` shape). */
+function isRefTable(v: unknown): v is Record<string, ModelRef> {
+  return isTable(v) && Object.keys(v).length > 0 && Object.values(v).every(isModelRefShape);
+}
+
+/** A key as TOML writes it: bare when it can be, quoted otherwise (smol-toml's own rule). */
+function tomlKey(key: string): string {
+  const line = stringifyToml({ [key]: 0 }).trim();
+  return line.slice(0, line.lastIndexOf(" = "));
+}
+
 /**
  * Renders the full text of `.project_config.toml` — the **single source of the write format
  * site-wide** (shared by core's saveProjectConfig and the interface layer's full-table write, to
  * avoid the same file ending up in two different formats).
  *
- * Paired references (default_model / tools.i2t) are rendered as a TOML inline table
- * `{ provider = "...", model_id = "..." }`; `models` is always
+ * Paired references (default_model / vision_model) are rendered as a TOML inline table
+ * `{ provider = "...", model_id = "..." }`, and a table whose every member is one (`[tools]`)
+ * as its header followed by one `key = { … }` line per member; `models` is always
  * placed last, since any table header after `[[models]]` would be read as its sub-table. Unknown
  * extension fields are kept as-is.
  *
@@ -878,18 +917,11 @@ export function renderProjectConfigToml(data: Record<string, unknown>): string {
       head.push(`${key} = ${tomlInlineRef(value)}`);
       continue;
     }
-    if (
-      key === "tools" &&
-      isTable(value) &&
-      Object.keys(value).every((k) => TOOL_MODEL_KEYS.some((key) => key === k)) &&
-      Object.values(value).every(isModelRefShape)
-    ) {
+    if (isRefTable(value)) {
       tables.push(
         [
-          "[tools]",
-          ...Object.entries(value).map(
-            ([slot, model]) => `${slot} = ${tomlInlineRef(model as ModelRef)}`,
-          ),
+          `[${tomlKey(key)}]`,
+          ...Object.entries(value).map(([k, ref]) => `${tomlKey(k)} = ${tomlInlineRef(ref)}`),
         ].join("\n"),
       );
       continue;
@@ -1021,7 +1053,8 @@ export async function addModel(
   }
   // The three price buckets are merged field by field: an unspecified bucket keeps its existing
   // value (the same policy as context_window/credential); the unit is fixed to usd_per_mtok, and
-  // the complete pricing is written as long as any bucket is present.
+  // the complete pricing is written as long as any bucket is present. The thinking rate rides
+  // along the same way, and is written only when one is set.
   const mergedPricing: Partial<ModelPricing> = {
     ...existing?.pricing,
     ...entry.pricing,
@@ -1036,6 +1069,7 @@ export async function addModel(
       cache_read: mergedPricing.cache_read ?? 0,
       cache_write: mergedPricing.cache_write ?? 0,
       output: mergedPricing.output ?? 0,
+      ...(mergedPricing.thoughts !== undefined ? { thoughts: mergedPricing.thoughts } : {}),
     };
   }
   // Inline credential entry: fields not provided keep their existing value, cleared ones go.
@@ -1158,15 +1192,15 @@ export async function setVisionModel(
   const entry = getModel(cfg, ref);
   if (!entry) {
     throw new Error(
-      `tools.i2t must point to a configured model: ${formatModelRef(ref)} is not in models. Use \`penguin config model list\` to see the configured models.`,
+      `vision_model must point to a configured model: ${formatModelRef(ref)} is not in models. Use \`penguin config model list\` to see the configured models.`,
     );
   }
   if (entry.vision === false) {
     throw new Error(
-      `tools.i2t cannot point to a model tagged as not supporting images: ${formatModelRef(ref)}.`,
+      `vision_model cannot point to a model tagged as not supporting images: ${formatModelRef(ref)}.`,
     );
   }
-  cfg.tools = { ...cfg.tools, i2t: { provider: ref.provider, model_id: ref.model_id } };
+  cfg.vision_model = { provider: ref.provider, model_id: ref.model_id };
   await saveProjectConfig(root, projectId, cfg);
   return cfg;
 }
@@ -1176,10 +1210,11 @@ export async function setVisionModel(
  * have is not an error and writes nothing, so the caller decides whether a missing entry
  * deserves a message.
  *
- * `default_model` / `tools.i2t` are cleared when they named the removed entry. Leaving a
- * pointer behind would name a model that is no longer configured, which createSession rejects
- * outright — the same rule the models page applies when a row is deleted, kept on one behavior
- * so the CLI and the Web App never disagree about what a deletion leaves behind.
+ * `default_model` / `vision_model`, and every `[tools]` binding, are cleared when they named the
+ * removed entry. Leaving a pointer behind would name a model that is no longer configured, which
+ * createSession rejects outright — the same rule the models page applies when a row is deleted,
+ * kept on one behavior so the CLI and the Web App never disagree about what a deletion leaves
+ * behind.
  */
 export async function removeModel(
   root: string,
@@ -1193,12 +1228,13 @@ export async function removeModel(
   if (cfg.default_model && sameModelRef(cfg.default_model, ref)) {
     delete cfg.default_model;
   }
-  for (const key of TOOL_MODEL_KEYS) {
-    const bound = cfg.tools?.[key];
-    if (bound && sameModelRef(bound, ref)) {
-      delete cfg.tools![key];
-      if (key === "t2t" && cfg.voice_polish_enabled) cfg.voice_polish_enabled = false;
-    }
+  if (cfg.vision_model && sameModelRef(cfg.vision_model, ref)) {
+    delete cfg.vision_model;
+  }
+  if (cfg.tools !== undefined) {
+    const kept = Object.entries(cfg.tools).filter(([, bound]) => !sameModelRef(bound, ref));
+    if (kept.length > 0) cfg.tools = Object.fromEntries(kept);
+    else delete cfg.tools;
   }
   await saveProjectConfig(root, projectId, cfg);
   return cfg;

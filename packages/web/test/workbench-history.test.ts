@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 /**
- * Given an empty 500, history shows a recoverable error instead of waiting forever.
+ * Given an empty 500, history shows a recoverable error instead of waiting forever, with Report
+ * after it, since the read failed.
  * When the user retries after service recovery, the saved versions replace that error.
  * Given a restore that listed the current revision twice, only its newest entry is marked
  * current and the older one can still be restored.
@@ -65,7 +66,10 @@ it("retries a failed history request and displays saved versions", async () => {
   await click(button(en.workbenches.history));
   // An empty body is carried as its status with a null body (serve.ts answerOnce), so this is
   // the server's status without an envelope: the generic failure, not a page/proxy message.
-  expect(document.querySelector('[role="alert"]')?.textContent).toBe(en.common.unknownError);
+  const alert = document.querySelector('[role="alert"]');
+  expect(alert?.textContent?.startsWith(en.common.unknownError)).toBe(true);
+  // A failed read, not a refusal: the words are followed by Report.
+  expect(alert?.querySelector("[data-report-issue]")).not.toBeNull();
   expect(document.body.textContent).not.toContain(en.workbenches.loadingHistory);
   requests.answer(() =>
     json({

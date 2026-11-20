@@ -131,7 +131,19 @@ Averaged across the three runs, DSH and PenguinHarness score clearly higher than
 
 Figure 5 breaks the overall scores down by task type across Sec A through Sec E:
 
-<figure class="post-figure prose-figure-centered prose-figure-diagram"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/harness-comparison-02-subset-bars-en.png" width="2880" height="3180" alt="Figure 5: Scores across the five subsets" /><figcaption>Figure 5: Scores across the five subsets</figcaption></figure>
+<figure class="post-figure prose-figure-centered prose-figure-diagram"><img class="w-full rounded-lg border border-gray-200 dark:border-gray-800" src="/blog-assets/harness-comparison-02-subset-radar-en.svg" width="2880" height="2400" alt="Figure 5: Scores across the five subsets" /><figcaption>Figure 5: Scores across the five subsets</figcaption></figure>
+
+<!-- harness-subset-scores:start -->
+**Mean ± sample standard deviation**
+
+| Subset | DSH | PenguinHarness | Pi | Codex |
+| --- | ---: | ---: | ---: | ---: |
+| Sec A Data analysis | **70.00** ± 0.00 | **70.00** ± 10.00 | 56.67 ± 5.77 | 60.00 ± 0.00 |
+| Sec B Software engineering | 63.33 ± 15.28 | **70.00** ± 10.00 | 60.00 ± 10.00 | 53.33 ± 5.77 |
+| Sec C Automated workflows | **36.67** ± 5.77 | 30.00 ± 10.00 | 26.67 ± 11.55 | 26.67 ± 15.28 |
+| Sec D Scientific computing | 3.33 ± 5.77 | 0.00 ± 0.00 | 3.33 ± 5.77 | **10.00** ± 0.00 |
+| Sec E Terminal tasks | 20.00 ± 10.00 | 20.00 ± 0.00 | **23.33** ± 15.28 | 0.00 ± 0.00 |
+<!-- harness-subset-scores:end -->
 
 Figure 5 shows that an overall leader does not lead on every task type. Each Harness has different strengths: PenguinHarness scores highest on Sec B, software engineering, and ties with DSH for first on Sec A, data analysis. DSH leads on Sec C, automated workflows; Pi leads on Sec E, terminal troubleshooting; and Codex scores highest on Sec D, scientific computing.
 

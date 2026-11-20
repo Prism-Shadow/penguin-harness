@@ -310,10 +310,8 @@ describe("2026-09-23-machines-columns → current: 2026-10-04-browser-extensions
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
-        "2026-11-18-capability-runs",
-        "2026-11-19-tool-request-usage",
-        "2026-11-19-tool-meter-quantities",
-        "2026-11-19-tool-registry-route",
+        "2026-11-19-usage-records-purpose",
+        "2026-11-19-usage-records-thoughts",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -378,10 +376,8 @@ describe("a sessions table from before the sidebar mark: 2026-10-12-sessions-kep
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
-        "2026-11-18-capability-runs",
-        "2026-11-19-tool-request-usage",
-        "2026-11-19-tool-meter-quantities",
-        "2026-11-19-tool-registry-route",
+        "2026-11-19-usage-records-purpose",
+        "2026-11-19-usage-records-thoughts",
       ]);
       expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
         { session_id: "s1", kept_at: null },
@@ -440,10 +436,8 @@ describe("an agent_api table from before the session settings: 2026-10-14-agent-
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
-        "2026-11-18-capability-runs",
-        "2026-11-19-tool-request-usage",
-        "2026-11-19-tool-meter-quantities",
-        "2026-11-19-tool-registry-route",
+        "2026-11-19-usage-records-purpose",
+        "2026-11-19-usage-records-thoughts",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -505,10 +499,8 @@ describe("an agent_api table from before the concurrency limit: 2026-10-14-agent
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
-        "2026-11-18-capability-runs",
-        "2026-11-19-tool-request-usage",
-        "2026-11-19-tool-meter-quantities",
-        "2026-11-19-tool-registry-route",
+        "2026-11-19-usage-records-purpose",
+        "2026-11-19-usage-records-thoughts",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -558,10 +550,8 @@ describe("a machines table from before the adoption times: 2026-10-16-machines-a
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
-        "2026-11-18-capability-runs",
-        "2026-11-19-tool-request-usage",
-        "2026-11-19-tool-meter-quantities",
-        "2026-11-19-tool-registry-route",
+        "2026-11-19-usage-records-purpose",
+        "2026-11-19-usage-records-thoughts",
       ]);
       expect(db.prepare("SELECT address, adopted_at FROM machines").all()).toEqual([
         { address: "ssh:nas", adopted_at: null },
@@ -608,10 +598,8 @@ describe("a database from before the account's drafts: 2026-10-26-user-drafts", 
     try {
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "2026-10-26-user-drafts",
-        "2026-11-18-capability-runs",
-        "2026-11-19-tool-request-usage",
-        "2026-11-19-tool-meter-quantities",
-        "2026-11-19-tool-registry-route",
+        "2026-11-19-usage-records-purpose",
+        "2026-11-19-usage-records-thoughts",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -651,6 +639,102 @@ describe("a database from before the account's drafts: 2026-10-26-user-drafts", 
   });
 });
 
+// Given a usage table from before requests outside a chat turn were recorded, the upgrade adds
+// their purpose while a pushed platform boots, every existing row reads as a chat turn's, and down
+// keeps the column with the purposes recorded since.
+describe("a usage table from before the purpose column: 2026-11-19-usage-records-purpose", () => {
+  /** A root through 2026-10-26-user-drafts whose usage_records table has no `purpose` column. */
+  function openPrePurpose(): DatabaseSync {
+    const db = openFresh();
+    db.exec("ALTER TABLE usage_records DROP COLUMN purpose");
+    stampThrough(db, "2026-10-26-user-drafts");
+    return db;
+  }
+
+  const insertUsage = (db: DatabaseSync) =>
+    db.exec(
+      "INSERT INTO usage_records (ts, date, project_id, agent_id, session_id, provider, model_id," +
+        " cache_read, cache_write, output, total)" +
+        " VALUES ('2026-11-19T00:00:00.000Z', '2026-11-19', 'p1', 'coder', 's1', 'openai', 'gpt', 1, 2, 3, 6)",
+    );
+
+  it("adds the column while a pushed platform boots, leaving every existing row a chat turn's", () => {
+    const db = openPrePurpose();
+    try {
+      insertUsage(db);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "2026-11-19-usage-records-purpose",
+        "2026-11-19-usage-records-thoughts",
+      ]);
+      expect(db.prepare("SELECT session_id, purpose FROM usage_records").all()).toEqual([
+        { session_id: "s1", purpose: null },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down keeps the column and the purposes in it", () => {
+    const db = openPrePurpose();
+    try {
+      insertUsage(db);
+      migrate(db);
+      db.exec("UPDATE usage_records SET purpose = 'acme-tools:t2i'");
+      rollbackTo(db, "2026-10-26-user-drafts");
+      expect(db.prepare("SELECT purpose FROM usage_records").get()).toEqual({
+        purpose: "acme-tools:t2i",
+      });
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("a usage table from before the thinking column: 2026-11-19-usage-records-thoughts", () => {
+  /** A root through 2026-11-19-usage-records-purpose whose usage_records table has no `thoughts` column. */
+  function openPreThoughts(): DatabaseSync {
+    const db = openFresh();
+    db.exec("ALTER TABLE usage_records DROP COLUMN thoughts");
+    stampThrough(db, "2026-11-19-usage-records-purpose");
+    return db;
+  }
+
+  const insertUsage = (db: DatabaseSync) =>
+    db.exec(
+      "INSERT INTO usage_records (ts, date, project_id, agent_id, session_id, provider, model_id," +
+        " cache_read, cache_write, output, total, purpose)" +
+        " VALUES ('2026-11-19T00:00:00.000Z', '2026-11-19', 'p1', 'coder', 's1', 'google', 'video', 1, 2, 3, 6, 'acme-tools:t2v')",
+    );
+
+  it("adds the column while a pushed platform boots, leaving every existing row unreported", () => {
+    const db = openPreThoughts();
+    try {
+      insertUsage(db);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "2026-11-19-usage-records-thoughts",
+      ]);
+      expect(db.prepare("SELECT output, thoughts FROM usage_records").all()).toEqual([
+        { output: 3, thoughts: null },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down keeps the column and the counts in it", () => {
+    const db = openPreThoughts();
+    try {
+      insertUsage(db);
+      migrate(db);
+      db.exec("UPDATE usage_records SET thoughts = 2");
+      rollbackTo(db, "2026-11-19-usage-records-purpose");
+      expect(db.prepare("SELECT thoughts FROM usage_records").get()).toEqual({ thoughts: 2 });
+    } finally {
+      db.close();
+    }
+  });
+});
+
 describe("numbered roots other lines stamped: adopted whole", () => {
   it("a root the chain stamped 16 before its restack gets both model tables back, on the swap path", () => {
     const db = openFresh();
@@ -661,126 +745,6 @@ describe("numbered roots other lines stamped: adopted whole", () => {
       migrate(db, { swapPath: true });
       expect(db.prepare("SELECT * FROM model_promotions").all()).toEqual([]);
       expect(db.prepare("SELECT * FROM model_provider_auth_tokens").all()).toEqual([]);
-    } finally {
-      db.close();
-    }
-  });
-});
-
-describe("project capability runs", () => {
-  it("adds the project-owned ledger on a hot update and can roll it back", () => {
-    const db = openFresh();
-    try {
-      db.exec(
-        "DROP TABLE tool_registry_routes; DROP TABLE tool_request_usage; DROP TABLE capability_runs",
-      );
-      stampThrough(db, "2026-10-26-user-drafts");
-      const before = shape(db);
-      expect(migrate(db, { swapPath: true }).applied).toEqual(namesAfter("2026-10-26-user-drafts"));
-      expect(columns(db, "capability_runs")).toEqual([
-        "id",
-        "project_id",
-        "session_id",
-        "created_at",
-        "status",
-        "data",
-      ]);
-      const after = shape(db);
-      rollbackTo(db, "2026-10-26-user-drafts");
-      expect(shape(db)).toBe(before);
-      migrate(db);
-      expect(shape(db)).toBe(after);
-    } finally {
-      db.close();
-    }
-  });
-});
-
-describe("tool request history", () => {
-  it("recovers a metered failure from protocol usage and backfills input quantities on a V1 database", () => {
-    const db = openFresh();
-    try {
-      migrate(db);
-      rollbackTo(db, "2026-11-19-tool-request-usage");
-      db.exec("PRAGMA foreign_keys=OFF");
-      const insert = db.prepare(
-        "INSERT INTO capability_runs(id,project_id,created_at,status,data) VALUES(?,?,?,?,?)",
-      );
-      const data = {
-        model: { provider: "tokendance", modelId: "deepseek-asr" },
-        capability: "stt",
-        usage: { cached_tokens: null, prompt_tokens: 4, thoughts_tokens: null, response_tokens: 0 },
-        inputMeter: { unit: "billed_audio_second", quantity: 4 },
-      };
-      insert.run(
-        "asr",
-        "p",
-        "2026-11-19T02:00:00Z",
-        "completed",
-        JSON.stringify({
-          ...data,
-          registryRouteMatched: true,
-          measurements: [{ unit: "request", quantity: 1 }],
-        }),
-      );
-      insert.run("error", "p", "2026-11-19T02:00:01Z", "failed", JSON.stringify(data));
-      expect(db.prepare("SELECT count(*) AS n FROM tool_request_usage").get()?.n).toBe(1);
-      migrate(db);
-      migrate(db);
-      expect(db.prepare("SELECT run_id FROM tool_registry_routes").all()).toEqual([
-        { run_id: "asr" },
-      ]);
-      const rows = db
-        .prepare(
-          "SELECT id, input_unit, input_quantity, completed_requests, cached, prompt, thoughts, response FROM tool_request_usage ORDER BY id",
-        )
-        .all();
-      expect(rows).toEqual(
-        ["asr", "error"].map((id) => ({
-          id,
-          input_unit: "billed_audio_second",
-          input_quantity: 4,
-          completed_requests: id === "asr" ? 1 : null,
-          cached: null,
-          prompt: 4,
-          thoughts: null,
-          response: 0,
-        })),
-      );
-      expect(
-        columns(db, "tool_request_usage").filter((name) => /price|cost|amount/.test(name)),
-      ).toEqual([]);
-    } finally {
-      db.close();
-    }
-  });
-  it("backfills a proven upstream error once and keeps an unverified attempt out after a restart", () => {
-    const db = openFresh();
-    try {
-      migrate(db);
-      rollbackTo(db, "2026-11-18-capability-runs");
-      const insert = db.prepare(
-        "INSERT INTO capability_runs(id,project_id,created_at,status,data) VALUES (?,?,?, ?,?)",
-      );
-      db.exec("PRAGMA foreign_keys=OFF");
-      const model = { provider: "deepseek", modelId: "deepseek-asr" };
-      for (const [id, error] of [
-        ["real", "The model provider returned HTTP 400."],
-        ["uncertain", "The model request failed. Check the selected model and its endpoint."],
-      ]) {
-        insert.run(
-          id!,
-          "p",
-          "2026-11-19T02:00:00Z",
-          "failed",
-          JSON.stringify({ model, capability: "stt", error, measurements: [] }),
-        );
-      }
-      migrate(db);
-      migrate(db);
-      expect(db.prepare("SELECT id, agent_id, session_id FROM tool_request_usage").all()).toEqual([
-        { id: "real", agent_id: null, session_id: null },
-      ]);
     } finally {
       db.close();
     }

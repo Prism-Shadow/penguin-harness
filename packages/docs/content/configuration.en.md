@@ -92,9 +92,8 @@ A new Project writes no `base_url` for these seven first-party groups, so their 
 | --- | --- | --- | --- |
 | `name` | string | — | Project display name; the id is shown when unset |
 | `default_model` | pair | — | Paired `{ provider, model_id }` reference to the default model; must point to an entry in `models` |
-| `[tools]` | table | — | One model reference per operation: `t2t`, `i2t`, `search`, `fetch`, `t2i`, `t2v`, `t2s`, `s2t`. Image reading uses `i2t`; transcript editing uses `t2t`. |
-| `voice_polish_enabled` | boolean | false | Edit voice transcripts before adding them to the chat draft |
-| `voice_polish_prompt` | string | Built-in instructions | Instructions used only when editing a voice transcript. Clear to restore the default. |
+| `vision_model` | pair | — | The vision model that reads images for text-only models (`read_file` hands images to it); a paired reference |
+| `[tools]` | table | — | The models bound to the tools plugins offer, one `key = { provider = "…", model_id = "…" }` line per binding; the keys are the plugins'. Set in Project settings; removing a model unbinds it |
 | `[default_chat]` | table | — | Prefilled defaults for new chats; see [New chat defaults](#new-chat-defaults) |
 | `[command_policy]` | table | Factory set | Ask and deny rules for shell commands, applied ahead of the approval mode; see [Command policy](#command-policy) |
 | `[plugins]` | table | — | The server plugins the Project asks for; see [Plugins](#plugins) |
@@ -115,7 +114,7 @@ Gemini 4 Argon uses `model_id = "gemini-4-argon"` in the `google` and `penguin-g
 | `vision` | boolean | `true` | Whether the model accepts image input |
 | `max_tokens` | number | The agent's `model.max_tokens` | Per-model max output Tokens; overrides the agent's `model.max_tokens` when set |
 | `fast_mode` | boolean | Off | Per-model fast mode (the provider's premium faster serving tier) |
-| `pricing` | table | — | Three price buckets, `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`). Always the list price |
+| `pricing` | table | — | Three price buckets, `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`), and an optional `thoughts` rate for a model that bills thinking apart from its other output. Always the list price |
 | `api_key` | string | The group key, where it reaches the entry; with none, the client's own environment variable when no `base_url` resolves or it is the client's default endpoint | Inline credential, this model's own |
 | `base_url` | string | The group's; with neither, the client's default endpoint | Custom base URL, this model's own |
 | `created_at` | string | — | When `api_key` was written (ISO 8601); a display field maintained by the interface layer |
@@ -433,7 +432,7 @@ The harness fills these placeholders:
 | `{{LAST_TURN}}` | `handoff_note` | The last completed request before the compaction: its text and its last four tool calls with their outputs, each cut at 500 characters |
 | `{{TRACE_PATH}}` | `handoff_note` | The absolute path of the Trace file the compaction closed |
 
-A placeholder with nothing to quote reads `(not recorded)`. A blank text means no prose from the harness: a blank `reminder` sends a round's tool outputs alone, so an empty reply, which leaves nothing to send, ends with the note; a blank `handoff_note` gives the four quoted values, one per line. A key missing from the file reads as its default: a file written before `max_rounds`, `reminder` and `handoff_note` existed runs on their defaults and keeps a `prompt` edited there; the new keys appear in the file once a [kernel update](#kernel-updates) or a restore of defaults rewrites the section.
+A placeholder with nothing to quote reads `(not recorded)`. A blank text means no prose from the harness: a blank `reminder` sends a round's tool outputs alone, so an empty reply, which leaves nothing to send, ends with the note; a blank `handoff_note` gives the four quoted values, one per line. A key missing from the file reads as its default: a file written before `max_rounds`, `reminder` and `handoff_note` existed runs on their defaults and keeps a `prompt` edited there; the new keys appear in the file once a [kernel update](#kernel-updates) or a restore of defaults rewrites the section, or once one is saved on the agent's **Runtime** tab, where all three are edited beside the `prompt`.
 
 ### When the provider refuses a request
 

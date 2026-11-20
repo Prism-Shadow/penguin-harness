@@ -26,7 +26,7 @@
  * of them is what keeps an entity's history from sliding onto the wrong
  * intervals. Each chart marks the skipped intervals on its own axis.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import type { ModelRefDto, UsageBucket, UsageResponse } from "@prismshadow/penguin-server/api";
 import {
@@ -41,11 +41,10 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
-import { formatEstimatedCost, humanizeTokens } from "../../lib/format";
-import { catalogEntryFor, providerInfo } from "@prismshadow/penguin-server/model-catalog";
+import { formatMoney, humanizeTokens } from "../../lib/format";
+import { catalogEntryFor } from "@prismshadow/penguin-server/model-catalog";
 import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
 import { useOpenedInProject } from "../../lib/use-opened-in-project";
 import { useProject } from "../../state/project";
@@ -60,11 +59,11 @@ import {
   presetRange,
   presetTsWindow,
   rangeDays,
-  toolQuantityRows,
   type EntityCounts,
   type RangePreset,
 } from "../../lib/usage-controls";
 import { ErrorsPanel } from "./errors-panel";
+import { failureNode } from "../../lib/failure";
 
 /** A summary card's stat row: name on the left, value on the right — each item on its own row, so a narrow card no longer crams them into one wrapping line. */
 function SummaryRow({
@@ -116,13 +115,10 @@ function SummaryCard({
       <div className="space-y-1">
         <SummaryRow label={S.usage.tokens} value={humanizeTokens(bucket.total)} />
         <SummaryRow label={S.usage.requests} value={String(bucket.requests)} muted />
-        {toolQuantityRows(bucket.toolQuantities).map(({ unit, quantity }) => (
-          <SummaryRow key={unit} label={S.usage.toolUnits[unit]} value={String(quantity)} muted />
-        ))}
         {/* The unpriced-records asterisk sits on the word "cost" (superscript), keeping the number clean and readable; see the footer for the explanation */}
         <SummaryRow
-          label={S.usage.estimatedCost}
-          value={formatEstimatedCost(bucket, currency)}
+          label={S.common.cost}
+          value={formatMoney(bucket.cost, currency)}
           sup={bucket.hasUncosted}
         />
       </div>
@@ -233,7 +229,7 @@ export function UsagePage() {
    * changes nothing (the panel's fetch effect depends on that identity).
    */
   const [loaded, setLoaded] = useState<LoadedRange>(() => ({ preset, from, to }));
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   // The legend / control state that lives in the card headers (ChartCard's
   // extra) while the marks live inside the cards, lifted to this level.
   const [tokenBucket, setTokenBucket] = useState<TokenLegendKey | null>(null);
@@ -267,7 +263,9 @@ export function UsagePage() {
       setData(scoped(projectId, res));
       setLoaded({ preset, ...range });
     } catch (e) {
-      if (ask === asked.current) setError(apiErrorText(e));
+      if (ask === asked.current) {
+        setError(failureNode(e, { what: "the Cost Center could not be loaded" }));
+      }
     }
   }, [projectId, preset, from, to, agentFilter, modelFilter?.provider, modelFilter?.modelId]);
 
@@ -298,21 +296,6 @@ export function UsagePage() {
 
   // Model filter candidates and the currently selected item's index (the option value uses the index, avoiding concatenating an id as the key).
   const modelOptions = data?.models ?? [];
-  const modelName = (ref: ModelRefDto) =>
-    catalogEntryFor(ref.provider, ref.modelId)?.displayName ?? ref.modelId;
-  const names = new Set<string>();
-  const repeatedNames = new Set<string>();
-  for (const ref of modelOptions) {
-    const name = modelName(ref);
-    if (names.has(name)) repeatedNames.add(name);
-    names.add(name);
-  }
-  const modelLabel = (ref: ModelRefDto) => {
-    const name = modelName(ref);
-    return repeatedNames.has(name)
-      ? S.models.modelInGroup(name, providerInfo(ref.provider)?.label ?? ref.provider)
-      : name;
-  };
   const selectedModelIndex = modelFilter
     ? modelOptions.findIndex(
         (m) => m.provider === modelFilter.provider && m.modelId === modelFilter.modelId,
@@ -339,7 +322,7 @@ export function UsagePage() {
     ...compactCounts(s, plotted.kept),
   }));
   const modelEntities: EntityCounts[] = (data?.byModelSeries ?? []).map((s) => ({
-    label: modelLabel(s),
+    label: catalogEntryFor(s.provider, s.modelId)?.displayName ?? s.modelId,
     ...compactCounts(s, plotted.kept),
   }));
   return (
@@ -368,7 +351,7 @@ export function UsagePage() {
                 ))}
               </Select>
             </div>
-            <div className={modelFilter ? "w-48 max-w-full" : "w-32"}>
+            <div className="w-32">
               <Select
                 size="sm"
                 value={modelFilterIndex}
@@ -380,7 +363,7 @@ export function UsagePage() {
                 <option value="">{S.usage.filterAllModels}</option>
                 {modelOptions.map((m, i) => (
                   <option key={`${m.provider}:${m.modelId}`} value={String(i)}>
-                    {modelLabel(m)}
+                    {catalogEntryFor(m.provider, m.modelId)?.displayName ?? m.modelId}
                   </option>
                 ))}
               </Select>
@@ -469,6 +452,7 @@ export function UsagePage() {
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <ChartCard title={S.usage.chartRequestsByAgent}>
             <RequestsChart
+              label={S.usage.chartRequestsByAgent}
               series={plotted.points}
               entities={agentEntities}
               granularity={data.granularity}
@@ -477,6 +461,7 @@ export function UsagePage() {
           </ChartCard>
           <ChartCard title={S.usage.chartRequestsByModel}>
             <RequestsChart
+              label={S.usage.chartRequestsByModel}
               series={plotted.points}
               entities={modelEntities}
               granularity={data.granularity}
@@ -489,6 +474,7 @@ export function UsagePage() {
             extra={<TokenLegend active={tokenBucket} onHover={setTokenBucket} />}
           >
             <TokenBarChart
+              label={S.usage.chartTokenTrend}
               series={plotted.points}
               granularity={data.granularity}
               legend={tokenBucket}
@@ -497,6 +483,7 @@ export function UsagePage() {
           </ChartCard>
           <ChartCard title={S.usage.chartCostTrend}>
             <TrendChart
+              label={S.usage.chartCostTrend}
               series={plotted.points}
               granularity={data.granularity}
               currency={currency}

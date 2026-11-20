@@ -1134,11 +1134,11 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
           fetch.progress.doneBytes = Math.max(fetch.progress.doneBytes, base);
           next(at + 1);
         },
-        onError: (message) => {
+        onError: (message, cause) => {
           end();
           if (bodyFetches.get(key) !== fetch) return;
           bodyFetches.delete(key);
-          const failed: BodyLoad = { ...fetch.progress, error: message };
+          const failed: BodyLoad = { ...fetch.progress, error: message, cause };
           for (const waiting of fetch.items) waiting.bodyLoad = failed;
           deps.onModelChange();
         },

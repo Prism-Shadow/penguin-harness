@@ -15,20 +15,6 @@ import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-se
 import { cacheHitRate } from "./format";
 import { SERIES_COLORS } from "./category-colors";
 
-export function toolQuantityRows(totals: UsageSeriesPoint["toolQuantities"]) {
-  const units = [
-    "billed_audio_second",
-    "billed_character",
-    "utf8_byte",
-    "billable_request",
-    "image",
-  ] as const;
-  return units.flatMap((unit) => {
-    const quantity = totals?.[unit];
-    return quantity === undefined ? [] : [{ unit, quantity }];
-  });
-}
-
 /** Quick range choices; `1h`/`1d` are trailing timestamp windows, the rest calendar ranges (`custom` reveals the range picker its pair is picked in). */
 export type RangePreset = "1h" | "1d" | "7d" | "30d" | "90d" | "custom";
 
@@ -174,9 +160,7 @@ export function sumCounts(series: readonly EntityCounts[]): Omit<EntityCounts, "
 /**
  * Per-bucket success rate in percent, or **null where there is nothing to
  * rate** (denominator 0 — the entity was idle, or every request it made was
- * aborted). Null is not a number the reader may be shown: the hover table
- * prints a dash for it, and plotRates below turns it into a drawing height so
- * the line still crosses the interval.
+ * aborted). The chart leaves a gap there (rateRuns) and the bubble prints a dash.
  */
 export function rateSeries(
   counts: Pick<EntityCounts, "completed" | "denominator">,
@@ -193,20 +177,28 @@ export function hitRateValues(series: readonly UsageSeriesPoint[]): (number | nu
 }
 
 /**
- * The height a rate line is drawn at across a bucket that has no rate. The
- * stroke has to cross the interval at *some* height — a hole reads as a claim
- * of its own, and so does dropping to the floor, which is where "made
- * requests and failed every one" lives. The top of the axis is the one height
- * that invents no failure.
+ * How a rate line is drawn: the runs of neighbouring buckets that both have a rate, as bucket
+ * indices. A bucket with nothing to rate breaks the line, and so does an axis break (`breaks`,
+ * the indices after which the axis skipped an interval), since the two points either side of
+ * it are not neighbours in time. A run of one is a lone rate, drawn as a point.
  *
- * It is a drawing choice and nothing more: the hover table prints a dash for
- * the same bucket, so the number the reader takes away is never this 100.
+ * The success-rate lines and the cache hit-rate curve share this rule. Drawing an idle
+ * interval at the top of the axis would read as "everything succeeded".
  */
-export const NO_RATE_PLOT = 100;
-
-/** Drawing values for a rate line: every bucket gets a height, the ones with no rate at NO_RATE_PLOT. */
-export function plotRates(values: readonly (number | null)[]): number[] {
-  return values.map((v) => v ?? NO_RATE_PLOT);
+export function rateRuns(
+  rates: readonly (number | null)[],
+  breaks: readonly number[] = [],
+): number[][] {
+  const skippedAfter = new Set(breaks);
+  const runs: number[][] = [];
+  let run: number[] = [];
+  for (const [i, value] of rates.entries()) {
+    if (value === null || skippedAfter.has(i - 1)) run = [];
+    if (value === null) continue;
+    if (!run.length) runs.push(run);
+    run.push(i);
+  }
+  return runs;
 }
 
 /** A time series with its empty buckets dropped: the buckets that survived, where they sat, and where the axis now jumps. */

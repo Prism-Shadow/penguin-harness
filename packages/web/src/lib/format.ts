@@ -138,27 +138,8 @@ export function formatMoney(
   if (v === 0) return `${symbol}0`;
   const abs = Math.abs(v);
   if (opts?.compact && abs < 1) return `${symbol}${Number(v.toPrecision(2))}`;
-  if (abs < 0.001)
-    return (
-      symbol +
-      Number(v.toPrecision(4)).toLocaleString("en-US", {
-        maximumSignificantDigits: 4,
-        useGrouping: false,
-      })
-    );
   const digits = abs >= 100 ? 0 : abs >= 1 ? 2 : 4;
   return `${symbol}${v.toFixed(digits)}`;
-}
-
-/** The Cost Center knows a range when an image endpoint omits its billed resolution tier. */
-export function formatEstimatedCost(
-  estimate: { cost: number | null; costMax?: number },
-  currency: "USD" | "CNY",
-): string {
-  const minimum = formatMoney(estimate.cost, currency);
-  return estimate.costMax === undefined
-    ? minimum
-    : minimum + "–" + formatMoney(estimate.costMax, currency);
 }
 
 /** Benchmark score display: integers unchanged, decimals keep up to the stored two places. */

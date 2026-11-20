@@ -228,7 +228,7 @@ describe("read_file on an image — text-only session model (describer injected)
     const local = await run({ file_path: "a.png" }, tmp, { visionDescriber: { modelId: null } });
     expect(local.result?.status).toBe("fatal");
     expect(local.text).toContain("No vision model");
-    expect(local.text).toContain("tools.i2t");
+    expect(local.text).toContain("vision_model");
     // A URL source is not even downloaded: the missing vision model is what stands between
     // this session and image reading, not the image.
     const fetchMock = vi.fn(async () => new Response(PNG_1X1, { status: 200 }));

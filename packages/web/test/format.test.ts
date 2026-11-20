@@ -122,9 +122,6 @@ describe("formatMoney", () => {
   it("defaults to USD, decimal places scale with magnitude", () => {
     expect(formatMoney(0)).toBe("$0");
     expect(formatMoney(0.1234)).toBe("$0.1234");
-    expect(formatMoney((4 * 0.058) / 3600)).toBe("$0.00006444");
-    expect(formatMoney(0.0004 / 7, "CNY")).toBe("¥0.0004");
-    expect(formatMoney(0.000001 / 7)).toBe("$0.0000001429");
     expect(formatMoney(1.5)).toBe("$1.50");
     expect(formatMoney(150)).toBe("$150");
   });

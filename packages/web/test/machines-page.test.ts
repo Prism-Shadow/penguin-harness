@@ -257,8 +257,15 @@ function all(node: ReactNode): AnyElement[] {
 
 /** The shared package's components: the browser renders them; here they stay as they are. */
 const SHARED: ReadonlySet<unknown> = new Set(Object.values(ui));
-/** The shared machine views this page hands its data to: drawn, so what they draw is in the list. */
-const MACHINE_VIEWS: ReadonlySet<unknown> = new Set([ui.MachineCard, ui.MachineToolbar]);
+/**
+ * The shared views this page hands its data to — the machine views, and the words a failure is
+ * said in — drawn, so what they draw is in the list.
+ */
+const MACHINE_VIEWS: ReadonlySet<unknown> = new Set([
+  ui.MachineCard,
+  ui.MachineToolbar,
+  ui.FailureText,
+]);
 
 /** A node's children as one flat list: a component may hand on a list inside its own. */
 const nodes = (node: ReactNode): ReactNode[] =>

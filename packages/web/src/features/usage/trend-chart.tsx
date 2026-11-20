@@ -14,8 +14,9 @@
  * dropped (usage-controls' compactSeries), so the points sit left to right
  * over only the intervals that recorded something and the geometry spreads
  * them across the card. A bucket that ran but has no priced model still
- * counts for requests and leaves a gap in the cost curve. `breaks` marks where the axis
- * skipped an interval.
+ * counts: it reads as a cost of 0, not a dash. `breaks` marks where the axis
+ * skipped an interval. The chart can be inspected without a mouse (ChartFrame's
+ * `inspectable`).
  */
 import { useState } from "react";
 import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-server/api";
@@ -24,16 +25,15 @@ import {
   ChartFrame,
   ChartLine,
   ChartPoint,
-  makeRangeGeom,
-  plotPadLeft,
+  makeGeom,
+  seriesPoints,
   useChartWidth,
   type ChartPaint,
 } from "@prismshadow/penguin-ui";
 
-import { S } from "../../lib/strings";
-import { formatEstimatedCost, formatMoney } from "../../lib/format";
+import { formatMoney } from "../../lib/format";
 import type { Currency } from "../../state/theme";
-import { bucketAxisLabel, bucketFullLabel, toolQuantityRows } from "../../lib/usage-controls";
+import { bucketAxisLabel, bucketFullLabel } from "../../lib/usage-controls";
 import { Empty } from "./usage-charts";
 
 /**
@@ -46,11 +46,14 @@ const COST_PAINT: ChartPaint = { ink: "" };
 const MIN_DOT_STEP = 8;
 
 export function TrendChart({
+  label,
   series,
   granularity,
   currency = "USD",
   breaks,
 }: {
+  /** The chart's accessible name. */
+  label: string;
   series: UsageSeriesPoint[];
   granularity: UsageGranularity;
   currency?: Currency;
@@ -64,32 +67,24 @@ export function TrendChart({
   if (series.length === 0) return <Empty />;
 
   const cost = series.map((p) => p.cost ?? 0);
-  const max = Math.max(1e-9, ...series.map((p) => p.costMax ?? p.cost ?? 0));
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((fraction) => fraction * max);
-  const tickLabel = (value: number) => formatMoney(value, currency);
-  const geom = makeRangeGeom(series.length, 0, max, width, undefined, {
-    padL: plotPadLeft(ticks.map(tickLabel)),
-  });
+  const max = Math.max(1e-9, ...cost);
+  const geom = makeGeom(series.length, max, width);
   const buckets = series.map((p) => p.bucket);
   // Dots are drawn only where the cells are wide enough to hold them apart: a
   // 2.5px-radius dot needs roughly this much room or the row fuses into a rope
   // (61 minute buckets in a half-width card sit ~7px apart). Below that the
   // line stands alone and only the hovered point gets its dot.
   const everyDot = geom.step >= MIN_DOT_STEP;
-  const segments: [number, number][][] = [];
-  series.forEach((p, index) => {
-    if (p.cost === null) return;
-    if (index === 0 || series[index - 1]?.cost === null) segments.push([]);
-    segments[segments.length - 1]!.push([geom.x(index), geom.y(p.cost)]);
-  });
+  const points = seriesPoints(geom, cost);
 
   return (
     <div ref={ref}>
       {width > 0 && (
         <ChartFrame
+          label={label}
+          inspectable
           geom={geom}
-          fmtY={tickLabel}
-          yTicks={ticks}
+          fmtY={(v) => formatMoney(v, currency)}
           dates={buckets}
           fmtX={(b) => bucketAxisLabel(granularity, b)}
           hover={hover}
@@ -100,64 +95,33 @@ export function TrendChart({
             return (
               <>
                 <p className="text-gray-400">{bucketFullLabel(granularity, p.bucket)}</p>
-                <p className="font-mono">
-                  {formatEstimatedCost(p, currency)}
-                  {p.hasUncosted && <sup>*</sup>}
-                </p>
-                {toolQuantityRows(p.toolQuantities).map(({ unit, quantity }) => (
-                  <p key={unit}>
-                    {S.usage.toolUnits[unit]} · {quantity}
-                  </p>
-                ))}
+                <p className="font-mono">{formatMoney(p.cost ?? 0, currency)}</p>
               </>
             );
           }}
         >
           <g>
-            {segments.map((points) => (
-              <g key={points[0]![0]}>
-                <ChartArea
-                  points={points}
-                  baseY={geom.y(0)}
-                  paint={COST_PAINT}
-                  strength={hover !== null ? 0.6 : 1}
-                />
-                <ChartLine points={points} paint={COST_PAINT} opacity={hover !== null ? 0.35 : 1} />
-                {!everyDot && points.length === 1 && (
-                  <ChartPoint cx={points[0]![0]} cy={points[0]![1]} paint={COST_PAINT} />
-                )}
-              </g>
-            ))}
-            {series.map(
-              (p, i) =>
-                p.costMax !== undefined &&
-                p.cost !== null && (
-                  <ChartLine
-                    key={p.bucket}
-                    points={[
-                      [geom.x(i), geom.y(p.cost)],
-                      [geom.x(i), geom.y(p.costMax)],
-                    ]}
-                    paint={COST_PAINT}
-                    dash="2 2"
-                  />
-                ),
-            )}
+            {/* Area fill: the line closes down to the baseline, low opacity reinforces the trend's sense of "volume" */}
+            <ChartArea
+              points={points}
+              baseY={geom.y(0)}
+              paint={COST_PAINT}
+              // Dimmed while a point is singled out.
+              strength={hover !== null ? 0.6 : 1}
+            />
+            <ChartLine points={points} paint={COST_PAINT} opacity={hover !== null ? 0.35 : 1} />
             {everyDot &&
-              series.map(
-                (p, i) =>
-                  p.cost !== null && (
-                    <ChartPoint
-                      key={p.bucket}
-                      cx={geom.x(i)}
-                      cy={geom.y(cost[i] ?? 0)}
-                      paint={COST_PAINT}
-                      grow={hover === i}
-                      opacity={hover !== null && hover !== i ? 0.25 : 1}
-                    />
-                  ),
-              )}
-            {!everyDot && hover !== null && series[hover]?.cost != null && (
+              series.map((p, i) => (
+                <ChartPoint
+                  key={p.bucket}
+                  cx={geom.x(i)}
+                  cy={geom.y(cost[i] ?? 0)}
+                  paint={COST_PAINT}
+                  grow={hover === i}
+                  opacity={hover !== null && hover !== i ? 0.25 : 1}
+                />
+              ))}
+            {!everyDot && hover !== null && (
               <ChartPoint
                 cx={geom.x(hover)}
                 cy={geom.y(cost[hover] ?? 0)}

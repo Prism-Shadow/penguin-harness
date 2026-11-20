@@ -95,6 +95,11 @@ export interface UsageContext {
   provider: string;
   /** Upstream model_id of the top-level Session (paired with provider). */
   modelId: string;
+  /**
+   * What a request outside a chat turn is for (`<package>:<operation>`, ProjectModelRequests),
+   * stored on its row; absent for a chat turn's requests and the Session's title.
+   */
+  purpose?: string;
 }
 
 export interface UsageQuery {
@@ -229,28 +234,16 @@ export interface UsageErrorItem {
   firstTs: string;
 }
 
-interface ToolQuantityUnitTotals {
-  /** Physical quantities observed by the adapter. Units stay separate from true tokens. */
-  toolQuantities?: Partial<
-    Record<
-      "billed_audio_second" | "billed_character" | "utf8_byte" | "billable_request" | "image",
-      number
-    >
-  >;
-}
-
-export interface UsageBucket extends ToolQuantityUnitTotals {
+export interface UsageBucket {
   total: number;
   requests: number;
   /** Cost converted using current pricing at query time (USD); a partial sum when uncosted Models are included, null if none has pricing. */
   cost: number | null;
-  /** Upper estimate for a provider-reported quantity with multiple possible rates. */
-  costMax?: number;
   /** Whether any Model has no pricing (its usage isn't included in cost; counted once pricing is added later). */
   hasUncosted: boolean;
 }
 
-export interface UsageGroupRow extends ToolQuantityUnitTotals {
+export interface UsageGroupRow {
   /** Group key: date / agentId / modelId / sessionId. */
   key: string;
   /** Provider group when groupBy=model (rows are broken down by (provider, modelId); unset for other dimensions). */
@@ -261,18 +254,16 @@ export interface UsageGroupRow extends ToolQuantityUnitTotals {
   total: number;
   requests: number;
   cost: number | null;
-  /** Upper estimate for a provider-reported quantity with multiple possible rates. */
-  costMax?: number;
   /**
    * `cost` split by pricing bucket, each record at the same rates, tier and promotion that
-   * priced it in `cost`. Omitted when the estimate includes tool tariffs that cannot be
-   * split into these three chat buckets.
+   * priced it in `cost`. Present exactly when `cost` is not null; a row's unpriced usage is in
+   * neither.
    */
   costParts?: CostParts;
   hasUncosted: boolean;
 }
 
-export interface UsageSeriesPoint extends ToolQuantityUnitTotals {
+export interface UsageSeriesPoint {
   bucket: string;
   cacheRead: number;
   cacheWrite: number;
@@ -280,10 +271,6 @@ export interface UsageSeriesPoint extends ToolQuantityUnitTotals {
   total: number;
   /** Cost converted at query time (USD); null when no priced Model contributed. */
   cost: number | null;
-  /** Upper estimate for a provider-reported quantity with multiple possible rates. */
-  costMax?: number;
-  /** This point includes upstream requests with unknown prices or quantities. */
-  hasUncosted?: boolean;
   requests: number;
   /** Successful requests in the bucket. */
   completed: number;
@@ -372,6 +359,16 @@ export abstract class UsageStore {
   abstract deleteByProject(projectId: string): void;
 }
 
+/**
+ * What a standalone record's usage reports beyond its `token_usage` buckets: the thinking share
+ * of the output, which a request through ProjectModelRequests has from MMSP's usage and a chat
+ * turn's `token_usage` does not carry.
+ */
+export interface UsageDetail {
+  /** Thinking tokens, a part of the record's `output`; stored for the thinking rate to price. */
+  thoughts?: number;
+}
+
 /** UsageRecording: the mechanism UsageRecorder implements. */
 @Interface()
 export abstract class UsageRecording {
@@ -379,6 +376,7 @@ export abstract class UsageRecording {
     ctx: UsageContext,
     msg: AmspRecord<AmspPayload>,
     source?: "stream" | "standalone",
+    detail?: UsageDetail,
   ): Promise<void>;
 }
 

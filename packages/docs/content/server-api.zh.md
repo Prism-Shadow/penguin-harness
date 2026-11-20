@@ -253,7 +253,7 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 - 主机可以用密码代替密钥登录。`POST …/ssh-hosts` 与 `PUT …/ssh-hosts/:alias` 接受 `password`：字符串即保存；`PUT` 时 `null` 删除已保存的密码，不带则保持不变。对手写的配置段，`PUT` 可以只设置密码，其余字段原样传回该段的内容。`GET …/ssh-hosts/:alias` 与机器列表在保存了密码时答 `passwordSaved: true`，从不返回密码本身。密码存放在 `<root>/machines/ssh-passwords/` 下权限为 0600 的文件里，不写进 ssh 配置、数据库或日志，只经 `SSH_ASKPASS` 出现在那一个 ssh 进程的环境变量里；这样的机器不提供密钥，每种方式只问一次。ssh 拒绝了的密码不再重试，直到为这台机器重新保存或删除密码：任务立即以 `sshReason: "password-rejected"` 失败（主机不接受密码时为 `"password-not-offered"`），保持连接的机器带上 `reconnect.waitsForPassword` 并停止重试。把机器从最后一个使用它的 Project 中删除时，它的密码一并删除。密码为空或不止一行时返回 `400` `ssh_password_invalid`；本机的 OpenSSH 无法接收密码时（Windows 上低于 8.4）返回 `409` `ssh_password_unsupported`，`details.ssh` 为 `ssh -V` 的输出。
 - `POST …/connect` 维持一条 `ssh -T -D` 会话，空闲时永不超时。Windows 机器返回 `409` `connect_unsupported`，因为没有 shell 可以维持会话。
 - 连接过的机器会被**保持连接**（`keepConnected`），直到被停止（`POST …/stop`）、删除（`POST …/stop-using`）或断开：它的 ssh 会话断开、服务停止或重启、本服务器自身重启时，服务器都会自己把它连回来——探测它，服务没在运行就启动它，重新持有连接并下发 Project 配置。每次失败后的等待是上一次的两倍，从 5 秒起、封顶 5 分钟，连续失败 8 次（约 15 分钟）后停止自动重连；重试也不会好转的 ssh 失败——主机密钥未知或已变、私钥文件不可用、密钥被拒、ssh 配置有误——第一次失败即停止。`POST …/reconnect` 重试：立即尝试，停止后则从第 1 次重新开始。其间这台机器带 `reconnect`，连续失败 3 次后自动运行下文的连接检查，结果保存在其中。有任务在处理这台机器时不重连；本服务器重启后每一轮都重新开始。
-- 下发给一台机器的，是使用它的每个 Project 的配置：模型及各分组的连接、默认模型与视觉模型、Project 名称，沙箱命令策略（对端的 `PUT …/command-policy`），新对话默认值（对端的 `PUT …/chat-defaults`；工作区是本服务器上的目录，保留那台机器自己的，那台机器没有的默认 Agent 也保留它自己的），以及插件列表。某个 Project 的某一部分被拒绝时写进日志，其余照常下发。对端按名拒绝的模型条目（`model_not_addable`、`model_not_routable`，见 `PUT /models`）被跳过，表中其余条目照常写入；指向它的默认模型或视觉模型不下发。本服务器取自环境变量的值（模型条目自己没有的 Key 或 base URL）不在配置里，从不随同下发。每次连接、`POST …/sync`，以及本服务器上每次写入 Project 配置之后（模型、默认模型、命令策略、新对话默认值、重命名、插件列表），都会下发给运行本服务器镜像的已连接机器。
+- 下发给一台机器的，是使用它的每个 Project 的配置：模型及各分组的连接、默认模型与视觉模型、工具模型绑定（机器上的绑定与本服务器一致）、Project 名称，沙箱命令策略（对端的 `PUT …/command-policy`），新对话默认值（对端的 `PUT …/chat-defaults`；工作区是本服务器上的目录，保留那台机器自己的，那台机器没有的默认 Agent 也保留它自己的），以及插件列表。某个 Project 的某一部分被拒绝时写进日志，其余照常下发。对端按名拒绝的模型条目（`model_not_addable`、`model_not_routable`，见 `PUT /models`）被跳过，表中其余条目照常写入；指向它的默认模型或视觉模型不下发。本服务器取自环境变量的值（模型条目自己没有的 Key 或 base URL）不在配置里，从不随同下发。每次连接、`POST …/sync`，以及本服务器上每次写入 Project 配置之后（模型、默认模型、工具模型绑定、命令策略、新对话默认值、重命名、插件列表），都会下发给运行本服务器镜像的已连接机器。
 - 向一台机器下发 Project 配置之前（连接、启用，或服务器自己把它连回来时），服务器先问那台机器的服务在运行什么（`GET /api/version`）。服务没有在运行那里安装的构建（例如在那个数据目录上启动的正式版自带的服务），就把它重启到这个构建上。服务运行的构建与本服务器的镜像不同，就先通过它的更新通道把镜像交给它。两样都做不到时，任务停在 `sync`，说明那台机器在运行什么、需要先更新，什么都不下发。问不到的机器照常连接，但不下发，日志里写明原因。修改配置时，只有运行本服务器镜像的已连接机器会收到。
 - `POST …/sync` 是带 `check`、`sync` 两步的任务。`check` 像连接时一样问那台机器在运行什么，但不做任何改动：运行其他构建的机器以同样的话失败于 `check`，要靠更新把它带到本服务器的构建。没有连接的机器返回 `409` `not_connected`。
 - `POST …/disconnect` 断开后远端服务器继续运行：它属于那台机器，其他人可能还在使用。
@@ -452,12 +452,14 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/projects/:projectId/models` | 列出模型（`api_key` 做掩码处理）；正在促销的条目会带上促销折扣 `discount`。连接与注册表参考价不匹配的条目会带上 `referencePriceEligible: false` |
+| GET | `/api/projects/:projectId/models` | 列出模型（`api_key` 做掩码处理）；正在促销的条目会带上促销折扣 `discount` |
 | PUT | `/api/projects/:projectId/models` | 整表替换，以 `(provider, modelId)` 为键；条目的 `discount` 用来保存或清除它的促销 |
 | PUT | `/api/projects/:projectId/models/providers/:provider` | 逐字段设置或清除一个分组在 `[providers.<provider>]` 里的连接信息：`{apiKey?, clearApiKey?, baseUrl?, clientType?}`（`null` 清除该项）→ 模型表 |
 | POST | `/api/projects/:projectId/models/sync-presets` | 按内置目录**同步新增模型**或**恢复默认**：`{mode: add\|restore}` → 模型表，外加 `added` 与 `restored` 计数 |
 | GET | `/api/projects/:projectId/models/balance?provider=<分组>` | 用分组密钥（没有时用其端点允许的环境变量）查询分组的账户余额（`force=1` 跳过一分钟缓存）：`{ok, provider, amount?, currency?, error?, fetchedAt, …}` |
 | PUT | `/api/projects/:projectId/models/default` | 设置默认模型：`{provider, modelId}` → `{defaultModel}` |
+| GET | `/api/projects/:projectId/models/tool-bindings` | 已加载插件声明的工具模型绑定：`{bindings: [{key, title, package, model?, candidates}]}`——`candidates` 是该绑定接受的已配置模型 |
+| PATCH | `/api/projects/:projectId/models/tool-bindings` | 仅所有者。绑定一个键，或以 `model: null` 解除：`{key, model}` → 绑定列表；没有插件声明的键答 `404 unknown_binding`，绑定不接受的模型答 `400 model_not_accepted` |
 | POST | `/api/projects/:projectId/models/test` | 测试连通性：`{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 | POST | `/api/projects/:projectId/models/detect` | 检测自定义 base URL 使用的协议 |
 | POST | `/api/projects/:projectId/models/list` | 列出端点提供的模型 id，供添加分组时导入 |
@@ -687,14 +689,14 @@ interface AgentApiKeyInfo {
 
 ## 插件提供的 CLI 命令
 
-插件可以向 `penguin` CLI 贡献命令。命令与插件的其他部分一起住在 server 的模块树里，因此知道它们的是 server，CLI 通过两条路由触达：一条列出，另一条运行。列出对任何已登录用户开放；运行插件的代码是管理员操作。
+插件可以向 `penguin` CLI 贡献命令。命令与插件的其他部分一起住在 server 的模块树里，因此知道它们的是 server，CLI 通过两条路由触达：一条列出，另一条运行。列出对任何已登录用户开放。运行命令是管理员操作，除非命令声明 `access: "member"`：这时该次运行所在 Project 的任何成员都能运行它，非管理员的运行只含该包的成员命令（其余命令答 `403 admin_required`）。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/cli/commands` | 每条插件命令，连同所属包：`{commands: [{package, key, summary}]}`——`key` 是命令路径（`a.b.c` 等价于 `penguin a b c ARGS`），`summary` 每种语言一行 |
-| POST | `/api/cli/commands/run` | 仅管理员。将 `args` 对一个包的命令解析，应答它们打印的内容与退出码 |
+| GET | `/api/cli/commands` | 每条插件命令，连同所属包：`{commands: [{package, key, summary, access, files?}]}`——`key` 是命令路径（`a.b.c` 等价于 `penguin a b c ARGS`），`summary` 每种语言一行，`access` 为 `admin` 或 `member`，`files` 列出终端读取并发送其文件的选项（`read`），以及终端保存交回文件所用的选项（`write`） |
+| POST | `/api/cli/commands/run` | 将 `args` 对一个包中调用方可运行的命令解析，应答它们打印的内容、退出码与交回的文件 |
 
-运行请求是 `{package, args, language, prog}`：`package` 是列表所示名称的插件包，`args` 是本应跟在程序名之后的参数，`language`（`"en"` 或 `"zh"`）用于 summary 与命令自己的输出，`prog` 是用法行打印的程序名（`penguin`，或 `penguin exec <插件>`）。应答是 `{exitCode, stdout, stderr}`。
+运行请求是 `{package, args, language, prog, projectId?, sessionId?, files?}`：`package` 是列表所示名称的插件包，`args` 是本应跟在程序名之后的参数，`language`（`"en"` 或 `"zh"`）用于 summary 与命令自己的输出，`prog` 是用法行打印的程序名（`penguin`，或 `penguin exec <插件>`）。`projectId` 与 `sessionId` 是调用方上下文：server 校验调用方能看到该 Project（否则 `404`）、该 Session 属于这个 Project（否则 `404 session_not_found`），成员命令必须有 Project（否则 `400 project_required`）。`files` 是 `[{value, name, data}]`，终端为 `read` 选项读取的每个文件一项，按选项值原样为键，字节为 base64；它们计入请求体上限。应答是 `{exitCode, stdout, stderr, files?}`，其中 `files` 为 `[{name, mimeType?, data}]`——只含文件名，总计至多 64 MiB。
 
 每次运行都只用被点名包的命令新建一个命令程序：每条命令位于其 key 定位的节点上、以所请求语言的 summary 作描述，`args` 对这个程序解析。无参数时打印该包的帮助并以 0 退出；用法错误按 commander 的原样报出、带 commander 自己的退出码；命令自身失败以退出码 1 返回、消息在 stderr 上。输出是缓冲的，不作流式传输：命令通过 context 写下的一切，以及程序为帮助与用法错误打印的一切，在运行结束时随应答一次到达。一次运行不会波及 server——失败的命令不影响 server 与它的其他路由。
 
@@ -1008,7 +1010,7 @@ interface RunFormLive {
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, interrupt?, steerIfBusy?, goal?}` → 202 |
+| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, interrupt?, steerIfBusy?, goal?, promptHooks?}` → 202 |
 | POST | `/steer` | 为正在运行的 Task 排入一条插话消息：`{text, images?}` → 202 |
 | DELETE | `/steer/:steerId` | 撤回一条尚未投递的插话消息 |
 | DELETE | `/follow-ups/:followUpId` | 撤回一个排队的后续 Task |
@@ -1027,6 +1029,7 @@ interface RunFormLive {
 - `POST /tasks` 带 `interrupt: true` 时，忙碌的 Session 会停止当前运行，并把输入接在被打断的那一轮之后发出。输入排到后续 Task 队列的最前面（排在更早的打断之后，同样受队列上限约束），运行按 `POST /abort` 的方式中止，收尾后它最先启动（`queued: true`）；在它之前排队的后续 Task 在它之后启动。被打断那一轮已经产出的内容排在它前面一起发出，已提交的历史不变。尚未投递的插话与 `POST /abort` 时一样退回（`returnedSteering`）。启动之前，该条目以 `interrupt: true` 列在 `pendingFollowUps` 里，可以撤回。Session 空闲时直接启动 Task。与 `queueIfBusy` 或 `goal` 同时使用时返回 400。
 - `POST /tasks` 带 `steerIfBusy: true` 时，不论 Session 此刻在做什么都只需这一个请求，由服务端在会话锁内判定。空闲的 Session 直接启动 Task。有 Task 在运行时，输入作为插话送入，与 `POST /steer` 同一路径：插话镜像、撤回与退回照旧，`file` 部分以 `[attached file: <path>]` 行随插话送达；响应 `{sessionId, queued: false, steered: true}`。压缩期间没有 Task 可插话，运行恰在收束时也不再接受插话，这两种情况按 `queueIfBusy` 入队（`queued: true`）。与 `interrupt` 或 `goal` 同时使用时返回 400；同时带 `queueIfBusy` 不改变任何行为。
 - `POST /tasks` 带 `goal: {budget?}` 时改为启动目标循环。Agent 没有安装 `goal` 插件时返回 409 `goal_plugin_not_installed`。插件的启动钩子运行失败（脚本报错或超时，或沙盒拒绝运行它）时返回 409 `goal_start_failed` 并附上原因，不启动任何 Task。目标就是输入里的文本（去掉开头的标记块），所以输入必须带非空文本（否则返回 400）：只有图片说明不了目标。图片作为普通输入随第 1 轮发送，之后各轮只重新注入目标文本。`file` 部分一律以 400 拒绝，因为没有办法把文件带进每一轮都重新注入的目标。见[目标模式](/goal-mode)。
+- `POST /tasks` 带 `promptHooks: [name, …]` 时，携带的是输入框的开关。对所列的每个钩子包，服务端按顺序以用户的原话运行它 `"trigger": "host"` 的 `user_prompt` 命令，并把 context 以 `sender: "harness"` 标记紧随这条消息发出。这些命令在请求被接受时运行，所以排队或打断的输入带着各自的 context 等待，排队行与撤回仍只是用户自己的内容；转为插话的输入不运行任何命令。Agent 没有该钩子包、或包里没有这样的命令时返回 409 `prompt_hook_not_installed`；命令运行失败时返回 409 `prompt_hook_failed` 并附上原因。两种情况都不启动、也不入队。与 `goal` 同时使用时返回 400。
 - `POST /steer` 在轮次之间把消息作为一条独立的 `[user_steering]` 用户消息投递，图片紧随其后。`text` 和 `images` 任一字段都能单独携带消息，但两者都缺时返回 400。没有 Task 在运行时返回 409 `not_running`。
 - `DELETE /steer/:steerId` 接收 `task_state` 里 `pendingSteering` 的 id，把那条消息从队列撤回。响应 200，带原始内容 `{text, images, files}`，便于输入框恢复消息供编辑：文件以 data URL 的形式从暂存区读回，磁盘上的副本随之删除。消息已经投递给模型时返回 409 `not_pending`。
 - `DELETE /follow-ups/:followUpId` 接收 `task_state` 里 `pendingFollowUps` 的 id，在后续 Task 启动前把它移除。响应 200，带原始内容 `{text, images, files}`；无论以哪种方式排队，每个排队的后续 Task 都带这些内容。后续 Task 已经启动、或 id 未知时返回 409 `follow_up_started`。
@@ -1360,8 +1363,8 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | POST | `/tabs/:tab/activate` | 设为当前标签页；在 `chrome` 上，Chrome 也会切到该标签页 |
 | DELETE | `/tabs/:tab` | 关闭标签页；`204` |
 | POST | `/tabs/:tab/navigate`、`scan`、`exec`、`click`、`type`、`screenshot`、`cdp` | Agent 的各项操作，见 [penguin browser](/cli#penguin-browser) |
-| GET | `/import/sources` | 内置：可导入的系统浏览器个人资料 |
-| POST | `/import` | 内置：导入 Cookie 与历史记录：`{sourceId, cookies?, history?, domains?}` |
+| GET | `/import/sources` | 内置：可导入的系统浏览器个人资料，以及调用者已连接的 Chrome 扩展（`chrome-extension`，只有 Cookie）→ `{sources, extension?}`，`extension` 说明扩展为何未列出 |
+| POST | `/import` | 内置：导入 Cookie 与历史记录：`{sourceId, cookies?, history?, domains?}` → `{sourceId, browserName, cookies?: {found, imported, skipped, failed, skips}, history?, notes}`；跳过原因与提示都是代码加计数。经扩展导入须用户在 Chrome 中允许（否则 403 `import_declined`） |
 | GET / PUT | `/settings` | 主页：`{homepage}`。仅管理员 |
 | GET / DELETE | `/history?q=&limit=` | 内置：搜索或清空历史记录 |
 | POST | `/clear-data` | 内置：`{storages}`，取 `cookies`、`cache` 和 `storage` 中的若干项 |

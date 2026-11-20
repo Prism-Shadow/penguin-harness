@@ -146,12 +146,16 @@ export function tokenFromSetCookie(lines: string[] | undefined, name: string): s
  * Reads one echoed line from the terminal, for answers that are not secret.
  *
  * `fallback` is what an empty answer means, so the common case is a bare Enter rather than
- * retyping what the prompt already suggested.
+ * retyping what the prompt already suggested. `stdin` is the input to read: the caller's
+ * terminal input (console-input.ts), which the caller releases.
  */
-export function promptLine(prompt: string, fallback: string): Promise<string> {
+export function promptLine(
+  prompt: string,
+  fallback: string,
+  stdin: NodeJS.ReadStream = process.stdin,
+): Promise<string> {
   return new Promise((resolve) => {
     process.stderr.write(prompt);
-    const stdin = process.stdin;
     const onData = (chunk: Buffer) => {
       stdin.pause();
       stdin.removeListener("data", onData);
@@ -167,15 +171,23 @@ export function promptLine(prompt: string, fallback: string): Promise<string> {
 }
 
 /**
- * Reads a password from the terminal without echoing it.
+ * Reads a password from the terminal without echoing it: raw mode, on stdin or on the console's
+ * input alike.
  *
- * Falls back to a plain read when stdin is not a TTY, so a password can be piped in — the
- * echo is the only thing being suppressed, not the ability to script.
+ * Falls back to a plain read when the input is not a TTY, so a password can be piped in — the
+ * echo is the only thing being suppressed, not the ability to script. `stdin` as for
+ * `promptLine`.
+ *
+ * Echo goes off BEFORE the prompt is shown. libuv applies raw mode with `tcsetattr(TCSADRAIN)`,
+ * which on macOS takes effect only once the terminal has read what is still queued for it — the
+ * prompt, had it been written first — and reading the prompt is what tells the person (or a
+ * test) to type. Keys typed in that window were echoed by the terminal, password included.
  */
-export function promptPassword(prompt: string): Promise<string> {
+export function promptPassword(
+  prompt: string,
+  stdin: NodeJS.ReadStream = process.stdin,
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    process.stderr.write(prompt);
-    const stdin = process.stdin;
     const raw = stdin.isTTY === true;
     let value = "";
     const done = (out: string) => {
@@ -208,6 +220,7 @@ export function promptPassword(prompt: string): Promise<string> {
       }
     };
     if (raw) stdin.setRawMode(true);
+    process.stderr.write(prompt);
     stdin.resume();
     stdin.on("data", onData);
   });

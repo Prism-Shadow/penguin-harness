@@ -12,15 +12,14 @@
  * - The file is the only truth: a Session on a preset is built with its group table's endpoint,
  *   protocol and key; with the table cleared a probe goes where the client's defaults send it,
  *   and GET reports the missing values as none — the catalog never fills them back in.
- * - An audio-only or generation endpoint can be configured without becoming the chat default;
- *   selecting one through either default write is refused without replacing a working model.
  * - Credentials live inline in `.project_config.toml` (0600) and GET shows only a mask; the env
  *   fallback is reported and masked only where the entry is allowed one, never leaking a value.
  * - GET labels a row with the catalog's display name and reports the env key; a pre-rename
  *   `client_type = "openai"` reads as openai-chat; a file written before MMSP's names and group
  *   connections is rewritten once on its first read into the shape a new Project is written in
  *   (OpenCode Go's and Penguin Go's included), then served from the cache; a model the catalog
- *   dropped still loads and stays usable; one model_id under two providers is two rows.
+ *   dropped still loads and stays usable; one model_id under two providers is two rows; a
+ *   catalog tool model (image, speech, web) reads as not chat-eligible.
  * - PUT persists a custom model's vision flag and max_tokens (clearing and rejecting bad values),
  *   falls back to OPENAI_API_KEY for the openai protocol, requires a provider, refuses an id a
  *   vendor group cannot route when the request introduces it (unless its group names a
@@ -169,53 +168,6 @@ describe("models preset & catalog enrichment", () => {
       })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-  });
-
-  it("a Jina proxy in the project or MMSP environment cannot use the official registry price", async () => {
-    const table = async () => (await (await api.get(url())).json()) as ModelsResponse;
-    vi.stubEnv("JINA_BASE_URL", "https://proxy.example");
-    try {
-      expect(pick(await table(), "jina", "jina-search").referencePriceEligible).toBe(false);
-      const changed = await api.put(url() + "/providers/jina", { baseUrl: "https://s.jina.ai/" });
-      expect(changed.status).toBe(200);
-      const models = await table();
-      expect(pick(models, "jina", "jina-search").referencePriceEligible).toBeUndefined();
-      expect(pick(models, "jina", "jina-fetch").referencePriceEligible).toBe(false);
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
-
-  it("dedicated models never displace a chat model, including the first saved model", async () => {
-    const speech = { provider: "deepseek", modelId: "deepseek-asr" };
-    const image = { provider: "google", modelId: "gemini-3.1-flash-image" };
-    const chat = { provider: "google", modelId: "gemini-4-carbon" };
-    const first = await api.put(url(), { models: [speech, image], initialChatModel: speech });
-    expect(first.status).toBe(200);
-    const firstTable = (await first.json()) as ModelsResponse;
-    expect(firstTable.defaultModel).toBeUndefined();
-    expect(firstTable.models.every((m) => m.chatEligible === false)).toBe(true);
-    // The vision-capable general chat model remains available.
-    const added = await api.put(url(), { models: [speech, image, chat], initialChatModel: chat });
-    expect(((await added.json()) as ModelsResponse).defaultModel).toEqual(chat);
-    expect((await api.put(url() + "/default", speech)).status).toBe(400);
-    expect(
-      (await api.put(url(), { models: [speech, image, chat], defaultModel: image })).status,
-    ).toBe(400);
-    const table = (await (await api.get(url())).json()) as ModelsResponse;
-    expect(table.defaultModel).toEqual(chat);
-    expect(pick(table, chat.provider, chat.modelId).chatEligible).not.toBe(false);
-    // Inheriting a transcription protocol makes a hand-added model audio-only as well.
-    const inherited = { provider: "lab", modelId: "experiment" };
-    const changed = await api.put(url(), {
-      providers: { lab: { clientType: "openai-transcription" } },
-      models: [inherited, chat],
-      initialChatModel: inherited,
-    });
-    expect(changed.status).toBe(200);
-    const changedTable = (await changed.json()) as ModelsResponse;
-    expect(changedTable.defaultModel).toEqual(chat);
-    expect(pick(changedTable, inherited.provider, inherited.modelId).chatEligible).toBe(false);
   });
 
   it("credentials are inlined in one file: the apiKey from PUT lands in .project_config.toml (0600), GET returns only a mask", async () => {
@@ -987,6 +939,49 @@ describe("models preset & catalog enrichment", () => {
     }
   });
 
+  it("PUT pricing.thoughts: stored beside the buckets and read back through GET; omitting it clears it; a negative one 400", async () => {
+    const buckets = { cacheRead: 0.5, cacheWrite: 1.5, output: 12 };
+    const put = await api.put(url(), {
+      models: [
+        {
+          provider: "custom",
+          modelId: "video-model",
+          clientType: "openai",
+          pricing: { ...buckets, thoughts: 9 },
+        },
+      ],
+    });
+    expect(put.status).toBe(200);
+    expect(pick((await put.json()) as ModelsResponse, "custom", "video-model").pricing).toEqual({
+      ...buckets,
+      thoughts: 9,
+    });
+    const again = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(again, "custom", "video-model").pricing).toEqual({ ...buckets, thoughts: 9 });
+    expect(await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8")).toContain(
+      "thoughts = 9",
+    );
+
+    // A full-table PUT with the buckets alone prices thinking as output again.
+    const cleared = await api.put(url(), {
+      models: [{ provider: "custom", modelId: "video-model", clientType: "openai", pricing: buckets }],
+    });
+    expect(cleared.status).toBe(200);
+    expect(pick((await cleared.json()) as ModelsResponse, "custom", "video-model").pricing).toEqual(
+      buckets,
+    );
+
+    const bad = await api.put(url(), {
+      models: [
+        { provider: "custom", modelId: "video-model", pricing: { ...buckets, thoughts: -1 } },
+      ],
+    });
+    expect(bad.status).toBe(400);
+    expect(((await bad.json()) as { error: { message: string } }).error.message).toContain(
+      "models[0].pricing.thoughts",
+    );
+  });
+
   it("the same model_id can coexist under different providers (paired keys, neither overwrites the other)", async () => {
     // The gateway's copy was added by hand, before gateways stopped taking such rows.
     await storeRows(t.root, projectId, [
@@ -1019,6 +1014,13 @@ describe("models preset & catalog enrichment", () => {
     // Round-trips through disk unchanged.
     const again = (await (await api.get(url())).json()) as ModelsResponse;
     expect(again.models.map(pairKey).sort()).toEqual(body.models.map(pairKey).sort());
+  });
+
+  it("a preset tool model (image, speech, web) reads as not chat-eligible, and every chat preset as eligible", async () => {
+    const body = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(body, "deepseek", "deepseek-search").chatEligible).toBe(false);
+    expect(pick(body, "openai", "gpt-image-2.5-flare").chatEligible).toBe(false);
+    expect(pick(body, "deepseek", "deepseek-v4-pro").chatEligible).toBeUndefined();
   });
 });
 
@@ -1091,12 +1093,13 @@ describe("default_project presets", () => {
       baseUrl: "https://or-proxy.example/v1",
       apiKeyMasked: "sk-o…0018",
     });
-    // Its models follow its endpoint and carry the protocol it lacks; other groups get theirs.
+    // Its models follow its endpoint and carry the protocol it lacks (a row that pins its own, an
+    // image or speech model on OpenRouter, keeps it); other groups get theirs.
     for (const row of body.models.filter((m) => m.provider === "openrouter")) {
       expect(row.credential, row.modelId).toBeUndefined();
       expect(row.clientType, row.modelId).toBe(
-        MODEL_CATALOG.find((m) => m.provider === "openrouter" && m.modelId === row.modelId)!
-          .clientType,
+        catalogEntryFor("openrouter", row.modelId)?.clientType ??
+          catalogGroupConnection("openrouter")!.client_type,
       );
       expect(row.effective.baseUrl, row.modelId).toBe("https://or-proxy.example/v1");
     }
@@ -1759,63 +1762,6 @@ describe("model-reference rekeying and the connectivity test", () => {
       }
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
-    }
-  });
-
-  // The model card and the group speed test use the same endpoint. A transcription
-  // route must receive an actual audio file even when the owner is testing a draft.
-  it.each([
-    ["deepseek-official", "deepseek-asr", "/gateway/deepseek/v1/tools/asr", false],
-    ["openai-transcription", "custom-asr", "/gateway/deepseek/audio/transcriptions", true],
-  ] as const)(
-    "uploads speech through the %s route using the draft connection",
-    async (clientType, modelId, path, speed) => {
-      const upstream = stubFetch(() => jsonResponse({ text: "Testing", duration_ms: 570 }));
-      try {
-        const result = await api.post(testUrl(), {
-          provider: "private-gateway",
-          modelId,
-          clientType,
-          speed,
-          apiKey: "probe-fixture-key",
-          baseUrl: "https://gateway.example/gateway/deepseek",
-        });
-        expect(await result.json()).toMatchObject({ ok: true, latencyMs: expect.any(Number) });
-        expect(upstream.calls).toHaveLength(1);
-        const call = upstream.calls[0]!;
-        expect(new URL(call.url).pathname).toBe(path);
-        expect(call.headers.get("authorization")).toBe("Bearer probe-fixture-key");
-        const form = await new Response(call.bytes, { headers: call.headers }).formData();
-        const file = form.get("file") as File;
-        expect(file.type).toBe("audio/ogg");
-        const bytes = Buffer.from(await file.arrayBuffer());
-        expect(bytes.toString("ascii", 0, 4)).toBe("OggS");
-        expect(bytes.indexOf("OpusHead")).toBeGreaterThan(0);
-      } finally {
-        vi.unstubAllGlobals();
-      }
-    },
-  );
-
-  it("shows an upstream transcription rejection as a failed connectivity test", async () => {
-    const upstream = stubFetch(() =>
-      jsonResponse({ error: { message: "invalid audio key" } }, 401),
-    );
-    try {
-      const result = await api.post(testUrl(), {
-        provider: "custom",
-        modelId: "deepseek-asr",
-        clientType: "deepseek-official",
-        apiKey: "probe-fixture-key",
-        baseUrl: "https://gateway.example",
-      });
-      expect(await result.json()).toMatchObject({
-        ok: false,
-        message: expect.stringContaining("invalid audio key"),
-      });
-      expect(upstream.calls).toHaveLength(1);
-    } finally {
-      vi.unstubAllGlobals();
     }
   });
 

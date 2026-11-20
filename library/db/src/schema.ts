@@ -1,5 +1,3 @@
-import { TOOL_REGISTRY_ROUTE } from "./migrations/steps/2026-11-19-tool-registry-route.js";
-import { TOOL_REQUEST_USAGE_V2 } from "./migrations/steps/2026-11-19-tool-meter-quantities.js";
 /**
  * SQLite table-creation SQL.
  *
@@ -98,20 +96,6 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at    TEXT NOT NULL
 );                                            -- the Session's SOURCE (user/api/schedule/subagent/cli/company) is NOT stored: session_meta in the Trace is the single source of truth (see runtime/session-sources.ts); "client" is a different, DB-only axis (who created the row), read for the source only where the Trace records none ('org' → company)
 CREATE INDEX IF NOT EXISTS idx_sessions_agent_created ON sessions(project_id, agent_id, created_at DESC);
-CREATE TABLE IF NOT EXISTS capability_runs (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
-  session_id TEXT,
-  created_at TEXT NOT NULL,
-  status TEXT NOT NULL,
-  data TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS capability_runs_project_time ON capability_runs(project_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS capability_runs_session_time ON capability_runs(project_id, session_id, created_at DESC);
-
-${TOOL_REQUEST_USAGE_V2}
-${TOOL_REGISTRY_ROUTE}
-
 CREATE TABLE IF NOT EXISTS usage_records (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   ts                TEXT NOT NULL,
@@ -126,7 +110,9 @@ CREATE TABLE IF NOT EXISTS usage_records (
   cache_write       INTEGER NOT NULL,
   output            INTEGER NOT NULL,
   total             INTEGER NOT NULL,         -- from token_usage.request (one row per Request)
-  status            TEXT NOT NULL DEFAULT 'completed'  -- request outcome: completed=success (with tokens); others=failure (0 tokens, for success rate)
+  status            TEXT NOT NULL DEFAULT 'completed', -- request outcome: completed=success (with tokens); others=failure (0 tokens, for success rate)
+  purpose           TEXT,                     -- what a request outside a chat turn was for ('<package>:<operation>', ProjectModelRequests); NULL = a chat turn's (and the Session title's)
+  thoughts          INTEGER                   -- the thinking share of `output`, where the usage reported it apart (ProjectModelRequests); NULL = not reported, all output priced at the output rate
 );                                            -- cost is not stored: computed at query time from current pricing
 CREATE INDEX IF NOT EXISTS idx_usage_project_date ON usage_records(project_id, date);
 CREATE INDEX IF NOT EXISTS idx_usage_session_ts ON usage_records(session_id, ts);  -- (session_id) alone was idx_usage_session (dropped on open): ts makes the last_active_at backfill's MAX(ts) a covering index scan instead of a random row lookup per usage record

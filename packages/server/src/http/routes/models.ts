@@ -32,6 +32,7 @@ import type { SessionManager } from "../../runtime/session-manager.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { Machines } from "../../machines/service.js";
 import { ModelBalances } from "../../services/model-balance.js";
+import { toolBindingKeyFault } from "../../services/tool-binding-key.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface ModelsRouteDeps {
@@ -234,10 +235,20 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
           throw badRequest(`models[${i}].pricing.${key} must be a non-negative number.`);
         }
       }
+      // The thinking rate is optional: omitted, thinking is output (and a stored one is removed,
+      // like every other field this full-table write omits).
+      const thoughts = p.thoughts;
+      if (
+        thoughts !== undefined &&
+        (typeof thoughts !== "number" || !Number.isFinite(thoughts) || thoughts < 0)
+      ) {
+        throw badRequest(`models[${i}].pricing.thoughts must be a non-negative number.`);
+      }
       entry.pricing = {
         cacheRead: p.cacheRead as number,
         cacheWrite: p.cacheWrite as number,
         output: p.output as number,
+        ...(thoughts !== undefined ? { thoughts } : {}),
       };
     }
     // The promotion stored for this row (null clears it); the service checks the range.
@@ -268,14 +279,24 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
     return entry;
   });
   const req: ModelsUpdateRequest = { models };
-  if (body.initialChatModel !== undefined) {
-    req.initialChatModel = parseRef(body.initialChatModel, "initialChatModel");
-  }
   if (body.defaultModel !== undefined) {
     req.defaultModel = parseRef(body.defaultModel, "defaultModel");
   }
   if (body.visionModel !== undefined) {
     req.visionModel = parseRef(body.visionModel, "visionModel");
+  }
+  if (body.toolModels !== undefined) {
+    const table = body.toolModels;
+    if (table === null || typeof table !== "object" || Array.isArray(table)) {
+      throw badRequest("toolModels must be an object keyed by binding.");
+    }
+    req.toolModels = Object.fromEntries(
+      Object.entries(table as Record<string, unknown>).map(([key, ref]) => {
+        const fault = toolBindingKeyFault(key);
+        if (fault !== null) throw badRequest(`toolModels: ${fault}.`);
+        return [key, parseRef(ref, `toolModels.${key}`)];
+      }),
+    );
   }
   if (body.providers !== undefined) {
     const providers = body.providers;

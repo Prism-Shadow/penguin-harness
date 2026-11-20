@@ -16,6 +16,7 @@
  * every conversation, and a red mark there would be an alarm about nothing that went wrong.
  */
 import { ActivityGroup, DisclosureRow, StatusIcon } from "@prismshadow/penguin-ui";
+import { toldNode } from "../../lib/failure";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import type { McpConnectItem, McpServerOutcome, McpToolSummary } from "../../lib/amsp/stream-model";
@@ -55,9 +56,19 @@ function ServerGroup({ outcome, tools }: { outcome: McpServerOutcome; tools: Mcp
       : outcome.errorCode === "mcp_sign_in_required"
         ? S.chat.mcpServerSignIn
         : S.chat.mcpServerFailed;
+  // A server that could not connect offers 「[报告问题]」 after its error; its report carries the
+  // server's words masked — a stdio child can print its command line, a URL or an environment
+  // value. One waiting on a vault value or a sign-in is a state, not a failure.
   const body = !expandable ? undefined : failed ? (
     <p className="anim-fade px-3 pt-0.5 pb-2 pl-8 font-mono text-xs break-all text-fg-muted">
-      {outcome.error}
+      {skipped || outcome.error === undefined
+        ? outcome.error
+        : toldNode(outcome.error, {
+            what: "an MCP server could not be connected",
+            ...(outcome.errorCode !== undefined ? { code: outcome.errorCode } : {}),
+            detail: outcome.error,
+            mask: { hosts: true },
+          })}
     </p>
   ) : (
     <ul className="anim-fade pb-1">

@@ -6,8 +6,6 @@
  * raw Token sums (a model_id shared across providers is aggregated separately; never concatenated).
  */
 import type { UsageGroupBy, UsageStore } from "../observability.js";
-import { REQUEST_SOURCE, BILLING_GROUP } from "./usage-source.js";
-import type { ModelOperation } from "@prismshadow/penguin-core";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "@prismshadow/penguin-library-db";
 
@@ -28,12 +26,14 @@ export interface UsageRecordInsert {
   total: number;
   /** Request outcome; defaults to completed (success, carries tokens). Failed requests are stored with 0 tokens + status, for success-rate calculations. */
   status?: string;
+  /** What a request outside a chat turn was for (`<package>:<operation>`); absent for a chat turn's. */
+  purpose?: string;
+  /** The thinking share of `output`, where the usage reported it apart; absent when it did not. */
+  thoughts?: number;
 }
 
 /** Generic filter: date range + agent / model dimensions (cost center top bar switches by agent/model). */
 export interface UsageFilter {
-  /** Tariff change instants. Amounts on opposite sides must be priced separately. */
-  promotionEnds?: readonly string[];
   from?: string;
   to?: string;
   /** Timestamp window bounds (ISO UTC, compared as strings against the row's `ts`): refine the date range down to instants for the trailing minute/hour windows. */
@@ -47,33 +47,18 @@ export interface UsageFilter {
   sessionIds?: readonly string[];
 }
 
-/** MMSP may use prompt_tokens to carry the native quantity billed by the adapter. */
-type ToolInputUnit =
-  "token" | "billable_request" | "billed_audio_second" | "billed_character" | "utf8_byte";
-
 /** Raw Token sums for a single Model (paired reference) — the smallest unit for cost conversion. */
 export interface UsageModelSums {
-  tool?: {
-    capability: ModelOperation | "voice-polish";
-    createdAt: string;
-    registryRouteMatched?: true;
-    usage: {
-      cached_tokens: number | null;
-      prompt_tokens: number | null;
-      thoughts_tokens: number | null;
-      response_tokens: number | null;
-    };
-    inputMeter?: {
-      unit: ToolInputUnit;
-      quantity: number;
-    };
-    measurements: { unit: string; quantity: number }[];
-  };
   provider: string;
   modelId: string;
   cacheRead: number;
   cacheWrite: number;
   output: number;
+  /**
+   * The thinking share of `output` over the rows that reported it apart (0 where none did): what
+   * a model's thinking rate prices.
+   */
+  thoughts: number;
   total: number;
   requests: number;
   /**
@@ -189,62 +174,22 @@ function peakExpr(tiers: readonly PeakTier[]): { sql: string; params: Record<str
   return { sql: `CASE ${branches.join(" ")} ELSE 1 END`, params };
 }
 
-function billingGroup(cutoffs: readonly string[] = []) {
-  const params: Record<string, string> = {};
-  const branches = cutoffs.map((cutoff, i) => {
-    params[`cutoff${i}`] = cutoff;
-    return `WHEN operation IS NOT NULL AND julianday(ts) < julianday(:cutoff${i}) THEN ${i}`;
-  });
-  const sql = branches.length
-    ? BILLING_GROUP + `, CASE ${branches.join(" ")} ELSE ${branches.length} END`
-    : BILLING_GROUP;
-  return { sql, params };
-}
-
 const SUM_COLUMNS = `COALESCE(SUM(cache_read), 0) AS cache_read,
                 COALESCE(SUM(cache_write), 0) AS cache_write,
                 COALESCE(SUM(output), 0) AS output,
+                COALESCE(SUM(thoughts), 0) AS thoughts,
                 COALESCE(SUM(total), 0) AS total,
-                COUNT(*) AS requests, operation, registry_route_matched, input_unit, MIN(ts) AS first_ts,
-                SUM(input_quantity) AS input_quantity, SUM(completed_requests) AS completed_requests,
-                SUM(raw_cached) AS raw_cached, SUM(raw_prompt) AS raw_prompt,
-                SUM(raw_thoughts) AS raw_thoughts, SUM(raw_response) AS raw_response,
-                SUM(images) AS images`;
+                COUNT(*) AS requests`;
 
 function toSums(r: Record<string, unknown>): UsageModelSums {
   return {
     provider: r.provider as string,
     modelId: r.model_id as string,
     peak: r.peak !== 0,
-    ...(r.operation != null && {
-      tool: {
-        capability: r.operation as ModelOperation | "voice-polish",
-        createdAt: r.first_ts as string,
-        ...(r.registry_route_matched === 1 && { registryRouteMatched: true as const }),
-        usage: {
-          cached_tokens: r.raw_cached as number | null,
-          prompt_tokens: r.raw_prompt as number | null,
-          thoughts_tokens: r.raw_thoughts as number | null,
-          response_tokens: r.raw_response as number | null,
-        },
-        ...(r.input_unit != null &&
-          r.input_quantity != null && {
-            inputMeter: {
-              unit: r.input_unit as ToolInputUnit,
-              quantity: Number(r.input_quantity),
-            },
-          }),
-        measurements: [
-          ...(r.images == null ? [] : [{ unit: "image", quantity: Number(r.images) }]),
-          ...(r.completed_requests == null
-            ? []
-            : [{ unit: "request", quantity: Number(r.completed_requests) }]),
-        ],
-      },
-    }),
     cacheRead: r.cache_read as number,
     cacheWrite: r.cache_write as number,
     output: r.output as number,
+    thoughts: r.thoughts as number,
     total: r.total as number,
     requests: r.requests as number,
   };
@@ -259,8 +204,8 @@ export class UsageRepo implements UsageStore {
       .prepare(
         `INSERT INTO usage_records
            (ts, date, project_id, agent_id, session_id, origin_session_id, provider, model_id,
-            cache_read, cache_write, output, total, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            cache_read, cache_write, output, total, status, purpose, thoughts)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         r.ts,
@@ -276,6 +221,8 @@ export class UsageRepo implements UsageStore {
         r.output,
         r.total,
         r.status ?? "completed",
+        r.purpose ?? null,
+        r.thoughts ?? null,
       );
   }
 
@@ -339,14 +286,13 @@ export class UsageRepo implements UsageStore {
   ): UsageModelSums[] {
     const { where, params } = this.conds(projectId, f);
     const peak = peakExpr(tiers);
-    const billing = billingGroup(f.promotionEnds);
     const rows = this.db
       .prepare(
         `SELECT provider, model_id, ${peak.sql} AS peak, ${SUM_COLUMNS}
-         FROM ${REQUEST_SOURCE} WHERE ${where}
-         GROUP BY provider, model_id, peak, ${billing.sql}`,
+         FROM usage_records WHERE ${where}
+         GROUP BY provider, model_id, peak`,
       )
-      .all({ ...params, ...peak.params, ...billing.params });
+      .all({ ...params, ...peak.params });
     return rows.map(toSums);
   }
 
@@ -360,14 +306,13 @@ export class UsageRepo implements UsageStore {
     const col = GROUP_COLUMNS[groupBy];
     const { where, params } = this.conds(projectId, f);
     const peak = peakExpr(tiers);
-    const billing = billingGroup(f.promotionEnds);
     const rows = this.db
       .prepare(
         `SELECT ${col} AS key, provider, model_id, ${peak.sql} AS peak, ${SUM_COLUMNS}
-         FROM ${REQUEST_SOURCE} WHERE ${where} AND ${col} IS NOT NULL
-         GROUP BY ${col}, provider, model_id, peak, ${billing.sql}`,
+         FROM usage_records WHERE ${where}
+         GROUP BY ${col}, provider, model_id, peak`,
       )
-      .all({ ...params, ...peak.params, ...billing.params });
+      .all({ ...params, ...peak.params });
     return rows.map((r) => ({ key: r.key as string, ...toSums(r) }));
   }
 
@@ -386,16 +331,15 @@ export class UsageRepo implements UsageStore {
     const expr = BUCKET_EXPRS[granularity];
     const { where, params } = this.conds(projectId, f);
     const peak = peakExpr(tiers);
-    const billing = billingGroup(f.promotionEnds);
     const rows = this.db
       .prepare(
         `SELECT ${expr} AS key, provider, model_id, ${peak.sql} AS peak, ${SUM_COLUMNS},
                 COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS completed,
                 COALESCE(SUM(CASE WHEN status <> 'aborted' THEN 1 ELSE 0 END), 0) AS denominator
-         FROM ${REQUEST_SOURCE} WHERE ${where}
-         GROUP BY key, provider, model_id, peak, ${billing.sql}`,
+         FROM usage_records WHERE ${where}
+         GROUP BY key, provider, model_id, peak`,
       )
-      .all({ ...params, ...peak.params, ...billing.params });
+      .all({ ...params, ...peak.params });
     return rows.map((r) => ({
       key: r.key as string,
       ...toSums(r),
@@ -417,7 +361,7 @@ export class UsageRepo implements UsageStore {
         `SELECT ${expr} AS key, agent_id, COUNT(*) AS requests,
                 COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS completed,
                 COALESCE(SUM(CASE WHEN status <> 'aborted' THEN 1 ELSE 0 END), 0) AS denominator
-         FROM ${REQUEST_SOURCE} WHERE ${where} AND agent_id IS NOT NULL
+         FROM usage_records WHERE ${where}
          GROUP BY key, agent_id`,
       )
       .all(params);
@@ -434,7 +378,7 @@ export class UsageRepo implements UsageStore {
   distinctAgentIds(projectId: string): string[] {
     const rows = this.db
       .prepare(
-        `SELECT DISTINCT agent_id AS v FROM ${REQUEST_SOURCE} WHERE project_id = ? AND agent_id IS NOT NULL ORDER BY agent_id`,
+        "SELECT DISTINCT agent_id AS v FROM usage_records WHERE project_id = ? ORDER BY agent_id",
       )
       .all(projectId);
     return rows.map((r) => r.v as string);
@@ -444,7 +388,7 @@ export class UsageRepo implements UsageStore {
   distinctModels(projectId: string): Array<{ provider: string; modelId: string }> {
     const rows = this.db
       .prepare(
-        `SELECT DISTINCT provider, model_id FROM ${REQUEST_SOURCE}
+        `SELECT DISTINCT provider, model_id FROM usage_records
          WHERE project_id = ? ORDER BY provider, model_id`,
       )
       .all(projectId);

@@ -70,6 +70,7 @@ import type {
   ModelProtocolDetectRequest,
   ModelRefDto,
   ModelsResponse,
+  ModelOAuthErrorCode,
   ModelsUpdateRequest,
   ModelTestRequest,
   ModelUpdateEntry,
@@ -249,7 +250,9 @@ import {
 import { isPinned, usePinnedBalance } from "./balance";
 import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
 import { ConnectDefaultOfferConfirm } from "./connect-default-offer";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError, toastFailure } from "../../lib/toast-api-error";
+import { toastDetectFailed, type DetectMiss } from "./detect-failure";
+import { failureNode, toldFailure, toldNode } from "../../lib/failure";
 
 /**
  * The authorization flows a group's Connect dialog can run, keyed by the flow named in that
@@ -456,6 +459,12 @@ export interface RowState {
   cacheRead: string;
   cacheWrite: string;
   output: string;
+  /**
+   * The row's thinking rate (USD per million tokens), for a model that bills thinking apart from
+   * its other output. The dialog does not edit it; it is carried so that a save, which replaces
+   * the whole table, sends it back with the buckets. Absent when the row has none.
+   */
+  thoughts?: number;
   /**
    * The running promotion the server reports for this row: a fraction off the list price above
    * (0.5 = half price), stored outside the config file and applied when usage is priced. Absent
@@ -691,6 +700,7 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
     apiKeyInput: "",
     clearApiKey: false,
   };
+  if (m.pricing?.thoughts !== undefined) row.thoughts = m.pricing.thoughts;
   if (m.displayName !== undefined) row.displayName = m.displayName;
   if (m.envKey !== undefined) row.envKey = m.envKey;
   if (m.envKeyMasked !== undefined) row.envKeyMasked = m.envKeyMasked;
@@ -870,7 +880,12 @@ export function rowToEntry(row: RowState, group?: ProviderConnectionDto): ModelU
     Number.isFinite(cwr) &&
     Number.isFinite(out)
   ) {
-    entry.pricing = { cacheRead: cr, cacheWrite: cwr, output: out };
+    entry.pricing = {
+      cacheRead: cr,
+      cacheWrite: cwr,
+      output: out,
+      ...(row.thoughts !== undefined ? { thoughts: row.thoughts } : {}),
+    };
   }
   // The promotion is never sent: the server keeps the stored one unless this entry renames
   // the row or changes its price.
@@ -1034,7 +1049,7 @@ export function ModelsPage() {
   /** "Add models with AI" dialog: the prompt goes to the Project's default agent. */
   const [aiAddOpen, setAiAddOpen] = useState(false);
   /** Initial load failure: shown inline only when the whole page has no content (there's no context to pop a toast against). */
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
   // Currency follows the user setting (toggled in sidebar settings).
   const { currency } = useTheme();
@@ -1067,7 +1082,7 @@ export function ModelsPage() {
     try {
       adopt(await api.getModels(projectId, null));
     } catch (e) {
-      setLoadError(apiErrorText(e));
+      setLoadError(failureNode(e, { what: "a Project's models could not be listed" }));
     }
     try {
       const totals = await api.getUsageModelTotals(projectId);
@@ -2248,7 +2263,7 @@ function AddGroupDialog({
     dropped: number;
     picked: Set<string>;
   } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   /** Detection run counter: a manual pick or an edited URL supersedes an in-flight run (same convention as the model dialog). */
   const detectSeq = useRef(0);
 
@@ -2301,12 +2316,17 @@ function AddGroupDialog({
       } else {
         setDetectFailed(true);
         // Same condition the model dialog reports, so it gets the same sentence.
-        setError(S.models.detectFailedBody);
+        setError(
+          toldNode(S.models.detectFailedBody, {
+            what: "protocol detection found no protocol the endpoint serves",
+            detail: null,
+          }),
+        );
       }
     } catch (e) {
       if (seq !== detectSeq.current) return;
       setDetectFailed(true);
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "protocol detection failed" }));
     } finally {
       if (seq === detectSeq.current) setDetecting(false);
     }
@@ -2351,7 +2371,10 @@ function AddGroupDialog({
         setError(
           listed.unsupported
             ? S.models.groupImportUnsupported
-            : (listed.message ?? S.models.groupImportFailed),
+            : toldNode(listed.message ?? S.models.groupImportFailed, {
+                what: "an endpoint's model list could not be read",
+                detail: listed.message ?? null,
+              }),
         );
         return;
       }
@@ -2367,7 +2390,7 @@ function AddGroupDialog({
         picked: new Set(ids),
       });
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an endpoint's model list could not be read" }));
     } finally {
       setImporting(null);
     }
@@ -2389,7 +2412,7 @@ function AddGroupDialog({
         list.dropped + built.skipped,
       );
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "a model group could not be imported" }));
     } finally {
       setImporting(null);
     }
@@ -3029,13 +3052,24 @@ function ModelDialog({
    * endpoint diagnosable. The relayed sentence is not lost either way: it goes to the console,
    * where a developer looking into a report can still read it.
    */
-  const reportTestFailure = (message: string) => {
-    if (unroutableFix(form.provider, form.modelId, effectiveClientType) === null) {
-      toastError(S.models.testFailed(message));
-      return;
+  const reportTestFailure = (message: string, error?: unknown) => {
+    let text = S.models.testFailed(message);
+    if (unroutableFix(form.provider, form.modelId, effectiveClientType) !== null) {
+      console.warn(`[models] ${form.provider}/${form.modelId.trim()}: ${message}`);
+      text = S.models.testNotRoutable;
     }
-    console.warn(`[models] ${form.provider}/${form.modelId.trim()}: ${message}`);
-    toastError(S.models.testNotRoutable);
+    // A request that failed goes by the rule; an answer that says the test failed carries the
+    // provider's own words in its report.
+    if (error !== undefined) toastApiError(error, { text, what: "a model test failed" });
+    else {
+      toastFailure(
+        toldFailure(text, {
+          what: "a model test failed",
+          facts: [["Model", `${form.provider}/${form.modelId.trim()}`]],
+          detail: message === "" ? null : message,
+        }),
+      );
+    }
   };
 
   /**
@@ -3073,7 +3107,7 @@ function ModelDialog({
       if (res.ok) toastSuccess(S.models.testOk(res.latencyMs ?? 0));
       else reportTestFailure(res.message ?? "");
     } catch (e) {
-      reportTestFailure(apiErrorText(e));
+      reportTestFailure(apiErrorText(e), e);
     } finally {
       setTesting(false);
     }
@@ -3111,10 +3145,10 @@ function ModelDialog({
     // What an empty result means depends on who asked. A manual run simply failed; a save
     // run silently resolves to the compatible client and says so, because the save it was
     // serving is still going through.
-    const failed = () => {
+    const failed = (miss: DetectMiss) => {
       setDetectFailed(true);
       if (mode === "save") toastInfo(S.models.detectFellBack);
-      else toastError(S.models.detectFailedBody);
+      else toastDetectFailed(miss);
     };
     // The model's own base URL, or — left blank — the one it follows, so a model in a group
     // whose settings name the endpoint can be probed without retyping it.
@@ -3122,7 +3156,7 @@ function ModelDialog({
     // An unusable URL is just another failure: the server would 400 it, and the user gets
     // the same message either way rather than a distinct piece of API error text.
     if (!detectableBaseUrl(baseUrl)) {
-      failed();
+      failed("check");
       return null;
     }
     const seq = ++detectSeq.current;
@@ -3150,10 +3184,10 @@ function ModelDialog({
         set({ clientType: res.detected, ...patch });
         return { clientType: res.detected, ...patch };
       }
-      failed();
+      failed("none");
       return null;
-    } catch {
-      if (seq === detectSeq.current) failed();
+    } catch (error) {
+      if (seq === detectSeq.current) failed({ error });
       return null;
     } finally {
       if (seq === detectSeq.current) setDetecting(false);
@@ -3224,10 +3258,19 @@ function ModelDialog({
           set({ vision: false });
           toastInfo(S.models.detectVisionNo);
         } else {
-          toastError(S.models.detectVisionFailed);
+          toastFailure(
+            toldFailure(S.models.detectVisionFailed, {
+              what: "vision detection failed",
+              facts: [["Model", `${form.provider}/${form.modelId.trim()}`]],
+              detail: res.message ?? null,
+            }),
+          );
         }
-      } catch {
-        toastError(S.models.detectVisionFailed);
+      } catch (error) {
+        toastApiError(error, {
+          text: S.models.detectVisionFailed,
+          what: "vision detection failed",
+        });
       } finally {
         setVisionDetecting(false);
       }
@@ -4259,6 +4302,23 @@ const OAUTH_POLL_MS = 2000;
  * the last word on which: it opens a manual flow when the provider would refuse to redirect to
  * the address this page is served from, and the dialog follows the flow it was given.
  */
+/** The flow's own refusals: the authorization asked again is the way on, nothing failed. */
+const OAUTH_REFUSALS: ReadonlySet<ModelOAuthErrorCode> = new Set([
+  "invalid_request",
+  "code_rejected",
+]);
+
+/**
+ * What a flow that ended in an error says: a refusal (or a flow that ran out of time) in its
+ * words alone, a failure with 「[报告问题]」 after them.
+ */
+function oauthFlowError(code: ModelOAuthErrorCode | undefined): ReactNode {
+  if (code === undefined) return S.models.oauthTimedOut;
+  const text = S.models.oauthErrors[code];
+  if (OAUTH_REFUSALS.has(code)) return text;
+  return toldNode(text, { what: "a model provider's authorization failed", code, detail: null });
+}
+
 function ModelOAuthDialog({
   projectId,
   provider,
@@ -4286,7 +4346,7 @@ function ModelOAuthDialog({
   const byHand = manual || redirectRefused;
   const [phase, setPhase] = useState<OAuthPhase>("starting");
   const [flow, setFlow] = useState<{ flowId: string; authorizeUrl: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [code, setCode] = useState("");
   /** How many models use the group key the flow wrote — the sentence the `done` phase reports. */
   const [applied, setApplied] = useState(0);
@@ -4318,7 +4378,7 @@ function ModelOAuthDialog({
         setPhase("ready");
       } catch (e) {
         if (cancelled) return;
-        setError(apiErrorText(e));
+        setError(failureNode(e, { what: "a model provider's authorization could not start" }));
         setPhase("failed");
       }
     })();
@@ -4346,7 +4406,7 @@ function ModelOAuthDialog({
           return;
         }
         if (res.status === "error") {
-          setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);
+          setError(oauthFlowError(res.error));
           setPhase("failed");
         }
       } catch {
@@ -4381,10 +4441,10 @@ function ModelOAuthDialog({
         onAppliedRef.current(n, res.defaultOffer);
         return;
       }
-      setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);
+      setError(oauthFlowError(res.error));
       setPhase("failed");
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "a model provider's authorization code was not taken" }));
       setPhase("failed");
     }
   };

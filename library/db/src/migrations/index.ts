@@ -67,11 +67,9 @@ import { sessionsKeptAt } from "./steps/2026-10-12-sessions-kept-at.js";
 import { agentApiConcurrency } from "./steps/2026-10-14-agent-api-concurrency.js";
 import { agentApiSessionSettings } from "./steps/2026-10-14-agent-api-session-settings.js";
 import { machinesAdoptedAt } from "./steps/2026-10-16-machines-adopted-at.js";
-import { toolRegistryRoute } from "./steps/2026-11-19-tool-registry-route.js";
-import { toolMeterQuantities } from "./steps/2026-11-19-tool-meter-quantities.js";
-import { toolRequestUsage } from "./steps/2026-11-19-tool-request-usage.js";
-import { capabilityRuns } from "./steps/2026-11-18-capability-runs.js";
 import { userDrafts } from "./steps/2026-10-26-user-drafts.js";
+import { usageRecordsPurpose } from "./steps/2026-11-19-usage-records-purpose.js";
+import { usageRecordsThoughts } from "./steps/2026-11-19-usage-records-thoughts.js";
 
 export type { Migration } from "./migration.js";
 export { IrreversibleMigrationError, UnknownMigrationError, appliedMigrations } from "./runner.js";
@@ -105,10 +103,8 @@ export const MIGRATIONS: readonly Migration[] = [
   machinesAdoptedAt,
   modelTablesAdoption,
   userDrafts,
-  capabilityRuns,
-  toolRequestUsage,
-  toolMeterQuantities,
-  toolRegistryRoute,
+  usageRecordsPurpose,
+  usageRecordsThoughts,
 ];
 
 /**

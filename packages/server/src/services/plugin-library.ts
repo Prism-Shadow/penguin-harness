@@ -210,6 +210,7 @@ export function toPluginItem(plugin: LibraryPlugin): PluginItem {
       ? { icon: iconRef(libraryIconRoute(plugin.name), plugin.icon) }
       : {}),
     ...(plugin.quickStart !== undefined ? { quickStart: plugin.quickStart } : {}),
+    ...(plugin.composerMode ? { composerMode: true as const } : {}),
     mcpServers: plugin.mcpServers.map(toPluginMcpServerItem),
   };
 }

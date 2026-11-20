@@ -18,7 +18,13 @@ import type { ProtocolClientType } from "./protocol-client-types";
 import type { ModelGroupSort } from "../features/models/model-sort";
 import type { StartPageSiteId } from "./browser-start-sites";
 import { EVOLUTION_DEMO } from "./evolution-demo";
-import type { AgentAuthor, SemanticIdSuggestReason } from "@prismshadow/penguin-server/api";
+import type {
+  AgentAuthor,
+  BuiltinBrowserCookieSkip,
+  BuiltinBrowserImportNote,
+  SemanticIdSuggestReason,
+} from "@prismshadow/penguin-server/api";
+import type { ImportExtensionRoute } from "./browser-import-route";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -750,6 +756,74 @@ export const zh = {
       (c.failed > 0 ? `，失败 ${c.failed}` : ""),
     importHistoryResult: (h: { found: number; imported: number }): string =>
       `历史记录：已导入 ${h.imported} / ${h.found} 条`,
+    /** Under the counts: why that many cookies were skipped; `browser` is the source's name. */
+    importSkip: ({ reason, count: n }: BuiltinBrowserCookieSkip, browser: string): string => {
+      switch (reason) {
+        case "app_bound":
+          return `${n} 个受 ${browser} 的应用绑定加密保护，只有 ${browser} 自己能读取。`;
+        case "dpapi":
+          return `${n} 个的密钥 Windows 未能解开。`;
+        case "keychain":
+          return `${n} 个的密钥钥匙串未放行；在 macOS 询问时选择「允许」，再导入一次。`;
+        case "keyring":
+          return `${n} 个的密钥未能从桌面密钥环取得。`;
+        case "undecryptable":
+          return `${n} 个无法解密。`;
+        case "partitioned":
+          return `${n} 个是只属于某个站点或容器的分区 Cookie。`;
+        case "expired":
+          return `${n} 个已过期。`;
+      }
+    },
+    /** Anything else the import reports. */
+    importNote: (note: BuiltinBrowserImportNote, browser: string): string => {
+      const store = (which: "cookies" | "history") =>
+        which === "cookies" ? " Cookie 库" : "历史记录";
+      switch (note.code) {
+        case "no_cookie_store":
+          return "这个个人资料没有 Cookie 库。";
+        case "no_history":
+          return "这个来源没有可导入的历史记录。";
+        case "store_busy":
+          return `${browser} 正占用它的${store(note.store)}，关闭 ${browser} 后再导入。`;
+        case "store_unreadable":
+          return `无法读取 ${browser} 的${store(note.store)}。`;
+        case "cookies_not_set":
+          return (
+            `${note.count} 个 Cookie 未能写入内置浏览器` +
+            (note.errors.length > 0 ? `：${note.errors.join("；")}` : "。")
+          );
+      }
+    },
+    /** The group the user's connected Chrome extension is listed under, and its row's hint. */
+    importExtensionGroup: "经 Chrome 扩展",
+    importExtensionHint:
+      "读取扩展所在的 Chrome 个人资料的 Cookie，导入前要在 Chrome 中选择「允许」。",
+    /** The import button while the extension waits for the user's answer in Chrome. */
+    importWaitingChrome: "等待 Chrome 确认…",
+    /**
+     * Windows, a Chrome profile's cookies chosen: why most of them will be skipped, and the way
+     * round it the extension's state leaves.
+     */
+    importAppBoundHint: (route: ImportExtensionRoute): string =>
+      route === "not_paired"
+        ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取：在「设置 › 浏览器」中连接你的 Chrome 后可经扩展导入，或直接在浏览器面板中登录。"
+        : route === "disconnected"
+          ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取：让你的 Chrome 连上 PenguinHarness Browser 扩展后可经扩展导入，或直接在浏览器面板中登录。"
+          : route === "connected"
+            ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取，可改选下方的「经 Chrome 扩展」导入。"
+            : "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取，可直接在浏览器面板中登录。",
+    /** After app-bound skips: how to get those cookies, given the extension's state. */
+    importAppBoundAdvice: (route: ImportExtensionRoute): string =>
+      route === "connected"
+        ? "选择「经 Chrome 扩展」再导入一次即可取回它们，也可以直接在浏览器面板中登录。"
+        : route === "not_paired"
+          ? "在「设置 › 浏览器」中连接你的 Chrome 后，可经扩展导入它们；也可以直接在浏览器面板中登录。"
+          : route === "disconnected"
+            ? "让你的 Chrome 连上 PenguinHarness Browser 扩展后，可经扩展导入它们；也可以直接在浏览器面板中登录。"
+            : "可以直接在浏览器面板中登录这些网站。",
+    /** The outcome's way back to the form with the extension chosen. */
+    importUseExtension: "经 Chrome 扩展导入",
     importFailed: (reason: string): string => `导入失败：${reason}`,
     /** The clear-browsing-data confirmation. */
     clearTitle: "清除浏览数据",
@@ -1407,8 +1481,8 @@ export const zh = {
     /** The windowed app's title bar. */
     windowClose: "关闭，回到应用中心",
     windowFullScreen: "全屏打开",
-    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
-    machinesNote: "机器上 Agent 的应用不在这里，请从它们的 Agent 设置页进入。",
+    /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
+    machinesOffline: (names: string) => `暂时无法连接：${names}。已缓存的内容仍可查看。`,
     aiCreateTitle: "用 AI 创建应用",
     aiCreateDescription: "选定的 Agent 会做一个 Workbench，并让它出现在应用中心。",
     aiCreatePlaceholder: "描述你想要的应用，例如：一个记录每日待办的看板",
@@ -2200,6 +2274,20 @@ export const zh = {
       ["discard", "不生成摘要，直接丢弃旧上下文，下一轮从新窗口重新开始。"],
     ] as ReadonlyArray<readonly [string, string]>,
     compactionPrompt: "摘要提示词",
+    maxRounds: "最多工具轮数",
+    maxRoundsInfo:
+      "生成摘要时，模型在给出摘要之前最多可用几轮工具调用（例如写交接文件）；用尽仍没有摘要，下一个上下文以交接说明开头。",
+    maxRoundsHint: "0 表示不留工具轮",
+    maxRoundsInvalid: "必须是 ≥ 0 的整数",
+    compactionReminder: "每轮提醒",
+    compactionReminderInfo: "生成摘要期间，每个工具轮之后附在工具输出后面发给模型的一行。",
+    compactionReminderHint:
+      "可用占位符 {{ROUNDS_USED}}、{{ROUNDS_LEFT}}、{{SCRATCHPAD_DIR}}；留空则不发提醒",
+    compactionHandoffNote: "交接说明",
+    compactionHandoffNoteInfo:
+      "取不到摘要时，下一个上下文以这段说明开头：harness 从 Trace 文件填入占位符，不再请求模型。",
+    compactionHandoffNoteHint:
+      "可用占位符 {{ERROR}}、{{USER_MESSAGES}}、{{LAST_TURN}}、{{TRACE_PATH}}、{{SCRATCHPAD_DIR}}；留空则只留引述的内容",
     numberInvalid: "必须是 > 0 的整数或 -1",
     numberCannotClear: "已保存的值不能清空：请填写数值，或点「重置」还原",
     toolFieldInvalid: (name: string, field: string) => `${name}: ${field} 必须是 > 0 的整数或 -1`,
@@ -4786,9 +4874,18 @@ Benchmark：
       `当前模型的上下文窗口 ${n} 小于本 Agent 的压缩阈值 ${m}，压缩实际会在窗口边缘触发。拖动上下文面板里的虚线或在 Agent 设置中把阈值调到窗口以下，立即生效。`,
     contextWindowUnderThresholdAction: "打开 Agent 设置",
     contextWindowUnderThresholdDismiss: "忽略",
-    /** Composer notice in the same slot, with the same two buttons: the Session's latest compaction was a refusal hand-off (see composerNotice). */
-    contextRefusedHandoff:
-      "服务商拒绝了上一次请求：留给压缩的空间不足，本对话已改由 Trace 交接说明接续。请在模型配置中更正该模型的上下文窗口，或调低本 Agent 的压缩阈值（可拖动上下文面板里的虚线）。",
+    /**
+     * Composer notice in the same slot, with the same two buttons: the Session's latest compaction
+     * was a refusal hand-off (see composerNotice). Why first: the lead, then the provider's own
+     * words after its colon when it sent any; then what was done, the likely cause and what to
+     * correct.
+     */
+    contextRefusedHandoff: {
+      reason: (said: boolean): string =>
+        said ? "服务商拒绝了上一次请求：" : "服务商拒绝了上一次请求。",
+      advice:
+        "本对话已改由 Trace 交接说明接续。多半是因为留给压缩的空间不足：请在模型配置中更正该模型的上下文窗口，或调低本 Agent 的压缩阈值（可拖动上下文面板里的虚线）。",
+    },
     slashHint: "输入 / 使用命令",
     /** `/agent` handoff: command description, picker title, search box, no-match hint, and the staged target's description and remove button. */
     switchAgent: "交给其他 Agent，发送时开启新会话",
@@ -4888,16 +4985,28 @@ Benchmark：
       tracePath
         ? `没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件：${tracePath}`
         : "没有摘要：原模型不可用或压缩失败，新模型按需读取此前的 Trace 文件",
-    /** The settled row's status-mark tooltip and accessible name when the compaction completed without a full summary: the title stays 压缩完毕, only the mark says it; carries the end's error message when there is one. */
-    compactionDegradedHint: (errorMessage?: string): string =>
-      errorMessage !== undefined
-        ? `未能生成完整摘要，新上下文改以 Trace 交接说明开头：${errorMessage}`
-        : "未能生成完整摘要，新上下文改以 Trace 交接说明开头",
-    /** The same when too little room was left for the compaction (compactionShortOfRoom): what to correct, then the provider's own words when it refused. */
-    compactionRoomHint: (providerMessage?: string): string =>
-      `留给压缩的空间不足，新上下文改以 Trace 交接说明开头。请更正该模型的上下文窗口，或调低压缩阈值。${
-        providerMessage !== undefined ? `服务商的原话：${providerMessage}` : ""
-      }`,
+    /**
+     * The settled row's status-mark tooltip and accessible name when the compaction completed without
+     * a full summary: the title stays 压缩完毕, only the mark says it. Why first — the cause in words
+     * (the retry line's, with the HTTP status) and the error's own words — then what was done, then,
+     * short of room (compactionShortOfRoom), the likely cause and what to correct. One line each.
+     */
+    compactionDegradedHint: (
+      why: string | null,
+      errorMessage: string | undefined,
+      room: boolean,
+    ): string =>
+      [
+        why !== null && errorMessage !== undefined
+          ? `${why}：${errorMessage}`
+          : (why ?? errorMessage),
+        "未能生成完整摘要，新上下文改以 Trace 交接说明开头。",
+        room
+          ? "多半是因为留给压缩的空间不足：请更正该模型的上下文窗口，或调低压缩阈值。"
+          : undefined,
+      ]
+        .filter((line) => line !== undefined)
+        .join("\n"),
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";
@@ -5112,6 +5221,8 @@ Benchmark：
     goalBudgetInvalid: "无效预算：应为正数，可带 k/m 后缀（500k、2m）",
     goalBudgetSave: "保存预算",
     goalRemove: "退出目标模式",
+    /** The remove label of a composer switch's chip (a plugin's mode, e.g. Plan mode). */
+    switchOff: (title: string): string => `关闭${title}`,
     /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
     goalPluginMissing: "目标模式需要 goal 插件：安装到此 Agent 后即可发起目标。",
     goalPluginInstall: "安装到此 Agent",
@@ -5657,15 +5768,7 @@ Benchmark：
     colCacheRead: "缓存命中",
     colCacheWrite: "缓存未命中",
     colOutput: "输出",
-    estimatedCost: "估算成本",
-    toolUnits: {
-      billed_audio_second: "计费音频（秒）",
-      billed_character: "计费字符数",
-      utf8_byte: "计费字节数",
-      billable_request: "计费请求数",
-      image: "图片张数",
-    },
-    uncostedNote: "* 缺少单价或计量的请求未计入估算成本",
+    uncostedNote: "* 只计入配置了价格的模型成本",
     filterAllAgents: "全部 Agent",
     filterAllModels: "全部模型",
     rangeLabel: "日期范围",
@@ -5677,7 +5780,8 @@ Benchmark：
     rangeCustom: "自定义",
     chartRequestsByAgent: "各 Agent 请求与成功率",
     chartRequestsByModel: "各模型请求与成功率",
-    legendSuccessRate: "成功率",
+    legendRequestCount: "请求数（左轴）",
+    legendSuccessRate: "成功率（右轴）",
     chartTokenTrend: "Token 变化",
     chartCostTrend: "成本变化",
     legendOther: (n: number): string => `其他 ${n} 项`,
@@ -7036,13 +7140,13 @@ Benchmark：
     },
   },
   /**
-   * The problem report (the UI package's `ReportStrings`): 「[报告问题]」 after a serious error, the
+   * The problem report (the UI package's `ReportStrings`): 「[报告问题]」 after a failure, the
    * report dialog it opens, and the notice a crashed part of the page shows.
    */
   report: {
     action: "报告问题",
     title: "报告问题",
-    lead: "这类错误多半是 PenguinHarness 的缺陷。提交到 GitHub 能帮助改进这个开源项目。",
+    lead: "这可能是 PenguinHarness 的缺陷，也可能来自网络、模型服务或所连的机器。如果你认为问题出在 PenguinHarness，欢迎到 GitHub 提交 issue，帮助改进这个开源项目。",
     check: "报告已去掉密钥、Token 与个人路径一类的内容，发送前仍请检查有没有不想公开的信息。",
     label: "报告",
     copy: "复制",
@@ -7127,6 +7231,8 @@ Benchmark：
       unknown_plugin: "该插件不在插件库中。",
       goal_plugin_not_installed:
         "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装，并确认其钩子包已启用。",
+      prompt_hook_not_installed:
+        "这个 Agent 已没有该开关所需的钩子包，或钩子已关闭。请关闭这个开关，或重新安装对应插件。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
       hook_too_large: "该钩子包过大，超出了导入限制。",
       workbench_too_large: "该工作台的源码过大，超出了导出限制。",
@@ -7216,6 +7322,8 @@ Benchmark：
       browser_unavailable:
         "浏览器现在不可用：内置浏览器需要打开 PenguinHarness 桌面应用，你的 Chrome 需要连上 PenguinHarness Browser 扩展。",
       source_not_found: "找不到这个浏览器配置文件。",
+      import_declined: "你没有在 Chrome 中允许这次导入。",
+      extension_outdated: "Chrome 中的 PenguinHarness Browser 扩展版本过旧，请更新后重试。",
       shell_unreachable: "无法联系桌面应用。",
       timeout: "操作超时，请重试。",
     },
