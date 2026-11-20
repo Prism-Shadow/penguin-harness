@@ -14,15 +14,20 @@
  *   `/usr/local/share` and `/usr/share`), where the server's own user — the Agent's, outside the
  *   sandbox — can write neither the file nor any directory above it, nor owns them (a server
  *   running as root: owned by root, and no group or other may write). agent-desktop then gets
- *   that entry's absolute path, which it
- *   launches exactly, rather than the name it would also look up on PATH. An entry that is
- *   hidden, not an application, or runs in a terminal is not offered;
+ *   that entry's absolute path, which it launches exactly, rather than the name it would also
+ *   look up on PATH — and, for that one run, a PATH of only the system directories of the
+ *   server's PATH, the entry's own program resolved in one of them (or given by an absolute path
+ *   the same rule trusts), so a directory the user can write that comes first on PATH is never
+ *   searched. An entry that is hidden, not an application, runs in a terminal, or is a terminal
+ *   emulator (category `TerminalEmulator`, or an `X-…Terminal…` one) is not offered. A name
+ *   matches an entry's id, its Name, or — only when exactly one entry runs it, and never a shell
+ *   or an interpreter such as `sh` or `python3` — its command;
  * - Windows: agent-desktop itself resolves a bare name only under System32 and the Windows
  *   directory (`notepad`, `notepad.exe`);
  * - macOS: agent-desktop resolves a display name or bundle ID through Launch Services. That can
  *   include an app in a folder the user can write, such as ~/Applications — a documented gap.
  *
- * Typing into a terminal app that is already allowed stays the documented, accepted risk.
+ * Typing into a terminal app that is already open stays the documented, accepted risk.
  */
 import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
@@ -34,12 +39,19 @@ const FILE_SUFFIXES = [".desktop", ".sh", ".command", ".bat", ".cmd", ".ps1", ".
 /** At most this many entries are read per applications directory. */
 const MAX_ENTRIES = 4000;
 
-export type LaunchChoice = { ok: true; app: string } | { ok: false; message: string };
+/**
+ * What agent-desktop is given: the app argument, and on Linux the PATH that run gets — only the
+ * system directories of the server's PATH.
+ */
+export type LaunchChoice =
+  { ok: true; app: string; path?: string } | { ok: false; message: string };
 
 export interface LaunchLookup {
   platform: NodeJS.Platform;
   /** The directories whose `applications/` hold desktop entries, in precedence order (Linux). */
   dataDirs: readonly string[];
+  /** The server's PATH entries, in order (Linux): the system ones among them are the launch's PATH. */
+  pathDirs?: readonly string[];
   /** Whether a path, and every directory above it, is out of the server user's reach (tests replace it). */
   trusted?: (file: string) => Promise<boolean>;
 }
@@ -103,7 +115,21 @@ interface DesktopEntry {
   file: string;
   id: string;
   name: string | null;
+  /** The program Exec runs, as written: an absolute path or a name looked up on PATH. */
+  program: string;
+  /** Its base name, for matching; null for a shell or an interpreter, which names no app. */
   command: string | null;
+}
+
+/** Programs that run something else: their name says nothing about the app an entry starts. */
+const WRAPPERS =
+  /^(sh|bash|dash|zsh|ksh|mksh|csh|tcsh|fish|busybox|python[0-9.]*|perl[0-9.]*|ruby[0-9.]*|node|nodejs|lua[0-9.]*|tclsh[0-9.]*|wish[0-9.]*|java)$/;
+
+/** A terminal emulator's categories: `TerminalEmulator`, or a vendor's `X-…Terminal…`. */
+function isTerminal(categories: string | undefined): boolean {
+  return (categories ?? "")
+    .split(";")
+    .some((c) => c === "TerminalEmulator" || (/^X-/.test(c) && /terminal/i.test(c)));
 }
 
 /** The `[Desktop Entry]` group's keys of one file, or null for an entry not offered. */
@@ -124,6 +150,7 @@ function parseEntry(file: string, id: string, text: string): DesktopEntry | null
   }
   if (keys.get("Type") !== "Application") return null;
   if (keys.get("Hidden") === "true" || keys.get("Terminal") === "true") return null;
+  if (isTerminal(keys.get("Categories"))) return null;
   const exec = keys.get("Exec");
   if (exec === undefined || exec === "") return null;
   const words = exec.split(/\s+/).map((w) => w.replace(/^"|"$/g, ""));
@@ -134,12 +161,37 @@ function parseEntry(file: string, id: string, text: string): DesktopEntry | null
     while (i < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]!)) i += 1;
   }
   const program = words[i];
+  if (program === undefined || program === "") return null;
+  const base = path.basename(program);
   return {
     file,
     id,
     name: keys.get("Name") ?? null,
-    command: program === undefined || program === "" ? null : path.basename(program),
+    program,
+    command: WRAPPERS.test(base) ? null : base,
   };
+}
+
+/** Where `program` resolves among `dirs` (or itself, when absolute and trusted); null if nowhere. */
+async function programIn(
+  program: string,
+  dirs: readonly string[],
+  trusted: (file: string) => Promise<boolean>,
+): Promise<string | null> {
+  const candidates = path.isAbsolute(program)
+    ? [program]
+    : program.includes("/")
+      ? []
+      : dirs.map((d) => path.join(d, program));
+  for (const file of candidates) {
+    try {
+      await fs.access(file, fsConstants.X_OK);
+    } catch {
+      continue;
+    }
+    if (await trusted(file)) return file;
+  }
+  return null;
 }
 
 /** The desktop entries under one applications directory, ids as XDG forms them (`sub-x`). */
@@ -166,21 +218,24 @@ async function entriesUnder(dir: string): Promise<Array<{ file: string; id: stri
 }
 
 /**
- * The absolute path of the system desktop entry `name` names — its id (with or without
- * `.desktop`), its command, or its `Name`, compared ignoring case and preferred in that order —
- * or null. The first directory in precedence order that holds a match wins.
+ * The absolute path of the system desktop entry `name` names, or null. Compared ignoring case,
+ * preferred in this order: its id (with or without `.desktop`), its command when exactly one
+ * entry runs that command, its `Name`; among entries alike, the first directory in precedence
+ * order wins. The entry's program must resolve in `pathDirs` (only system directories) or be an
+ * absolute path the same rule trusts.
  */
 export async function linuxDesktopEntry(
   name: string,
   dataDirs: readonly string[],
   trusted: (file: string) => Promise<boolean> = systemOnly,
+  pathDirs: readonly string[] = [],
 ): Promise<string | null> {
   const want = name.toLowerCase().replace(/\.desktop$/, "");
   const seen = new Set<string>();
+  const entries: DesktopEntry[] = [];
   for (const base of dataDirs) {
     const dir = path.join(base, "applications");
     if (!(await trusted(dir))) continue;
-    const ranked: Array<{ rank: number; entry: DesktopEntry }> = [];
     for (const { file, id } of await entriesUnder(dir)) {
       // An id an earlier directory already holds is that directory's (XDG precedence).
       if (seen.has(id)) continue;
@@ -192,23 +247,33 @@ export async function linuxDesktopEntry(
         continue;
       }
       const entry = parseEntry(file, id, text);
-      if (entry === null) continue;
-      const rank =
-        entry.id.toLowerCase() === want
-          ? 0
-          : entry.command?.toLowerCase() === want
-            ? 1
-            : entry.name?.toLowerCase() === want
-              ? 2
-              : -1;
-      if (rank >= 0) ranked.push({ rank, entry });
-    }
-    ranked.sort((a, b) => a.rank - b.rank);
-    for (const { entry } of ranked) {
-      if (await trusted(entry.file)) return entry.file;
+      if (entry !== null) entries.push(entry);
     }
   }
+  const byCommand = entries.filter((e) => e.command?.toLowerCase() === want);
+  const ranked = [
+    ...entries.filter((e) => e.id.toLowerCase() === want),
+    ...(byCommand.length === 1 ? byCommand : []),
+    ...entries.filter((e) => e.name?.toLowerCase() === want),
+  ];
+  for (const entry of ranked) {
+    if (!(await trusted(entry.file))) continue;
+    if ((await programIn(entry.program, pathDirs, trusted)) === null) continue;
+    return entry.file;
+  }
   return null;
+}
+
+/** The system directories of `dirs`, in order: the only PATH a Linux launch runs with. */
+export async function systemPathDirs(
+  dirs: readonly string[],
+  trusted: (file: string) => Promise<boolean> = systemOnly,
+): Promise<string[]> {
+  const out: string[] = [];
+  for (const d of dirs) {
+    if (path.isAbsolute(d) && !out.includes(d) && (await trusted(d))) out.push(d);
+  }
+  return out;
 }
 
 /** What agent-desktop is given for `launch <app>`, or why it is refused. */
@@ -216,20 +281,22 @@ export async function resolveLaunch(app: string, lookup: LaunchLookup): Promise<
   const fault = launchNameFault(app, lookup.platform);
   if (fault !== null) return { ok: false, message: `${fault}${HOW[lookup.platform] ?? ""}` };
   if (lookup.platform !== "linux") return { ok: true, app };
-  const entry = await linuxDesktopEntry(app, lookup.dataDirs, lookup.trusted);
+  const trusted = lookup.trusted ?? systemOnly;
+  const dirs = await systemPathDirs(lookup.pathDirs ?? [], trusted);
+  const entry = await linuxDesktopEntry(app, lookup.dataDirs, trusted, dirs);
   if (entry === null) {
     return {
       ok: false,
       message: `no installed app is named ${JSON.stringify(app.slice(0, 80))}${HOW.linux}`,
     };
   }
-  return { ok: true, app: entry };
+  return { ok: true, app: entry, path: dirs.join(":") };
 }
 
 /** What each system accepts, said with every refusal. */
 const HOW: Partial<Record<NodeJS.Platform, string>> = {
   linux:
-    ": on Linux, launch takes an installed app's name — the id, the name or the command of its desktop entry in a system applications directory, such as gnome-calculator, Calculator or org.gnome.Calculator",
+    ": on Linux, launch takes an installed app's name — the id, the name or the command of its desktop entry in a system applications directory, such as gnome-calculator, Calculator or org.gnome.Calculator; terminal emulators are not offered",
   win32:
     ": on Windows, launch takes the name of a program in System32 or the Windows directory, such as notepad",
   darwin:

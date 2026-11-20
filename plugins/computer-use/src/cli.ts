@@ -409,11 +409,14 @@ export async function handleComputer(
     budgetMs = withText;
   }
   let argv = decision.argv;
+  // A Linux launch also runs with a PATH of system directories only (launch-name.ts).
+  let launchPath: string | undefined;
   if (decision.launch !== undefined) {
     const target = await service.launchTarget(decision.launch.app);
     if (!target.ok)
       return fail(io, "policy_refused", `launch takes a plain app name: ${target.message}`);
     argv = [...argv, target.app];
+    launchPath = target.path;
   }
   const stateDir = await stateDirFor(service.root, callerOf(io));
   const refusal = await selfTargetRefusal(service, choice, decision.targets, stateDir);
@@ -432,6 +435,7 @@ export async function handleComputer(
     const out = await service.run(choice, argv, {
       stateDir: runDir,
       ...(stdin.text !== undefined ? { stdin: stdin.text } : {}),
+      ...(launchPath !== undefined ? { path: launchPath } : {}),
       budgetMs,
     });
     const envelope = reportRun(io, out, decision.plain);

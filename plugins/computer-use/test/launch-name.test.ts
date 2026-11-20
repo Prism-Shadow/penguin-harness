@@ -4,9 +4,12 @@
  * - Given a path, a script, a bundle given by name, an option or a home-relative name, it is
  *   refused on every system; a `.exe` name is a program name on Windows only.
  * - Given Linux, a name is an installed app's only when a desktop entry in a system applications
- *   directory has it as its id, its command or its Name; agent-desktop is then handed that entry's
- *   file. An entry that is hidden, not an application or runs in a terminal is not offered, a
- *   directory the user can write is not looked in, and the first directory holding an id wins.
+ *   directory has it as its id, its Name, or its command when exactly one entry runs that command
+ *   and it is no shell or interpreter; agent-desktop is then handed that entry's file and a PATH
+ *   of system directories only. An entry that is hidden, not an application, runs in a terminal
+ *   or is a terminal emulator is not offered, a directory the user can write is not looked in,
+ *   the first directory holding an id wins, and an entry whose program resolves only in a
+ *   directory the user can write is not launched.
  * - Given a directory the current user owns, it is not the system's; /usr/share is, on a machine
  *   where this user cannot write it.
  */
@@ -55,11 +58,16 @@ describe("a name that is not an app's", () => {
 });
 
 describe("Linux: an installed app's desktop entry", () => {
-  it("is found by its id, its command or its Name, ignoring case", async () => {
-    const apps = await desktopEntries([
-      { id: "org.gnome.Calculator", name: "Calculator", exec: "gnome-calculator %U" },
-      { id: "editor", name: "Text Editor", exec: "env GTK_DEBUG=0 /usr/bin/gnome-text-editor" },
-    ]);
+  it("is found by its id, its Name, or its command, ignoring case", async () => {
+    const apps = await desktopEntries(
+      [
+        { id: "org.gnome.Calculator", name: "Calculator", exec: "gnome-calculator %U" },
+        { id: "editor", name: "Text Editor", exec: "env GTK_DEBUG=0 gnome-text-editor" },
+      ],
+      ["gnome-text-editor"],
+    );
+    const find = (name: string) =>
+      linuxDesktopEntry(name, apps.dataDirs, apps.trusted, apps.pathDirs);
     const calc = path.join(apps.dir, "applications", "org.gnome.Calculator.desktop");
     for (const name of [
       "org.gnome.Calculator",
@@ -67,40 +75,92 @@ describe("Linux: an installed app's desktop entry", () => {
       "gnome-calculator",
       "calculator",
     ]) {
-      expect(await linuxDesktopEntry(name, apps.dataDirs, apps.trusted), name).toBe(calc);
+      expect(await find(name), name).toBe(calc);
     }
-    expect(await linuxDesktopEntry("gnome-text-editor", apps.dataDirs, apps.trusted)).toBe(
+    expect(await find("gnome-text-editor")).toBe(
       path.join(apps.dir, "applications", "editor.desktop"),
     );
     expect(await resolveLaunch("Text Editor", { platform: "linux", ...apps })).toEqual({
       ok: true,
       app: path.join(apps.dir, "applications", "editor.desktop"),
+      path: apps.bin,
     });
   });
 
-  it("offers no hidden, non-application or terminal entry", async () => {
+  it("offers no hidden, non-application, terminal or terminal-emulator entry", async () => {
     const apps = await desktopEntries([
       { id: "hidden", name: "Hidden", exec: "hidden", extra: "Hidden=true\n" },
       { id: "term", name: "Term", exec: "htop", extra: "Terminal=true\n" },
+      { id: "xterm", name: "XTerm", exec: "xterm", extra: "Categories=System;TerminalEmulator;\n" },
+      { id: "vterm", name: "Vendor Term", exec: "vterm", extra: "Categories=X-Vendor-Terminal;\n" },
     ]);
     await fs.writeFile(
       path.join(apps.dir, "applications", "link.desktop"),
       "[Desktop Entry]\nType=Link\nName=Link\nURL=https://example.invalid\n",
     );
-    for (const name of ["hidden", "htop", "Link"]) {
-      expect(await linuxDesktopEntry(name, apps.dataDirs, apps.trusted), name).toBeNull();
+    for (const name of ["hidden", "htop", "Link", "xterm", "XTerm", "Vendor Term"]) {
+      expect(
+        await linuxDesktopEntry(name, apps.dataDirs, apps.trusted, apps.pathDirs),
+        name,
+      ).toBeNull();
     }
   });
 
+  it("matches a command only when one entry alone runs it, and never a shell's", async () => {
+    const apps = await desktopEntries([
+      { id: "fortune", name: "Fortune", exec: 'sh -c "fortune | xmessage -file -"' },
+      { id: "notes-a", name: "Notes A", exec: "notes --a" },
+      { id: "notes-b", name: "Notes B", exec: "notes --b" },
+      { id: "calc", name: "Calc", exec: "calcapp" },
+    ]);
+    const find = (name: string) =>
+      linuxDesktopEntry(name, apps.dataDirs, apps.trusted, apps.pathDirs);
+    expect(await find("sh")).toBeNull();
+    expect(await find("notes")).toBeNull();
+    expect(await find("calcapp")).toBe(path.join(apps.dir, "applications", "calc.desktop"));
+    expect(await find("Fortune")).toBe(path.join(apps.dir, "applications", "fortune.desktop"));
+  });
+
+  it("launches nothing whose program resolves only in a directory the user can write", async () => {
+    const apps = await desktopEntries([{ id: "calc", name: "Calc", exec: "gnome-calculator" }]);
+    const planted = await tempDir();
+    await fs.writeFile(path.join(planted, "gnome-calculator"), "#!/bin/sh\n", { mode: 0o755 });
+    const systemOnlyBin = async (file: string) => !file.startsWith(planted);
+    // The planted directory comes first on PATH: it is left out, and the system one resolves it.
+    expect(
+      await resolveLaunch("calc", {
+        platform: "linux",
+        dataDirs: apps.dataDirs,
+        pathDirs: [planted, apps.bin],
+        trusted: systemOnlyBin,
+      }),
+    ).toEqual({
+      ok: true,
+      app: path.join(apps.dir, "applications", "calc.desktop"),
+      path: apps.bin,
+    });
+    // With the program only in the planted directory, there is nothing to launch.
+    await fs.rm(path.join(apps.bin, "gnome-calculator"));
+    expect(
+      await resolveLaunch("calc", {
+        platform: "linux",
+        dataDirs: apps.dataDirs,
+        pathDirs: [planted, apps.bin],
+        trusted: systemOnlyBin,
+      }),
+    ).toMatchObject({ ok: false });
+  });
+
   it("does not look in a directory the user can write, and the first directory's id wins", async () => {
-    const mine = await desktopEntries([{ id: "calc", name: "Calc", exec: "/home/me/payload" }]);
+    const mine = await desktopEntries([{ id: "calc", name: "Calc", exec: "mine-calc" }]);
     const system = await desktopEntries([{ id: "calc", name: "Calc", exec: "gnome-calculator" }]);
+    const bins = [mine.bin, system.bin];
     const onlySystem = async (file: string) => file.startsWith(system.dir);
-    expect(await linuxDesktopEntry("calc", [mine.dir, system.dir], onlySystem)).toBe(
+    expect(await linuxDesktopEntry("calc", [mine.dir, system.dir], onlySystem, bins)).toBe(
       path.join(system.dir, "applications", "calc.desktop"),
     );
     const both = async () => true;
-    expect(await linuxDesktopEntry("calc", [mine.dir, system.dir], both)).toBe(
+    expect(await linuxDesktopEntry("calc", [mine.dir, system.dir], both, bins)).toBe(
       path.join(mine.dir, "applications", "calc.desktop"),
     );
   });

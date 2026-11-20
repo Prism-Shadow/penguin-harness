@@ -13,7 +13,7 @@ description: 让 Agent 用 penguin computer 查看并操作电脑桌面上的应
 - 它不受 Agent 沙盒约束：打开之后，Agent 能做那个桌面允许它做的事。每条 `penguin computer` 命令仍是 Agent 执行的 shell 命令，照常受审批模式约束。
 - 安装插件与修改其设置由管理员进行。
 - **谁能使用。** 缺省只有管理员，以及由管理员驱动对话的 Agent，可以运行 `penguin computer`；Project 还须在本服务端启用了本插件。在单人使用的桌面上你就是管理员，你的 Agent 可以使用。管理员可以在卡片上打开**允许成员使用**——这等于把这台机器的桌面会话交给已启用本插件的 Project 的所有成员控制，与允许他们在这台机器上运行程序无异。其他人的命令一律被拒绝：未允许成员使用时为 `admin_only`，Project 未启用本插件时为 `plugin_not_enabled`。
-- **Agent 算作谁。** Agent 的 shell 带着服务端的本机 API token，它代表管理员。对 `penguin computer`，服务端改把 Agent 算作最近在其对话中发起运行的人（定时任务的运行算作定时任务的创建者）。没有指明对话的 Agent 调用被拒绝为 `session_required`；对话没有记录任何人（只被 API 或本机 token 驱动过）时被拒绝为 `driver_unknown`。对登录的人，这条规则没有例外；对 Agent，它收窄了 Agent 持有的 token，但在每个对话有自己的凭据之前不是边界：在沙盒之外以服务端用户身份运行的程序，仍可经其他途径登录。
+- **Agent 算作谁。** Agent 的 shell 带着服务端的本机 API token，它代表管理员。对 `penguin computer`，服务端改把 Agent 算作其对话此刻正在处理其消息的那位已登录者，并检查此人对该 Project 的访问权。定时任务的运行算作以自己的登录保存该定时任务的人，直到 Agent 或其他人改动了它的文件。没有指明对话的 Agent 调用被拒绝为 `session_required`；没有这样的运行在进行——空闲、无人署名的定时任务、Agent API、公司模式、目标模式，或被他人插话过的运行——时被拒绝为 `driver_unknown`。对登录的人，这条规则没有例外；对 Agent 只是尽力而为：Agent 可以指明它能触及的 Project 中的另一个对话，借用那里正在进行的运行的发起者，真正的隔离要等每个对话有了自己的凭据。
 
 > **Agent 使用电脑操作时，不要在这个桌面上开着 Web App。** 使用电脑操作的 Agent 能操作这个桌面上的任何窗口，包括显示 PenguinHarness Web App 的浏览器标签页，并可能在那里批准自己的请求或修改设置。只有桌面应用自己的窗口受到保护。
 
@@ -64,7 +64,7 @@ description: 让 Agent 用 penguin computer 查看并操作电脑桌面上的应
 
 | 系统 | `launch` 接受什么 |
 | --- | --- |
-| Linux | 系统应用目录（`/usr/share/applications` 及 `XDG_DATA_DIRS` 中其余服务端用户既不拥有、也不能写入的目录）里某个桌面条目的 id、名称或命令，如 `gnome-calculator`、`Calculator` 或 `org.gnome.Calculator`。你自己目录里的条目、隐藏的条目与在终端中运行的条目不提供。 |
+| Linux | 系统应用目录（`/usr/share/applications` 及 `XDG_DATA_DIRS` 中其余服务端用户既不拥有、也不能写入的目录）里某个桌面条目的 id、名称或命令，如 `gnome-calculator`、`Calculator` 或 `org.gnome.Calculator`。命令只在恰有一个条目运行它时才算数，且从不算 `sh` 之类的 shell 或解释器。条目的程序也须在系统目录中：启动时的 `PATH` 只含服务端 `PATH` 里的系统目录。你自己目录里的条目、隐藏的条目、在终端中运行的条目与终端模拟器不提供。 |
 | Windows | System32 或 Windows 目录中的程序，如 `notepad` 或 `notepad.exe`。 |
 | macOS | 应用的名称或 bundle ID，如 `Calculator` 或 `com.apple.calculator`。名称由 macOS 自己解析，可能包括你可写的文件夹（如 `~/Applications`）中的应用。 |
 

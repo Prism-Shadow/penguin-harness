@@ -25,7 +25,7 @@
 ## Linux (glibc 2.35 or later; X11 or GNOME on Wayland)
 
 - **The session.** agent-desktop needs the desktop session's display, session bus and accessibility bus, and a window manager. `status` reports which is missing.
-- **Apps** are named by their process name exactly as `list-apps` prints it, version suffix and all (`gnome-calculator`, `gedit`, `python3.13`; `python3` is refused). `launch` takes an installed desktop entry's id, name or command (`org.gnome.Calculator`, `Calculator`, `gnome-calculator`) from a system applications directory — never a path, and not a program that has no desktop entry.
+- **Apps** are named by their process name exactly as `list-apps` prints it, version suffix and all (`gnome-calculator`, `gedit`, `python3.13`; `python3` is refused). `launch` takes an installed desktop entry's id, name or command (`org.gnome.Calculator`, `Calculator`, `gnome-calculator`) from a system applications directory — never a path, not a program that has no desktop entry, not a terminal emulator, and a command only when one entry alone runs it (never `sh` or `python3`).
 - An app started before the first `penguin computer` command of a desktop session may be missing from `list-apps` for a moment: toolkits switch their accessibility on when it is first asked for. Wait a second and list again before concluding it is not there.
 - **Twins.** A ref works only when its element is unique in the window; identical controls answer `AMBIGUOUS_TARGET`.
 - **GTK4** acts once on two clicks of one button less than about 250 ms apart: wait for the effect between clicks (`wait --element <ref> --predicate value --value <v>`).

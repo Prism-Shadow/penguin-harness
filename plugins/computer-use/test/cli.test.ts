@@ -15,7 +15,7 @@
  * - Given --text-file text that would take past the limit to type, nothing runs.
  * - Given launch, it runs with a state directory of its own, never a Session's; given a path or a
  *   script instead of an app's name, or on Linux a name no system desktop entry has, nothing runs,
- *   and on Linux agent-desktop is handed the entry's own file.
+ *   and on Linux agent-desktop is handed the entry's own file and a PATH of system directories.
  * - Given a reply that names a window of PenguinHarness's own (agent-desktop resolved the app
  *   again after the check), or a launch that reached PenguinHarness, the reply is discarded.
  * - Given `status`, agent-desktop's status comes back with the plugin's own state, and exit code 1
@@ -217,7 +217,7 @@ describe("penguin computer", () => {
     expect(fake.calls()).toEqual([]);
   });
 
-  it("on Linux, launches an installed app by its desktop entry, handing agent-desktop the entry", async () => {
+  it("on Linux, launches an installed app by its desktop entry, with a PATH of system directories only", async () => {
     const fake = await fakeAgentDesktop();
     const apps = await desktopEntries([
       { id: "org.gnome.Calculator", name: "Calculator", exec: "gnome-calculator" },
@@ -232,6 +232,8 @@ describe("penguin computer", () => {
       ["launch", "--activate", entry],
       ["launch", "--activate", entry],
     ]);
+    // The entry's Exec is looked up on this PATH only: no directory the user can write.
+    expect(fake.calls()[0]!.env.PATH).toBe(apps.bin);
     const unknown = await runComputer(t, ["launch", "payload"]);
     expect(unknown.stderr).toMatch(
       /^error: policy_refused: launch takes a plain app name: no installed app is named "payload": on Linux/,

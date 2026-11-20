@@ -73,8 +73,12 @@ export interface ServiceOptions {
   program?: AgentDesktopProgram;
   /** Linux: the glibc version, or null for none (musl); read from Node's report by default. */
   glibc?: string | null;
-  /** Tests: where `launch` looks for desktop entries, and whether a path counts as the system's. */
-  launch?: { dataDirs?: string[]; trusted?: (file: string) => Promise<boolean> };
+  /** Tests: where `launch` looks for desktop entries and programs, and what counts as the system's. */
+  launch?: {
+    dataDirs?: string[];
+    pathDirs?: string[];
+    trusted?: (file: string) => Promise<boolean>;
+  };
 }
 
 /** The oldest glibc agent-desktop's Linux programs run on. */
@@ -366,16 +370,21 @@ export class ComputerUseService {
     return resolveLaunch(app, {
       platform: this.platform,
       dataDirs: this.launchOpts?.dataDirs ?? xdgDataDirs(this.env),
+      pathDirs:
+        this.launchOpts?.pathDirs ??
+        (this.env.PATH ?? "").split(path.delimiter).filter((d) => d !== ""),
       ...(this.launchOpts?.trusted !== undefined ? { trusted: this.launchOpts.trusted } : {}),
     });
   }
 
-  envFor(stateDir: string, helper?: string): Record<string, string> {
+  /** The environment of one run; `pathOverride` replaces PATH (a Linux launch: system directories only). */
+  envFor(stateDir: string, helper?: string, pathOverride?: string): Record<string, string> {
     return agentDesktopEnv(this.env, this.platform, {
       AGENT_DESKTOP_HOME: stateDir,
       ...(this.platform === "darwin" && helper !== undefined
         ? { AGENT_DESKTOP_MACOS_HELPER_PATH: helper }
         : {}),
+      ...(pathOverride !== undefined ? { PATH: pathOverride } : {}),
     });
   }
 
@@ -383,12 +392,12 @@ export class ComputerUseService {
   run(
     choice: Extract<ProgramChoice, { ok: true }>,
     argv: readonly string[],
-    opts: { stateDir: string; stdin?: Buffer | string; budgetMs: number },
+    opts: { stateDir: string; stdin?: Buffer | string; budgetMs: number; path?: string },
   ): Promise<RunOutput> {
     void this.sweep();
     return runAgentDesktop(choice.program, {
       argv,
-      env: this.envFor(opts.stateDir, choice.helper),
+      env: this.envFor(opts.stateDir, choice.helper, opts.path),
       // The user's home, never the state directory: an app agent-desktop launches inherits the
       // working directory, and on Windows a process's working directory cannot be removed while
       // it runs, which would pin the Session's state directory for the app's lifetime.

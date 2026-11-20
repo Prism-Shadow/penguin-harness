@@ -150,7 +150,11 @@ export async function testService(opts: {
   ownPids?: number[];
   parents?: Record<number, number>;
   platform?: NodeJS.Platform;
-  launch?: { dataDirs?: string[]; trusted?: (file: string) => Promise<boolean> };
+  launch?: {
+    dataDirs?: string[];
+    pathDirs?: string[];
+    trusted?: (file: string) => Promise<boolean>;
+  };
 }) {
   const root = await tempDir();
   const ownPids = opts.ownPids ?? [];
@@ -173,20 +177,30 @@ export async function testService(opts: {
 
 /**
  * A system applications directory holding one desktop entry per `entries` item — as
- * `<dir>/applications/<id>.desktop` — and the lookup options that treat it as the system's.
+ * `<dir>/applications/<id>.desktop` — a `bin/` beside it holding each entry's program (a bare
+ * Exec name), and the lookup options that treat both as the system's.
  */
 export async function desktopEntries(
   entries: Array<{ id: string; name: string; exec: string; extra?: string }>,
+  /** Programs for `bin/`, when an Exec's first word is not the program (`env A=b prog`). */
+  programs: string[] = [],
 ) {
   const dir = await tempDir();
+  const bin = path.join(dir, "bin");
   await fs.promises.mkdir(path.join(dir, "applications"));
+  await fs.promises.mkdir(bin);
   for (const e of entries) {
     await fs.promises.writeFile(
       path.join(dir, "applications", `${e.id}.desktop`),
       `[Desktop Entry]\nType=Application\nName=${e.name}\nExec=${e.exec}\n${e.extra ?? ""}`,
     );
+    const first = e.exec.split(/\s+/)[0]!;
+    if (!first.includes("/") && first !== "env") programs.push(first);
   }
-  return { dataDirs: [dir], trusted: async () => true, dir };
+  for (const program of programs) {
+    await fs.promises.writeFile(path.join(bin, program), "#!/bin/sh\n", { mode: 0o755 });
+  }
+  return { dataDirs: [dir], pathDirs: [bin], trusted: async () => true, dir, bin };
 }
 
 /** What one run of `penguin computer …` printed, its exit code and the files it handed back. */
