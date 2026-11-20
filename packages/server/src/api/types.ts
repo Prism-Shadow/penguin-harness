@@ -4467,6 +4467,31 @@ export interface WorkbenchesResponse {
 }
 
 /**
+ * GET /api/projects/:p/agents/:a/workbenches?view=sidebar: the rows of the Agent's sidebar list, a
+ * shortcut (the App Center tile's shape) for every workbench that runs, has at least one tab and
+ * carries no `.hidden-from-sidebar` marker, by title; none while the Agent-wide switch is off.
+ * Read from the manifests, load status and the loads under way; nothing is compiled. A server
+ * older than the setting ignores `view` and answers `WorkbenchesResponse`.
+ */
+export interface WorkbenchSidebarResponse {
+  apps: AppCenterShortcut[];
+}
+
+/**
+ * PATCH /api/projects/:p/agents/:a/workbenches/:id/sidebar: the sidebar setting, any member of
+ * the Project. `show: false` writes the installation's `.hidden-from-sidebar` marker and `true`
+ * removes it; the source, its versions and its App Center declaration are untouched.
+ */
+export interface WorkbenchSidebarRequest {
+  show: boolean;
+}
+
+/** The workbench with its `showInSidebar` read back. */
+export interface WorkbenchSidebarSetResponse {
+  workbench: WorkbenchInfo;
+}
+
+/**
  * PUT /api/projects/:p/agents/:a/workbenches/enabled (the Agent-wide switch; answers
  * `WorkbenchesResponse`) and PUT …/workbenches/:id/enabled (one workbench's switch; answers
  * `{ workbench: WorkbenchInfo }`). Owner only. Turning a switch off unloads what it covers at
