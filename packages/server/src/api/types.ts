@@ -2746,16 +2746,17 @@ export interface GoalResponse {
  *   A context with a completed turn is closed by an ordinary `manual` compaction pair (always
  *   summarize); one without — just compacted, or its first request never finished — has
  *   nothing to summarize and streams no pair. Then come the new context's opener records
- *   and its `session_meta`: its `provider` / `model_id` name the model the Session now runs
- *   on, the Session reads report that pair from this record on, and `task_state` turns idle
- *   after the switch.
+ *   and the switch's `session_update`: its `provider` / `model_id` name the model the Session
+ *   now runs on, the Session reads report that pair from this record on, and `task_state`
+ *   turns idle after the switch. The new context's `session_meta` streams with the next
+ *   message, when its Trace file opens.
  *   When the summary cannot be had — the model the Session is on is no longer configured or
  *   has no credential (it is then sent nothing, and no pair streams), or the compaction ends
  *   without a summary — the switch still completes, by Trace handoff: right
- *   after the `session_meta` comes a user text that is one whole `[model_switch_from]` block
+ *   after the `session_update` comes a user text that is one whole `[model_switch_from]` block
  *   whose `session` is this Session, naming the Trace file of the context it left. Only a
  *   stopped compaction (`aborted`), or a `fatal` one (the next context could not be opened on the
- *   target; its `error_message` says why), means no switch: no `session_meta` follows and the
+ *   target; its `error_message` says why), means no switch: no `session_update` follows and the
  *   Session keeps its model and its context.
  * - **200** {@link SessionResponse} — a Session that never ran has no context to close: it
  *   switched inside the request, and nothing is streamed.

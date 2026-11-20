@@ -1046,9 +1046,10 @@ export class Agent {
         // A closed context is one a completed compaction (or switch) opened: the same fact drives
         // the deferred Trace rotation above and the "just compacted" compaction reason, but they
         // are separate meanings and stay separate fields. A file past the first was opened by
-        // a compaction too, so one with no completed turn yet — a model switch's eagerly opened
-        // file, or any new context the process died in before its first answer — is just as
-        // freshly compacted (read structurally, from the index, never from its records).
+        // a compaction too, so one with no completed turn yet — a file an older harness opened
+        // eagerly for a switch, or any new context the process died in before its first
+        // answer — is just as freshly compacted (read structurally, from the index, never from
+        // its records).
         fromCompaction: resumed.contextClosed || (located.index > 1 && resumed.sessionTurns === 0),
       },
       resumedHistory: resumed.renderMessages,

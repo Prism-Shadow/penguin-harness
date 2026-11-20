@@ -2415,11 +2415,11 @@ export class SessionManager {
             this.publishState(entry, entry.status);
           }
           // The main session's own session_meta is streamed whenever it is written: a Session's
-          // first message, a compaction's new context (when its file opens), a model switch.
-          // The runtime is on that context's model by then: the entry and the row follow it
-          // here, ahead of the publish below, so a client that re-reads the Session on this
-          // record already finds the new model (the first meta and a compaction's name the
-          // model the entry is on, and nothing moves). The context's file is open too, its
+          // first message, and the new context of a compaction or a model switch (when its file
+          // opens, with the next message). The runtime is on that context's model by then: the
+          // entry and the row follow it here, ahead of the publish below, so a client that
+          // re-reads the Session on this record already finds the new model (a switch's moved
+          // them already, at its session_update, and nothing moves again). The context's file is open too, its
           // records on it — so what the bootstrap held for GET /messages is in the Trace — and
           // what the context it replaced still held pending went with it.
           if (isSessionMeta(msg)) {
