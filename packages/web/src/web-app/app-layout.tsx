@@ -215,7 +215,7 @@ export function AppLayout() {
         </Notice>
       )}
 
-      <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
+      <main data-page-viewport className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {/* A page that crashes says so here, and leaves the sidebar working: going to another
             page gives the body another chance. The recovery panel (error details, safe reload,
             harness history) stands in for the bare crash notice — the same fallback the shell

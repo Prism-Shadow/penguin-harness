@@ -34,7 +34,15 @@
  * names and the invite picker, so a hiccup there degrades names to ids rather than blocking
  * the page.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useNavigate, useParams } from "react-router";
 import type { OrgChannelDetail, OrgChannelMessage } from "@prismshadow/penguin-server/api";
 import {
@@ -55,7 +63,6 @@ import {
 
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
@@ -102,6 +109,7 @@ import {
 
 import { parsePrincipal } from "./principals";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /** What the first response fixes for this channel: today, the day list, and the read cursor the divider is drawn at. */
 interface StreamMeta {
@@ -119,10 +127,10 @@ export function ChannelView() {
   const company = useCompany();
   const { user } = useAuth();
   const [detail, setDetail] = useState<OrgChannelDetail | null>(null);
-  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<ReactNode>(null);
   const [days, setDays] = useState<ChannelDay[] | null>(null);
   const [meta, setMeta] = useState<StreamMeta | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [employees, setEmployees] = useState<
     ReadonlyArray<{ agentId: string; name: string; title: string }>
   >([]);
@@ -177,7 +185,7 @@ export function ChannelView() {
       setDetail(res);
       setDetailError(null);
     } catch (e) {
-      setDetailError(apiErrorText(e));
+      setDetailError(failureNode(e, { what: "a channel's details could not be read" }));
     }
   }, [projectId, orgId, channelId]);
 
@@ -229,7 +237,7 @@ export function ChannelView() {
       setError(null);
     } catch (e) {
       if (!current()) return;
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "a channel's messages could not be loaded" }));
     }
   }, [projectId, orgId, channelId, loadDetail]);
   useEffect(() => {

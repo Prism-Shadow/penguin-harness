@@ -26,7 +26,7 @@
  * of them is what keeps an entity's history from sliding onto the wrong
  * intervals. Each chart marks the skipped intervals on its own axis.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import type { ModelRefDto, UsageBucket, UsageResponse } from "@prismshadow/penguin-server/api";
 import {
@@ -41,7 +41,6 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
 import { formatMoney, humanizeTokens } from "../../lib/format";
@@ -64,6 +63,7 @@ import {
   type RangePreset,
 } from "../../lib/usage-controls";
 import { ErrorsPanel } from "./errors-panel";
+import { failureNode } from "../../lib/failure";
 
 /** A summary card's stat row: name on the left, value on the right — each item on its own row, so a narrow card no longer crams them into one wrapping line. */
 function SummaryRow({
@@ -229,7 +229,7 @@ export function UsagePage() {
    * changes nothing (the panel's fetch effect depends on that identity).
    */
   const [loaded, setLoaded] = useState<LoadedRange>(() => ({ preset, from, to }));
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   // The legend / control state that lives in the card headers (ChartCard's
   // extra) while the marks live inside the cards, lifted to this level.
   const [tokenBucket, setTokenBucket] = useState<TokenLegendKey | null>(null);
@@ -263,7 +263,9 @@ export function UsagePage() {
       setData(scoped(projectId, res));
       setLoaded({ preset, ...range });
     } catch (e) {
-      if (ask === asked.current) setError(apiErrorText(e));
+      if (ask === asked.current) {
+        setError(failureNode(e, { what: "the Cost Center could not be loaded" }));
+      }
     }
   }, [projectId, preset, from, to, agentFilter, modelFilter?.provider, modelFilter?.modelId]);
 
@@ -450,6 +452,7 @@ export function UsagePage() {
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <ChartCard title={S.usage.chartRequestsByAgent}>
             <RequestsChart
+              label={S.usage.chartRequestsByAgent}
               series={plotted.points}
               entities={agentEntities}
               granularity={data.granularity}
@@ -458,6 +461,7 @@ export function UsagePage() {
           </ChartCard>
           <ChartCard title={S.usage.chartRequestsByModel}>
             <RequestsChart
+              label={S.usage.chartRequestsByModel}
               series={plotted.points}
               entities={modelEntities}
               granularity={data.granularity}
@@ -470,6 +474,7 @@ export function UsagePage() {
             extra={<TokenLegend active={tokenBucket} onHover={setTokenBucket} />}
           >
             <TokenBarChart
+              label={S.usage.chartTokenTrend}
               series={plotted.points}
               granularity={data.granularity}
               legend={tokenBucket}
@@ -478,6 +483,7 @@ export function UsagePage() {
           </ChartCard>
           <ChartCard title={S.usage.chartCostTrend}>
             <TrendChart
+              label={S.usage.chartCostTrend}
               series={plotted.points}
               granularity={data.granularity}
               currency={currency}

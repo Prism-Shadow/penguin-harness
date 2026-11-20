@@ -145,7 +145,7 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
-  await setAccountPrefs(page.request, { lang: "en" });
+  await setAccountPrefs(page.request, { lang: "en", themeId: "doodle" });
   await page.goto(`${BASE}/apps`);
   const grid = page.getByRole("list", { name: "App Center" });
   const tile = (name) => grid.getByRole("button", { name: new RegExp(`^${name},`) });
@@ -178,7 +178,8 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   const folder = grid.getByRole("button", { name: /^New folder, folder, 2 apps/ });
   // Inspect the two ends of the actual CSS transitions without racing the display refresh.
   const slow = await page.addStyleTag({
-    content: ".app-center-folder[data-ready] { --ui-dur-layout: 2s; }",
+    content:
+      "[data-unfold-surface][data-layout-motion], [data-unfold-surface] [data-layout-motion] { transition-duration: 2s; }",
   });
   await folder.click();
   const panel = page.getByRole("region", { name: "New folder" });
@@ -191,18 +192,27 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
     const trigger = document.querySelector(`[aria-controls="${node.id}"]`);
     const bounds = (el) => {
       const { x, y, width } = el.getBoundingClientRect();
-      return [x, y, width].map(Math.round);
+      const radius =
+        (parseFloat(getComputedStyle(el).borderTopLeftRadius) * width) / el.offsetWidth;
+      return [x, y, width, radius].map(Math.round);
     };
-    const pairs = [...trigger.querySelectorAll("[data-preview-app]")].map((mini) => {
-      const tile = [...node.querySelectorAll("[data-app]")].find(
-        (el) => el.dataset.app === mini.dataset.previewApp,
+    const pairs = [...trigger.querySelectorAll("[data-unfold-source]")].map((mini) => {
+      const slot = [...node.querySelectorAll("[data-unfold-art]")].find(
+        (el) => el.dataset.unfoldArt === mini.dataset.unfoldSource,
       );
-      return [bounds(mini), bounds(tile.querySelector("[data-app-icon] > span"))];
+      return [
+        bounds(mini.querySelector("[data-app-icon-shape]")),
+        bounds(slot.firstElementChild.querySelector("[data-app-icon-shape]")),
+      ];
     });
     for (const part of animations) part.finish();
     return pairs;
   });
-  for (const [preview, icon] of positions) expect(icon).toEqual(preview);
+  for (const [preview, icon] of positions) {
+    expect(icon).toEqual(preview);
+    // The projected corner matches the preview and leaves a straight side on the 20px tile.
+    expect(icon[3]).toBeLessThanOrEqual(icon[2] / 4);
+  }
   await slow.evaluate((style) => style.remove());
   await expect(panel.getByRole("button", { name: /^Alpha,/ })).toBeVisible();
   await expect(panel.getByRole("button", { name: /^Gamma,/ })).toBeVisible();

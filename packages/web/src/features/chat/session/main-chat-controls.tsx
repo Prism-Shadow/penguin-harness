@@ -3,7 +3,7 @@ import type { ModelRefDto } from "@prismshadow/penguin-server/api";
 import { toastError, toastInfo, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
+import { toastApiError } from "../../../lib/toast-api-error";
 import { onPluginConfigSaved } from "../../../lib/plugin-config-event";
 import {
   compactionTally,
@@ -67,7 +67,7 @@ export function useMainChatControls(scope: ReturnType<typeof useMainChatComposer
       await syncHealedSessionId(selected.sessionId, res.sessionId);
       return true;
     } catch (e) {
-      toastError(apiErrorText(e, { modelId: selected.modelId }));
+      toastApiError(e, { modelId: selected.modelId });
       return false;
     }
   }, [selected, syncHealedSessionId]);
@@ -218,7 +218,7 @@ export function useMainChatControls(scope: ReturnType<typeof useMainChatComposer
     } catch (e) {
       // The codes that take a model name are about the model the Session is on (its loader's
       // missing credential); a refusal of the target names it in its own message.
-      toastError(apiErrorText(e, { modelId: selected.modelId }));
+      toastApiError(e, { modelId: selected.modelId });
     } finally {
       setModelSwitchPosting(false);
       setModelSwitchAsk(null);

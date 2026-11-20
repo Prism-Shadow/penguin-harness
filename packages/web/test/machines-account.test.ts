@@ -9,8 +9,8 @@
  *   not one each, and the account ends on the newest answer.
  * - Given a Project switch while a read about the old Project is in flight, its late answer is
  *   dropped: the new Project's machines stand, and nothing of the old one shows meanwhile.
- * - Given a read that fails, the last list stands, the failure says why, and the account is
- *   settled — a surface waiting on it does not wait forever.
+ * - Given a read that fails, the last list stands, the failure says why and offers its report,
+ *   and the account is settled — a surface waiting on it does not wait forever.
  * - Given a member (not an admin), nothing is read and the account is settled at once.
  * - Given an answer a request already brought (every machines POST answers with the list), the
  *   account takes it without reading again.
@@ -130,11 +130,7 @@ async function mountAccount() {
     handles.account = account;
     handles.switchTo = project.useProject().setCurrentProjectId;
     const aliases = account.state?.machines.map((m) => m.alias).join(",") ?? "—";
-    return h(
-      "p",
-      null,
-      `${account.settled ? "settled" : "waiting"} ${aliases} ${account.error ?? ""}`,
-    );
+    return h("p", null, `${account.settled ? "settled" : "waiting"} ${aliases} `, account.error);
   }
   const mounted = await mount(
     h(
@@ -194,12 +190,12 @@ describe("the machines account", () => {
     expect(account.shown()).toBe("settled beta-box");
   });
 
-  it("keeps the last list when a read fails, says why, and settles", async () => {
+  it("keeps the last list when a read fails, says why with its report, and settles", async () => {
     const server = machinesServer();
     const account = await mountAccount();
     server.refuse();
     await account.changed();
-    expect(account.shown()).toBe("settled alpha-box The machine list could not be read.");
+    expect(account.shown()).toBe("settled alpha-box The machine list could not be read. [Report]");
   });
 
   it("reads nothing for a member, and is settled at once", async () => {

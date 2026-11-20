@@ -3,7 +3,8 @@
  * encrypted with known keys on each platform's scheme — the macOS Keychain and the Linux
  * v10/v11 CBC paths, the Windows GCM path behind a fake DPAPI — plus the version-24 host
  * digest, the v20 (app-bound) skip, the domain filter, and the shape each cookie takes for the
- * shell. No warning may ever carry a cookie value.
+ * shell. Every cookie left behind is accounted for under one reason with its count, and nothing
+ * the import reports may ever carry a cookie value.
  */
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -50,9 +51,14 @@ async function importAll(domains?: string[]): Promise<CookieReadResult> {
 }
 
 function expectNoValues(result: CookieReadResult): void {
-  for (const warning of result.warnings) {
-    for (const secret of SECRETS) expect(warning).not.toContain(secret);
-  }
+  const reported = JSON.stringify({ skips: result.skips, notes: result.notes });
+  for (const secret of SECRETS) expect(reported).not.toContain(secret);
+}
+
+/** The rows left behind add up to what the reasons count. */
+function expectAccounted(result: CookieReadResult): void {
+  const counted = result.skips.reduce((sum, skip) => sum + skip.count, 0);
+  expect(counted).toBe(result.found - result.cookies.length);
 }
 
 describe("macOS (Keychain, AES-128-CBC, 1003 iterations)", () => {
@@ -78,7 +84,7 @@ describe("macOS (Keychain, AES-128-CBC, 1003 iterations)", () => {
       },
     ]);
     const result = await importAll();
-    expect(result).toMatchObject({ found: 2, skipped: 0, warnings: [] });
+    expect(result).toMatchObject({ found: 2, skips: [], notes: [] });
     expect(result.cookies).toEqual([
       {
         url: "https://amazon.com/",
@@ -131,7 +137,7 @@ describe("macOS (Keychain, AES-128-CBC, 1003 iterations)", () => {
       { host: ".a.com", name: "unspecified", value: "x", sameSite: -1 },
     ]);
     const result = await importAll();
-    expect(result).toMatchObject({ found: 4, skipped: 1 });
+    expect(result).toMatchObject({ found: 4, skips: [{ reason: "expired", count: 1 }] });
     expect(result.cookies.map((c) => [c.name, c.sameSite])).toEqual([
       ["none-secure", "no_restriction"],
       ["none-insecure", "unspecified"],
@@ -139,7 +145,7 @@ describe("macOS (Keychain, AES-128-CBC, 1003 iterations)", () => {
     ]);
   });
 
-  it("skips the encrypted cookies with one warning when the Keychain refuses", async () => {
+  it("counts the encrypted cookies under the Keychain when it refuses", async () => {
     macChrome([
       { host: ".a.com", name: "e1", encrypted: encryptCbc("v10", SECRETS[0]!, macKey(), ".a.com") },
       { host: ".a.com", name: "e2", encrypted: encryptCbc("v10", SECRETS[1]!, macKey(), ".a.com") },
@@ -149,11 +155,12 @@ describe("macOS (Keychain, AES-128-CBC, 1003 iterations)", () => {
       throw new Error("security exited with code 51");
     });
     const result = await importAll();
-    expect(result).toMatchObject({ found: 3, skipped: 2 });
+    expect(result).toMatchObject({
+      found: 3,
+      skips: [{ reason: "keychain", count: 2 }],
+      notes: [],
+    });
     expect(result.cookies.map((c) => c.name)).toEqual(["p"]);
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]).toContain("Chrome Safe Storage");
-    expect(result.warnings[0]).toContain("2 cookies");
     expectNoValues(result);
   });
 
@@ -173,8 +180,11 @@ describe("macOS (Keychain, AES-128-CBC, 1003 iterations)", () => {
       },
     ]);
     const result = await importAll();
-    expect(result).toMatchObject({ found: 2, skipped: 2, cookies: [] });
-    expect(result.warnings).toEqual(["Skipped 2 cookies that could not be decrypted."]);
+    expect(result).toMatchObject({
+      found: 2,
+      skips: [{ reason: "undecryptable", count: 2 }],
+      cookies: [],
+    });
     expectNoValues(result);
   });
 });
@@ -256,7 +266,7 @@ describe("Linux (v10 peanuts, v11 keyring, one iteration)", () => {
     );
     const result = await importAll();
     expect(result.cookies.map((c) => c.name)).toEqual(["first-party"]);
-    expect(result).toMatchObject({ found: 2, skipped: 1 });
+    expect(result).toMatchObject({ found: 2, skips: [{ reason: "partitioned", count: 1 }] });
   });
 
   it("decrypts v11 with the password secret-tool returns", async () => {
@@ -287,11 +297,11 @@ describe("Linux (v10 peanuts, v11 keyring, one iteration)", () => {
       },
     ]);
     const result = await importAll();
-    expect(result).toMatchObject({ skipped: 0, warnings: [] });
+    expect(result).toMatchObject({ skips: [], notes: [] });
     expect(result.cookies.map((c) => c.value)).toEqual([SECRETS[1]]);
   });
 
-  it("skips v11 values with a warning when secret-tool cannot provide the key", async () => {
+  it("counts v11 values under the keyring when secret-tool cannot provide the key", async () => {
     linuxChrome([
       {
         host: ".a.com",
@@ -306,10 +316,7 @@ describe("Linux (v10 peanuts, v11 keyring, one iteration)", () => {
     ]);
     const result = await importAll();
     expect(result.cookies.map((c) => c.name)).toEqual(["v10"]);
-    expect(result.skipped).toBe(1);
-    expect(result.warnings).toEqual([
-      "Skipped 1 cookie encrypted with a key from the desktop keyring, which secret-tool could not provide.",
-    ]);
+    expect(result.skips).toEqual([{ reason: "keyring", count: 1 }]);
     expectNoValues(result);
   });
 
@@ -371,18 +378,72 @@ describe("Windows (DPAPI-wrapped key, AES-256-GCM)", () => {
     expect(call!.args.join(" ")).toContain("ProtectedData]::Unprotect");
   });
 
-  it("skips app-bound (v20) values with one warning naming the count", async () => {
+  it("counts app-bound (v20) values under their own reason", async () => {
     windowsChrome([
       { host: ".a.com", name: "b1", encrypted: encryptGcm("v20", SECRETS[0]!, AES_KEY, ".a.com") },
       { host: ".a.com", name: "b2", encrypted: encryptGcm("v20", SECRETS[1]!, AES_KEY, ".a.com") },
       { host: ".a.com", name: "ok", encrypted: encryptGcm("v10", SECRETS[2]!, AES_KEY, ".a.com") },
     ]);
     const result = await importAll();
-    expect(result).toMatchObject({ found: 3, skipped: 2 });
+    expect(result).toMatchObject({ found: 3, skips: [{ reason: "app_bound", count: 2 }] });
     expect(result.cookies.map((c) => c.name)).toEqual(["ok"]);
-    expect(result.warnings).toEqual([
-      "Skipped 2 cookies protected by Chrome's app-bound encryption, which can't be imported on Windows; sign in inside the Browser panel instead.",
+    expectNoValues(result);
+  });
+
+  it("gives every cookie it leaves behind a reason, the expected ones after the app-bound ones", async () => {
+    // A Chrome 127+ store as a Windows user has it: mostly app-bound values, plus rows the
+    // import leaves behind whatever their encryption — partitioned ones and expired ones.
+    machine = new FakeMachine("win32");
+    const userData = path.join(machine.vars.LOCALAPPDATA!, "Google", "Chrome", "User Data");
+    writeLocalState(userData, { names: { Default: "Me" }, encryptedKey: wrappedKey(AES_KEY) });
+    const bound = (name: string): ChromiumCookieFixture => ({
+      host: ".a.com",
+      name,
+      encrypted: encryptGcm("v20", SECRETS[0]!, AES_KEY, ".a.com"),
+    });
+    writeChromiumCookies(
+      path.join(userData, "Default", "Network", "Cookies"),
+      [
+        bound("b1"),
+        bound("b2"),
+        bound("b3"),
+        {
+          host: ".widgets.test",
+          name: "embedded",
+          encrypted: encryptGcm("v20", SECRETS[1]!, AES_KEY, ".widgets.test"),
+          topFrameSiteKey: "https://a.com",
+        },
+        {
+          host: ".a.com",
+          name: "stale",
+          encrypted: encryptGcm("v20", SECRETS[1]!, AES_KEY, ".a.com"),
+          expiresUtc: chromeTime(nowSeconds() - DAY),
+        },
+        {
+          host: ".a.com",
+          name: "stale-plain",
+          value: "x",
+          expiresUtc: chromeTime(nowSeconds() - DAY),
+        },
+        {
+          host: ".a.com",
+          name: "ok",
+          encrypted: encryptGcm("v10", SECRETS[2]!, AES_KEY, ".a.com"),
+        },
+      ],
+      { version: 24, partitioned: true },
+    );
+    machine.helpers.set("powershell", (_args, input) =>
+      fakeDpapi(Buffer.from(input ?? "", "base64")).toString("base64"),
+    );
+    const result = await importAll();
+    expect(result.cookies.map((c) => c.name)).toEqual(["ok"]);
+    expect(result.skips).toEqual([
+      { reason: "app_bound", count: 3 },
+      { reason: "partitioned", count: 1 },
+      { reason: "expired", count: 2 },
     ]);
+    expectAccounted(result);
     expectNoValues(result);
   });
 
@@ -394,7 +455,7 @@ describe("Windows (DPAPI-wrapped key, AES-256-GCM)", () => {
     expect(machine.calls).toEqual([]);
   });
 
-  it("skips with a warning when DPAPI refuses the key", async () => {
+  it("counts the encrypted cookies under DPAPI when it refuses the key", async () => {
     windowsChrome([
       { host: ".a.com", name: "v10", encrypted: encryptGcm("v10", SECRETS[0]!, AES_KEY, ".a.com") },
     ]);
@@ -402,9 +463,7 @@ describe("Windows (DPAPI-wrapped key, AES-256-GCM)", () => {
       throw new Error("powershell exited with code 1");
     });
     const result = await importAll();
-    expect(result).toMatchObject({ skipped: 1, cookies: [] });
-    expect(result.warnings).toEqual([
-      "Skipped 1 cookie: Windows could not unlock Chrome's cookie key.",
-    ]);
+    expect(result).toMatchObject({ skips: [{ reason: "dpapi", count: 1 }], cookies: [] });
+    expectAccounted(result);
   });
 });
