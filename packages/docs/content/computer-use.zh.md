@@ -64,7 +64,7 @@ description: 让 Agent 用 penguin computer 查看并操作电脑桌面上的应
 
 | 系统 | `launch` 接受什么 |
 | --- | --- |
-| Linux | 系统应用目录（`/usr/share/applications` 及 `XDG_DATA_DIRS` 中其余归 root 所有的目录）里某个桌面条目的 id、名称或命令，如 `gnome-calculator`、`Calculator` 或 `org.gnome.Calculator`。你自己目录里的条目、隐藏的条目与在终端中运行的条目不提供。 |
+| Linux | 系统应用目录（`/usr/share/applications` 及 `XDG_DATA_DIRS` 中其余服务端用户既不拥有、也不能写入的目录）里某个桌面条目的 id、名称或命令，如 `gnome-calculator`、`Calculator` 或 `org.gnome.Calculator`。你自己目录里的条目、隐藏的条目与在终端中运行的条目不提供。 |
 | Windows | System32 或 Windows 目录中的程序，如 `notepad` 或 `notepad.exe`。 |
 | macOS | 应用的名称或 bundle ID，如 `Calculator` 或 `com.apple.calculator`。名称由 macOS 自己解析，可能包括你可写的文件夹（如 `~/Applications`）中的应用。 |
 

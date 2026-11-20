@@ -11,8 +11,10 @@
  *   `.ps1`, `.app`; `.exe` everywhere but Windows);
  * - Linux: the name must be an installed app's — the id, the `Name` or the command of a desktop
  *   entry in a system applications directory (each `$XDG_DATA_DIRS/applications`, default
- *   `/usr/local/share` and `/usr/share`), where the file and every directory above it belong to
- *   root and nobody else can write. agent-desktop then gets that entry's absolute path, which it
+ *   `/usr/local/share` and `/usr/share`), where the server's own user — the Agent's, outside the
+ *   sandbox — can write neither the file nor any directory above it, nor owns them (a server
+ *   running as root: owned by root, and no group or other may write). agent-desktop then gets
+ *   that entry's absolute path, which it
  *   launches exactly, rather than the name it would also look up on PATH. An entry that is
  *   hidden, not an application, or runs in a terminal is not offered;
  * - Windows: agent-desktop itself resolves a bare name only under System32 and the Windows
@@ -22,6 +24,7 @@
  *
  * Typing into a terminal app that is already allowed stays the documented, accepted risk.
  */
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -37,7 +40,7 @@ export interface LaunchLookup {
   platform: NodeJS.Platform;
   /** The directories whose `applications/` hold desktop entries, in precedence order (Linux). */
   dataDirs: readonly string[];
-  /** Whether a path, and every directory above it, only root can write (tests replace it). */
+  /** Whether a path, and every directory above it, is out of the server user's reach (tests replace it). */
   trusted?: (file: string) => Promise<boolean>;
 }
 
@@ -63,8 +66,14 @@ export function xdgDataDirs(env: NodeJS.ProcessEnv): string[] {
   return dirs.length > 0 ? dirs : ["/usr/local/share", "/usr/share"];
 }
 
-/** Whether `file` and every directory above it belong to root and only root can write them. */
-export async function rootOnly(file: string): Promise<boolean> {
+/**
+ * Whether `file` and every directory above it are the system's: the server's user neither owns
+ * nor can write any of them, so nobody running as it can put an entry there or change one. A
+ * server running as root can write everything, so there each must belong to root with no group
+ * or other write.
+ */
+export async function systemOnly(file: string): Promise<boolean> {
+  const uid = process.getuid?.();
   let at = path.resolve(file);
   for (;;) {
     let st;
@@ -73,7 +82,17 @@ export async function rootOnly(file: string): Promise<boolean> {
     } catch {
       return false;
     }
-    if (st.uid !== 0 || (st.mode & 0o022) !== 0) return false;
+    if (uid === 0) {
+      if (st.uid !== 0 || (st.mode & 0o022) !== 0) return false;
+    } else {
+      if (st.uid === uid) return false;
+      try {
+        await fs.access(at, fsConstants.W_OK);
+        return false;
+      } catch {
+        // Not writable by this user: as it should be.
+      }
+    }
     const up = path.dirname(at);
     if (up === at) return true;
     at = up;
@@ -154,7 +173,7 @@ async function entriesUnder(dir: string): Promise<Array<{ file: string; id: stri
 export async function linuxDesktopEntry(
   name: string,
   dataDirs: readonly string[],
-  trusted: (file: string) => Promise<boolean> = rootOnly,
+  trusted: (file: string) => Promise<boolean> = systemOnly,
 ): Promise<string | null> {
   const want = name.toLowerCase().replace(/\.desktop$/, "");
   const seen = new Set<string>();

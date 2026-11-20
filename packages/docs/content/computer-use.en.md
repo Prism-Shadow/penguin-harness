@@ -64,7 +64,7 @@ All three are off by default, and so is **Allow members** (see [Before you begin
 
 | System | What `launch` accepts |
 | --- | --- |
-| Linux | The id, name or command of a desktop entry in a system applications directory (`/usr/share/applications` and the others of `XDG_DATA_DIRS`, owned by root), such as `gnome-calculator`, `Calculator` or `org.gnome.Calculator`. Entries in your own folders, hidden ones and those that run in a terminal are not offered. |
+| Linux | The id, name or command of a desktop entry in a system applications directory (`/usr/share/applications` and the others of `XDG_DATA_DIRS` that the server's user can neither write nor owns), such as `gnome-calculator`, `Calculator` or `org.gnome.Calculator`. Entries in your own folders, hidden ones and those that run in a terminal are not offered. |
 | Windows | A program in System32 or the Windows directory, such as `notepad` or `notepad.exe`. |
 | macOS | An app's name or bundle ID, such as `Calculator` or `com.apple.calculator`. macOS resolves the name itself, which can include an app in a folder you can write, such as `~/Applications`. |
 

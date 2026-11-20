@@ -7,12 +7,19 @@
  *   directory has it as its id, its command or its Name; agent-desktop is then handed that entry's
  *   file. An entry that is hidden, not an application or runs in a terminal is not offered, a
  *   directory the user can write is not looked in, and the first directory holding an id wins.
- * - Given a directory the current user owns, it is not the system's; /usr/share is.
+ * - Given a directory the current user owns, it is not the system's; /usr/share is, on a machine
+ *   where this user cannot write it.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { launchNameFault, linuxDesktopEntry, resolveLaunch, rootOnly } from "../src/launch-name.js";
+import { accessSync, constants } from "node:fs";
+import {
+  launchNameFault,
+  linuxDesktopEntry,
+  resolveLaunch,
+  systemOnly,
+} from "../src/launch-name.js";
 import { desktopEntries, tempDir } from "./helpers.js";
 
 describe("a name that is not an app's", () => {
@@ -111,12 +118,24 @@ describe("Linux: an installed app's desktop entry", () => {
 
 describe("whose directory it is", () => {
   const posixUser = process.platform !== "win32" && process.getuid?.() !== 0;
+  /** Whether this user can write any of /, /usr and /usr/share (some CI images let it). */
+  const usrWritable = ["/", "/usr", "/usr/share"].some((d) => {
+    try {
+      accessSync(d, constants.W_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  });
 
   it.skipIf(!posixUser)("a directory the current user owns is not the system's", async () => {
-    expect(await rootOnly(await tempDir())).toBe(false);
+    expect(await systemOnly(await tempDir())).toBe(false);
   });
 
-  it.skipIf(process.platform !== "linux")("/usr/share is the system's", async () => {
-    expect(await rootOnly("/usr/share")).toBe(true);
-  });
+  it.skipIf(process.platform !== "linux" || !posixUser || usrWritable)(
+    "/usr/share is the system's",
+    async () => {
+      expect(await systemOnly("/usr/share")).toBe(true);
+    },
+  );
 });
