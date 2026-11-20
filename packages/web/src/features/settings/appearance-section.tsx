@@ -169,6 +169,8 @@ export function AppearanceSection() {
     setTerminalMode,
     toolAliases,
     setToolAliases,
+    activityDisplayMode,
+    setActivityDisplayMode,
     dark,
     theme,
     appliedTheme,
@@ -299,6 +301,17 @@ export function AppearanceSection() {
           checked={launcherShown}
           onChange={(shown) => writeLauncherHidden(!shown)}
         />
+        <PrefRow label={S.settings.activityDisplayMode} info={S.settings.activityDisplayModeInfo}>
+          <Segmented
+            options={[
+              { value: "standard", label: S.settings.activityDisplayStandard },
+              { value: "expanded", label: S.settings.activityDisplayExpanded },
+              { value: "compact", label: S.settings.activityDisplayCompact },
+            ]}
+            value={activityDisplayMode}
+            onChange={setActivityDisplayMode}
+          />
+        </PrefRow>
         <ToggleRow
           label={S.settings.toolAliases}
           info={S.settings.toolAliasesInfo}
