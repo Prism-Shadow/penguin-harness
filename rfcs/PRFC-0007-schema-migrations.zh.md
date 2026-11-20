@@ -1,4 +1,4 @@
-# PRFC-0007 schema 的改动是有序、带戳、只跑一次的迁移
+# PRFC-0007 DB Schema Migration
 
 [English](PRFC-0007-schema-migrations.md)
 
