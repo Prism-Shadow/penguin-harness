@@ -3,7 +3,7 @@
  * A cover card's own parts on a live page (src/components/showcase/cover-card.tsx): the bar of
  * text actions under the card, the version chip and the origin line.
  *
- * - A bar action is named by its word, its second line and the card's title, so two cards'
+ * - A bar action is one line of words, named by them and the card's title, so two cards'
  *   "Install" are told apart; pressing it runs it and does not open the card.
  * - A disabled bar action stays on the card and runs nothing.
  * - The version chip shows the caller's words and stays outside the opener, which still opens
@@ -43,12 +43,12 @@ describe("a cover card's bar", () => {
     const root = await card({
       onOpen,
       bar: [
-        { key: "install", label: "Install", note: "2 agents", onClick: install },
+        { key: "install", label: "Installed on 2 Agents", onClick: install },
         { key: "quick", label: "Quick start", hint: "Start a chat with it" },
       ],
     });
-    const button = barButton(root, "Install · 2 agents · Goal Mode");
-    expect(button).toBeDefined();
+    const button = barButton(root, "Installed on 2 Agents · Goal Mode");
+    expect(button?.textContent).toBe("Installed on 2 Agents");
     expect(barButton(root, "Quick start · Goal Mode")?.getAttribute("data-tooltip")).toBe(
       "Start a chat with it",
     );

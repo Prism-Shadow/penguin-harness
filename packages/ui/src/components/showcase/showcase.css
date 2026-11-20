@@ -253,10 +253,13 @@
   align-items: center;
   gap: 0.25rem;
 }
-/* The bar: text actions across the card's whole width, in equal columns split by a line. */
+/* The bar: text actions across the card's whole width, in columns split by a line. Each column is
+   as wide as its words plus an even share of what is left, so a count longer than "Quick start"
+   keeps its words whole; each action is one line, and only when the card cannot hold both
+   labels is the longer one cut off with an ellipsis, never wrapped onto a second line. */
 .showcase-card-bar {
   display: grid;
-  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-columns: minmax(0, auto);
   grid-auto-flow: column;
   margin-top: auto;
   border-top: var(--showcase-line-w, 1px) solid
@@ -272,7 +275,9 @@
   font-size: 0.8125rem;
   font-weight: 550;
   line-height: 1.3;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .showcase-card-bar > button + button {
   border-inline-start: var(--showcase-line-w, 1px) solid
@@ -288,12 +293,6 @@
 }
 .showcase-card-bar > button:disabled {
   color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
-}
-.showcase-card-bar small {
-  display: block;
-  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
-  font-size: var(--showcase-text-xs, 0.75rem);
-  font-weight: 400;
 }
 /* The version: a chip at the card's top end corner, over the cover; the opener takes its clicks. */
 .showcase-card-version {
@@ -336,32 +335,34 @@
 /* A phone's single column: the card lies down — the cover a thumbnail beside the title and the
    description — so a list of thirty is a few screens long, not thirty covers tall. */
 @container showcase-grid (width < 29rem) {
-  .showcase-grid > .showcase-card > .showcase-card-open {
+  .showcase-grid[data-layout="cards"] > .showcase-card > .showcase-card-open {
     flex-direction: row;
     align-items: flex-start;
     gap: 0.75rem;
     padding: 0.75rem 0.75rem 0;
   }
-  .showcase-grid > .showcase-card > .showcase-card-open:not(:has(+ .showcase-card-foot)) {
+  .showcase-grid[data-layout="cards"]
+    > .showcase-card
+    > .showcase-card-open:not(:has(+ .showcase-card-foot)) {
     padding-bottom: 0.75rem;
   }
-  .showcase-grid > .showcase-card > .showcase-card-open > .showcase-cover {
+  .showcase-grid[data-layout="cards"] > .showcase-card > .showcase-card-open > .showcase-cover {
     width: 7.5rem;
     flex: none;
     border-radius: var(--showcase-radius-sm, 0.5rem);
   }
-  .showcase-grid > .showcase-card > .showcase-card-open > .showcase-card-body {
+  .showcase-grid[data-layout="cards"] > .showcase-card > .showcase-card-open > .showcase-card-body {
     flex: 1;
     padding: 0;
   }
-  .showcase-grid > .showcase-card .showcase-card-desc {
+  .showcase-grid[data-layout="cards"] > .showcase-card .showcase-card-desc {
     min-height: 0;
   }
-  .showcase-grid > .showcase-card > .showcase-card-foot {
+  .showcase-grid[data-layout="cards"] > .showcase-card > .showcase-card-foot {
     padding: 0.5rem 0.75rem 0.75rem;
   }
   /* Lying down, the chip stands over the text: the title starts under it. */
-  .showcase-grid
+  .showcase-grid[data-layout="cards"]
     > .showcase-card:has(> .showcase-card-version)
     > .showcase-card-open
     > .showcase-card-body {
@@ -369,59 +370,157 @@
   }
 }
 
+/* The list: one compact row per card, ruled, in two columns wherever two rows of at least
+   `--showcase-list-min` fit and in one otherwise. The column floor is the larger of that minimum
+   and half the width (less a pixel, so rounding never drops the second column), which caps the
+   list at two columns at any width. A row that ends in a bar needs little room (two short
+   actions), 22rem; one that ends in tags and facts needs more, 34rem. A host may set
+   `--showcase-list-min` itself. */
 .showcase-grid[data-layout="list"] {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0;
+  --showcase-list-row: var(--showcase-list-min, 22rem);
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(
+      min(
+        100%,
+        max(var(--showcase-list-row), calc(50% - var(--showcase-list-gap, 1.5rem) / 2 - 1px))
+      ),
+      1fr
+    )
+  );
+  gap: 0 var(--showcase-list-gap, 1.5rem);
 }
+.showcase-grid[data-layout="list"]:has(> .showcase-card > .showcase-card-foot) {
+  --showcase-list-row: var(--showcase-list-min, 34rem);
+}
+/* A row: the cover or the caller's icon tile, the title over a one-line description, and the
+   card's end part on the same row. */
 .showcase-grid[data-layout="list"] > .showcase-card {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 0.75rem;
   border: 0;
   border-bottom: var(--showcase-line-w, 1px) solid var(--showcase-line, currentColor);
   border-radius: 0;
   background: transparent;
 }
 .showcase-grid[data-layout="list"] > .showcase-card > .showcase-card-open {
+  flex: 999 1 12rem;
   flex-direction: row;
   align-items: center;
-  gap: 0.875rem;
-  padding: 0.625rem 0.25rem;
+  gap: 0.75rem;
+  padding: 0.5rem 0.25rem;
+}
+.showcase-grid[data-layout="list"] > .showcase-card > .showcase-card-open > :first-child {
+  flex: none;
 }
 .showcase-grid[data-layout="list"] > .showcase-card > .showcase-card-open > .showcase-cover {
   width: 4rem;
-  flex: none;
   border-radius: var(--showcase-radius-sm, 0.5rem);
 }
+/* The title, with the origin after it on the same line, over the description. */
 .showcase-grid[data-layout="list"] .showcase-card-open > .showcase-card-body {
+  display: grid;
   flex: 1;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.125rem 0.5rem;
   padding: 0;
 }
-.showcase-grid[data-layout="list"] .showcase-card-desc {
-  min-height: 0;
+.showcase-grid[data-layout="list"] .showcase-card-title {
+  grid-column: 1;
 }
+.showcase-grid[data-layout="list"] .showcase-card-origin {
+  grid-column: 2;
+}
+.showcase-grid[data-layout="list"] .showcase-card-desc {
+  grid-column: 1 / -1;
+  min-height: 0;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+.showcase-grid[data-layout="list"] .showcase-card-version {
+  display: none;
+}
+/* Tags over facts, at the row's end; alone on a line of its own once the row wraps. */
 .showcase-grid[data-layout="list"] .showcase-card-foot {
-  padding: 0 0.25rem 0.625rem;
+  flex: 1 0 36%;
+  min-width: 0;
+  padding: 0.5rem 0.25rem;
+}
+/* The bar's actions inline at the row's end, each as wide as its words: no rule above them, no
+   box. The text beside them gives way first (the opener's basis is nothing), so the actions keep
+   their words whole unless they alone outgrow the row. */
+.showcase-grid[data-layout="list"] > .showcase-card:has(> .showcase-card-bar) {
+  flex-wrap: nowrap;
 }
 .showcase-grid[data-layout="list"]
-  > .showcase-card:has(> .showcase-card-version)
-  > .showcase-card-open
-  > .showcase-card-body {
-  padding-top: 1.125rem;
+  > .showcase-card:has(> .showcase-card-bar)
+  > .showcase-card-open {
+  flex-basis: 0;
 }
-@container showcase-grid (min-width: 40rem) {
-  .showcase-grid[data-layout="list"] > .showcase-card {
-    flex-direction: row;
-    align-items: center;
-    gap: 1rem;
+.showcase-grid[data-layout="list"] .showcase-card-bar {
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 0.125rem;
+  margin: 0;
+  border-top: 0;
+}
+.showcase-grid[data-layout="list"] .showcase-card-bar > button {
+  min-height: 0;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--showcase-radius-sm, 0.5rem);
+  font-size: var(--showcase-text-xs, 0.75rem);
+}
+.showcase-grid[data-layout="list"] .showcase-card-bar > button + button {
+  border-inline-start: 0;
+}
+/* A phone-width column has no room beside the text: the end part drops under the row, the bar
+   back to its full width under a rule. */
+@container showcase-grid (width < 26rem) {
+  .showcase-grid[data-layout="list"] > .showcase-card:has(> .showcase-card-bar) {
+    flex-wrap: wrap;
   }
-  .showcase-grid[data-layout="list"] .showcase-card-foot {
-    width: 36%;
-    padding: 0.625rem 0.25rem;
+  .showcase-grid[data-layout="list"] .showcase-card-bar {
+    flex: 1 0 100%;
+    border-top: var(--showcase-line-w, 1px) solid
+      var(--showcase-line, color-mix(in srgb, currentColor 14%, transparent));
   }
 }
-/* A list row with a bar keeps the bar under it, at every width. */
-.showcase-grid[data-layout="list"] > .showcase-card:has(> .showcase-card-bar) {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0;
+
+/* ------------------------------------------------------------------------ layout switch */
+
+/* Two flat icon buttons: the pressed one in the body's ink, the other muted, deepening on
+   hover. No box at rest or on hover. */
+.showcase-layout-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+.showcase-layout-option {
+  display: grid;
+  width: 1.875rem;
+  height: 1.875rem;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--showcase-radius-sm, 0.5rem);
+  background: none;
+  color: var(--showcase-fg-muted, color-mix(in srgb, currentColor 62%, transparent));
+  cursor: pointer;
+  transition: color var(--showcase-dur, 150ms) ease-out;
+}
+.showcase-layout-option:hover,
+.showcase-layout-option[aria-pressed="true"] {
+  color: var(--showcase-fg, inherit);
+}
+.showcase-layout-option[aria-pressed="true"] {
+  cursor: default;
+}
+.showcase-layout-option:focus-visible {
+  outline: 2px solid var(--showcase-accent, currentColor);
+  outline-offset: -2px;
 }
 /* --------------------------------------------------------------- carousel */
 
@@ -951,7 +1050,8 @@
   .showcase-cover > img,
   .showcase-card,
   .showcase-rail-item,
-  .showcase-control {
+  .showcase-control,
+  .showcase-layout-option {
     transition: none;
   }
   .showcase-turn,

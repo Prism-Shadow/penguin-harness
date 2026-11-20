@@ -10,9 +10,11 @@
  *
  * Two optional parts sit outside that flow. `version` is a small chip at the card's top end
  * corner, over the cover. `bar` is a row of text actions across the card's whole width under
- * everything else, in equal columns split by a line (the Web App's market: install and quick
- * start), each with an optional second line (`note`) and a hover sentence (`hint`); a disabled
- * one stays in place in muted ink. In the list layout a card with a bar keeps it under its row.
+ * everything else, in columns split by a line, each as wide as its words plus an even share of
+ * the rest (the Web App's market: install and quick start). Each is one line of words with an
+ * optional hover sentence (`hint`): only when the card cannot hold every label is the longer one
+ * cut off with an ellipsis, never wrapped onto a second line. A disabled one stays in place in
+ * muted ink.
  *
  * The cover, the title and the description are one opener — a link when the host gives an
  * `href` (the public site, where the detail is a page), a button otherwise (the Web App, where
@@ -21,19 +23,22 @@
  *
  * `ShowcaseGrid` lays the cards out by the width of the column it stands in: as many columns of
  * at least 14 rem as fit, one on a phone, where a card lies down (its cover a thumbnail beside
- * its text).
+ * its text). Its list layout makes each card one compact row — the cover (or the caller's icon
+ * tile) beside the title over a one-line description, and the card's end part on the same row:
+ * the bar's actions inline, or the tags over the facts — with no version chip; the rows stand in
+ * two columns wherever two of them fit (`--showcase-list-min`, 22 rem for a row that ends in a
+ * bar, 34 rem for one that ends in tags and facts), one otherwise. Only on a phone-width column
+ * does a row's end part drop under it.
  *
  * Props only: every word is the caller's. The look is showcase.css; the card is a `ui-showcase`
  * host (hooks.ts).
  */
 import { useEffect, useState, type HTMLAttributes, type MouseEvent, type ReactNode } from "react";
 
-/** One of a cover card's bar actions. */
+/** One of a cover card's bar actions: one line of words, never two. */
 export interface CoverCardBarAction {
   key: string;
   label: string;
-  /** A second, smaller line under the label (who has it, where it is installed). */
-  note?: string | undefined;
   /** The sentence on hover. */
   hint?: string | undefined;
   disabled?: boolean | undefined;
@@ -136,14 +141,13 @@ export function CoverCard({
               type="button"
               disabled={action.disabled}
               // The card's title ends the name: several cards' "Install" are told apart.
-              aria-label={[action.label, action.note, title].filter(Boolean).join(" · ")}
+              aria-label={`${action.label} · ${title}`}
               {...(action.hint !== undefined
                 ? { "data-tooltip": action.hint, "data-tooltip-content": "text" }
                 : {})}
               onClick={action.onClick}
             >
               {action.label}
-              {action.note && <small>{action.note}</small>}
             </button>
           ))}
         </div>
@@ -178,7 +182,7 @@ export function useShowcaseLayout(storageKey: string) {
   return [layout, chooseLayout] as const;
 }
 
-/** The same cards and actions in a responsive grid or a compact one-column list. */
+/** The same cards and actions in a responsive grid or a list of compact rows. */
 export function ShowcaseGrid({
   children,
   className = "",
