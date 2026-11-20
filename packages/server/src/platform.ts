@@ -156,7 +156,6 @@ import { PluginModulePreinstallsRepo } from "@prismshadow/penguin-library-settin
 import { PluginModules } from "./mechanisms/plugins.js";
 import { PluginModulesService } from "./services/plugin-modules.js";
 import { PluginModuleRoutes } from "./http/routes/plugin-modules.js";
-import { PluginUiRoutes } from "./http/routes/plugin-ui.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
@@ -550,7 +549,6 @@ export class CompanyModule {}
     NpmPluginPackages,
     InstalledPluginRoutes,
     PluginCliCommandsProvider,
-    PluginUiRoutes,
     SuggestIdRoutes,
     LanguagesModule,
     LanguageRoutes,
