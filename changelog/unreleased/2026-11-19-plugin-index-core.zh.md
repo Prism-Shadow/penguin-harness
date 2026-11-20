@@ -3,6 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** refactor
 - **Scope:** `core`, `server`
+- **PR:** [#1657](https://github.com/Prism-Shadow/penguin-harness/pull/1657)
 
 [English](2026-11-19-plugin-index-core.md)
 
