@@ -3,6 +3,7 @@
 - **Date:** 2026-11-20
 - **Type:** feature
 - **Scope:** `core`, `server`, `docs`
+- **PR:** [#1675](https://github.com/Prism-Shadow/penguin-harness/pull/1675)
 
 [English](2026-11-20-plugin-app-server-seams.md)
 
