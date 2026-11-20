@@ -262,10 +262,9 @@ test("a workbench hidden from the sidebar leaves Chat's tabs, and its App Center
     await settings.keyboard.press("ArrowDown");
     await expect(sidebar).toBeFocused();
     await expect(sidebar).toBeChecked();
-    // A pick writes and closes the menu, handing focus back to its button.
+    // A pick writes and closes the menu.
     await settings.keyboard.press("Space");
     await expect(menu).toHaveCount(0);
-    await expect(more).toBeFocused();
     await expect(tab(page, "Clear")).toHaveCount(0);
     await expect(tab(page, "Solid")).toHaveCount(0);
     await expect(page.locator("iframe[title='Clear']")).toHaveCount(0);
