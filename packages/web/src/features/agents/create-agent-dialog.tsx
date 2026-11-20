@@ -19,6 +19,12 @@
  * there: the plugins on offer are that machine's library, the Skills directory is browsed on it,
  * and it decides whether the id is free. A new location drops the plugins
  * and the directory picked for the old one, which would name things the new one may not have.
+ *
+ * The plugins start ticked with the library's default-install ones (`PluginItem.defaultInstall`:
+ * goal mode and Plan mode), which the user may untick. Until the plugin field is touched it
+ * follows the location's library as it arrives; Create then sends the list on screen together with
+ * `defaultPlugins: false`, so the server installs exactly what was shown. With no library to show
+ * and nothing picked, it sends neither, and the server adds its defaults.
  */
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -61,7 +67,8 @@ import { StdioDisclosure, stdioServers } from "../plugins";
 import { failureNode } from "../../lib/failure";
 
 /** A library plugin as a picker row, keeping what the create confirmation reads: its title and its MCP servers. */
-export type PluginPickItem = PickableItem & Pick<PluginItem, "title" | "titleZh" | "mcpServers">;
+export type PluginPickItem = PickableItem &
+  Pick<PluginItem, "title" | "titleZh" | "mcpServers" | "defaultInstall">;
 
 /**
  * The library's plugins as picker rows. A row is a Skill's metadata, which a plugin's manifest
@@ -88,8 +95,11 @@ interface CreateAgentDraft {
   name: string;
   agentId: string;
   description: string;
-  /** Library plugins to install into the new Agent, in pick order. */
-  plugins: string[];
+  /**
+   * Library plugins to install into the new Agent, in pick order; null until the field is
+   * touched, which means the location's default-install plugins (defaultPicks).
+   */
+  plugins: string[] | null;
   /**
    * The project directory Skills are imported from, kept apart from the library picks: the
    * server lets a directory Skill and a library plugin's Skill share a name (the directory one
@@ -105,17 +115,26 @@ const EMPTY: CreateAgentDraft = {
   name: "",
   agentId: "",
   description: "",
-  plugins: [],
+  plugins: null,
   skillsDir: "",
   dirSkills: [],
 };
 
-/** What Create would send, for the dirty comparison: the text trimmed. */
-const normalizeCreate = (draft: CreateAgentDraft) => ({
+/** The library's default-install plugins, in library order: what the field starts ticked with. */
+export function defaultPicks(library: readonly PluginPickItem[] | null): string[] {
+  return (library ?? []).filter((plugin) => plugin.defaultInstall === true).map((p) => p.name);
+}
+
+/**
+ * What Create would send, for the dirty comparison: the text trimmed, and the plugins as a set
+ * with an untouched field read as the defaults — so ticking a default off and on again is clean.
+ */
+const normalizeCreate = (defaults: readonly string[]) => (draft: CreateAgentDraft) => ({
   ...draft,
   name: draft.name.trim(),
   agentId: draft.agentId.trim(),
   description: draft.description.trim(),
+  plugins: [...(draft.plugins ?? defaults)].sort(),
 });
 
 export interface CreateAgentDialogProps {
@@ -147,13 +166,14 @@ function CreateAgentForm({
   onImport,
   onCreated,
 }: CreateAgentDialogProps) {
-  const form = useFormDraft(EMPTY, { normalize: normalizeCreate });
+  const [defaults, setDefaults] = useState<string[]>(() => defaultPicks(libraryHere));
+  const form = useFormDraft(EMPTY, { normalize: normalizeCreate(defaults) });
   const {
     location,
     name,
     agentId,
     description,
-    plugins,
+    plugins: pickedPlugins,
     skillsDir,
     dirSkills: pickedDirSkills,
   } = form.draft;
@@ -191,6 +211,12 @@ function CreateAgentForm({
   /** The library the picked location installs from, and why it could not be read. */
   const library = location === null ? libraryHere : (onMachine?.items ?? null);
   const libraryError = location === null ? libraryErrorHere : (onMachine?.error ?? null);
+  // The defaults follow the location's library as it arrives, kept in state so the dirty
+  // comparison reads the same list the field shows.
+  const libraryDefaults = defaultPicks(library);
+  if (libraryDefaults.join("\0") !== defaults.join("\0")) setDefaults(libraryDefaults);
+  /** The plugins on screen: the picks, or the defaults while the field is untouched. */
+  const plugins = pickedPlugins ?? libraryDefaults;
   /** The picked machine's name, for the words that say where a command runs. */
   const machineLabel =
     location === null ? undefined : machines.find((m) => m.value === location)?.label;
@@ -279,8 +305,10 @@ function CreateAgentForm({
       if (name.trim()) body.name = name.trim();
       if (description.trim()) body.description = description.trim();
       // Picked plugins are seeded server-side inside the same create call, so a failure leaves
-      // no half-equipped Agent behind.
+      // no half-equipped Agent behind. The list on screen is the whole list, defaults included;
+      // only when there was none to show does the server pick its defaults.
       if (plugins.length > 0) body.plugins = plugins;
+      if (pickedPlugins !== null || library !== null) body.defaultPlugins = false;
       // The pair only means anything together, so it is sent only when a directory actually
       // contributed something — picking a directory and then no Skills from it is a plain Agent.
       if (skillsDir && pickedDirSkills.length > 0) {
@@ -359,7 +387,7 @@ function CreateAgentForm({
                     if (next === (location ?? HERE)) return;
                     form.patch({
                       location: next === HERE ? null : next,
-                      plugins: [],
+                      plugins: null,
                       skillsDir: "",
                       dirSkills: [],
                     });
@@ -423,13 +451,22 @@ function CreateAgentForm({
                 skills={library ?? []}
                 selected={plugins}
                 onToggle={(pluginName) =>
-                  setDraft((d) => ({ ...d, plugins: toggleSkillName(d.plugins, pluginName) }))
+                  setDraft((d) => ({
+                    ...d,
+                    plugins: toggleSkillName(d.plugins ?? libraryDefaults, pluginName),
+                  }))
                 }
                 onSelectAll={(names) =>
-                  setDraft((d) => ({ ...d, plugins: addSkillNames(d.plugins, names) }))
+                  setDraft((d) => ({
+                    ...d,
+                    plugins: addSkillNames(d.plugins ?? libraryDefaults, names),
+                  }))
                 }
                 onSelectNone={(names) =>
-                  setDraft((d) => ({ ...d, plugins: removeSkillNames(d.plugins, names) }))
+                  setDraft((d) => ({
+                    ...d,
+                    plugins: removeSkillNames(d.plugins ?? libraryDefaults, names),
+                  }))
                 }
                 emptyHint={library === null ? S.common.loading : S.agent.createPluginsEmpty}
                 searchPlaceholder={S.plugins.searchPlaceholder}
