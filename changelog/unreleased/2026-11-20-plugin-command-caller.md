@@ -3,6 +3,7 @@
 - **Date:** 2026-11-20
 - **Type:** feat
 - **Scope:** `core`, `server`, `cli`
+- **PR:** [#1665](https://github.com/Prism-Shadow/penguin-harness/pull/1665)
 
 [中文版](2026-11-20-plugin-command-caller.zh.md)
 
