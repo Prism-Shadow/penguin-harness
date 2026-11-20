@@ -26,7 +26,7 @@ import { useNavigate } from "react-router";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { CreateAgentDialog } from "../src/features/agents/create-agent-dialog";
+import { CreateAgentDialog, pluginPickItems } from "../src/features/agents/create-agent-dialog";
 import type { LocationChoice, PluginPickItem } from "../src/features/agents/create-agent-dialog";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import {
@@ -51,11 +51,13 @@ import {
 } from "./helpers/dom";
 
 /** A library plugin whose MCP server is a command this server runs. */
-const MAIL: PluginPickItem = {
+const MAIL = {
   name: "mail",
   description: "Mail tools",
   version: "1.0.0",
   title: "Mail tools",
+  skills: [],
+  hooks: [],
   mcpServers: [
     {
       name: "mail",
@@ -66,7 +68,7 @@ const MAIL: PluginPickItem = {
       signIn: false,
     },
   ],
-};
+} as unknown as PluginItem;
 
 /** A plugin of the machine's own library, which this server's does not have. */
 const GPU_TOOLS = {
@@ -110,9 +112,10 @@ function Harness({
   });
 }
 
-async function openCreate(library: PluginPickItem[] = [], machines: LocationChoice[] = []) {
-  const server = agentServer(undefined, { machines: [GPU_MACHINE] });
-  const router = await mountAgentApp(h(Harness, { library, machines }), {
+/** The dialog over this server's `library`, offered as the Agents page offers it. */
+async function openCreate(library: PluginItem[] = [], machines: LocationChoice[] = []) {
+  const server = agentServer(undefined, { machines: [GPU_MACHINE], library });
+  const router = await mountAgentApp(h(Harness, { library: pluginPickItems(library), machines }), {
     route: "/create",
     at: "/create",
   });

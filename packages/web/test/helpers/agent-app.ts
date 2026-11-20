@@ -26,7 +26,9 @@
  *
  * It answers the plugin library too: this server's (`library`) and each machine's own, and an
  * install on an Agent takes the named plugins' Skills from the library of the server that holds
- * the Agent, refusing a plugin that library does not have ({@link AgentServer.skillsOn}).
+ * the Agent, refusing a plugin that library does not have ({@link AgentServer.skillsOn}). An Agent
+ * created on this server joins its list under the name it was given, carrying the Skills of the
+ * plugins it was created with; a plugin this server's library lacks refuses the create.
  *
  * It can hold machines too ({@link FakeMachine}): connected ones answer through their proxy
  * (`/server/<id>/api/…`) with an Agent list of their own — created and deleted there, never
@@ -455,6 +457,8 @@ export function agentServer(
       ...organizations.flatMap((o) => o.employees.map((e) => e.agentId)),
     ]),
   ];
+  /** The names this server's Agents were created with here (a create), as its list answers them. */
+  const createdNames = new Map<string, string>();
   /** The organizations employing an Agent, as the Agent list carries them. */
   const employmentsOf = (agentId: string): Employment[] =>
     organizations.flatMap((o) =>
@@ -678,7 +682,7 @@ export function agentServer(
           return {
             ...summaryOf(id),
             ...avatarFields(null, id),
-            name: id === AGENT_ID ? stored.config.name : id,
+            name: id === AGENT_ID ? stored.config.name : (createdNames.get(id) ?? id),
             ...(id === AGENT_ID && stored.config.author !== undefined
               ? { author: stored.config.author }
               : {}),
@@ -1032,7 +1036,17 @@ export function agentServer(
       return json({ workbench: listed(workbench) });
     }
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "POST") {
-      const body = request.body as { agentId: string; name?: string };
+      const body = request.body as { agentId: string; name?: string; plugins?: string[] };
+      // The plugins are seeded in the same call: an unknown one refuses before the Agent exists.
+      const names = body.plugins ?? [];
+      const missing = names.find((name) => !libraryOf(null).some((p) => p.name === name));
+      if (missing !== undefined) return apiError(404, "unknown_plugin", missing);
+      const skills = libraryOf(null)
+        .filter((p) => names.includes(p.name))
+        .flatMap((p) => p.skills.map((skill) => skill.name));
+      if (skills.length > 0) installs.set(installKey(null, body.agentId), skills);
+      if (!localAgentIds.includes(body.agentId)) localAgentIds = [...localAgentIds, body.agentId];
+      if (body.name !== undefined) createdNames.set(body.agentId, body.name);
       return json({ agent: { ...summaryOf(body.agentId), name: body.name ?? body.agentId } });
     }
     if (path === `${AGENT_PATH}/config`) {
