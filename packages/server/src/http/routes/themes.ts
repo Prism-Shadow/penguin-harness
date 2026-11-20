@@ -24,6 +24,7 @@ import type { ThemePackImportResponse, ThemePacksResponse } from "../../api/type
 import type { ServerEvent } from "@prismshadow/penguin-library-project";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { Channels, Clock, Config, Hmr, Paths } from "../../hmr/capabilities.js";
+import { PACK_RULES, packRuleHits } from "@prismshadow/penguin-ui/pack-rules";
 import { ThemeStore } from "@prismshadow/penguin-library-setting/theme-store";
 import { HttpError } from "../errors.js";
 
@@ -180,6 +181,9 @@ export class ThemeRoutes {
       root: this.paths.root,
       webFiles: () => this.hmr.resolveWebSource() ?? { kind: "dir", dir: this.config.webDist },
       now: () => this.clock.now(),
+      // The UI package's own table, the one its de-slop suite runs over the built-in packs: an
+      // import is held to it with no hit allowed.
+      cleanliness: { hits: packRuleHits, says: PACK_RULES },
     });
     const changed: ServerEvent = { type: "themes_changed" };
     this.routes = themeRoutes({

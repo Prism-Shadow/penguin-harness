@@ -10,8 +10,7 @@
       "@prismshadow/penguin-library-db/migrations": ["../db/src/migrations/index.ts"],
       "@prismshadow/penguin-library-db/migrations/runner": ["../db/src/migrations/runner.ts"],
       "@prismshadow/penguin-library-http": ["../http/src/index.ts"],
-      "@prismshadow/penguin-theme-pack": ["../../packages/theme-pack/src/index.ts"],
-      "@prismshadow/penguin-ui/pack-rules": ["../../packages/ui/src/testing/pack-rules.ts"]
+      "@prismshadow/penguin-theme-pack": ["../../packages/theme-pack/src/index.ts"]
     }
   },
   "include": ["src"]
