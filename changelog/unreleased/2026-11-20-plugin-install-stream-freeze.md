@@ -3,6 +3,7 @@
 - **Date:** 2026-11-20
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1668](https://github.com/Prism-Shadow/penguin-harness/pull/1668)
 
 [中文版](2026-11-20-plugin-install-stream-freeze.zh.md)
 
