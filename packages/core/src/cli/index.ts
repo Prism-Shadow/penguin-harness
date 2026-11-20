@@ -66,10 +66,12 @@ export interface CliCommandData {
   /**
    * Whom a call with the server's local API token runs as — the token every Agent's shell
    * carries, which stands for the built-in administrator. Absent: that administrator, as for any
-   * other credential. `"session-driver"`: the person who last started a run in the named Session,
-   * as the Session index records it; a token call that names no Session is refused with 403
-   * `session_required`, and one whose Session records no person who can still open its Project
-   * with 403 `driver_unknown`. A person's own sign-in is never replaced.
+   * other credential. `"session-driver"`: the signed-in person who started the run in progress in
+   * the named Session (for a subagent's Session, its root's run), judged by that person's access
+   * to the Project; a token call that names no Session is refused with 403 `session_required`,
+   * and one with no such run in progress, or whose person cannot open the Project, with 403
+   * `driver_unknown`. A person's own sign-in is never replaced. The Session is the caller's to
+   * name, so this narrows the token; it is not a boundary until per-Session credentials.
    */
   tokenCaller?: "session-driver";
 }

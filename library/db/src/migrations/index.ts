@@ -70,7 +70,6 @@ import { machinesAdoptedAt } from "./steps/2026-10-16-machines-adopted-at.js";
 import { userDrafts } from "./steps/2026-10-26-user-drafts.js";
 import { usageRecordsPurpose } from "./steps/2026-11-19-usage-records-purpose.js";
 import { pluginModuleRequests } from "./steps/2026-11-19-plugin-module-requests.js";
-import { sessionsDrivenBy } from "./steps/2026-11-20-sessions-driven-by.js";
 
 export type { Migration } from "./migration.js";
 export { IrreversibleMigrationError, UnknownMigrationError, appliedMigrations } from "./runner.js";
@@ -106,7 +105,6 @@ export const MIGRATIONS: readonly Migration[] = [
   userDrafts,
   usageRecordsPurpose,
   pluginModuleRequests,
-  sessionsDrivenBy,
 ];
 
 /**

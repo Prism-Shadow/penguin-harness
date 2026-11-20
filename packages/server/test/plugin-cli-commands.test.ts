@@ -10,7 +10,9 @@ import {
   provisionUser,
   restartTestApp,
   tokenClient,
+  waitFor,
 } from "./helpers.js";
+import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import type { TestApp } from "./helpers.js";
 import type { PluginCliCommandRunRequest } from "../src/api/types.js";
 import { validPluginCommands, runPluginCommands } from "../src/plugin/cli-commands.js";
@@ -767,21 +769,28 @@ describe("member commands, caller context and files", () => {
 
 /**
  * `tokenCaller: "session-driver"`: whom the local API token — every Agent's credential, standing
- * for the administrator — runs such a command as.
+ * for the administrator — runs such a command as: the person whose run is in progress.
  *
- * - Given a Session a member last started a run in, an Agent's token call naming it runs the
- *   command as that member, and an admin command of that kind refuses them; after a restart the
- *   answer is the same.
- * - Given a token call naming no Session, or a Session nobody is recorded as driving, or whose
- *   driver can no longer open the Project, it refuses; a Session of another Project is not found.
+ * - Given a run a member started in progress, an Agent's token call naming its Session runs as
+ *   that member — in her own Project too, which the administrator cannot open — and an admin
+ *   command of that kind refuses her; a subagent's Session runs as its root's run.
+ * - Given a follow-up another person queued, the run in progress keeps its driver, and the queued
+ *   run is driven by whoever queued it once it starts; given someone else steering the run, it
+ *   has no driver.
+ * - Given a token call naming no Session, a Session with no run in progress, a run nobody
+ *   started, or a driver who cannot open the Project, it refuses; a Session of another Project is
+ *   not found; after a restart nothing is in progress.
  * - Given a command without the opt-in, the token stays the administrator (PRFC-0024 v1.1); given
  *   a person's own sign-in, the person runs it whoever drives the Session.
  */
 describe("a session-driver command and the local API token", () => {
   let t: TestApp;
   let admin: ReturnType<typeof apiClient>;
-  let sessionId: string;
+  let mia: ReturnType<typeof apiClient>;
   const ran: string[] = [];
+  /** The held runs by Session: each resolves its run's end. */
+  const held = new Map<string, Array<() => void>>();
+  const steered: string[] = [];
 
   function whoPlugin(): ModuleDef {
     const manifest = parseManifest({
@@ -843,12 +852,16 @@ describe("a session-driver command and the local API token", () => {
     return h;
   };
   const agent = () => tokenClient(t.app, t.deps.authService.localApiToken()!);
-  const run = (client: ReturnType<typeof apiClient>, body: Record<string, unknown>) =>
+  const run = (
+    client: ReturnType<typeof apiClient>,
+    body: Record<string, unknown>,
+    projectId = "default_project",
+  ) =>
     client.post("/api/cli/commands/run", {
       package: "@acme/who",
       language: "en",
       prog: "penguin",
-      projectId: "default_project",
+      projectId,
       ...body,
     });
   const answer = async (res: Response) => {
@@ -862,63 +875,134 @@ describe("a session-driver command and the local API token", () => {
     status: res.status,
     code: ((await res.json()) as { error: { code: string } }).error.code,
   });
-  /** A Session needs a model its client can be built for; nothing is ever sent to it. */
-  const withModel = async (projectId: string) => {
-    const model = { provider: "custom", modelId: "chat-model" };
-    expect(
-      (
-        await admin.put(`/api/projects/${projectId}/models`, {
-          providers: {
-            custom: { clientType: "mmsp", baseUrl: "http://127.0.0.1:9/v1", apiKey: "sk-unused" },
-          },
-          models: [model],
-          defaultModel: model,
-        })
-      ).status,
-    ).toBe(200);
-  };
-  const newSession = async (projectId = "default_project") => {
-    const created = await admin.post(
-      `/api/projects/${projectId}/agents/default_agent/sessions`,
-      {},
+  /** A Session whose every run holds until the test ends it (the model is never called). */
+  const heldSession = (projectId = "default_project") => {
+    const sid = uniqueSessionId();
+    held.set(sid, []);
+    adoptSession(
+      t.deps,
+      fakeSession(sid, {
+        async *run() {
+          await new Promise<void>((resolve) => held.get(sid)!.push(resolve));
+        },
+        steer: () => {
+          steered.push(sid);
+          return true;
+        },
+      }),
+      { projectId },
     );
-    expect(created.status).toBe(201);
-    return ((await created.json()) as { session: { sessionId: string } }).session.sessionId;
+    return sid;
   };
-  /** What the sessions route does when a signed-in person starts a run. */
-  const startedBy = (id: string, userId: string) =>
-    t.deps.tree
-      .api<{ note(sessionId: string, userId: string): void }>(
-        "SessionRuntimeModule",
-        "SessionDrivers",
-      )
-      .note(id, userId);
+  /** A person sends a message: the route starts (or queues) a run for them. */
+  const send = async (client: ReturnType<typeof apiClient>, sid: string, extra = {}) => {
+    const res = await client.post(`/api/sessions/${sid}/tasks`, {
+      input: [{ type: "text", text: "go" }],
+      ...extra,
+    });
+    expect(res.status).toBe(202);
+    return (await res.json()) as { queued: boolean };
+  };
+  /** Ends the Session's oldest held run and waits for the Session to settle. */
+  const finish = async (sid: string, next: "idle" | "running" = "idle") => {
+    held.get(sid)!.shift()!();
+    const waiting = next === "running" ? 1 : 0;
+    await waitFor(() => t.deps.manager.statusOf(sid) === next && held.get(sid)!.length === waiting);
+  };
 
   beforeAll(async () => {
     t = await createTestApp({ plugins: host(), durableDatabase: true });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-    await provisionUser(t.app, "mia");
+    mia = apiClient(t.app, (await provisionUser(t.app, "mia")).cookie);
     expect(
       (await admin.post("/api/projects/default_project/members", { userId: "mia" })).status,
     ).toBe(201);
-    await withModel("default_project");
-    sessionId = await newSession();
-    startedBy(sessionId, "mia");
   });
 
-  afterAll(() => t?.cleanup());
+  afterAll(async () => {
+    for (const ends of held.values()) for (const end of ends) end();
+    await t?.cleanup();
+  });
 
-  it("runs as the member who drives the Session, and refuses them an admin command", async () => {
-    expect(await answer(await run(agent(), { args: ["who", "me"], sessionId }))).toEqual({
+  it("runs as the member whose run is in progress, and refuses her an admin command", async () => {
+    const sid = heldSession();
+    await send(mia, sid);
+    expect(await answer(await run(agent(), { args: ["who", "me"], sessionId: sid }))).toEqual({
       userId: "mia",
       isAdmin: false,
     });
     ran.length = 0;
-    expect(await refusal(await run(agent(), { args: ["who", "wipe"], sessionId }))).toEqual({
+    expect(await refusal(await run(agent(), { args: ["who", "wipe"], sessionId: sid }))).toEqual({
       status: 403,
       code: "admin_required",
     });
     expect(ran).toEqual([]);
+    await finish(sid);
+    // The run is over: nobody is driving the Session any more.
+    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: sid }))).toEqual({
+      status: 403,
+      code: "driver_unknown",
+    });
+  });
+
+  it("reaches a member's Agent in her own Project, which the administrator cannot open", async () => {
+    expect((await mia.post("/api/projects", { projectId: "mia-own", name: "Mia" })).status).toBe(
+      201,
+    );
+    const sid = heldSession("mia-own");
+    await send(mia, sid);
+    expect(
+      await answer(await run(agent(), { args: ["who", "me"], sessionId: sid }, "mia-own")),
+    ).toEqual({ userId: "mia", isAdmin: false });
+    await finish(sid);
+  });
+
+  it("keeps the driver of the run in progress when another person queues, and hands the queued run its own", async () => {
+    const sid = heldSession();
+    await send(mia, sid);
+    expect((await send(admin, sid, { queueIfBusy: true })).queued).toBe(true);
+    expect((await answer(await run(agent(), { args: ["who", "me"], sessionId: sid }))).userId).toBe(
+      "mia",
+    );
+    await finish(sid, "running");
+    expect((await answer(await run(agent(), { args: ["who", "me"], sessionId: sid }))).userId).toBe(
+      "admin",
+    );
+    await finish(sid);
+  });
+
+  it("leaves a run someone else steered with no driver", async () => {
+    const sid = heldSession();
+    await send(admin, sid);
+    expect(
+      (await mia.post(`/api/sessions/${sid}/steer`, { text: "use the computer for me" })).status,
+    ).toBe(202);
+    expect(steered).toContain(sid);
+    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: sid }))).toEqual({
+      status: 403,
+      code: "driver_unknown",
+    });
+    await finish(sid);
+  });
+
+  it("runs a subagent's Session as its root's run", async () => {
+    const root = heldSession();
+    const child = heldSession();
+    await send(mia, root);
+    const state = t.deps.tree.api<{ childRoots: Map<string, string> }>(
+      "SessionRuntimeModule",
+      "AgentState",
+    );
+    state.childRoots.set(child, root);
+    expect(await answer(await run(agent(), { args: ["who", "me"], sessionId: child }))).toEqual({
+      userId: "mia",
+      isAdmin: false,
+    });
+    await finish(root);
+    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: child }))).toEqual({
+      status: 403,
+      code: "driver_unknown",
+    });
   });
 
   it("refuses a token call that names no Session, before any code runs", async () => {
@@ -930,61 +1014,72 @@ describe("a session-driver command and the local API token", () => {
     expect(ran).toEqual([]);
   });
 
-  it("refuses a Session nobody is recorded as driving, never guessing its Project's owner", async () => {
-    const idle = await newSession();
-    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: idle }))).toEqual({
+  it("refuses a run nobody started, never guessing its Project's owner", async () => {
+    const sid = heldSession();
+    // The local token starting it — as an Agent's shell, a schedule nobody signed for, the Agent
+    // API or company mode do — makes nobody its driver.
+    await send(agent(), sid);
+    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: sid }))).toEqual({
       status: 403,
       code: "driver_unknown",
     });
+    await finish(sid);
   });
 
   it("does not borrow a person from a Session of another Project", async () => {
     expect(
       (await admin.post("/api/projects", { projectId: "elsewhere", name: "Elsewhere" })).status,
     ).toBe(201);
-    await withModel("elsewhere");
-    const other = await newSession("elsewhere");
-    startedBy(other, "admin");
+    const other = heldSession("elsewhere");
+    await send(admin, other);
     expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: other }))).toEqual({
       status: 404,
       code: "session_not_found",
     });
+    await finish(other);
   });
 
   it("keeps the token the administrator for a command without the opt-in, and a person themself", async () => {
-    expect(await answer(await run(agent(), { args: ["who", "plain"], sessionId }))).toEqual({
+    const sid = heldSession();
+    await send(mia, sid);
+    expect(await answer(await run(agent(), { args: ["who", "plain"], sessionId: sid }))).toEqual({
       userId: "admin",
       isAdmin: true,
     });
-    expect(await answer(await run(admin, { args: ["who", "me"], sessionId }))).toEqual({
+    expect(await answer(await run(admin, { args: ["who", "me"], sessionId: sid }))).toEqual({
       userId: "admin",
       isAdmin: true,
     });
+    await finish(sid);
   });
 
   it("refuses a driver who can no longer open the Project", async () => {
-    const left = await newSession();
-    await provisionUser(t.app, "leo");
+    const leo = apiClient(t.app, (await provisionUser(t.app, "leo")).cookie);
     expect(
       (await admin.post("/api/projects/default_project/members", { userId: "leo" })).status,
     ).toBe(201);
-    startedBy(left, "leo");
+    const sid = heldSession();
+    await send(leo, sid);
     expect((await admin.delete("/api/projects/default_project/members/leo")).status).toBeLessThan(
       300,
     );
-    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: left }))).toEqual({
+    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: sid }))).toEqual({
       status: 403,
       code: "driver_unknown",
     });
+    await finish(sid);
   });
 
   // Last: it replaces `t` with the app booted on the same root.
-  it("gives the same answer after a restart", async () => {
+  it("finds nothing in progress after a restart", async () => {
+    const sid = heldSession();
+    await send(mia, sid);
+    for (const end of held.get(sid)!) end();
+    held.set(sid, []);
     t = await restartTestApp(t, { plugins: host() });
-    admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-    expect(await answer(await run(agent(), { args: ["who", "me"], sessionId }))).toEqual({
-      userId: "mia",
-      isAdmin: false,
+    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: sid }))).toEqual({
+      status: 403,
+      code: "driver_unknown",
     });
   });
 });

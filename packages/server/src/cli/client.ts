@@ -16,9 +16,7 @@
  * `penguin auth token`), sent as the `penguin_session` cookie in place of the token. Only for
  * a loopback target, only for a sign-in made to a loopback server, and only outside a Session
  * (PENGUIN_SESSION_ID unset): inside one the command is an Agent's, and the refusal is the
- * point. A 403 `session_required` — a plugin command that runs for the person driving a Session,
- * called with the token outside one — retries the same way. Every other request goes exactly as
- * above.
+ * point. Every other request goes exactly as above.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -35,12 +33,8 @@ export type TokenSource = "env" | "file" | "none";
 /** The server's session cookie (auth/middleware.ts SESSION_COOKIE): a stored sign-in goes as it. */
 const SESSION_COOKIE = "penguin_session";
 
-/**
- * The server's refusals a person's stored sign-in answers: the local API token on a write only a
- * person may make (requireHuman), and on a plugin command that runs for a Session's driver called
- * outside a Session (plugin/cli-command-caller.ts).
- */
-const PERSON_REQUIRED = new Set(["human_required", "session_required"]);
+/** The server's refusal of the local API token on a write only a person may make (requireHuman). */
+const HUMAN_REQUIRED = "human_required";
 
 /** The token file the server writes each boot (kept in sync with the server's auth/api-token.ts). */
 export function apiTokenPath(root: string): string {
@@ -196,11 +190,11 @@ export class ServerClient {
   }
 
   /**
-   * `refused` was a 403. When it is `human_required` or `session_required` and there is a stored
-   * sign-in to use (see the module doc), sends the same request once more as that sign-in — the
-   * session cookie, no Bearer, since the server reads a Bearer first — and answers with that. The
-   * refusal stands when there is no usable sign-in, and when the server does not accept the
-   * sign-in either (a 401: it expired or was revoked), so the caller still sees the refusal.
+   * `refused` was a 403. When it is `human_required` and there is a stored sign-in to use (see the
+   * module doc), sends the same request once more as that sign-in — the session cookie, no
+   * Bearer, since the server reads a Bearer first — and answers with that. The refusal stands
+   * when there is no usable sign-in, and when the server does not accept the sign-in either (a
+   * 401: it expired or was revoked), so the caller still sees `human_required`.
    */
   private async retryAsPerson(
     apiPath: string,
@@ -210,7 +204,7 @@ export class ServerClient {
     if (!this.conn.loopback) return refused;
     const signIn = readStoredSignIn(this.conn.root);
     if (signIn === null) return refused;
-    if (!PERSON_REQUIRED.has((await errorCodeOf(refused.clone())) ?? "")) return refused;
+    if ((await errorCodeOf(refused.clone())) !== HUMAN_REQUIRED) return refused;
     const headers: Record<string, string> = { cookie: `${SESSION_COOKIE}=${signIn}` };
     for (const [name, value] of Object.entries((init.headers ?? {}) as Record<string, string>)) {
       if (name.toLowerCase() !== "authorization") headers[name] = value;

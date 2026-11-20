@@ -4,29 +4,34 @@
  * The token stands for the built-in administrator, and every tool subprocess of a server-driven
  * Session holds it as `PENGUIN_API_TOKEN`: an Agent's `penguin <command>` arrives as the
  * administrator, whoever asked the Agent. For most commands that is PRFC-0024 v1.1's rule and
- * stays so. A command whose data half says `tokenCaller: "session-driver"` asks for the person
- * instead: a token call must name a Session, and runs as the person who last started a run in it
- * — the `driven_by` the Session index records (SessionDriverRegistry.note), so the answer is the
- * same before and after a restart. It fails closed: no Session named is `session_required`; a
- * Session that records nobody, a person since deleted, or one who can no longer open the
- * Project is `driver_unknown`. It never falls back to the Project's owner.
+ * stays so. A command whose data half says `tokenCaller: "session-driver"` asks for a person
+ * instead: a token call must name a Session, and runs as the person whose run is in progress in
+ * it — the signed-in user who started that run (SessionDrivers.runDriverOf; for a subagent's
+ * Session, its root's run). It fails closed: no Session named is `session_required`; no run in
+ * progress, a run nobody started (the token itself, a schedule nobody signed for, the Agent API,
+ * company mode, a goal, a compaction), a run someone else steered, a person since deleted, or one
+ * who cannot open the Project is `driver_unknown`. Never the Project's owner, never a past run —
+ * and nothing is in progress after a restart.
  *
- * The route has already checked that the Session belongs to the named Project, so the person
- * borrowed is always one who drove a Session of that Project. A person's own sign-in (a cookie,
- * a Remote session) is never replaced.
+ * The person's access decides, not the token's: the route skips the token's own Project check
+ * for these commands, so a member's own Project — which the administrator cannot open — reaches
+ * its Agents. The route still checks that the Session belongs to the named Project.
  *
- * This narrows the token; it is not a boundary (auth/middleware.ts requireHuman): a process
- * outside the sandbox can mint a sign-in of its own. A per-Session credential (design PR #235)
- * is the structural fix.
+ * A known limit, until per-Session credentials (design PR #235) land: the Session is whatever
+ * the caller names, and `PENGUIN_SESSION_ID` / `PENGUIN_PROJECT_ID` are the Agent's own to set.
+ * An Agent can name another Session of a Project it names and borrow the driver of a run in
+ * progress there — in a Project the token opens, or whose Session it can name. For a person's own
+ * sign-in the rule holds without exception; for an Agent it narrows the token, it is not a
+ * boundary (auth/middleware.ts requireHuman).
  */
 import type { CliCommandCaller } from "@prismshadow/penguin-core/cli";
 import type { Users } from "@prismshadow/penguin-library-auth";
 import type { Access } from "@prismshadow/penguin-library-project";
-import type { SessionIndex } from "@prismshadow/penguin-library-session";
+import type { SessionDrivers } from "@prismshadow/penguin-library-session";
 import { HttpError } from "../http/errors.js";
 
 export interface SessionDriverDeps {
-  sessions: Pick<SessionIndex, "findById">;
+  drivers: Pick<SessionDrivers, "runDriverOf">;
   users: Pick<Users, "findById">;
   access: Pick<Access, "canAccess">;
 }
@@ -41,23 +46,23 @@ export function sessionDriverCaller(
     throw new HttpError(
       403,
       "session_required",
-      "This command runs for the person driving a Session: with the local API token, run it inside a Session (PENGUIN_SESSION_ID), or sign in (penguin auth login) to run it as yourself.",
+      "This command runs for the person whose run is in progress in a Session: with the local API token, run it inside that Session (PENGUIN_SESSION_ID).",
     );
   }
-  const userId = deps.sessions.findById(sessionId)?.drivenBy ?? null;
+  const userId = deps.drivers.runDriverOf(sessionId);
   const user = userId === null ? null : deps.users.findById(userId);
   if (user === null) {
     throw new HttpError(
       403,
       "driver_unknown",
-      `Session ${sessionId} records no person who started a run in it, so this command cannot tell whom it runs for: start a run in it from the Web App or a signed-in CLI first.`,
+      `No run a person started is in progress in Session ${sessionId}, so this command cannot tell whom it runs for: it runs while a signed-in person's message is being worked on (not for schedules nobody signed for, the Agent API, company mode or goals).`,
     );
   }
   if (!deps.access.canAccess(user.userId, projectId)) {
     throw new HttpError(
       403,
       "driver_unknown",
-      `The person who last started a run in Session ${sessionId} can no longer open Project ${projectId}, so this command does not run for them.`,
+      `The person whose run is in progress in Session ${sessionId} cannot open Project ${projectId}, so this command does not run for them.`,
     );
   }
   return { ...caller, userId: user.userId, isAdmin: user.isAdmin };
