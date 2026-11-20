@@ -14,6 +14,8 @@ export interface PricingRates {
   cacheRead: number;
   cacheWrite: number;
   output: number;
+  /** The thinking rate of a model that bills thinking apart; absent, thinking is output at `output`. */
+  thoughts?: number;
 }
 
 /** Peak/off-peak pricing. */
