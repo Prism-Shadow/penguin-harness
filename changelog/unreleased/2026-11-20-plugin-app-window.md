@@ -3,6 +3,7 @@
 - **Date:** 2026-11-20
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#1673](https://github.com/Prism-Shadow/penguin-harness/pull/1673)
 
 [中文版](2026-11-20-plugin-app-window.zh.md)
 
