@@ -56,7 +56,7 @@ import type { AppEnv } from "../auth/middleware.js";
 import type { Paths } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
 import { iconResponse } from "../http/icon-response.js";
-import { mediaType } from "../http/media-type.js";
+import { mediaType } from "@prismshadow/penguin-library-http/media-type";
 import { badRequest, readJson, requireString, requireValidId } from "../http/validate.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Access, Projects } from "@prismshadow/penguin-library-project";
