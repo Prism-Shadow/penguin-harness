@@ -112,7 +112,7 @@ Benchmark 也可以以**包**的形式导入：它的 `benchmark_config.toml` �
    - **上传 zip。**点**选择 zip 文件**，选择导出的评估集包，或根目录（或唯一的顶层目录）里有 `benchmark_config.toml` 和各个 `CASE-*` 文件夹的 zip。
 3. 如果已有同 id 的 Benchmark，会先弹出确认再覆盖。覆盖会替换它的全部文件，并删除它的评估记录与运行结果，无法撤销。这个 Benchmark 的评估还有 trial 在它的 `.jobs` 文件夹里运行时，覆盖会被拒绝，因为评估会接着往新副本里写：等评估结束后再导入。
 
-Agent 会将链接固定到一个提交，把包取回临时目录并读完文件，然后直接将 `benchmark_config.toml` 和各个 `CASE-*` 文件夹复制到 Project 的 `<app_data_dir>/benchmarks/<id>/`，在 `[origin]` 中记录来源，并新建内容为 `evaluations: []` 的 `scoreboard.yaml`。目标目录已存在时会先询问，仍在评估的目录不能替换。你也可以自行复制这些文件，评估中心直接从磁盘读取。
+Agent 会将链接固定到一个提交，把包取回临时目录并读完文件，然后直接将 `benchmark_config.toml` 和各个 `CASE-*` 文件夹复制到提示词写明的 Benchmark 目录 `<app_data_dir>/agents/system_agent/app/data/benchmark/<id>/`，在 `[origin]` 中记录来源，并新建内容为 `evaluations: []` 的 `scoreboard.yaml`。目标目录已存在时会先询问，仍在评估的目录不能替换。你也可以自行复制这些文件，评估中心直接从磁盘读取。
 
 包里不带分数：导入的 Benchmark 没有评估记录，先用它[评估 Agent](#评估-agent)。zip 不是包时，上传会被拒绝并说明原因：
 
@@ -137,7 +137,7 @@ Agent 会将链接固定到一个提交，把包取回临时目录并读完文�
 
 点 Benchmark 卡片或**查看**，打开这个 Benchmark 的页面（`/benchmark/<benchmark>`）。**返回列表**回到列表页。
 
-页头在标题旁边写出 Benchmark 的目录 `benchmarks/<benchmark>`，附带**复制目录路径**按钮（已发布的 Benchmark 还有**导出**按钮）；清单带版本时还写出 Benchmark 的版本（例如 `v2026.10.09.1`），另有它自己的**使用**按钮。Agent 从仓库文件夹导入的 Benchmark 另在**来源**处链接那个文件夹。
+页头在标题旁边写出 Benchmark 在 App Data Dir 下的目录 `agents/system_agent/app/data/benchmark/<benchmark>`，附带复制其绝对路径的**复制目录路径**按钮（已发布的 Benchmark 还有**导出**按钮）；清单带版本时还写出 Benchmark 的版本（例如 `v2026.10.09.1`），另有它自己的**使用**按钮。Agent 从仓库文件夹导入的 Benchmark 另在**来源**处链接那个文件夹。
 
 ### 题目
 
@@ -255,11 +255,11 @@ Benchmark 一经创建，题目就冻结了。Web App 和服务端接口都不�
 
 ## 工作原理
 
-- **存储。** Benchmark 就是 Project 里与 `agents/` 平级的 `benchmarks/<benchmark>/` 目录，以 Benchmark id 命名。它的清单是 `benchmark_config.toml`，其中还记有包版本和这份副本的来源；每道题都有 `statement/README.md`、`rubric/README.md` 和 `task_config.toml`，分数记在 `scoreboard.yaml` 里。见 [Benchmark 存储](/self-improvement#benchmark-存储)。
+- **存储。** Benchmark 就是评估中心数据目录里的一个目录，即 Project 中的 `agents/system_agent/app/data/benchmark/<benchmark>/`，以 Benchmark id 命名，不属于它评估的任何 Agent。它的清单是 `benchmark_config.toml`，其中还记有包版本和这份副本的来源；每道题都有 `statement/README.md`、`rubric/README.md` 和 `task_config.toml`，分数记在 `scoreboard.yaml` 里。见 [Benchmark 存储](/self-improvement#benchmark-存储)。
 - **状态。** `benchmark_config.toml` 中的 `status` 决定遮罩：`draft` 显示**构建中**，`failed` 显示**创建失败**，`published` 解除遮罩。清单读不了的 Benchmark 同样遮罩，显示**清单无法读取**，旁边图标的悬停提示说明原因。
 - **用 AI 创建。** 提示词的固定结尾把被测智能体的 id、期望的基线分和 Pilot 迭代上限交给 `benchmark-design` Skill，并要求取得基线分。
 - **手动创建。** 服务端按 Skill 读取的目录结构，把表单内容写入磁盘（`POST …/benchmarks`，仅 owner），状态为 `published`。
-- **导入。** 上传的 zip 交给 `POST …/benchmarks/archive`（任意成员），服务端检查后把包写入 `benchmarks/<id>/`，清单写明 `id`，来源记为 `zip` 并带导入时间，记分板为空；版本保持包里的值，包里没有就仍不带版本。`.jobs/` 里有还没有 `result.json` 的 trial，或有为 trial 打包的被测 Agent State（`*.agent-state.tar.gz`）时，说明评估仍在运行，覆盖会以 `409` `benchmark_busy` 拒绝。Agent 从仓库导入时，直接将清单和题目复制到 `benchmarks/<id>/`，新建空记分板并记录 `git` 来源；文件布局见 `benchmark-design` Skill 的 `reference/package.md`。
+- **导入。** 上传的 zip 交给 `POST …/benchmarks/archive`（任意成员），服务端检查后把包写入该目录下的 `<id>/`，清单写明 `id`，来源记为 `zip` 并带导入时间，记分板为空；版本保持包里的值，包里没有就仍不带版本。`.jobs/` 里有还没有 `result.json` 的 trial，或有为 trial 打包的被测 Agent State（`*.agent-state.tar.gz`）时，说明评估仍在运行，覆盖会以 `409` `benchmark_busy` 拒绝。Agent 从仓库导入时，直接将清单和题目复制到提示词写明的目录，新建空记分板并记录 `git` 来源；文件布局见 `benchmark-design` Skill 的 `reference/package.md`。
 - **导出。** `GET …/benchmarks/:id/archive`（任意成员）把已发布 Benchmark 的 `benchmark_config.toml` 与题目打成 zip。
 - **评估。** 提示词要求通过自行派生的 `agent-evaluation` 子 Agent，在提示词点名的 provider 与模型上跑完完整的 Case × runs 矩阵，这个模型不一定是会话自己的。每条结果报告的 Agent、模型和思考等级都必须一致，最后只向 `scoreboard.yaml` 追加一条带标签的评估。被测的 Agent 和 Benchmark 都保持不变。
 - **优化。** 使用 Default 时，提示词的固定结尾把被测智能体、Benchmark、每题运行次数、被测模型、目标分数和最多轮数交给 `agent-optimization`；使用其他方法时，交给该方法的 Skill 的是被测智能体、Benchmark、测试集重复次数和被测模型，运行协议与预算由 Skill 自定。**方法**列表与插件库 Agent 自进化分类的插件一一对应。

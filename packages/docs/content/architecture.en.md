@@ -95,7 +95,7 @@ Item by item, each design maps to an owner and to the file or module that carrie
 | Secrets | File layer | Vault: `agent_state/.vault.toml`; model credentials: `.project_config.toml` (both 0600) |
 | The model table and the default model | File layer | `<project>/.project_config.toml` |
 | Run history (the sole source of truth for recovery) | File layer | `traces/<date>/<session>_<index>.jsonl` — see [Sessions & Traces](/sessions-and-traces) |
-| Benchmark cases and scores | File layer | `<project>/benchmarks/<id>/` — see [Self-Improvement](/self-improvement) |
+| Benchmark cases and scores | File layer | `<project>/agents/system_agent/app/data/benchmark/<id>/` — see [Self-Improvement](/self-improvement) |
 | Snapshots | File layer | `snapshots/v<version>.tar.gz`; the export/import service lives in the Server |
 | Streaming rendering, approval UI, charts | CLI / Web | `cli/src`, `web/src` (pure rendering, no engine logic) |
 
@@ -104,7 +104,7 @@ Item by item, each design maps to an owner and to the file or module that carrie
 
 ## The state layer
 
-Below the engine sits a purely file-based state layer. Its root is `~/.penguin/data` (override it with `PENGUIN_HOME`), organized as `<project>/agents/<agent>/`:
+Below the engine sits a purely file-based state layer. Its root is `~/.penguin/data` (override it with `PENGUIN_HOME`), organized as `projects/<project>/agents/<agent>/`:
 
 | Component | Location | Contents |
 | --- | --- | --- |

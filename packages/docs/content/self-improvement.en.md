@@ -137,10 +137,10 @@ The Web App's [Evaluation Center](/evaluation-center) starts the same two top-le
 
 ## Benchmark storage
 
-Benchmarks belong to the Project. Each one is stored in `<root>/<project>/benchmarks/<id>/`, a sibling of `agents/`. Benchmarks and agents are peers rather than owner and owned: one Benchmark can evaluate several agents, and one agent can be evaluated by several Benchmarks. So `benchmark_config.toml` names no agent; each evaluation records the agent it tested.
+Benchmarks belong to the Project. Each one is stored in the Evaluation Center's data folder, `<root>/projects/<project>/agents/system_agent/app/data/benchmark/<id>/`: the system Agent's, which is never deleted or exported, so the folder lives as long as the Project. The Evaluation Center's prompts name that folder to the agent (`BENCHMARK_DIR`). Benchmarks and agents are peers rather than owner and owned: one Benchmark can evaluate several agents, and one agent can be evaluated by several Benchmarks. So `benchmark_config.toml` names no agent; each evaluation records the agent it tested.
 
 ```text
-<project>/benchmarks/<id>/
+<project>/agents/system_agent/app/data/benchmark/<id>/
 ├── benchmark_config.toml       # the manifest: id, title, description, description_zh, version, status, runs (Builder runs is fixed at 1), [origin]
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent
