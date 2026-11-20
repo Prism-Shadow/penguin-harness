@@ -182,7 +182,7 @@ function ToolRequestsList({ tools, currency }: { tools: UsageToolRow[]; currency
         {tools.map((t) => {
           const { operation, source } = toolPurposeLabel(t.purpose);
           return (
-            <tr key={t.purpose} title={t.purpose}>
+            <tr key={t.purpose} data-tooltip={t.purpose}>
               <td className="truncate py-1.5 pr-3">
                 <span className="text-gray-900 dark:text-gray-100">{operation}</span>
                 {source && (
