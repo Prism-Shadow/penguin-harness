@@ -64,7 +64,7 @@ import { agentSettingsPath } from "../../lib/agent-location";
 import { APP_CENTER_PATH } from "../../lib/app-center-path";
 import { windowEntryState, WINDOW_PARAM } from "../../lib/app-window-address";
 import { openFullPage, returnToHostEntry } from "../../lib/host-history";
-import { keepListedApps, launchApp, useRunningApps } from "../../lib/running-apps";
+import { launchApp, takeListedShortcuts, useRunningApps } from "../../lib/running-apps";
 import { localizedText } from "../../lib/skill-use";
 import { S } from "../../lib/strings";
 import { useSystemApps } from "../../lib/system-apps";
@@ -260,8 +260,8 @@ export function AppCenterPage() {
     previousWindow.current = openKey;
   }, [openKey]);
 
-  // An app the list no longer has ends: the App Center is the one place an app is opened from, so
-  // one it no longer lists could not be brought back. The rest take the shortcut it gives now.
+  // A running app the list has takes the shortcut it gives now. One it does not list runs on: the
+  // sidebar opens apps the App Center hides, and an app ends only when its workbench is gone.
   useEffect(() => {
     if (projectId === null || grid === null) return;
     const listed = new Map<string, LocatedShortcut>();
@@ -269,7 +269,7 @@ export function AppCenterPage() {
       if (item.type === "app") listed.set(item.id, item.shortcut);
       else for (const app of item.apps) listed.set(app.id, app.shortcut);
     }
-    keepListedApps(projectId, listed);
+    takeListedShortcuts(projectId, listed);
   }, [projectId, grid]);
 
   // An address that names a listed app starts it (a link, a reload, Forward after a close), before
@@ -324,6 +324,16 @@ export function AppCenterPage() {
                 app.shortcut.agentId,
                 app.shortcut.workbenchId,
                 false,
+                app.shortcut.machineId ?? null,
+              )
+              .then(() => refreshMachine(app.shortcut.machineId), toastApiError),
+          setShowInSidebar: (app, show) =>
+            void api
+              .setWorkbenchSidebar(
+                projectId,
+                app.shortcut.agentId,
+                app.shortcut.workbenchId,
+                show,
                 app.shortcut.machineId ?? null,
               )
               .then(() => refreshMachine(app.shortcut.machineId), toastApiError),

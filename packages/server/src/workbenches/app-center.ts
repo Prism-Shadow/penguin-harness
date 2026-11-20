@@ -250,6 +250,7 @@ function shortcutOf(
   workbenchId: string,
   manifest: AppCenterManifest,
   build: Pick<AppCenterShortcut, "build" | "error">,
+  showInSidebar: boolean,
 ): AppCenterShortcut {
   const { appCenter, tabs } = manifest;
   const first = tabs[0];
@@ -268,6 +269,7 @@ function shortcutOf(
     path: appCenter?.tab !== undefined ? `${page}/${segment(appCenter.tab)}` : page,
     ...(tab !== undefined ? { tab } : {}),
     ...build,
+    showInSidebar,
   };
 }
 
@@ -310,7 +312,9 @@ export async function agentShortcuts(
     const manifest = await readAppCenterManifest(dir, entry.name);
     if (!(await inView(view, dir, manifest)) || (await isSwitchedOff(dir))) continue;
     const build = await buildOf(dir, building(entry.name));
-    out.push(shortcutOf(projectId, agent, entry.name, manifest, build));
+    // The sidebar lists only what is shown there; a tile carries the setting for its menu.
+    const showInSidebar = view === "sidebar" || !(await isSwitchedOff(dir, HIDDEN_FROM_SIDEBAR));
+    out.push(shortcutOf(projectId, agent, entry.name, manifest, build, showInSidebar));
   }
   return out.sort(
     (a, b) => a.title.localeCompare(b.title) || a.workbenchId.localeCompare(b.workbenchId),

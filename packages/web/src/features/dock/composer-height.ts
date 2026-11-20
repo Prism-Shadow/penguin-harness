@@ -7,8 +7,8 @@
  *
  * The last measurement outlives the composer. Switching conversations remounts it, with a skeleton
  * in its place while the history loads, and a dock at its ceiling must not leap up for that moment
- * and come back down when the composer returns. A box measuring nothing (a workbench tab covering
- * the chat hides it) is not a measurement either.
+ * and come back down when the composer returns. A box measuring nothing (the chat hidden) is not
+ * a measurement either.
  */
 import { useSyncExternalStore } from "react";
 

@@ -1166,14 +1166,8 @@ export const en: Strings = {
     noMatches: "No matching agents.",
     searchAgents: "Search agents",
 
-    tabsLabel: "Chat and workbenches",
-    chatTab: "Chat",
-    brokenMark: "The current files failed to load",
     reload: "Reload",
-    reloading: "Reloading…",
     history: "History",
-    loadError: "Load error",
-    loadingHistory: "Loading history…",
     /** The full-page route while it is still finding out which page it should show. */
     loadingPage: "Opening the page…",
     noHistory: "No versions recorded yet.",
@@ -1184,26 +1178,19 @@ export const en: Strings = {
     restoreConfirm: (revision: string) =>
       `Restore version ${revision}? The workbench's files are replaced by that version and reloaded at once; its data (state.json) stays. Edits that never loaded successfully are lost.`,
     remove: "Remove",
-    fillApp: "Fill the app",
-    /** `palette` is the formatted palette.toggle chord, null while unbound. */
-    fillAppHint: (palette: string | null): string =>
-      palette === null
-        ? "Show this page as the whole app; the command palette is the way to leave"
-        : `Show this page as the whole app; ${palette} opens the command palette to leave`,
-    exitFullPage: "Exit full page (back to workbench)",
+    exitToWindow: "Exit full screen (back to the app window)",
     exitFullPageButton: "Exit full screen",
     exitBallTuck: "Tuck to the edge",
     exitBallShow: "Show the exit button",
     retryHistory: "Retry",
     exitHint: (palette: string | null): string =>
       palette === null
-        ? "Open the command palette to get back to the workbench."
-        : `Press ${palette} for the command palette to get back to the workbench.`,
+        ? "Open the command palette to leave full screen."
+        : `Press ${palette} for the command palette to leave full screen.`,
     noSuchPage: "This workbench does not exist or has no page.",
     removeConfirm:
       "Delete this workbench and its data? Its past versions will no longer be listed.",
     removeYes: "Remove",
-    removing: "Removing…",
     removeNo: "Keep",
     importTitle: "Import workbench",
     importChatTitle: "Recommended: import it by chatting with the agent",
@@ -1268,6 +1255,15 @@ export const en: Strings = {
     /** The full page's way out when it was opened from the App Center. */
     exitToAppCenter: "Exit full page (back to the App Center)",
   },
+  sidebarApps: {
+    title: "Apps",
+    manage: "Manage apps",
+    open: "Open",
+    removeFromSidebar: "Remove from sidebar",
+    viewInSettings: "View in agent settings",
+    rowName: (title: string, agent: string | null, state: string | null) =>
+      [title, agent === null ? null : `from ${agent}`, state].filter((s) => s !== null).join(", "),
+  },
   appCenter: {
     title: "App Center",
     loading: "Loading…",
@@ -1311,6 +1307,7 @@ export const en: Strings = {
       removeFromFolder: "Remove from folder",
       removeFromAppCenter: "Remove from the App Center",
       viewInSettings: "View in agent settings",
+      showInSidebar: "Show in the sidebar",
       showError: "Show error",
       rename: "Rename",
       dissolve: "Ungroup",
@@ -1341,7 +1338,7 @@ export const en: Strings = {
     errorUnknown: "No error message was recorded. Open the app to see how it loads.",
     /** The windowed app's title bar. */
     windowMinimize: "Minimize",
-    windowClose: "Close, back to the App Center",
+    windowClose: "Close",
     windowFullScreen: "Open full screen",
     /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
     machinesOffline: (names: string) =>

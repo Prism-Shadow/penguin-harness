@@ -138,7 +138,8 @@ describe("the mocked API", () => {
         ],
       },
     ];
-    const sidebar = () => api.getSidebarApps(project, agentId, null);
+    const sidebar = () =>
+      api.getSidebarApps(project, agentId, null).then((r) => ("apps" in r ? r.apps : null));
     expect(await sidebar()).toMatchObject([{ agentId, workbenchId: id, title, tab: "main" }]);
     await api.setWorkbenchSidebar(project, agentId, id, false, null);
     expect(await sidebar()).toEqual([]);

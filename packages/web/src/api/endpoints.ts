@@ -28,6 +28,7 @@ import type {
   AppCenterLayout,
   AppCenterLayoutResponse,
   AppCenterResponse,
+  AppCenterShortcut,
   BackgroundImagePutResponse,
   BackgroundImageRequest,
   BackgroundImageResponse,
@@ -2889,7 +2890,7 @@ export const openPrivacySettings = (pane: DesktopPrivacyPane) =>
 export const openDesktopWindow = () =>
   apiFetch<void>("/api/desktop/window", { method: "POST", body: {}, server: null });
 
-// ---- Workbenches (an Agent's own extension packages, served as tabs beside the chat) ----
+// ---- Workbenches (an Agent's own extension packages, opened as its apps) ----
 const workbenchesBase = (projectId: string, agentId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/workbenches`;
 /**
@@ -2903,15 +2904,23 @@ export const getWorkbenches = (projectId: string, agentId: string, machineId: st
   }).then((r) => ({ ...r, workbenches: iconsOn(r.workbenches, machineId) }));
 /**
  * The rows of the Agent's sidebar list: a shortcut for each workbench that runs, has a tab and is
- * not hidden from the sidebar, read from the files without compiling anything. Null from a server
- * older than the setting, which ignores `view` and answers the full list: everything it lists
- * is shown there.
+ * not hidden from the sidebar, read from the files without compiling anything. A server older
+ * than the setting ignores `view` and answers the full list (`workbenches`): everything it lists
+ * that runs and has a page is shown there.
  */
-export const getSidebarApps = (projectId: string, agentId: string, machineId: string | null) =>
+export const getSidebarApps = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null,
+): Promise<{ apps: AppCenterShortcut[] } | { workbenches: WorkbenchesResponse }> =>
   apiFetch<WorkbenchSidebarResponse | WorkbenchesResponse>(
     `${workbenchesBase(projectId, agentId)}?view=sidebar`,
     { server: machineId },
-  ).then((r) => ("apps" in r ? iconsOn(r.apps, machineId) : null));
+  ).then((r) =>
+    "apps" in r
+      ? { apps: iconsOn(r.apps, machineId) }
+      : { workbenches: { ...r, workbenches: iconsOn(r.workbenches, machineId) } },
+  );
 /** The Agent-wide switch (Project owner): off, none of the Agent's workbenches runs. */
 export const setWorkbenchesEnabled = (
   projectId: string,

@@ -88,7 +88,8 @@ export function TileIcon({
   title,
   size = ICON_PX,
 }: {
-  shortcut: LocatedShortcut;
+  /** What draws it: the app's icon, else its letter tile in its id's colour, or a system glyph. */
+  shortcut: Pick<LocatedShortcut, "workbenchId" | "icon" | "system">;
   title: string;
   size?: number;
 }) {
@@ -351,7 +352,10 @@ export function FolderTile({
               S.appCenter.folderName(folder.name, count, running),
               ...notes,
             ])}
-            data-tooltip={S.todo.joined([S.appCenter.folderTip(folder.name, count, running), ...notes])}
+            data-tooltip={S.todo.joined([
+              S.appCenter.folderTip(folder.name, count, running),
+              ...notes,
+            ])}
             data-tooltip-extra
             onClick={() => {
               if (target.consumeLongPressClick()) return;

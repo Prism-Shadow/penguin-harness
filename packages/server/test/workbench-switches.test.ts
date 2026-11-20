@@ -27,6 +27,9 @@
  *   workbench 404, and neither writes a marker.
  * - Given the marker on a workbench a plugin installed, a reinstall of the plugin keeps it, and
  *   removing the workbench takes it away: installed again, the workbench is listed.
+ * - Given a workbench shown in the App Center, its tile carries the sidebar setting
+ *   (`showInSidebar`) as the marker says, before and after a member's write, so the tile's menu
+ *   reads the same setting as the row's.
  *
  * A loaded workbench (one load shared by the group, and one more each time a switch turns it
  * back on):
@@ -263,6 +266,7 @@ describe("workbench switches", { timeout: 30_000 }, () => {
           path: `/app/${PROJECT}/${agentId}/desk`,
           tab: "board",
           build: "ready",
+          showInSidebar: true,
         },
       ]);
       for (const dir of Object.values(dirs))
@@ -277,6 +281,30 @@ describe("workbench switches", { timeout: 30_000 }, () => {
 
       await turn(`${base}/enabled`, false);
       expect(await sidebarOf(base)).toEqual([]);
+    });
+
+    it("reports the setting on the workbench's App Center tile, as the marker says", async () => {
+      const { agentId, base, folders } = await newAgent();
+      const dir = path.join(folders, "desk");
+      await writeFiles(dir, {
+        ...DEMO_FILES,
+        "package.json": packageJson({ appCenter: { show: true } }),
+      });
+      const tile = async () =>
+        (
+          (await (await member.get(`/api/projects/${PROJECT}/app-center`)).json()) as {
+            shortcuts: AppCenterShortcut[];
+          }
+        ).shortcuts.find((s) => s.agentId === agentId && s.workbenchId === "desk");
+      expect((await tile())?.showInSidebar).toBe(true);
+
+      expect((await member.patch(`${base}/desk/sidebar`, { show: false })).status).toBe(200);
+      expect(await exists(hiddenMarker(dir))).toBe(true);
+      // Hidden from the sidebar only: the tile stays, and says so.
+      expect((await tile())?.showInSidebar).toBe(false);
+
+      expect((await member.patch(`${base}/desk/sidebar`, { show: true })).status).toBe(200);
+      expect((await tile())?.showInSidebar).toBe(true);
     });
 
     it("refuses a body without a boolean and an unknown workbench, and writes no marker", async () => {

@@ -1774,8 +1774,8 @@ export function applyUserEvent(
   if (ev.type === "org_run" && ev.projectId === store.getState().projectId) {
     void store.getState().reload();
   }
-  // A workbench of some Agent was (re)loaded: the chat page's tab strip owns that list and
-  // listens on window (it is mounted per page, this provider per app).
+  // A workbench of some Agent was (re)loaded or removed: the lists that show workbenches (the
+  // sidebar's apps, the App Center, an app's window) listen on window for it.
   if (ev.type === "workbench_updated" || ev.type === "workbench_removed") {
     window.dispatchEvent(
       new CustomEvent(WORKBENCH_UPDATED_EVENT, {

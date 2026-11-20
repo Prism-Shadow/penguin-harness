@@ -8,10 +8,11 @@
  * minimized: mounted and laid out at the area's size, but neither painted nor reachable
  * (`AppWindow`), so what runs in its frame — its state, timers, sound and connections — carries
  * on. Minimize and Back leave a window alike, back to the page it was opened or brought back from
- * (lib/app-window-address.ts); Close ends the app and unmounts its frame. Switching Project ends
- * the previous Project's apps, and leaving the app shell (the full page, signing out, a reload)
- * unmounts this layer and ends them all, so nothing is ever listed as running with nothing behind
- * it.
+ * (lib/app-window-address.ts); Close ends the app and unmounts its frame. An app whose workbench is
+ * gone ends too, as its window learns it; one a list no longer shows does not (lib/running-apps.ts).
+ * Switching Project ends the previous Project's apps, and leaving the app shell (the full page,
+ * signing out, a reload) unmounts this layer and ends them all, so nothing is ever listed as
+ * running with nothing behind it.
  */
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -54,14 +55,18 @@ export function AppCenterWindows() {
               shortcut={app.shortcut}
               title={localizedText(locale, app.shortcut.title, app.shortcut.titleZh)}
               onMinimize={leave}
-              onFullScreen={() =>
-                openFullPage(navigate, app.shortcut.path, `${APP_CENTER_PATH}${location.search}`, {
+              onFullScreen={(path) =>
+                openFullPage(navigate, path, `${APP_CENTER_PATH}${location.search}`, {
                   fromWindow: true,
                 })
               }
               onClose={() => {
                 closeApp(app.key);
                 leave();
+              }}
+              onGone={() => {
+                closeApp(app.key);
+                if (app.key === front) leave();
               }}
             />
           </AppWindow>

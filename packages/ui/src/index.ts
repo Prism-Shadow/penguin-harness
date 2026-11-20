@@ -315,9 +315,10 @@ export * from "./components/shell/floating-ball/floating-ball";
 export * from "./components/shell/floating-ball/floating-ball-geometry";
 
 // W7-B — the shell: the app window and its columns, the folded rail, the phone's top bar, the
-// pinned sidebar's frame with its nav fold, list header and controls, and the conversation row
-// with the hover actions it shares.
+// pinned sidebar's frame with its list header and controls, the conversation row with the hover
+// actions it shares, and the app list's row.
 export * from "./components/shell/app-shell/app-shell";
+export * from "./components/shell/app-row/app-row";
 export * from "./components/shell/app-window/app-window";
 export * from "./components/shell/app-window/app-window-bar";
 export { WallpaperSurface } from "./components/shell/app-shell/wallpaper";

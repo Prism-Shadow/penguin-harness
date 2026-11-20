@@ -36,6 +36,15 @@ export function windowInFront(location: Pick<Location, "pathname" | "search">): 
   return new URLSearchParams(location.search).get(WINDOW_PARAM);
 }
 
+/** The app whose window an in-app path (`/apps?app=…`) puts in front, else none. */
+export function windowOfPath(path: string): string | null {
+  const at = path.indexOf("?");
+  return windowInFront({
+    pathname: at === -1 ? path : path.slice(0, at),
+    search: at === -1 ? "" : path.slice(at),
+  });
+}
+
 /** Leaves the window in front for the view beneath; whether the app keeps running is the caller's. */
 export function leaveWindow(navigate: NavigateFunction, location: Location): void {
   const state = location.state as WindowEntryState | null;

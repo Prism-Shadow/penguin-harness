@@ -8,7 +8,8 @@
  *   not exit and comes to rest against the left edge; a reload keeps it there.
  * - Hovering the ball shows its tuck button; a click puts the ball away into a handle on the left
  *   edge, and a reload keeps it tucked. Tucked, the command palette still offers the exit.
- * - The handle brings the ball back, and Enter on the ball leaves the full page.
+ * - The handle brings the ball back, and Enter on the ball leaves the full page for the app's
+ *   window.
  */
 import { test, expect } from "@playwright/test";
 import { ADMIN_ID, ADMIN_PASSWORD, login } from "./auth.mjs";
@@ -66,7 +67,7 @@ test("the exit ball drags to the other edge, tucks away and comes back, and stil
   await page.keyboard.press("Control+Shift+KeyP");
   await expect(page.getByPlaceholder("Type to filter commands…")).toBeVisible();
   await expect(
-    page.getByRole("option", { name: "Exit full page (back to workbench)", exact: true }),
+    page.getByRole("option", { name: "Exit full screen (back to the app window)", exact: true }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
 
@@ -74,5 +75,5 @@ test("the exit ball drags to the other edge, tucks away and comes back, and stil
   await expect(handle).toHaveCount(0);
   await ball.focus();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/chat\/new$/);
+  await expect(page).toHaveURL(/\/apps\?app=penguin_support%2Fsupport$/);
 });

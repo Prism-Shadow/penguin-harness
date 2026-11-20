@@ -26,8 +26,12 @@
  *   reports it (`showInSidebar`). It commits at once and writes the installation's
  *   `.hidden-from-sidebar` marker, never the package.json: no reload and no version, and a plugin
  *   update keeps it, where it resets the App Center's. Every member sees the same sidebar list.
- *   A refused write puts it back. Until the sidebar's list replaces the chat's workbench tabs,
- *   the tabs follow it, so "Open" on a workbench hidden from the sidebar opens its full page.
+ *   A refused write puts it back.
+ * - "Open" opens the app's window over the main area, the one the App Center and the sidebar's
+ *   list open (lib/running-apps.ts): the same live window when the app runs, and closing or
+ *   minimizing it comes back here.
+ * - A workbench without a page has no window to show what its load said, so its row does: the
+ *   load error, else the first hint, with every hint in the row's hint.
  *
  * Everything but the Enable switch is member-level, matching the workbench routes, and goes to
  * the server the Agent lives on.
@@ -40,7 +44,9 @@
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { useNavigate } from "react-router";
+import { locatedAppKey } from "../../lib/app-center-path";
+import { useRestoreApp } from "../../lib/running-apps";
+import { shortcutOfWorkbench } from "../../lib/workbench-shortcut";
 import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -55,9 +61,9 @@ import * as api from "../../api/endpoints";
 import { formatDateTime } from "../../lib/format";
 import { useInstantSetting } from "../../lib/instant-setting";
 import { S } from "../../lib/strings";
-import { workbenchAppPath, workbenchTabsOf } from "../../lib/workbench-tabs";
+import { workbenchTabsOf } from "../../lib/workbench-tabs";
 import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
+import { agentDisplayName, useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { localizedText } from "../../lib/skill-use";
 import { toastApiError } from "../../lib/toast-api-error";
@@ -216,6 +222,27 @@ function WorkbenchSidebar({
 }
 
 /**
+ * What a row says under its title: the load error when its files do not load; for a workbench
+ * without a page, which has no window to say it in, the first thing its load noticed (every one
+ * in the hint); else its id.
+ */
+function loadNotice(workbench: WorkbenchInfo): ReactNode {
+  // Strings stay strings: the row caps a long line it is given as text.
+  if (workbench.error !== null) return workbench.error;
+  const hints = workbench.tabs.length === 0 ? (workbench.hints ?? []) : [];
+  if (hints.length === 0) return workbench.id;
+  return (
+    <span
+      data-tooltip={hints.join("\n")}
+      data-tooltip-content="text"
+      data-tooltip-extra={hints.length > 1}
+    >
+      {hints[0]}
+    </span>
+  );
+}
+
+/**
  * The rows of an Agent's workbenches, and the history dialog and the confirmation (restore,
  * remove) they share. A row shows the icon of the plugin it came from when the workbench declares
  * no App Center icon of its own; the anvil without either.
@@ -225,12 +252,14 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
   modals: ReactNode;
 } {
   const { agentId, onChanged, sourceOf, onOpenFiles, onShowPlugin } = options;
-  const { currentProject } = useProject();
+  const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   /** The machine the Agent lives on, where its workbenches are; null for this server. */
   const machineId = useAgentLocation();
   const { locale } = useLocale();
-  const navigate = useNavigate();
+  const restore = useRestoreApp();
+  const local = agents.find((agent) => agent.agentId === agentId);
+  const agentName = machineId === null && local ? agentDisplayName(local) : agentId;
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState<{
     workbench: WorkbenchInfo;
@@ -284,25 +313,10 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
             size="sm"
             aria-label={`${S.workbenches.open} ${title}`}
             onClick={() =>
-              // Hidden from the sidebar, it has no tab beside the chat: its full page instead.
-              sidebar?.checked === false
-                ? void navigate(
-                    workbenchAppPath(projectId, agentId, workbench.id, first.key, machineId),
-                  )
-                : void navigate("/chat/new", {
-                    state: {
-                      agentId,
-                      workspace: "",
-                      // A machine's Agent runs there: its temporary Workspace on it.
-                      ...(machineId !== null ? { machineId } : {}),
-                      workbench: {
-                        projectId,
-                        agentId,
-                        tabId: first.tabId,
-                        machineId,
-                      },
-                    },
-                  })
+              restore(
+                locatedAppKey(agentId, workbench.id, machineId),
+                shortcutOfWorkbench(projectId, { agentId, agentName }, workbench, machineId),
+              )
             }
           >
             {S.workbenches.openAction}
@@ -351,7 +365,7 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
             />
           )
         }
-        description={workbench.error ?? workbench.id}
+        description={loadNotice(workbench)}
         meta={workbench.version ? `v${workbench.version}` : undefined}
         trailing={
           <WorkbenchSidebar workbench={workbench} options={options}>
