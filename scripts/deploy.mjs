@@ -278,6 +278,13 @@ async function compileEntry(entry, outfile) {
     const args = [path.join(ROOT, "scripts/gen-ifaces.mjs")];
     for (const p of projects)
       args.push("--project", path.join(ROOT, "packages", p, "tsconfig.json"));
+    // Only the host's own sources and the library's, as the packages' `gen:ifaces` lines say: a
+    // shipped plugin's sources the programs reach (a test helper, the CLI's generated module
+    // list) carry their own table, and a copy here would stand in for theirs.
+    for (const p of projects) {
+      for (const dir of ["src", "test"]) args.push("--sources", path.join(ROOT, "packages", p, dir));
+    }
+    args.push("--sources", path.join(ROOT, "library"));
     args.push("--out", path.join(ROOT, "packages", pkg, "src", "ifaces.json"));
     execFileSync(process.execPath, args, { stdio: "inherit" });
   }
