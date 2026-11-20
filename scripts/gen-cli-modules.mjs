@@ -43,8 +43,10 @@ export function shippedCliPackages(dir) {
     try {
       dependency = JSON.parse(fs.readFileSync(file, "utf8"));
     } catch (err) {
+      // The package is the actionable fact (what to install); the path and the cause follow.
+      const cause = err instanceof Error ? err.message : String(err);
       throw new Error(
-        `gen-cli-modules: cannot read ${file} (${err instanceof Error ? err.message : String(err)}) — run pnpm install`,
+        `gen-cli-modules: ${name}, a dependency of ${manifest.name ?? dir}, is not installed (${file}: ${cause}) — run pnpm install`,
       );
     }
     return exportsCli(dependency);
