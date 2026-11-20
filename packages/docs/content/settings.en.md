@@ -186,6 +186,8 @@ The page keeps up with changes made elsewhere: it updates when a conversation is
 
 The **Storage** page shows how much space this server's data root takes, and cleans up what can be regenerated. A member sees the Projects they own or are a member of. An admin sees the whole data root: the Projects they cannot open are summed into one row, **N Projects of other users**, with no names. Connected machines keep their own data roots, which this page does not measure.
 
+The page comes from the preinstalled `storage` plugin, whose server module every Project lists. While an admin keeps that module stopped (Settings › Plugins), the page is not there. The same figures and cleanup are in the shell as [`penguin storage`](/cli#penguin-storage).
+
 The first section, **This server** for an admin and **My Projects** for a member, shows the space used, when it was measured, and **Refresh**. The server measures in the background and keeps the figures in memory, so they describe the time shown: a chat deleted elsewhere changes them only at the next measurement. Under the total is a bar of the categories, with each one's size in the legend:
 
 | Category | What it holds |
@@ -195,8 +197,8 @@ The first section, **This server** for an admin and **My Projects** for a member
 | **Temporary workspaces** | Each agent's `workspaces/`: the folders made for chats started without a Workspace, and the evaluation Skill's Test Workspaces |
 | **Scratchpads** | Each agent's `scratchpad/`: one folder per chat, holding its attachments, plans and hand-off files |
 | **Caches** | Each agent's tool environments in `shared_env/`, and the server's `.cache/` |
-| **Logs** | The server's `logs/` |
-| **Plugins** | The installed plugin packages |
+| **Logs** | The server's `logs/`, measured but never cleaned here |
+| **Plugins** | The installed plugin packages, measured but never cleaned here |
 | **Other** | Everything else: Benchmarks, organizations, the database, the hot-update store, machines and theme packs |
 
 **By Project** lists each Project with its size, largest first; expand one to see its agents. **By folder** shows the data root's path (an admin) or each Project's folder (a member), with **Copy path** and, in the desktop app's own window, **Show in folder**. An admin also has **Server files**, which lists the data root's top-level entries that are not Projects.
