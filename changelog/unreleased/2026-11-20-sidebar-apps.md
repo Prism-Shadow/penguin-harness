@@ -3,6 +3,7 @@
 - **Date:** 2026-11-20
 - **Type:** feature
 - **Scope:** `web`, `ui`, `ui-gallery`, `server`
+- **PR:** [#1667](https://github.com/Prism-Shadow/penguin-harness/pull/1667)
 
 [中文版](2026-11-20-sidebar-apps.zh.md)
 
