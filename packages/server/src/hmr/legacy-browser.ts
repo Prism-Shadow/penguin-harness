@@ -27,7 +27,7 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
 import type { RawData, WebSocket } from "ws";
-import { profileFromEnv } from "../machines/layout.js";
+import { profileFromEnv } from "../machines/profile.js";
 import type { ServerHmrHost } from "./platform.js";
 
 const PAIR_PATH = "/api/builtin-browser/extension/pair";

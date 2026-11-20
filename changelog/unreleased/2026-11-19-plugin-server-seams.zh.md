@@ -16,7 +16,7 @@
   - 类型 `AppEnv`、`ShellPort`、`WebSocketUpgrade`、`UpgradeCaller`、`MeRoutes`、`MeRoutesSlots` 与 `OwnedPref`；
   - 值 `HttpError`、`isHttpError`、`errorBody`、`badRequest`、`publicOriginOf`、`requireHuman`、`userChannelKey`、`ensureInstallId`、`shellPortOf` 与 `profileFromEnv`。
 
-  `requireHuman` 与 `userChannelKey` 各自移入独立模块，原导入路径照旧再导出。
+  `requireHuman`、`userChannelKey` 与 `profileFromEnv` 各自移入独立模块（`auth/require-human.ts`、`http/user-channel.ts`、`machines/profile.ts`），原导入路径照旧再导出。打包这一面的插件因此只带上这些小模块（约 5 KB），不带 core 的 SDK。
 - **跨副本识别 HttpError。** `HttpError` 带全局品牌 `Symbol.for("penguin.http-error")`。App 的错误处理与异常落库认得任何带这个品牌的副本，例如插件打包的那一份。这样的错误按它自己的状态码、错误码、文案、details 与 `Retry-After` 应答，并记为 expected。不带品牌、只是自称 `HttpError` 的错误仍答 500 `internal`。
 - **用另一份 Hono 构建的路由组。** 内置插件会打包自己的 Hono，它的缺省错误处理会在 App 的错误处理看到之前，把一切错误答成 `500 text/plain`。这样的路由组若没有设自己的错误处理，宿主现在为它设上一个原样转交错误的处理；组自己设了的，宿主不动。
 - **自判来源的路由组。** `HttpModule.routes` 的路由组可以声明 `origin: "own"`，表示该组自行判定调用方来源。这些组挂在写请求同源检查之前，各自带一份 JSON-only 检查。它们应答的请求不经同源检查；其前缀下它们不应答的请求（别的方法、组不提供的路径）仍照常检查。这取代了扩展配对路由的硬编码豁免，该路由改为声明这个字段。因此，该前缀下配对路由不应答的跨源写请求（如 `DELETE`）答 403 `cross_origin_write`。运行时在接缝之前做的同一检查把这类写请求放给平台：它经 `Http.ownOrigin` 向当前一代询问，前缀逐段比对，含 `:param` 段。
