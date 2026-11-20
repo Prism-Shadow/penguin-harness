@@ -8,6 +8,10 @@
  *   does not, the generated list names the first alone, reading the entry through nested export
  *   conditions; a `./web` entry outside `src/web/`, or a listed dependency that is not
  *   installed, is refused, naming the package.
+ * - A workspace plugin (a directory under `plugins/`, linked into node_modules as pnpm links it)
+ *   is read from its own directory with the app's program, so the interface generator gets no
+ *   second project for it — that second read fails the generator; only a plugin installed under
+ *   node_modules is read through its own `tsconfig.web.json`.
  * - The generated list boots: the plugin's module joins the app's tree beside the app's own, its
  *   contributions checked against the same table.
  * - Until the server says its module runs, none of the plugin's contributions is drawn — no dock
@@ -43,7 +47,11 @@ import {
   type ModuleClass,
 } from "@prismshadow/penguin-core/kernel";
 
-import { pluginWebEntries, writePluginWebModules } from "../scripts/gen-web-table.mjs";
+import {
+  pluginWebEntries,
+  separateProjects,
+  writePluginWebModules,
+} from "../scripts/gen-web-table.mjs";
 // The suite's own table: the app, its tests (the fixture plugin's module among them) and the
 // shipped web halves. The app's table (src/ifaces.json) carries no test module.
 import table from "./ifaces.json";
@@ -133,6 +141,44 @@ describe("the generated list of plugin web halves", () => {
       "@penguinharness/web-fixture",
       "nested",
     ]);
+  });
+
+  it("reads a workspace plugin with the app's program, and only an installed one through its own project", () => {
+    const root = mkdtempSync(join(tmpdir(), "web-workspace-"));
+    dirs.push(root);
+    /** A plugin package with a web half, its tsconfig.web.json beside it. */
+    const plugin = (dir: string, name: string) => {
+      mkdirSync(join(dir, "src", "web"), { recursive: true });
+      writeFileSync(join(dir, "tsconfig.web.json"), "{}");
+      writeFileSync(join(dir, "src", "web", "index.ts"), "export default { modules: [] };\n");
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ name, exports: { "./web": "./src/web/index.ts" } }),
+      );
+    };
+    // The workspace plugin lives under plugins/ and is linked into the app's node_modules.
+    plugin(join(root, "plugins", "board"), "@penguinharness/board");
+    const web = join(root, "packages", "web");
+    mkdirSync(join(web, "node_modules", "@penguinharness"), { recursive: true });
+    symlinkSync(
+      join(root, "plugins", "board"),
+      join(web, "node_modules", "@penguinharness", "board"),
+      "junction",
+    );
+    // The other one is a copy installed under node_modules, in no workspace.
+    plugin(join(web, "node_modules", "installed-board"), "installed-board");
+    writeFileSync(
+      join(web, "package.json"),
+      JSON.stringify({
+        name: "web",
+        dependencies: { "@penguinharness/board": "workspace:*", "installed-board": "1.0.0" },
+      }),
+    );
+
+    const entries = pluginWebEntries(web, { pluginsDir: join(root, "plugins") });
+    expect(entries.map((e) => e.name)).toEqual(["@penguinharness/board", "installed-board"]);
+    expect(entries[0]!.tsconfig).toBe(join(root, "plugins", "board", "tsconfig.web.json"));
+    expect(separateProjects(entries).map((e) => e.name)).toEqual(["installed-board"]);
   });
 
   it("refuses a listed dependency that is not installed, naming it", () => {

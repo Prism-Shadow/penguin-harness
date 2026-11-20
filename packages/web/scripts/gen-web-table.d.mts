@@ -13,6 +13,8 @@ export function pluginWebEntries(
   options?: { pluginsDir?: string | null },
 ): PluginWebSource[];
 
+export function separateProjects(entries: readonly PluginWebSource[]): PluginWebSource[];
+
 export function pluginWebModuleSource(entries: readonly PluginWebSource[]): string;
 
 export function writePluginWebModules(
