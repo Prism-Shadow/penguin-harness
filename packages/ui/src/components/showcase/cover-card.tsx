@@ -1,10 +1,18 @@
 /**
  * A cover card: one thing in a showcase grid, led by its cover — a plugin in the market, in the
- * Web App and on the public site alike. Under the cover: the title on one line, the description
- * on two (the box holds two lines whether the text fills them or not, so a row of cards lines
- * up), then a foot: the tag line across the card's width, and under it the facts with the
- * card's controls at the line's end. The tag line never shares a line with the controls, so two
- * or three controls never squeeze it into wrapping and the feet of one grid row line up.
+ * Web App and on the public site alike. Under the cover: the title on one line — and, in a grid
+ * that gathers several sources, the card's own (`origin`: the machine it came from) on one line
+ * under it — the description on two (the box holds two lines whether the text fills them or not,
+ * so a row of cards lines up), then a foot: the tag line across the card's width, and under it
+ * the facts with the card's controls at the line's end. The tag line never shares a line with
+ * the controls, so two or three controls never squeeze it into wrapping and the feet of one grid
+ * row line up.
+ *
+ * Two optional parts sit outside that flow. `version` is a small chip at the card's top end
+ * corner, over the cover. `bar` is a row of text actions across the card's whole width under
+ * everything else, in equal columns split by a line (the Web App's market: install and quick
+ * start), each with an optional second line (`note`) and a hover sentence (`hint`); a disabled
+ * one stays in place in muted ink. In the list layout a card with a bar keeps it under its row.
  *
  * The cover, the title and the description are one opener — a link when the host gives an
  * `href` (the public site, where the detail is a page), a button otherwise (the Web App, where
@@ -20,12 +28,29 @@
  */
 import { useEffect, useState, type HTMLAttributes, type MouseEvent, type ReactNode } from "react";
 
+/** One of a cover card's bar actions. */
+export interface CoverCardBarAction {
+  key: string;
+  label: string;
+  /** A second, smaller line under the label (who has it, where it is installed). */
+  note?: string | undefined;
+  /** The sentence on hover. */
+  hint?: string | undefined;
+  disabled?: boolean | undefined;
+  onClick?: (() => void) | undefined;
+}
+
 export interface CoverCardProps extends Omit<HTMLAttributes<HTMLElement>, "title"> {
   /** The card's cover (`Cover`, at its thumbnail rendition). */
   cover: ReactNode;
   title: string;
   /** The id behind a display name, on the title's hover. */
   titleHint?: string;
+  /**
+   * Where the thing comes from, when the grid gathers several sources (the market across a
+   * Project's machines: the machine's name). Part of the opener, so its accessible name says it.
+   */
+  origin?: string;
   description: string;
   /** The tag line's items, keyed. Empty or omitted: no line. */
   tags?: ReactNode[];
@@ -33,6 +58,10 @@ export interface CoverCardProps extends Omit<HTMLAttributes<HTMLElement>, "title
   meta?: ReactNode;
   /** The card's controls, keyed, at the end of the facts' line. */
   actions?: ReactNode[];
+  /** The version as the caller writes it (`v1.2.0`), in a chip at the card's top end corner. */
+  version?: string;
+  /** Text actions in a bar across the card's whole width, under everything else. */
+  bar?: readonly CoverCardBarAction[];
   /** Where the detail is, when it is a page; the opener is then a link. */
   href?: string;
   /** Opens the detail: the button's press, or the link's click (the host may route it). */
@@ -45,10 +74,13 @@ export function CoverCard({
   cover,
   title,
   titleHint,
+  origin,
   description,
   tags,
   meta,
   actions,
+  version,
+  bar,
   href,
   onOpen,
   children,
@@ -67,6 +99,7 @@ export function CoverCard({
         >
           {title}
         </span>
+        {origin !== undefined && <span className="showcase-card-origin">{origin}</span>}
         <span className="showcase-card-desc">{description}</span>
       </span>
     </>
@@ -95,6 +128,28 @@ export function CoverCard({
           {hasActions && <div className="showcase-card-actions">{actions}</div>}
         </div>
       )}
+      {bar !== undefined && bar.length > 0 && (
+        <div className="showcase-card-bar">
+          {bar.map((action) => (
+            <button
+              key={action.key}
+              type="button"
+              disabled={action.disabled}
+              // The card's title ends the name: several cards' "Install" are told apart.
+              aria-label={[action.label, action.note, title].filter(Boolean).join(" · ")}
+              {...(action.hint !== undefined
+                ? { "data-tooltip": action.hint, "data-tooltip-content": "text" }
+                : {})}
+              onClick={action.onClick}
+            >
+              {action.label}
+              {action.note && <small>{action.note}</small>}
+            </button>
+          ))}
+        </div>
+      )}
+      {/* After the opener, so it paints over the cover, which is positioned itself. */}
+      {version !== undefined && <span className="showcase-card-version">{version}</span>}
       {children}
     </article>
   );

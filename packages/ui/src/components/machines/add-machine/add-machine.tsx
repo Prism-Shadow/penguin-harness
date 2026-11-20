@@ -34,8 +34,8 @@ export interface AddMachineShellProps<K extends string = string> {
   onTab: (tab: K) => void;
   /** The active tab's panel. */
   children: ReactNode;
-  /** Why the last Add did not go through; null otherwise. */
-  error?: string | null;
+  /** Why the last Add did not go through (its words, and 「[报告问题]」 for a failure); null otherwise. */
+  error?: ReactNode;
 }
 
 export function AddMachineShell<K extends string>({

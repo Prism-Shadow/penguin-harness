@@ -15,8 +15,10 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import {
   MessageBubble,
+  ReportIssueAction,
   TextAction,
   TransferProgress,
+  reportFor,
   useElapsedPast,
 } from "@prismshadow/penguin-ui";
 import { elidedRecordsOf } from "../../lib/amsp/stream-model";
@@ -46,10 +48,18 @@ export function ElidedBodyNote({ item }: { item: ToolCallItem | ThinkingItem }) 
   const past = useElapsedPast(load !== undefined ? since : undefined, QUIET_MS);
   const words = S.chat.historyTransfer;
   if (load !== undefined && load.error !== null) {
+    const report = reportFor(load.cause, {
+      what: "the full content of a folded value could not be loaded",
+    });
     return (
       <MessageBubble
         variant="notice"
-        actions={<TextAction onClick={() => bodies?.load(item)}>{S.common.retry}</TextAction>}
+        actions={
+          <>
+            <TextAction onClick={() => bodies?.load(item)}>{S.common.retry}</TextAction>
+            {report !== null && <ReportIssueAction report={report} />}
+          </>
+        }
       >
         {words.bodyFailed(load.error)}
       </MessageBubble>

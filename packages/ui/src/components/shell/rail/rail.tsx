@@ -10,7 +10,8 @@
  * second, slower hint under the first. A selected entry (`active`) takes the column's selected
  * wash; a toggle (`pressed`) takes it while on. An entry with nowhere to go keeps its place,
  * muted, with nothing to click or tab to. A router's link draws a link entry through
- * `renderLink`, as a `NavRow` does.
+ * `renderLink`, as a `NavRow` does. The column's primary action (New chat) is marked `primary`,
+ * as its `NavRow` is on the pinned sidebar, and carries the `ui-action` hook.
  */
 import type { ReactNode, Ref } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
@@ -78,6 +79,8 @@ export interface RailItemProps {
   pressed?: boolean;
   /** Nowhere to go right now: muted, no hover fill, not focusable. */
   disabled?: boolean;
+  /** The column's primary action (New chat): a theme may draw it as its hero button. */
+  primary?: boolean;
   /** A mark on the entry's corner: an update dot, a count. */
   badge?: ReactNode;
   /** A link to this address instead of a button. */
@@ -96,13 +99,15 @@ export function RailItem({
   active = false,
   pressed,
   disabled = false,
+  primary = false,
   badge,
   href,
   renderLink,
   onClick,
   className,
 }: RailItemProps) {
-  const classes = railItemClass({ active: active || pressed === true, disabled });
+  // ui-action: the column's primary action, which a theme may draw as its hero button.
+  const classes = `${railItemClass({ active: active || pressed === true, disabled })}${primary ? " ui-action" : ""}`;
   const mark = (
     <>
       <GlyphIcon d={glyph} size={ICON_SIZE.sectionMark} />

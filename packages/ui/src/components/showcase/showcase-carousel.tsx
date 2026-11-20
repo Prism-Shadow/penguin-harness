@@ -1,7 +1,9 @@
 /**
  * The selected carousel: the head of a showcase. One slide at a time is the header post — its
  * cover large, beside it its name, its one line, a short description and its actions — and under
- * it a rail of every slide's thumbnail, the one on show marked.
+ * it a rail of every slide's thumbnail, the one on show marked. With `navigation="controls"`
+ * the rail gives way to the slide's place in the count ("2 / 5") beside the same controls, and
+ * no slide but the one on show is mounted, so no other cover loads before its turn.
  *
  * It moves on by itself every `intervalMs`, and stops whenever the reader would lose their
  * place: while the pointer is over it, while its tab is in the background, once keyboard focus

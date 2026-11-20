@@ -17,10 +17,10 @@ async function openPaged(page, { width = 1280, height = 800 } = {}) {
   await page.getByRole("button", { name: "Open settings" }).click();
   const dialog = page.getByRole("dialog", { name: "Settings" });
   await expect(dialog.getByRole("listitem")).toHaveCount(24);
-  // The dialog rises into place as it opens: where its rail sits is read off the resting dialog.
-  await page.evaluate(() =>
-    Promise.all(
-      document
+  // Measure the resting dialog. Moving focus into it can cancel a transition on the opener.
+  await dialog.evaluate((element) =>
+    Promise.allSettled(
+      element
         .getAnimations()
         .filter((a) => a.effect?.getTiming().iterations !== Infinity)
         .map((a) => a.finished),

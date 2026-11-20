@@ -14,6 +14,8 @@ export interface PluginText {
     linkDesc: string;
     /** `link --overwrite`: replace the name's installed package or earlier link. */
     linkOverwriteOpt: string;
+    /** `link --force`: replace a name the build ships (the build's copy returns when the link is removed). */
+    linkForceOpt: string;
     removeDesc: string;
     colName(): string;
     colKind(): string;
@@ -81,6 +83,8 @@ export const pluginEn: PluginText = {
     linkDesc:
       "Link a local plugin package directory into the server's plugin prefix: the directory stays where it is and the server loads it in place, and the Plugins page shows it with a link mark. The directory must be a built plugin package",
     linkOverwriteOpt: "Replace the name's installed package or earlier link",
+    linkForceOpt:
+      "Replace a package the build ships (the build's own copy returns when the link is removed)",
     removeDesc: "Remove a plugin from the Project, and from the server once nothing else lists it",
     colName: () => "PLUGIN",
     colKind: () => "KIND",
@@ -137,6 +141,7 @@ export const pluginZh: PluginText = {
     linkDesc:
       "把本机的插件包目录链接进服务端的插件前缀：目录留在原地，服务端就地装载，插件页显示它并标记 link。目录必须是构建过的插件包",
     linkOverwriteOpt: "替换该名字已安装的包或先前的链接",
+    linkForceOpt: "替换随构建发行的包（移除链接后构建自带的副本即恢复生效）",
     removeDesc: "从 Project 中移除插件；没有其他 Project 使用时一并从服务端删除",
     colName: () => "插件",
     colKind: () => "类型",

@@ -59,17 +59,27 @@ export function compactionShortOfRoom(
   );
 }
 
+/** The Session's latest compaction when a refusal forced it. */
+export interface RefusalHandoff {
+  /** Its begin time, which the live stream and the Trace agree on: what a dismissal is keyed by. */
+  occurrence: string;
+  /** The compaction row the refusal forced; its error pair is the refused request's. */
+  item: CompactionItem;
+}
+
 /**
- * An id for the Session's latest compaction row when a refusal forced it (a degraded end with
- * `rejected`): its begin time, which the live stream and the Trace agree on. Null otherwise —
- * so any later compaction, ended any other way, takes the occurrence down.
+ * The Session's latest compaction row when a refusal forced it (a degraded end with `rejected`).
+ * Null otherwise — so any later compaction, ended any other way, takes it down.
  */
-export function refusalHandoffOccurrence(items: readonly ChatItem[]): string | null {
+export function refusalHandoff(items: readonly ChatItem[]): RefusalHandoff | null {
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i]!;
     if (item.kind !== "compaction") continue;
     if (!compactionDegraded(item) || item.errorCode !== "rejected") return null;
-    return item.beginTsMs !== undefined ? String(item.beginTsMs) : `#${item.id}`;
+    return {
+      occurrence: item.beginTsMs !== undefined ? String(item.beginTsMs) : `#${item.id}`,
+      item,
+    };
   }
   return null;
 }

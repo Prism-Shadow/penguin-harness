@@ -19,6 +19,7 @@
  *   - Silent failure (logged): the fallback stays in place, and while the stored title
  *     still equals it the next Task start retries the LLM request.
  */
+import type { UsageContext, UsageRecording } from "@prismshadow/penguin-library-observability";
 import {
   emptyTokenCounts,
   matchAttachedFileLine,
@@ -28,13 +29,11 @@ import {
   tokenUsage,
   truncateTitle,
 } from "@prismshadow/penguin-core";
-import type { ServerEvent } from "../api/types.js";
+import type { ServerEvent } from "@prismshadow/penguin-library-project";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
 import type { RuntimeSession } from "./session-manager.js";
-import type { UsageContext } from "./usage-recorder.js";
-import type { UsageRecording } from "../mechanisms/observability.js";
-import type { SessionIndex } from "../mechanisms/sessions.js";
+import type { SessionIndex } from "@prismshadow/penguin-library-session";
 
 export interface TitleGeneratorDeps {
   sessions: SessionIndex;
