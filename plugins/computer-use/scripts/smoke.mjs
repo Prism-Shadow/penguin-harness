@@ -16,8 +16,8 @@
  *   darwin   commands that need no Accessibility grant, and snapshot answering; where the
  *            runner has granted Accessibility, Calculator: launch, a bundle ID refused, snapshot,
  *            click, screenshot
- *   all      status, and the policy refusals (unscoped, launch arguments, an unlisted window,
- *            physical input)
+ *   all      status, and the policy refusals (unscoped, launch arguments, a launch by path, an
+ *            unlisted window, physical input)
  *
  * Prints one line per check and exits 1 when any failed.
  */
@@ -118,6 +118,14 @@ check(
   "launch with arguments is refused",
   launchArgs.code === 1 && /--arg/.test(launchArgs.stderr),
   launchArgs.brief,
+);
+// A program written to disk would otherwise run outside every sandbox.
+const payload = path.join(os.tmpdir(), process.platform === "win32" ? "payload.cmd" : "payload.sh");
+const launchPath = await computer(["launch", payload]);
+check(
+  "launch by a path is refused",
+  launchPath.code === 1 && /launch takes a plain app name/.test(launchPath.stderr),
+  launchPath.brief,
 );
 const ghostWindow = await computer(["minimize", "--window-id", "w-no-such-window"]);
 check(

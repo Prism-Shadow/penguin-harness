@@ -182,6 +182,76 @@ async function selfTargetRefusal(
   };
 }
 
+/** The window ids a reply names: a snapshot's window, an action's window surfaces. */
+function windowIdsOf(data: unknown): string[] {
+  if (data === null || typeof data !== "object") return [];
+  const d = data as {
+    window?: { id?: unknown };
+    surfaces?: Array<{ id?: unknown; type?: unknown }>;
+  };
+  const ids: string[] = [];
+  if (typeof d.window?.id === "string") ids.push(d.window.id);
+  for (const s of Array.isArray(d.surfaces) ? d.surfaces : []) {
+    if (s.type === "window" && typeof s.id === "string") ids.push(s.id);
+  }
+  return ids;
+}
+
+/**
+ * The check after a run, on what agent-desktop says it acted on: the refusal, or null to keep
+ * the reply.
+ *
+ * agent-desktop resolves `--app` again after the check before the run, so the window it read or
+ * acted on is checked once more: each window id the reply names that was not already checked is
+ * mapped to its process through `list-windows`, and a `launch` that attached to a running app is
+ * checked by the pid it reports. A process of PenguinHarness's own tree discards the reply — an
+ * action may already have happened, but its result never reaches the Agent. Only commands that
+ * named a target (and `launch`) are checked; a ref action's refs come from a checked snapshot.
+ * A window that is gone by then cannot be mapped and is let be.
+ */
+async function afterRunRefusal(
+  service: ComputerUseService,
+  choice: Ready,
+  decision: { command: string; targets: readonly Target[] },
+  envelope: Envelope,
+  stateDir: string,
+): Promise<{ code: string; message: string } | null> {
+  if (!envelope.ok) return null;
+  const pids = new Map<number, string>();
+  if (decision.command === "launch") {
+    const pid = (envelope.data as { pid?: unknown } | null)?.pid;
+    if (typeof pid === "number") pids.set(pid, "the app launch reached");
+  }
+  if (decision.targets.length > 0) {
+    const checked = new Set(decision.targets.flatMap((t) => ("windowId" in t ? [t.windowId] : [])));
+    const fresh = windowIdsOf(envelope.data).filter((id) => !checked.has(id));
+    if (fresh.length > 0) {
+      const windows = (await service.run(choice, ["list-windows"], { stateDir, budgetMs: 5_000 }))
+        .envelope;
+      const list = windows?.ok === true && Array.isArray(windows.data) ? windows.data : [];
+      for (const id of fresh) {
+        const w = (list as Array<{ id?: unknown; pid?: unknown }>).find((x) => x.id === id);
+        if (typeof w?.pid === "number") pids.set(w.pid, `window ${id}`);
+      }
+    }
+  }
+  if (pids.size === 0) return null;
+  let own: number[];
+  try {
+    own = await service.selfTree.own([...pids.keys()]);
+  } catch (err) {
+    return {
+      code: "target_unverified",
+      message: `could not read this machine's process table to check what ${decision.command} reached (${err instanceof Error ? err.message : String(err)}), so its result was discarded`,
+    };
+  }
+  if (own.length === 0) return null;
+  return {
+    code: "policy_refused",
+    message: `${pids.get(own[0]!)} turned out to be PenguinHarness itself (process ${own[0]}): Computer Use never operates PenguinHarness's own windows or processes, so the result was discarded`,
+  };
+}
+
 /** The text a plan sends on stdin, read from the file the terminal sent for `--text-file`. */
 function stdinOf(plan: RunPlan, io: Io): { text?: Buffer | string; error?: string } {
   if (plan.stdin === undefined) return {};
@@ -338,6 +408,13 @@ export async function handleComputer(
     }
     budgetMs = withText;
   }
+  let argv = decision.argv;
+  if (decision.launch !== undefined) {
+    const target = await service.launchTarget(decision.launch.app);
+    if (!target.ok)
+      return fail(io, "policy_refused", `launch takes a plain app name: ${target.message}`);
+    argv = [...argv, target.app];
+  }
   const stateDir = await stateDirFor(service.root, callerOf(io));
   const refusal = await selfTargetRefusal(service, choice, decision.targets, stateDir);
   if (refusal !== null) return fail(io, refusal.code, refusal.message);
@@ -345,7 +422,6 @@ export async function handleComputer(
   // launch gets a state directory of its own, holding no Session's refs.
   const runDir = decision.command === "launch" ? await launchDirOf(service.root) : stateDir;
   let shot: string | null = null;
-  let argv = decision.argv;
   if (decision.screenshot !== undefined) {
     const dir = tmpDirOf(service.root);
     await mkdirPrivate(service.root, dir);
@@ -360,6 +436,8 @@ export async function handleComputer(
     });
     const envelope = reportRun(io, out, decision.plain);
     if (envelope === null) return;
+    const after = await afterRunRefusal(service, choice, decision, envelope, stateDir);
+    if (after !== null) return fail(io, after.code, after.message);
     if (shot !== null && envelope.ok && decision.screenshot !== undefined) {
       const data = await fs.readFile(shot);
       io.output?.({ name: decision.screenshot.name, mimeType: "image/png", data });

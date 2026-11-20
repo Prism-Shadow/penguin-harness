@@ -13,6 +13,7 @@ For websites, use the [Built-in Browser](/builtin-browser) instead.
 - It runs outside the agent sandbox: once it is on, an agent can do what that desktop lets it do. Each `penguin computer` command is still a shell command of the agent's, under its approval mode.
 - Installing the plugin and its settings are for administrators.
 - **Who may use it.** By default only administrators, and agents in a conversation an administrator drives, may run `penguin computer`; the Project must also have the plugin enabled on this server. On a single-user desktop you are the administrator, so your agents can use it. An administrator can turn on **Allow members** on the card — that hands every member of a Project with the plugin control of this machine's desktop session, which is as much as letting them run programs on it. Everyone else's commands are refused: `admin_only` when members are not allowed, `plugin_not_enabled` when the Project has not enabled the plugin.
+- **How an agent counts.** An agent's shell holds the server's local API token, which stands for the administrator. For `penguin computer` the server instead counts the agent as the person who last started a run in its conversation (a scheduled run counts as the schedule's creator). An agent's call that names no conversation is refused with `session_required`, and a conversation with nobody recorded — one only the API or the local token has driven — with `driver_unknown`. This holds without exception for people signing in; for agents it narrows the token they hold, but it is not a boundary until each conversation gets a credential of its own: a program running outside the sandbox as the server's user could still sign in by other means.
 
 > **Do not leave the Web App open on this desktop while an agent uses Computer Use.** An agent with Computer Use can operate any window on this desktop, including a browser tab showing the PenguinHarness Web App, where it could approve its own requests or change settings. Only the desktop app's own windows are protected.
 
@@ -57,9 +58,19 @@ Every command that reads or acts on a window must name its app, so an agent neve
 | **Allow reading the clipboard** | `clipboard-get`: whatever was last copied, which may be a password. |
 | **Allow reading notifications** | `list-notifications`: notifications from every app. |
 
-All three are off by default, and so is **Allow members** (see [Before you begin](#before-you-begin)). Never offered at all: agent-desktop's sandboxes, MCP server, cursor overlay, sessions and traces, acting on notifications, debug captures, and launching an app with arguments, an environment or a working directory (`launch` takes an app's name only, so it cannot open a debugging port or run a script either).
+All three are off by default, and so is **Allow members** (see [Before you begin](#before-you-begin)). Never offered at all: agent-desktop's sandboxes, MCP server, cursor overlay, sessions and traces, acting on notifications, debug captures, and launching an app with arguments, an environment or a working directory.
 
-An agent names each app exactly as `penguin computer list-apps` prints it; a bundle ID, a part of a name or a window that `list-windows` does not show is refused, so the plugin always knows which process a command reaches.
+`launch` takes an installed app's plain name, never a path, a script or a bundle given by name, so it cannot run a program an agent wrote to disk or open a debugging port:
+
+| System | What `launch` accepts |
+| --- | --- |
+| Linux | The id, name or command of a desktop entry in a system applications directory (`/usr/share/applications` and the others of `XDG_DATA_DIRS`, owned by root), such as `gnome-calculator`, `Calculator` or `org.gnome.Calculator`. Entries in your own folders, hidden ones and those that run in a terminal are not offered. |
+| Windows | A program in System32 or the Windows directory, such as `notepad` or `notepad.exe`. |
+| macOS | An app's name or bundle ID, such as `Calculator` or `com.apple.calculator`. macOS resolves the name itself, which can include an app in a folder you can write, such as `~/Applications`. |
+
+Typing into a terminal app that is already open remains possible; do not leave one open for an agent you do not trust with it.
+
+An agent names each app exactly as `penguin computer list-apps` prints it; a bundle ID, a part of a name or a window that `list-windows` does not show is refused, so the plugin always knows which process a command reaches. After a command runs, the window agent-desktop reports it read or acted on is checked once more, and a reply from PenguinHarness's own window is discarded.
 
 To stop all of it, turn off the **Computer Use** switch on the card: every command is then refused.
 

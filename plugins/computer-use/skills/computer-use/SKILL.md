@@ -1,7 +1,7 @@
 ---
 name: computer-use
 description: "Operate the desktop apps on the user's computer from the shell with `penguin computer`: read an app's window as an accessibility tree, click, type, select, toggle and wait through each element's accessibility API, take window screenshots, and launch or quit apps, on macOS, Windows and Linux. Use it for any task in a desktop app (not a website) that the user asks you to do on their computer, such as working a calculator, filling a native form, or reading a value from a settings window."
-version: 2026.11.20.1
+version: 2026.11.20.2
 ---
 
 # Computer use
@@ -14,10 +14,12 @@ It runs as the user's own account, outside your sandbox, on the user's real desk
 
 If the user's message only names this skill without a task, ask what they want done on their computer.
 
-Who may use it: by default only administrators of this server, and Agents in a conversation an administrator drives; an administrator can allow every member with **Allow members**. The Project must also have the plugin enabled on this server. Otherwise every command refuses with one line you pass on to the user:
+Who may use it: by default only administrators of this server, and Agents in a conversation an administrator drives; an administrator can allow every member with **Allow members**. You count as the person who last started a run in this conversation (a scheduled run: the schedule's creator), so run `penguin computer` from this conversation's shell as it is — its `PENGUIN_SESSION_ID` names the conversation. The Project must also have the plugin enabled on this server. Otherwise every command refuses with one line you pass on to the user:
 
 - `error: admin_only: …` — the conversation is driven by someone who is not an administrator, and members are not allowed. An administrator can turn on **Allow members** in **Settings → Plugins → Computer Use**.
 - an error naming `plugin_not_enabled` — this Project has not enabled Computer Use on this server. Installing the plugin on one of the Project's Agents enables it (or asks an administrator to).
+- an error naming `session_required` — the command did not name this conversation (`PENGUIN_SESSION_ID` was unset or removed). Run it from your own shell without changing that variable.
+- an error naming `driver_unknown` — nobody is recorded as having started a run in this conversation (only the API or a script drove it), or that person can no longer open the Project. Tell the user; a person starting a run here fixes it.
 
 Then check that it can run:
 
@@ -104,7 +106,7 @@ The PNG is saved in the current directory (or `--out-dir`), never over an existi
 
 Ask the user before each of these, saying what you will do:
 
-- `launch "<App>"` starts an app by name (`--activate` waits for its window, `--timeout` bounds it). It takes no arguments, environment or working directory: `--arg`, `--env` and `--cwd` are refused, so open a document from inside the app. Start apps this way, not from your shell: an app your shell started belongs to PenguinHarness's own processes and is refused as a target.
+- `launch "<App>"` starts an installed app by its plain name (`--activate` waits for its window, `--timeout` bounds it). It takes no arguments, environment or working directory — `--arg`, `--env` and `--cwd` are refused, so open a document from inside the app — and never a path or a script (`/…`, `./…`, `~/…`, `C:\…`, `….sh`, `….app`, `….desktop`). What a name is depends on the system: on Linux the id, name or command of an installed desktop entry (`gnome-calculator`, `Calculator`, `org.gnome.Calculator`); on Windows a program in System32 (`notepad`); on macOS an app's name or bundle ID (`Calculator`). The name you launch by is not always the name `list-apps` prints afterwards: list again and use that one. Start apps this way, not from your shell: an app your shell started belongs to PenguinHarness's own processes and is refused as a target.
 - `close-app "<App>"` quits an app gracefully, letting it ask to save. `--force` is refused.
 - `focus-window`, `move-window`, `resize-window`, `minimize`, `maximize`, `restore` with `--app` or `--window-id` (from `list-windows`).
 - `clipboard-set "<text>"` and `clipboard-clear` replace what the user copied.
@@ -151,7 +153,7 @@ agent-desktop's codes (in `error.code`):
 | `PLATFORM_NOT_SUPPORTED` | Not on this OS or session | Another approach, or tell the user |
 | `INTERNAL` | Unexpected OS failure | Retry once only if `retry` is `safe` |
 
-This plugin's own errors are one line on stderr, `error: <code>: <message>`: `policy_refused` (see above; also a name `list-apps` does not print or a window `list-windows` does not show), `admin_only`, `disabled`, `installing`, `install_failed`, `not_installed`, `unsupported` (see Before you start), `target_unverified` (the running apps could not be listed to check the target; retry), `timeout` (agent-desktop did not answer within its own time), `unknown_command`, `invalid_argument` (including combined short options such as `-vw`: give each on its own), `invalid_batch` and `too_long` (exit code 2).
+This plugin's own errors are one line on stderr, `error: <code>: <message>`: `policy_refused` (see above; also a name `list-apps` does not print, a window `list-windows` does not show, a `launch` name that is a path or not an installed app, and a reply that turned out to come from PenguinHarness's own window, which is discarded), `admin_only`, `session_required`, `driver_unknown`, `disabled`, `installing`, `install_failed`, `not_installed`, `unsupported` (see Before you start), `target_unverified` (the running apps could not be listed to check the target; retry), `timeout` (agent-desktop did not answer within its own time), `unknown_command`, `invalid_argument` (including combined short options such as `-vw`: give each on its own), `invalid_batch` and `too_long` (exit code 2).
 
 ## More
 

@@ -103,7 +103,7 @@ penguin computer snapshot --window-id w-5678 -i
 Ask the user first.
 
 ```bash
-penguin computer launch "Calculator" --activate     # Windows: "calc.exe"; Linux: "gnome-calculator"
+penguin computer launch "Calculator" --activate     # Windows: "calc"; Linux: "gnome-calculator"
 penguin computer list-apps                          # the exact name to use with --app
 penguin computer snapshot --app "Calculator" -i --compact
 penguin computer close-app "Calculator"

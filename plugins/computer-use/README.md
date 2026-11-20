@@ -18,7 +18,7 @@ A machine that cannot reach the npm registry can point **agent-desktop program p
 
 ## Who may use it
 
-By default only administrators, and Agents in a conversation an administrator drives; **Allow members** on the card opens it to every member of a Project that has the plugin enabled, which hands them control of this machine's desktop session. A Project must have the plugin enabled on the server (installing it on one of the Project's Agents does that).
+By default only administrators, and Agents in a conversation an administrator drives; **Allow members** on the card opens it to every member of a Project that has the plugin enabled, which hands them control of this machine's desktop session. A Project must have the plugin enabled on the server (installing it on one of the Project's Agents does that). An Agent counts as the person who last started a run in its conversation (the command declares `tokenCaller: "session-driver"`, a platform rule of plugin commands); its call must name the conversation. That holds for people without exception; for Agents it narrows the local API token they hold and is not a boundary until each conversation has a credential of its own.
 
 **Do not leave the Web App open on this desktop while an Agent uses Computer Use**: an Agent can operate any window on this desktop, including a browser tab showing the PenguinHarness Web App, where it could approve its own requests or change settings. Only the desktop app's own windows are protected.
 
@@ -26,7 +26,7 @@ By default only administrators, and Agents in a conversation an administrator dr
 
 By default: read windows (`snapshot`, `find`, `get`, `is`, `wait`, `screenshot`), act on elements semantically (`click`, `type`, `set-value`, `select`, `toggle`, `check`, `expand`, `scroll-to` …), manage windows, launch and quit apps, write the clipboard, and press keys in a named app. The Skill has the Agent ask you before it launches, quits, moves windows or writes the clipboard, and before anything that pays, sends or deletes.
 
-Off until an administrator allows it on the card: physical input (the real mouse and keyboard), reading the clipboard, reading notifications. Never: operating PenguinHarness's own windows, agent-desktop's sandboxes, MCP server, cursor overlay, sessions and traces, notification actions, debug captures, and `launch` with `--cdp`, `--arg`, `--env` or `--cwd`. Apps are named exactly as `list-apps` prints them.
+Off until an administrator allows it on the card: physical input (the real mouse and keyboard), reading the clipboard, reading notifications. Never: operating PenguinHarness's own windows, agent-desktop's sandboxes, MCP server, cursor overlay, sessions and traces, notification actions, debug captures, and `launch` with `--cdp`, `--arg`, `--env` or `--cwd`, or with a path or a script: `launch` takes an installed app's plain name (on Linux a system desktop entry's id, name or command; on Windows a program in System32; on macOS an app's name or bundle ID). Apps are named exactly as `list-apps` prints them, and a reply that came from PenguinHarness's own window is discarded.
 
 Removing the plugin leaves its data in the server's data root: `cache/computer-use/` (agent-desktop, about 16 MB) and `computer-use/state/` (each conversation's snapshots, removed after 14 days unused). Delete them by hand if you want them gone.
 

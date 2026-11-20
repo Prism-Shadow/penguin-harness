@@ -65,6 +65,15 @@ describe("what runs as typed", () => {
     expect(run(argv).argv[0]).toBe(argv[0]);
   });
 
+  it("launch hands its app name to the caller to check, off the command line", () => {
+    expect(run(["launch", "Calculator", "--activate"])).toMatchObject({
+      argv: ["launch", "--activate"],
+      launch: { app: "Calculator" },
+    });
+    expect(decide(["launch"], OFF)).toMatchObject({ kind: "usage", code: "invalid_argument" });
+    expect(decide(["launch", "a", "b"], OFF)).toMatchObject({ kind: "usage" });
+  });
+
   it("a window is named by its id, which is checked like an app", () => {
     expect(run(["focus-window", "--window-id", "w-12"]).targets).toEqual([{ windowId: "w-12" }]);
   });

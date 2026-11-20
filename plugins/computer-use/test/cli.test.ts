@@ -13,7 +13,11 @@
  * - Given a member, nothing runs unless an administrator allowed members; an administrator (and an
  *   Agent working for one) runs it.
  * - Given --text-file text that would take past the limit to type, nothing runs.
- * - Given launch, it runs with a state directory of its own, never a Session's.
+ * - Given launch, it runs with a state directory of its own, never a Session's; given a path or a
+ *   script instead of an app's name, or on Linux a name no system desktop entry has, nothing runs,
+ *   and on Linux agent-desktop is handed the entry's own file.
+ * - Given a reply that names a window of PenguinHarness's own (agent-desktop resolved the app
+ *   again after the check), or a launch that reached PenguinHarness, the reply is discarded.
  * - Given `status`, agent-desktop's status comes back with the plugin's own state, and exit code 1
  *   when Computer Use cannot run.
  * - Given the plugin switched off, every command but status is refused.
@@ -29,7 +33,15 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { tmpDirOf } from "../src/state.js";
-import { err, fakeAgentDesktop, ok, PNG, runComputer, testService } from "./helpers.js";
+import {
+  desktopEntries,
+  err,
+  fakeAgentDesktop,
+  ok,
+  PNG,
+  runComputer,
+  testService,
+} from "./helpers.js";
 
 const posix = process.platform !== "win32";
 
@@ -178,11 +190,78 @@ describe("penguin computer", () => {
 
   it("launches with a state directory of its own, never the Session's", async () => {
     const fake = await fakeAgentDesktop();
-    const t = await testService({ program: fake.program });
-    await runComputer(t, ["launch", "gedit"]);
+    const t = await testService({ program: fake.program, platform: "win32" });
+    await runComputer(t, ["launch", "notepad"]);
     expect(fake.calls()[0]!.env.AGENT_DESKTOP_HOME).toBe(
       path.join(t.root, "computer-use", "state", "launch"),
     );
+  });
+
+  it("launches only a plain app name: a path or a script never reaches agent-desktop", async () => {
+    const fake = await fakeAgentDesktop();
+    for (const platform of ["linux", "win32", "darwin"] as const) {
+      const t = await testService({ program: fake.program, platform });
+      for (const app of [
+        "/tmp/payload.sh",
+        "payload.sh",
+        "~/bin/x",
+        "./x",
+        "C:\\x\\y.exe",
+        "Evil.app",
+      ]) {
+        const run = await runComputer(t, ["launch", app]);
+        expect(run.exitCode, `${platform} ${app}`).toBe(1);
+        expect(run.stderr).toMatch(/^error: policy_refused: launch takes a plain app name: /);
+      }
+    }
+    expect(fake.calls()).toEqual([]);
+  });
+
+  it("on Linux, launches an installed app by its desktop entry, handing agent-desktop the entry", async () => {
+    const fake = await fakeAgentDesktop();
+    const apps = await desktopEntries([
+      { id: "org.gnome.Calculator", name: "Calculator", exec: "gnome-calculator" },
+    ]);
+    const t = await testService({ program: fake.program, platform: "linux", launch: apps });
+    const entry = path.join(apps.dir, "applications", "org.gnome.Calculator.desktop");
+    for (const name of ["gnome-calculator", "Calculator", "org.gnome.Calculator"]) {
+      expect((await runComputer(t, ["launch", name, "--activate"])).exitCode).toBe(0);
+    }
+    expect(fake.calls().map((c) => c.argv)).toEqual([
+      ["launch", "--activate", entry],
+      ["launch", "--activate", entry],
+      ["launch", "--activate", entry],
+    ]);
+    const unknown = await runComputer(t, ["launch", "payload"]);
+    expect(unknown.stderr).toMatch(
+      /^error: policy_refused: launch takes a plain app name: no installed app is named "payload": on Linux/,
+    );
+    expect(fake.calls()).toHaveLength(3);
+  });
+
+  it("discards a reply that came from PenguinHarness's own window, or a launch that reached it", async () => {
+    // agent-desktop resolved Gedit to a window of PenguinHarness after the check passed.
+    const fake = await fakeAgentDesktop({
+      "list-apps": { stdout: ok("list-apps", { apps: [{ name: "Gedit", pid: 800 }] }) },
+      snapshot: { stdout: ok("snapshot", { app: "Gedit", window: { id: "w-own" }, tree: {} }) },
+      "list-windows": { stdout: ok("list-windows", [{ id: "w-own", pid: 700 }]) },
+      launch: { stdout: ok("launch", { app: "notepad.exe", pid: 700 }) },
+    });
+    const t = await testService({
+      program: fake.program,
+      ownPids: [500],
+      parents: { 700: 500, 800: 1 },
+      platform: "win32",
+    });
+    const snap = await runComputer(t, ["snapshot", "--app", "Gedit"]);
+    expect(snap.exitCode).toBe(1);
+    expect(snap.stdout).toBe("");
+    expect(snap.stderr).toMatch(
+      /^error: policy_refused: window w-own turned out to be PenguinHarness itself \(process 700\).*the result was discarded/,
+    );
+    const launched = await runComputer(t, ["launch", "notepad"]);
+    expect(launched.stdout).toBe("");
+    expect(launched.stderr).toMatch(/turned out to be PenguinHarness itself \(process 700\)/);
   });
 
   it("answers status with agent-desktop's status and the plugin's own state", async () => {

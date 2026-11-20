@@ -149,6 +149,8 @@ export async function testService(opts: {
   settings?: Record<string, unknown>;
   ownPids?: number[];
   parents?: Record<number, number>;
+  platform?: NodeJS.Platform;
+  launch?: { dataDirs?: string[]; trusted?: (file: string) => Promise<boolean> };
 }) {
   const root = await tempDir();
   const ownPids = opts.ownPids ?? [];
@@ -161,10 +163,30 @@ export async function testService(opts: {
     env: { ...process.env, PENGUIN_TEST_SECRET: "sk-not-for-agent-desktop" },
     selfTree: new SelfTree(async () => table, ownPids.length > 0 ? ownPids : [999_999]),
     log: () => {},
+    ...(opts.platform !== undefined ? { platform: opts.platform } : {}),
+    ...(opts.launch !== undefined ? { launch: opts.launch } : {}),
   });
   const reader = settingsReader({ "computer-use": opts.settings ?? {} });
   service.bind(reader);
   return { root, service, probe: new Probe(service), reader };
+}
+
+/**
+ * A system applications directory holding one desktop entry per `entries` item — as
+ * `<dir>/applications/<id>.desktop` — and the lookup options that treat it as the system's.
+ */
+export async function desktopEntries(
+  entries: Array<{ id: string; name: string; exec: string; extra?: string }>,
+) {
+  const dir = await tempDir();
+  await fs.promises.mkdir(path.join(dir, "applications"));
+  for (const e of entries) {
+    await fs.promises.writeFile(
+      path.join(dir, "applications", `${e.id}.desktop`),
+      `[Desktop Entry]\nType=Application\nName=${e.name}\nExec=${e.exec}\n${e.extra ?? ""}`,
+    );
+  }
+  return { dataDirs: [dir], trusted: async () => true, dir };
 }
 
 /** What one run of `penguin computer …` printed, its exit code and the files it handed back. */

@@ -13,6 +13,7 @@ description: 让 Agent 用 penguin computer 查看并操作电脑桌面上的应
 - 它不受 Agent 沙盒约束：打开之后，Agent 能做那个桌面允许它做的事。每条 `penguin computer` 命令仍是 Agent 执行的 shell 命令，照常受审批模式约束。
 - 安装插件与修改其设置由管理员进行。
 - **谁能使用。** 缺省只有管理员，以及由管理员驱动对话的 Agent，可以运行 `penguin computer`；Project 还须在本服务端启用了本插件。在单人使用的桌面上你就是管理员，你的 Agent 可以使用。管理员可以在卡片上打开**允许成员使用**——这等于把这台机器的桌面会话交给已启用本插件的 Project 的所有成员控制，与允许他们在这台机器上运行程序无异。其他人的命令一律被拒绝：未允许成员使用时为 `admin_only`，Project 未启用本插件时为 `plugin_not_enabled`。
+- **Agent 算作谁。** Agent 的 shell 带着服务端的本机 API token，它代表管理员。对 `penguin computer`，服务端改把 Agent 算作最近在其对话中发起运行的人（定时任务的运行算作定时任务的创建者）。没有指明对话的 Agent 调用被拒绝为 `session_required`；对话没有记录任何人（只被 API 或本机 token 驱动过）时被拒绝为 `driver_unknown`。对登录的人，这条规则没有例外；对 Agent，它收窄了 Agent 持有的 token，但在每个对话有自己的凭据之前不是边界：在沙盒之外以服务端用户身份运行的程序，仍可经其他途径登录。
 
 > **Agent 使用电脑操作时，不要在这个桌面上开着 Web App。** 使用电脑操作的 Agent 能操作这个桌面上的任何窗口，包括显示 PenguinHarness Web App 的浏览器标签页，并可能在那里批准自己的请求或修改设置。只有桌面应用自己的窗口受到保护。
 
@@ -57,9 +58,19 @@ description: 让 Agent 用 penguin computer 查看并操作电脑桌面上的应
 | **允许读取剪贴板** | `clipboard-get`：最近复制的内容，可能是密码。 |
 | **允许读取通知** | `list-notifications`：来自所有应用的通知。 |
 
-三项缺省都关闭，**允许成员使用**也是（见上文「开始之前」）。以下一律不提供：agent-desktop 的沙盒、MCP 服务器、光标浮层、会话与追踪、操作通知、调试截图，以及带参数、环境变量或工作目录启动应用（`launch` 只接受应用名，因此也无法打开调试端口或运行脚本）。
+三项缺省都关闭，**允许成员使用**也是（见上文「开始之前」）。以下一律不提供：agent-desktop 的沙盒、MCP 服务器、光标浮层、会话与追踪、操作通知、调试截图，以及带参数、环境变量或工作目录启动应用。
 
-Agent 须按 `penguin computer list-apps` 打印的名称逐字指明应用；bundle ID、名称的一部分，或 `list-windows` 没有列出的窗口一律被拒绝，插件因此总能确定一条命令作用于哪个进程。
+`launch` 只接受已安装应用的名称，从不接受路径、脚本或以文件名给出的应用包，因此无法运行 Agent 写到磁盘上的程序，也无法打开调试端口：
+
+| 系统 | `launch` 接受什么 |
+| --- | --- |
+| Linux | 系统应用目录（`/usr/share/applications` 及 `XDG_DATA_DIRS` 中其余归 root 所有的目录）里某个桌面条目的 id、名称或命令，如 `gnome-calculator`、`Calculator` 或 `org.gnome.Calculator`。你自己目录里的条目、隐藏的条目与在终端中运行的条目不提供。 |
+| Windows | System32 或 Windows 目录中的程序，如 `notepad` 或 `notepad.exe`。 |
+| macOS | 应用的名称或 bundle ID，如 `Calculator` 或 `com.apple.calculator`。名称由 macOS 自己解析，可能包括你可写的文件夹（如 `~/Applications`）中的应用。 |
+
+向已经打开的终端应用输入文字仍然可行；不要为你不放心的 Agent 留着打开的终端。
+
+Agent 须按 `penguin computer list-apps` 打印的名称逐字指明应用；bundle ID、名称的一部分，或 `list-windows` 没有列出的窗口一律被拒绝，插件因此总能确定一条命令作用于哪个进程。命令运行之后，agent-desktop 报告它读取或操作的窗口会再检查一次，来自 PenguinHarness 自身窗口的结果一律丢弃。
 
 要整体停用，关闭卡片上的**电脑操作**开关：此后所有命令都被拒绝。
 

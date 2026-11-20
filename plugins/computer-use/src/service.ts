@@ -19,6 +19,8 @@ import {
   UnsupportedPlatformError,
 } from "./install.js";
 import type { Installed, InstallProgress } from "./install.js";
+import { resolveLaunch, xdgDataDirs } from "./launch-name.js";
+import type { LaunchChoice } from "./launch-name.js";
 import { AGENT_DESKTOP, targetKey } from "./pin.js";
 import type { AgentDesktopPin } from "./pin.js";
 import { runAgentDesktop } from "./runner.js";
@@ -71,6 +73,8 @@ export interface ServiceOptions {
   program?: AgentDesktopProgram;
   /** Linux: the glibc version, or null for none (musl); read from Node's report by default. */
   glibc?: string | null;
+  /** Tests: where `launch` looks for desktop entries, and whether a path counts as the system's. */
+  launch?: { dataDirs?: string[]; trusted?: (file: string) => Promise<boolean> };
 }
 
 /** The oldest glibc agent-desktop's Linux programs run on. */
@@ -119,6 +123,7 @@ export class ComputerUseService {
   private readonly now: () => number;
   private readonly log: (line: string) => void;
   private readonly testProgram: AgentDesktopProgram | undefined;
+  private readonly launchOpts: ServiceOptions["launch"];
   private readers: SettingsReaders | null = null;
   private current: InstallState = { kind: "missing" };
   private installing: Promise<void> | null = null;
@@ -137,6 +142,7 @@ export class ComputerUseService {
     this.now = opts.now ?? Date.now;
     this.log = opts.log ?? ((line) => console.warn(line));
     this.testProgram = opts.program;
+    this.launchOpts = opts.launch;
     const target = targetKey(this.platform, this.arch);
     if (this.pin.targets[target] === undefined) {
       this.current = { kind: "unsupported", target };
@@ -355,6 +361,15 @@ export class ComputerUseService {
   }
 
   /** The environment one run gets: the session variables, the state root, the macOS helper. */
+  /** What `launch <app>` hands agent-desktop on this system, or why it is refused (launch-name.ts). */
+  launchTarget(app: string): Promise<LaunchChoice> {
+    return resolveLaunch(app, {
+      platform: this.platform,
+      dataDirs: this.launchOpts?.dataDirs ?? xdgDataDirs(this.env),
+      ...(this.launchOpts?.trusted !== undefined ? { trusted: this.launchOpts.trusted } : {}),
+    });
+  }
+
   envFor(stateDir: string, helper?: string): Record<string, string> {
     return agentDesktopEnv(this.env, this.platform, {
       AGENT_DESKTOP_HOME: stateDir,

@@ -185,6 +185,7 @@ const probes = new Map<string, Probe>();
         },
         access: "member",
         requiresProjectListing: true,
+        tokenCaller: "session-driver",
         files: { read: ["--text-file"], write: "--out-dir" },
       },
     ],

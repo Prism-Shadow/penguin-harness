@@ -3,8 +3,8 @@
  * default-safe profile of the design (05 「Computer Use」):
  *
  * - Observation and semantic ref actions run. Window management, `launch` (an app's name, no
- *   arguments, environment or working directory), `close-app` and clipboard writes run too; the
- *   Skill has the Agent ask the user first.
+ *   arguments, environment or working directory; the caller checks the name, launch-name.ts),
+ *   `close-app` and clipboard writes run too; the Skill has the Agent ask the user first.
  * - Physical input (`--headed`, the pointer, hover, drag, multi-clicks, focus, the wheel, held
  *   keys) runs only with "Allow physical input"; reading the clipboard and notifications each
  *   have their own switch. All three are off by default.
@@ -48,6 +48,11 @@ export interface RunPlan {
   targets: Target[];
   /** `screenshot`: the name of the file handed back. */
   screenshot?: { name: string };
+  /**
+   * `launch`: the app named, taken off `argv` — the caller checks it (launch-name.ts) and appends
+   * what agent-desktop is given for it.
+   */
+  launch?: { app: string };
   /** The command's own budget, before any text read from a file. */
   budgetMs: number;
   /** Added to the budget per character of text read from a file. */
@@ -449,6 +454,19 @@ export function decide(
       extra.push("--stdin");
     }
   }
+  let launch: RunPlan["launch"];
+  if (command === "launch") {
+    const app = parsed.positionals[0];
+    if (app === undefined || parsed.positionals.length > 1) {
+      return {
+        kind: "usage",
+        code: "invalid_argument",
+        message: "launch takes one app name, such as penguin computer launch Calculator",
+      };
+    }
+    launch = { app };
+    drop.add(0);
+  }
   let screenshot: RunPlan["screenshot"];
   if (command === "screenshot") {
     const given = parsed.positionals[0];
@@ -482,6 +500,7 @@ export function decide(
     ...(stdin !== undefined ? { stdin } : {}),
     targets: outcome.targets,
     ...(screenshot !== undefined ? { screenshot } : {}),
+    ...(launch !== undefined ? { launch } : {}),
     budgetMs: total,
     perCharMs,
   };
