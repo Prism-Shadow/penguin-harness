@@ -2304,11 +2304,14 @@ export const en: GalleryStrings = {
       loading: "Loading: the picture's tone",
       loaded: "Loaded",
       fallback: "Failed: the generated cover",
-      cardView: "Cards",
-      listView: "List",
+      layoutLabel: "Layout",
+      cardView: "Card view",
+      listView: "List view",
       cards: "Cover cards",
       cardsHint:
-        "Short words, overlong words with the machine it came from, a card with tags, facts and two controls, one with none of them, the Web App market's card with its version chip and a bar of two text actions (the second one disabled, its reason on hover), and the placeholder while a list is read.",
+        "Short words, overlong words with the machine it came from, a card with tags, facts and two controls, one with none of them, the Web App market's card with its version chip and a bar of two one-line text actions (the second one disabled, its reason on hover), and the placeholder while a list is read. The icons at the top end switch every grid on this board between cards and the list.",
+      marketCaption:
+        "The Web App market's cards: in the list each is one row — its icon tile, the title over the description, then the install action (Install, or how many Agents have it) and Quick start on the same row — two rows abreast wherever two fit.",
       shortTitle: "Goal Mode",
       shortDescription: "Loop the session on an objective until it is done.",
       longTitle:
@@ -2323,7 +2326,7 @@ export const en: GalleryStrings = {
       barTitle: "Bento Slides",
       barDescription: "From one sentence to a deck ready to present.",
       barInstall: "Install",
-      barInstallNote: "On 2 agents",
+      barInstalledOn: (n: number) => `Installed on ${n} ${n === 1 ? "Agent" : "Agents"}`,
       barQuickHint: "Install it on this agent first",
       tagSelected: "Selected",
       tagCategory: "Office Productivity",

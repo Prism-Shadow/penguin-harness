@@ -36,6 +36,7 @@ export type { ImageIconSource } from "./components/icons/image-icon/image-icon";
 // same modules as the Web App's; site.css carries their sheet and maps it onto the sites' palette.
 export * from "./components/showcase/cover";
 export * from "./components/showcase/cover-card";
+export * from "./components/showcase/showcase-layout-toggle";
 export * from "./components/showcase/carousel-rotation";
 export * from "./components/showcase/showcase-carousel";
 export * from "./components/showcase/product-page";

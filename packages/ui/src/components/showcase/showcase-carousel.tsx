@@ -21,10 +21,10 @@
  * is the caller's; the look is showcase.css, and the carousel is a `ui-showcase` host (hooks.ts).
  */
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { ICON_SIZE } from "../../icon-scale";
 import { usePrefersReducedMotion } from "../../motion/use-reduced-motion";
 import { ICONS } from "../icons/icons";
 import { rotates, stepIndex } from "./carousel-rotation";
+import { ShowcaseMark } from "./showcase-mark";
 
 export interface ShowcaseSlide {
   key: string;
@@ -70,30 +70,6 @@ export interface ShowcaseCarouselProps {
   /** The slide that leads. */
   start?: number;
   className?: string;
-}
-
-/**
- * A control's mark: a registry path as its line drawing alone, on the 24 grid at the line
- * family's weight, at the rung of a glyph alone in an icon button. The public sites do not load
- * the icon sets, so the carousel draws the line set in every theme (as the sites' menu check
- * does).
- */
-function Mark({ d, filled = false }: { d: string; filled?: boolean }) {
-  return (
-    <svg
-      width={ICON_SIZE.iconButton}
-      height={ICON_SIZE.iconButton}
-      viewBox="0 0 24 24"
-      fill={filled ? "currentColor" : "none"}
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d={d} />
-    </svg>
-  );
 }
 
 export function ShowcaseCarousel({
@@ -252,7 +228,7 @@ export function ShowcaseCarousel({
               title={labels.previous}
               onClick={() => setIndex(stepIndex(at, count, -1))}
             >
-              <Mark d={ICONS.chevronLeft} />
+              <ShowcaseMark d={ICONS.chevronLeft} />
             </button>
             <button
               type="button"
@@ -262,7 +238,7 @@ export function ShowcaseCarousel({
               aria-pressed={!playing}
               onClick={() => setPlaying((p) => !p)}
             >
-              {playing ? <Mark d={ICONS.pause} /> : <Mark d={ICONS.play} filled />}
+              {playing ? <ShowcaseMark d={ICONS.pause} /> : <ShowcaseMark d={ICONS.play} filled />}
             </button>
             <button
               type="button"
@@ -271,7 +247,7 @@ export function ShowcaseCarousel({
               title={labels.next}
               onClick={() => setIndex(stepIndex(at, count, 1))}
             >
-              <Mark d={ICONS.chevronRight} />
+              <ShowcaseMark d={ICONS.chevronRight} />
             </button>
           </div>
         </div>
