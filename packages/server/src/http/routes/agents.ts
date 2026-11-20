@@ -147,6 +147,8 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       ...(author !== undefined ? { author } : {}),
       ...(plugins !== undefined ? { plugins } : {}),
       ...(directory !== undefined ? { directory } : {}),
+      // The creator brings the plugins' server modules along (PRFC-0031).
+      actor: { userId: c.var.user.userId, isAdmin: c.var.user.isAdmin },
     });
     const agent: AgentSummary = {
       ...item,
