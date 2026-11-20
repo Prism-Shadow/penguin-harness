@@ -28,6 +28,8 @@ describe("the CLI's interface table", () => {
     const host = table as unknown as Table;
     expect(Object.keys(shipped.modules).length).toBeGreaterThan(0);
     expect(Object.keys(shipped.modules).filter((name) => name in host.modules)).toEqual([]);
-    expect(Object.keys(host.ifaces).filter((key) => key.startsWith("@penguinharness/"))).toEqual([]);
+    expect(Object.keys(host.ifaces).filter((key) => key.startsWith("@penguinharness/"))).toEqual(
+      [],
+    );
   });
 });

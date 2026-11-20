@@ -26,6 +26,8 @@ describe("the platform's interface table", () => {
     const host = table as unknown as Table;
     expect(Object.keys(plugin.modules).length).toBeGreaterThan(0);
     expect(Object.keys(plugin.modules).filter((name) => name in host.modules)).toEqual([]);
-    expect(Object.keys(host.ifaces).filter((key) => key.startsWith("@penguinharness/"))).toEqual([]);
+    expect(Object.keys(host.ifaces).filter((key) => key.startsWith("@penguinharness/"))).toEqual(
+      [],
+    );
   });
 });
