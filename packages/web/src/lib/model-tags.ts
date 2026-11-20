@@ -14,6 +14,7 @@
  * and amber the marks have always worn, and identity is carried by the words in every case —
  * the tone only sorts them at a glance, and never alone says which mark this is.
  */
+import type { ModelCatalogEntry } from "@prismshadow/penguin-server/model-catalog";
 import type { ToneName } from "@prismshadow/penguin-ui";
 import { S } from "./strings";
 import type { DiscountedPrice } from "./model-grouping";
@@ -26,7 +27,7 @@ export const TAG_TONE = {
 } as const satisfies Record<string, ToneName>;
 
 export interface ModelTag {
-  key: "default" | "vision" | "visionModel" | "fastMode" | "free" | "discount";
+  key: "default" | "vision" | "visionModel" | "fastMode" | "free" | "discount" | "offerFrom";
   label: string;
   /** Hover text, for a mark whose word needs a sentence behind it (a discount's terms). */
   title?: string;
@@ -39,8 +40,15 @@ type MarkGroup = keyof typeof TAG_TONE;
 /** A group's tone, as the mark carries it. */
 const toneOf = (group: MarkGroup) => ({ tone: TAG_TONE[group] });
 
+/** JellyToken's initial presets make no image capability claim, even on an older project
+ * row whose missing annotation defaults to true. Hand-added models keep their annotation. */
+export function showsVisionDetails(preset: ModelCatalogEntry | undefined): boolean {
+  return preset?.provider !== "jellytoken" || preset.supportsVision;
+}
+
 /** What a list knows about one model, from which its marks follow. */
 export interface ModelTagFacts {
+  preset: ModelCatalogEntry | undefined;
   /** The Project's default model. */
   isDefault: boolean;
   /** Accepts image input (the effective annotation: unset counts as supported). */
@@ -61,17 +69,27 @@ export interface ModelTagFacts {
  * model is (vision, fast, free) before what it costs today (the discount).
  */
 export function modelTags(facts: ModelTagFacts): ModelTag[] {
-  const { discount } = facts;
+  const { discount, preset } = facts;
+  const showVision = showsVisionDetails(preset);
+  const offer = preset?.offerFromTenths;
   const tags: Array<ModelTag | false | undefined> = [
     facts.isDefault && { key: "default", label: S.models.default, ...toneOf("status") },
-    facts.vision && { key: "vision", label: S.models.visionBadge, ...toneOf("capability") },
-    facts.isVisionModel && {
-      key: "visionModel",
-      label: S.models.visionModelBadge,
-      ...toneOf("capability"),
-    },
+    showVision &&
+      facts.vision && { key: "vision", label: S.models.visionBadge, ...toneOf("capability") },
+    showVision &&
+      facts.isVisionModel && {
+        key: "visionModel",
+        label: S.models.visionModelBadge,
+        ...toneOf("capability"),
+      },
     facts.fastMode && { key: "fastMode", label: S.models.fastModeBadge, ...toneOf("capability") },
     facts.free && { key: "free", label: S.models.freeBadge, ...toneOf("price") },
+    offer !== undefined && {
+      key: "offerFrom",
+      label: S.models.offerFromBadge(offer),
+      title: S.models.offerFromTitle(offer),
+      ...toneOf("price"),
+    },
     discount && {
       key: "discount",
       label: S.models.discountBadge(discount.percent),

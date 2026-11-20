@@ -39,6 +39,10 @@
  *   group's table field by field (a field the table holds is followed, one it lacks is written on
  *   the row, a group with neither rows nor table gets the catalog's), and moves nothing else: a
  *   row already there without a promotion stays without one.
+ * - A newly seeded JellyToken Project routes through its group endpoint with the group key, while
+ *   an unset group key never falls back to OPENAI_API_KEY.
+ * - Additive sync on a pre-existing group named JellyToken preserves its custom connection,
+ *   custom model and existing row overrides, adding only missing JellyToken presets.
  * - "Restore defaults" leaves what a new Project has (its rows, group
  *   settings, promotions and default model; no vision model) and keeps only the API keys, on
  *   their built-in group or preset row — a key a group's keyed rows share, deleted rows
@@ -207,6 +211,35 @@ describe("models preset & catalog enrichment", () => {
     // No more separate .credentials.toml / project_config.toml files.
     await expect(readFile(path.join(projectDir, ".credentials.toml"), "utf8")).rejects.toThrow();
     await expect(readFile(path.join(projectDir, "project_config.toml"), "utf8")).rejects.toThrow();
+  });
+
+  it("a new Project's JellyToken preset runs through its group endpoint with its group key", async () => {
+    await api.put(`${url()}/providers/jellytoken`, { apiKey: "jelly-group-key-001" });
+    const network = stubFetch(() =>
+      jsonResponse({ error: { message: "Incorrect API key provided." } }, 401),
+    );
+    try {
+      const created = await api.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {
+        provider: "jellytoken",
+        modelId: "glm-5.3",
+      });
+      expect(created.status).toBe(201);
+      const { session } = (await created.json()) as SessionCreateResponse;
+      expect(
+        (
+          await api.post(`/api/sessions/${session.sessionId}/tasks`, {
+            input: [{ type: "text", text: "hello" }],
+          })
+        ).status,
+      ).toBe(202);
+      await waitFor(() => network.calls.length > 0, 20_000);
+      expect(network.calls[0]!.url).toBe("https://aiservice.jellytoken.com/v1/chat/completions");
+      expect(network.calls[0]!.headers.get("authorization")).toBe("Bearer jelly-group-key-001");
+      expect((JSON.parse(network.calls[0]!.body) as { model: string }).model).toBe("glm-5.3");
+      await waitFor(() => t.deps.manager.statusOf(session.sessionId) !== "running", 20_000);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("a new Project's file carries every built-in model and each built-in group's endpoint and protocol, and every preset runs on what the file says", async () => {
@@ -1830,6 +1863,7 @@ describe("model-reference rekeying and the connectivity test", () => {
       // config — it may name a variable to set, never a value the environment holds.
       for (const [provider, modelId] of [
         ["tokendance", "glm-5.3"],
+        ["jellytoken", "glm-5.3"],
         ["openrouter", "openai/gpt-5.5"],
         ["custom", "Atria-Dawn"],
       ] as const) {
@@ -2392,6 +2426,49 @@ describe("preset sync: add new models / restore defaults", () => {
       await api.post("/api/projects", { projectId: `gina-sync_${projects}`, name: "Sync" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
+  });
+
+  it("adding JellyToken presets is additive and preserves a pre-existing same-name group's connection and model", async () => {
+    const preset = (await (await api.get(url())).json()) as ModelsResponse;
+    const existing = {
+      provider: "jellytoken",
+      modelId: "glm-5.3",
+      clientType: "openai-chat",
+      baseUrl: "https://old-jelly.example/v1",
+      apiKey: "old-jelly-row-key",
+      contextWindow: 123456,
+    };
+    const put = await api.put(url(), {
+      models: [existing],
+      providers: {
+        jellytoken: {
+          baseUrl: "https://old-jelly.example/v1",
+          clientType: "openai-chat",
+          apiKey: "old-jelly-group-key",
+        },
+      },
+      defaultModel: { provider: "jellytoken", modelId: "glm-5.3" },
+    });
+    expect(put.status).toBe(200);
+
+    const first = (await (await sync("add")).json()) as PresetSyncResponse;
+    expect(first.added).toBe(220);
+    expect(first.restored).toBe(0);
+    expect(first.providers.jellytoken).toMatchObject({
+      baseUrl: "https://old-jelly.example/v1",
+      clientType: "openai-chat",
+      apiKeyMasked: "old-…-key",
+    });
+    expect(pick(first, "jellytoken", "glm-5.3")).toMatchObject({
+      contextWindow: 123456,
+      clientType: "openai-chat",
+      credential: {
+        baseUrl: "https://old-jelly.example/v1",
+        apiKeyMasked: "old-…-key",
+      },
+    });
+    expect(first.models.filter((model) => model.provider === "jellytoken")).toHaveLength(9);
+    expect((await (await sync("add")).json()).added).toBe(0);
   });
 
   it("adding new models brings back only the presets the table lacks, with their promotions, and moves nothing else", async () => {

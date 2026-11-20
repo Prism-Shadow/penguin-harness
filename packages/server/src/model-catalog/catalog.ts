@@ -58,8 +58,8 @@
  * (delisted 2026-08-06; the Z.AI direct glm-5.1 remains), the OpenRouter
  * inclusionai/ling-3.0-flash:free listing (delisted from OpenRouter, removed 2026-08-18),
  * non-chat models (embedding / image generation / TTS), and Bedrock. Direct-vendor ids are
- * auto-routed by MMSP and leave client_type unset; nine gateway groups (OpenRouter,
- * Fireworks AI, SiliconFlow, Atlas Cloud, Runcrate, TokenDance, OpenCode Go, Qwen
+ * auto-routed by MMSP and leave client_type unset; gateway groups (OpenRouter,
+ * Fireworks AI, SiliconFlow, JellyToken, Atlas Cloud, Runcrate, TokenDance, OpenCode Go, Qwen
  * Pay-As-You-Go and Qwen Token Plan) can't be auto-routed, so every gateway row **always
  * pins an explicit client_type** and names its preset base URL. ModelScope's rows pin one
  * protocol too (see below).
@@ -68,10 +68,10 @@
  * (presetProviderTable), a row's own only where it differs from its group's
  * (catalogModelEntry) — as do "Add new models" and "Restore defaults"; from then on the file
  * alone says where a request goes (effectiveConnection reads no catalog).
- * Six groups pin at GROUP level as well (ModelProviderInfo.clientType, read
+ * Some groups pin at GROUP level as well (ModelProviderInfo.clientType, read
  * through providerClientType), so that a model the user adds there speaks the same protocol
  * as the presets: vLLM, whose added models inherit the local server's address its table is
- * seeded with, and OpenRouter, TokenDance, SiliconFlow, Atlas Cloud and Runcrate, whose inherit
+ * seeded with, and OpenRouter, TokenDance, SiliconFlow, JellyToken, Atlas Cloud and Runcrate, whose inherit
  * the gateway's — see each group's own block comment.
  * That pin is load-bearing, not decoration: MMSP's AutoLLMClient routes an unpinned id by
  * the family its spelling begins with and never looks at base_url (MMSP's routedClientType), so
@@ -209,20 +209,22 @@ export interface ModelProviderInfo {
   balance?: ModelProviderBalance;
   /**
    * The group takes models the user adds by hand: `custom` and vLLM, whose rows point at an
-   * endpoint the catalog cannot know, and the five gateways whose catalogs list a fraction of
-   * what they serve — OpenRouter, TokenDance, SiliconFlow, Atlas Cloud and Runcrate — where an
+   * endpoint the catalog cannot know, and the gateways whose catalogs list a fraction of
+   * what they serve — OpenRouter, TokenDance, SiliconFlow, JellyToken, Atlas Cloud and Runcrate — where an
    * added model follows the group's connection (its endpoint, key and protocol) exactly as the
    * presets do. Every other built-in group carries its catalog presets and the rows it already
    * stores, and nothing else. Read it through isAddableGroup, which also answers for
    * user-defined groups.
    */
   addable?: boolean;
+  /** Present this group's presets in catalog order unless the user chooses another sort. */
+  catalogOrder?: boolean;
   /**
    * The MMSP protocol EVERY entry in this group speaks, models the user adds included.
    *
    * Set it where the group itself decides the answer for a row the catalog does not list:
    * every group that takes hand-added models and speaks one protocol (vLLM, OpenRouter,
-   * TokenDance, SiliconFlow, Atlas Cloud, Runcrate). The other gateways hold catalog rows only,
+   * TokenDance, SiliconFlow, JellyToken, Atlas Cloud, Runcrate). The other gateways hold catalog rows only,
    * each carrying its own pin, and `custom` / user-defined groups deliberately declare
    * nothing — their whole point is that the protocol is detected from the endpoint or picked
    * by hand, and a pin here would take that choice away.
@@ -265,6 +267,8 @@ export interface ModelCatalogEntry {
    * applies when it prices usage, so it charges what the seller charges.
    */
   discount?: number;
+  /** Advertised starting price in percent of list (60 = 6折起). Display only, never billed. */
+  offerFromTenths?: number;
   /**
    * A discount that is only live outside a weekly set of peak windows — a vendor billing
    * cheaper off-hours. `pricing` holds the PEAK price, the one billed inside the windows, and
@@ -339,6 +343,8 @@ const VLLM_LOCAL_BASE_URL = "http://127.0.0.1:8000/v1";
 /** Preset provider endpoints; only OpenAI-compatible gateways expose theirs as gatewayBaseUrl. */
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
+const JELLYTOKEN_BASE_URL = "https://aiservice.jellytoken.com/v1";
+const JELLYTOKEN_LOGIN = "https://www.jellytoken.com/auth/login";
 const QWEN_TOKEN_PLAN_BASE_URL =
   "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1";
 const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
@@ -412,7 +418,7 @@ export const MODELSCOPE_PROVIDER_ID = "modelscope";
  * moves when the curation changes: a Project that has ever reordered its groups has every
  * key stored already, so it keeps the arrangement its user built.
  *
- * The nine gateway groups — OpenRouter, Fireworks AI, SiliconFlow, Atlas Cloud, Runcrate,
+ * The gateway groups — OpenRouter, Fireworks AI, SiliconFlow, JellyToken, Atlas Cloud, Runcrate,
  * TokenDance, OpenCode Go, Qwen Pay-As-You-Go and Qwen Token Plan — reach their models
  * through MMSP's generic protocol clients (`openai-responses` for OpenRouter, `openai-chat`
  * for the rest, and all three generic clients within OpenCode Go). Those clients read the
@@ -553,6 +559,18 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     // As TokenDance: Chat Completions throughout, and models added by hand follow the group.
     clientType: "openai-chat",
     addable: true,
+  },
+  {
+    id: "jellytoken",
+    label: "JellyToken",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    apiKeyUrl: JELLYTOKEN_LOGIN,
+    modelsUrl: JELLYTOKEN_LOGIN,
+    gatewayBaseUrl: JELLYTOKEN_BASE_URL,
+    clientType: "openai-chat",
+    addable: true,
+    catalogOrder: true,
   },
   {
     id: "atlascloud",
@@ -1904,6 +1922,32 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
   },
+  // JellyToken's curated chat lineup (November 2026). The rates are CNY per million tokens;
+  // the advertised starting offers do not further reduce them. Do not advertise image input
+  // on these presets. The 1M window is the configured window, not a measured upstream limit.
+  ...(
+    [
+      ["deepseek-v4.1-flash-1017", 0.012, 0.6, 2.4, 60],
+      ["qwen4-max", 0.475, 9.5, 28.5, 95],
+      ["glm-5.3", 1, 4, 10, 36],
+      ["glm-5.3-flash", 0.184, 0.64, 2.24, 80],
+      ["qwen3.8-flash", 0.075, 0.75, 2.25, 75],
+      ["glm-5.3-flashx", 0.4275, 1.5, 5.25, 75],
+      ["doubao-seed-2.1-lite", 0.12, 0.6, 2.025, 75],
+      ["doubao-seed-2-1-pro", 0.9, 4.5, 22.5, 75],
+      ["kimi-k3", 1.5, 15, 75, 75],
+    ] as const
+  ).map(([modelId, cacheRead, input, output, offerFromTenths]) => ({
+    provider: "jellytoken",
+    modelId,
+    displayName: modelId,
+    contextWindow: 1_000_000,
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: JELLYTOKEN_BASE_URL,
+    pricing: cny(cacheRead, input, output),
+    offerFromTenths,
+  })),
   // -- Atlas Cloud (gateway: OpenAI-compatible protocol, preset base URL). Read 2026-10-11 from
   // the public catalog API (GET https://api.atlascloud.ai/v1/models, no credential required):
   // the ids exactly as listed, context windows, output limits, input modalities, quantization
@@ -3718,9 +3762,9 @@ export function providerInfo(providerId: string): ModelProviderInfo | undefined 
  * The protocol a group pins on every one of its entries (ModelProviderInfo.clientType), or
  * undefined when the group pins none — an unknown id (a user-defined group) included.
  *
- * Six groups pin: vLLM, whose models are served by the user's own vLLM adapter,
+ * Some groups pin: vLLM, whose models are served by the user's own vLLM adapter,
  * OpenRouter, whose models all speak the Responses API OpenRouter serves at its preset base
- * URL, and TokenDance, SiliconFlow, Atlas Cloud and Runcrate, whose models all speak Chat
+ * URL, and TokenDance, SiliconFlow, JellyToken, Atlas Cloud and Runcrate, whose models all speak Chat
  * Completions.
  *
  * A reference value, read when a file is written from the catalog (catalogGroupConnection:
@@ -3798,7 +3842,7 @@ export function vendorClientType(providerId: string): string | undefined {
 
 /**
  * Whether models may be added to this group by hand: `custom`, vLLM, OpenRouter, TokenDance,
- * SiliconFlow, Atlas Cloud, Runcrate (ModelProviderInfo.addable) and every user-defined group,
+ * SiliconFlow, JellyToken, Atlas Cloud, Runcrate (ModelProviderInfo.addable) and every user-defined group,
  * i.e. an id this catalog does not know. Every other built-in group — the first-party vendors
  * and the other gateways — carries its catalog presets and the rows it already stores: the
  * models page offers no add-model entry point there, and the models PUT and the CLI's

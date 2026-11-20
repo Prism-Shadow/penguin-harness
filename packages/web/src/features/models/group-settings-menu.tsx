@@ -1,7 +1,7 @@
 /**
  * The gear at the end of every group header, and the menu it opens:
  *
- * - **Sort**, three radio rows — price low to high (the default), price high to low, name — the
+ * - **Sort**, radio rows for price, name and, where the group publishes one, catalog order — the
  *   current one checked (model-sort.ts orders the rows). A view preference that writes nothing
  *   to the Project, so it is there for members too, and a page busy writing never blocks it.
  * - a rule, then **Group settings…**, which opens the group settings dialog
@@ -29,7 +29,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { HEADER_SQUARE } from "./group-header";
-import { MODEL_GROUP_SORTS, type ModelGroupSort } from "./model-sort";
+import { modelGroupSortOptions, type ModelGroupSort } from "./model-sort";
 
 /** What the gear's name is: the action and the group, the same words the gear always carried. */
 const gearName = (provider: ModelProviderInfo): string =>
@@ -52,7 +52,7 @@ export function GroupSettingsMenu({
   return (
     <Menu density="sm" label={gearName(provider)}>
       <MenuLabel>{S.models.sortHeading}</MenuLabel>
-      {MODEL_GROUP_SORTS.map((mode) => (
+      {modelGroupSortOptions(provider).map((mode) => (
         <MenuRadioItem
           key={mode}
           label={S.models.sortModes[mode]}

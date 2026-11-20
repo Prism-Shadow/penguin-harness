@@ -36,6 +36,12 @@
  * - A model with no key anywhere names the variable its client reads when the server reports it
  *   set, and otherwise asks for a key; the key field is never left without a placeholder.
  * - The price fields say a model left without prices is not costed.
+ * - Even when the project rows arrive in reverse, JellyToken's cards and picker show the nine
+ *   presets in catalog order. Filtering keeps their relative order. Each preset quotes its own
+ *   starting offer, without marking vision or reducing the displayed price. Hand-added models
+ *   and another group's model with the same ID do not inherit those labels.
+ * - The group settings and the add-model dialog each open JellyToken's login page for both
+ *   vendor links without listing or importing models.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
@@ -48,7 +54,12 @@ import type {
   ModelsUpdateRequest,
   ProjectSummary,
 } from "@prismshadow/penguin-server/api";
-import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
+import {
+  MODEL_CATALOG,
+  presetProviderTable,
+  providerInfo,
+} from "@prismshadow/penguin-server/model-catalog";
+import { ModelPickerModal } from "../src/features/model-picker/model-picker-modal";
 import { toastStore } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -66,6 +77,7 @@ import {
   dialogs,
   field,
   hasButton,
+  menuItem,
   mount,
   pressEscape,
   run,
@@ -121,15 +133,19 @@ const deepseek = (envKeyMasked?: string) =>
  */
 type Listing = string[] | EndpointModelListResponse;
 
-function modelsServer(models: ModelInfo[] = [ATLAS], listing: Listing = []) {
-  let table: ModelsResponse = { providers: {}, models };
+function modelsServer(
+  models: ModelInfo[] = [ATLAS],
+  listing: Listing = [],
+  providers: ModelsResponse["providers"] = {},
+) {
+  let table: ModelsResponse = { providers, models };
   let refuse = false;
   const puts: ModelsUpdateRequest[] = [];
   /** Every endpoint listing asked for (POST models/list), as sent. */
   const lists: EndpointModelListRequest[] = [];
   /** While set, a listing's answer waits for it. */
   let listGate: Promise<void> | null = null;
-  stubFetch((req) => {
+  const network = stubFetch((req) => {
     if (req.path === "/api/projects/p1/models/list" && req.method === "POST") {
       lists.push(req.body as EndpointModelListRequest);
       const answer = json(Array.isArray(listing) ? { ok: true, models: listing } : listing);
@@ -178,6 +194,7 @@ function modelsServer(models: ModelInfo[] = [ATLAS], listing: Listing = []) {
     return apiError(404, "not_found");
   });
   return {
+    network,
     puts,
     lists,
     refuseNext: () => {
@@ -203,8 +220,12 @@ const card = (name: string) =>
     .find((s) => s.textContent === name)
     ?.closest("button") ?? undefined;
 
-async function openModelsPage(models?: ModelInfo[], listing?: Listing) {
-  const server = modelsServer(models, listing);
+async function openModelsPage(
+  models?: ModelInfo[],
+  listing?: Listing,
+  providers?: ModelsResponse["providers"],
+) {
+  const server = modelsServer(models, listing, providers);
   await mount(
     h(
       MemoryRouter,
@@ -314,6 +335,143 @@ describe("the model config dialog", () => {
   afterEach(async () => {
     await unmountAll();
     localStorage.clear();
+  });
+
+  const jellyOffers = [
+    ["deepseek-v4.1-flash-1017", "6折起"],
+    ["qwen4-max", "9.5折起"],
+    ["glm-5.3", "3.6折起"],
+    ["glm-5.3-flash", "8折起"],
+    ["qwen3.8-flash", "7.5折起"],
+    ["glm-5.3-flashx", "7.5折起"],
+    ["doubao-seed-2.1-lite", "7.5折起"],
+    ["doubao-seed-2-1-pro", "7.5折起"],
+    ["kimi-k3", "7.5折起"],
+  ] as const;
+  const jellyRows = () =>
+    MODEL_CATALOG.filter((m) => m.provider === "jellytoken")
+      .reverse()
+      .map((m) =>
+        model({
+          provider: m.provider,
+          modelId: m.modelId,
+          contextWindow: m.contextWindow!,
+          pricing: {
+            cacheRead: m.pricing!.cache_read,
+            cacheWrite: m.pricing!.cache_write,
+            output: m.pricing!.output,
+          },
+          effective: {
+            baseUrlSource: "provider",
+            clientTypeSource: "provider",
+            apiKeySource: "provider",
+          },
+          // An older saved row can lack a vision annotation. That is not a verified capability.
+        }),
+      );
+
+  it("shows each preset's starting offer and window in catalog order, with no image claim or second discount", async () => {
+    localStorage.setItem("penguin.currency", "CNY");
+    await openModelsPage([
+      ATLAS,
+      model({ provider: "jellytoken", modelId: "hand-added" }),
+      ...jellyRows(),
+      model({ provider: "custom", modelId: "glm-5.3", displayName: "Other GLM" }),
+    ]);
+    await type(searchBox(), "JellyToken");
+    const names = () =>
+      [...document.querySelectorAll('[data-slot="card"] [data-slot="name"]')].map(
+        (n) => n.textContent,
+      );
+    expect(names()).toEqual([...jellyOffers.map(([id]) => id), "hand-added"]);
+    for (const [id, offer] of jellyOffers) {
+      const row = card(id)!;
+      expect(row.querySelector('[data-slot="tags"]')!.textContent).toBe(offer);
+      expect(row.textContent).toContain("1M");
+      expect(row.textContent).not.toMatch(/vision|images/i);
+    }
+    expect(card("hand-added")!.querySelector('[data-slot="tags"]')!.textContent).toBe("Vision");
+    expect(card("glm-5.3")!.querySelector('[data-slot="price"]')!.textContent).toBe(
+      "¥1 / ¥4 / ¥10",
+    );
+    await type(searchBox(), "glm");
+    expect(names().filter((name) => name?.startsWith("glm"))).toEqual([
+      "glm-5.3",
+      "glm-5.3-flash",
+      "glm-5.3-flashx",
+    ]);
+    expect(card("Other GLM")!.querySelector('[data-slot="tags"]')!.textContent).toBe("Vision");
+    await click(button(`${en.models.groupSettings} JellyToken`));
+    await click(menuItem(en.models.sortModes["price-asc"]));
+    expect(names().filter((name) => name?.startsWith("glm"))).toEqual([
+      "glm-5.3-flash",
+      "glm-5.3-flashx",
+      "glm-5.3",
+    ]);
+    expect(card("glm-5.3")!.querySelector('[data-slot="tags"]')!.textContent).toBe("3.6折起");
+    await click(card("glm-5.3")!);
+    expect(dialogs()[0]!.textContent).not.toMatch(/vision|images/i);
+  });
+
+  it("lists the configured JellyToken presets in catalog order in the picker and filtered results", async () => {
+    const models = jellyRows();
+    modelsServer(models);
+    await mount(
+      h(
+        ProjectProvider,
+        null,
+        h(ModelPickerModal, {
+          open: true,
+          title: "Choose model",
+          value: null,
+          models,
+          onClose: () => {},
+          onPick: () => {},
+        }),
+      ),
+    );
+    const options = () =>
+      [...document.querySelectorAll('[role="option"]')].map((opt) => {
+        const accessible = opt.cloneNode(true) as Element;
+        accessible.querySelectorAll('[aria-hidden="true"]').forEach((mark) => mark.remove());
+        return accessible.textContent;
+      });
+    expect(options()).toEqual(jellyOffers.map(([id, offer]) => id + offer));
+    await type(document.querySelector('[role="combobox"]')!, "glm");
+    expect(options()).toEqual(
+      jellyOffers.filter(([id]) => id.startsWith("glm")).map(([id, offer]) => id + offer),
+    );
+  });
+
+  it("opens the same login page at all four settings links without fetching or importing models", async () => {
+    const group = presetProviderTable().jellytoken!;
+    const { network } = await openModelsPage([ATLAS, ...jellyRows()], undefined, {
+      jellytoken: { baseUrl: group.base_url!, clientType: group.client_type! },
+    });
+    await type(searchBox(), "JellyToken");
+    await click(button(`${en.models.groupSettings} JellyToken`));
+    await click(menuItem(en.models.groupSettingsEntry));
+    expect(field(en.models.baseUrl).value).toBe("https://aiservice.jellytoken.com/v1");
+    expect(dialogs()[0]!.textContent).toContain("/chat/completions");
+    async function follow(label: string) {
+      const link = [...dialogs()[0]!.querySelectorAll("a")].find(
+        (a) => a.textContent?.trim() === label,
+      )!;
+      expect(link.href).toBe("https://www.jellytoken.com/auth/login");
+      expect(link.target).toBe("_blank");
+      // Leave navigation to the browser, but let any click handler run.
+      link.addEventListener("click", (e) => e.preventDefault(), { once: true });
+      const n = network.requests.length;
+      await click(link);
+      expect(network.requests.slice(n)).toEqual([]);
+    }
+    await follow(en.models.getApiKey);
+    await follow(en.models.modelList);
+    await click(button(en.common.cancel));
+    await click(button(`${en.models.addToGroup} JellyToken`));
+    await follow(en.models.getModelIds);
+    await click(button(en.models.details));
+    await follow(en.models.getApiKey);
   });
 
   it("keeps the dialog open with the draft when the save is refused, and the list as it was", async () => {

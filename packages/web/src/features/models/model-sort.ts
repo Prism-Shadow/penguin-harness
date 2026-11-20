@@ -5,7 +5,8 @@
  *
  * Each group has one sort, picked from its header's gear menu:
  *
- * - **Price, low to high** (the default) and **high to low** compare one blended figure per row,
+ * - **Catalog order** is the default only for groups that publish one.
+ * - **Price, low to high** (the usual default) and **high to low** compare one blended figure per row,
  *   `cache read × 85% + cache write × 10% + output × 5%` per million Tokens.
  *   The buckets are the ones the card prints, the rate billed right now (billedPrice: the list
  *   price less a running promotion, and less a live off-peak tier), so a promotion or an off-peak
@@ -24,21 +25,29 @@
  * Project with such a group. Storage is injectable (vitest runs in Node, no localStorage);
  * nothing stored, unrecognized values and throwing storage all read as the default.
  */
+import { providerInfo, type ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
 import {
   billedPrice,
+  catalogOrderedRows,
   type ModelRowLike,
   type PricingBucketsLike,
   type ProviderGroup,
 } from "../../lib/model-grouping";
 
 /** How one group orders its models. */
-export type ModelGroupSort = "price-asc" | "price-desc" | "name";
+export type ModelGroupSort = "catalog" | "price-asc" | "price-desc" | "name";
 
-/** Every sort, in the order the gear menu offers them. */
-export const MODEL_GROUP_SORTS: readonly ModelGroupSort[] = ["price-asc", "price-desc", "name"];
+const STANDARD_SORTS: readonly ModelGroupSort[] = ["price-asc", "price-desc", "name"];
+const CATALOG_SORTS: readonly ModelGroupSort[] = ["catalog", ...STANDARD_SORTS];
 
-/** Every group starts here, and choosing it again is how a group goes back. */
-export const DEFAULT_MODEL_GROUP_SORT: ModelGroupSort = "price-asc";
+/** The first choice restores the group's default; only a curated group offers catalog order. */
+export function modelGroupSortOptions(provider?: ModelProviderInfo): readonly ModelGroupSort[] {
+  return provider?.catalogOrder ? CATALOG_SORTS : STANDARD_SORTS;
+}
+
+function defaultSort(id: string): ModelGroupSort {
+  return modelGroupSortOptions(providerInfo(id))[0]!;
+}
 
 /**
  * One row's blended price at `now`, in USD per million Tokens, from the buckets its card prints;
@@ -67,6 +76,7 @@ export function sortGroupRows<T extends ModelRowLike & PricingBucketsLike>(
   now: Date,
   locale: string,
 ): T[] {
+  if (sort === "catalog") return catalogOrderedRows(rows);
   const collator = new Intl.Collator(locale, { numeric: true, sensitivity: "base" });
   const byName = (a: T, b: T): number => collator.compare(rowName(a), rowName(b));
   if (sort === "name") return [...rows].sort(byName);
@@ -91,7 +101,7 @@ export type ModelGroupSorts = Readonly<Record<string, ModelGroupSort>>;
  * plain object answers through its prototype.
  */
 export function modelGroupSortOf(sorts: ModelGroupSorts, id: string): ModelGroupSort {
-  return Object.hasOwn(sorts, id) ? sorts[id]! : DEFAULT_MODEL_GROUP_SORT;
+  return Object.hasOwn(sorts, id) ? sorts[id]! : defaultSort(id);
 }
 
 /**
@@ -104,7 +114,7 @@ export function withModelGroupSort(
   sort: ModelGroupSort,
 ): ModelGroupSorts {
   if (modelGroupSortOf(sorts, id) === sort) return sorts;
-  if (sort !== DEFAULT_MODEL_GROUP_SORT) return { ...sorts, [id]: sort };
+  if (sort !== defaultSort(id)) return { ...sorts, [id]: sort };
   const next: Record<string, ModelGroupSort> = { ...sorts };
   delete next[id];
   return next;
@@ -135,9 +145,6 @@ export interface ModelGroupSortStorage {
 /** The sorts' single global key; holds ModelGroupSorts as a JSON object. */
 export const MODEL_GROUP_SORTS_KEY = "penguin.modelsGroupSort";
 
-const isSort = (value: unknown): value is ModelGroupSort =>
-  MODEL_GROUP_SORTS.includes(value as ModelGroupSort);
-
 /**
  * Reads the stored sorts. Only a known sort under a non-empty group id is kept; anything else —
  * absent, unparseable, not an object, throwing storage — reads as no choices, i.e. every group
@@ -152,7 +159,7 @@ export function initialModelGroupSorts(storage?: ModelGroupSortStorage): ModelGr
     // fromEntries defines own properties, so no stored id can reach the object's prototype.
     return Object.fromEntries(
       Object.entries(parsed).filter(
-        ([id, sort]) => id !== "" && isSort(sort) && sort !== DEFAULT_MODEL_GROUP_SORT,
+        ([id, sort]) => id !== "" && STANDARD_SORTS.includes(sort) && sort !== defaultSort(id),
       ),
     );
   } catch {

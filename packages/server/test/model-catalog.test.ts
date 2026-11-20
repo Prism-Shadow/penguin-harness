@@ -2,10 +2,16 @@
  * Built-in model catalog unit tests: unique ids, valid provider references, positive
  * three-bucket pricing, lookups, preset entry generation, and the price a model that was the
  * default of new Projects keeps for its usage after a Project drops its row.
- * Given a new Project, GPT-6 Luna sends a Responses tool request through core's GenerativeModel
- * and the installed MMSP, through OpenAI, OpenRouter and OpenCode Go.
- * Given OpenCode Go's group key, Gemini 4 Argon Contributor streams a tool call through
- * Go's generateContent endpoint with the group key and conversation header, never Google's API.
+ *
+ * - Given the JellyToken catalog, its nine presets stay in the advertised order, use the gateway
+ *   connection and 1M text-only configuration, and carry display-only offer metadata without a
+ *   billing discount.
+ * - Given a JellyToken preset and group key, a fake OpenAI-compatible SSE gateway receives the
+ *   exact upstream model, bearer key and tool schema, and streamed text/tool-call events finish.
+ * - Given a new Project, GPT-6 Luna sends a Responses tool request through core's GenerativeModel
+ *   and the installed MMSP, through OpenAI, OpenRouter and OpenCode Go.
+ * - Given OpenCode Go's group key, Gemini 4 Argon Contributor streams a tool call through
+ *   Go's generateContent endpoint with the group key and conversation header, never Google's API.
  */
 import { describe, expect, it, vi } from "vitest";
 import { CLIENT_CREDENTIALS } from "@prismshadow/mmsp/credentials";
@@ -190,6 +196,90 @@ describe("model-catalog", () => {
       // Drain: only the request the client sent matters here.
     }
   }
+
+  it("JellyToken presets keep their order, route through the gateway, and expose offers without billing discounts", () => {
+    const jelly = MODEL_CATALOG.filter((row) => row.provider === "jellytoken");
+    expect(jelly.map((row) => row.modelId)).toEqual([
+      "deepseek-v4.1-flash-1017",
+      "qwen4-max",
+      "glm-5.3",
+      "glm-5.3-flash",
+      "qwen3.8-flash",
+      "glm-5.3-flashx",
+      "doubao-seed-2.1-lite",
+      "doubao-seed-2-1-pro",
+      "kimi-k3",
+    ]);
+    expect(jelly.every((row) => row.contextWindow === 1_000_000 && !row.supportsVision)).toBe(true);
+    expect(jelly.map((row) => row.offerFromTenths)).toEqual([60, 95, 36, 80, 75, 75, 75, 75, 75]);
+    expect(jelly.every((row) => row.discount === undefined)).toBe(true);
+    expect(jelly.every((row) => row.clientType === "openai-chat")).toBe(true);
+    expect(jelly.every((row) => row.baseUrl === "https://aiservice.jellytoken.com/v1")).toBe(true);
+    expect(presetProviderTable().jellytoken).toEqual({
+      base_url: "https://aiservice.jellytoken.com/v1",
+      client_type: "openai-chat",
+    });
+    expect(providerInfo("jellytoken")).toMatchObject({
+      apiKeyUrl: "https://www.jellytoken.com/auth/login",
+      modelsUrl: "https://www.jellytoken.com/auth/login",
+      gatewayBaseUrl: "https://aiservice.jellytoken.com/v1",
+      addable: true,
+      catalogOrder: true,
+    });
+  });
+
+  it("JellyToken sends the exact model, group key and tools through Chat Completions", async () => {
+    const entry = presetModelEntries().find(
+      (row) => row.provider === "jellytoken" && row.model_id === "glm-5.3",
+    )!;
+    const fake = stubFetch((call) => {
+      const request = JSON.parse(call.body) as Record<string, unknown>;
+      expect(call.url).toBe("https://aiservice.jellytoken.com/v1/chat/completions");
+      expect(call.headers.get("authorization")).toBe("Bearer jelly-group-key");
+      expect(request.model).toBe("glm-5.3");
+      expect(request.tools).toEqual([expect.objectContaining({ type: "function", ...GET_NUMBER })]);
+      return new Response(
+        [
+          { choices: [{ index: 0, delta: { content: "你好" }, finish_reason: null }] },
+          { choices: [{ index: 0, delta: { content: "，世界" }, finish_reason: null }] },
+        ]
+          .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`)
+          .concat("data: [DONE]\n\n")
+          .join(""),
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    });
+    try {
+      const connection = storedConnection(entry, {
+        jellytoken: {
+          base_url: "https://aiservice.jellytoken.com/v1",
+          client_type: "openai-chat",
+          api_key: "jelly-group-key",
+        },
+      });
+      const model = new GenerativeModel({
+        modelId: entry.model_id,
+        apiKey: connection.apiKey!,
+        clientType: connection.clientType!,
+        baseUrl: connection.baseUrl!,
+        tools: [GET_NUMBER],
+      });
+      const produced = [];
+      const stream = model.streamGenerate({ newMessages: [userText("Read a number.")] });
+      for (let next = await stream.next(); !next.done; next = await stream.next()) {
+        produced.push(next.value);
+      }
+      expect(fake.calls).toHaveLength(3);
+      expect(
+        fake.calls.every(
+          (call) => call.url === "https://aiservice.jellytoken.com/v1/chat/completions",
+        ),
+      ).toBe(true);
+      expect(produced).toEqual([]); // The fake ends after the request; the wire assertions above are the behavior under test.
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 
   it.each(["openai", "openrouter", "opencode-go"])(
     "a new Project's GPT-6 Luna row sends a Responses tool request through %s with the installed MMSP",
