@@ -509,6 +509,84 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    // Five thinking/tool pairs make a saved, two-digit history with real file arguments.
+    if (flat.includes("ten-step work history") && !isTitle) {
+      const path = "资料/每周 总结/评审 记录.md";
+      const calls = [
+        ["write_file", { file_path: path, content: "Draft", description: "起草评审记录" }],
+        ["read_file", { file_path: path, description: "阅读初稿" }],
+        [
+          "edit_file",
+          {
+            file_path: path,
+            old_string: "Draft",
+            new_string: "Reviewed",
+            description: "修订评审记录",
+          },
+        ],
+        ["exec_command", { cmd: "pwd", description: "确认工作目录" }],
+        ["read_file", { file_path: path, description: "核对本周评审记录" }],
+      ];
+      const completed = [...flat.matchAll(/toolu_work_history_(\d+)/g)].reduce(
+        (n, match) => Math.max(n, Number(match[1])),
+        0,
+      );
+      const call = calls[completed];
+      if (!call) {
+        block(res, 0, { type: "text", text: "" }, [
+          { type: "text_delta", text: "The review notes are ready." },
+        ]);
+        messageStop(res, "end_turn", 12);
+      } else {
+        block(
+          res,
+          0,
+          { type: "thinking", thinking: "" },
+          [{ type: "thinking_delta", thinking: `Reviewing item ${completed + 1}.` }],
+          { type: "signature_delta", signature: "sig_mock_review" },
+        );
+        block(
+          res,
+          1,
+          { type: "tool_use", id: `toolu_work_history_${completed + 1}`, name: call[0], input: {} },
+          [{ type: "input_json_delta", partial_json: JSON.stringify(call[1]) }],
+        );
+        messageStop(res, "tool_use", 24);
+      }
+      return;
+    }
+
+    // Two approval gates let the real Session stay on each page until the browser advances it.
+    if (flat.includes("activity pages test") && !isTitle) {
+      if (flat.includes("toolu_activity_2")) {
+        block(res, 0, { type: "text", text: "" }, [
+          { type: "text_delta", text: "Both tools finished." },
+        ]);
+        messageStop(res, "end_turn", 12);
+      } else {
+        const step = hasToolResult ? 2 : 1;
+        const thinking =
+          step === 1 ? "I will check the first entry." : "I will compare the second entry.";
+        block(res, 0, { type: "thinking", thinking: "" }, [{ type: "thinking_delta", thinking }], {
+          type: "signature_delta",
+          signature: "sig_mock_activity",
+        });
+        block(
+          res,
+          1,
+          { type: "tool_use", id: `toolu_activity_${step}`, name: "exec_command", input: {} },
+          [
+            {
+              type: "input_json_delta",
+              partial_json: JSON.stringify({ cmd: `printf 'entry ${step}'` }),
+            },
+          ],
+        );
+        messageStop(res, "tool_use", 24);
+      }
+      return;
+    }
+
     // Sticky-rows test case (sticky-rows.spec): one work group of a thinking step and three
     // exec_command calls whose output is one long run of numbers, so every line of an open
     // output block is full of text, edge to edge, while it scrolls under the pinned rows.

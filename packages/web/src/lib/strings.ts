@@ -1204,6 +1204,12 @@ export const zh = {
     launcherInfo:
       "在对话正文右缘浮动的圆形按钮，展开后是工作台各块面板与终端的快捷方式；这里关掉后它就不再出现，展开里的「隐藏悬浮球」同样会关掉它。",
     toolAliases: "工具短名",
+    activityDisplayMode: "思考显示方式",
+    activityDisplayModeInfo:
+      "标准列出每一步，点开可看详情。展开直接显示思考和工具调用的内容。紧凑跟随当前步骤，可前后翻页。",
+    activityDisplayStandard: "标准",
+    activityDisplayExpanded: "展开",
+    activityDisplayCompact: "紧凑",
     toolAliasesInfo:
       "对话里的工具卡片用短名称呼内置工具，read_file 显示为「读取」。其余工具（含 MCP 工具）与轨迹观测始终是工具原本的名字；悬停短名也能看到它。",
     notifications: "任务完成通知",
@@ -4779,6 +4785,8 @@ Benchmark：
       heavy: "完整输出正在同步",
       /** Under an unfolded output or thinking block while its whole text arrives. */
       body: "正在加载完整内容",
+      /** On an unfolded output or thinking block the reader did not open (an Expanded view, a search): fetch the whole. */
+      bodyLoad: "加载完整内容",
       /** The fetch failed: a notice line like the earlier-messages one, the failure in parentheses. */
       bodyFailed: (reason: string) => `[加载失败]：完整内容没能加载（${reason}）`,
       /** The Trace panel bringing a machine's Trace file over before it opens it. */
@@ -5035,6 +5043,17 @@ Benchmark：
     } as Record<string, string>,
     workRunning: "运行中",
     workDone: "运行完毕",
+    workFailed: "运行失败",
+    workStopped: "已停止",
+    workRetryStep: (n: number) => `第 ${n} 次重试`,
+    previousWorkStep: "上一步",
+    nextWorkStep: "下一步",
+    latestWorkStep: "最新步骤",
+    waitingWorkStep: "查看待处理步骤",
+    workElapsed: "总耗时",
+    /** The words around the step number in Compact's pager; the number between them is a field. */
+    workStepWords: ["第 ", " 步"] as readonly [before: string, after: string],
+    workStepJump: "跳转到步骤",
     workGroupSteps: (n: number) => `${n} 步`,
     approvalWaiting: "待审批",
     copyCode: "复制代码",

@@ -573,6 +573,8 @@ export interface UiPrefs {
   terminalTheme?: string | null;
   /** Whether tool cards name the built-in tools by their short alias. */
   toolAliases?: boolean | null;
+  /** How the conversation shows thinking and tool steps (the Web App's "standard", "expanded", "compact"). */
+  activityDisplayMode?: string | null;
   /** Whether task-completion notifications were asked for (each browser still needs its own OS permission). */
   notifications?: boolean | null;
   /** Whether the floating dock launcher was put away. */
