@@ -92,9 +92,8 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 | --- | --- | --- | --- |
 | `name` | 字符串 | — | Project 显示名；未设置时显示 id |
 | `default_model` | 成对引用 | — | 指向默认模型的 `{ provider, model_id }` 成对引用；必须指向 `models` 里的条目 |
-| `[tools]` | 表 | — | 每项工具选择一个模型：`t2t`、`i2t`、`search`、`fetch`、`t2i`、`t2v`、`t2s`、`s2t`。图片理解使用 `i2t`，听写润色使用 `t2t`。 |
-| `voice_polish_enabled` | 布尔 | false | 把听写文字填入草稿前先润色 |
-| `voice_polish_prompt` | 字符串 | 内置提示词 | 仅用于听写润色。清空后恢复默认提示词。 |
+| `vision_model` | 成对引用 | — | 为纯文本模型读取图像的视觉模型（`read_file` 会把图像交给它）；成对引用 |
+| `[tools]` | 表 | — | 插件所提供工具绑定的模型，每个绑定一行 `key = { provider = "…", model_id = "…" }`，键由插件声明。在 Project 设置中选择；删除模型即解除绑定 |
 | `[default_chat]` | 表 | — | 新对话的预填默认值；见[新对话默认值](#新对话默认值) |
 | `[command_policy]` | 表 | 出厂规则集 | shell 命令的需确认与拒绝规则，先于审批模式生效；见[命令策略](#命令策略) |
 | `[plugins]` | 表 | — | Project 要求的服务端插件；见[插件](#插件) |
@@ -434,7 +433,7 @@ harness 填入以下占位符：
 | `{{LAST_TURN}}` | `handoff_note` | 压缩之前最后完成的一次请求：它的文本与最后四个工具调用及其输出，每项至多 500 字符 |
 | `{{TRACE_PATH}}` | `handoff_note` | 被关闭的 Trace 文件的绝对路径 |
 
-没有内容可引的占位符读作 `(not recorded)`。空白即 harness 不发这段文字：空白的 `reminder` 只发一轮的工具输出，空响应此时没有可发的内容，即转入交接说明；空白的 `handoff_note` 只留四项引述，各占一行。文件中缺少的键读作默认值：没有 `max_rounds`、`reminder` 与 `handoff_note` 的旧文件按默认值运行，其中编辑过的 `prompt` 照常保留；这几个键要等[内核更新](#内核更新)或还原默认改写这一节之后才出现在文件里。
+没有内容可引的占位符读作 `(not recorded)`。空白即 harness 不发这段文字：空白的 `reminder` 只发一轮的工具输出，空响应此时没有可发的内容，即转入交接说明；空白的 `handoff_note` 只留四项引述，各占一行。文件中缺少的键读作默认值：没有 `max_rounds`、`reminder` 与 `handoff_note` 的旧文件按默认值运行，其中编辑过的 `prompt` 照常保留；这几个键要等[内核更新](#内核更新)或还原默认改写这一节，或在 Agent 的**运行参数**标签页保存其中一项之后，才出现在文件里；三项都在该标签页与 `prompt` 一起编辑。
 
 ### 供应商拒绝请求时
 

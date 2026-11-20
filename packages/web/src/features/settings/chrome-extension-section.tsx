@@ -8,14 +8,14 @@
  * the server can use a Chrome — and the knob stays on until the answer is yes. Pairings survive
  * either way. A write that fails puts the knob back on the stored value and says why under it.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { ServerSettingsResponse } from "@prismshadow/penguin-server/api";
 import { ConfirmModal, SettingsGroup, SettingsSection, ToggleRow } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /** Turns the switch off on the server. Reached only through the confirm. */
 const switchOffExtensions = (): Promise<ServerSettingsResponse> =>
@@ -64,7 +64,7 @@ export function ChromeExtensionSection() {
   /** What the switch shows: the stored value, or the pending one while a write is in flight. */
   const [enabled, setEnabled] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<ReactNode>(undefined);
   const [confirmOff, setConfirmOff] = useState(false);
 
   useEffect(() => {
@@ -91,7 +91,9 @@ export function ChromeExtensionSection() {
       setEnabled(outcome.enabled);
     } else {
       setEnabled(previous);
-      setError(apiErrorText(outcome.error));
+      setError(
+        failureNode(outcome.error, { what: "the Chrome extension link could not be switched" }),
+      );
     }
     setBusy(false);
   };

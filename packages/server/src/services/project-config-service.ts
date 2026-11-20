@@ -16,7 +16,7 @@
  * stored as two independent fields, `provider` and `model_id`; the `(provider,
  * model_id)` pair is the entry's unique key. `model_id` is the upstream request id,
  * sent to MMSP verbatim — string concatenation like `<provider>/<id>` is
- * forbidden everywhere in the pipeline. `default_model` / `tools.i2t` are `{
+ * forbidden everywhere in the pipeline. `default_model` / `vision_model` are `{
  * provider, model_id }` paired references (TOML tables).
  *
  * Reads are memoized on the file's mtime (see readTable): every consumer of this
@@ -27,15 +27,6 @@
  * caught by the stat. The cached table is shared between callers and must be treated
  * as immutable — every mutating method here copies before changing.
  */
-import { CLIENT_CREDENTIALS } from "@prismshadow/mmsp/credentials";
-import { projectPluginTables } from "../plugin/project-defaults.js";
-import type { CapabilitySettingsPatch, ModelOperation } from "../api/capabilities.js";
-import {
-  applyCapabilitySettings,
-  chatEligibleForConnection,
-  modelOperationsForConnection,
-} from "./capability-settings.js";
-import { TRANSCRIPTION_PROBE_AUDIO } from "./transcription-probe.js";
 import type {
   ChatDefaultsDto,
   CommandPolicyDto,
@@ -81,6 +72,7 @@ import {
   commandPolicyPatternError,
   effectiveCommandPolicyRules,
   parseCommandPolicy,
+  parsePluginTables,
   pluginTablesToToml,
   GenerativeModel,
   canonicalClientType,
@@ -89,10 +81,10 @@ import {
   effectiveConnection,
   groupKeyReaches,
   imageUrlMessage,
-  inlineData,
   metaMaxTokens,
   migrateProjectConfigTable,
   parseProviderTable,
+  parseToolModelTable,
   projectConfigFromTable,
   projectConfigPath,
   providerConnectionShape,
@@ -112,7 +104,6 @@ import {
   unroutableVendorModel,
   vendorClientType,
 } from "../model-catalog/catalog.js";
-import { toolPricingFor } from "../model-catalog/tool-pricing.js";
 import { clientEnvKey, modelEnvPreviewKey } from "../model-catalog/env-keys.js";
 import {
   catalogGroupConnection,
@@ -292,7 +283,7 @@ function toCommandPolicyRuleDtos(rules: readonly CommandPolicyRule[]): CommandPo
   });
 }
 
-/** Leniently reads a paired reference table (default_model / tools.i2t); returns undefined on a shape mismatch (including the old string format). */
+/** Leniently reads a paired reference table (default_model / vision_model); returns undefined on a shape mismatch (including the old string format). */
 function optRef(v: unknown): ModelRef | undefined {
   const t = asTable(v);
   const provider = optStr(t.provider);
@@ -305,6 +296,18 @@ function optRef(v: unknown): ModelRef | undefined {
 /** Whether an entry matches a paired reference (the entry's provider / model_id fields must be strings). */
 function entryMatches(m: RawTable, provider: string, modelId: string): boolean {
   return m.provider === provider && m.model_id === modelId;
+}
+
+/** The `[tools]` bindings that name a row of the table, as DTOs: what the models view reports. */
+function configuredToolModels(raw: RawTable): Record<string, ModelRefDto> {
+  const rows = asArray(raw.models);
+  const out: Record<string, ModelRefDto> = {};
+  for (const [key, ref] of Object.entries(parseToolModelTable(raw.tools) ?? {})) {
+    if (rows.some((m) => entryMatches(m, ref.provider, ref.model_id))) {
+      out[key] = { provider: ref.provider, modelId: ref.model_id };
+    }
+  }
+  return out;
 }
 
 /** In-process Map/Set key for a paired reference (\0-separated to avoid concatenation ambiguity; never persisted, not an id format). */
@@ -386,32 +389,6 @@ function ownConnection(
   };
 }
 
-/** Resolve the row's actual protocol, including an inherited Project provider connection. */
-function chatRow(raw: RawTable, ref: ModelRefDto) {
-  const row = asArray(raw.models).find((m) => entryMatches(m, ref.provider, ref.modelId));
-  if (!row) return false;
-  const effective = effectiveConnection(
-    ownConnection(row, ref.provider, ref.modelId),
-    providerShapeOf(raw, ref.provider),
-  );
-  return chatEligibleForConnection(ref.provider, ref.modelId, effective.clientType);
-}
-
-function effectiveChatDefault(raw: RawTable): ModelRef | undefined {
-  const ref = optRef(raw.default_model);
-  return ref && chatRow(raw, { provider: ref.provider, modelId: ref.model_id }) ? ref : undefined;
-}
-
-function requireChatRow(raw: RawTable, ref: ModelRefDto) {
-  if (!chatRow(raw, ref)) {
-    throw new HttpError(
-      400,
-      "model_not_chat_eligible",
-      "This model cannot be used as the default chat model.",
-    );
-  }
-}
-
 /**
  * The connection a probe of one row's form draft is built with (the connectivity, speed and
  * vision probes): the draft's own values — the request's, else the stored row's — then the
@@ -473,16 +450,14 @@ function connectOfferOf(
   next: RawTable,
   provider: string,
 ): DefaultModelOffer | undefined {
-  const current = effectiveChatDefault(before);
+  const current = optRef(before.default_model);
   return connectDefaultOffer({
     provider,
     hadKey: providerTableOf(before)[provider]?.api_key !== undefined,
     hasKey: providerTableOf(next)[provider]?.api_key !== undefined,
     current:
       current === undefined ? undefined : { provider: current.provider, modelId: current.model_id },
-    holds: (modelId) =>
-      asArray(before.models).some((m) => entryMatches(m, provider, modelId)) &&
-      chatRow(next, { provider, modelId }),
+    holds: (modelId) => asArray(before.models).some((m) => entryMatches(m, provider, modelId)),
   });
 }
 
@@ -1041,7 +1016,6 @@ export class ProjectConfigService implements ProjectConfigStore {
     const preset = presetProjectConfig();
     await this.writeRaw(projectId, {
       name,
-      plugins: pluginTablesToToml(projectPluginTables()),
       ...(preset.default_model !== undefined ? { default_model: preset.default_model } : {}),
       // The factory command-policy rules are seeded exactly like the model presets:
       // copied in at creation, owned by the project from then on.
@@ -1072,7 +1046,6 @@ export class ProjectConfigService implements ProjectConfigStore {
     const { providers, added } = presetAdditions(raw);
     await this.writeRaw(projectId, {
       ...raw,
-      plugins: raw.plugins ?? pluginTablesToToml(projectPluginTables()),
       // Also reset to the preset default_model if the existing one points at a now-deleted model, to keep the default model valid.
       ...(preset.default_model !== undefined ? { default_model: preset.default_model } : {}),
       providers,
@@ -1110,7 +1083,7 @@ export class ProjectConfigService implements ProjectConfigStore {
   /** Paired reference of the default Model; returns undefined if unconfigured (or in the old string format). */
   async getDefaultModelRef(projectId: string): Promise<ModelRef | undefined> {
     const raw = await this.readRaw(projectId);
-    return effectiveChatDefault(raw);
+    return optRef(raw.default_model);
   }
 
   /**
@@ -1130,7 +1103,6 @@ export class ProjectConfigService implements ProjectConfigStore {
         `defaultModel must be included in models: ${showRef(ref.provider, ref.modelId)}.`,
       );
     }
-    requireChatRow(raw, ref);
     await this.writeRaw(projectId, {
       ...raw,
       default_model: { provider: ref.provider, model_id: ref.modelId },
@@ -1138,37 +1110,48 @@ export class ProjectConfigService implements ProjectConfigStore {
     return { provider: ref.provider, modelId: ref.modelId };
   }
 
-  /** Refresh a managed credential only for a model permitted to inherit its provider key. */
-  async loadCapabilityModel(projectId: string, ref: ModelRefDto): Promise<ProjectConfig> {
-    const config = await this.loadConfig(projectId);
-    const row = config.models.find(
-      (m) => m.provider === ref.provider && m.model_id === ref.modelId,
-    );
-    if (
-      !row ||
-      row.api_key ||
-      !groupKeyReaches(row.base_url, config.providers?.[ref.provider]?.base_url)
-    )
-      return config;
-    const key = await this.modelApiKeyResolver?.({
-      projectId,
-      provider: ref.provider,
-      modelId: ref.modelId,
-    });
-    if (!key) return config;
-    return {
-      ...config,
-      models: config.models.map((m) => (m === row ? { ...m, api_key: key } : m)),
-    };
+  async getToolModels(projectId: string): Promise<Record<string, ModelRefDto>> {
+    return configuredToolModels(await this.readRaw(projectId));
   }
 
-  async patchCapabilitySettings(projectId: string, patch: CapabilitySettingsPatch<ModelOperation>) {
-    // Model-table edits and restore use the same Project lock; a simultaneous binding save sees their final rows.
+  /**
+   * Binds one `[tools]` key, or with null unbinds it: read-modify-write of the same toml, under
+   * the lock the whole-table PUT and "Restore defaults" take, so a binding saved beside them sees
+   * their final rows. The model must be a configured row (400 otherwise); the key's grammar and
+   * which models it accepts are the declaring plugin's (ToolModelBindings checks them first).
+   */
+  async setToolModel(
+    projectId: string,
+    key: string,
+    model: ModelRefDto | null,
+  ): Promise<Record<string, ModelRefDto>> {
     return this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, async () => {
       const raw = await this.readRaw(projectId);
-      const config = projectConfigFromTable(projectConfigPath(this.root, projectId), raw);
-      const updated = applyCapabilitySettings(config, patch);
-      await this.writeRaw(projectId, { ...raw, ...updated });
+      if (
+        model !== null &&
+        !asArray(raw.models).some((m) => entryMatches(m, model.provider, model.modelId))
+      ) {
+        throw badRequest(
+          `The model must be included in models: ${showRef(model.provider, model.modelId)}.`,
+        );
+      }
+      const tools: RawTable = { ...asTable(raw.tools) };
+      if (model === null) delete tools[key];
+      else tools[key] = { provider: model.provider, model_id: model.modelId };
+      const next: RawTable = { ...raw };
+      if (Object.keys(tools).length > 0) next.tools = tools;
+      else delete next.tools;
+      await this.writeRaw(projectId, next);
+      return configuredToolModels(next);
+    });
+  }
+
+  /** The key the host resolves for one request to this model (the Sessions' resolver), if any. */
+  async modelRequestApiKey(projectId: string, model: ModelRefDto): Promise<string | undefined> {
+    return this.modelApiKeyResolver?.({
+      projectId,
+      provider: model.provider,
+      modelId: model.modelId,
     });
   }
 
@@ -1281,7 +1264,7 @@ export class ProjectConfigService implements ProjectConfigStore {
    * file's order; both empty when it asks for none.
    */
   async getPluginTables(projectId: string): Promise<PluginTables> {
-    return projectPluginTables((await this.readRaw(projectId)).plugins);
+    return parsePluginTables((await this.readRaw(projectId)).plugins) ?? { all: {}, machines: {} };
   }
 
   /**
@@ -1504,11 +1487,9 @@ export class ProjectConfigService implements ProjectConfigStore {
         maxTokens: req.speed ? 64 : 16,
         requestTimeoutMs: 20_000,
       });
-      const transcription = modelOperationsForConnection(req.modelId, clientType).includes("stt");
-      const prompt = transcription
-        ? inlineData("user", TRANSCRIPTION_PROBE_AUDIO, "audio/ogg")
-        : userText(req.speed ? SPEED_PROBE_PROMPT : PROBE_PROMPT);
-      const gen = llm.streamGenerate({ newMessages: [prompt] });
+      const gen = llm.streamGenerate({
+        newMessages: [userText(req.speed ? SPEED_PROBE_PROMPT : PROBE_PROMPT)],
+      });
       let sawContent = false;
       let firstContentAt: number | null = null;
       let outputTokens = 0;
@@ -1657,8 +1638,8 @@ export class ProjectConfigService implements ProjectConfigStore {
    */
   async getModels(projectId: string): Promise<ModelsResponse> {
     const raw = await this.readRaw(projectId);
-    const defaultRef = effectiveChatDefault(raw);
-    const visionRef = optRef(asTable(raw.tools).i2t);
+    const defaultRef = optRef(raw.default_model);
+    const visionRef = optRef(raw.vision_model);
     const providers = providerTableOf(raw);
     const discounts = new Map(
       (this.promotions?.list(projectId) ?? []).map((p) => [
@@ -1733,23 +1714,11 @@ export class ProjectConfigService implements ProjectConfigStore {
               ? { apiKeyMasked: envKeyMasked }
               : {}),
         };
-        const registry =
-          cat?.toolPricing?.source === "mmsp" ? cat.toolPricing.registryRoute : undefined;
-        const referenceMismatch =
-          registry &&
-          !toolPricingFor(cat, {
-            clientType: eff.clientType,
-            baseUrl:
-              eff.baseUrl || process.env[CLIENT_CREDENTIALS[registry.clientType]!.baseUrlEnv],
-          });
         const info: ModelInfo = {
-          ...(referenceMismatch ? { referencePriceEligible: false as const } : {}),
-          ...(!chatEligibleForConnection(provider, modelId, eff.clientType)
-            ? { chatEligible: false }
-            : {}),
           provider,
           modelId,
           ...(displayName !== undefined ? { displayName } : {}),
+          ...(cat?.tool === true ? { chatEligible: false } : {}),
           isDefault:
             defaultRef !== undefined &&
             defaultRef.provider === provider &&
@@ -1782,10 +1751,12 @@ export class ProjectConfigService implements ProjectConfigStore {
       provider: ref.provider,
       modelId: ref.model_id,
     });
+    const toolModels = configuredToolModels(raw);
     const updatedAt = await this.configUpdatedAt(projectId);
     return {
       ...(defaultRef !== undefined ? { defaultModel: toDto(defaultRef) } : {}),
       ...(visionRef !== undefined ? { visionModel: toDto(visionRef) } : {}),
+      ...(Object.keys(toolModels).length > 0 ? { toolModels } : {}),
       ...(updatedAt !== undefined ? { updatedAt } : {}),
       providers: Object.fromEntries(
         Object.entries(providers).map(([id, connection]) => [id, providerDto(connection)]),
@@ -2071,7 +2042,6 @@ export class ProjectConfigService implements ProjectConfigStore {
     }
 
     // default_model: when provided it must be present in models; when omitted the previous value is kept (the pointer follows a key rename; if it was deleted, it's removed).
-    const next: RawTable = { ...raw, providers: providersTable, models: nextModels };
     let defaultModel: ModelRefDto | undefined;
     if (req.defaultModel !== undefined) {
       if (!seen.has(refKey(req.defaultModel.provider, req.defaultModel.modelId))) {
@@ -2079,7 +2049,6 @@ export class ProjectConfigService implements ProjectConfigStore {
           `defaultModel must be included in models: ${showRef(req.defaultModel.provider, req.defaultModel.modelId)}.`,
         );
       }
-      requireChatRow(next, req.defaultModel);
       defaultModel = req.defaultModel;
     } else {
       const prevRef = optRef(raw.default_model);
@@ -2089,14 +2058,11 @@ export class ProjectConfigService implements ProjectConfigStore {
           provider: prevRef.provider,
           modelId: prevRef.model_id,
         };
-        if (chatRow(next, followed)) defaultModel = followed;
-      }
-      if (!defaultModel && req.initialChatModel && chatRow(next, req.initialChatModel)) {
-        defaultModel = req.initialChatModel;
+        if (seen.has(refKey(followed.provider, followed.modelId))) defaultModel = followed;
       }
     }
 
-    // tools.i2t: same semantics as default_model; additionally must not be annotated vision=false (can't proxy-read images if unsupported).
+    // vision_model: same semantics as default_model; additionally must not be annotated vision=false (can't proxy-read images if unsupported).
     const targetOf = (ref: ModelRefDto) =>
       req.models.find((m) => m.provider === ref.provider && m.modelId === ref.modelId);
     let visionModel: ModelRefDto | undefined;
@@ -2113,7 +2079,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       }
       visionModel = req.visionModel;
     } else {
-      const prevRef = optRef(asTable(raw.tools).i2t);
+      const prevRef = optRef(raw.vision_model);
       if (prevRef !== undefined) {
         const prevKey = refKey(prevRef.provider, prevRef.model_id);
         const followed = renamed.get(prevKey) ?? {
@@ -2127,33 +2093,42 @@ export class ProjectConfigService implements ProjectConfigStore {
       }
     }
 
+    // [tools]: given, the table becomes exactly what was sent, every model in the table being
+    // written; omitted, each stored binding follows a renamed model and goes with a removed one.
+    const toolModels: Record<string, ModelRefDto> = {};
+    if (req.toolModels !== undefined) {
+      for (const [key, ref] of Object.entries(req.toolModels)) {
+        if (!seen.has(refKey(ref.provider, ref.modelId))) {
+          throw badRequest(
+            `toolModels.${key} must be included in models: ${showRef(ref.provider, ref.modelId)}.`,
+          );
+        }
+        toolModels[key] = ref;
+      }
+    } else {
+      for (const [key, ref] of Object.entries(parseToolModelTable(raw.tools) ?? {})) {
+        const followed = renamed.get(refKey(ref.provider, ref.model_id)) ?? {
+          provider: ref.provider,
+          modelId: ref.model_id,
+        };
+        if (seen.has(refKey(followed.provider, followed.modelId))) toolModels[key] = followed;
+      }
+    }
+
     const toRaw = (ref: ModelRefDto): RawTable => ({
       provider: ref.provider,
       model_id: ref.modelId,
     });
+    const next: RawTable = { ...raw, providers: providersTable, models: nextModels };
     if (defaultModel !== undefined) next.default_model = toRaw(defaultModel);
     else delete next.default_model;
-    // Capabilities follow a renamed model, and disappear if its row was removed.
-    const follow = (value: unknown): RawTable | undefined => {
-      const old = optRef(value);
-      if (!old) return undefined;
-      const ref = renamed.get(refKey(old.provider, old.model_id)) ?? {
-        provider: old.provider,
-        modelId: old.model_id,
-      };
-      return seen.has(refKey(ref.provider, ref.modelId)) ? toRaw(ref) : undefined;
-    };
-    const previousTools = asTable(raw.tools);
-    const tools = Object.fromEntries(
-      Object.entries(previousTools).flatMap(([key, value]) => {
-        const moved = key === "i2t" ? undefined : follow(value);
-        return moved ? [[key, moved]] : [];
-      }),
-    );
-    if (visionModel) tools.i2t = toRaw(visionModel);
-    if (raw.tools || visionModel) next.tools = tools;
-    if (previousTools.t2t && !tools.t2t && raw.voice_polish_enabled)
-      next.voice_polish_enabled = false;
+    if (visionModel !== undefined) next.vision_model = toRaw(visionModel);
+    else delete next.vision_model;
+    if (Object.keys(toolModels).length > 0) {
+      next.tools = Object.fromEntries(
+        Object.entries(toolModels).map(([key, ref]) => [key, toRaw(ref)]),
+      );
+    } else delete next.tools;
     const commit = async (): Promise<ModelsResponse> => {
       await this.writeRaw(projectId, next);
       if (this.promotions !== undefined) {
@@ -2558,23 +2533,14 @@ export class ProjectConfigService implements ProjectConfigStore {
     const next: RawTable = { ...raw, providers, models: nextModels };
     if (defaultModel !== undefined) next.default_model = defaultModel;
     else delete next.default_model;
-    const tools = asTable(raw.tools);
-    if (raw.tools) {
-      const keptTools = Object.fromEntries(
-        Object.entries(tools).filter(([key, value]) => {
-          const ref = optRef(value);
-          return key !== "i2t" && ref && presetRefs.has(refKey(ref.provider, ref.model_id));
-        }),
-      );
-      next.tools = keptTools;
-      if (tools.t2t && !keptTools.t2t && raw.voice_polish_enabled)
-        next.voice_polish_enabled = false;
-    }
+    delete next.vision_model;
+    delete next.tools;
     const changed =
       !sameValue(current, nextModels) ||
       !sameValue(asTable(raw.providers), providers) ||
-      !sameValue(raw.tools, next.tools) ||
-      !sameValue(optRef(raw.default_model), defaultModel);
+      !sameValue(optRef(raw.default_model), defaultModel) ||
+      raw.vision_model !== undefined ||
+      raw.tools !== undefined;
     if (changed) await this.writeRaw(projectId, next);
 
     this.promotions?.replaceAll(projectId, presetPromotions());

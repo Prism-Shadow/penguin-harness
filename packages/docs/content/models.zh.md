@@ -621,11 +621,11 @@ Google、Penguin Go 和 OpenRouter 分组均预置了 Gemini 4 Argon，支持图
 | `pricing` | 三档价格（单位 `usd_per_mtok`，即每百万 Token 的美元价格）：`cache_read` / `cache_write` / `output` |
 | `api_key` / `base_url` | 该模型自己的 key 与端点，两项都可选；留空时使用分组的值（key 仅在能借给该模型的端点时），再回退到客户端的环境变量：key 限于不带 base URL 或为客户端缺省端点，base URL 限于任何一层都不带时（见[设置 API key](#设置-api-key)） |
 
-文件里还保存着 `default_model`、可选的 `tools.i2t`（即视觉代理模型），以及 `[providers.<分组>]` 里各分组的设置（见[分组设置](#分组设置)与 [Project 配置](/configuration#project-配置)）。新建 Project 的文件已带有目录给出端点或协议的每个内置分组的设置。文件结构（示例）：
+文件里还保存着 `default_model`、可选的 `vision_model`（即视觉代理模型），以及 `[providers.<分组>]` 里各分组的设置（见[分组设置](#分组设置)与 [Project 配置](/configuration#project-配置)）。新建 Project 的文件已带有目录给出端点或协议的每个内置分组的设置。文件结构（示例）：
 
 ```toml
 default_model = { provider = "deepseek", model_id = "deepseek-flash" }
-tools.i2t = { provider = "google", model_id = "gemini-3.1-pro-preview" }
+vision_model = { provider = "google", model_id = "gemini-3.1-pro-preview" }
 
 [providers.tokendance]
 base_url = "https://tokendance.space/gateway/v1"

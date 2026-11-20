@@ -1,7 +1,6 @@
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { forgetSession } from "../../lib/session-seen";
-import { apiErrorText } from "../../lib/api-error";
 import { toastApiError } from "../../lib/toast-api-error";
 import { removePinnedSession, savePinnedSessions } from "./pinned-sessions";
 import { removeFromSessionOrder, saveSessionOrder } from "../../lib/session-order";
@@ -14,6 +13,7 @@ import {
 } from "../chat";
 import { docksOnScreen, openPanel, dockWorkspace } from "../dock";
 import type { useMainSidebarFetchScope } from "./main-sidebar-fetch-scope";
+import { failureNode } from "../../lib/failure";
 
 /** Consecutive live main statements 116..122, called once in original hook order. */
 export function useMainSidebarArchiveSession(scope: ReturnType<typeof useMainSidebarFetchScope>) {
@@ -69,7 +69,7 @@ export function useMainSidebarArchiveSession(scope: ReturnType<typeof useMainSid
       replace(res.session);
       setRenamingSession(null);
     } catch (e) {
-      setRenameError(apiErrorText(e));
+      setRenameError(failureNode(e, { what: "a conversation could not be renamed" }));
     } finally {
       setRenameBusy(false);
     }

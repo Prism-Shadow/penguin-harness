@@ -348,6 +348,9 @@
   --ui-enter-shift: 8px;
   --ui-enter-scale: 0.96;
   --ui-enter-blur: 6px;
+  --ui-page-duration: 200ms;
+  --ui-page-enter: ui-page-unfrost;
+  --ui-page-exit: ui-page-frost;
   --ui-dur-reveal: 360ms;
   --ui-reveal-blur: 4px;
   --ui-dur-layout: 320ms;
