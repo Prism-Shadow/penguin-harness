@@ -564,6 +564,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 - `kimi-k3.1-pro` / `kimi-k3.1-pro-highspeed` / `kimi-k3`（高速版仅 Moonshot 提供）
 - `qwen3.8-max` / `qwen3.8-flash`
 - `seed-2.1-pro` / `seed-2.1-turbo` / `seed-evolving`
+- Hy4 支持文本和图像输入，TokenDance 的模型 ID 为 `hy4`，OpenRouter 的为 `tencent/hy4`
 - `mimo-v2.6-pro` / `mimo-v2.6-flash` / `step-5-preview` / `ling-3.1-flash`（TokenDance）
 - `dots-3-note-preview`（TokenDance 上免费，512K 上下文）
 - `deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`、`Qwen/Qwen3.8-Flash-Next`（ModelScope 的 api-inference，没有价格的预置条目）
