@@ -176,8 +176,11 @@ describe("trace-index", () => {
     await backdate(tracesRoot(root), path.join(tracesRoot(root), "2026-07-01"));
     const files = await h.service.listTraceFiles(P, A, LATE);
     expect(files.map((f) => f.index)).toEqual([1]);
-    // The forced pass also swept in the other blind-spot shard.
-    expect(h.traceIndex.repo.listFilesBySession(P, A, OLD)).toHaveLength(2);
+    // The read locates the Session it was asked about (asserted above) and no longer walks
+    // the tree, so it does not sweep in OTHER Sessions' shards as a side effect. That sweep
+    // was incidental: those shards become visible on the next full pass — the periodic
+    // indexer's reconcile, or a miss that forces one.
+    expect(h.traceIndex.repo.listFilesBySession(P, A, OLD)).toHaveLength(1);
   });
 
   it("import registers synchronously (rows + facts, no re-read); Session delete removes files and rows", async () => {
