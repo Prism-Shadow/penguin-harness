@@ -1907,6 +1907,14 @@ export const en: GalleryStrings = {
       copyId: "Copy id",
       entityAction: "Open a session",
       entityTags: ["review", "read-only"],
+      shell: "App window",
+      shellHint:
+        "The sidebar's end edge drags its width, following the pointer as it moves; once focused, the arrow keys step it, and a double click puts back the theme's own width. Folded to the rail and out again, it keeps the width it was dragged to.",
+      shellResize: "Resize sidebar",
+      shellProject: "Default project",
+      shellFold: "Collapse sidebar",
+      shellUnfold: "Expand sidebar",
+      shellBody: "The page sits here, and gives way as the sidebar widens.",
       nav: "Navigation list",
       navHint:
         "The current row takes the solid fill and is the current page; a glyph is decoration beside a label that already says it. A dialog's rail scrolls sideways on a phone.",

@@ -45,6 +45,8 @@ export const zh = {
     userSettings: "用户设置",
     collapseSidebar: "收起侧栏",
     expandSidebar: "展开侧栏",
+    /** The handle on the pinned sidebar's edge: its accessible name and tooltip. */
+    resizeSidebar: "调整侧栏宽度",
     /** The desktop window's title band: back and forward through the pages visited. */
     back: "后退",
     forward: "前进",

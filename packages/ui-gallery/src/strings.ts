@@ -1862,6 +1862,14 @@ export const zh = {
       copyId: "复制 ID",
       entityAction: "打开会话",
       entityTags: ["审查", "只读"],
+      shell: "应用窗口",
+      shellHint:
+        "侧栏右缘可以拖动改变宽度，拖动中即时跟手；聚焦后左右方向键微调，双击复原为主题自身的宽度。收起为图标栏再展开，回到拖好的宽度。",
+      shellResize: "调整侧栏宽度",
+      shellProject: "默认项目",
+      shellFold: "收起侧栏",
+      shellUnfold: "展开侧栏",
+      shellBody: "页面在这里，侧栏变宽时它让出位置。",
       nav: "导航列表",
       navHint:
         "当前行用实色填充，并标为当前页；图标只是装饰，旁边的标签已经说明了它。对话框的侧栏在手机上横向滚动。",

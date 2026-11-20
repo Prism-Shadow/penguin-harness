@@ -31,6 +31,7 @@ export const en: Strings = {
     userSettings: "User settings",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
+    resizeSidebar: "Resize sidebar",
     back: "Back",
     forward: "Forward",
     collapseGroup: "Collapse",
