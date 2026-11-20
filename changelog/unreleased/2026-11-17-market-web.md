@@ -2,7 +2,7 @@
 
 - **Date:** 2026-11-17
 - **Type:** feature
-- **Scope:** `core`, `web`, `ui`, `ui-gallery`
+- **Scope:** `core`, `server`, `web`, `ui-gallery`
 - **PR:** [#1584](https://github.com/Prism-Shadow/penguin-harness/pull/1584)
 
 [中文版](2026-11-17-market-web.zh.md)
@@ -13,4 +13,4 @@ Both views open plugin details, manage installations and launch installed workbe
 
 Categories supplied only by the remote registry, including Utilities and Entertainment, appear as soon as they have a plugin to browse.
 
-The version appears in the top right of each card and list row. Below it, you can see how many Agents have the plugin, or whether it is installed on the server. A package update names the new version alongside the current one. Quick start opens an example on the selected Agent.
+The version appears in the top right of each card and list row. Below it, you can see how many Agents have the plugin, or whether it is installed on the server. A package update names the new version alongside the current one. Quick start opens an example on the selected Agent. The card, its version chip and its two actions are the UI package's cover card, the one the public catalog draws.
