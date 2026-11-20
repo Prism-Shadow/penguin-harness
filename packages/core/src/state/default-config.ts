@@ -410,6 +410,8 @@ export interface SystemConfig {
   description?: string;
   /** Who made the Agent (see AgentAuthor); read through `agentAuthorOf`, absent means `user`. */
   author?: AgentAuthor;
+  /** Set only on the system Agent by its preset: with the id `system_agent`, it makes the Agent the system Agent (system-agent.ts). */
+  system?: boolean;
   /** Agent State version number: a natural number, 1 on creation, incremented on successful optimization; a missing field is treated as 1. */
   version?: number;
   /**
