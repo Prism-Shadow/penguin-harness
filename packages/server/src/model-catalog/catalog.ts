@@ -3721,8 +3721,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // prices it (0.5.10, read 2026-11-19): MMSP folds the provider's billing units — an image's
   // output tokens, a search, a second of audio, a character — into its token buckets
   // (MMSP-RFC-0003 §3.2), so the bill is the reported usage times these rates. A row MMSP prices
-  // nowhere is unpriced; the thinking of a video model bills at its output rate here, MMSP's
-  // separate thoughts rate having no bucket in this catalog yet.
+  // nowhere is unpriced. A video model's thinking is billed as output, at the output price: there
+  // is no separate thinking rate.
   {
     provider: "google",
     modelId: "gemini-3.1-flash-lite-image",
@@ -3752,7 +3752,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     tool: true,
   },
   {
-    // $1.50 input and $12 per 1M video output tokens (5,792 a second at 720p); thinking bills $9.
+    // $1.50 input and $12 per 1M output tokens (5,792 video tokens a second at 720p); thinking is
+    // billed as output, at the same $12, with no separate thinking rate.
     provider: "google",
     modelId: "gemini-omni-1.2-flash",
     displayName: "Gemini Omni 1.2 Flash",
