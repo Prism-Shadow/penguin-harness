@@ -3,6 +3,7 @@
 - **Date:** 2026-11-20
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `skills`, `desktop`
+- **PR:** [#1669](https://github.com/Prism-Shadow/penguin-harness/pull/1669)
 - **Breaking:** yes — Project 的目录为 `<root>/projects/<project_id>/`，Benchmark 的目录为评估中心的数据目录；名为 `projects` 的 Project 使服务端无法启动
 
 [English](2026-11-20-data-root-projects.md)

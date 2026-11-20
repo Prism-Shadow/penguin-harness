@@ -3,6 +3,7 @@
 - **Date:** 2026-11-20
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `skills`, `desktop`
+- **PR:** [#1669](https://github.com/Prism-Shadow/penguin-harness/pull/1669)
 - **Breaking:** yes — a Project's folder is `<root>/projects/<project_id>/` and a Benchmark's is the Evaluation Center's data folder; a Project named `projects` keeps the server from starting
 
 [中文版](2026-11-20-data-root-projects.zh.md)
