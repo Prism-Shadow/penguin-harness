@@ -26,6 +26,7 @@ const en = {
   stillRunning: (id: string) =>
     `The run is still going in its Session: check it with \`penguin tools status ${id}\`.\n`,
   noModel: "not bound",
+  followsDefault: "(the default chat model)",
 };
 
 const zh: typeof en = {
@@ -51,6 +52,7 @@ const zh: typeof en = {
   statusOut: "同时把已完成任务的文件保存到这个本地目录",
   stillRunning: (id: string) => `任务仍在会话中进行：用 \`penguin tools status ${id}\` 查看。\n`,
   noModel: "未绑定",
+  followsDefault: "（默认对话模型）",
 };
 
 export type Strings = typeof en;

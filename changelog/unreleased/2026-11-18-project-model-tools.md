@@ -13,7 +13,9 @@ The built-in **Multimodal tools** plugin (`@penguinharness/multimodal-tools`) le
 
 - The plugin declares seven tool-model bindings, one `[tools]` key per tool: `t2t`, `search`, `fetch`, `t2i`, `t2v`, `t2s` and `s2t`. An owner binds a configured model to each through `PATCH /api/projects/:projectId/models/tool-bindings`; a picker offers only the models a tool can use, judged by the client MMSP routes the model to and the modalities its registry lists.
 - Image understanding has no binding: it runs on the Project's vision model (`vision_model`), unchanged.
-- Transcript editing for dictation shares the `t2t` model. Whether it is on, and its prompt, are the plugin's per-Project settings, kept in the plugin's folder of the Project.
+- While nothing is bound to `t2t`, text generation (`penguin tools t2t` and transcript editing) runs on the Project's default chat model; `penguin tools list` marks it as such.
+- Transcript editing for dictation shares the text generation model. Whether it is on, and its prompt, are the plugin's per-Project settings, kept in the plugin's folder of the Project (`voice-polish.json`). Until an owner sets the switch, editing is on whenever speech recognition is bound and a text generation model exists; once set, the stored switch decides, so a switch turned off stays off.
+- The default editing prompt asks for a minimal, faithful cleanup only — punctuation, words the recognizer plainly misheard, filler words and stutters — and never to add, drop, reorder or reinterpret content or change the speaker's wording, language or register, keeping the original when unsure. It tells the model to answer at once without thinking, and each editing request asks for the least thinking the model accepts (MMSP's `none`).
 
 ## Enabled in every Project
 
