@@ -102,7 +102,7 @@ import { fileIdentityOf } from "./history-wire.js";
 import { traceRecordImage, withImagesByReference } from "./trace-images.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
-import type { TracePaths } from "./ports.js";
+import type { TracePricing, TracePaths } from "./ports.js";
 import type { SessionIndex, SessionOrigins } from "@prismshadow/penguin-library-session";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
@@ -361,7 +361,7 @@ export class TraceService implements Traces {
    * The Project's pricing table, read structurally (the server's ProjectConfigStore satisfies
    * it; narrow tests wire their own or none — without pricing the analysis carries no cost).
    */
-  @Use() private readonly projectConfig?: { getPricing: PricingLookup };
+  @Use() private readonly projectConfig?: TracePricing;
   /**
    * The Project's current price for a paired reference — the same lookup the cost center
    * prices `usage_records` with, so the analysis' per-turn cost and the toolbar's figure come
