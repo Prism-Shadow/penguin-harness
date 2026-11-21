@@ -210,6 +210,7 @@ describe("creating an Agent", () => {
       agentId: "writer",
       name: "Writer",
       author: "user",
+      defaultPlugins: false,
     });
   });
 
