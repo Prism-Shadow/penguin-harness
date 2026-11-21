@@ -16,6 +16,7 @@ export interface RfcPrDocRef {
   number: string;
   title: string;
   titleZh?: string;
+  version?: string;
 }
 
 export interface RfcPrRecord {
@@ -26,6 +27,14 @@ export interface RfcPrRecord {
   baseRefName: string;
   headRefOid: string;
   rfcs: RfcPrDocRef[];
+}
+
+export interface RfcEditionPr {
+  number: number;
+  title: string;
+  url: string;
+  status: RfcStatus;
+  version?: string;
 }
 
 /** One language version of a document: the in-site page that renders it, and the raw document. */
@@ -62,6 +71,8 @@ export interface RfcEntry {
   zh?: RfcDocument;
   /** An open PR carrying a revision newer than this merged version, if any. */
   openRevision?: ExternalDocument;
+  /** All opening (`open` or `draft`) PRs for this RFC that are not its main version. */
+  openEditions?: RfcEditionPr[];
 }
 
 export interface ParsedDocument {
@@ -85,14 +96,39 @@ export interface RfcTreeNode {
   key: string;
   label?: string;
   entry?: RfcEntry;
+  editionPr?: RfcEditionPr;
   children?: RfcTreeNode[];
 }
 
-export type RfcTreeStyle = "outline" | "cards" | "terminal" | "graph";
-
-export const RFC_TREE_STYLES: readonly RfcTreeStyle[] = ["outline", "cards", "terminal", "graph"];
-export const RFC_TREE_STYLE_STORAGE_KEY = "penguin-rfc-tree-style-v1";
 export const RFC_TREE_COLLAPSED_STORAGE_KEY = "penguin-rfc-tree-collapsed-v1";
+
+/** SemVer 2.0 format required by `check-rfcs` (`vMAJOR.MINOR.PATCH`, e.g. `v0.0.1`, `v0.1.0`, `v1.0.0`). */
+export const RFC_SEMVER_REGEX =
+  /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+
+/** Whether `version` is a valid SemVer 2.0 RFC version (`vMAJOR.MINOR.PATCH` and not `v0.0.0`). */
+export function isValidRfcSemver(version: string): boolean {
+  const m = RFC_SEMVER_REGEX.exec(version.trim());
+  if (!m) return false;
+  return Number(m[1]) !== 0 || Number(m[2]) !== 0 || Number(m[3]) !== 0;
+}
+
+/**
+ * Whether `version` is a major version of an RFC:
+ * - `v0.0.1`, `v0.0.2` (when `major === 0 && minor === 0 && patch > 0`)
+ * - `v0.1.0`, `v0.2.0` / `v0.1`, `v0.2` (when `major === 0 && minor > 0 && patch === 0`)
+ * - `v1.0.0`, `v2.0.0` / `v1`, `v2` (when `major > 0 && minor === 0 && patch === 0`)
+ * Versions like `v0.1.2`, `v1.1.0`, `v1.2.0` are not major versions.
+ */
+export function isMajorRfcVersion(version: string): boolean {
+  const m = /^v?(0|[1-9]\d*)(?:\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?)?$/.exec(version.trim());
+  if (!m) return false;
+  const major = Number(m[1]);
+  const minor = Number(m[2] ?? "0");
+  const patch = Number(m[3] ?? "0");
+  const nonZeroCount = (major > 0 ? 1 : 0) + (minor > 0 ? 1 : 0) + (patch > 0 ? 1 : 0);
+  return nonZeroCount === 1;
+}
 
 export interface RfcSearchRecord {
   href: string;
@@ -179,71 +215,94 @@ export function buildRfcIndex(
     .slice()
     .sort((a, b) => a.number - b.number);
 
-  const prByRfcId = new Map<
-    string,
-    { pr: RfcPrRecord; ref: RfcPrDocRef; openRevisionHref?: string }
-  >();
+  const itemsByRfcId = new Map<string, { pr: RfcPrRecord; ref: RfcPrDocRef }[]>();
   for (const pr of mainPrs) {
     if (pr.status === "closed") continue;
     for (const ref of pr.rfcs ?? []) {
-      const existing = prByRfcId.get(ref.id);
-      if (!existing) {
-        prByRfcId.set(ref.id, {
-          pr,
-          ref,
-          openRevisionHref: pr.status === "open" ? pr.url : undefined,
-        });
-      } else if (existing.pr.status === "merged") {
-        if (pr.status === "merged") {
-          existing.pr = pr;
-          existing.ref = ref;
-        } else if (pr.status === "open") {
-          existing.openRevisionHref = pr.url;
-        }
-      } else {
-        existing.pr = pr;
-        existing.ref = ref;
-        if (pr.status === "open") existing.openRevisionHref = pr.url;
-      }
+      const list = itemsByRfcId.get(ref.id) ?? [];
+      list.push({ pr, ref });
+      itemsByRfcId.set(ref.id, list);
     }
+  }
+
+  const resolvedPrByRfcId = new Map<
+    string,
+    {
+      main: { pr: RfcPrRecord; ref: RfcPrDocRef };
+      openEditions: RfcEditionPr[];
+    }
+  >();
+
+  for (const [id, items] of itemsByRfcId) {
+    const mergedItems = items.filter(({ pr }) => pr.status === "merged");
+    const openingItems = items.filter(({ pr }) => pr.status === "open" || pr.status === "draft");
+
+    let main: { pr: RfcPrRecord; ref: RfcPrDocRef };
+    if (mergedItems.length > 0) {
+      const majorMerged = mergedItems.filter(
+        ({ ref }) => !ref.version || isMajorRfcVersion(ref.version),
+      );
+      main = majorMerged.at(-1) ?? mergedItems[0]!;
+    } else {
+      const majorOpening = openingItems.filter(
+        ({ ref }) => !ref.version || isMajorRfcVersion(ref.version),
+      );
+      main = majorOpening.at(-1) ?? openingItems[0]!;
+    }
+
+    const openEditions: RfcEditionPr[] = openingItems
+      .filter(({ pr }) => pr.number !== main.pr.number)
+      .map(({ pr, ref }) => ({
+        number: pr.number,
+        title: pr.title,
+        url: pr.url,
+        status: pr.status,
+        ...(ref.version ? { version: ref.version } : {}),
+      }));
+
+    resolvedPrByRfcId.set(id, { main, openEditions });
   }
 
   const entriesById = new Map<string, RfcEntry>();
   for (const [id, { en, zh }] of pairs) {
-    const prInfo = prByRfcId.get(id);
+    const resolved = resolvedPrByRfcId.get(id);
+    const mainPr = resolved?.main.pr;
+    const openEditions = resolved?.openEditions ?? [];
     const docStatus = en?.status ?? zh?.status ?? "draft";
     const status: RfcStatus =
-      docStatus === "merged" ? "merged" : (prInfo?.pr.status ?? docStatus);
+      docStatus === "merged" ? "merged" : (mainPr?.status ?? docStatus);
     const linked = (doc?: ParsedDocument): RfcDocument | undefined => {
       if (!doc || status === "draft" || status === "closed") return undefined;
       if (status === "open") {
-        const href = prInfo?.pr.url ?? doc.prHref;
+        const href = mainPr?.url ?? doc.prHref;
         return href ? { href, file: doc.file, raw: doc.raw } : undefined;
       }
       return { href: inSiteHref(doc.id, doc.zh), file: doc.file, raw: doc.raw };
     };
     const openRevisionHref =
-      (status === "merged" ? prInfo?.openRevisionHref : undefined) ??
+      (status === "merged" ? openEditions[0]?.url : undefined) ??
       en?.openRevisionHref ??
       zh?.openRevisionHref;
-    const prHref = prInfo?.pr.url ?? en?.prHref ?? zh?.prHref;
+    const prHref = mainPr?.url ?? en?.prHref ?? zh?.prHref;
     entriesById.set(id, {
       id,
       number: id.match(/^PRFC-\d+/)?.[0] ?? id,
       title: en?.title ?? zh!.title,
       titleZh: zh?.title,
       status,
-      ...(prInfo?.pr.number ? { prNumber: prInfo.pr.number } : {}),
-      ...(prInfo?.pr.title ? { prTitle: prInfo.pr.title } : {}),
+      ...(mainPr?.number ? { prNumber: mainPr.number } : {}),
+      ...(mainPr?.title ? { prTitle: mainPr.title } : {}),
       ...(prHref ? { prHref } : {}),
       en: linked(en),
       zh: linked(zh),
       openRevision: openRevisionHref ? { href: openRevisionHref } : undefined,
+      ...(openEditions.length > 0 ? { openEditions } : {}),
     });
   }
 
-  for (const [id, { pr, ref }] of prByRfcId) {
-    if (entriesById.has(id) || pr.status === "closed") continue;
+  for (const [id, { main, openEditions }] of resolvedPrByRfcId) {
+    if (entriesById.has(id) || main.pr.status === "closed") continue;
+    const { pr, ref } = main;
     entriesById.set(id, {
       id,
       number: ref.number || (id.match(/^PRFC-\d+/)?.[0] ?? id),
@@ -253,6 +312,7 @@ export function buildRfcIndex(
       prNumber: pr.number,
       prTitle: pr.title,
       prHref: pr.url,
+      ...(openEditions.length > 0 ? { openEditions } : {}),
     });
   }
 
@@ -420,9 +480,14 @@ export function buildRfcTree(entries: readonly RfcEntry[] = rfcEntries): RfcTree
     const entry = spec.rfcId ? byId.get(spec.rfcId) : undefined;
     if (spec.rfcId && !entry) return null;
     if (entry) placed.add(entry.id);
-    const children = (spec.children ?? [])
+    const editionChildren: RfcTreeNode[] = (entry?.openEditions ?? []).map((editionPr) => ({
+      key: `${entry!.id}:pr-${editionPr.number}`,
+      editionPr,
+    }));
+    const specChildren = (spec.children ?? [])
       .map(buildNode)
       .filter((child): child is RfcTreeNode => child !== null);
+    const children = [...editionChildren, ...specChildren];
     if (!entry && children.length === 0) return null;
     return {
       key: spec.key,
@@ -436,7 +501,17 @@ export function buildRfcTree(entries: readonly RfcEntry[] = rfcEntries): RfcTree
   const unplaced = entries.filter((entry) => !placed.has(entry.id));
   if (unplaced.length > 0) {
     const harness = tree.find((node) => node.key === "harness");
-    const extraNodes = unplaced.map((entry) => ({ key: entry.id, entry }));
+    const extraNodes: RfcTreeNode[] = unplaced.map((entry) => {
+      const editionChildren: RfcTreeNode[] = (entry.openEditions ?? []).map((editionPr) => ({
+        key: `${entry.id}:pr-${editionPr.number}`,
+        editionPr,
+      }));
+      return {
+        key: entry.id,
+        entry,
+        ...(editionChildren.length > 0 ? { children: editionChildren } : {}),
+      };
+    });
     if (harness) {
       harness.children = [...(harness.children ?? []), ...extraNodes];
     } else {
@@ -464,7 +539,7 @@ export function collapsibleRfcTreeKeys(nodes: readonly RfcTreeNode[] = rfcTree):
   return keys;
 }
 
-/** Count how many RFC entries live inside `node`'s descendants (excluding `node.entry` itself). */
+/** Count how many RFC entries live inside `node`'s descendants. */
 export function countRfcTreeDescendantEntries(node: RfcTreeNode): number {
   let count = 0;
   for (const child of node.children ?? []) {
@@ -481,33 +556,6 @@ function defaultStorage(): Storage | null {
       : null;
   } catch {
     return null;
-  }
-}
-
-/** Read the persisted RFC tree view style from storage, defaulting to `"outline"`. */
-export function readRfcTreeStyle(
-  storage: Pick<Storage, "getItem"> | null | undefined = defaultStorage(),
-): RfcTreeStyle {
-  try {
-    const raw = storage?.getItem(RFC_TREE_STYLE_STORAGE_KEY);
-    if (raw && (RFC_TREE_STYLES as readonly string[]).includes(raw)) {
-      return raw as RfcTreeStyle;
-    }
-  } catch {
-    // Ignore storage access errors.
-  }
-  return "outline";
-}
-
-/** Persist the selected RFC tree view style to storage. */
-export function writeRfcTreeStyle(
-  style: RfcTreeStyle,
-  storage: Pick<Storage, "setItem"> | null | undefined = defaultStorage(),
-): void {
-  try {
-    storage?.setItem(RFC_TREE_STYLE_STORAGE_KEY, style);
-  } catch {
-    // Ignore storage access errors.
   }
 }
 

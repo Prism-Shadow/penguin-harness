@@ -31,7 +31,10 @@ function formatTreeMarkdown(nodes: readonly RfcTreeNode[], locale: string, depth
   const indent = "  ".repeat(depth);
   const lines: string[] = [];
   for (const node of nodes) {
-    if (!node.entry) {
+    if (node.editionPr) {
+      const pr = node.editionPr;
+      lines.push(`${indent}- [#${pr.number} ${pr.title}](${pr.url})`);
+    } else if (!node.entry) {
       lines.push(`${indent}- **${node.label}**`);
     } else {
       const entry = node.entry;
@@ -123,13 +126,7 @@ export function RfcsPage() {
         </SiteMarkdown>
       )}
       <section className="mt-8">
-        <h2
-          id={allSectionId}
-          className="scroll-mt-24 text-xl font-semibold tracking-tight text-gray-900 dark:text-gray-100"
-        >
-          {S.rfcs.sectionAll}
-        </h2>
-        <RfcTreeView locale={locale} />
+        <RfcTreeView locale={locale} headingId={allSectionId} />
       </section>
       <SiteMarkdown
         variant="doc"

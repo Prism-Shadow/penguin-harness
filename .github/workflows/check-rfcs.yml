@@ -94,6 +94,58 @@ jobs:
           done
 
           echo ""
+          echo "=== Checking SemVer 2.0 version format in RFCs ==="
+
+          SEMVER_RE='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+
+          for file in rfcs/PRFC-*.md; do
+            if [ ! -e "$file" ]; then
+              continue
+            fi
+
+            filename=$(basename "$file")
+            FILE_SEMVER_OK=1
+
+            # If a Rev / 修订 provenance line is present, validate its version token
+            REV_LINE=$(grep -E '^>[[:space:]]*(-\s*)?(\*\*Rev\*\*:|Rev:|\*\*修订\*\*：|修订：)' "$file" | head -n 1 || true)
+            if [ -n "$REV_LINE" ]; then
+              REV_TOKEN=$(echo "$REV_LINE" | sed -E 's/^>[[:space:]]*(-\s*)?(\*\*Rev\*\*:|Rev:|\*\*修订\*\*：|修订：)[[:space:]]*([^[:space:]（(;；,，]+).*/\3/')
+              if ! echo "$REV_TOKEN" | grep -qE "$SEMVER_RE" || [ "$REV_TOKEN" = "v0.0.0" ]; then
+                echo "❌ $filename has invalid Rev version '$REV_TOKEN' (must follow SemVer 2.0, e.g. v0.0.1, v0.1.0, v1.0.0)"
+                ERROR=1
+                FILE_SEMVER_OK=0
+              fi
+            fi
+
+            # Every RFC must have ## Changes with SemVer 2.0 ### vX.Y.Z headings
+            if ! grep -q "^## Changes" "$file"; then
+              echo "❌ $filename is missing '## Changes' section"
+              ERROR=1
+              continue
+            fi
+
+            CHANGE_HEADINGS=$(awk '/^## Changes/{flag=1; next} /^## /{flag=0} flag && /^### /{sub(/^### +/, ""); print}' "$file")
+            if [ -z "$CHANGE_HEADINGS" ]; then
+              echo "❌ $filename has '## Changes' but no '### vX.Y.Z' version headings"
+              ERROR=1
+              continue
+            fi
+
+            while IFS= read -r ver; do
+              [ -z "$ver" ] && continue
+              if ! echo "$ver" | grep -qE "$SEMVER_RE" || [ "$ver" = "v0.0.0" ]; then
+                echo "❌ $filename has invalid Changes version '### $ver' (must follow SemVer 2.0, e.g. v0.0.1, v0.1.0, v1.0.0)"
+                ERROR=1
+                FILE_SEMVER_OK=0
+              fi
+            done <<< "$CHANGE_HEADINGS"
+
+            if [ $FILE_SEMVER_OK -eq 1 ]; then
+              echo "✅ $filename: SemVer 2.0 versions OK"
+            fi
+          done
+
+          echo ""
           echo "=== Checking Changes section for modified RFCs ==="
 
           # Get list of modified RFC files (excluding new files)

@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-21T03:43:42.235Z",
+  "updatedAt": "2026-11-21T04:44:45.549Z",
   "prs": [
     {
       "number": 1228,
@@ -13,61 +13,71 @@
           "id": "PRFC-0001-module",
           "number": "PRFC-0001",
           "title": "PRFC-0001 Module",
-          "titleZh": "PRFC-0001 Module"
+          "titleZh": "PRFC-0001 Module",
+          "version": "v1.0.0"
         },
         {
           "id": "PRFC-0002-hmr",
           "number": "PRFC-0002",
           "title": "PRFC-0002 HMR v1: the layer has only `/api/hmr`, and depends only on http and log",
-          "titleZh": "PRFC-0002 HMR v1：层只有 `/api/hmr`，只依赖 http 与 log"
+          "titleZh": "PRFC-0002 HMR v1：层只有 `/api/hmr`，只依赖 http 与 log",
+          "version": "v1.0.0"
         },
         {
           "id": "PRFC-0003-plugin",
           "number": "PRFC-0003",
           "title": "PRFC-0003 Plugin",
-          "titleZh": "PRFC-0003 插件"
+          "titleZh": "PRFC-0003 插件",
+          "version": "v1.0.0"
         },
         {
           "id": "PRFC-0007-schema-migrations",
           "number": "PRFC-0007",
           "title": "PRFC-0007: Schema changes are ordered, stamped, run-once migrations",
-          "titleZh": "PRFC-0007 schema 的改动是有序、带戳、只跑一次的迁移"
+          "titleZh": "PRFC-0007 schema 的改动是有序、带戳、只跑一次的迁移",
+          "version": "v1.0.0"
         },
         {
           "id": "PRFC-0009-sandbox",
           "number": "PRFC-0009",
           "title": "PRFC-0009 Sandbox: policy fails closed, backend is a plugin",
-          "titleZh": "PRFC-0009 Sandbox：策略 fail closed，后端是插件"
+          "titleZh": "PRFC-0009 Sandbox：策略 fail closed，后端是插件",
+          "version": "v1.0.0"
         },
         {
           "id": "PRFC-0014-workflow",
           "number": "PRFC-0014",
           "title": "PRFC-0014 Workflow: A Module Tree in the Agent's Directory",
-          "titleZh": "PRFC-0014 Workflow：Agent 目录里的一棵模块树"
+          "titleZh": "PRFC-0014 Workflow：Agent 目录里的一棵模块树",
+          "version": "v1.0.0"
         },
         {
           "id": "PRFC-0015-agent-state",
           "number": "PRFC-0015",
           "title": "PRFC-0015 Agent State Component: hand off state during HMR, running tasks are not interrupted",
-          "titleZh": "PRFC-0015 Agent 状态组件：热更新时移交状态，运行中的 Task 不被打断"
+          "titleZh": "PRFC-0015 Agent 状态组件：热更新时移交状态，运行中的 Task 不被打断",
+          "version": "v1.0.0"
         },
         {
           "id": "PRFC-0018-amsp",
           "number": "PRFC-0018",
           "title": "PRFC-0018 AMSP and Agent API",
-          "titleZh": "PRFC-0018 AMSP 与 Agent API"
+          "titleZh": "PRFC-0018 AMSP 与 Agent API",
+          "version": "v1.0.0"
         },
         {
           "id": "PRFC-0019-rsi-toolkits",
           "number": "PRFC-0019",
           "title": "PRFC-0019 RSI Toolkits",
-          "titleZh": "PRFC-0019 RSI 工具包"
+          "titleZh": "PRFC-0019 RSI 工具包",
+          "version": "v1.0.0"
         },
         {
           "id": "PRFC-0020-agent-workbench",
           "number": "PRFC-0020",
           "title": "PRFC-0020 Agent Workbench: App Naming, Plugin Distribution, and Product Support",
-          "titleZh": "PRFC-0020 Agent Workbench：应用命名、插件分发与产品支持"
+          "titleZh": "PRFC-0020 Agent Workbench：应用命名、插件分发与产品支持",
+          "version": "v1.0.0"
         }
       ]
     },
@@ -83,7 +93,8 @@
           "id": "PRFC-0004-plugin-scope",
           "number": "PRFC-0004",
           "title": "PRFC-0004 Plugin Scope",
-          "titleZh": "PRFC-0004 插件的作用域"
+          "titleZh": "PRFC-0004 插件的作用域",
+          "version": "v1.0.0"
         }
       ]
     },
@@ -99,7 +110,8 @@
           "id": "PRFC-0005-plugin-versioning",
           "number": "PRFC-0005",
           "title": "PRFC-0005 Plugin Versioning",
-          "titleZh": "PRFC-0005 插件的版本"
+          "titleZh": "PRFC-0005 插件的版本",
+          "version": "v1.0.0"
         }
       ]
     },
@@ -115,7 +127,8 @@
           "id": "PRFC-0006-plugin-distribution",
           "number": "PRFC-0006",
           "title": "PRFC-0006 Plugin Distribution and Installation",
-          "titleZh": "PRFC-0006 插件的分发与安装"
+          "titleZh": "PRFC-0006 插件的分发与安装",
+          "version": "v1.0.0"
         }
       ]
     },
@@ -131,7 +144,8 @@
           "id": "PRFC-0008-telemetry",
           "number": "PRFC-0008",
           "title": "PRFC-0008 Telemetry: Let the System Itself Say Where Time Went and Where Messages Stalled",
-          "titleZh": "PRFC-0008 遥测：让系统自己说出时间花在哪、消息停在哪"
+          "titleZh": "PRFC-0008 遥测：让系统自己说出时间花在哪、消息停在哪",
+          "version": "v1.0.0"
         }
       ]
     },
@@ -147,7 +161,8 @@
           "id": "PRFC-0010-ui-modules",
           "number": "PRFC-0010",
           "title": "PRFC-0010 UI Modules: The Web App Is a Module Tree; Pages and Global UI Are Contributions",
-          "titleZh": "PRFC-0010 UI Modules：Web App 是一棵模块树，页面与全局 UI 都是贡献"
+          "titleZh": "PRFC-0010 UI Modules：Web App 是一棵模块树，页面与全局 UI 都是贡献",
+          "version": "v1.0.0"
         }
       ]
     },
@@ -163,7 +178,8 @@
           "id": "PRFC-0011-single-socket",
           "number": "PRFC-0011",
           "title": "PRFC-0011 API Socket",
-          "titleZh": "PRFC-0011 API Socket"
+          "titleZh": "PRFC-0011 API Socket",
+          "version": "v1.0.0"
         }
       ]
     },
@@ -171,7 +187,7 @@
       "number": 1247,
       "title": "docs(rfcs): draft RFC PRFC-0012 - chat bots",
       "url": "https://github.com/Prism-Shadow/penguin-harness/pull/1247",
-      "status": "open",
+      "status": "closed",
       "baseRefName": "main",
       "headRefOid": "0d5431ebf1996cf25c431db0a09f139c238d32dc",
       "rfcs": [
@@ -179,7 +195,8 @@
           "id": "PRFC-0012-chat-bots",
           "number": "PRFC-0012",
           "title": "PRFC-0012 A bot that starts agents from chat is a plugin's job",
-          "titleZh": "PRFC-0012 从聊天里启动智能体的机器人是插件的事"
+          "titleZh": "PRFC-0012 从聊天里启动智能体的机器人是插件的事",
+          "version": "v1.0.0"
         }
       ]
     },
@@ -187,7 +204,7 @@
       "number": 1248,
       "title": "docs(rfcs): draft RFC PRFC-0016 - company proposals",
       "url": "https://github.com/Prism-Shadow/penguin-harness/pull/1248",
-      "status": "open",
+      "status": "closed",
       "baseRefName": "main",
       "headRefOid": "26831e267265e55a8f4e1095a73d02b4cfdb6380",
       "rfcs": [
@@ -195,7 +212,8 @@
           "id": "PRFC-0016-company-proposals",
           "number": "PRFC-0016",
           "title": "PRFC-0016 Company-mode proposals: the person reads one while the Agent builds it at the same time",
-          "titleZh": "PRFC-0016 公司模式的提案：人读一份，Agent 同时做一份"
+          "titleZh": "PRFC-0016 公司模式的提案：人读一份，Agent 同时做一份",
+          "version": "v1.0.0"
         }
       ]
     },
@@ -203,7 +221,7 @@
       "number": 1249,
       "title": "docs(rfcs): draft RFC PRFC-0017 - session surface",
       "url": "https://github.com/Prism-Shadow/penguin-harness/pull/1249",
-      "status": "open",
+      "status": "closed",
       "baseRefName": "main",
       "headRefOid": "6e004a020385172d91b7606db1a9eab0d47f1235",
       "rfcs": [
@@ -211,7 +229,8 @@
           "id": "PRFC-0017-session-surface",
           "number": "PRFC-0017",
           "title": "PRFC-0017 Session Surface",
-          "titleZh": "PRFC-0017 会话表面"
+          "titleZh": "PRFC-0017 会话表面",
+          "version": "v1.0.0"
         }
       ]
     },
@@ -227,7 +246,8 @@
           "id": "PRFC-0022-rfc-invariant",
           "number": "PRFC-0022",
           "title": "PRFC-0022 RFC Invariants: a permanent section for what must always hold",
-          "titleZh": "PRFC-0022 RFC Invariants：一个永久节，写下必须一直成立的性质"
+          "titleZh": "PRFC-0022 RFC Invariants：一个永久节，写下必须一直成立的性质",
+          "version": "v1.0.0"
         }
       ]
     },
@@ -243,13 +263,15 @@
           "id": "PRFC-0021-distros",
           "number": "PRFC-0021",
           "title": "PRFC-0021 Distro Channels: the shared vocabulary of how the harness reaches a machine",
-          "titleZh": "PRFC-0021 发行通道：harness 抵达一台机器的共用词表"
+          "titleZh": "PRFC-0021 发行通道：harness 抵达一台机器的共用词表",
+          "version": "v1.0.0"
         },
         {
           "id": "PRFC-0023-harness-meta",
           "number": "PRFC-0023",
           "title": "PRFC-0023 Harness Meta: every data root carries the record of its harness",
-          "titleZh": "PRFC-0023 Harness Meta：每个数据根都带着自己那份 harness 记录"
+          "titleZh": "PRFC-0023 Harness Meta：每个数据根都带着自己那份 harness 记录",
+          "version": "v1.1.0"
         }
       ]
     },
@@ -265,7 +287,8 @@
           "id": "PRFC-0018-amsp",
           "number": "PRFC-0018",
           "title": "PRFC-0018 AMSP and Agent API",
-          "titleZh": "PRFC-0018 AMSP 与 Agent API"
+          "titleZh": "PRFC-0018 AMSP 与 Agent API",
+          "version": "v1.1.0"
         }
       ]
     },
@@ -281,19 +304,22 @@
           "id": "PRFC-0003-plugin",
           "number": "PRFC-0003",
           "title": "PRFC-0003 Plugin",
-          "titleZh": "PRFC-0003 插件"
+          "titleZh": "PRFC-0003 插件",
+          "version": "v1.1.0"
         },
         {
           "id": "PRFC-0014-workflow",
           "number": "PRFC-0014",
           "title": "PRFC-0014 Workflow: A Module Tree in the Agent's Directory",
-          "titleZh": "PRFC-0014 Workflow：Agent 目录里的一棵模块树"
+          "titleZh": "PRFC-0014 Workflow：Agent 目录里的一棵模块树",
+          "version": "v1.1.0"
         },
         {
           "id": "PRFC-0019-rsi-toolkits",
           "number": "PRFC-0019",
           "title": "PRFC-0019 RSI Toolkits",
-          "titleZh": "PRFC-0019 RSI 工具包"
+          "titleZh": "PRFC-0019 RSI 工具包",
+          "version": "v1.1.0"
         }
       ]
     },
@@ -309,7 +335,8 @@
           "id": "PRFC-0024-cli-modules",
           "number": "PRFC-0024",
           "title": "PRFC-0024 CLI Modules",
-          "titleZh": "PRFC-0024 CLI Modules：命令是归属于拥有它的进程的贡献"
+          "titleZh": "PRFC-0024 CLI Modules：命令是归属于拥有它的进程的贡献",
+          "version": "v1.0.0"
         }
       ]
     },
@@ -325,19 +352,22 @@
           "id": "PRFC-0001-module",
           "number": "PRFC-0001",
           "title": "PRFC-0001 Module",
-          "titleZh": "PRFC-0001 Module"
+          "titleZh": "PRFC-0001 Module",
+          "version": "v2.1.0"
         },
         {
           "id": "PRFC-0003-plugin",
           "number": "PRFC-0003",
           "title": "PRFC-0003 Plugin",
-          "titleZh": "PRFC-0003 插件"
+          "titleZh": "PRFC-0003 插件",
+          "version": "v2.1.0"
         },
         {
           "id": "PRFC-0025-module-pass",
           "number": "PRFC-0025",
           "title": "PRFC-0025 Module Pass: immutable operators before boot",
-          "titleZh": "PRFC-0025 Module Pass：boot 前的不可变 operator"
+          "titleZh": "PRFC-0025 Module Pass：boot 前的不可变 operator",
+          "version": "v2.1.0"
         }
       ]
     },
@@ -353,19 +383,22 @@
           "id": "PRFC-0001-module",
           "number": "PRFC-0001",
           "title": "PRFC-0001 Module",
-          "titleZh": "PRFC-0001 Module"
+          "titleZh": "PRFC-0001 Module",
+          "version": "v2.3.0"
         },
         {
           "id": "PRFC-0003-plugin",
           "number": "PRFC-0003",
           "title": "PRFC-0003 Plugin",
-          "titleZh": "PRFC-0003 插件"
+          "titleZh": "PRFC-0003 插件",
+          "version": "v2.3.0"
         },
         {
           "id": "PRFC-0025-module-pass",
           "number": "PRFC-0025",
           "title": "PRFC-0025 Module Pass: immutable operators before boot",
-          "titleZh": "PRFC-0025 Module Pass：boot 前的不可变 operator"
+          "titleZh": "PRFC-0025 Module Pass：boot 前的不可变 operator",
+          "version": "v2.3.0"
         }
       ]
     },
@@ -381,7 +414,8 @@
           "id": "PRFC-0024-cli-modules",
           "number": "PRFC-0024",
           "title": "PRFC-0024 CLI Modules",
-          "titleZh": "PRFC-0024 CLI Modules：命令是归属于拥有它的进程的贡献"
+          "titleZh": "PRFC-0024 CLI Modules：命令是归属于拥有它的进程的贡献",
+          "version": "v1.2.0"
         }
       ]
     }

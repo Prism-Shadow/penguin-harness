@@ -650,13 +650,6 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     statusClosed: "Closed",
     /** The row's link to the open design PR carrying a revision newer than the merged version. */
     openRevision: "未合并修订",
-    treeStyles: {
-      label: "视图风格",
-      outline: "大纲",
-      cards: "卡片",
-      terminal: "终端",
-      graph: "分支",
-    },
     expandAll: "全部展开",
     collapseAll: "全部折叠",
     expandNode: (name: string) => `展开 ${name}`,

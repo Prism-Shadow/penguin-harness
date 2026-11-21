@@ -20,11 +20,10 @@ import {
   collapsibleRfcTreeKeys,
   countRfcTreeDescendantEntries,
   findRfcSearchMatchRanges,
+  isMajorRfcVersion,
+  isValidRfcSemver,
   readRfcTreeCollapsed,
-  readRfcTreeStyle,
   RFC_TREE_COLLAPSED_STORAGE_KEY,
-  RFC_TREE_STYLE_STORAGE_KEY,
-  RFC_TREE_STYLES,
   rfcBodyMarkdown,
   rfcEntries,
   rfcEntryShortTitle,
@@ -35,7 +34,6 @@ import {
   shortRfcNumber,
   shortRfcTitle,
   writeRfcTreeCollapsed,
-  writeRfcTreeStyle,
 } from "../src/lib/rfcs";
 import type { RfcTreeNode } from "../src/lib/rfcs";
 import { rfcIndexMarkdown } from "../src/pages/rfcs";
@@ -213,12 +211,110 @@ describe("buildRfcIndex", () => {
     expect(rfcEntryShortTitle(index[2]!, "en")).toBe("Module Pass");
   });
 
-  it("populates all 24 RFCs in rfcEntries with their GitHub PR statuses, numbers, and titles", () => {
-    expect(rfcEntries).toHaveLength(24);
+  it("validates SemVer 2.0 RFC versions and identifies major RFC versions", () => {
+    for (const v of ["v0.0.1", "v0.0.2", "v0.1.0", "v0.2.0", "v1.0.0", "v1.2.0", "v2.0.0"]) {
+      expect(isValidRfcSemver(v)).toBe(true);
+    }
+    for (const bad of ["v0.0.0", "v0.1", "v1", "1.0.0", "v01.0.0", ""]) {
+      expect(isValidRfcSemver(bad)).toBe(false);
+    }
+
+    for (const major of [
+      "v0.0.1",
+      "v0.0.2",
+      "v0.1",
+      "v0.1.0",
+      "v0.2",
+      "v0.2.0",
+      "v1",
+      "v1.0.0",
+      "v2",
+      "v2.0.0",
+    ]) {
+      expect(isMajorRfcVersion(major)).toBe(true);
+    }
+    for (const nonMajor of ["v0.0.0", "v0.1.2", "v1.1.0", "v1.2.0", "v2.3.0"]) {
+      expect(isMajorRfcVersion(nonMajor)).toBe(false);
+    }
+  });
+
+  it("selects the last major version PR as main and collects non-main opening PRs as child editions", () => {
+    const index = buildRfcIndex({ "PRFC-0003-plugin.md": landedWithUnmerged }, [
+      {
+        number: 1228,
+        title: "docs(rfcs): move the landed design RFCs into the repository",
+        url: "https://github.com/Prism-Shadow/penguin-harness/pull/1228",
+        status: "merged",
+        baseRefName: "main",
+        headRefOid: "sha1",
+        rfcs: [
+          {
+            id: "PRFC-0003-plugin",
+            number: "PRFC-0003",
+            title: "PRFC-0003 Plugin",
+            version: "v1.0.0",
+          },
+        ],
+      },
+      {
+        number: 1480,
+        title: "docs(rfcs): align PRFC-0003 to v1.1.0",
+        url: "https://github.com/Prism-Shadow/penguin-harness/pull/1480",
+        status: "merged",
+        baseRefName: "main",
+        headRefOid: "sha2",
+        rfcs: [
+          {
+            id: "PRFC-0003-plugin",
+            number: "PRFC-0003",
+            title: "PRFC-0003 Plugin",
+            version: "v1.1.0",
+          },
+        ],
+      },
+      {
+        number: 1560,
+        title: "feat: add module passes and verified reconfiguration semantics",
+        url: "https://github.com/Prism-Shadow/penguin-harness/pull/1560",
+        status: "draft",
+        baseRefName: "main",
+        headRefOid: "sha3",
+        rfcs: [
+          {
+            id: "PRFC-0003-plugin",
+            number: "PRFC-0003",
+            title: "PRFC-0003 Plugin",
+            version: "v1.1.0",
+          },
+        ],
+      },
+    ]);
+    expect(index[0]!.prNumber).toBe(1228);
+    expect(index[0]!.openEditions).toEqual([
+      {
+        number: 1560,
+        title: "feat: add module passes and verified reconfiguration semantics",
+        url: "https://github.com/Prism-Shadow/penguin-harness/pull/1560",
+        status: "draft",
+        version: "v1.1.0",
+      },
+    ]);
+  });
+
+  it("populates all 21 active RFCs in rfcEntries with their major-version main PR and opening editions", () => {
+    expect(rfcEntries).toHaveLength(21);
     const mod = rfcEntries.find((e) => e.id === "PRFC-0001-module");
     expect(mod?.status).toBe("merged");
     expect(mod?.prNumber).toBe(1228);
-    expect(mod?.prTitle).toContain("docs(rfcs):");
+    expect(mod?.openEditions?.map((p) => p.number)).toEqual([1560]);
+
+    const plugin = rfcEntries.find((e) => e.id === "PRFC-0003-plugin");
+    expect(plugin?.prNumber).toBe(1228);
+    expect(plugin?.openEditions?.map((p) => p.number)).toEqual([1560]);
+
+    expect(rfcEntries.find((e) => e.id === "PRFC-0014-workflow")?.prNumber).toBe(1228);
+    expect(rfcEntries.find((e) => e.id === "PRFC-0019-rsi-toolkits")?.prNumber).toBe(1228);
+
     expect(rfcEntries.find((e) => e.id === "PRFC-0004-plugin-scope")?.status).toBe("open");
     expect(
       rfcEntries.find((e) => e.id === "PRFC-0005-mechanisms-not-implementations"),
@@ -227,19 +323,36 @@ describe("buildRfcIndex", () => {
     const apiSocket = rfcEntries.find((e) => e.id === "PRFC-0011-single-socket");
     expect(rfcEntryShortTitle(apiSocket!, "en")).toBe("API Socket");
     expect(rfcEntryShortTitle(apiSocket!, "zh")).toBe("API Socket");
-    expect(rfcEntries.find((e) => e.id === "PRFC-0024-cli-modules")?.openRevision?.href).toBe(
-      "https://github.com/Prism-Shadow/penguin-harness/pull/1649",
-    );
+
+    const cliMod = rfcEntries.find((e) => e.id === "PRFC-0024-cli-modules");
+    expect(cliMod?.prNumber).toBe(1523);
+    expect(cliMod?.openEditions).toEqual([
+      {
+        number: 1649,
+        title: "docs(rfcs): PRFC-0024 v1.2.0 — shipped plugins' CLI modules (impl #1645)",
+        url: "https://github.com/Prism-Shadow/penguin-harness/pull/1649",
+        status: "open",
+        version: "v1.2.0",
+      },
+    ]);
     expect(rfcEntries.find((e) => e.id === "PRFC-0025-module-pass")?.status).toBe("draft");
   });
 
-  it("organizes all 24 RFCs into the Meta, Modules & Plugins, and Harness tree view without tables", () => {
+  it("organizes all 21 active RFCs and their opening edition PRs into the tree view", () => {
     expect(rfcTree.map((n) => n.label)).toEqual(["Meta", "Modules & Plugins", "Harness"]);
     const collectIds = (nodes: readonly RfcTreeNode[]): string[] =>
       nodes.flatMap((n) => [...(n.entry ? [n.entry.id] : []), ...collectIds(n.children ?? [])]);
     const treeIds = collectIds(rfcTree);
     expect(treeIds).toHaveLength(rfcEntries.length);
     expect(new Set(treeIds)).toEqual(new Set(rfcEntries.map((e) => e.id)));
+
+    const collectEditionPrNumbers = (nodes: readonly RfcTreeNode[]): number[] =>
+      nodes.flatMap((n) => [
+        ...(n.editionPr ? [n.editionPr.number] : []),
+        ...collectEditionPrNumbers(n.children ?? []),
+      ]);
+    expect(collectEditionPrNumbers(rfcTree)).toEqual([1560, 1649, 1560]);
+
     const customTree = buildRfcTree(rfcEntries);
     expect(customTree).toHaveLength(3);
     const md = rfcIndexMarkdown("en");
@@ -247,15 +360,19 @@ describe("buildRfcIndex", () => {
     expect(md).toContain("- **Modules & Plugins**");
     expect(md).toContain("- **Harness**");
     expect(md).toContain("([#1228](https://github.com/Prism-Shadow/penguin-harness/pull/1228))");
+    expect(md).toContain(
+      "- [#1649 docs(rfcs): PRFC-0024 v1.2.0 — shipped plugins' CLI modules (impl #1645)](https://github.com/Prism-Shadow/penguin-harness/pull/1649)",
+    );
     expect(md).not.toContain("| --- |");
   });
 
-  it("computes collapsible keys, descendant entry counts, and persists tree style and collapsed state", () => {
+  it("computes collapsible keys, descendant entry counts, and persists collapsed state", () => {
     const keys = collapsibleRfcTreeKeys(rfcTree);
     expect(keys).toEqual([
       "meta",
       "modules-and-plugins",
       "PRFC-0001-module",
+      "PRFC-0024-cli-modules",
       "PRFC-0003-plugin",
       "harness",
       "observability",
@@ -265,7 +382,7 @@ describe("buildRfcIndex", () => {
       "distribution",
       "PRFC-0021-distros",
     ]);
-    expect(rfcTree.map((n) => countRfcTreeDescendantEntries(n))).toEqual([1, 9, 14]);
+    expect(rfcTree.map((n) => countRfcTreeDescendantEntries(n))).toEqual([1, 8, 12]);
 
     const store = new Map<string, string>();
     const mockStorage = {
@@ -274,14 +391,6 @@ describe("buildRfcIndex", () => {
         store.set(k, v);
       },
     };
-
-    expect(RFC_TREE_STYLES).toEqual(["outline", "cards", "terminal", "graph"]);
-    expect(readRfcTreeStyle(mockStorage)).toBe("outline");
-    writeRfcTreeStyle("cards", mockStorage);
-    expect(store.get(RFC_TREE_STYLE_STORAGE_KEY)).toBe("cards");
-    expect(readRfcTreeStyle(mockStorage)).toBe("cards");
-    store.set(RFC_TREE_STYLE_STORAGE_KEY, "invalid-style");
-    expect(readRfcTreeStyle(mockStorage)).toBe("outline");
 
     const validSet = new Set(keys);
     expect([...readRfcTreeCollapsed(validSet, mockStorage)]).toEqual([]);

@@ -53,6 +53,39 @@ export function extractH1Title(raw) {
   return raw?.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? undefined;
 }
 
+function parseSemverTuple(ver) {
+  const m = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?/.exec(ver ?? "");
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2]), Number(m[3] ?? "0")];
+}
+
+function compareSemver(a, b) {
+  const ta = parseSemverTuple(a);
+  const tb = parseSemverTuple(b);
+  if (!ta && !tb) return 0;
+  if (!ta) return -1;
+  if (!tb) return 1;
+  return ta[0] - tb[0] || ta[1] - tb[1] || ta[2] - tb[2];
+}
+
+/** Extract the RFC revision version (e.g. `v1.0.0`) from raw RFC Markdown. */
+export function extractRfcVersion(raw) {
+  if (!raw) return undefined;
+  const candidates = [];
+  const revMatch = raw.match(
+    /^\s*>\s*(?:-\s*)?(?:\*\*Rev\*\*:|Rev:|\*\*修订\*\*：|修订：)\s*(v\d+\.\d+(?:\.\d+)?)/m,
+  );
+  if (revMatch?.[1]) candidates.push(revMatch[1]);
+  const changesIdx = raw.indexOf("\n## Changes");
+  if (changesIdx >= 0) {
+    for (const m of raw.slice(changesIdx).matchAll(/^###\s+(v\d+\.\d+(?:\.\d+)?)/gm)) {
+      if (m[1]) candidates.push(m[1]);
+    }
+  }
+  if (candidates.length === 0) return undefined;
+  return candidates.sort(compareSemver).at(-1);
+}
+
 /** Execute a single GitHub GraphQL query via `gh api graphql`. */
 export function runGithubGraphql(query) {
   const out = execFileSync("gh", ["api", "graphql", "-f", `query=${query}`], {
@@ -83,9 +116,9 @@ const PR_FIELDS = `
 `;
 
 /**
- * Fetch RFC H1 titles for a list of `{ key, oid, path }` items in a single batched GraphQL query.
+ * Fetch RFC H1 titles and revision versions for a list of `{ key, oid, path }` items in a single batched GraphQL query.
  */
-function fetchBlobTitles(items, graphql = runGithubGraphql) {
+function fetchBlobMetadata(items, graphql = runGithubGraphql) {
   if (items.length === 0) return new Map();
   const aliases = items
     .map(
@@ -104,7 +137,8 @@ function fetchBlobTitles(items, graphql = runGithubGraphql) {
   items.forEach((item, idx) => {
     const text = repo[`b_${idx}`]?.text;
     const h1 = extractH1Title(text);
-    if (h1) result.set(item.key, h1);
+    const version = extractRfcVersion(text);
+    if (h1 || version) result.set(item.key, { title: h1, version });
   });
   return result;
 }
@@ -125,8 +159,13 @@ export function hydratePrRecords(nodes, cachedByNumber, graphql = runGithubGraph
       .map((f) => f.path)
       .filter((p) => /^rfcs\/PRFC-\d+-.+\.md$/.test(p));
 
-    // Reuse cached RFC metadata if headRefOid matches and rfcs are already populated.
-    if (cached && cached.headRefOid === node.headRefOid && cached.rfcs?.length > 0) {
+    // Reuse cached RFC metadata if headRefOid matches and rfcs (with version) are already populated.
+    if (
+      cached &&
+      cached.headRefOid === node.headRefOid &&
+      cached.rfcs?.length > 0 &&
+      cached.rfcs.every((r) => typeof r.version === "string")
+    ) {
       pendingNodes.push({
         number: node.number,
         title: node.title,
@@ -169,7 +208,7 @@ export function hydratePrRecords(nodes, cachedByNumber, graphql = runGithubGraph
     });
   }
 
-  const titles = fetchBlobTitles(blobRequests, graphql);
+  const metaByKey = fetchBlobMetadata(blobRequests, graphql);
 
   return pendingNodes
     .map((item) => {
@@ -177,12 +216,21 @@ export function hydratePrRecords(nodes, cachedByNumber, graphql = runGithubGraph
       const rfcs = (item.ids ?? []).map((id) => {
         const number = id.match(/^PRFC-\d+/)?.[0] ?? id;
         const override = RFC_TITLE_OVERRIDES[id];
+        const enMeta = metaByKey.get(`${item.number}:${id}:en`);
+        const zhMeta = metaByKey.get(`${item.number}:${id}:zh`);
         const title =
           override?.title ??
-          titles.get(`${item.number}:${id}:en`) ??
+          enMeta?.title ??
           `${number} ${id.replace(/^PRFC-\d+-/, "")}`;
-        const titleZh = override?.titleZh ?? titles.get(`${item.number}:${id}:zh`);
-        return titleZh ? { id, number, title, titleZh } : { id, number, title };
+        const titleZh = override?.titleZh ?? zhMeta?.title;
+        const version = enMeta?.version ?? zhMeta?.version;
+        return {
+          id,
+          number,
+          title,
+          ...(titleZh ? { titleZh } : {}),
+          ...(version ? { version } : {}),
+        };
       });
       return {
         number: item.number,

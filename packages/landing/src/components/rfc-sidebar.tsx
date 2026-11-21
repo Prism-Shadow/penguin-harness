@@ -26,8 +26,6 @@ import {
   countRfcTreeDescendantEntries,
   findRfcSearchMatchRanges,
   readRfcTreeCollapsed,
-  readRfcTreeStyle,
-  RFC_TREE_STYLES,
   rfcDocForLocale,
   rfcEntries,
   rfcEntryOf,
@@ -38,9 +36,8 @@ import {
   searchRfcRecords,
   shortRfcNumber,
   writeRfcTreeCollapsed,
-  writeRfcTreeStyle,
 } from "../lib/rfcs";
-import type { RfcEntry, RfcStatus, RfcTreeNode, RfcTreeStyle } from "../lib/rfcs";
+import type { RfcEntry, RfcStatus, RfcTreeNode } from "../lib/rfcs";
 import { S } from "../lib/strings";
 
 export function RfcSidebar({
@@ -180,13 +177,14 @@ interface FlatTreeRow {
   node: RfcTreeNode;
   depth: number;
   isFirstRoot: boolean;
-  continuingTracks: readonly boolean[];
-  parentContinues: boolean;
+  /** For each ancestor depth `0 .. depth - 1`, whether that ancestor's vertical rail continues below this row. */
+  ancestorContinues: readonly boolean[];
+  /** Whether this node's own vertical rail continues downward into its visible children. */
   selfContinues: boolean;
   hasChildren: boolean;
   isCollapsed: boolean;
   descendantCount: number;
-  asciiPrefix: string;
+  hiddenChildCount: number;
 }
 
 function flattenRfcTree(
@@ -198,58 +196,35 @@ function flattenRfcTree(
     node: RfcTreeNode,
     depth: number,
     isFirstRoot: boolean,
-    rootIsLast: boolean,
-    continuingTracks: readonly boolean[],
-    parentContinues: boolean,
-    asciiAncestors: readonly boolean[],
-    isLastSibling: boolean,
+    ancestorContinues: readonly boolean[],
   ) => {
     const children = node.children ?? [];
     const hasChildren = children.length > 0;
     const isCollapsed = hasChildren && collapsed.has(node.key);
     const visibleChildren = isCollapsed ? [] : children;
-    const selfContinues = visibleChildren.length > 0 || (depth === 0 && !rootIsLast);
+    const selfContinues = visibleChildren.length > 0;
     const descendantCount = hasChildren ? countRfcTreeDescendantEntries(node) : 0;
-    const asciiPrefix =
-      depth === 0
-        ? ""
-        : `${asciiAncestors.map((c) => (c ? "│   " : "    ")).join("")}${
-            isLastSibling ? "└── " : "├── "
-          }`;
+    const hiddenChildCount = children.length;
 
     rows.push({
       node,
       depth,
       isFirstRoot,
-      continuingTracks,
-      parentContinues,
+      ancestorContinues,
       selfContinues,
       hasChildren,
       isCollapsed,
       descendantCount,
-      asciiPrefix,
+      hiddenChildCount,
     });
 
     visibleChildren.forEach((child, idx) => {
       const childIsLast = idx === visibleChildren.length - 1;
-      const trackContinues = !childIsLast || (depth === 0 && !rootIsLast);
-      const nextContinuing = depth === 0 ? [] : [...continuingTracks, parentContinues];
-      const nextAscii = depth === 0 ? [] : [...asciiAncestors, !isLastSibling];
-      visit(
-        child,
-        depth + 1,
-        false,
-        rootIsLast,
-        nextContinuing,
-        trackContinues,
-        nextAscii,
-        childIsLast,
-      );
+      visit(child, depth + 1, false, [...ancestorContinues, !childIsLast]);
     });
   };
   roots.forEach((root, idx) => {
-    const isLast = idx === roots.length - 1;
-    visit(root, 0, idx === 0, isLast, [], false, [], isLast);
+    visit(root, 0, idx === 0, []);
   });
   return rows;
 }
@@ -268,7 +243,7 @@ function RfcPrBadge({
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-xs tabular-nums text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+      className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 font-mono text-xs tabular-nums text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
     >
       <RfcPrStatusIcon status={status} className="shrink-0" />
       <span>#{number}</span>
@@ -276,54 +251,12 @@ function RfcPrBadge({
   );
 }
 
-function RfcChevronIcon({
-  expanded,
-  className = "",
-}: {
-  expanded: boolean;
-  className?: string;
-}) {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      width="14"
-      height="14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className={`shrink-0 ${expanded ? "rotate-90" : ""} ${className}`}
-    >
-      <path d="M6 4l4 4-4 4" />
-    </svg>
-  );
-}
-
-function RfcStatusDot({ status }: { status: RfcStatus }) {
-  return (
-    <svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true" className="shrink-0">
-      {status === "merged" ? (
-        <circle cx="5" cy="5" r="3.5" className="fill-purple-600 dark:fill-purple-400" />
-      ) : status === "open" ? (
-        <circle cx="5" cy="5" r="3.5" className="fill-emerald-600 dark:fill-emerald-400" />
-      ) : (
-        <circle
-          cx="5"
-          cy="5"
-          r="3"
-          strokeWidth="1.5"
-          className="fill-none stroke-gray-400 dark:stroke-gray-500"
-        />
-      )}
-    </svg>
-  );
-}
-
 function nodeAccessibleName(node: RfcTreeNode, locale: string): string {
   if (node.entry) {
     return `${node.entry.number} ${rfcEntryShortTitle(node.entry, locale)}`;
+  }
+  if (node.editionPr) {
+    return `#${node.editionPr.number} ${node.editionPr.title}`;
   }
   return node.label ?? node.key;
 }
@@ -331,20 +264,17 @@ function nodeAccessibleName(node: RfcTreeNode, locale: string): string {
 function RfcEntryLink({
   entry,
   locale,
-  monoTitle = false,
 }: {
   entry: RfcEntry;
   locale: string;
-  monoTitle?: boolean;
 }) {
   const doc = rfcDocForLocale(entry, locale);
   const shortTitle = rfcEntryShortTitle(entry, locale);
-  const titleFont = monoTitle ? "font-mono text-xs" : "text-sm";
   if (entry.status === "merged" && doc) {
     return (
       <Link
         to={`/rfcs/${entry.id}`}
-        className={`group inline-flex min-w-0 items-baseline gap-2 ${titleFont}`}
+        className="group inline-flex min-w-0 items-baseline gap-2 text-sm"
       >
         <span className="shrink-0 font-mono text-xs tabular-nums text-gray-500 group-hover:text-brand-700 dark:text-gray-400 dark:group-hover:text-brand-300">
           {entry.number}
@@ -361,419 +291,24 @@ function RfcEntryLink({
         href={entry.prHref}
         target="_blank"
         rel="noreferrer"
-        className={`group inline-flex min-w-0 items-baseline gap-2 ${titleFont}`}
+        className="group inline-flex min-w-0 items-baseline gap-2 text-sm"
       >
         <span className="shrink-0 font-mono text-xs tabular-nums text-gray-500 group-hover:text-brand-700 dark:text-gray-400 dark:group-hover:text-brand-300">
           {entry.number}
         </span>
-        <span className="truncate font-medium text-gray-800 group-hover:text-brand-700 dark:text-gray-200 dark:group-hover:text-brand-300">
+        <span className="truncate font-medium text-gray-700 group-hover:text-brand-700 dark:text-gray-300 dark:group-hover:text-brand-300">
           {shortTitle}
         </span>
       </a>
     );
   }
   return (
-    <span className={`inline-flex min-w-0 items-baseline gap-2 ${titleFont}`}>
+    <span className="inline-flex min-w-0 items-baseline gap-2 text-sm">
       <span className="shrink-0 font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400">
         {entry.number}
       </span>
-      <span className="truncate font-medium text-gray-800 dark:text-gray-200">{shortTitle}</span>
+      <span className="truncate font-medium text-gray-700 dark:text-gray-300">{shortTitle}</span>
     </span>
-  );
-}
-
-function RfcEntryBadges({ entry }: { entry: RfcEntry }) {
-  const openRevPr = entry.openRevision ? rfcPrOfUrl(entry.openRevision.href) : undefined;
-  return (
-    <span className="inline-flex shrink-0 items-center gap-1">
-      {entry.prNumber && entry.prHref && (
-        <RfcPrBadge href={entry.prHref} number={entry.prNumber} status={entry.status} />
-      )}
-      {openRevPr && openRevPr.number !== entry.prNumber && (
-        <RfcPrBadge href={openRevPr.url} number={openRevPr.number} status={openRevPr.status} />
-      )}
-    </span>
-  );
-}
-
-function OutlineTreeBranch({
-  nodes,
-  locale,
-  depth,
-  collapsed,
-  onToggle,
-}: {
-  nodes: readonly RfcTreeNode[];
-  locale: string;
-  depth: number;
-  collapsed: ReadonlySet<string>;
-  onToggle: (key: string) => void;
-}) {
-  return (
-    <ul
-      role={depth === 0 ? "tree" : "group"}
-      aria-label={depth === 0 ? S.rfcs.sectionAll : undefined}
-      className={
-        depth === 0
-          ? "space-y-1"
-          : "mt-0.5 ml-3.5 space-y-0.5 border-l border-gray-200/90 pl-3 dark:border-gray-800"
-      }
-    >
-      {nodes.map((node) => {
-        const children = node.children ?? [];
-        const hasChildren = children.length > 0;
-        const isCollapsed = hasChildren && collapsed.has(node.key);
-        const descendantCount = hasChildren ? countRfcTreeDescendantEntries(node) : 0;
-        const entry = node.entry;
-        const name = nodeAccessibleName(node, locale);
-
-        return (
-          <li
-            key={node.key}
-            role="treeitem"
-            aria-level={depth + 1}
-            aria-expanded={hasChildren ? !isCollapsed : undefined}
-          >
-            {!entry ? (
-              <button
-                type="button"
-                onClick={() => onToggle(node.key)}
-                aria-label={isCollapsed ? S.rfcs.expandNode(name) : S.rfcs.collapseNode(name)}
-                className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-900/70"
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 dark:text-gray-500">
-                    <RfcChevronIcon expanded={!isCollapsed} />
-                  </span>
-                  <span
-                    className={
-                      depth === 0
-                        ? "text-sm font-semibold text-gray-900 dark:text-gray-100"
-                        : "text-sm font-medium text-gray-700 dark:text-gray-300"
-                    }
-                  >
-                    {node.label}
-                  </span>
-                </span>
-                <span className="rounded-full bg-gray-100 px-2 py-0.5 font-mono text-xs tabular-nums text-gray-500 dark:bg-gray-800/80 dark:text-gray-400">
-                  {descendantCount}
-                </span>
-              </button>
-            ) : (
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg px-2 py-1 transition-colors hover:bg-gray-50 dark:hover:bg-gray-900/50">
-                <div className="flex min-w-0 items-center gap-2">
-                  {hasChildren ? (
-                    <button
-                      type="button"
-                      onClick={() => onToggle(node.key)}
-                      aria-label={isCollapsed ? S.rfcs.expandNode(name) : S.rfcs.collapseNode(name)}
-                      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-400 transition-colors hover:bg-gray-200/70 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                    >
-                      <RfcChevronIcon expanded={!isCollapsed} />
-                    </button>
-                  ) : (
-                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
-                      <RfcStatusDot status={entry.status} />
-                    </span>
-                  )}
-                  <RfcEntryLink entry={entry} locale={locale} />
-                  {hasChildren && isCollapsed && (
-                    <button
-                      type="button"
-                      onClick={() => onToggle(node.key)}
-                      aria-label={S.rfcs.expandNode(name)}
-                      className="rounded-full bg-gray-100 px-1.5 py-0.5 font-mono text-xs tabular-nums text-gray-600 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
-                    >
-                      +{descendantCount}
-                    </button>
-                  )}
-                </div>
-                <RfcEntryBadges entry={entry} />
-              </div>
-            )}
-
-            {hasChildren && !isCollapsed && (
-              <OutlineTreeBranch
-                nodes={children}
-                locale={locale}
-                depth={depth + 1}
-                collapsed={collapsed}
-                onToggle={onToggle}
-              />
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function CardTreeSublist({
-  nodes,
-  locale,
-  depth,
-  collapsed,
-  onToggle,
-}: {
-  nodes: readonly RfcTreeNode[];
-  locale: string;
-  depth: number;
-  collapsed: ReadonlySet<string>;
-  onToggle: (key: string) => void;
-}) {
-  return (
-    <div className={depth > 1 ? "mt-1 ml-5 space-y-1 border-l border-gray-200 pl-3 dark:border-gray-800" : "space-y-1.5"}>
-      {nodes.map((node) => {
-        const children = node.children ?? [];
-        const hasChildren = children.length > 0;
-        const isCollapsed = hasChildren && collapsed.has(node.key);
-        const descendantCount = hasChildren ? countRfcTreeDescendantEntries(node) : 0;
-        const entry = node.entry;
-        const name = nodeAccessibleName(node, locale);
-
-        if (!entry) {
-          return (
-            <div
-              key={node.key}
-              role="treeitem"
-              aria-level={depth + 1}
-              aria-expanded={hasChildren ? !isCollapsed : undefined}
-              className="rounded-lg border border-gray-200/70 bg-gray-50/40 px-3 py-2 dark:border-gray-800/70 dark:bg-gray-900/25"
-            >
-              <button
-                type="button"
-                onClick={() => onToggle(node.key)}
-                aria-label={isCollapsed ? S.rfcs.expandNode(name) : S.rfcs.collapseNode(name)}
-                className="flex w-full items-center justify-between gap-2 text-left"
-              >
-                <span className="flex items-center gap-2">
-                  <RfcChevronIcon
-                    expanded={!isCollapsed}
-                    className="text-gray-400 dark:text-gray-500"
-                  />
-                  <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                    {node.label}
-                  </span>
-                </span>
-                <span className="rounded-full bg-white px-2 py-0.5 font-mono text-xs tabular-nums text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                  {descendantCount}
-                </span>
-              </button>
-              {hasChildren && !isCollapsed && (
-                <div className="mt-2 border-t border-gray-200/60 pt-1.5 dark:border-gray-800/60">
-                  <CardTreeSublist
-                    nodes={children}
-                    locale={locale}
-                    depth={depth + 1}
-                    collapsed={collapsed}
-                    onToggle={onToggle}
-                  />
-                </div>
-              )}
-            </div>
-          );
-        }
-
-        return (
-          <div
-            key={node.key}
-            role="treeitem"
-            aria-level={depth + 1}
-            aria-expanded={hasChildren ? !isCollapsed : undefined}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-md px-2 py-1 transition-colors hover:bg-gray-100/60 dark:hover:bg-gray-800/40">
-              <div className="flex min-w-0 items-center gap-2">
-                {hasChildren ? (
-                  <button
-                    type="button"
-                    onClick={() => onToggle(node.key)}
-                    aria-label={isCollapsed ? S.rfcs.expandNode(name) : S.rfcs.collapseNode(name)}
-                    className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-400 transition-colors hover:bg-gray-200/70 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                  >
-                    <RfcChevronIcon expanded={!isCollapsed} />
-                  </button>
-                ) : (
-                  <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
-                    <RfcStatusDot status={entry.status} />
-                  </span>
-                )}
-                <RfcEntryLink entry={entry} locale={locale} />
-                {hasChildren && isCollapsed && (
-                  <button
-                    type="button"
-                    onClick={() => onToggle(node.key)}
-                    aria-label={S.rfcs.expandNode(name)}
-                    className="rounded-full bg-gray-100 px-1.5 py-0.5 font-mono text-xs tabular-nums text-gray-600 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
-                  >
-                    +{descendantCount}
-                  </button>
-                )}
-              </div>
-              <RfcEntryBadges entry={entry} />
-            </div>
-            {hasChildren && !isCollapsed && (
-              <CardTreeSublist
-                nodes={children}
-                locale={locale}
-                depth={depth + 1}
-                collapsed={collapsed}
-                onToggle={onToggle}
-              />
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function CardsTreeView({
-  locale,
-  collapsed,
-  onToggle,
-}: {
-  locale: string;
-  collapsed: ReadonlySet<string>;
-  onToggle: (key: string) => void;
-}) {
-  return (
-    <div role="tree" aria-label={S.rfcs.sectionAll} className="space-y-3">
-      {rfcTree.map((root) => {
-        const children = root.children ?? [];
-        const hasChildren = children.length > 0;
-        const isCollapsed = hasChildren && collapsed.has(root.key);
-        const descendantCount = countRfcTreeDescendantEntries(root);
-        const name = nodeAccessibleName(root, locale);
-
-        return (
-          <div
-            key={root.key}
-            role="treeitem"
-            aria-level={1}
-            aria-expanded={hasChildren ? !isCollapsed : undefined}
-            className="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950/60"
-          >
-            <button
-              type="button"
-              onClick={() => onToggle(root.key)}
-              aria-label={isCollapsed ? S.rfcs.expandNode(name) : S.rfcs.collapseNode(name)}
-              className={`flex w-full items-center justify-between gap-3 bg-gray-50/70 px-4 py-2.5 text-left transition-colors hover:bg-gray-100/70 dark:bg-gray-900/50 dark:hover:bg-gray-900 ${
-                isCollapsed
-                  ? "rounded-xl"
-                  : "rounded-t-xl border-b border-gray-200/80 dark:border-gray-800/80"
-              }`}
-            >
-              <span className="flex items-center gap-2.5">
-                <RfcChevronIcon
-                  expanded={!isCollapsed}
-                  className="text-gray-400 dark:text-gray-500"
-                />
-                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                  {root.label}
-                </span>
-              </span>
-              <span className="rounded-full bg-white px-2.5 py-0.5 font-mono text-xs tabular-nums text-gray-600 shadow-none dark:bg-gray-800 dark:text-gray-400">
-                {descendantCount}
-              </span>
-            </button>
-            {hasChildren && !isCollapsed && (
-              <div className="px-3 py-2.5 sm:px-4">
-                <CardTreeSublist
-                  nodes={children}
-                  locale={locale}
-                  depth={1}
-                  collapsed={collapsed}
-                  onToggle={onToggle}
-                />
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function TerminalTreeView({
-  rows,
-  locale,
-  onToggle,
-}: {
-  rows: readonly FlatTreeRow[];
-  locale: string;
-  onToggle: (key: string) => void;
-}) {
-  return (
-    <div
-      role="tree"
-      aria-label={S.rfcs.sectionAll}
-      className="overflow-x-auto rounded-xl border border-gray-200 bg-gray-50/70 px-3.5 py-3 font-mono text-xs dark:border-gray-800 dark:bg-gray-900/50"
-    >
-      {rows.map((row) => {
-        const { node, depth, hasChildren, isCollapsed, descendantCount, asciiPrefix } = row;
-        const entry = node.entry;
-        const name = nodeAccessibleName(node, locale);
-
-        return (
-          <div
-            key={node.key}
-            role="treeitem"
-            aria-level={depth + 1}
-            aria-expanded={hasChildren ? !isCollapsed : undefined}
-            className="flex min-h-7 items-center justify-between gap-3 rounded px-1.5 py-0.5 transition-colors hover:bg-gray-200/50 dark:hover:bg-gray-800/50"
-          >
-            <div className="flex min-w-0 items-center">
-              {asciiPrefix && (
-                <span className="select-none whitespace-pre text-gray-400 dark:text-gray-600">
-                  {asciiPrefix}
-                </span>
-              )}
-              {hasChildren && (
-                <button
-                  type="button"
-                  onClick={() => onToggle(node.key)}
-                  aria-label={isCollapsed ? S.rfcs.expandNode(name) : S.rfcs.collapseNode(name)}
-                  className="mr-1.5 inline-flex shrink-0 items-center rounded px-1 py-0.5 font-mono text-xs text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-                >
-                  {isCollapsed ? "[+]" : "[-]"}
-                </button>
-              )}
-              {!entry ? (
-                <button
-                  type="button"
-                  onClick={() => onToggle(node.key)}
-                  className={`text-left ${
-                    depth === 0
-                      ? "font-semibold text-gray-900 dark:text-gray-100"
-                      : "font-medium text-gray-700 dark:text-gray-300"
-                  }`}
-                >
-                  <span>{node.label}/</span>
-                  <span className="ml-2 tabular-nums text-gray-400 dark:text-gray-500">
-                    ({descendantCount})
-                  </span>
-                </button>
-              ) : (
-                <div className="flex min-w-0 items-center gap-2">
-                  <RfcEntryLink entry={entry} locale={locale} monoTitle />
-                  {hasChildren && isCollapsed && (
-                    <button
-                      type="button"
-                      onClick={() => onToggle(node.key)}
-                      aria-label={S.rfcs.expandNode(name)}
-                      className="rounded bg-gray-200/70 px-1.5 py-0.5 font-mono text-xs tabular-nums text-gray-600 hover:bg-gray-300/70 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
-                    >
-                      +{descendantCount}
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-            {entry && <RfcEntryBadges entry={entry} />}
-          </div>
-        );
-      })}
-    </div>
   );
 }
 
@@ -787,32 +322,49 @@ function GraphTreeView({
   onToggle: (key: string) => void;
 }) {
   const LANE = 22;
-  const CY = 16;
-  const xOf = (d: number) => d * LANE + 10;
+  const CY = 15;
+  const xOf = (d: number) => d * LANE + 11;
 
   return (
-    <div
-      role="tree"
-      aria-label={S.rfcs.sectionAll}
-      className="rounded-xl border border-gray-200/80 bg-gray-50/40 px-4 py-3 dark:border-gray-800/80 dark:bg-gray-900/30"
-    >
+    <div role="tree" aria-label={S.rfcs.sectionAll} className="select-none">
       {rows.map((row) => {
         const {
           node,
           depth,
           isFirstRoot,
-          continuingTracks,
-          parentContinues,
+          ancestorContinues,
           selfContinues,
           hasChildren,
           isCollapsed,
           descendantCount,
+          hiddenChildCount,
         } = row;
         const cx = xOf(depth);
         const px = depth > 0 ? xOf(depth - 1) : cx;
-        const railWidth = (depth + 1) * LANE + 6;
+        const railWidth = depth * LANE + 24;
         const entry = node.entry;
+        const editionPr = node.editionPr;
         const name = nodeAccessibleName(node, locale);
+
+        const nodeStrokeClass = !entry
+          ? depth === 0
+            ? "stroke-gray-700 dark:stroke-gray-200"
+            : "stroke-gray-500 dark:stroke-gray-400"
+          : entry.status === "merged"
+            ? "stroke-purple-600 dark:stroke-purple-400"
+            : entry.status === "open"
+              ? "stroke-emerald-600 dark:stroke-emerald-400"
+              : "stroke-gray-400 dark:stroke-gray-500";
+
+        const nodeGlyphColorClass = !entry
+          ? depth === 0
+            ? "text-gray-700 dark:text-gray-200"
+            : "text-gray-500 dark:text-gray-400"
+          : entry.status === "merged"
+            ? "text-purple-600 dark:text-purple-400"
+            : entry.status === "open"
+              ? "text-emerald-600 dark:text-emerald-400"
+              : "text-gray-500 dark:text-gray-400";
 
         return (
           <div
@@ -820,24 +372,14 @@ function GraphTreeView({
             role="treeitem"
             aria-level={depth + 1}
             aria-expanded={hasChildren ? !isCollapsed : undefined}
-            className="flex min-h-8 items-stretch"
+            className={`flex min-h-[30px] items-stretch ${depth === 0 && !isFirstRoot ? "mt-2" : ""}`}
           >
             <div className="relative shrink-0 self-stretch" style={{ width: `${railWidth}px` }}>
               <svg
                 aria-hidden="true"
-                className="absolute inset-0 h-full w-full overflow-visible text-gray-300 dark:text-gray-700"
+                className="pointer-events-none absolute inset-0 h-full w-full overflow-visible text-gray-300 dark:text-gray-700"
               >
-                {depth === 0 && !isFirstRoot && (
-                  <line
-                    x1={cx}
-                    y1={0}
-                    x2={cx}
-                    y2={CY}
-                    stroke="currentColor"
-                    strokeWidth={1.75}
-                  />
-                )}
-                {continuingTracks.map((continues, d) =>
+                {ancestorContinues.map((continues, d) =>
                   continues ? (
                     <line
                       key={d}
@@ -846,26 +388,16 @@ function GraphTreeView({
                       x2={xOf(d)}
                       y2="100%"
                       stroke="currentColor"
-                      strokeWidth={1.75}
+                      strokeWidth={1.5}
                     />
                   ) : null,
                 )}
-                {depth > 0 && parentContinues && (
-                  <line
-                    x1={px}
-                    y1={0}
-                    x2={px}
-                    y2="100%"
-                    stroke="currentColor"
-                    strokeWidth={1.75}
-                  />
-                )}
                 {depth > 0 && (
                   <path
-                    d={`M ${px} 0 L ${px} ${CY - 5} Q ${px} ${CY} ${px + 5} ${CY} L ${cx} ${CY}`}
+                    d={`M ${px} 0 L ${px} ${CY - 6} Q ${px} ${CY} ${px + 6} ${CY} L ${cx} ${CY}`}
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth={1.75}
+                    strokeWidth={1.5}
                     strokeLinecap="round"
                   />
                 )}
@@ -876,48 +408,66 @@ function GraphTreeView({
                     x2={cx}
                     y2="100%"
                     stroke="currentColor"
-                    strokeWidth={1.75}
+                    strokeWidth={1.5}
                   />
                 )}
-                {!entry ? (
-                  depth === 0 ? (
-                    <>
-                      <circle
-                        cx={cx}
-                        cy={CY}
-                        r={5}
-                        className="fill-white stroke-gray-800 dark:fill-gray-950 dark:stroke-gray-200"
-                        strokeWidth={2}
-                      />
-                      <circle
-                        cx={cx}
-                        cy={CY}
-                        r={2}
-                        className="fill-gray-800 dark:fill-gray-200"
-                      />
-                    </>
-                  ) : (
+                {hasChildren ? (
+                  <>
                     <circle
                       cx={cx}
                       cy={CY}
-                      r={4}
-                      className="fill-white stroke-gray-500 dark:fill-gray-950 dark:stroke-gray-400"
-                      strokeWidth={1.75}
+                      r={6}
+                      className={`fill-white dark:fill-gray-950 ${nodeStrokeClass}`}
+                      strokeWidth={1.5}
                     />
-                  )
-                ) : entry.status === "merged" ? (
+                    <line
+                      x1={cx - 2.5}
+                      y1={CY}
+                      x2={cx + 2.5}
+                      y2={CY}
+                      stroke="currentColor"
+                      strokeWidth={1.5}
+                      strokeLinecap="round"
+                      className={nodeGlyphColorClass}
+                    />
+                    {isCollapsed && (
+                      <line
+                        x1={cx}
+                        y1={CY - 2.5}
+                        x2={cx}
+                        y2={CY + 2.5}
+                        stroke="currentColor"
+                        strokeWidth={1.5}
+                        strokeLinecap="round"
+                        className={nodeGlyphColorClass}
+                      />
+                    )}
+                  </>
+                ) : editionPr ? (
                   <circle
                     cx={cx}
                     cy={CY}
-                    r={4.5}
+                    r={3.5}
+                    className={
+                      editionPr.status === "open"
+                        ? "fill-white stroke-emerald-600 dark:fill-gray-950 dark:stroke-emerald-400"
+                        : "fill-white stroke-gray-400 dark:fill-gray-950 dark:stroke-gray-500"
+                    }
+                    strokeWidth={1.5}
+                  />
+                ) : entry?.status === "merged" ? (
+                  <circle
+                    cx={cx}
+                    cy={CY}
+                    r={4.25}
                     className="fill-purple-600 stroke-white dark:fill-purple-400 dark:stroke-gray-950"
                     strokeWidth={1.5}
                   />
-                ) : entry.status === "open" ? (
+                ) : entry?.status === "open" ? (
                   <circle
                     cx={cx}
                     cy={CY}
-                    r={4.5}
+                    r={4.25}
                     className="fill-emerald-600 stroke-white dark:fill-emerald-400 dark:stroke-gray-950"
                     strokeWidth={1.5}
                   />
@@ -925,26 +475,46 @@ function GraphTreeView({
                   <circle
                     cx={cx}
                     cy={CY}
-                    r={4}
+                    r={3.75}
                     className="fill-white stroke-gray-400 dark:fill-gray-950 dark:stroke-gray-500"
                     strokeWidth={1.75}
                   />
                 )}
               </svg>
-            </div>
-
-            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-2.5 gap-y-1 py-1">
-              {!entry ? (
+              {hasChildren && (
                 <button
                   type="button"
                   onClick={() => onToggle(node.key)}
                   aria-label={isCollapsed ? S.rfcs.expandNode(name) : S.rfcs.collapseNode(name)}
-                  className="inline-flex items-center gap-1.5 rounded px-1 py-0.5 text-left transition-colors hover:bg-gray-200/60 dark:hover:bg-gray-800/60"
+                  style={{ left: `${cx - 10}px`, top: `${CY - 10}px` }}
+                  className="absolute h-5 w-5 cursor-pointer rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                />
+              )}
+            </div>
+
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 py-0.5 select-text">
+              {editionPr ? (
+                <a
+                  href={editionPr.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group inline-flex min-w-0 items-center gap-1.5 rounded px-1.5 py-0.5 -ml-1.5 text-xs transition-colors hover:bg-gray-100 dark:hover:bg-gray-800/60"
                 >
-                  <RfcChevronIcon
-                    expanded={!isCollapsed}
-                    className="text-gray-400 dark:text-gray-500"
-                  />
+                  <RfcPrStatusIcon status={editionPr.status} className="shrink-0" />
+                  <span className="shrink-0 font-mono tabular-nums text-gray-600 group-hover:text-brand-700 dark:text-gray-400 dark:group-hover:text-brand-300">
+                    #{editionPr.number}
+                  </span>
+                  <span className="truncate text-gray-600 group-hover:text-brand-700 dark:text-gray-400 dark:group-hover:text-brand-300">
+                    {editionPr.title}
+                  </span>
+                </a>
+              ) : !entry ? (
+                <button
+                  type="button"
+                  onClick={() => onToggle(node.key)}
+                  aria-label={isCollapsed ? S.rfcs.expandNode(name) : S.rfcs.collapseNode(name)}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded px-1.5 py-0.5 -ml-1.5 text-left transition-colors hover:bg-gray-100 dark:hover:bg-gray-800/60"
+                >
                   <span
                     className={
                       depth === 0
@@ -954,38 +524,26 @@ function GraphTreeView({
                   >
                     {node.label}
                   </span>
-                  <span className="rounded-full bg-gray-200/70 px-1.5 py-0.5 font-mono text-xs tabular-nums text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                  <span className="rounded-full bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] leading-none tabular-nums text-gray-500 dark:bg-gray-800 dark:text-gray-400">
                     {descendantCount}
                   </span>
                 </button>
               ) : (
                 <>
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    {hasChildren && (
-                      <button
-                        type="button"
-                        onClick={() => onToggle(node.key)}
-                        aria-label={
-                          isCollapsed ? S.rfcs.expandNode(name) : S.rfcs.collapseNode(name)
-                        }
-                        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-400 transition-colors hover:bg-gray-200/70 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                      >
-                        <RfcChevronIcon expanded={!isCollapsed} />
-                      </button>
-                    )}
-                    <RfcEntryLink entry={entry} locale={locale} />
-                    {hasChildren && isCollapsed && (
-                      <button
-                        type="button"
-                        onClick={() => onToggle(node.key)}
-                        aria-label={S.rfcs.expandNode(name)}
-                        className="rounded-full bg-gray-200/70 px-1.5 py-0.5 font-mono text-xs tabular-nums text-gray-600 transition-colors hover:bg-gray-300/70 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
-                      >
-                        +{descendantCount}
-                      </button>
-                    )}
-                  </div>
-                  <RfcEntryBadges entry={entry} />
+                  <RfcEntryLink entry={entry} locale={locale} />
+                  {entry.prNumber && entry.prHref && (
+                    <RfcPrBadge href={entry.prHref} number={entry.prNumber} status={entry.status} />
+                  )}
+                  {hasChildren && isCollapsed && (
+                    <button
+                      type="button"
+                      onClick={() => onToggle(node.key)}
+                      aria-label={S.rfcs.expandNode(name)}
+                      className="cursor-pointer rounded-full bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] leading-none tabular-nums text-gray-600 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                    >
+                      +{hiddenChildCount}
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -996,19 +554,13 @@ function GraphTreeView({
   );
 }
 
-/** Hierarchical view of all RFCs with selectable visual styles and persistent expand/collapse state. */
-export function RfcTreeView({ locale }: { locale: string }) {
+/** Hierarchical Graph tree view of all RFCs with persistent expand/collapse state. */
+export function RfcTreeView({ locale, headingId }: { locale: string; headingId?: string }) {
   const collapsibleKeys = useMemo(() => collapsibleRfcTreeKeys(rfcTree), []);
   const validKeysSet = useMemo(() => new Set(collapsibleKeys), [collapsibleKeys]);
-  const [style, setStyleState] = useState<RfcTreeStyle>(() => readRfcTreeStyle());
   const [collapsed, setCollapsedState] = useState<Set<string>>(() =>
     readRfcTreeCollapsed(validKeysSet),
   );
-
-  const selectStyle = useCallback((next: RfcTreeStyle) => {
-    setStyleState(next);
-    writeRfcTreeStyle(next);
-  }, []);
 
   const toggleNode = useCallback((key: string) => {
     setCollapsedState((prev) => {
@@ -1037,71 +589,38 @@ export function RfcTreeView({ locale }: { locale: string }) {
   const allCollapsed = collapsibleKeys.length > 0 && collapsed.size >= collapsibleKeys.length;
 
   return (
-    <div className="my-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div
-          role="tablist"
-          aria-label={S.rfcs.treeStyles.label}
-          className="inline-flex items-center gap-0.5 rounded-lg border border-gray-200 bg-gray-100/70 px-0.5 py-0.5 dark:border-gray-800 dark:bg-gray-900"
+    <div>
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2
+          id={headingId}
+          className="scroll-mt-24 text-xl font-semibold tracking-tight text-gray-900 dark:text-gray-100"
         >
-          {RFC_TREE_STYLES.map((item) => {
-            const active = style === item;
-            return (
-              <button
-                key={item}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => selectStyle(item)}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                  active
-                    ? "bg-white text-gray-900 shadow-sm dark:bg-gray-800 dark:text-gray-100"
-                    : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
-                }`}
-              >
-                {S.rfcs.treeStyles[item]}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="inline-flex items-center gap-1.5">
+          {S.rfcs.sectionAll}
+        </h2>
+        <div className="inline-flex items-center gap-2 text-xs">
           <button
             type="button"
             onClick={expandAll}
             disabled={allExpanded}
-            className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-900 disabled:cursor-default disabled:opacity-45 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-400 dark:hover:border-gray-700 dark:hover:text-gray-200"
+            className="cursor-pointer text-gray-500 transition-colors hover:text-gray-900 disabled:cursor-default disabled:opacity-40 dark:text-gray-400 dark:hover:text-gray-100"
           >
             {S.rfcs.expandAll}
           </button>
+          <span aria-hidden="true" className="text-gray-300 dark:text-gray-700">
+            ·
+          </span>
           <button
             type="button"
             onClick={collapseAll}
             disabled={allCollapsed}
-            className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-900 disabled:cursor-default disabled:opacity-45 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-400 dark:hover:border-gray-700 dark:hover:text-gray-200"
+            className="cursor-pointer text-gray-500 transition-colors hover:text-gray-900 disabled:cursor-default disabled:opacity-40 dark:text-gray-400 dark:hover:text-gray-100"
           >
             {S.rfcs.collapseAll}
           </button>
         </div>
       </div>
 
-      {style === "outline" ? (
-        <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 sm:px-4 sm:py-3 dark:border-gray-800 dark:bg-gray-950/60">
-          <OutlineTreeBranch
-            nodes={rfcTree}
-            locale={locale}
-            depth={0}
-            collapsed={collapsed}
-            onToggle={toggleNode}
-          />
-        </div>
-      ) : style === "cards" ? (
-        <CardsTreeView locale={locale} collapsed={collapsed} onToggle={toggleNode} />
-      ) : style === "terminal" ? (
-        <TerminalTreeView rows={rows} locale={locale} onToggle={toggleNode} />
-      ) : (
-        <GraphTreeView rows={rows} locale={locale} onToggle={toggleNode} />
-      )}
+      <GraphTreeView rows={rows} locale={locale} onToggle={toggleNode} />
     </div>
   );
 }

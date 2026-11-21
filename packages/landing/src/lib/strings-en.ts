@@ -653,13 +653,6 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     statusClosed: "Closed",
     /** The row's link to the open design PR carrying a revision newer than the merged version. */
     openRevision: "unmerged revision",
-    treeStyles: {
-      label: "Tree style",
-      outline: "Outline",
-      cards: "Cards",
-      terminal: "Terminal",
-      graph: "Graph",
-    },
     expandAll: "Expand all",
     collapseAll: "Collapse all",
     expandNode: (name: string) => `Expand ${name}`,
