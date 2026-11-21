@@ -87,7 +87,12 @@ import type {
   AgentTracesResponse,
   ContextFileShare,
   CostParts,
+  HistoryFileKey,
+  HistoryHeldRange,
+  HistoryHave,
   HistoryMessage,
+  HistorySegment,
+  HistoryStub,
   RequestSpan,
   SessionCategory,
   SessionCategoryCounts,
@@ -1372,7 +1377,12 @@ export type {
   AgentTraceSessionFile,
   ContextFileShare,
   CostParts,
+  HistoryFileKey,
+  HistoryHeldRange,
+  HistoryHave,
   HistoryMessage,
+  HistorySegment,
+  HistoryStub,
   RequestSpan,
   SessionCategory,
   SessionCategoryCounts,
@@ -2153,49 +2163,8 @@ export interface MessagesResponse {
 //   - web leg, `GET /api/sessions/:id/history` and `…/trace-body?ref=` (every server): the
 //     window as whole-record lines with progress, bulky bodies elided.
 
-/** One Trace file of a Session or a descendant: `${agentId}/${sessionId}/${fileIndex}`. */
-export type HistoryFileKey = string;
 
-/**
- * One run of a Trace file the hub holds: bytes [lo, hi), from a line start to just after a
- * `\n`, vouched for by the hashes of its edges. Every run is checked on its own, so a hub that
- * holds several runs (a window, then older pages, then part of the fill) is sent none of them.
- */
-export interface HistoryHeldRange {
-  lo: number;
-  /** Records before `lo` (the ordinal of the first record at or after it). */
-  loOrd: number;
-  hi: number;
-  /** sha256 (base64url) of bytes [lo, min(hi, lo + 4 KiB)). */
-  loAnchor: string;
-  /** sha256 (base64url) of bytes [max(lo, hi − 4 KiB), hi). */
-  hiAnchor: string;
-}
 
-/**
- * What the hub holds of one Trace file, sent as `have=` (base64url JSON of the array) so the
- * machine sends only what is missing: the file's identity, every run held (`ranges`), and a
- * line held in part. The single-run form (`lo`…`hiAnchor` beside `k`, no `ranges`) is still
- * read while the hub moves to `ranges`; it names one run, the top one.
- */
-export interface HistoryHave extends Partial<HistoryHeldRange> {
-  k: HistoryFileKey;
-  /** The file's inode as a decimal string: NTFS file ids pass 2^53, which a JSON number cannot carry. */
-  ino: string;
-  /** The device the file lives on, decimal: a hint, never compared (overlayfs can change it across a restart). */
-  dev?: string;
-  /** Whole milliseconds, or 0 where the machine keeps no birth time; compared only when both sides know one. */
-  birthtimeMs: number;
-  /** Every run held, in any order. */
-  ranges?: HistoryHeldRange[];
-  /**
-   * A line held in part: bytes [off, off + len) of the line starting at `off`, whose sha256 is
-   * `anchor`. The machine sends the rest of it from `off + len` — before `ready` when it is a light
-   * line of the window, after it otherwise; a partial that does not check is dropped and the line
-   * sent whole.
-   */
-  partial?: { off: number; len: number; anchor: string };
-}
 
 /** One Trace file the window or the fill reads, as the machine sees it now. */
 export interface HistoryFileFact {
@@ -2218,32 +2187,7 @@ export interface HistoryFileFact {
   reset?: true;
 }
 
-/**
- * One run of records the window takes from one file, in window order: records [from, to) by
- * ordinal, bytes [from, to) by offset (blank and malformed lines inside the run are skipped as
- * the tolerant reader skips them). `origin` null: the Session's own records, which carry their
- * `tracePosition`; otherwise the child Session chain its records are tagged with, outer to
- * inner, prepended to any `origin` a line carries.
- */
-export interface HistorySegment {
-  k: HistoryFileKey;
-  from: [offset: number, ordinal: number];
-  to: [offset: number, ordinal: number];
-  origin: string[] | null;
-}
 
-/**
- * A window record whose line is heavy, in its final web form — `tracePosition` or `origin` set,
- * images by reference, bodies elided, its `elided` entries attached — so the hub can deliver
- * the window before that line's bytes arrive. `[offset, offset + length)` is its line.
- */
-export interface HistoryStub {
-  k: HistoryFileKey;
-  ordinal: number;
-  offset: number;
-  length: number;
-  record: HistoryMessage;
-}
 
 /** The machine leg's first event, `window`. */
 export interface HistoryLinesWindow {
