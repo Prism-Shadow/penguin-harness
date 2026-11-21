@@ -26,6 +26,7 @@ import type { OrgService } from "../../runtime/organization/service.js";
 import { HttpError } from "../errors.js";
 import {
   badRequest,
+  optionalBoolean,
   optionalEnum,
   optionalString,
   optionalStringArray,
@@ -123,6 +124,8 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     // Library plugins to seed the new Agent with (the create dialog's picker); unknown names
     // are rejected before the Agent directory exists.
     const plugins = optionalStringArray(body, "plugins");
+    // The library's default-install plugins join them unless the client sent its complete list.
+    const defaultPlugins = optionalBoolean(body, "defaultPlugins");
     // Skills imported from a directory the user picked. The pair only means anything together, so
     // half of it is a bad request rather than a silently ignored field.
     const skillsDirectory = optionalString(body, "skillsDirectory", {
@@ -146,6 +149,7 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       ...(description !== undefined ? { description } : {}),
       ...(author !== undefined ? { author } : {}),
       ...(plugins !== undefined ? { plugins } : {}),
+      ...(defaultPlugins !== undefined ? { defaultPlugins } : {}),
       ...(directory !== undefined ? { directory } : {}),
     });
     const agent: AgentSummary = {

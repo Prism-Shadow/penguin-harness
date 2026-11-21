@@ -18,6 +18,8 @@ export interface AgentText {
     createAuthorInvalid(value: string): string;
     /** --plugins: comma-separated library plugin names to seed the new agent with. */
     createPlugins: string;
+    /** --no-default-plugins: leave out the plugins every new agent gets (goal and plan). */
+    createNoDefaultPlugins: string;
     created(agentId: string, projectId: string): string;
     colId(): string;
     colName(): string;
@@ -119,6 +121,8 @@ export const agentEn: AgentText = {
     createAuthorInvalid: (value) => `Unknown --author "${value}": use user, agent or company.`,
     createPlugins:
       "Library plugins to preinstall, comma-separated (e.g. software-development,goal)",
+    createNoDefaultPlugins:
+      "Leave out the plugins every new agent gets: goal (Goal mode) and plan (Plan mode)",
     created: (agentId, projectId) => `Agent ${agentId} created in project ${projectId}.`,
     colId: () => "ID",
     colName: () => "NAME",
@@ -177,7 +181,8 @@ export const agentEn: AgentText = {
     exportNoHooks: "Leave out the hook packages",
     exportNoMemory: "Leave out the memory",
     exportNoWorkbenches: "Leave out the workbenches",
-    exportNoWorkbenchData: "Take each workbench's source without its data (state.json)",
+    exportNoWorkbenchData:
+      "Take each workbench's source without its data (state.json and its data folder)",
     exportSchedules: "Take the scheduled tasks (once imported, they run on their schedule)",
     exportTraces:
       "Sessions to take: none, last:<N> (1-500 by last activity, subagents with their parent) or <yyyy-mm-dd>..<yyyy-mm-dd>",
@@ -211,6 +216,8 @@ export const agentZh: AgentText = {
     createAuthor: "由谁创建：user、agent 或 company（缺省：在会话内为 agent，否则为 user）",
     createAuthorInvalid: (value) => `未知的 --author「${value}」：请用 user、agent 或 company。`,
     createPlugins: "预装的插件库插件，逗号分隔（如 software-development,goal）",
+    createNoDefaultPlugins:
+      "不安装每个新 Agent 默认安装的插件：goal（目标模式）与 plan（计划模式）",
     created: (agentId, projectId) => `已在 Project ${projectId} 创建 Agent ${agentId}。`,
     colId: () => "ID",
     colName: () => "名称",
@@ -269,7 +276,7 @@ export const agentZh: AgentText = {
     exportNoHooks: "不带钩子包",
     exportNoMemory: "不带记忆",
     exportNoWorkbenches: "不带 Workbench",
-    exportNoWorkbenchData: "Workbench 只带源码，不带其数据（state.json）",
+    exportNoWorkbenchData: "Workbench 只带源码，不带其数据（state.json 与数据文件夹）",
     exportSchedules: "带上定时任务（导入后会按计划运行）",
     exportTraces:
       "带哪些 Session：none、last:<N>（1~500，按最近活跃，Subagent 会话随其父）或 <yyyy-mm-dd>..<yyyy-mm-dd>",

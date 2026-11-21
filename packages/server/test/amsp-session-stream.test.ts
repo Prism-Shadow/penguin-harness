@@ -10,8 +10,9 @@
  * - Given a second message on that Session, its run stream carries no session_meta.
  * - Given a run after a completed Task-boundary compaction, its stream carries the new context's
  *   session_meta once, after its task_begin and before its input, as the new Trace file has them.
- * - Given a model switch between two runs, the Session stream carries the new session_meta at
- *   switch time, and the next run stream none.
+ * - Given a model switch between two runs, the Session stream carries the switch's
+ *   session_update at switch time, and the next run stream the new context's session_meta once,
+ *   after its task_begin and before its input.
  * - Given a stop hook that continues once, one run stream holds two Task pairs.
  * - Given an always-ask Session, the SDK's approval loop finds the call through the approvals
  *   long-poll, `onApproval` allows it and the tool runs; with no callback the SDK answers deny.
@@ -267,7 +268,7 @@ describe("AMSP on the wire", () => {
     ]);
   });
 
-  it("a model switch streams its session_meta on the Session stream at switch time, and the next run stream none", async () => {
+  it("a model switch streams its session_update on the Session stream at switch time, and the next run stream the new session_meta once, after task_begin and before the input", async () => {
     const first = await readAll(await run(A, { input: "Before the switch" }));
     const sessionId = sessionOf(first.frames);
     const live = follow(await amsp(keys[A]!, `/sessions/${sessionId}/stream`));
@@ -277,15 +278,19 @@ describe("AMSP on the wire", () => {
       modelId: "claude-switch-target",
     });
     expect(switched.status).toBeLessThan(300);
-    const meta = await live.until(isRecord("session_meta"));
-    expect(meta.kind === "record" && (meta.record.payload as { model_id: string }).model_id).toBe(
-      "claude-switch-target",
-    );
+    const update = await live.until(isRecord("session_update"));
+    expect(update.kind === "record" && update.record.payload).toMatchObject({
+      provider: "custom",
+      model_id: "claude-switch-target",
+    });
     await live.close();
     await waitFor(() => t.deps.manager.statusOf(sessionId) === "idle");
 
     const after = await readAll(await run(A, { session_id: sessionId, input: "After" }));
-    expect(recordsOf(after.frames).map(kindOf)).not.toContain("session_meta");
+    const records = recordsOf(after.frames);
+    expect(records.map(kindOf).slice(0, 3)).toEqual(["task_begin", "session_meta", "text"]);
+    expect(records.map(kindOf).filter((k) => k === "session_meta")).toHaveLength(1);
+    expect((records[1]!.payload as { model_id: string }).model_id).toBe("claude-switch-target");
   });
 
   it("a stop hook that continues once gives one run stream two Task pairs", async () => {

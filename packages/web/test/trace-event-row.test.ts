@@ -8,11 +8,14 @@
  * - Opened, the `session_meta` row lists the Session's fields, the provider among them.
  * - Opened, a record that completed carries no status badge; one that did not names its status.
  * - A summary the row's context computed (a thinking-level change) replaces the record's own.
+ * - A `session_update` row says what the record is and names the model it sets, under its own
+ *   glyph — not the bare row an unknown record gets.
  */
 import { createElement as h } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AmspRecord } from "@prismshadow/amsp";
 import { EventRow } from "../src/features/traces/trace-event-row";
+import { S } from "../src/lib/strings";
 import { click, mount, unmountAll } from "./helpers/dom";
 
 const at = "2026-10-23T02:32:26.000Z";
@@ -43,6 +46,10 @@ async function rows(msgs: AmspRecord[], summary?: string): Promise<HTMLLIElement
 
 /** The row's line, as read: the text of its toggle. */
 const line = (row: HTMLLIElement): string => row.querySelector("button")?.textContent ?? "";
+
+/** The row's type glyph, as drawn. */
+const glyph = (row: HTMLLIElement): string | null =>
+  row.querySelector("button svg path")?.getAttribute("d") ?? null;
 
 describe("a Trace event row", () => {
   afterEach(() => unmountAll());
@@ -115,6 +122,23 @@ describe("a Trace event row", () => {
     expect(nonZero!.textContent).toContain("[exit code: 2]");
     expect(nonZero!.textContent).not.toContain("completed");
     expect(denied!.textContent).toContain("aborted");
+  });
+
+  it("says what a session_update is and names the model it sets, unlike the bare row of an unknown record", async () => {
+    const [update, unknown] = await rows([
+      record("event_msg", {
+        type: "session_update",
+        provider: "anthropic",
+        model_id: "claude-fable-5-2",
+      }),
+      record("event_msg", { type: "something_new", provider: "anthropic" }),
+    ]);
+
+    expect(line(update!)).toContain(
+      `session_update${S.traces.sessionUpdate} · anthropic / claude-fable-5-2`,
+    );
+    expect(line(unknown!)).not.toContain("anthropic");
+    expect(glyph(update!)).not.toBe(glyph(unknown!));
   });
 
   it("takes a summary its context computed in place of the record's own", async () => {
