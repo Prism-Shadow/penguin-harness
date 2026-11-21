@@ -59,6 +59,7 @@ import {
   unroutableVendorModel,
   vendorClientType,
 } from "../src/model-catalog/index.js";
+import { modelModalities } from "../src/services/model-modalities.js";
 
 /**
  * The band a billed rate lies in, USD per million tokens. Wide on purpose — no row's value is
@@ -846,6 +847,20 @@ describe("MMSP's clients as the catalog reads them", () => {
         `${m.provider}/${m.modelId}`,
       ).toBe(false);
     }
+  });
+
+  it("catalog invariant: a row MMSP's registry lists with no text output holds no chat, so it is marked a tool model", () => {
+    // The chat pickers hide only `tool` rows (ModelInfo's `chatEligible`). A model that returns
+    // only images, audio or search results, judged by MMSP's registry on the client the row
+    // routes to rather than by its name, would otherwise be offered as a chat model.
+    const textless = MODEL_CATALOG.filter((m) => {
+      const { output } = modelModalities(m.modelId, m.clientType);
+      return output !== undefined && !output.includes("Text");
+    });
+    expect(textless.length).toBeGreaterThan(0);
+    expect(
+      textless.filter((m) => m.tool !== true).map((m) => `${m.provider}/${m.modelId}`),
+    ).toEqual([]);
   });
 
   it("unroutableVendorModel judges only the groups that route by id, and only once an id is typed", () => {
