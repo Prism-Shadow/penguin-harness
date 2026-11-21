@@ -15,7 +15,7 @@
  * `library/node_modules/@penguinharness/<name>/…` (each plugin directory as it is in the
  * repo, with the `ifaces.json` its build writes — what the library reads a plugin's content from
  * — and without the `src/` and `tsconfig.json` that build reads, which nothing on the target
- * does). The platform points core at it at boot (server hmr/platform.ts,
+ * does, nor a code plugin's `dist/`, which ships in the builtin plugin prefix). The platform points core at it at boot (server hmr/platform.ts,
  * `usePushedPluginLibrary`).
  */
 import { execFile } from "node:child_process";
@@ -26,21 +26,37 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 const PREFIX = "@penguinharness/";
-/** Never part of a plugin's content: what its build reads (`src/`, `tsconfig.json`), its tests, its dependencies. */
-const SKIP = new Set(["node_modules", "test", "tests", "src", "tsconfig.json"]);
+/**
+ * Never part of a plugin's content: what its build reads (`src/`, `tsconfig.json`), its tests, its
+ * dependencies, and the code a plugin with a server module builds (`dist/`), which the builtin
+ * plugin prefix carries (scripts/build-plugins.mjs) and the library never runs.
+ */
+const SKIP = new Set(["node_modules", "test", "tests", "src", "tsconfig.json", "dist"]);
 
 /**
- * Writes each plugin's `ifaces.json` the way its own `build` does (gen-ifaces over its
- * tsconfig), a few at a time: the table is generated, never committed, and a push must carry the
- * one of the revision being pushed. Needs core's dist (the decorators' declarations), as the
- * server's own table does.
+ * Writes each plugin's `ifaces.json` the way its own `build` does, a few at a time: the table is
+ * generated, never committed, and a push must carry the one of the revision being pushed. Needs
+ * core's dist (the decorators' declarations), as the server's own table does. A plugin that
+ * carries content alone builds it with gen-ifaces over its tsconfig; one with a code entry
+ * (`main` / `exports`) runs its own `build`, which says how its table is made (browser-automation
+ * reads its host's face from source and projects its own `src` alone).
  */
 async function buildTables(repoRoot, dirs) {
   const run = promisify(execFile);
   const generator = path.join(repoRoot, "scripts", "gen-ifaces.mjs");
+  const windows = process.platform === "win32";
   const queue = [...dirs];
   const worker = async () => {
     for (let dir = queue.shift(); dir !== undefined; dir = queue.shift()) {
+      const pkg = JSON.parse(await fsp.readFile(path.join(dir, "package.json"), "utf8"));
+      if (pkg.main !== undefined || pkg.exports !== undefined) {
+        // pnpm is a .cmd shim on Windows, which only a shell runs; the package name needs no quoting.
+        await run(windows ? "pnpm.cmd" : "pnpm", ["--filter", pkg.name, "run", "build"], {
+          cwd: repoRoot,
+          shell: windows,
+        });
+        continue;
+      }
       await run(process.execPath, [
         generator,
         "--project",

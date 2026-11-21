@@ -30,8 +30,6 @@
  * - A pending request outlives its Project with no Project named, and approving it is refused.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import fs from "node:fs/promises";
-import path from "node:path";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { assistantText, toolCall, usePushedPluginLibrary } from "@prismshadow/penguin-core";
 import type { ServerEvent } from "@prismshadow/penguin-library-project";
@@ -44,7 +42,13 @@ import type {
 } from "../src/api/types.js";
 import { userChannelKey } from "../src/http/routes/events.js";
 import type { RuntimeSession, SessionManager } from "../src/runtime/session-manager.js";
-import { decorators, hybridPackageFiles, lower, writePrefixPackage } from "./plugin-fixtures.js";
+import {
+  decorators,
+  hybridPackageFiles,
+  lower,
+  shipHybrids,
+  writePrefixPackage,
+} from "./plugin-fixtures.js";
 import type { HybridPackage } from "./plugin-fixtures.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -81,37 +85,6 @@ describe("a plugin's server module, installed with the plugin on an Agent", () =
   let admin: Client;
   let member: Client;
 
-  /** Writes a package into an npm prefix and names it in the prefix's manifest. */
-  async function intoPrefix(prefix: string, pkg: HybridPackage): Promise<void> {
-    const manifest = path.join(prefix, "package.json");
-    const listed = JSON.parse(
-      await fs.readFile(manifest, "utf8").catch(() => '{"name":"pushed","private":true}'),
-    ) as { dependencies?: Record<string, string> };
-    listed.dependencies = { ...listed.dependencies, [pkg.name]: "1.0.0" };
-    await fs.mkdir(prefix, { recursive: true });
-    await fs.writeFile(manifest, JSON.stringify(listed));
-    const dir = path.join(prefix, "node_modules", ...pkg.name.split("/"));
-    for (const [rel, body] of Object.entries(hybridPackageFiles(pkg))) {
-      await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
-      await fs.writeFile(path.join(dir, rel), body);
-    }
-  }
-
-  /**
-   * What a hot push carried, as the runtime reports it (hmr.assetsDir()): the plugin library the
-   * build was made with, and the plugin prefix it ships — what makes a package built in. Every
-   * boot of the App reads both from there (hmr/platform.ts), a re-assembly's included.
-   */
-  async function ship(...packages: HybridPackage[]): Promise<void> {
-    const assets = path.join(t.root, "pushed-assets");
-    for (const pkg of packages) {
-      await intoPrefix(path.join(assets, "library"), pkg);
-      await intoPrefix(path.join(assets, "plugins"), pkg);
-    }
-    (t.deps.hmr as { assetsDir(): string | null }).assetsDir = () => assets;
-    usePushedPluginLibrary(path.join(assets, "library"));
-  }
-
   /** A package an administrator installed under the data root (`<root>/plugins`). */
   const installOnServer = (pkg: HybridPackage) =>
     writePrefixPackage(t.root, pkg.name, hybridPackageFiles(pkg));
@@ -120,7 +93,7 @@ describe("a plugin's server module, installed with the plugin on an Agent", () =
     t = await createTestApp();
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     member = apiClient(t.app, (await provisionUser(t.app, "member")).cookie);
-    await ship(HYBRID, SWAPPER, BRITTLE);
+    await shipHybrids(t, HYBRID, SWAPPER, BRITTLE);
   });
 
   afterEach(async () => {
@@ -248,6 +221,7 @@ describe("a plugin's server module, installed with the plugin on an Agent", () =
         decision: "enabled",
         decidedBy: "member",
         via: "builtin",
+        preinstalled: false,
         state: "running",
       }),
     ]);

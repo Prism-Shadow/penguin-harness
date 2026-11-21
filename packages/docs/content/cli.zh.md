@@ -693,6 +693,20 @@ note: No visible change on the page.
 
 CLI 自己还有三种：命令写错时的 `invalid_argument`、文件读写失败时的 `io_error`，以及连不上服务器时的 `request_failed`。
 
+## penguin storage
+
+数据根占用了多少空间，以及清理：shell 里的[设置 › 存储空间](/settings#存储空间)，是服务器 `/api/me/storage` 路由之上的瘦客户端。调用者看到的与页面给他看的相同：成员看到自己可进入的 Project，管理员看到整个数据根。这条命令与页面一起由预装的 `storage` 插件提供。
+
+```bash
+penguin storage [--refresh]                                  # 已用空间，按分类、Project、Agent，管理员另有服务端条目
+penguin storage clean [--older-than <天数>] [--all] [--yes]  # 审阅现在可以删除的内容；--yes 删除
+```
+
+- 服务器在后台测量。命令会等正在进行的测量结束，所以不会打印一块空磁盘。`--refresh` 先重新测量。
+- 不加 `--yes` 时 `clean` 只列出不删除。它打印页面显示的审阅结果，用 `x` 标出删除会带走的项：页面缺省勾选的项（已删除对话的草稿区、孤立的临时工作区、服务端缓存），加 `--all` 则是全部，含闲置对话的草稿区与 Agent 的工具环境。`--older-than` 是闲置天数，1–3650，缺省 7。
+- 加 `--yes` 时，每一项在删除时都重新判定，与页面相同；最后一行写明删除了几项、释放了多少空间、几项因正在使用或已不在而跳过。删除需要本人登录：Agent 的 shell 持有的本地 API 令牌会被拒绝（`human_required`），所以先用 [`penguin auth login`](#penguin-auth-login) 登录，或在页面上清理。
+- `--json` 把应答打印成一行 JSON（`clean` 只列出时是审阅结果加上 `chosen`，即 `--yes` 会删除的 id），`--server` 与其他命令相同。服务器上没有任何 Project 运行该插件的模块时，两者都以 `storage_unavailable` 失败。
+
 ## 审批模式（--approve）
 
 | 模式 | 行为 |

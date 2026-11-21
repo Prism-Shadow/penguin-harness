@@ -1,6 +1,8 @@
 /**
- * Every endpoint the Web App calls (`packages/web/src/api/endpoints.ts`), answered from the
- * demo store. Reads answer the fixtures; writes mutate them where the app shows the result
+ * Every endpoint the Web App calls (`packages/web/src/api/endpoints.ts`, the wrappers its
+ * features keep beside them, and those a plugin web half exports, such as the agent browser's
+ * `plugins/browser-automation/src/web/api.ts`), answered from the demo store. Reads answer the
+ * fixtures; writes mutate them where the app shows the result
  * (a renamed Session, a saved model table, a new schedule) and answer `demo_read_only` where
  * the operation would need a machine, a registry or a provider behind it. Each handler's
  * return is annotated with the contract type it stands for, so a DTO change fails here
@@ -154,6 +156,7 @@ import type {
 import { isThemeId } from "@prismshadow/penguin-ui";
 // The catalog decides which groups publish a balance, as it does on the server.
 import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
+import { declaredServerModules } from "../../../../web/src/lib/module-gate";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
@@ -163,7 +166,21 @@ import { IDS } from "./ids";
 import { empty, fail, json, raw, Router } from "./router";
 import type { RequestContext } from "./router";
 import type { DemoStore } from "./store";
+import {
+  cleanupReview,
+  forgetStorageSession,
+  refreshStorage,
+  runCleanup,
+  storageSessions,
+  storageUsage,
+} from "./storage-demo";
 import { payloadOf } from "./types";
+import type {
+  StorageCleanupResult,
+  StorageCleanupReview,
+  StorageSessionsResponse,
+  StorageUsage,
+} from "@penguinharness/storage/types";
 import type { AmspRecord } from "./types";
 
 type Ctx = RequestContext;
@@ -198,13 +215,16 @@ function costOf(day: Pick<UsageDay, "cacheRead" | "cacheWrite" | "output" | "pro
 export const router = new Router();
 
 // The demo boots its own page table and has no server-side plugin contributions: no pages,
-// no file renderers, and nothing removed.
+// no file renderers and nothing removed. It stands in for every plugin's server half, so it
+// answers as running every server module a booted web module declared: a plugin's web half is
+// drawn in the gallery as it is on a server that runs its module.
 router.get("/api/contributions", (): ContributionsResponse => ({
   pages: [],
   fileRenderers: [],
   pageRemovals: [],
   agentTabs: [],
   sessionTabs: [],
+  modules: declaredServerModules(),
 }));
 
 // ---------------------------------------------------------------------------------------------
@@ -1352,9 +1372,38 @@ router
   })
   .post("/api/me/archived-sessions/delete", ({ store, body }): ArchivedSessionsBatchResponse => {
     let done = 0;
-    for (const id of batchIds(store, body)) if (store.deleteSession(id)) done += 1;
+    for (const id of batchIds(store, body)) {
+      // The Storage page lists conversations of Projects the demo store does not hold.
+      if (store.deleteSession(id) || forgetStorageSession(store, id)) done += 1;
+    }
     return { done, missing: [] };
   });
+
+// ---------------------------------------------------------------------------------------------
+// Storage (Settings › Storage): the demo's data root, its cleanup and its conversations by size
+// ---------------------------------------------------------------------------------------------
+
+router
+  .get("/api/me/storage", ({ store }): StorageUsage => storageUsage(store))
+  .post("/api/me/storage/refresh", ({ store }): StorageUsage => refreshStorage(store))
+  .get("/api/me/storage/cleanup", ({ store, query }): StorageCleanupReview => {
+    const days = Number(query.get("olderThanDays") ?? 7);
+    return cleanupReview(store, Number.isInteger(days) && days >= 1 && days <= 3650 ? days : 7);
+  })
+  .post("/api/me/storage/cleanup", ({ store, body }): StorageCleanupResult => {
+    const items = record(body).items;
+    return runCleanup(
+      store,
+      Array.isArray(items) ? items.filter((id) => typeof id === "string") : [],
+    );
+  })
+  .get("/api/me/storage/sessions", ({ store, query }): StorageSessionsResponse =>
+    storageSessions(store, query),
+  )
+  // The demo is not the desktop shell: there is no file manager to show a folder in.
+  .post("/api/me/storage/reveal", () =>
+    fail(404, "not_desktop", "Only the desktop shell can show a folder."),
+  );
 
 // ---------------------------------------------------------------------------------------------
 // Messaging bindings: nothing bound in the demo; every write needs a platform behind it

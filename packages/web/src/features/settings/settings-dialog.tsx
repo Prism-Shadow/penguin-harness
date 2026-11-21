@@ -24,10 +24,13 @@ import {
 } from "@prismshadow/penguin-ui";
 
 import { S } from "../../lib/strings";
+import { glyphOf } from "../../lib/nav-icons";
+import { useModuleGates } from "../../lib/module-gate";
 import {
   resolveSettingsSection,
   settingsGroups,
   visibleSettingsSections,
+  type HostSettingsSectionKey,
   type SettingsGroupKey,
   type SettingsSectionKey,
 } from "../../lib/settings-sections";
@@ -43,14 +46,13 @@ import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
 import { UploadsSection } from "./uploads-section";
 import { CompanySection } from "./company-section";
-import { BrowserSection } from "./browser-section";
-import { ChromeExtensionSection } from "./chrome-extension-section";
 import { AgentApiSection } from "./agent-api-section";
 import { PluginsSection } from "./plugins-section";
 import { AdminUsersSection } from "../admin";
+import { shownSections } from "./contributed-sections";
 
-/** Rail glyphs (see NAV_ICONS' conventions). */
-const SECTION_ICONS: Record<SettingsSectionKey, string> = {
+/** Rail glyphs of the app's own pages (see NAV_ICONS' conventions); a contributed page names its own. */
+const SECTION_ICONS: Record<HostSettingsSectionKey, string> = {
   /** Person in a circle: the account's own identity, distinct from the bust used for credentials. */
   profile: ICONS.userCircle,
   general: ICONS.gear,
@@ -62,17 +64,13 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   archived: ICONS.archive,
   /** Single person: the signed-in account. */
   account: ICONS.user,
-  /** A browser window: the agent browser. */
-  browser: ICONS.appWindow,
   /** Globe: outbound traffic. */
   proxy: ICONS.globe,
   /** Up arrow over a base: uploads. */
   uploads: ICONS.arrowUpFromLine,
   /** The building the mode switch wears: company mode. */
   company: ICONS.building,
-  /** Plug: whether users may connect their Chrome. */
-  chromeExtension: ICONS.plug,
-  /** Angle brackets: programs calling the Agents. The plug that marks the API elsewhere is taken here, by the Chrome page above. */
+  /** Angle brackets: programs calling the Agents. The plug that marks the API elsewhere is taken here, by the Chrome extension's page. */
   agentApi: ICONS.angleBrackets,
   /** Puzzle piece: plugins, the plugin library's own mark. */
   plugins: ICONS.puzzle,
@@ -95,11 +93,14 @@ export function SettingsDialog({
 }) {
   // uploadLimits feeds the Upload limits page's "?" (sectionInfo below); the rest pick pages.
   const { user, desktopMode, sessionVia, uploadLimits } = useAuth();
-  const sections = visibleSettingsSections({
-    isAdmin: user?.isAdmin === true,
-    desktopMode,
-    sessionVia,
-  });
+  // A contributed page is there while its module's server half runs; the gates re-render this.
+  useModuleGates();
+  const contributed = shownSections();
+  const sections = visibleSettingsSections(
+    { isAdmin: user?.isAdmin === true, desktopMode, sessionVia },
+    contributed.map((c) => c.data),
+  );
+  const contributedByKey = new Map(contributed.map((c) => [c.data.key, c]));
   const [active, setActive] = useState<SettingsSectionKey | null>(null);
   const requestClose = useGuardedClose(onClose, SETTINGS_SCOPE);
 
@@ -115,18 +116,16 @@ export function SettingsDialog({
   if (current === null) return null;
 
   // Read inside the component: after a language switch remount, these pick up the current dictionary.
-  const sectionLabel: Record<SettingsSectionKey, string> = {
+  const sectionLabel: Record<HostSettingsSectionKey, string> = {
     profile: S.settings.profile,
     general: S.settings.generalTitle,
     appearance: S.settings.appearanceTitle,
     shortcuts: S.settings.shortcutsTitle,
     archived: S.settings.archivedTitle,
     account: S.settings.accountTitle,
-    browser: S.settings.browserTitle,
     proxy: S.settings.proxyTitle,
     uploads: S.settings.uploadLimitsTitle,
     company: S.settings.companyModeTitle,
-    chromeExtension: S.settings.chromeExtensionTitle,
     agentApi: S.settings.agentApiTitle,
     plugins: S.settings.pluginsTitle,
     users: S.admin.users,
@@ -137,15 +136,20 @@ export function SettingsDialog({
   };
   // Page-level explanations, disclosed by the "?" the shell draws beside the pane heading.
   // Pages whose rows explain themselves one by one carry none.
-  const sectionInfo: Partial<Record<SettingsSectionKey, string>> = {
+  const sectionInfo: Partial<Record<HostSettingsSectionKey, string>> = {
     shortcuts: S.settings.shortcutsInfo,
     archived: S.settings.archivedInfo,
     proxy: S.settings.proxyInfo,
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
     company: S.settings.companyModeServerInfo,
-    chromeExtension: S.settings.chromeExtensionInfo,
     agentApi: S.settings.agentApiHint,
     plugins: S.settings.pluginsInfo,
+  };
+
+  // Every way to another page goes through the same guard: the rail, and a contributed page's
+  // own link to another (`openPage`).
+  const select = (key: SettingsSectionKey) => {
+    if (key !== current) void guardLeave(() => setActive(key), SETTINGS_SCOPE);
   };
 
   const groups: Array<PagedDialogGroup<SettingsSectionKey>> = settingsGroups(sections).map(
@@ -154,14 +158,21 @@ export function SettingsDialog({
       label: groupLabel[group],
       items: sections
         .filter((s) => s.group === group)
-        .map((s) => ({
-          key: s.key,
-          label: sectionLabel[s.key],
-          icon: SECTION_ICONS[s.key],
-          ...(sectionInfo[s.key] !== undefined ? { info: sectionInfo[s.key] } : {}),
-        })),
+        .map((s) => {
+          const page = contributedByKey.get(s.key);
+          const own = s.key as HostSettingsSectionKey;
+          const info = page !== undefined ? page.code.info?.() : sectionInfo[own];
+          return {
+            key: s.key,
+            label: page !== undefined ? page.code.label() : sectionLabel[own],
+            icon: page !== undefined ? glyphOf(page.data.icon) : SECTION_ICONS[own],
+            ...(info !== undefined ? { info } : {}),
+          };
+        }),
     }),
   );
+
+  const ContributedBody = contributedByKey.get(current)?.code.Body;
 
   return (
     <PagedDialog
@@ -170,9 +181,7 @@ export function SettingsDialog({
       title={S.settings.title}
       groups={groups}
       active={current}
-      onSelect={(key) => {
-        if (key !== current) void guardLeave(() => setActive(key), SETTINGS_SCOPE);
-      }}
+      onSelect={select}
     >
       {current === "profile" && <ProfileSection />}
       {current === "general" && <GeneralSection />}
@@ -180,16 +189,17 @@ export function SettingsDialog({
       {current === "shortcuts" && <ShortcutsSection />}
       {current === "archived" && <ArchivedSessionsSection />}
       {current === "account" && <AccountSection />}
-      {current === "browser" && <BrowserSection />}
       {current === "proxy" && <ProxySection />}
       {current === "uploads" && <UploadsSection />}
       {current === "company" && <CompanySection />}
-      {current === "chromeExtension" && <ChromeExtensionSection />}
       {current === "agentApi" && <AgentApiSection />}
       {current === "plugins" && (
         <PluginsSection {...(pluginFocus !== undefined ? { focus: pluginFocus } : {})} />
       )}
       {current === "users" && <AdminUsersSection />}
+      {ContributedBody !== undefined && (
+        <ContributedBody openPage={(key) => select(key as SettingsSectionKey)} />
+      )}
     </PagedDialog>
   );
 }

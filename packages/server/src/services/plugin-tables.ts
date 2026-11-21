@@ -101,3 +101,14 @@ export function pluginTableEdits(deps: PluginTablesDeps): PluginTableEdits {
 
   return { tablesOf, edit, list };
 }
+
+/** `packages` added to `machineId`'s own table, each as an administrator's entry reads: any version. */
+export function withOwnListing(
+  tables: PluginTables,
+  machineId: string,
+  packages: readonly string[],
+): PluginTables {
+  const own = { ...tables.machines[machineId] };
+  for (const pkg of packages) own[pkg] = {};
+  return { ...tables, machines: { ...tables.machines, [machineId]: own } };
+}

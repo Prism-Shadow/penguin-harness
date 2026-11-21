@@ -15,11 +15,11 @@ export interface PluginModuleRequestRow {
   package: string;
   /** The library plugin's name, for display. */
   plugin: string;
-  /** The Project whose table lists it, or will; null once that Project is gone. */
+  /** The Project whose table lists it, or will; null once that Project is gone, and for a preinstalled module (PRFC-0030), which is every Project's. */
   projectId: string | null;
   /** The Agent whose install asked first; display only. */
   agentId: string | null;
-  /** The user who asked; "" when no person was behind it (company mode's reconcile). */
+  /** The user who asked; "" when no person was behind it (company mode's reconcile, a preinstalled module's one-time listing). */
   requestedBy: string;
   requestedAt: string;
   /** null = pending. */

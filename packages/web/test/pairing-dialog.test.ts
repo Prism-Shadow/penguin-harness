@@ -1,5 +1,5 @@
 /**
- * Connecting the user's Chrome (features/builtin-browser/pairing-dialog.tsx and
+ * Connecting the user's Chrome (plugins/browser-automation/src/web/pairing-dialog.tsx and
  * pairing-code.ts): the steps rendered to static markup (node env, no DOM), the window's one
  * pairing code against the fetch fake, and when the dialog counts the Chrome as connected.
  *
@@ -16,19 +16,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+// The browser reaches the app's own helpers through the plugin face; this hands them over.
+import "../src/web-app/plugin-host";
 import {
   EXTENSION_DOWNLOAD_URL,
   EXTENSION_STORE_URL,
   PairingStatus,
   PairingSteps,
   connectedSince,
-} from "../src/features/builtin-browser/pairing-dialog";
+} from "../../../plugins/browser-automation/src/web/pairing-dialog";
 import {
   ensurePairingCode,
   forgetPairingCode,
   pairingCode,
-} from "../src/features/builtin-browser/pairing-code";
+} from "../../../plugins/browser-automation/src/web/pairing-code";
 import { S } from "../src/lib/strings";
+import { S as B } from "../../../plugins/browser-automation/src/web/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 
 const ORIGIN = "https://ph.example.com";
@@ -72,10 +75,10 @@ describe("the pairing steps", () => {
     }
     expect(textOf(html, "browser-pairing-server")).toBe(ORIGIN);
     expect(textOf(html, "browser-pairing-code")).toBe(CODE);
-    expect(html).toContain(`aria-label="${S.common.copy}: ${S.builtinBrowser.pairServer}"`);
-    expect(html).toContain(`aria-label="${S.common.copy}: ${S.builtinBrowser.pairCode}"`);
-    expect(html).toContain(S.builtinBrowser.pairCodeExpiry("14:10"));
-    expect(html).toContain(`>${S.builtinBrowser.pairNewCode}<`);
+    expect(html).toContain(`aria-label="${S.common.copy}: ${B.builtinBrowser.pairServer}"`);
+    expect(html).toContain(`aria-label="${S.common.copy}: ${B.builtinBrowser.pairCode}"`);
+    expect(html).toContain(B.builtinBrowser.pairCodeExpiry("14:10"));
+    expect(html).toContain(`>${B.builtinBrowser.pairNewCode}<`);
   });
 
   it("hide a code that has lapsed and offer a new one", async () => {
@@ -83,15 +86,15 @@ describe("the pairing steps", () => {
     await ensurePairingCode(true);
     const html = steps();
     expect(html).not.toContain(CODE);
-    expect(html).toContain(S.builtinBrowser.pairCodeExpired);
-    expect(html).toContain(`>${S.builtinBrowser.pairNewCode}<`);
+    expect(html).toContain(B.builtinBrowser.pairCodeExpired);
+    expect(html).toContain(`>${B.builtinBrowser.pairNewCode}<`);
   });
 
   it("say why there is no code when the server refused to make one", async () => {
     stubFetch(() => apiError(503, "browser_unavailable"));
     await ensurePairingCode();
     expect(pairingCode().status).toBe("failed");
-    expect(steps()).toContain(S.builtinBrowser.pairCodeFailed(S.errors.byCode.browser_unavailable));
+    expect(steps()).toContain(B.builtinBrowser.pairCodeFailed(B.apiErrors.browser_unavailable));
   });
 });
 
@@ -126,10 +129,10 @@ describe("waiting for the Chrome", () => {
 
   it("says it is waiting, then that the Chrome connected", () => {
     expect(renderToStaticMarkup(createElement(PairingStatus, { connected: false }))).toContain(
-      S.builtinBrowser.pairWaiting,
+      B.builtinBrowser.pairWaiting,
     );
     const done = renderToStaticMarkup(createElement(PairingStatus, { connected: true }));
-    expect(done).toContain(S.builtinBrowser.pairConnected);
-    expect(done).not.toContain(S.builtinBrowser.pairWaiting);
+    expect(done).toContain(B.builtinBrowser.pairConnected);
+    expect(done).not.toContain(B.builtinBrowser.pairWaiting);
   });
 });

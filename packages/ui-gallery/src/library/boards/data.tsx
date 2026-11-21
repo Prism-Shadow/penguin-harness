@@ -4,7 +4,8 @@
  * list rows plain and opening what they name, rows with marks after their title (whose puzzle
  * marks its plugin's row in a list under them), a list loading
  * and empty, rows whose text runs far past a narrow card (one of them trailed), label/value pairs
- * at both rungs, and a running job's log — all from the package.
+ * at both rungs, a running job's log, and the review-before-delete list (review-lists.tsx) — all
+ * from the package.
  */
 import type { ReactNode } from "react";
 import {
@@ -42,6 +43,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
+import { ReviewLists } from "./review-lists";
 
 /** Ids, schedules, figures and command output are the same in both languages: data, not copy. */
 const SCHEDULES = [
@@ -510,6 +512,7 @@ export function DataBoard() {
           <LogView lines={LOG} highlightLast label={t.logLabel} maxHeight="sm" />
         </div>
       </BoardGroup>
+      <ReviewLists />
     </div>
   );
 }

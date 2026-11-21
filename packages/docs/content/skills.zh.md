@@ -250,7 +250,8 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | 办公效率 | `a2ui` | 让回复更易读的富文本组件——选项、表单、分步操作、提示框、Mermaid 图、由数据绘制的统计图（折线、面积、柱状、饼图、散点、直方图或仪表），以及天气、时钟、倒计时、指标和系统资源小组件，以围栏代码块写在普通 Markdown 里，Web App 用自己的组件渲染（用户的选择以普通文字填入输入框），其他界面显示为可读文本——附带中英文 STE 风格写作规则、把天气查询和系统快照直接生成组件块的脚本，以及一个发送前校验、打分的检查脚本（预装） |
 | | `data-analysis` | 完成数据分析任务：有限度地检查证据，明确决定是否修改答案，原生处理产出文件，并核验最终输出 |
 | | `use-firecrawl` | 通过 Firecrawl API 搜索网页、抓取页面，输出干净的 markdown |
-| | `browser-automation` | 用 `penguin browser` 驱动 Agent 浏览器，即桌面应用的[内置浏览器](/builtin-browser)或[你自己的 Chrome](/builtin-browser#使用你自己的-chrome)：以简化 HTML 或纯文本读取页面，用 JavaScript 以及可信的点击和输入操作页面，提取亚马逊订单这样的数据，登录用的是你自己的账号 |
+| | `browser-automation` | 用 `penguin browser` 驱动 Agent 浏览器，即桌面应用的[内置浏览器](/builtin-browser)或[你自己的 Chrome](/builtin-browser#使用你自己的-chrome)：以简化 HTML 或纯文本读取页面，用 JavaScript 以及可信的点击和输入操作页面，提取亚马逊订单这样的数据，登录用的是你自己的账号。预装；浏览器本身也由它提供——每个 Project 都列入的服务端模块、应用里的面板与设置，以及 `penguin browser` 命令 |
+| | `storage` | [设置 › 存储空间](/settings#存储空间)与 [`penguin storage`](/cli#penguin-storage)：数据根按分类、Project 与 Agent 的空间占用，以及先审阅再删除的草稿区、孤立临时工作区与缓存清理。预装：每个 Project 都列入的服务端模块、页面、命令，以及让 Agent 告诉你空间被什么占用的 Skill（它自己从不删除任何东西） |
 | | `use-bento-slides` | 创建和编辑 Bento 演示文稿：单文件 `.bento.html` 幻灯片，文件内容为 JSON，支持素材到图表的映射、morph 过渡和状态幻灯片 |
 | | `humanizer` | 去除任何语言文字中的 AI 写作痕迹，改写成书籍、报纸和百科全书的语体（不预装：需要时从插件库安装） |
 | | `goal` | [目标模式](/goal-mode)背后的 stop 钩子：让 Session 持续朝着目标推进，直到完成、受阻或 Token 预算耗尽（预装，每个新建的 Agent 也都装上） |
@@ -353,7 +354,7 @@ npm 标准字段：
 | `shortDescription` / `shortDescriptionZh` | 卡片上显示的简短文案；没有时用完整描述 |
 | `category` | `rsi`、`office-productivity`、`software-development`、`ai-app-development` 之一，Agent 运行沙箱后端用 `sandbox`；缺失或未知的分类归入「其他」 |
 | `icon` | 包内一个 SVG 的路径；没有时取包根目录的 `icon.svg`，再没有就显示拼图块。SVG 必须是不含脚本、事件、链接和外部引用的纯图形，且不超过 64 KiB，否则不显示 |
-| `preinstall` | 设为 `false` 的插件不进入 `default_agent` 的预装集合，只能从插件库手动安装 |
+| `preinstall` | 设为 `false` 的插件不进入 `default_agent` 的预装集合，只能从插件库手动安装。不写时只预装插件的 Agent 内容。带服务端模块的内置插件只有显式写 `true`，其模块才列入每个 Project：新建的 Project 都会列入，服务端也会把它一次性列入已有的 Project |
 | `defaultInstall` | 设为 `true` 的插件装到此后新建的每个 Agent 上：创建对话框里默认勾选，`penguin agent create --no-default-plugins` 不装；已有的 Agent 不变。管理员装进服务端的插件忽略此字段 |
 | `composerMode` | 设为 `true` 时，装有该插件的 Agent 在对话输入框的 **+** 菜单里多出一个以卡片标题命名的开关：开着时，用户每发一条消息都会运行钩子包里 `"trigger": "host"` 的 `user_prompt` 命令，其 context 紧随这条消息。没装该钩子包的 Agent 也列出这个开关，置灰并带「安装」。钩子包没有这样的命令时忽略 |
 | `quickStart` | 插件页「快速开始」预填进新对话草稿的演示：`{ prompt: "…", promptZh: "…", skills: ["…"], goal: true }`——一条发出后就能看到插件工作的提示词、要预选的本插件 Skill，以及草稿是否以目标模式打开。页面从不代为发送；不填时，快速开始预选第一个 Skill |

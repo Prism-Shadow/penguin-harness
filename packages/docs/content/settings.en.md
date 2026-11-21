@@ -1,11 +1,11 @@
 ---
 title: Settings
-description: Manage your profile, preferences, archived chats and password, and, as an admin, users, the proxy, upload limits, company mode, the Agent API and plugins.
+description: Manage your profile, preferences, archived chats, storage and password, and, as an admin, users, the proxy, upload limits, company mode, the Agent API and plugins.
 ---
 
-**Settings** is one dialog for the settings that belong to neither a Project nor an agent: your profile, your interface preferences, your archived chats and your password, and, for an admin, the server's users, proxy, upload limits, company mode, Agent API and plugins, the sandbox among them.
+**Settings** is one dialog for the settings that belong to neither a Project nor an agent: your profile, your interface preferences, your archived chats, the space your data takes and your password, and, for an admin, the server's users, proxy, upload limits, company mode, Agent API and plugins, the sandbox among them.
 
-- Your own settings: [Profile](#profile), [General](#general), [Appearance](#appearance), [Keyboard shortcuts](#keyboard-shortcuts), [Archived chats](#archived-chats) and [Account](#account).
+- Your own settings: [Profile](#profile), [General](#general), [Appearance](#appearance), [Keyboard shortcuts](#keyboard-shortcuts), [Archived chats](#archived-chats), [Storage](#storage) and [Account](#account).
 - Server settings, for admins: [Users](#users), [Proxy options](#proxy-options), [Upload limits](#upload-limits), [Company mode](#company-mode), [Agent API](#agent-api) and [Plugins](#plugins).
 
 ## Open Settings
@@ -26,6 +26,7 @@ The rail is grouped into **Personal** and **Server**:
 | [Appearance](#appearance) | Personal | Everyone |
 | [Keyboard shortcuts](#keyboard-shortcuts) | Personal | Everyone |
 | [Archived chats](#archived-chats) | Personal | Everyone |
+| [Storage](#storage) | Personal | Everyone; an admin also sees the whole data root |
 | [Account](#account) | Personal | Only where a password exists to change |
 | [Users](#users) | Server | Admin only, and not in the desktop app |
 | [Proxy options](#proxy-options) | Server | Admin only |
@@ -180,6 +181,47 @@ With no archived conversations the page reads **No archived chats**; when the se
 Unarchiving does not ask. Deleting always asks first, and a batch delete names how many chats it removes. Deleting removes the conversations' messages and Traces for good, along with their subagent Sessions.
 
 The page keeps up with changes made elsewhere: it updates when a conversation is archived, unarchived or deleted, or when a program opens a new one, and a row's running mark comes and goes with its run.
+
+## Storage
+
+The **Storage** page shows how much space this server's data root takes, and cleans up what can be regenerated. A member sees the Projects they own or are a member of. An admin sees the whole data root: the Projects they cannot open are summed into one row, **N Projects of other users**, with no names. Connected machines keep their own data roots, which this page does not measure.
+
+The page comes from the preinstalled `storage` plugin, whose server module every Project lists. While an admin keeps that module stopped (Settings › Plugins), the page is not there. The same figures and cleanup are in the shell as [`penguin storage`](/cli#penguin-storage).
+
+The first section, **This server** for an admin and **My Projects** for a member, shows the space used, when it was measured, and **Refresh**. The server measures in the background and keeps the figures in memory, so they describe the time shown: a chat deleted elsewhere changes them only at the next measurement. Under the total is a bar of the categories, with each one's size in the legend:
+
+| Category | What it holds |
+| --- | --- |
+| **Traces** | Each agent's `traces/`, the record of its conversations |
+| **Agent State** | Each agent's `agent_state/`, its history (`agent_state.git/`) and its snapshots |
+| **Temporary workspaces** | Each agent's `workspaces/`: the folders made for chats started without a Workspace, and the evaluation Skill's Test Workspaces |
+| **Scratchpads** | Each agent's `scratchpad/`: one folder per chat, holding its attachments, plans and hand-off files |
+| **Caches** | Each agent's tool environments in `shared_env/`, and the server's `.cache/` |
+| **Logs** | The server's `logs/`, measured but never cleaned here |
+| **Plugins** | The installed plugin packages, measured but never cleaned here |
+| **Other** | Everything else: Benchmarks, organizations, the database, the hot-update store, machines and theme packs |
+
+**By Project** lists each Project with its size, largest first; expand one to see its agents. **By folder** shows the data root's path (an admin) or each Project's folder (a member), with **Copy path** and, in the desktop app's own window, **Show in folder**. An admin also has **Server files**, which lists the data root's top-level entries that are not Projects.
+
+### Clean up temporary files
+
+**Clean up temporary files** › **Review** measures again and lists what can be removed safely right now, grouped by kind. Groups with nothing in them are hidden:
+
+| Group | What it lists | Ticked to begin with |
+| --- | --- | --- |
+| **Scratchpads of deleted chats** | Scratchpads whose chat is gone, untouched for a day | Yes |
+| **Scratchpads of idle chats** | Scratchpads of chats that are not running and were last active before the number of days at the top (7 by default). Attached images and files in those chats stop showing, and a continued chat can no longer find its plans and attachments | No |
+| **Orphaned temporary workspaces** | Temporary workspaces no chat works in, untouched for a day. A temporary workspace a chat still has is never listed, since without it the chat cannot continue; delete the chat first | Yes |
+| **Agent caches** | An agent's tool environments, while none of its chats is running. The agent installs them again the next time it needs them | No |
+| **Server caches** | What the server keeps in `.cache/` and fetches again when it is missing. Admins only | Yes |
+
+Tick what to remove and select **Delete**; the confirmation names how many items go and how much space they free. Each item is checked again as it is removed: one that started being used meanwhile is skipped, and the message says so. Nothing a running chat uses is ever removed.
+
+### Clean up old chats and manage chats
+
+**Manage chats** › **Review** lists the chats of your Projects by size or by last activity. Filter by agent, by **Archived** or **Not archived**, and by **Last active more than N days ago**. A chat's size is its Trace plus its scratchpad as last measured. A running chat is marked and cannot be chosen. The list shows up to 500 chats.
+
+**Clean up old chats** opens the same list with archived chats last active more than 30 days ago, all selected. Deleting removes the chats for good, with their Traces, scratchpads and subagent Sessions, the same way the [Archived chats](#archived-chats) page deletes them. **Archived chats** › **Open** switches to that page, where archived chats can also be restored.
 
 ## Account
 
