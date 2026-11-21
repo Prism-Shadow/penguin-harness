@@ -70,9 +70,9 @@ import type {
   WeChatScanPollResponse,
   WeChatScanStartResponse,
   WeChatTestResponse,
-} from "@prismshadow/penguin-library-messaging/vocabulary";
+} from "./vocabulary.js";
 import type { AppEnv } from "@prismshadow/penguin-library-http";
-import type { MessagingBindingRow } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import type { MessagingBindingRow } from "./repos/messaging-bindings.js";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { FEISHU_DEFAULT_DOMAIN, feishuConfigOf } from "./feishu-connector.js";
 import { telegramBotIdOf } from "./telegram-connector.js";
@@ -98,7 +98,7 @@ import { isMessagingChannel } from "./enabled-channel.js";
 import type { WeChatScanService } from "./wechat-scan.js";
 import type { MessagingBridge } from "./bridge.js";
 import type { QQScanService } from "./qq-scan.js";
-import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
+import type { MessagingBindings } from "./messaging.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { Access } from "@prismshadow/penguin-library-project";
 

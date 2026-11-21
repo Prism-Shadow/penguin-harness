@@ -137,7 +137,7 @@ import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/p
 import type { Opaque } from "@prismshadow/penguin-core/kernel";
 import type { MessagingTuning } from "./bridge.js";
 import type { MessagingClock } from "./ports.js";
-import type { MessagingConversations } from "@prismshadow/penguin-library-messaging";
+import type { MessagingConversations } from "./messaging.js";
 
 /** The WeChat binding's stored config document (`messaging_bindings.config_json`). */
 export interface WeChatBindingConfig extends Record<string, unknown> {

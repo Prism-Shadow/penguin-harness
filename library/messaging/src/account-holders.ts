@@ -22,9 +22,9 @@ import type {
   MessagingChannel,
   MessagingUnreachableMachine,
   MessagingUnreachableReason,
-} from "@prismshadow/penguin-library-messaging/vocabulary";
+} from "./vocabulary.js";
 import type { MessagingMachineApi } from "./ports.js";
-import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
+import type { MessagingBindings } from "./messaging.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import { isMessagingChannel } from "./enabled-channel.js";
 
@@ -90,7 +90,7 @@ function accountsOf(text: string): unknown[] | null {
  * been reconnected since this server upgraded (every connect brings the machine onto this build).
  */
 async function askMachine(
-  api: Pick<MachineApi, "request">,
+  api: MessagingMachineApi,
   channel: MessagingChannel,
   accountId: string,
 ): Promise<MachineAnswer> {

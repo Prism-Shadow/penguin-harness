@@ -78,8 +78,8 @@ import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import type {
   MessagingDeliveryError,
   MessagingRuntimeStatus,
-} from "@prismshadow/penguin-library-messaging/vocabulary";
-import type { MessagingBindingRow } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+} from "./vocabulary.js";
+import type { MessagingBindingRow } from "./repos/messaging-bindings.js";
 import {
   INLINE_IMAGE_MAX_BYTES,
   toAttachmentLimits,
@@ -121,7 +121,7 @@ import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { Errors } from "@prismshadow/penguin-library-observability";
 import type { WorkspaceFiles } from "@prismshadow/penguin-library-workspace";
 import type { Settings } from "@prismshadow/penguin-library-setting";
-import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
+import type { MessagingBindings } from "./messaging.js";
 
 /**
  * Max characters per outbound text message, shared by every channel: it must sit under
