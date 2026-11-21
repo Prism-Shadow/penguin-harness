@@ -2,7 +2,8 @@
  * This plugin's files in a Project directory — the only place its results live:
  *
  *   <root>/<project>/.multimodal-tools/
- *     voice-polish.json                 the Project's transcript-editing settings
+ *     voice-polish.json                 the Project's transcript-editing settings (absent until an
+ *                                       owner sets them: editing then follows the bindings)
  *     sessions/<session>/<run>.json     one run: its operation, model, status, text, sources, files
  *     sessions/<session>/<file>         the images, video and speech that run generated
  *     sessions/<session>/read-aloud/    replies read aloud: `<key>.json` and its audio `<key>.<ext>`
@@ -40,9 +41,12 @@ function segment(id: string): string {
   return id;
 }
 
-/** Transcript editing in one Project: off until an owner turns it on; the prompt absent = the default. */
+/**
+ * Transcript editing in one Project, as an owner set it: the switch absent = never set (the
+ * plugin then decides, polish.ts), the prompt absent = the default.
+ */
 export interface PolishSettings {
-  enabled: boolean;
+  enabled?: boolean;
   prompt?: string;
 }
 
@@ -259,14 +263,14 @@ export class ToolStore {
         await fs.readFile(path.join(this.projectBase(projectId), "voice-polish.json"), "utf8"),
       ) as Partial<PolishSettings>;
       return {
-        enabled: raw.enabled === true,
+        ...(typeof raw.enabled === "boolean" ? { enabled: raw.enabled } : {}),
         ...(typeof raw.prompt === "string" && raw.prompt.trim() !== ""
           ? { prompt: raw.prompt }
           : {}),
       };
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT" || err instanceof SyntaxError)
-        return { enabled: false };
+      // No file: nothing was ever set.
+      if ((err as NodeJS.ErrnoException).code === "ENOENT" || err instanceof SyntaxError) return {};
       throw err;
     }
   }

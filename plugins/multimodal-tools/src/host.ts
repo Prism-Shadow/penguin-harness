@@ -5,7 +5,7 @@
  *
  *   ModelRequests   ProjectModelRequests: one request to a Project model, with its usage recorded
  *   ModelBindings   ToolModelBindings: which model a `[tools]` key names in a Project
- *   ProjectModels   the Project's model table: the vision model, each row's client type
+ *   ProjectModels   the Project's model table: the default and vision models, each row's client type
  *   ProjectAccess   who may see and who may configure a Project
  *   SessionLookup   the Session index: whose Session an id is, and whether it still exists
  *   DataRoot        the server's configuration: where the data root is, under which every
@@ -55,6 +55,8 @@ export abstract class ModelBindings {
 
 /** The part of a Project's model table this plugin reads. */
 export interface ProjectModelTable {
+  /** The Project's default chat model: text generation runs on it while `t2t` names none. */
+  defaultModel?: ModelRef;
   /** The model that reads images for a text-only model (`vision_model`): image understanding uses it. */
   visionModel?: ModelRef;
   models: { provider: string; modelId: string; effective: { clientType?: string } }[];
