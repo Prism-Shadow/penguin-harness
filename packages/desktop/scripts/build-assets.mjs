@@ -132,7 +132,7 @@ if (hostBinding(ptyFiles) === undefined) {
 // The compiler plugin interfaces and workflows are checked with, beside the server bundle for the same reason
 // node-pty is: the bundle has no node_modules of its own, and the server resolves
 // `typescript` from the program that is running.
-const { typescriptPayload } = await import(
+const { nodeTypesPayload, typescriptPayload } = await import(
   pathToFileURL(path.resolve(pkgDir, "..", "..", "scripts", "typescript-payload.mjs")).href
 );
 const tsDest = path.join(pkgDir, "dist", "node_modules", "typescript");
@@ -140,6 +140,15 @@ fs.rmSync(tsDest, { recursive: true, force: true });
 for (const { rel, abs } of typescriptPayload(path.resolve(pkgDir, "..", "server"))) {
   fs.mkdirSync(path.dirname(path.join(tsDest, rel)), { recursive: true });
   fs.copyFileSync(abs, path.join(tsDest, rel));
+}
+// And the Node declarations a workbench's server code is checked with, beside the compiler.
+for (const name of ["@types/node", "undici-types"]) {
+  fs.rmSync(path.join(pkgDir, "dist", "node_modules", name), { recursive: true, force: true });
+}
+for (const { rel, abs } of nodeTypesPayload(path.resolve(pkgDir, "..", "server"))) {
+  const dest = path.join(pkgDir, "dist", "node_modules", rel);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(abs, dest);
 }
 
 const { posixLauncherScript, windowsLauncherScript } = await import(

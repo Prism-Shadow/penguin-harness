@@ -479,7 +479,7 @@ export function OrgSessionGroups({
           <SkeletonList rows={2} />
         ) : chartFailed && desks.length === 0 ? (
           <div className="flex items-center justify-between gap-2 px-2.5 py-1">
-            <span className={`text-xs ${toneInk.danger}`}>{S.company.sessionList.loadFailed}</span>
+            <span className={`text-xs ${toneInk.danger}`}>{company.orgChartError}</span>
             <Button size="sm" onClick={() => void company.reloadOrgChart()}>
               {S.common.retry}
             </Button>

@@ -404,25 +404,42 @@ export interface FinderMenuTarget {
   path: string;
   /** The machine the path is on (null: this server) — a Recent entry may be on another one. */
   machine: string | null;
+  /**
+   * The empty space over a folder whose listing failed (a refusal to be read among the
+   * reasons): nothing can be made or chosen there, but its path can be copied and read again.
+   */
+  unreadable?: boolean;
 }
 
 export type FinderMenuItem =
-  "open" | "choose" | "addToQuickAccess" | "removeFromQuickAccess" | "copyPath" | "refresh";
+  | "newFolder"
+  | "open"
+  | "choose"
+  | "addToQuickAccess"
+  | "removeFromQuickAccess"
+  | "copyPath"
+  | "refresh";
 
 /**
  * The context menu's rows, the way Explorer orders them: what opening the thing does first,
  * then choosing it, then Quick access, then copying its path. A file row only copies (files
- * are listed for context and cannot be picked); the empty space acts on the open folder, and
- * adds Refresh as Explorer's background menu does.
+ * are listed for context and cannot be picked). The empty space acts on the open folder: New
+ * folder first, as Finder's background menu has it, and Refresh last, as Explorer's does. Only
+ * the empty space makes a folder — the name row opens over the folder on screen, so a folder
+ * row's menu would have to leave for that folder first, which Open already does. A folder that
+ * could not be read still lists New folder, for the menu to say why it cannot be used.
  */
 export function finderMenuItems(
   target: FinderMenuTarget,
   inQuickAccess: boolean,
 ): FinderMenuItem[] {
   if (target.kind === "file") return ["copyPath"];
+  if (target.kind === "here" && target.unreadable === true) {
+    return ["newFolder", "copyPath", "refresh"];
+  }
   const quick = inQuickAccess ? "removeFromQuickAccess" : "addToQuickAccess";
   return target.kind === "here"
-    ? ["choose", quick, "copyPath", "refresh"]
+    ? ["newFolder", "choose", quick, "copyPath", "refresh"]
     : ["open", "choose", quick, "copyPath"];
 }
 
@@ -491,7 +508,8 @@ export type FinderAction =
   | "forward"
   | "goto"
   | "choose"
-  | "refresh";
+  | "refresh"
+  | "newFolder";
 
 /** The keyboard-event fields the map reads (a subset of KeyboardEvent, for tests). */
 export type FinderKey = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey">;
@@ -499,7 +517,7 @@ export type FinderKey = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "alt
 /**
  * The finder's keyboard map. The modifier is ⌘ on a Mac and Ctrl elsewhere, so the Finder
  * chords (⌘↑ parent, ⌘↓ open, ⌘[ / ⌘] back and forward, ⌘⇧G type a path into the address
- * bar) read the same on every platform; off the Mac, Explorer's own keys work too — Alt+arrows
+ * bar, ⇧⌘N new folder — Explorer's Ctrl+Shift+N) read the same on every platform; off the Mac, Explorer's own keys work too — Alt+arrows
  * for back, forward and up, and Ctrl+L, Alt+D and F4 for the address bar (Ctrl+L is also the
  * Linux file managers'). F5 refreshes everywhere, as it does in Explorer and in a browser,
  * where it would otherwise reload the whole app out from under the dialog; with a modifier it
@@ -516,6 +534,7 @@ export function finderKeyAction(
   const bare = !e.metaKey && !e.ctrlKey && !e.altKey;
   if (bare && !e.shiftKey && e.key === "F5") return "refresh";
   if (mod && e.shiftKey && !e.altKey && (e.key === "g" || e.key === "G")) return "goto";
+  if (mod && e.shiftKey && !e.altKey && (e.key === "n" || e.key === "N")) return "newFolder";
   if (mod && !e.shiftKey && !e.altKey) {
     if (e.key === "ArrowUp") return "parent";
     if (e.key === "ArrowDown") return "open";

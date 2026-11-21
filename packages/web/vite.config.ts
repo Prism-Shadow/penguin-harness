@@ -15,15 +15,16 @@
  * package. It is imported by relative path on purpose — see its module doc.
  *
  * The dev server sends the server's page Content-Security-Policy (`WEB_APP_CSP`, imported by
- * relative path from the server's dependency-free `http/page-csp.ts`, which the config bundle
- * inlines), so the two cannot drift.
+ * relative path from the http vocabulary package's `page-csp.ts` — the file itself, not the
+ * package's dist entry, so the config bundle inlines the source and no build is needed), which
+ * the server serves from the same constant, so the two cannot drift.
  */
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import { dropNonWoff2FontSources, penguinUi } from "../ui/src/vite-plugin";
-import { WEB_APP_CSP } from "../server/src/http/page-csp";
+import { WEB_APP_CSP } from "../../library/http/src/page-csp";
 import { penguinManifest } from "./scripts/penguin-manifest";
 
 /**

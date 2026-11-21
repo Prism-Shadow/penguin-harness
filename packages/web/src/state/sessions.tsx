@@ -1779,7 +1779,11 @@ export function applyUserEvent(
   if (ev.type === "workbench_updated" || ev.type === "workbench_removed") {
     window.dispatchEvent(
       new CustomEvent(WORKBENCH_UPDATED_EVENT, {
-        detail: { projectId: ev.projectId, agentId: ev.agentId },
+        detail: {
+          projectId: ev.projectId,
+          agentId: ev.agentId,
+          ...(source ? { machineId: source } : {}),
+        },
       }),
     );
     return;
@@ -1787,7 +1791,12 @@ export function applyUserEvent(
   if (ev.type === "workbench_building") {
     window.dispatchEvent(
       new CustomEvent(WORKBENCH_BUILDING_EVENT, {
-        detail: { projectId: ev.projectId, agentId: ev.agentId, workbenchId: ev.workbenchId },
+        detail: {
+          projectId: ev.projectId,
+          agentId: ev.agentId,
+          workbenchId: ev.workbenchId,
+          ...(source ? { machineId: source } : {}),
+        },
       }),
     );
     return;

@@ -53,6 +53,7 @@ export const DOCS_NAV: DocsSectionDef[] = [
       "remote-control",
       "agents",
       "skills",
+      "plugins",
       "models",
       "usage",
       "settings",

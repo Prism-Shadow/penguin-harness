@@ -60,3 +60,6 @@ plugins/sandbox-bwrap/vendor/
 plugins/*/workbenches/*/desk-kit.ts
 plugins/*/workbenches/*/ui/desk-kit.js
 plugins/*/workbenches/*/ui/desk-kit.css
+
+# plugin test instance data (penguin-testing-electron)
+.data/

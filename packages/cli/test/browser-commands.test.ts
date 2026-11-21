@@ -661,8 +661,15 @@ describe("import and history", () => {
     routes["POST /import"] = (body) => ({
       body: {
         sourceId: body?.sourceId,
-        cookies: { found: 45, imported: 43, skipped: 2, failed: 0 },
-        warnings: ["Skipped 2 cookies that could not be decrypted."],
+        browserName: "Chrome",
+        cookies: {
+          found: 45,
+          imported: 43,
+          skipped: 2,
+          failed: 0,
+          skips: [{ reason: "undecryptable", count: 2 }],
+        },
+        notes: [{ code: "store_busy", store: "history" }],
       },
     });
     const code = await cli([
@@ -687,7 +694,8 @@ describe("import and history", () => {
       [
         "source: chrome:Default",
         "cookies: 43 imported, 2 skipped, 0 failed (45 found)",
-        "warning: Skipped 2 cookies that could not be decrypted.",
+        "skipped: 2 that could not be decrypted",
+        "warning: Chrome is holding its history open; close Chrome and import again.",
         "",
       ].join("\n"),
     );
@@ -697,8 +705,9 @@ describe("import and history", () => {
     routes["POST /import"] = () => ({
       body: {
         sourceId: "firefox:ab12.default-release",
+        browserName: "Firefox",
         history: { found: 120, imported: 120 },
-        warnings: [],
+        notes: [],
       },
     });
     expect(await cli(["browser", "import", "--from", "firefox:ab12.default-release"])).toBe(0);
@@ -709,6 +718,27 @@ describe("import and history", () => {
     });
     expect(browserRequests().some((r) => r.path.endsWith("/import/sources"))).toBe(false);
     expect(out()).toBe("source: firefox:ab12.default-release\nhistory: 120 imported (120 found)\n");
+  });
+
+  it("--from names the connected Chrome extension by its id; a browser's name never picks it", async () => {
+    const extension = {
+      id: "chrome-extension",
+      browser: "chrome",
+      browserName: "Chrome",
+      profile: "Chrome 130 on Windows",
+      profileName: "Chrome 130 on Windows",
+      hasCookies: true,
+      hasHistory: false,
+      via: "extension",
+    };
+    routes["GET /import/sources"] = () => ({ body: { sources: [extension, SOURCES[0]] } });
+    routes["POST /import"] = (body) => ({
+      body: { sourceId: body?.sourceId, browserName: "Chrome", notes: [] },
+    });
+    expect(await cli(["browser", "import", "--from", "chrome-extension", "--cookies"])).toBe(0);
+    expect(lastBody()).toMatchObject({ sourceId: "chrome-extension" });
+    expect(await cli(["browser", "import", "--from", "chrome", "--cookies"])).toBe(0);
+    expect(lastBody()).toMatchObject({ sourceId: "chrome:Default" });
   });
 
   it("refuses an unknown browser, a missing mode, and both modes", async () => {
@@ -779,7 +809,9 @@ describe("the calling session", () => {
       "POST /tabs/15/activate": () => ({ body: { tab: GOOGLE } }),
       "POST /tabs/active/scan": () => ({ body: scan }),
       "POST /tabs/active/cdp": () => ({ body: { result: {} } }),
-      "POST /import": () => ({ body: { sourceId: "chrome:Default", warnings: [] } }),
+      "POST /import": () => ({
+        body: { sourceId: "chrome:Default", browserName: "Chrome", notes: [] },
+      }),
     });
     for (const args of [
       ["status"],

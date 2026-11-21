@@ -13,15 +13,15 @@
  * wherever the switch stands. Turning it off asks first — it stops every organization on the
  * server at once — and the knob stays on until the answer is yes; turning it on does not ask.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ConfirmModal, SettingsGroup, SettingsSection, ToggleRow } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { writeCompanyMode } from "./company-mode-write";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 export function CompanySection() {
   const { refresh } = useAuth();
@@ -30,7 +30,7 @@ export function CompanySection() {
   /** What the switch shows: the stored value, or the pending one while a write is in flight. */
   const [companyMode, setCompanyMode] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<ReactNode>(undefined);
   const [confirmOff, setConfirmOff] = useState(false);
 
   useEffect(() => {
@@ -58,7 +58,7 @@ export function CompanySection() {
     setBusy(true);
     const result = await writeCompanyMode(next, stored, {
       put: api.adminPutSettings,
-      describeError: apiErrorText,
+      describeError: (e) => failureNode(e, { what: "company mode could not be switched" }),
     });
     if (result.status === "applied") {
       setStored(result.companyMode);

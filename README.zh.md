@@ -33,6 +33,7 @@
   <a href="https://discord.gg/eFHKqqcU3D"><img src="https://img.shields.io/badge/Discord-join%20chat-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="https://x.com/code_hiyouga"><img src="https://img.shields.io/badge/X-code%5Fhiyouga-000000?logo=x&logoColor=white" alt="X（Twitter）" /></a>
   <a href="https://github.com/Prism-Shadow/penguin-harness-community/blob/main/assets/wechat/penguin.jpg"><img src="https://img.shields.io/badge/WeChat-user%20group-07C160?logo=wechat&logoColor=white" alt="微信" /></a>
+  <a href="https://gitcode.com/Prism-Shadow/penguin-harness"><img src="https://gitcode.com/Prism-Shadow/penguin-harness/star/badge.svg" alt="GitCode 星标数" /></a>
 </p>
 
 <p align="center">

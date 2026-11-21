@@ -25,6 +25,8 @@ import {
   skillsDir,
   parseSkillFrontmatter,
   PLUGIN_NAME_PATTERN,
+  isWindowsReservedName,
+  WINDOWS_RESERVED_RULE,
 } from "@prismshadow/penguin-core";
 import type { AgentSkillsResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
@@ -52,7 +54,7 @@ import {
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { Access } from "@prismshadow/penguin-library-project";
 
 /** A skill decoded from an uploaded zip: name + file bytes keyed by path relative to the skill directory. */
 interface ArchiveSkill {
@@ -234,6 +236,12 @@ export function agentSkillsRoutes(deps: SkillsRouteDeps): Hono<AppEnv> {
       if (installed) {
         throw new HttpError(409, "skill_exists", `Skill is already installed: ${skill.name}`);
       }
+    }
+    // A new Skill takes no name Windows refuses; one already on disk is replaced as it is.
+    if (isWindowsReservedName(skill.name) && (await fs.lstat(dir).catch(() => null)) === null) {
+      throw badRequest(
+        `Invalid skill name ${JSON.stringify(skill.name)}: ${WINDOWS_RESERVED_RULE}.`,
+      );
     }
     // Replace semantics (same as reinstalling from the library): the archive's files are
     // staged and swapped in, so no stale file survives and an interrupted import leaves no

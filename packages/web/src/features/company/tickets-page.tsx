@@ -26,7 +26,7 @@
  * being read can be linked to and survives a reload. No other page writes it — the dialog is
  * shell state, not a route.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useSearchParams } from "react-router";
 import type {
@@ -93,6 +93,7 @@ import { agentPrincipal, splitPrincipalList } from "./principals";
 import { dayKey } from "./calendar-geom";
 import { TICKET_COLUMN_ATTR, useTicketBoardDrag } from "./ticket-drag";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 
@@ -121,7 +122,7 @@ export function TicketsPage() {
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.tickets}` : S.nav.org.tickets);
   const [board, setBoard] = useState<OrgTicketsResponse | null>(null);
   const [chart, setChart] = useState<OrgChartResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [blockedOnly, setBlockedOnly] = useState(params.get("blocked") === "1");
   const [query, setQuery] = useState("");
   const [move, setMove] = useState<{ ticket: OrgTicketItem; to: OrgTicketStatus } | null>(null);
@@ -147,7 +148,12 @@ export function TicketsPage() {
       setChart(c);
       setError(null);
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(
+        failureNode(e, {
+          text: S.company.tickets.loadFailed(apiErrorText(e)),
+          what: "an organization's tickets could not be loaded",
+        }),
+      );
     }
   }, [projectId, orgId]);
   const { tickets: ticketsVersion, runs } = company.versions;
@@ -377,7 +383,7 @@ export function TicketsPage() {
           className="mb-3"
           retry={{ label: S.common.retry, onClick: () => void load() }}
         >
-          {S.company.tickets.loadFailed(error)}
+          {error}
         </Notice>
       )}
 

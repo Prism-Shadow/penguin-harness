@@ -19,6 +19,7 @@ import path from "node:path";
 import { isSafeIconSvg, workbenchesDir } from "@prismshadow/penguin-core";
 import type { WorkbenchInfo } from "../src/api/types.js";
 import { MAIN_ICON } from "../src/workbenches/manifest.js";
+import { withMachineInStartUrl } from "../src/workbenches/routes.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 
 const PROJECT = "owner-wf";
@@ -383,5 +384,36 @@ describe("workbench manifest route", { timeout: 30_000 }, () => {
     expect(local.status).toBe(200);
     const m = JSON.parse(await local.text()) as { start_url: string };
     expect(m.start_url).not.toContain("machine=");
+  });
+
+  it("writes the machine into a forwarded manifest's start_url and scope, and passes anything else through", async () => {
+    // The hop's success answer is what the machine contract rides on: the remote gate
+    // generated start_url/scope for its own server, so the machine query must be written
+    // in by the side that knows which machine this is — with the body-describing headers
+    // of the old body dropped, and everything else kept.
+    const ok = new Response(
+      JSON.stringify({ name: "wf", start_url: "/app/p/a/wf", scope: "/app/p/a/wf" }),
+      {
+        status: 200,
+        headers: { "content-type": "application/manifest+json", etag: '"stale"', "x-hop": "vm-1" },
+      },
+    );
+    const out = await withMachineInStartUrl(ok, "vm-1");
+    expect(out.status).toBe(200);
+    expect(out.headers.get("content-type")).toBe("application/manifest+json");
+    expect(out.headers.get("x-hop")).toBe("vm-1");
+    expect(out.headers.get("etag")).toBeNull();
+    expect(out.headers.get("content-length")).toBeNull();
+    const manifest = JSON.parse(await out.text()) as { start_url: string; scope: string };
+    expect(manifest.start_url).toBe("/app/p/a/wf?machine=vm-1");
+    expect(manifest.scope).toBe("/app/p/a/wf?machine=vm-1");
+
+    // The hop's error answer (and a body that is not a manifest) passes through as-is.
+    const refused = new Response('{"error":{"code":"not_found"}}', { status: 404 });
+    const passed = await withMachineInStartUrl(refused, "vm-1");
+    expect(passed.status).toBe(404);
+    expect(await passed.text()).toBe('{"error":{"code":"not_found"}}');
+    const junk = new Response("not json", { status: 200 });
+    expect((await withMachineInStartUrl(junk, "vm-1")).status).toBe(200);
   });
 });

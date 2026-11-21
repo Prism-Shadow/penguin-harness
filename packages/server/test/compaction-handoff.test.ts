@@ -32,14 +32,15 @@
  * A model switch away from a model that can no longer be used (issue #1557), the target working:
  * - Given the model being left refuses the summary request (HTTP 401, 403), the switch still
  *   lands on the target: the compaction ends `completed` with the provider's error, the file left
- *   keeps every record it had, the target's file opens with the `[model_switch_from]` block naming
- *   it, the row moves, one expected `compaction_degraded` row is recorded, and the Session is idle
- *   and runs its next Task on the target, which opens with that block.
+ *   keeps every record it had and ends with the switch's `session_update`, the
+ *   `[model_switch_from]` block naming it streams after that record, the row moves, one expected
+ *   `compaction_degraded` row is recorded, and the Session is idle; its next Task runs on the
+ *   target and opens the target's file with that block at its head.
  * - Given the model being left was removed from the Project config, or its key deleted, it is sent
- *   nothing: no compaction pair, the file left untouched, the target's file opens with the block,
- *   and the next Task runs on the target.
+ *   nothing: no compaction pair, the file left gains only the record, and the next Task opens the
+ *   target's file with the block and runs on the target.
  * - Given a compaction on a model that refuses it, the context is handed off in place; a switch
- *   after it sends that model nothing more and the target opens with the hand-off note.
+ *   after it sends that model nothing more and the target's file opens with the hand-off note.
  * - Given a switch the user stops while the model being left is still answering, the Session
  *   keeps its model and goes idle; the next attempt, refused by that model, lands on the target.
  */
@@ -64,9 +65,9 @@ import type {
   ProjectCreateResponse,
   SessionCreateResponse,
 } from "../src/api/types.js";
-import { openDatabase } from "../src/db/database.js";
-import { SessionsRepo } from "../src/db/repos/sessions.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
+import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { ChannelHub } from "../src/runtime/channel.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { SessionManager, createCoreSessionLoader } from "../src/runtime/session-manager.js";
@@ -545,7 +546,9 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
     const end = lastCompactionEnd(feed())!;
     expect(end).toMatchObject({ status: "fatal" });
     expect(end.error_message).toContain("Invalid Agent State config");
-    // No next context: no session_meta streamed, no new Trace file, the row where it was.
+    // No next context: no record of a switch, no session_meta, no new Trace file, the row where
+    // it was.
+    expect(feed().map(kindOf)).not.toContain("session_update");
     expect(feed().map(kindOf)).not.toContain("session_meta");
     expect(await traceFiles(sessionId)).toHaveLength(1);
     expect(t.deps.sessionsRepo.findById(sessionId)).toMatchObject({
@@ -597,32 +600,41 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
           status: "completed",
           error_code: code,
         });
-        // The file left keeps every record it had, closed by the pair.
-        const files = await traceFiles(sessionId);
-        expect(files).toHaveLength(2);
+        // The file left keeps every record it had, closed by the pair, then the record naming the
+        // target; no file opens before the next message.
+        let files = await traceFiles(sessionId);
+        expect(files).toHaveLength(1);
         expect(files[0]!.path).toBe(left!.path);
         expect(files[0]!.records.slice(0, left!.records.length)).toEqual(left!.records);
         expect(lastCompactionEnd(files[0]!.records)).toMatchObject({
           status: "completed",
           error_code: code,
         });
-        // The target's file opens on the target with the block naming the file left; the stream
-        // ends with that file's meta and the block, and the row has moved.
-        expect(modelOf(files[1]!.records)).toEqual(TARGET);
-        const handoff = switchHandoffOf(files[1]!.records)!;
-        expect(handoff.origin).toMatchObject({
+        expect(files[0]!.records.at(-1)!.payload).toMatchObject({
+          type: "session_update",
+          provider: TARGET.provider,
+          model_id: TARGET.modelId,
+        });
+        // The stream ends with the record and the block naming the file left; the row has moved.
+        expect(feed().map(kindOf).slice(-2)).toEqual(["session_update", "text"]);
+        const streamed = switchHandoffOf(feed().slice(-1))!;
+        expect(streamed.origin).toMatchObject({
           sessionId,
           tracePath: left!.path,
           prevProvider: SOURCE.provider,
           prevModelId: SOURCE.modelId,
         });
-        expect(feed().map(kindOf).slice(-2)).toEqual(["session_meta", "text"]);
         expect(t.deps.sessionsRepo.findById(sessionId)).toMatchObject(TARGET);
         expect(errorRows()).toEqual([["compaction", "compaction_degraded", "expected", 1]]);
 
-        // Idle and usable: the next Task runs on the target, opening with the block and carrying
-        // nothing else of the old context.
+        // Idle and usable: the next Task runs on the target, opening its file with the block and
+        // carrying nothing else of the old context.
         await runTask(sessionId, "carry on");
+        files = await traceFiles(sessionId);
+        expect(files).toHaveLength(2);
+        expect(modelOf(files[1]!.records)).toEqual(TARGET);
+        const handoff = switchHandoffOf(files[1]!.records)!;
+        expect(handoff.text).toBe(streamed.text);
         const next = mock.requests[2]!;
         expect(next.model).toBe(TARGET_MODEL_ID);
         expect(requestText(next)).toContain(JSON.stringify(handoff.text).slice(1, -1));
@@ -647,7 +659,7 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
         ],
       },
     ])(
-      "a model $change is sent nothing: no compaction pair, the file left untouched, the target's file opens with the block, and the next Task runs on the target",
+      "a model $change is sent nothing: no compaction pair, the file left gains only the record, and the next Task opens the target's file with the block and runs on the target",
       async ({ defaultModel, models }) => {
         const sessionId = await openSession();
         await runTask(sessionId, "plan the release");
@@ -663,10 +675,20 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
 
         expect(mock.requests.map((r) => r.model)).toEqual([MOCK_MODEL_ID]);
         expect(feed().map(kindOf)).not.toContain("compaction_begin");
-        expect(feed().map(kindOf).slice(-2)).toEqual(["session_meta", "text"]);
-        const files = await traceFiles(sessionId);
+        expect(feed().map(kindOf).slice(-2)).toEqual(["session_update", "text"]);
+        let files = await traceFiles(sessionId);
+        expect(files).toHaveLength(1);
+        expect(files[0]!.records.slice(0, -1)).toEqual(left!.records);
+        expect(files[0]!.records.at(-1)!.payload).toMatchObject({
+          type: "session_update",
+          model_id: TARGET.modelId,
+        });
+        expect(t.deps.sessionsRepo.findById(sessionId)).toMatchObject(TARGET);
+
+        await runTask(sessionId, "carry on");
+        expect(mock.requests[1]!.model).toBe(TARGET_MODEL_ID);
+        files = await traceFiles(sessionId);
         expect(files).toHaveLength(2);
-        expect(files[0]).toEqual(left);
         expect(modelOf(files[1]!.records)).toEqual(TARGET);
         const handoff = switchHandoffOf(files[1]!.records)!;
         expect(handoff.origin).toMatchObject({
@@ -674,15 +696,11 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
           tracePath: left!.path,
           prevModelId: SOURCE.modelId,
         });
-        expect(t.deps.sessionsRepo.findById(sessionId)).toMatchObject(TARGET);
-
-        await runTask(sessionId, "carry on");
-        expect(mock.requests[1]!.model).toBe(TARGET_MODEL_ID);
         expect(requestText(mock.requests[1]!)).toContain(JSON.stringify(handoff.text).slice(1, -1));
       },
     );
 
-    it("a compaction on a model that refuses it hands the context off in place, and a switch after it sends that model nothing more: the target opens with the hand-off note", async () => {
+    it("a compaction on a model that refuses it hands the context off in place, and a switch after it sends that model nothing more: the target's file opens with the hand-off note", async () => {
       script = leftRefuses({ refuse: { message: DENIED, status: 403 } });
       const sessionId = await openSession();
       await runTask(sessionId, "plan the release");
@@ -701,15 +719,21 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
       // The refused compaction request is the last one the model being left was sent.
       expect(mock.requests.map((r) => r.model)).toEqual([MOCK_MODEL_ID, MOCK_MODEL_ID]);
       expect(feed().map(kindOf)).not.toContain("compaction_begin");
-      const files = await traceFiles(sessionId);
-      expect(files).toHaveLength(2);
-      expect(files[0]).toEqual(left);
-      expect(modelOf(files[1]!.records)).toEqual(TARGET);
-      const note = openingOf(files[1]!.records)!;
-      expect(note).toContain(left!.path);
+      let files = await traceFiles(sessionId);
+      expect(files).toHaveLength(1);
+      expect(files[0]!.records.slice(0, -1)).toEqual(left!.records);
+      expect(files[0]!.records.at(-1)!.payload).toMatchObject({
+        type: "session_update",
+        model_id: TARGET.modelId,
+      });
       expect(t.deps.sessionsRepo.findById(sessionId)).toMatchObject(TARGET);
 
       await runTask(sessionId, "carry on");
+      files = await traceFiles(sessionId);
+      expect(files).toHaveLength(2);
+      expect(modelOf(files[1]!.records)).toEqual(TARGET);
+      const note = openingOf(files[1]!.records)!;
+      expect(note).toContain(left!.path);
       expect(mock.requests[2]!.model).toBe(TARGET_MODEL_ID);
       expect(requestText(mock.requests[2]!)).toContain(JSON.stringify(note).slice(1, -1));
     });
@@ -737,7 +761,7 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
       release();
 
       expect(lastCompactionEnd(feed())).toMatchObject({ status: "aborted" });
-      expect(feed().map(kindOf)).not.toContain("session_meta");
+      expect(feed().map(kindOf)).not.toContain("session_update");
       expect(await traceFiles(sessionId)).toHaveLength(1);
       expect(t.deps.sessionsRepo.findById(sessionId)).toMatchObject(SOURCE);
 
@@ -752,17 +776,23 @@ describe("a compaction's outcome on the whole app", { timeout: 30_000 }, () => {
         status: "completed",
         error_code: "denied",
       });
-      const files = await traceFiles(sessionId);
+      let files = await traceFiles(sessionId);
+      expect(files).toHaveLength(1);
+      expect(files[0]!.records.at(-1)!.payload).toMatchObject({
+        type: "session_update",
+        model_id: TARGET.modelId,
+      });
+      expect(t.deps.sessionsRepo.findById(sessionId)).toMatchObject(TARGET);
+
+      await runTask(sessionId, "carry on");
+      expect(mock.requests[3]!.model).toBe(TARGET_MODEL_ID);
+      files = await traceFiles(sessionId);
       expect(files).toHaveLength(2);
       expect(modelOf(files[1]!.records)).toEqual(TARGET);
       expect(switchHandoffOf(files[1]!.records)?.origin).toMatchObject({
         sessionId,
         tracePath: files[0]!.path,
       });
-      expect(t.deps.sessionsRepo.findById(sessionId)).toMatchObject(TARGET);
-
-      await runTask(sessionId, "carry on");
-      expect(mock.requests[3]!.model).toBe(TARGET_MODEL_ID);
     });
   });
 });

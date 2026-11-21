@@ -2,16 +2,18 @@
  * POST /api/sessions/:id/switch-model — the server half of an in-session model switch (core does
  * the compaction and the rotation; a fake Session stands in for it here, shaped like the real
  * one: an ordinary manual compaction pair, the getters moving once the new context is open, then
- * that context's main-session `session_meta` as the stream's last record).
+ * the switch's main-session `session_update` as the stream's last record — the handoff after
+ * it when no summary could be had; the new context's file opens with the next message).
  *
  * What this file pins is the HTTP contract on `SessionSwitchModelRequest` — the 400 for half a
  * pair, each 409 code, 202 for a streamed switch and 200 for a Session that never ran — and the
  * bookkeeping the contract implies: the index row and the runtime entry move to the new model
  * (so `GET /` and the compaction threshold follow it, and a client re-reading the Session on the
- * new context's `session_meta` already finds it) — by summary or, when the compaction gets no
+ * switch's `session_update` already finds it) — by summary or, when the compaction gets no
  * summary, by Trace handoff — stay put when the switch is stopped or the target's context cannot
  * be opened, and usage is attributed to the model that served each request — the switch's own
- * compaction request to the previous model, the next Task to the new one.
+ * compaction request to the previous model, the next Task to the new one. Until the next file
+ * opens, the opener's records and the switch's Trace handoff are held for history reads.
  *
  * A Session that is not in memory is loaded the ordinary way first, through the real loader and
  * core: one whose model was removed from the Project config hands its history over by Trace path
@@ -33,6 +35,7 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  sessionUpdate,
   tokenUsage,
   toolListReady,
   userText,
@@ -46,7 +49,7 @@ import type {
   SessionResponse,
   TaskCreateResponse,
 } from "../src/api/types.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { ORG_CONFIG_DEFAULTS } from "../src/organization/files.js";
 import { OrgStore } from "../src/organization/store.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
@@ -117,9 +120,9 @@ const aborted = (signal: AbortSignal): Promise<void> =>
 /**
  * A fake Session shaped like core's for a switch: the compaction request's token_usage rides
  * between a plain manual pair, and the getters move only once the new context is open — after
- * the completed `compaction_end` and before the new context's `session_meta` is yielded, exactly
- * as core adopts the opened context before it yields that context's meta — so the manager
- * follows the runtime in the real order. A context that could not be opened is never adopted:
+ * the completed `compaction_end` and before the switch's `session_update` is yielded, exactly
+ * as core adopts the opened context before it records the switch — so the manager follows the
+ * runtime in the real order. A context that could not be opened is never adopted:
  * the `fatal` end is the stream's last record, and the getters stay where they were.
  */
 function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake {
@@ -167,22 +170,13 @@ function switchFake(model: ModelRefDto, behaviour: SwitchBehaviour): SwitchFake 
           status,
           ...(behaviour.degraded ? { attempt: 1, ...behaviour.degraded } : {}),
         });
-        // The new context opens on the target: the getters follow it from here. Its opener's
-        // toolset record comes first, and its session_meta — main-session, no origin — is the
-        // last record on the stream.
+        // The new context opens on the target, in memory: the getters follow it from here. Its
+        // opener's toolset record comes first, then the switch's record — main-session, no
+        // origin; its file, and its session_meta, wait for the next message.
         fake.provider = opts.provider;
         fake.modelId = opts.modelId;
         yield toolListReady([]);
-        yield sessionMeta({
-          session_id: SID,
-          provider: opts.provider,
-          model_id: opts.modelId,
-          model_context_window: WINDOW_B,
-          system_prompt: "sp",
-          agent_state: "/tmp/agents/default_agent/agent_state",
-          workspace: "/tmp/w",
-          source: "user",
-        });
+        yield sessionUpdate({ provider: opts.provider, model_id: opts.modelId });
         // No summary: the handoff names this Session's file instead.
         if (behaviour.degraded) {
           yield userText(
@@ -241,8 +235,8 @@ describe("POST /switch-model", () => {
     const events: ServerEvent[] = [];
     /** The row's model as it stood when each compaction_end was published. */
     const rowAtEnd: ModelRefDto[] = [];
-    /** The row's model as it stood when each session_meta was published. */
-    const rowAtMeta: ModelRefDto[] = [];
+    /** The row's model as it stood when each session_update was published. */
+    const rowAtUpdate: ModelRefDto[] = [];
     /** How many bootstrap records the manager held for GET /messages as each message was published. */
     const heldAt: Array<[string | undefined, number]> = [];
     t.deps.channels.get(SID).subscribe((evt) => {
@@ -257,7 +251,9 @@ describe("POST /switch-model", () => {
         t.deps.manager.pendingBootstrap(SID).length,
       ]);
       const r = row();
-      if (msg.type === "session_meta") rowAtMeta.push({ provider: r.provider, modelId: r.modelId });
+      if ((msg.payload as { type?: string }).type === "session_update") {
+        rowAtUpdate.push({ provider: r.provider, modelId: r.modelId });
+      }
       if ((msg.payload as { type?: string }).type === "compaction_end") {
         rowAtEnd.push({ provider: r.provider, modelId: r.modelId });
       }
@@ -266,7 +262,7 @@ describe("POST /switch-model", () => {
       messages,
       events,
       rowAtEnd,
-      rowAtMeta,
+      rowAtUpdate,
       heldAt,
       /** Each message's kind: its payload type, or `session_meta`. */
       kinds: () =>
@@ -455,7 +451,7 @@ describe("POST /switch-model", () => {
     expect(row().modelId).toBe(B.modelId);
   });
 
-  it("202: streams a plain manual compaction and then the new context's session_meta; the row and the entry move to the target as that meta is published, and GET / plus the compaction threshold follow", async () => {
+  it("202: streams a plain manual compaction and then the switch's session_update; the row and the entry move to the target as that record is published, and GET / plus the compaction threshold follow", async () => {
     const fake = switchFake(A, { kind: "stream", status: "completed" });
     adopt(fake);
     const agentMax = (await t.deps.agentConfigService.getConfig(PROJECT, "default_agent")).config
@@ -477,13 +473,12 @@ describe("POST /switch-model", () => {
       "token_usage",
       "compaction_end",
       "tool_list_ready",
-      "session_meta",
+      "session_update",
     ]);
-    // The opener's record is held for history reads until it is on the Trace; the meta says
-    // the new context's file is open, and nothing is pending any more.
+    // The opener's record is held for history reads until the next message opens the file.
     expect(feed.heldAt.slice(-2)).toEqual([
       ["tool_list_ready", 1],
-      ["session_meta", 0],
+      ["session_update", 1],
     ]);
     // Nothing on the pair names a model.
     expect(feed.messages[2]!.payload).toEqual({
@@ -492,14 +487,18 @@ describe("POST /switch-model", () => {
       mode: "summarize",
       status: "completed",
     });
-    // The new model is on the new context's meta, a main-session record (no origin).
-    const meta = feed.messages[4]!;
-    expect(meta.origin).toBeUndefined();
-    expect(meta.payload).toMatchObject({ provider: B.provider, model_id: B.modelId });
+    // The new model is on the switch's record, a main-session record (no origin).
+    const update = feed.messages[4]!;
+    expect(update.origin).toBeUndefined();
+    expect(update.payload).toEqual({
+      type: "session_update",
+      provider: B.provider,
+      model_id: B.modelId,
+    });
     // A client refetching the Session on that very record reads the new model: the row had
-    // already moved when the meta was published (and not yet when the end was).
+    // already moved when the record was published (and not yet when the end was).
     expect(feed.rowAtEnd).toEqual([A]);
-    expect(feed.rowAtMeta).toEqual([B]);
+    expect(feed.rowAtUpdate).toEqual([B]);
     expect(row()).toMatchObject(B);
     const info = ((await (await api.get(`/api/sessions/${SID}`)).json()) as SessionResponse)
       .session;
@@ -525,7 +524,7 @@ describe("POST /switch-model", () => {
     expect(usageModels()).toEqual([A.modelId, B.modelId]);
   });
 
-  it("a compaction that gets no summary still switches, by Trace handoff: its end is completed with the error pair, the handoff follows the meta, the row moves, and the compaction request bills to the previous model", async () => {
+  it("a compaction that gets no summary still switches, by Trace handoff: its end is completed with the error pair, the handoff follows the record, the row moves, and the compaction request bills to the previous model", async () => {
     adopt(
       switchFake(A, {
         kind: "stream",
@@ -547,16 +546,65 @@ describe("POST /switch-model", () => {
       "token_usage",
       "compaction_end",
       "tool_list_ready",
-      "session_meta",
+      "session_update",
       "text",
     ]);
     const handoff = parseModelSwitchMessage(
       (feed.messages.at(-1)!.payload as { text: string }).text,
     );
     expect(handoff).toMatchObject({ sessionId: SID, ...prev(A) });
-    expect(feed.rowAtMeta).toEqual([B]);
+    expect(feed.rowAtUpdate).toEqual([B]);
     expect(row()).toMatchObject(B);
 
+    await api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text: "on B" }] });
+    await waitFor(() => usageModels().length === 2);
+    expect(usageModels()).toEqual([A.modelId, B.modelId]);
+  });
+
+  it("a switch that hands over by Trace path tells the listeners once, and holds its handoff for history reads beside the opener's record until the next file opens", async () => {
+    adopt(
+      switchFake(A, {
+        kind: "stream",
+        status: "completed",
+        degraded: { errorCode: "rejected", errorMessage: "prompt is too long" },
+      }),
+    );
+    const heard: Array<{ model: ModelRefDto; row: ModelRefDto }> = [];
+    t.deps.manager.onModelChanged((_sessionId, model) => {
+      const r = row();
+      heard.push({ model, row: { provider: r.provider, modelId: r.modelId } });
+    });
+    const feed = listen();
+
+    expect((await api.post(url, B)).status).toBe(202);
+    await waitFor(() => feed.states().includes("idle"));
+
+    expect(feed.kinds()).toEqual([
+      "compaction_begin",
+      "token_usage",
+      "compaction_end",
+      "tool_list_ready",
+      "session_update",
+      "text",
+    ]);
+    // A client refetching the Session on that record reads the new model.
+    expect(feed.rowAtEnd).toEqual([A]);
+    expect(feed.rowAtUpdate).toEqual([B]);
+    expect(row()).toMatchObject(B);
+    expect(heard).toEqual([{ model: B, row: B }]);
+    // No file opened: the opener's record and the handoff stay held for history reads.
+    expect(feed.heldAt.slice(-3)).toEqual([
+      ["tool_list_ready", 1],
+      ["session_update", 1],
+      ["text", 2],
+    ]);
+    const held = t.deps.manager.pendingBootstrap(SID);
+    expect(parseModelSwitchMessage((held.at(-1)!.payload as { text: string }).text)).toMatchObject({
+      sessionId: SID,
+      ...prev(A),
+    });
+
+    // The next Task bills to the target.
     await api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text: "on B" }] });
     await waitFor(() => usageModels().length === 2);
     expect(usageModels()).toEqual([A.modelId, B.modelId]);
@@ -578,7 +626,7 @@ describe("POST /switch-model", () => {
       status: "fatal",
       error_message: OPEN_FAILURE,
     });
-    expect(feed.rowAtMeta).toEqual([]);
+    expect(feed.rowAtUpdate).toEqual([]);
     expect(row()).toMatchObject(A);
     expect(fake.modelId).toBe(A.modelId);
     expect(heard).toEqual([]);
@@ -612,7 +660,7 @@ describe("POST /switch-model", () => {
     expect(fake.signals[0]!.aborted).toBe(true);
     const last = feed.messages[feed.messages.length - 1]!;
     expect((last.payload as { status: string }).status).toBe("aborted");
-    expect(feed.rowAtMeta).toEqual([]);
+    expect(feed.rowAtUpdate).toEqual([]);
     expect(row()).toMatchObject(A);
     expect(fake.modelId).toBe(A.modelId);
   });
@@ -650,18 +698,18 @@ describe("POST /switch-model", () => {
     expect(t.deps.sessionsRepo.findById(SID)).toBeNull();
   });
 
-  it("a main-session session_meta on the stream registers no child and records no error", async () => {
+  it("the switch's session_update on the stream is the main session's own: it registers no child and records no error", async () => {
     adopt(switchFake(A, { kind: "stream", status: "completed" }));
     const feed = listen();
     expect((await api.post(url, B)).status).toBe(202);
     await waitFor(() => feed.states().includes("idle"));
 
-    // The meta reached subscribers as the switch's last record, without an origin…
-    const meta = feed.messages.at(-1)!;
-    expect(meta.type).toBe("session_meta");
-    expect(meta.origin).toBeUndefined();
+    // The record reached subscribers as the switch's last record, without an origin…
+    const update = feed.messages.at(-1)!;
+    expect((update.payload as { type?: string }).type).toBe("session_update");
+    expect(update.origin).toBeUndefined();
     // …and the drive read it as the main session's own record: no child row, no
-    // session_created event, no registration failure on record.
+    // session_created event, nothing on record.
     expect(t.deps.sessionsRepo.listByProject(PROJECT).map((r) => r.sessionId)).toEqual([SID]);
     expect(feed.events.filter((e) => e.type === "session_created")).toEqual([]);
     expect(t.deps.errorsRepo.recent(PROJECT).map((r) => r.code)).toEqual([]);
@@ -827,7 +875,7 @@ describe("POST /switch-model", () => {
     /** Removes A from the Project config. */
     const removeA = (): Promise<void> => configure(false);
 
-    it("a model removed from the config is sent nothing: 202, B's meta then the handoff naming A's Trace file, and the row on B", async () => {
+    it("a model removed from the config is sent nothing: 202, the record naming B then the handoff naming A's Trace file, and the row on B", async () => {
       const file = await traceOnA();
       index();
       await removeA();
@@ -837,7 +885,7 @@ describe("POST /switch-model", () => {
       await waitFor(() => feed.states().includes("idle"));
 
       expect(feed.kinds()).not.toContain("compaction_begin");
-      expect(feed.kinds().slice(-2)).toEqual(["session_meta", "text"]);
+      expect(feed.kinds().slice(-2)).toEqual(["session_update", "text"]);
       const handoff = parseModelSwitchMessage(
         (feed.messages.at(-1)!.payload as { text: string }).text,
       );

@@ -10,42 +10,46 @@
  * Also handles Project create / list / delete, member authorization, and initial
  * Project provisioning at signup.
  */
-import fs from "node:fs/promises";
-import {
-  DEFAULT_PROJECT_ID,
-  projectDir,
-  provisionProjectAgents,
-  provisionProjectBenchmarks,
-  type BuiltinBenchmark,
-} from "@prismshadow/penguin-core";
-import type { MemberInfo, ProjectRole, ProjectSummary } from "../api/types.js";
-import { HttpError } from "../http/errors.js";
-import type { ProjectRow } from "../db/repos/projects.js";
-import type { UserRow } from "../db/repos/users.js";
-import type { SessionManager } from "../runtime/session-manager.js";
-import {
-  PROJECT_ID_MAX_LENGTH,
-  PROJECT_SUFFIX_PATTERN,
-  SEMANTIC_ID_PATTERN,
-  SEMANTIC_ID_RULE,
-} from "./ids.js";
-import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
-import type { Config, Paths } from "../hmr/capabilities.js";
 import type {
+  ProjectRole,
   Access,
   AgentIndex,
   Members,
   ProjectConfigStore,
   ProjectLifecycle,
   Projects,
-} from "../mechanisms/projects.js";
-import type { Users } from "../mechanisms/identity.js";
-import type { Schedules, SessionIndex } from "../mechanisms/sessions.js";
-import type { ErrorLog, UsageStore } from "../mechanisms/observability.js";
-import type { TraceIndex } from "../mechanisms/traces.js";
-import type { OrgCache } from "../mechanisms/organization.js";
-import type { AgentApi } from "../mechanisms/agent-api.js";
-import type { UserDraftsStore } from "../mechanisms/account-data.js";
+} from "@prismshadow/penguin-library-project";
+import type { Users, UserDraftsStore } from "@prismshadow/penguin-library-auth";
+import fs from "node:fs/promises";
+import {
+  DEFAULT_PROJECT_ID,
+  projectDir,
+  projectRunDir,
+  ROOT_FOLDER_NAMES,
+  provisionProjectAgents,
+  provisionProjectBenchmarks,
+  type BuiltinBenchmark,
+} from "@prismshadow/penguin-core";
+import type { MemberInfo, ProjectSummary } from "../api/types.js";
+import { HttpError } from "../http/errors.js";
+import type { ProjectRow } from "@prismshadow/penguin-library-project/repos/projects";
+import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
+import type { SessionManager } from "../runtime/session-manager.js";
+import { removeBelow } from "../workbenches/data-dirs.js";
+import {
+  isNewSemanticId,
+  NEW_ID_RULE,
+  PROJECT_ID_MAX_LENGTH,
+  PROJECT_SUFFIX_PATTERN,
+  SEMANTIC_ID_RULE,
+} from "./ids.js";
+import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
+import type { Config, Paths } from "../hmr/capabilities.js";
+import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-session";
+import type { ErrorLog, UsageStore } from "@prismshadow/penguin-library-observability";
+import type { TraceIndex } from "@prismshadow/penguin-library-trace";
+import type { OrgCache } from "@prismshadow/penguin-library-organization";
+import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;
@@ -122,11 +126,18 @@ export class ProjectService implements ProjectLifecycle {
    */
   async createProject(owner: UserRow, projectId: string, name?: string): Promise<ProjectSummary> {
     if (owner.isAdmin) {
-      if (!SEMANTIC_ID_PATTERN.test(projectId)) {
+      if (!isNewSemanticId(projectId)) {
         throw new HttpError(
           400,
           "invalid_project_id",
-          `Project id must be 2–64 characters: ${SEMANTIC_ID_RULE} (the hyphen is reserved as the user namespace separator).`,
+          `Project id must be 2–64 characters: ${SEMANTIC_ID_RULE}; ${NEW_ID_RULE} (the hyphen is reserved as the user namespace separator).`,
+        );
+      }
+      if (ROOT_FOLDER_NAMES.includes(projectId)) {
+        throw new HttpError(
+          400,
+          "invalid_project_id",
+          `Project id ${projectId} is the name of a folder the data root keeps for itself (${ROOT_FOLDER_NAMES.join(", ")}); choose another.`,
         );
       }
     } else {
@@ -308,6 +319,9 @@ export class ProjectService implements ProjectLifecycle {
     this.orgCache.deleteProject(projectId);
     this.traceIndex.removeProject(projectId);
     await fs.rm(projectDir(this.root, projectId), { recursive: true, force: true });
+    // Its workbenches' runtime files (sockets, locks) sit apart, at a short path (core's runDir).
+    // A link where a level belongs is left alone rather than followed; the deletion stands.
+    await removeBelow(this.root, projectRunDir(this.root, projectId)).catch(() => undefined);
   }
 
   // —— Member authorization ——

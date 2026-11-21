@@ -12,13 +12,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 import type { AmspRecord, SessionTitleResult } from "@prismshadow/penguin-core";
-import { openDatabase } from "../src/db/database.js";
-import { SessionsRepo } from "../src/db/repos/sessions.js";
-import type { SessionRow } from "../src/db/repos/sessions.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
+import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { ChannelHub } from "../src/runtime/channel.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { TitleGenerator, fallbackTitle } from "../src/runtime/title-generator.js";
-import type { UsageContext } from "../src/runtime/usage-recorder.js";
+import type { UsageContext } from "@prismshadow/penguin-library-observability";
 import { waitFor } from "./helpers.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
 

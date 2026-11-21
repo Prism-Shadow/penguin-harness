@@ -14,7 +14,7 @@ import {
   readHistory,
 } from "../src/builtin-browser/import/index.js";
 import { HISTORY_LIMIT } from "../src/builtin-browser/import/history.js";
-import { unreadableStoreWarning } from "../src/builtin-browser/import/sqlite-copy.js";
+import { unreadableStoreNote } from "../src/builtin-browser/import/sqlite-copy.js";
 import {
   DAY,
   FakeMachine,
@@ -52,7 +52,7 @@ describe("Firefox cookies", () => {
       { host: ".github.com", name: "insecure-none", value: "d", expiry: future, secure: false },
     ]);
     const result = await readCookies(await firstSource(), {}, machine.env());
-    expect(result).toMatchObject({ found: 4, skipped: 0, warnings: [] });
+    expect(result).toMatchObject({ found: 4, skips: [], notes: [] });
     expect(result.cookies.map((c) => [c.name, c.expirationDate, c.sameSite, c.domain])).toEqual([
       ["seconds", future, "lax", ".github.com"],
       ["millis", future, "strict", undefined],
@@ -89,7 +89,13 @@ describe("Firefox cookies", () => {
       { domains: ["amazon.com"] },
       machine.env(),
     );
-    expect(result).toMatchObject({ found: 4, skipped: 3 });
+    expect(result).toMatchObject({
+      found: 4,
+      skips: [
+        { reason: "partitioned", count: 2 },
+        { reason: "expired", count: 1 },
+      ],
+    });
     expect(result.cookies.map((c) => c.name)).toEqual(["live"]);
   });
 });
@@ -115,7 +121,7 @@ describe("history", () => {
       ],
     );
     const result = await readHistory(await firstSource(), machine.env());
-    expect(result.warnings).toEqual([]);
+    expect(result.notes).toEqual([]);
     expect(result.entries).toEqual([
       {
         url: "https://www.amazon.com/gp/cart",
@@ -207,7 +213,7 @@ describe("the private copy", () => {
     }
   });
 
-  it("turns a store it cannot copy into a warning, a sharing violation into 'close the browser'", async () => {
+  it("turns a store it cannot copy into a note, a sharing violation into a busy store", async () => {
     machine = new FakeMachine("linux");
     writeChromiumCookies(machine.path(".config", "google-chrome", "Default", "Cookies"), [
       { host: ".a.com", name: "n", value: "1" },
@@ -217,13 +223,11 @@ describe("the private copy", () => {
     expect(result).toEqual({
       cookies: [],
       found: 0,
-      skipped: 0,
-      warnings: ["The cookie store of Chrome could not be read."],
+      skips: [],
+      notes: [{ code: "store_unreadable", store: "cookies" }],
     });
     // What Windows reports while Chrome holds the file (ERROR_SHARING_VIOLATION).
     const busy = Object.assign(new Error("resource busy or locked"), { code: "EBUSY" });
-    expect(unreadableStoreWarning(busy, "Chrome", "cookie store")).toBe(
-      "Chrome is holding its cookie store open; close Chrome and import again.",
-    );
+    expect(unreadableStoreNote(busy, "cookies")).toEqual({ code: "store_busy", store: "cookies" });
   });
 });

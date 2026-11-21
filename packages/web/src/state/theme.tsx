@@ -35,10 +35,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { ThemePackDto } from "@prismshadow/penguin-server/api";
-import type { ThemeId } from "@prismshadow/penguin-ui";
+import type { ActivityDisplayMode, ThemeId } from "@prismshadow/penguin-ui";
 import { applyThemeAttributes, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
 import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
 import {
+  ACTIVITY_DISPLAY_MODE_KEY,
+  activityDisplayModeValue,
   CURRENCY_KEY,
   TERMINAL_THEME_KEY,
   TOOL_ALIASES_KEY,
@@ -115,6 +117,9 @@ interface ThemeContextValue {
   setCurrency: (currency: Currency) => void;
   terminalMode: TerminalThemeMode;
   setTerminalMode: (mode: TerminalThemeMode) => void;
+  /** How work groups show thinking and tool steps: Standard, Expanded or Compact. */
+  activityDisplayMode: ActivityDisplayMode;
+  setActivityDisplayMode: (mode: ActivityDisplayMode) => void;
   /** Whether tool-call cards name the built-in tools by their short alias. */
   toolAliases: boolean;
   setToolAliases: (on: boolean) => void;
@@ -139,6 +144,10 @@ function initialTerminalMode(): TerminalThemeMode {
 /** Default on, so anything but the explicit off value reads as on (an absent value included). */
 function initialToolAliases(): boolean {
   return localStorage.getItem(TOOL_ALIASES_KEY) !== "0";
+}
+
+function initialActivityDisplayMode(): ActivityDisplayMode {
+  return activityDisplayModeValue(localStorage.getItem(ACTIVITY_DISPLAY_MODE_KEY)) ?? "standard";
 }
 
 function initialCurrency(): Currency {
@@ -170,6 +179,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [accent, setAccentState] = useState<Accent>(initial.accent);
   const [currency, setCurrencyState] = useState<Currency>(initialCurrency);
   const [terminalMode, setTerminalModeState] = useState<TerminalThemeMode>(initialTerminalMode);
+  const [activityDisplayMode, setActivityDisplayModeState] = useState(initialActivityDisplayMode);
   const [toolAliases, setToolAliasesState] = useState<boolean>(initialToolAliases);
 
   // The account's preferences replaced the cached ones at sign-in:
@@ -187,6 +197,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         setCurrencyState(initialCurrency());
         setTerminalModeState(initialTerminalMode());
         setToolAliasesState(initialToolAliases());
+        setActivityDisplayModeState(initialActivityDisplayMode());
       }),
     [],
   );
@@ -298,6 +309,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setTerminalModeState(next);
   }, []);
 
+  const setActivityDisplayMode = useCallback((next: ActivityDisplayMode) => {
+    writeCached(ACTIVITY_DISPLAY_MODE_KEY, next);
+    setActivityDisplayModeState(next);
+  }, []);
+
   const setToolAliases = useCallback((next: boolean) => {
     writeCached(TOOL_ALIASES_KEY, next ? "1" : "0");
     setToolAliasesState(next);
@@ -328,6 +344,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         terminalMode,
         setTerminalMode,
         terminalDark,
+        activityDisplayMode,
+        setActivityDisplayMode,
         toolAliases,
         setToolAliases,
       }}
@@ -335,6 +353,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       {children}
     </ThemeContext.Provider>
   );
+}
+
+/** Embedded read-only transcript views can render without an appearance provider. */
+export function useActivityAppearance() {
+  return useContext(ThemeContext);
 }
 
 export function useTheme(): ThemeContextValue {
@@ -345,17 +368,22 @@ export function useTheme(): ThemeContextValue {
 
 /**
  * The accent swatches a theme offers: "neutral" first (the theme's own accent, the absence of a
- * choice), then the theme's own presets in its own order, painted in their light values.
+ * choice), then the theme's own presets in its own order, painted in their light values — save
+ * one: in dark, a preset that is the pack's own light ink (Doodle's `ink`) is painted in the
+ * pack's dark ink, because a near-black dot on a dark row cannot be seen.
  */
 export function accentSwatches(
   theme: ThemeEntry,
   dark = false,
 ): ReadonlyArray<{ value: Accent; color: string }> {
-  // "Theme's own" paints the accent that choice resolves to — every built-in theme's is black
-  // (white in dark) — rather than a stand-in grey.
+  // "Theme's own" paints the accent that choice resolves to — black (white in dark) in most
+  // built-in themes, the ballpoint blue in Doodle — rather than a stand-in grey.
   const own = theme.accent.own;
+  const ink = theme.swatches.light.ink.toLowerCase();
+  const paint = (swatch: string) =>
+    dark && swatch.toLowerCase() === ink ? theme.swatches.dark.ink : swatch;
   return [
     { value: "neutral", color: dark ? own.dark : own.light },
-    ...theme.accent.presets.map((preset) => ({ value: preset.id, color: preset.swatch })),
+    ...theme.accent.presets.map((preset) => ({ value: preset.id, color: paint(preset.swatch) })),
   ];
 }
