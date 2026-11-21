@@ -1,6 +1,8 @@
 /**
  * The CLI's text internationalization (i18n), hosted by the server package: the host's
- * own groups live below; every contribution's groups spread in from its message file.
+ * own groups live below; every contribution's groups spread in from its message file. A
+ * shipped plugin's CLI module brings its groups with it instead: the CLI adds them to the
+ * bundle its commands receive (packages/cli's cli-modules.ts), so this table never names them.
  *
  * Language comes from the `PENGUIN_LANG` env var (`en` / `zh`), defaulting to English (en) —
  * independent of Project config or CLI options. This module centralizes all user-visible text:
@@ -35,12 +37,12 @@ import { type SessionText, sessionEn, sessionZh } from "./commands/session.messa
 import { type ScheduleText, scheduleEn, scheduleZh } from "./commands/schedule.messages.js";
 import { type UpdateText, updateEn, updateZh } from "./commands/update.messages.js";
 import { type VersionText, versionEn, versionZh } from "./commands/version.messages.js";
-import { type BrowserText, browserEn, browserZh } from "./commands/browser.messages.js";
 import type { OrgText } from "./commands/org.messages.js";
 import { orgEn } from "./commands/org-en.messages.js";
 import { orgZh } from "./commands/org-zh.messages.js";
 
 import type { CliCommandMessages } from "@prismshadow/penguin-core/cli";
+import type { ClientText } from "@prismshadow/penguin-library-cli/messages";
 import { DEFAULT_CHAT_THINKING_LEVELS } from "@prismshadow/penguin-core";
 
 /**
@@ -94,7 +96,6 @@ export interface Messages
     ScheduleText,
     UpdateText,
     VersionText,
-    BrowserText,
     OrgText,
     CliCommandMessages {
   // —— Command/option help descriptions ——
@@ -138,39 +139,21 @@ export interface Messages
     /** Second line of a usage error: how the command is spelled, and where its full option list is. */
     hint(command: string, usage: string): string;
   };
-  /** Server-connection layer: resolution, auto-start, tokens, streams. */
-  client: {
-    invalidServerUrl(value: string): string;
-    /** --server names a non-loopback URL and no PENGUIN_API_TOKEN is set (the local token file must not travel). */
-    remoteNeedsToken(url: string): string;
-    /** No server reachable and auto-start was disabled by the caller. */
-    noServer(): string;
-    /** Auto-start impossible: the CLI entry is not plain-node runnable (tsx dev run). */
-    autoStartUnavailable(): string;
-    autoStartFailed(logPath: string): string;
-    /** Printed to stderr when a server was auto-started for this invocation. */
-    autoStarted(url: string, logPath: string): string;
-    /** 401 with no token found anywhere (env or file). */
-    noToken(url: string, tokenPath: string): string;
-    /** 401 despite presenting a token. */
-    authFailed(url: string): string;
-    httpError(status: number, code: string, message: string): string;
-    sessionNotFound(ref: string, projectId: string): string;
-    sessionAmbiguous(ref: string, candidates: string[]): string;
-    /** The SSE stream dropped and reconnecting gave up. */
-    streamLost(detail: string): string;
-    /** resync_required: the reconnect fell off the server's replay buffer (a display gap, not data loss). */
-    streamResynced(): string;
-    /** Invalid --timeout value (names the accepted shapes). */
-    timeoutInvalid(value: string): string;
-    /** Soft-yield detach: the wait budget expired, the task keeps running server-side. */
-    stillRunning(shortId: string): string;
-    /** Caller-context lookup failed (PENGUIN_SESSION_ID names a session this server cannot answer for): plain defaults apply. */
-    callerDefaultsFailed(sessionId: string): string;
-    /** Dim stderr note naming the session a bare `session log` / `input` / `rename` resolved to (the agent's most recent). */
-    latestSession(sessionId: string): string;
-    /** Bare `session log` / `input` / `rename` when the agent has no session at all: what to run to get one. */
-    noSessionsYet(agentId: string, projectId: string): string;
+  /** Server-connection layer: resolution, auto-start, tokens, streams (the CLI face words its errors with it). */
+  client: ClientText;
+  /**
+   * A shipped plugin's CLI module (packages/cli's cli-modules.ts) the CLI could not take whole,
+   * as one stderr line: the rest of the CLI runs.
+   */
+  cliModule: {
+    /** The module did not boot: none of its commands are on the program. */
+    failed(pkg: string, reason: string): string;
+    /** One command was left out (`reason` is `taken`'s, the key grammar's or its register's words). */
+    dropped(pkg: string, key: string, reason: string): string;
+    /** A word of the command's key already names a command or alias on the program. */
+    taken(word: string): string;
+    /** One of the module's message groups has a host group's name: the host's is the one read. */
+    groupTaken(pkg: string, group: string): string;
   };
   error(message: string): string;
 }
@@ -241,6 +224,13 @@ const en: Messages = {
     noSessionsYet: (agentId, projectId) =>
       `Agent ${agentId} has no sessions in project ${projectId} yet: start one with \`penguin run -m "..."\` or \`penguin chat\`.`,
   },
+  cliModule: {
+    failed: (pkg, reason) => `[warning] ${pkg}: its commands are unavailable (${reason})`,
+    dropped: (pkg, key, reason) => `[warning] ${pkg}: the command "${key}" is left out (${reason})`,
+    taken: (word) => `"${word}" already names a command or an alias`,
+    groupTaken: (pkg, group) =>
+      `[warning] ${pkg}: its message group "${group}" has the name of one of the CLI's; the CLI's is used`,
+  },
   error: (message) => `[error] ${message}`,
   ...sessionruntimeEn,
   ...renderEn,
@@ -262,7 +252,6 @@ const en: Messages = {
   ...scheduleEn,
   ...updateEn,
   ...versionEn,
-  ...browserEn,
   org: orgEn.org,
 };
 
@@ -328,6 +317,12 @@ const zh: Messages = {
     noSessionsYet: (agentId, projectId) =>
       `Agent ${agentId} 在 Project ${projectId} 下还没有任何会话：先用 \`penguin run -m "..."\` 或 \`penguin chat\` 开始一个。`,
   },
+  cliModule: {
+    failed: (pkg, reason) => `[警告] ${pkg}：其命令不可用（${reason}）`,
+    dropped: (pkg, key, reason) => `[警告] ${pkg}：未注册命令「${key}」（${reason}）`,
+    taken: (word) => `「${word}」已是某条命令的名称或别名`,
+    groupTaken: (pkg, group) => `[警告] ${pkg}：消息组「${group}」与 CLI 自有的组同名，沿用 CLI 的`,
+  },
   error: (message) => `[错误] ${message}`,
   ...sessionruntimeZh,
   ...renderZh,
@@ -349,7 +344,6 @@ const zh: Messages = {
   ...scheduleZh,
   ...updateZh,
   ...versionZh,
-  ...browserZh,
   org: orgZh.org,
 };
 

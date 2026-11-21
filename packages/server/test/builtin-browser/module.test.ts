@@ -16,7 +16,7 @@ import {
   loginAdmin,
   provisionUser,
 } from "../helpers.js";
-import { FakeShell, tab } from "./fake-shell.js";
+import { FakeShell, shellPortNode, tab } from "./fake-shell.js";
 
 async function until(ready: () => boolean, what: string): Promise<void> {
   for (let i = 0; i < 500; i++) {
@@ -54,7 +54,7 @@ describe("the built-in browser in the platform tree", () => {
   it("reaches the shell in desktop mode and tells the admin's event stream about tabs", async () => {
     const shell = new FakeShell();
     shell.guests.set(3, tab(3));
-    const t = await createDesktopApp({ browserShellPort: shell.port });
+    const t = await createDesktopApp({ nodes: [shellPortNode(shell.port)] });
     try {
       const cookie = await desktopLoginCookie(t.app);
       const events: { type: string; tabs?: { title: string }[] }[] = [];
@@ -86,7 +86,7 @@ describe("the built-in browser in the platform tree", () => {
 
   it("lets an Agent's CLI in with the admin's local API token", async () => {
     const shell = new FakeShell();
-    const t = await createDesktopApp({ browserShellPort: shell.port });
+    const t = await createDesktopApp({ nodes: [shellPortNode(shell.port)] });
     try {
       const token = t.deps.authService.localApiToken();
       expect(token).not.toBeNull();
@@ -102,7 +102,7 @@ describe("the built-in browser in the platform tree", () => {
 
   it("takes its listener off the port when the App is disposed", async () => {
     const shell = new FakeShell();
-    const t = await createDesktopApp({ browserShellPort: shell.port });
+    const t = await createDesktopApp({ nodes: [shellPortNode(shell.port)] });
     expect(shell.port.listenerCount).toBe(1);
     await t.cleanup();
     expect(shell.port.listenerCount).toBe(0);

@@ -8,7 +8,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import type { BuiltinBrowserImportNote } from "../../api/types.js";
+import type { BuiltinBrowserImportNote } from "@prismshadow/penguin-server/api";
 import type { ImportEnv } from "./index.js";
 
 // Resolved at runtime, like db/database.ts: keeps bundlers from resolving `node:sqlite` statically.

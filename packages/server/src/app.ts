@@ -66,6 +66,8 @@ import { UiPrefsRepo } from "@prismshadow/penguin-library-setting/repos/ui-prefs
 import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
 import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
 import { authMiddleware, jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
+import type { Http } from "./http/app.js";
+import { legacyOwnOrigin } from "./hmr/legacy-browser.js";
 import { originRule } from "@prismshadow/penguin-library-http/public-origin";
 import { WEB_APP_CSP } from "@prismshadow/penguin-library-http/page-csp";
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
@@ -424,6 +426,13 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   const settings = current(() => boot.tree.api<Settings>("SettingsModule", "Settings"));
   const access = current(() => boot.tree.api<Access>("ProjectsModule", "Access"));
   const authService = current(() => boot.tree.api<Auth>("IdentityModule", "Auth"));
+  const http = current(() => boot.tree.api<Partial<Pick<Http, "ownOrigin">>>("ApiModule", "Http"));
+  const ownOrigin = (path: string): boolean => {
+    const surface = http();
+    return typeof surface.ownOrigin === "function"
+      ? surface.ownOrigin(path)
+      : legacyOwnOrigin(path);
+  };
   const deps = {
     config: boot.config,
     desktop: boot.desktop,
@@ -544,7 +553,10 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
     }
     return capped.mw(c, next);
   });
-  app.use("/api/*", sameOriginWrites(originRule(deps.config)));
+  // The route groups that judge their callers' origin themselves are the current generation's
+  // to name (`origin: "own"`, Http.ownOrigin); one pushed before it could name them has the
+  // pairing route exempted by its path, as before (hmr/legacy-browser.ts).
+  app.use("/api/*", sameOriginWrites(originRule(deps.config), ownOrigin));
   app.use("/api/*", jsonOnlyWrites(originRule(deps.config)));
 
   // THE seam: every route is one the platform may take over by push — the upgrade channel

@@ -15,7 +15,9 @@
  * `Workbenches` is the platform-side mechanism the routes drive: list, reload, switch on and
  * off, dispatch, serve a UI file (and the page runtime compiled pages import), and the version
  * history every successful load commits to the Agent State repository — which is what makes an
- * Agent's own edits to its workbench reversible.
+ * Agent's own edits to its workbench reversible. A method that may record a version takes `by`,
+ * the member whose request it serves: that version is authored by them
+ * (../workbenches/git-identity.ts); without it, by the server's Git identity.
  */
 import type { IconImage } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
@@ -37,6 +39,7 @@ import type {
   WorkbenchRecord,
   IconRef,
 } from "@prismshadow/penguin-library-workbench";
+import type { VersionAuthor } from "../workbenches/git-identity.js";
 
 /**
  * The approval modes a workbench may open a Session with: two of a Session's existing modes,
@@ -182,7 +185,12 @@ export abstract class Workbenches {
     agentId: string,
     workbenchId: string,
   ): Promise<WorkbenchInfo>;
-  abstract reload(projectId: string, agentId: string, workbenchId: string): Promise<WorkbenchInfo>;
+  abstract reload(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    by?: VersionAuthor,
+  ): Promise<WorkbenchInfo>;
   /**
    * After its source was written (an archive import): loads it as `reload` does when it runs,
    * and otherwise answers it as it stands, not loaded.
@@ -191,6 +199,7 @@ export abstract class Workbenches {
     projectId: string,
     agentId: string,
     workbenchId: string,
+    by?: VersionAuthor,
   ): Promise<WorkbenchInfo>;
   /**
    * Sets one workbench's own switch. Off unloads it at once (its subscriptions end with its
@@ -202,6 +211,7 @@ export abstract class Workbenches {
     agentId: string,
     workbenchId: string,
     enabled: boolean,
+    by?: VersionAuthor,
   ): Promise<WorkbenchInfo>;
   /**
    * Sets the Agent-wide switch, leaving each workbench's own as it is: off unloads every
@@ -261,12 +271,18 @@ export abstract class Workbenches {
     agentId: string,
     workbenchId: string,
     revision: string,
+    by?: VersionAuthor,
   ): Promise<WorkbenchInfo>;
   /**
    * Deletes the folder, state and switch included, and records the removal; its earlier
    * versions are no longer listed. The instance goes with it.
    */
-  abstract remove(projectId: string, agentId: string, workbenchId: string): Promise<void>;
+  abstract remove(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    by?: VersionAuthor,
+  ): Promise<void>;
   /**
    * The App Center of a Project: a shortcut for every workbench of its Agents on this server
    * whose manifest asks to be shown, in Agent list order and by title within an Agent. Read from
@@ -309,6 +325,7 @@ export abstract class Workbenches {
     agentId: string,
     workbenchId: string,
     show: boolean,
+    by?: VersionAuthor,
   ): Promise<WorkbenchInfo>;
   /**
    * Lets go of everything held for one Agent before its folder is deleted or its State is

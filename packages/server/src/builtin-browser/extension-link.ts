@@ -29,7 +29,7 @@ import type {
   DesktopBrowserCommandMessage,
   DesktopBrowserEvent,
   DesktopBrowserReplyMessage,
-} from "../api/types.js";
+} from "@prismshadow/penguin-server/api";
 import { BrowserLinkError, CHROME_CAPABILITIES } from "./link.js";
 import type { BrowserLink } from "./link.js";
 import { parseBrowserEvent, parseBrowserReply } from "./shell-link.js";

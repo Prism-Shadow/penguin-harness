@@ -131,6 +131,12 @@ export interface AppCenterShortcut {
    * is a monochrome SVG drawn in the text colour. Absent without a declared icon that reads clean.
    */
   icon?: IconRef;
+  /**
+   * The library plugin that installed the workbench, by its name (the folder's `.plugin.json`
+   * receipt); absent for one the Agent or a person wrote. The App Center links such a tile to its
+   * plugin in the market.
+   */
+  plugin?: string;
   /** The full page the tile opens: /app/<projectId>/<agentId>/<workbenchId>[/<tab>]. */
   path: string;
   /** The tab the shortcut opens when the declaration names one; else the workbench's first. */
