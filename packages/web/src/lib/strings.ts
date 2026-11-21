@@ -764,6 +764,8 @@ export const zh = {
       detailsAbout: (subject: string) => `详情：${subject}`,
       /** The picked machine holds none of this plugin's settings. */
       noneOnMachine: (machine: string) => `${machine} 上没有这个插件的选项。`,
+      /** A plugin's page that only a machine has, switched to this server. */
+      notOnThisServer: "本机没有安装这个插件。在上方选择装有它的机器，即可查看它的选项。",
       /**
        * The picked machine names no plugin on any of its groups: none of this plugin's, or a build
        * older than the naming, which lists every plugin's options on the management page.
@@ -771,8 +773,6 @@ export const zh = {
       onAdminPage: (machine: string, page: string) =>
         `${machine} 上没有标明属于这个插件的选项。版本较旧的机器不标明选项属于哪个插件，它的插件选项都列在「${page}」里。`,
     },
-    /** The page's own switch, above the server's cards: a display preference of this browser. */
-    pluginsIncompatibleOnly: "只显示不兼容的插件",
     /** A list field's editor: the row buttons and the add row. */
     pluginListMoveUp: "上移",
     pluginListMoveDown: "下移",
@@ -3176,7 +3176,7 @@ export const zh = {
     unsatisfiedNotice: (n: number) => `当前构建无法完整运行 ${n} 个已装插件，原因见各自的条目。`,
     /** The notice's action: filters the list down to those rows. */
     unsatisfiedShow: "查看",
-    /** Page notice while Settings › Plugins narrows the list to the incompatible plugins. */
+    /** Page notice while the filter beside the search narrows the list to the incompatible plugins. */
     incompatibleOnlyNotice: "当前只显示不兼容的插件。",
     /** That notice's action: turns the filter off. */
     incompatibleOnlyShowAll: "显示全部",
@@ -3233,6 +3233,12 @@ export const zh = {
     openSettings: "设置",
     pageDesc:
       "所有插件按分类列出。只含技能和／或钩子包的插件随本次构建自带，装到 Agent 上使用；服务端模块插件（如 Agent 运行沙箱后端）由管理员安装到整个服务端。",
+    /**
+     * The filter beside the search: a toggle that narrows the list to the plugins this build cannot
+     * fully run, remembered in this browser; the group's accessible name, and the toggle's words.
+     */
+    filterLabel: "筛选插件",
+    incompatibleOnlyFilter: "只看不兼容",
     /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
     groupByLabel: "分组方式",
     groupBy: {

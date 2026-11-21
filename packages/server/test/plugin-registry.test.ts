@@ -7,8 +7,9 @@
  * - The builtin catalogue lists the sandbox backends that live in plugins/, each named,
  *   versioned, titled, described and licensed as the package names itself, described in both
  *   languages as its own card contribution describes it and drawn with its icon.svg (both of which
- *   it publishes), and serves each one's own shipped README.md; a listed package not on this
- *   machine, a name it does not list and a remote registry have no readme.
+ *   it publishes), repeats the platforms each declares itself the default backend for (what the
+ *   host offers, in index order), and serves each one's own shipped README.md; a listed package
+ *   not on this machine, a name it does not list and a remote registry have no readme.
  * - A package on this machine describes itself in the listing over what its row says (its card
  *   and its icon); one with neither, and a row whose package is not here, stay as the index wrote
  *   them. An icon is named by the URL the registry serves it at — the embedded row's SVG or the
@@ -51,6 +52,7 @@ import {
   mergeIndexes,
   newestPerName,
   parsePluginIndex,
+  sandboxDefaultsFor,
   selectIndexChannel,
 } from "../src/plugin/registry.js";
 import { indexUrlsOf } from "../src/plugin/index-config.js";
@@ -313,6 +315,15 @@ for (const dir of readdirSync(PLUGINS_DIR)) {
 const GENERATOR = fileURLToPath(new URL("../../../scripts/gen-ifaces.mjs", import.meta.url));
 type Card = NonNullable<LibraryContributions["card"]>;
 
+/** The platforms a package's sandbox providers declare it the default backend for, in order. */
+function defaultsDeclared(table: NonNullable<ReturnType<typeof readPluginTable>>): string[] {
+  return Object.values(table.modules).flatMap((manifest) =>
+    (manifest.contributes["SandboxModule.providers"] ?? []).flatMap(
+      (provider) => (provider as { defaultFor?: string[] }).defaultFor ?? [],
+    ),
+  );
+}
+
 /**
  * The sandbox backends' cards as their builds write them: the generator each `build` runs, over
  * the package's own compiler options with its entry alone as the root (its tests are not part of
@@ -321,9 +332,11 @@ type Card = NonNullable<LibraryContributions["card"]>;
  * from the source as it is, so a stale table cannot pass. Two at a time: each is a TypeScript
  * program of its own, beside the suite's other workers.
  */
-async function sandboxCards(dirs: readonly string[]): Promise<Map<string, Card>> {
+async function sandboxCards(
+  dirs: readonly string[],
+): Promise<Map<string, Card & { defaultFor: string[] }>> {
   const out = await mkdtemp(path.join(tmpdir(), "penguin-sandbox-tables-"));
-  const cards = new Map<string, Card>();
+  const cards = new Map<string, Card & { defaultFor: string[] }>();
   const generate = async (dir: string) => {
     const at = path.join(out, dir);
     await mkdir(at, { recursive: true });
@@ -344,7 +357,11 @@ async function sandboxCards(dirs: readonly string[]): Promise<Map<string, Card>>
       path.join(at, "ifaces.json"),
     ]);
     const warnings: string[] = [];
-    cards.set(dir, libraryContributions(readPluginTable(at)!, warnings).card ?? {});
+    const table = readPluginTable(at)!;
+    cards.set(dir, {
+      ...(libraryContributions(table, warnings).card ?? {}),
+      defaultFor: defaultsDeclared(table),
+    });
     expect(warnings, dir).toEqual([]);
   };
   try {
@@ -435,7 +452,7 @@ describe("plugin readmes", () => {
 });
 
 describe("the builtin catalogue and the packages it lists", () => {
-  let cards: Map<string, Card>;
+  let cards: Map<string, Card & { defaultFor: string[] }>;
   beforeAll(async () => {
     const index = await builtinPluginRegistry().index();
     cards = await sandboxCards(index.map((entry) => packages.get(entry.name)!.dir));
@@ -479,6 +496,28 @@ describe("the builtin catalogue and the packages it lists", () => {
       expect(manifest.files, entry.name).toContain("icon.svg");
       expect(manifest.files, entry.name).toContain("ifaces.json");
     }
+  });
+
+  /**
+   * The host names no backend: the platforms a backend is the default for are its package's own
+   * declaration, which its row repeats, and the host reads them from the index.
+   */
+  it("repeats the platforms each backend declares itself the default for, and offers them in index order", async () => {
+    const index = await builtinPluginRegistry().index();
+    for (const entry of index) {
+      const declared = cards.get(packages.get(entry.name)!.dir)!.defaultFor;
+      expect(entry.sandboxDefaultFor ?? [], entry.name).toEqual(declared);
+    }
+    for (const platform of ["linux", "darwin", "win32"]) {
+      const offered = sandboxDefaultsFor(platform, index);
+      expect(offered.length, platform).toBeGreaterThan(0);
+      expect(offered).toEqual(
+        index.filter((e) => e.sandboxDefaultFor?.includes(platform)).map((e) => e.name),
+      );
+    }
+    expect(sandboxDefaultsFor("aix", index)).toEqual([]);
+    // A row that declares nothing is the default for no platform.
+    expect(sandboxDefaultsFor("linux", [{ name: "@acme/backend" }])).toEqual([]);
   });
 
   it("serves each package's own README.md, which the package ships", async () => {

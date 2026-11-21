@@ -253,6 +253,9 @@ export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}
         id: "sandbox-bwrap.provider",
         name: "penguin-bwrap",
         dimensions: ["fs-write", "network", "mask-paths", "closed-temp"],
+        // A default backend on Linux, beside sandbox-dsh: where both load, this one serves
+        // every policy, since it implements more.
+        defaultFor: ["linux"],
       },
     ],
     "PluginConfigProvider.groups": [

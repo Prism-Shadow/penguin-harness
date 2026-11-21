@@ -5,7 +5,9 @@
  * masked at the API and kept when the mask is sent back, every save handed to the watchers.
  *
  * - A group a plugin's module declares (or a child of one) names that plugin's package on the
- *   page; the host's own groups name none.
+ *   page; the host's own groups name none. It also names that package's version and icon as the
+ *   package on this server says them, the icon served to admins by its own route; a plugin whose
+ *   package is not known here names neither.
  * - A status contributor's report reaches the page with the group's entry; a group whose
  *   contributor reports none carries none.
  * - A report from a plugin built against another version of the contract is read safely: a state
@@ -16,6 +18,9 @@
  * - A field's advanced and security marks are kept, and a mark that is not a boolean refuses the
  *   declaration.
  */
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { PluginConfigResponse } from "../src/api/types.js";
@@ -242,8 +247,21 @@ describe("PluginConfigStore", () => {
 describe("/api/admin/plugin-config", () => {
   let t: TestApp;
   let admin: ReturnType<typeof apiClient>;
+  /** The second plugin's package on disk: its version and icon beside the entry it was loaded from. */
+  let kitDir: string;
 
   beforeEach(async () => {
+    kitDir = await mkdtemp(path.join(tmpdir(), "penguin-acme-kit-"));
+    await mkdir(path.join(kitDir, "dist"));
+    await writeFile(path.join(kitDir, "dist", "index.js"), "");
+    await writeFile(
+      path.join(kitDir, "package.json"),
+      JSON.stringify({ name: "@acme/kit", version: "2.0.1" }),
+    );
+    await writeFile(
+      path.join(kitDir, "icon.svg"),
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h16v16H4z" /></svg>\n',
+    );
     const host = new PluginHost();
     host.use({
       specifier: "@acme/bot",
@@ -265,6 +283,7 @@ describe("/api/admin/plugin-config", () => {
     // A second plugin whose settings come from a child of its module.
     host.use({
       specifier: "@acme/kit",
+      file: path.join(kitDir, "dist", "index.js"),
       modules: [
         {
           manifest: parseManifest({
@@ -299,6 +318,32 @@ describe("/api/admin/plugin-config", () => {
   });
   afterEach(async () => {
     await t.cleanup();
+    await rm(kitDir, { recursive: true, force: true });
+  });
+
+  it("names a plugin's version and icon from its package here, and serves the icon to admins", async () => {
+    const body = (await (
+      await admin.get("/api/admin/plugin-config")
+    ).json()) as PluginConfigResponse;
+    const kit = body.plugins.find((p) => p.name === "acme-kit")!;
+    expect(kit.pluginVersion).toBe("2.0.1");
+    expect(kit.pluginIcon).toEqual({
+      url: expect.stringMatching(
+        /^\/api\/admin\/plugin-config\/icon\?plugin=%40acme%2Fkit&rev=\w+$/,
+      ),
+      tint: true,
+    });
+    const icon = await admin.get(kit.pluginIcon!.url);
+    expect(icon.status).toBe(200);
+    expect(icon.headers.get("content-type")).toBe("image/svg+xml");
+    // Loaded from no file this server knows: no version, no icon.
+    const bot = body.plugins.find((p) => p.name === "acme-bot")!;
+    expect([bot.pluginVersion, bot.pluginIcon]).toEqual([undefined, undefined]);
+    expect((await admin.get("/api/admin/plugin-config/icon?plugin=%40acme%2Fbot")).status).toBe(
+      404,
+    );
+    const member = apiClient(t.app, (await provisionUser(t.app, "member")).cookie);
+    expect((await member.get(kit.pluginIcon!.url)).status).toBe(403);
   });
 
   it("lists the declared groups, and is for admins only", async () => {

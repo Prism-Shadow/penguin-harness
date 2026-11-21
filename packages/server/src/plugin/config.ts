@@ -45,7 +45,9 @@ import type {
 } from "../api/types.js";
 import { Settings } from "@prismshadow/penguin-library-setting";
 import { maskApiKey } from "../services/project-config-service.js";
-import { pluginHostFrom, pluginPackageOf, pluginTitleOf } from "./host.js";
+import { pluginHostFrom, pluginPackageDisplayOf, pluginPackageOf, pluginTitleOf } from "./host.js";
+import type { PluginPackageDisplay } from "./host.js";
+import { iconRef } from "../http/icon-response.js";
 
 export type { PluginConfigField, PluginConfigNotice, PluginConfiguration } from "../api/types.js";
 
@@ -860,7 +862,13 @@ export interface PluginConfigStoreDeps {
   packageOf?: (module: string) => string | undefined;
   /** A loaded plugin's display name, from its card; undefined when it carries none. */
   titleOf?: (pkg: string) => { title: string; titleZh?: string } | undefined;
+  /** A loaded plugin's version and icon, from its package on this machine. */
+  displayOf?: (pkg: string) => PluginPackageDisplay;
 }
+
+/** Where this server serves a loaded plugin's icon (http/routes/admin-plugin-config.ts). */
+export const pluginIconRoute = (specifier: string): string =>
+  `/api/admin/plugin-config/icon?plugin=${encodeURIComponent(specifier)}`;
 
 export class PluginConfigStore {
   private readonly watchers = new Map<string, Set<(values: Record<string, unknown>) => void>>();
@@ -931,6 +939,7 @@ export class PluginConfigStore {
     const { name, configuration } = group;
     const plugin = group.from === undefined ? undefined : this.deps.packageOf?.(group.from);
     const title = plugin === undefined ? undefined : this.deps.titleOf?.(plugin);
+    const display = plugin === undefined ? undefined : this.deps.displayOf?.(plugin);
     return {
       name,
       configuration,
@@ -939,6 +948,10 @@ export class PluginConfigStore {
       ...(plugin !== undefined ? { plugin } : {}),
       ...(title !== undefined ? { pluginTitle: title.title } : {}),
       ...(title?.titleZh !== undefined ? { pluginTitleZh: title.titleZh } : {}),
+      ...(display?.version !== undefined ? { pluginVersion: display.version } : {}),
+      ...(display?.icon !== undefined && plugin !== undefined
+        ? { pluginIcon: iconRef(pluginIconRoute(plugin), display.icon) }
+        : {}),
     };
   }
 }
@@ -981,6 +994,7 @@ export class PluginConfigProvider {
       // The host is claimed per read: the plugins of this generation are recorded after this setup.
       packageOf: (module) => pluginPackageOf(pluginHostFrom(resources), module),
       titleOf: (pkg) => pluginTitleOf(pluginHostFrom(resources), pkg),
+      displayOf: (pkg) => pluginPackageDisplayOf(pluginHostFrom(resources), pkg),
     });
     this.pluginConfig = store;
     this.pluginConfigEntries = store;

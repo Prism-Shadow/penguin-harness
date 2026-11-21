@@ -13,6 +13,9 @@
  *   that machine's groups for this plugin.
  * - A picked machine that marks no group with its plugin is not said to have no options: the page
  *   points to the plugin sources page, where a machine on an older build lists them.
+ * - A plugin only the machine has gets its own page in the Settings dialog once the machine
+ *   answers (after this server has), named by the machine's answer and opening on that machine;
+ *   switched to this server, it says the plugin is not installed here.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act, createElement as h, type ComponentType } from "react";
@@ -20,6 +23,7 @@ import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { PluginsSection } from "../src/features/settings/plugins-section";
+import { SettingsDialog } from "../src/features/settings/settings-dialog";
 import { MACHINE, draftWorld, mountInWorld } from "./helpers/draft-world";
 import { button, click, dialogs, hasButton, mount, unmountAll, waitFor } from "./helpers/dom";
 import { apiError, json, stubFetch, type FakeFetch, type FetchRequest } from "./helpers/fetch";
@@ -148,6 +152,25 @@ describe("a plugin's page with a connected machine", () => {
     await click(button("lab"));
     await waitFor(() => document.querySelector('[data-plugin-config="acme-helper"]') !== null, 40);
     expect(fetch.requests.filter(isConfig).map((r) => r.machine)).toEqual([null, MACHINE]);
+  });
+
+  it("gives a plugin only the machine has a page of its own, opening on that machine", async () => {
+    const { fetch } = world([
+      { ...FAILED, pluginTitle: "Acme Remote Helper", configuration: { properties: {} } },
+    ]);
+    await mountInWorld(h(SettingsDialog, { open: true, onClose: () => {} }));
+    await waitFor(() => hasButton("Acme Remote Helper"), 40);
+    const reads = fetch.requests.filter(isConfig).map((r) => r.machine);
+    expect(reads.indexOf(null)).toBeLessThan(reads.indexOf(MACHINE));
+    await click(button("Acme Remote Helper"));
+    await waitFor(() => document.querySelector('[data-plugin-config="acme-helper"]') !== null, 40);
+    expect(button("Machine").textContent).toContain("lab");
+    await click(button("Machine"));
+    await click(button("This server"));
+    await waitFor(
+      () => document.body.textContent?.includes("not installed on this server") === true,
+      40,
+    );
   });
 
   it("points to plugin sources for a machine that marks no group with its plugin", async () => {

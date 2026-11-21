@@ -384,6 +384,7 @@ export class SandboxWslStatus {
         id: "sandbox-wsl.provider",
         name: "penguin-wsl",
         dimensions: ["fs-write", "network", "mask-paths", "closed-temp"],
+        defaultFor: ["win32"],
       },
     ],
     "PluginConfigProvider.groups": [

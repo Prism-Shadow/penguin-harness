@@ -6,17 +6,29 @@
  * declaring module's watchers so it applies without a restart; POST
  * /api/admin/plugin-config/action { name, action } — runs one group's action (what a deployment
  * must DO on the machine, like creating the Windows sandbox's local accounts) and answers what
- * happened, together with the groups as they stand afterwards.
+ * happened, together with the groups as they stand afterwards; GET
+ * /api/admin/plugin-config/icon?plugin=<specifier> — a loaded plugin's icon, which an entry names
+ * (`pluginIcon`) for the page of a plugin the plugin library does not list.
  */
 import { Hono } from "hono";
+import type { IconImage } from "@prismshadow/penguin-core";
 import type { PluginConfigActionResponse, PluginConfigResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { PluginConfigError } from "../../plugin/config.js";
 import type { PluginConfigAdmin } from "../../plugin/config-page.js";
 import { HttpError } from "../errors.js";
+import { iconResponse } from "../icon-response.js";
 import { badRequest, readJson, requireString } from "../validate.js";
 
-export function adminPluginConfigRoutes(store: PluginConfigAdmin): Hono<AppEnv> {
+export interface PluginConfigRouteDeps {
+  /** A loaded plugin's icon by its specifier; undefined when it is not loaded or has none. */
+  icon?: (plugin: string) => IconImage | undefined;
+}
+
+export function adminPluginConfigRoutes(
+  store: PluginConfigAdmin,
+  deps: PluginConfigRouteDeps = {},
+): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.use("*", async (c, next) => {
@@ -27,6 +39,12 @@ export function adminPluginConfigRoutes(store: PluginConfigAdmin): Hono<AppEnv> 
   });
 
   app.get("/", (c) => c.json({ plugins: store.describe() } satisfies PluginConfigResponse));
+
+  app.get("/icon", (c) => {
+    const plugin = c.req.query("plugin");
+    if (plugin === undefined || plugin === "") throw badRequest("plugin is required.");
+    return iconResponse(deps.icon?.(plugin));
+  });
 
   app.put("/", async (c) => {
     const body = await readJson(c);

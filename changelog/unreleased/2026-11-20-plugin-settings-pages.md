@@ -9,14 +9,18 @@
 
 The Settings dialog's rail ends with a **Plugins** group that holds every plugin-related
 setting; the Server group no longer has a plugins page. The group opens with two pages of the
-host's own, for admins: **Plugin sources** (the npm registry, the plugin index, the mirrors, and
-the incompatible-only switch) and **Agent Sandbox** (the sandbox switch and presets, with a line
-per sandbox backend linking to that backend's page). Then each plugin with options gets a page of
-its own, named and drawn with the plugin's icon and version, holding its personal options (every
-signed-in user) and its server options (admins only) as two ruled parts. A page exists only
-because the plugin contributes it: the browser's Browser and Chrome extension pages are now the
-two parts of the Browser Automation page, and the four sandbox backends (bubblewrap, Seatbelt,
-WSL, DSH) each have their own page instead of sitting inside the sandbox card.
+host's own, for admins: **Plugin sources** (the npm registry, the plugin index and the mirrors)
+and **Agent Sandbox** (the sandbox switch and presets, with a line per sandbox backend linking to
+that backend's page). Then each plugin with options gets a page of its own, named and drawn with
+the plugin's icon and version, holding its personal options (every signed-in user) and its server
+options (admins only) as two ruled parts. A page exists only because the plugin contributes it:
+the browser's Browser and Chrome extension pages are now the two parts of the Browser Automation
+page, and the four sandbox backends (bubblewrap, Seatbelt, WSL, DSH) each have their own page,
+with their own icon and version, instead of sitting inside the sandbox card. A plugin that only a
+connected machine has gets a page too, once that machine answers, and it opens on that machine.
+
+The Plugins page's "only incompatible plugins" filter moved from Settings to the page itself: an
+**Incompatible only** chip beside the search box, remembered in this browser as before.
 
 A plugin's server options are laid out as a status page: a status strip with the version of the
 program the plugin installs beside itself (name, version, platform and state, with progress, the
@@ -34,9 +38,16 @@ then the options, with security settings under their own heading.
   plugin's page; its key still opens it. `plugin:<package>` opens a plugin page, `plugins` the
   plugin sources page and `sandbox` the Agent Sandbox page; `plugins` focused on the sandbox (the
   composer's old link) opens the Agent Sandbox page.
-- Entries also carry the declaring plugin's card title (`pluginTitle`, `pluginTitleZh`), which
-  names the page of a plugin the library does not list. A check may link to another Settings page
-  (`page`), drawn as an Open link on its row.
+- Entries also carry the declaring plugin's card title (`pluginTitle`, `pluginTitleZh`), version
+  (`pluginVersion`) and icon (`pluginIcon`, served at `GET /api/admin/plugin-config/icon`), which
+  name and draw the page of a plugin the library does not list. A check may link to another
+  Settings page (`page`), drawn as an Open link on its row.
+- The OS's default sandbox backends, which the sandbox offers to install when it is turned on
+  with no backend, come from the plugin index embedded in the server: each backend package
+  declares the platforms it is the default for on its `SandboxModule.providers` contribution
+  (`defaultFor`), and its index row repeats them (`sandboxDefaultFor`). The host names no backend
+  of its own; the defaults are unchanged (Linux: bubblewrap and DSH; macOS: Seatbelt; Windows:
+  WSL).
 - The sandbox backend plugins declare their groups on their own (no `parent`) and report their
   state with `report()`: the program they run as the version element and their load check, with
   "not applicable" on another platform; saving a backend's page or Check again loads a refused

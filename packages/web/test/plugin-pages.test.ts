@@ -11,7 +11,13 @@
  *   card title the server sends with its group, else by its first group's title, else by its
  *   first contributed page's name, else by its package; pages sort by name.
  * - Nothing about a plugin is known in advance: a sandbox backend's group, standing on its own,
- *   gives that backend a page like any plugin's.
+ *   gives that backend a page like any plugin's, drawn with the icon and version the server sends
+ *   with its group when the library does not list it.
+ * - A plugin only a machine has gets a page once that machine has answered, named and drawn from
+ *   the machine's group (its icon fetched through that machine), opening on the first machine in
+ *   the Project's order that names it; a plugin with a page here keeps opening here, and a member
+ *   gets no machine's page. Plugin sources never draws a plugin's group, a machine's included;
+ *   a machine too old to name its groups' plugins keeps them there.
  * - A contributed page in the plugin group that names no plugin is dropped.
  * - A request for a page's key lands on it; the key a contributed page had of its own lands on its
  *   plugin's page at that part; plugin management focused on a group a plugin page draws lands
@@ -28,6 +34,7 @@ import {
   pluginPages,
   type PluginSectionRef,
 } from "../src/lib/plugin-pages";
+import { cardsOn } from "../src/features/settings/plugin-config-groups";
 
 type Code = { label: () => string };
 const section = (data: Partial<SettingsSectionData> & { key: string }, name: string) =>
@@ -147,6 +154,57 @@ describe("plugin pages", () => {
     const wsl = zhPages.find((p) => p.package === "@penguinharness/sandbox-wsl")!;
     expect(wsl.groups).toEqual(["sandbox-wsl"]);
     expect(wsl.title).toBe("Windows 沙箱");
+  });
+
+  it("draws a plugin the library does not list with the icon and version its group carries", () => {
+    const backend = entry("sandbox-wsl", {
+      plugin: "@penguinharness/sandbox-wsl",
+      pluginVersion: "0.2.3",
+      pluginIcon: { url: "/api/admin/plugin-config/icon?plugin=wsl&rev=1", tint: true },
+    });
+    const wsl = pages(true, { entries: [...ENTRIES, backend] }).find(
+      (p) => p.package === "@penguinharness/sandbox-wsl",
+    )!;
+    expect([wsl.icon?.url, wsl.version, wsl.machine]).toEqual([
+      "/api/admin/plugin-config/icon?plugin=wsl&rev=1",
+      "0.2.3",
+      undefined,
+    ]);
+  });
+
+  it("gives a plugin only a machine has a page, opening on the first machine naming it", () => {
+    const seatbelt = (version: string) =>
+      entry("sandbox-seatbelt", {
+        plugin: "@penguinharness/sandbox-seatbelt",
+        pluginTitle: "macOS Sandbox",
+        pluginVersion: version,
+        pluginIcon: { url: "/api/admin/plugin-config/icon?plugin=seatbelt&rev=2", tint: true },
+      });
+    const machines = [
+      { machine: "mac-a", entries: [seatbelt("0.2.3")] },
+      { machine: "mac-b", entries: [seatbelt("0.2.4")] },
+      // A plugin this server has a page for keeps opening here.
+      { machine: "mac-c", entries: [entry("computer-use", { plugin: COMPUTER })] },
+    ];
+    const admin = pages(true, { machines });
+    const mac = admin.find((p) => p.package === "@penguinharness/sandbox-seatbelt")!;
+    expect([mac.title, mac.machine, mac.version, mac.icon?.url, mac.groups]).toEqual([
+      "macOS Sandbox",
+      "mac-a",
+      "0.2.3",
+      "/server/mac-a/api/admin/plugin-config/icon?plugin=seatbelt&rev=2",
+      [],
+    ]);
+    expect(admin.find((p) => p.package === COMPUTER)?.machine).toBeUndefined();
+    expect(pages(false, { machines }).map((p) => p.package)).toEqual([BROWSER]);
+  });
+
+  it("never draws a plugin's group on plugin sources, a machine's included", () => {
+    const remote = [entry("sandbox"), entry("acme", { plugin: "@acme/x" }), entry("old")];
+    expect(cardsOn({ kind: "sources" }, remote).map((e) => e.name)).toEqual(["old"]);
+    expect(cardsOn({ kind: "plugin", plugin: "@acme/x" }, remote).map((e) => e.name)).toEqual([
+      "acme",
+    ]);
   });
 
   it("drops a plugin-group page that names no plugin", () => {

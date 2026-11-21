@@ -6,9 +6,9 @@
  * collapsible sections, by category unless the reader picks another grouping — status,
  * contents, or none — in the select beside the header's search box, which narrows the cards.
  * The grouping and which sections are folded are remembered per browser (plugin-groups.ts); the
- * search is not. Settings › Plugins can narrow the list to the plugins this build cannot fully
- * run, also per browser (incompatible-only.ts), and while it does a notice under the title says
- * so. Clicking a card opens its detail dialog (plugin-detail.tsx); the status rules are
+ * search is not. A filter beside the search box narrows the list to the plugins this build
+ * cannot fully run, also per browser (incompatible-only.ts), and while it does a notice under the
+ * title says so. Clicking a card opens its detail dialog (plugin-detail.tsx); the status rules are
  * plugin-status.ts.
  *
  * - A library plugin is installed per Agent, by any member, through its card's "manage
@@ -41,6 +41,7 @@ import { useNavigate } from "react-router";
 import type { AgentSummary, PluginItem, QuickStartItem } from "@prismshadow/penguin-server/api";
 import {
   Button,
+  ChoiceGroup,
   CollapsibleSection,
   ConfirmModal,
   EntityCardGrid,
@@ -255,7 +256,7 @@ export function PluginsPage() {
   const [importOpen, setImportOpen] = useState(false);
   /** Free text over names, descriptions and keywords. */
   const [query, setQuery] = useState("");
-  /** Only the plugins this build cannot fully run: switched in Settings › Plugins. */
+  /** Only the plugins this build cannot fully run: the filter beside the search, kept per browser. */
   const incompatibleOnly = usePluginsIncompatibleOnly();
   const [groupBy, setGroupBy] = useState<PluginGroupBy>(() => initialPluginsGroupBy());
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => initialFoldedGroups());
@@ -891,6 +892,8 @@ export function PluginsPage() {
           <PluginsHeaderActions
             query={query}
             onQuery={setQuery}
+            incompatibleOnly={incompatibleOnly}
+            onIncompatibleOnly={writePluginsIncompatibleOnly}
             groupBy={groupBy}
             onGroupBy={chooseGroupBy}
             isAdmin={isAdmin}
@@ -1118,8 +1121,8 @@ export function PluginsPage() {
  * The notice about incompatible plugins, one at a time. While the list holds only them it says
  * so and offers the whole list back: a filtered list that did not say so would read as plugins
  * gone missing. Otherwise, while this build cannot fully run some listed plugins, it counts them
- * and offers to show only those. Both actions flip the stored preference the Settings switch
- * shows.
+ * and offers to show only those. Both actions flip the stored preference the filter beside the
+ * search shows.
  */
 export function IncompatibleNotice({
   filtered,
@@ -1158,21 +1161,27 @@ export function IncompatibleNotice({
   );
 }
 
+/** The filter chip's value: the list narrowed to the plugins this build cannot fully run. */
+const INCOMPATIBLE = "incompatible";
+
 /**
  * The page header's actions, in the Agents page header's look: every control on the small rung,
  * so the row is one height, at the header's gap. For everyone (a member narrows and regroups the
- * list too): the search box, and beside it the grouping select, whose options each say what they
- * do ("Group by status") while its accessible name says what it groups; it is wide enough for its
+ * list too): the search box; beside it the incompatible-only filter, a toggle chip that narrows
+ * the list as the search does; then the grouping select, whose options each say what they do
+ * ("Group by status") while its accessible name says what it groups; it is wide enough for its
  * longest English option. Then, for an admin, the machine picker (which machine's plugins the rows
  * show, and which machine's own table an install or a removal edits), then
  * the pair the Agents page header has: Import plugin, the primary button, and Settings, the
  * secondary one, which opens the Settings dialog's Plugins page — each glyph before words that
- * always show. On a phone the search box and the select share the first line, the box taking what
- * the select leaves, and the admin's buttons wrap below them.
+ * always show. On a phone the search box and the filter share the first line, the box taking what
+ * the filter leaves, and the select and the admin's buttons wrap below them.
  */
 export function PluginsHeaderActions({
   query,
   onQuery,
+  incompatibleOnly,
+  onIncompatibleOnly,
   groupBy,
   onGroupBy,
   isAdmin,
@@ -1182,6 +1191,9 @@ export function PluginsHeaderActions({
 }: {
   query: string;
   onQuery: (query: string) => void;
+  /** Whether the list holds only the plugins this build cannot fully run. */
+  incompatibleOnly: boolean;
+  onIncompatibleOnly: (on: boolean) => void;
   groupBy: PluginGroupBy;
   onGroupBy: (by: PluginGroupBy) => void;
   isAdmin: boolean;
@@ -1203,20 +1215,30 @@ export function PluginsHeaderActions({
             onChange={onQuery}
           />
         </div>
-        <div className="w-40 shrink-0">
-          <Select
-            size="sm"
-            aria-label={S.plugins.groupByLabel}
-            value={groupBy}
-            onChange={(e) => onGroupBy(e.target.value as PluginGroupBy)}
-          >
-            {PLUGIN_GROUP_BYS.map((by) => (
-              <option key={by} value={by}>
-                {S.plugins.groupBy[by]}
-              </option>
-            ))}
-          </Select>
-        </div>
+        <ChoiceGroup
+          shape="chip"
+          size="sm"
+          multiple
+          aria-label={S.plugins.filterLabel}
+          className="shrink-0"
+          options={[{ value: INCOMPATIBLE, label: S.plugins.incompatibleOnlyFilter }]}
+          value={incompatibleOnly ? [INCOMPATIBLE] : []}
+          onChange={(on) => onIncompatibleOnly(on.includes(INCOMPATIBLE))}
+        />
+      </div>
+      <div className="w-40 shrink-0">
+        <Select
+          size="sm"
+          aria-label={S.plugins.groupByLabel}
+          value={groupBy}
+          onChange={(e) => onGroupBy(e.target.value as PluginGroupBy)}
+        >
+          {PLUGIN_GROUP_BYS.map((by) => (
+            <option key={by} value={by}>
+              {S.plugins.groupBy[by]}
+            </option>
+          ))}
+        </Select>
       </div>
       {isAdmin && (
         <>

@@ -10,7 +10,8 @@
  * one part alone draws no heading. The settings groups are drawn whenever this server declares one
  * for the plugin or the Project has a connected machine: the machine picker is how an admin reaches
  * a group another machine declares for it, so a page that exists only through its web half (the
- * browser's) still offers it. Inside a part, a contributed page is titled by its own name only when the part holds
+ * browser's) still offers it, and a page that exists only because a machine has the plugin opens
+ * on that machine. Inside a part, a contributed page is titled by its own name only when the part holds
  * more than one thing; a lone page's explanation then rides on the part's heading. A request that
  * named a part of the page (an old key of a contributed page, a settings group) scrolls it into
  * view once, when it is there.
@@ -27,16 +28,20 @@ import { PluginsSection } from "./plugins-section";
 
 type Page = PluginPage<SettingsSectionCode>;
 
-/** The page's mark: the library's icon, else its first contributed page's glyph, else the puzzle. */
+/**
+ * The page's mark: the library's icon, else the one its settings group carries (a plugin the
+ * library does not list), else its first contributed page's glyph, else the puzzle.
+ */
 export function PluginPageIcon({ page, size }: { page: Page; size: number }) {
+  const icon = page.library?.icon ?? page.icon;
   const glyph = glyphOf(page.glyph);
-  if (page.library?.icon === undefined && glyph !== "") return <GlyphIcon d={glyph} size={size} />;
-  return <SkillIcon icon={page.library?.icon} fallback={ICONS.puzzle} size={size} />;
+  if (icon === undefined && glyph !== "") return <GlyphIcon d={glyph} size={size} />;
+  return <SkillIcon icon={icon} fallback={ICONS.puzzle} size={size} />;
 }
 
 /** The pane heading: the icon before the name, the plugin's version after it. */
 export function PluginPageHeading({ page }: { page: Page }) {
-  const version = page.library?.version;
+  const version = page.library?.version ?? page.version;
   return (
     <span className={`flex min-w-0 items-center ${ICON_GAP.menu}`}>
       <span className="inline-flex shrink-0 text-fg-muted">
@@ -164,7 +169,7 @@ export function PluginPageBody({
           info={groups ? undefined : loneInfo(server, serverTitled)}
           headed={headed}
         >
-          {groups && <PluginsSection plugin={page.package} />}
+          {groups && <PluginsSection plugin={page.package} machine={page.machine ?? null} />}
           {server.map((section) => (
             <ContributedPart key={section.data.key} section={section} titled={serverTitled} />
           ))}

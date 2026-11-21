@@ -378,10 +378,17 @@ export abstract class Sandbox extends Interface<
 
 export interface SandboxSlots {
   /**
-   * A backend: its static half here (name, the dimensions it implements), its code half
-   * bound by the contributor — a provider, or a promise of one for backends that probe.
+   * A backend: its static half here (name, the dimensions it implements, and the platforms it is
+   * the default backend for, as `process.platform` names them), its code half bound by the
+   * contributor — a provider, or a promise of one for backends that probe. `defaultFor` is package
+   * metadata the plugin index repeats on the package's row (`sandboxDefaultFor`): the host offers
+   * the index's defaults for its platform when the sandbox is turned on with no backend, and names
+   * none of its own.
    */
-  providers: Slot<{ name: string; dimensions: SandboxDimension[] }, SandboxProviderSource>;
+  providers: Slot<
+    { name: string; dimensions: SandboxDimension[]; defaultFor?: string[] },
+    SandboxProviderSource
+  >;
 }
 
 @Module({

@@ -257,6 +257,7 @@ export function createSeatbeltProvider(internals: SeatbeltInternals = {}): Sandb
         id: "sandbox-seatbelt.provider",
         name: "penguin-seatbelt",
         dimensions: ["fs-write", "network", "network-local", "mask-paths", "closed-temp"],
+        defaultFor: ["darwin"],
       },
     ],
     "PluginConfigProvider.groups": [

@@ -10,18 +10,23 @@
  *   stays with that card) and its contributed pages with `visibility: "admin"`.
  *
  * A page exists only because the plugin contributes something to it — the host names no plugin.
- * A plugin with nothing this viewer may see has no page. The page's name, icon, version and
- * explanation are the plugin library's (`GET /api/plugins`), by package; a plugin the library
- * does not list (a server module with no Skill: a sandbox backend) is named by its own card's
- * title as the server sends it with its settings group, else that group's title, else its first
- * contributed page's name, else its package, and drawn with that page's glyph or the puzzle
- * piece. Pages sort by name in the interface's language, after the host's own pages.
+ * A plugin with nothing this viewer may see has no page. A plugin that only a machine of the
+ * Project has (its groups are in that machine's answer, and nothing of it is here) gets a page as
+ * well once that machine has answered, whose machine picker opens on the first machine, in the
+ * Project's order, that names it. The page's name, icon, version and explanation are the plugin
+ * library's (`GET /api/plugins`), by package; a plugin the library does not list (a server module
+ * with no Skill: a sandbox backend) is named by its own card's title as the server sends it with
+ * its settings group, else that group's title, else its first contributed page's name, else its
+ * package, and drawn with the icon and version the server sends with that group (its icon
+ * re-rooted onto the machine that sent it), else that page's glyph or the puzzle piece. Pages sort
+ * by name in the interface's language, after the host's own pages.
  *
  * Pure, so the rail and its tests read the same rule: the dialog hands in what it has read and
  * the contributions it was booted with.
  */
-import type { PluginConfigEntry, PluginItem } from "@prismshadow/penguin-server/api";
+import type { IconRef, PluginConfigEntry, PluginItem } from "@prismshadow/penguin-server/api";
 import type { SettingsSectionData } from "@prismshadow/penguin-web-plugin";
+import { apiUrl } from "./server-context";
 import { localizedText } from "./skill-use";
 import type { ContributedSettingsKey } from "./settings-sections";
 
@@ -42,6 +47,11 @@ export interface PluginPage<C extends { label: () => string }> {
   library?: PluginItem;
   /** The glyph (an `ICONS` key) of the first contributed page: the icon when the library has none. */
   glyph?: string;
+  /** The plugin's icon and version as its settings group carries them: what the library does not list. */
+  icon?: IconRef;
+  version?: string;
+  /** A plugin only a machine has: the machine its picker opens on. */
+  machine?: string;
   /** The contributed pages of the personal part, in their order. */
   personal: Array<PluginSectionRef<C>>;
   /** The contributed pages of the server part, in their order (admins only). */
@@ -75,6 +85,8 @@ export interface PluginPagesInput<C extends { label: () => string }> {
   sections: ReadonlyArray<PluginSectionRef<C>>;
   /** This server's settings groups (an admin's read); empty for anyone else. */
   entries: readonly PluginConfigEntry[];
+  /** Each machine's settings groups as it has answered, in the Project's order (an admin's reads). */
+  machines?: ReadonlyArray<{ machine: string; entries: readonly PluginConfigEntry[] }>;
   /** The plugin library's plugins. */
   library: readonly PluginItem[];
 }
@@ -114,10 +126,23 @@ export function pluginPages<C extends { label: () => string }>(
     (visibility === "admin" ? page.server : page.personal).push(section);
     page.glyph ??= section.data.icon;
   }
+  /** The first group naming each package — this server's, else a machine's — and who sent it. */
+  const named = new Map<string, { entry: PluginConfigEntry; machine: string | null }>();
   if (isAdmin) {
     for (const entry of input.entries) {
       const pkg = entryPlugin(entry, input.entries);
-      if (pkg !== undefined) pageOf(pkg).groups.push(entry.name);
+      if (pkg === undefined) continue;
+      pageOf(pkg).groups.push(entry.name);
+      if (!named.has(pkg)) named.set(pkg, { entry, machine: null });
+    }
+    for (const { machine, entries } of input.machines ?? []) {
+      for (const entry of entries) {
+        const pkg = entryPlugin(entry, entries);
+        // A page this server gives the plugin opens here; the first machine naming it has the rest.
+        if (pkg === undefined || pages.has(pkg)) continue;
+        pageOf(pkg).machine = machine;
+        named.set(pkg, { entry, machine });
+      }
     }
   }
   const library = new Map(input.library.map((item) => [item.package, item]));
@@ -126,7 +151,12 @@ export function pluginPages<C extends { label: () => string }>(
     page.server.sort(byOrder);
     const item = library.get(page.package);
     if (item !== undefined) page.library = item;
-    const first = input.entries.find((e) => e.name === page.groups[0]);
+    const source = named.get(page.package);
+    const first = source?.entry;
+    if (first?.pluginIcon !== undefined) {
+      page.icon = { ...first.pluginIcon, url: apiUrl(first.pluginIcon.url, source!.machine) };
+    }
+    if (first?.pluginVersion !== undefined) page.version = first.pluginVersion;
     const group = first?.configuration;
     page.title =
       (item?.title !== undefined ? localizedText(locale, item.title, item.titleZh) : undefined) ??

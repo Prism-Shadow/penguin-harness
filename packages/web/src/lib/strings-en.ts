@@ -669,6 +669,9 @@ export const en: Strings = {
       detailsAbout: (subject: string) => `Details: ${subject}`,
       /** The picked machine holds none of this plugin's settings. */
       noneOnMachine: (machine: string) => `${machine} has no options for this plugin.`,
+      /** A plugin's page that only a machine has, switched to this server. */
+      notOnThisServer:
+        "This plugin is not installed on this server. Pick a machine that has it above to see its options.",
       /**
        * The picked machine names no plugin on any of its groups: none of this plugin's, or a build
        * older than the naming, which lists every plugin's options on the management page.
@@ -676,8 +679,6 @@ export const en: Strings = {
       onAdminPage: (machine: string, page: string) =>
         `Nothing on ${machine} is marked as this plugin's options. A machine on an older build does not say which plugin its options belong to and lists them all under ${page}.`,
     },
-    /** The page's own switch, above the server's cards: a display preference of this browser. */
-    pluginsIncompatibleOnly: "Show only incompatible plugins",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "Leave empty to keep the saved value",
     pluginSecretClear: "Clear stored value",
@@ -2999,7 +3000,7 @@ export const en: Strings = {
         : `This build cannot fully run ${n} installed plugins. Their rows say why.`,
     /** The notice's action: filters the list down to those rows. */
     unsatisfiedShow: "Show",
-    /** Page notice while Settings › Plugins narrows the list to the incompatible plugins. */
+    /** Page notice while the filter beside the search narrows the list to the incompatible plugins. */
     incompatibleOnlyNotice: "Only incompatible plugins are shown.",
     /** That notice's action: turns the filter off. */
     incompatibleOnlyShowAll: "Show all",
@@ -3062,6 +3063,12 @@ export const en: Strings = {
     openSettings: "Settings",
     pageDesc:
       "Every plugin, by category. Plugins of skills and/or a hook package ship with this build and are installed on agents; server-module plugins, such as the Agent Sandbox backends, are installed on the whole server by an admin.",
+    /**
+     * The filter beside the search: a toggle that narrows the list to the plugins this build cannot
+     * fully run, remembered in this browser; the group's accessible name, and the toggle's words.
+     */
+    filterLabel: "Filter plugins",
+    incompatibleOnlyFilter: "Incompatible only",
     /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
     groupByLabel: "Group by",
     groupBy: {

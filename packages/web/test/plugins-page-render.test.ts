@@ -2,8 +2,11 @@
  * The Plugins page's pieces, rendered: the header actions with the grouping select, a card's
  * actions by kind and role, a server module's confirm, and the detail dialog's sections by kind.
  *
- * - A member sees the search box and the grouping select, and neither Import plugin nor
- *   Settings; an admin sees, after those two, Import plugin and then Settings, with their words.
+ * - A member sees the search box, the incompatible-only filter and the grouping select, and
+ *   neither Import plugin nor Settings; an admin sees, after those, Import plugin and then
+ *   Settings, with their words.
+ * - The filter beside the search shows whether the list holds only the incompatible plugins, and
+ *   pressing it asks for the other state.
  * - Choosing a grouping in the header regroups the cards that way.
  * - The grouping select shows the chosen grouping as its own phrase, and keeps an accessible name
  *   for what it groups.
@@ -124,10 +127,20 @@ const text = (html: string) =>
     .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ");
 
+/** Every element in a tree of plain elements, depth first, its children (and lists of them) followed. */
+const elements = (node: ReactNode): ReactElement<Record<string, unknown>>[] => {
+  if (Array.isArray(node)) return node.flatMap(elements);
+  if (!isValidElement(node)) return [];
+  const element = node as ReactElement<Record<string, unknown>>;
+  return [element, ...elements(element.props.children as ReactNode)];
+};
+
 type HeaderProps = Parameters<typeof PluginsHeaderActions>[0];
 const headerProps = (overrides: Partial<HeaderProps> = {}): HeaderProps => ({
   query: "",
   onQuery: () => undefined,
+  incompatibleOnly: false,
+  onIncompatibleOnly: () => undefined,
   groupBy: "category",
   onGroupBy: () => undefined,
   isAdmin: false,
@@ -139,24 +152,48 @@ const headerProps = (overrides: Partial<HeaderProps> = {}): HeaderProps => ({
 const header = (isAdmin: boolean) => inLocale(PluginsHeaderActions, headerProps({ isAdmin }));
 
 describe("the plugins page header", () => {
-  it("offers a member the search box and the grouping select, and neither Import plugin nor Settings", () => {
+  it("offers a member the search box, the filter and the grouping select, and neither Import plugin nor Settings", () => {
     const html = header(false);
     expect(html).toContain(`aria-label="${en.plugins.searchPlaceholder}"`);
+    expect(buttonWords(html)).toContain(en.plugins.incompatibleOnlyFilter);
     expect(buttonText(html, en.plugins.groupByLabel)).toBe(en.plugins.groupBy.category);
     expect(buttonWords(html)).not.toContain(en.plugins.importPlugin);
     expect(buttonWords(html)).not.toContain(en.plugins.openSettings);
   });
 
-  it("offers an admin, after the search box and the grouping select, Import plugin and then Settings", () => {
+  it("offers an admin, after the search box, the filter and the grouping select, Import plugin and then Settings", () => {
     const html = header(true);
     const search = html.indexOf(`aria-label="${en.plugins.searchPlaceholder}"`);
     expect(search).toBeGreaterThanOrEqual(0);
-    expect(html.indexOf(`aria-label="${en.plugins.groupByLabel}"`)).toBeGreaterThan(search);
+    const filter = html.indexOf(`aria-label="${en.plugins.filterLabel}"`);
+    expect(filter).toBeGreaterThan(search);
+    expect(html.indexOf(`aria-label="${en.plugins.groupByLabel}"`)).toBeGreaterThan(filter);
     expect(buttonWords(html)).toEqual([
+      en.plugins.incompatibleOnlyFilter,
       en.plugins.groupBy.category,
       en.plugins.importPlugin,
       en.plugins.openSettings,
     ]);
+  });
+
+  it("shows the filter's state and asks for the other one when pressed", () => {
+    for (const on of [false, true]) {
+      const html = inLocale(PluginsHeaderActions, headerProps({ incompatibleOnly: on }));
+      const chip = /<button[^>]*aria-pressed="(true|false)"[^>]*>(.*?)<\/button>/s.exec(html);
+      expect(text(chip?.[2] ?? "").trim()).toBe(en.plugins.incompatibleOnlyFilter);
+      expect(chip?.[1]).toBe(String(on));
+      const asked: boolean[] = [];
+      const tree = PluginsHeaderActions(
+        headerProps({ incompatibleOnly: on, onIncompatibleOnly: (next) => asked.push(next) }),
+      );
+      const group = elements(tree).find((el) => el.props["aria-label"] === en.plugins.filterLabel);
+      const props = group?.props as {
+        onChange: (values: string[]) => void;
+        options: { value: string }[];
+      };
+      props.onChange(on ? [] : [props.options[0]!.value]);
+      expect(asked).toEqual([!on]);
+    }
   });
 });
 
@@ -337,14 +374,6 @@ describe("the grouping select", () => {
     { id: "office-productivity", title: "Office Productivity" },
     { id: "sandbox", title: "Agent Sandbox" },
   ];
-
-  /** Every element in a tree of plain elements, depth first, its children (and lists of them) followed. */
-  const elements = (node: ReactNode): ReactElement<Record<string, unknown>>[] => {
-    if (Array.isArray(node)) return node.flatMap(elements);
-    if (!isValidElement(node)) return [];
-    const element = node as ReactElement<Record<string, unknown>>;
-    return [element, ...elements(element.props.children as ReactNode)];
-  };
 
   /** Picks the option showing `words` in the select named `name`, as a reader choosing it would. */
   const choose = (tree: ReactNode, name: string, words: string) => {

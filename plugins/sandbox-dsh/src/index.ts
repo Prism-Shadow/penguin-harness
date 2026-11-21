@@ -270,7 +270,15 @@ export async function loadDshAdaptor(host: DshLoadHost = {}): Promise<SandboxPro
       },
     ],
     "SandboxModule.providers": [
-      { id: "sandbox-dsh.provider", name: "dsh-local", dimensions: ["fs-write"] },
+      {
+        id: "sandbox-dsh.provider",
+        name: "dsh-local",
+        dimensions: ["fs-write"],
+        // A default backend on Linux beside bubblewrap, which needs unprivileged user
+        // namespaces that Ubuntu 23.10 and later grant only to AppArmor-profiled programs.
+        // Landlock needs neither a namespace nor root, so a default Ubuntu is still confined.
+        defaultFor: ["linux"],
+      },
     ],
     // No options: the group gives this backend its page in Settings, where its status shows.
     "PluginConfigProvider.groups": [

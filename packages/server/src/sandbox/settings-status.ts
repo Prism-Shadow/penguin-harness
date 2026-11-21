@@ -2,7 +2,8 @@
  * The Sandbox card's live status (`PluginConfigPage.status`): what this machine enforces and by
  * what, why each installed backend that is not in use is not, a warning when the saved policy
  * needs isolation no usable backend implements, the enum options no backend here can honour,
- * and which backend packages this OS defaults to. Its report lists every registered backend on
+ * and which backend packages this OS defaults to — as the embedded plugin index declares them,
+ * since the host names no backend of its own. Its report lists every registered backend on
  * one line — in use, installed but not in use (why folded under it), for another platform —
  * linked to the page of the plugin that registered it, where that backend's own options and
  * checks are. A code contribution, so it must not require plugin configuration itself.
@@ -13,6 +14,7 @@ import type { SandboxDimension } from "@prismshadow/penguin-core/plugin";
 import type { PluginConfigNotice, PluginStatusCheck, PluginStatusReport } from "../api/types.js";
 import type { PluginConfigUnavailable, SettingsGroupStatus } from "../plugin/config-page.js";
 import { pluginHostFrom, pluginTitleOf } from "../plugin/host.js";
+import { sandboxDefaultsFor } from "../plugin/registry.js";
 import type { PluginHost } from "../plugin/host.js";
 import { Sandbox, SandboxModule } from "./service.js";
 import { SANDBOX_DIMENSIONS, requestedDimensions } from "./dimensions.js";
@@ -22,21 +24,6 @@ import {
   prePresetStartOf,
   sandboxEnabledOf,
 } from "./settings-policy.js";
-
-/**
- * The backend packages each OS defaults to: what the card offers to install when the switch is
- * turned on and no backend for this OS is installed. Linux takes two. Bubblewrap enforces files,
- * network and masked paths, but needs unprivileged user namespaces, which Ubuntu 23.10 and later
- * grant only to AppArmor-profiled programs; sandbox-dsh confines files through Landlock, which
- * needs neither a namespace nor root, so a default Ubuntu is still confined with no step of its
- * own. Where both load, bubblewrap serves every policy (service.ts prefers the backend
- * implementing more).
- */
-const DEFAULT_BACKENDS: Partial<Record<NodeJS.Platform, readonly string[]>> = {
-  linux: ["@penguinharness/sandbox-bwrap", "@penguinharness/sandbox-dsh"],
-  darwin: ["@penguinharness/sandbox-seatbelt"],
-  win32: ["@penguinharness/sandbox-wsl"],
-};
 
 /** Each dimension as the card names it, in English and Chinese. */
 const DIMENSION_WORDS: Record<SandboxDimension, readonly [string, string]> = {
@@ -269,11 +256,13 @@ export class SandboxSettingsStatus {
           : { ...update, defaultPreset: current.defaultPreset },
       // A backend for this OS is installed when it is in use or failed (to load, or its check):
       // one that declined is for another OS. Installing the defaults would not fix a failure.
+      // The defaults are the index's: each backend's package declares the platforms it is the
+      // default for, and none declared for this one offers nothing.
       backend: () => {
-        const recommended = DEFAULT_BACKENDS[process.platform];
+        const recommended = sandboxDefaultsFor(process.platform);
         return {
           installed: sandbox.backends().length > 0 || sandbox.failures().length > 0,
-          ...(recommended !== undefined ? { recommended: [...recommended] } : {}),
+          ...(recommended.length > 0 ? { recommended } : {}),
         };
       },
       // A backend reads its own group (drawn inside this card) at load: after a save of the

@@ -4542,6 +4542,14 @@ export interface PluginIndexEntry {
   keywords?: string[];
   /** Capability floor(s) the plugin provides on (e.g. "sandbox"). */
   categories?: string[];
+  /**
+   * For a sandbox backend: the platforms (`process.platform` names: `linux`, `darwin`, `win32`)
+   * it is a default backend for, as its package declares them on its `SandboxModule.providers`
+   * contribution. A server whose sandbox is turned on with no backend for its platform offers to
+   * install the embedded index's defaults for that platform, in index order; an entry without the
+   * field is the default for none.
+   */
+  sandboxDefaultFor?: string[];
   /** Unix timestamp (seconds) of the entry's last update. */
   updatedAt?: number;
   /**
@@ -6816,6 +6824,13 @@ export interface PluginConfigEntry {
   pluginTitle?: string;
   pluginTitleZh?: string;
   /**
+   * That plugin's version and icon as its package on this server says them, for the same page:
+   * the npm version, and the icon (served at `GET /api/admin/plugin-config/icon?plugin=…`); each
+   * absent when the package carries none or is not known here.
+   */
+  pluginVersion?: string;
+  pluginIcon?: IconRef;
+  /**
    * What the group's status reports in the status page's shape, checked on the way out (a state
    * this build does not know reads as `unknown`, a field of the wrong type is dropped); absent
    * when it reports none, or when its report could not be read.
@@ -6909,9 +6924,9 @@ export interface PluginConfigBackend {
   /** A backend for this OS is installed: loaded, or installed and failing its check. */
   installed: boolean;
   /**
-   * The npm packages this OS defaults to, installed together; absent on an OS with no default
-   * backend. Linux names two: bubblewrap, and sandbox-dsh, which confines files through
-   * Landlock where bubblewrap is refused.
+   * The npm packages this OS defaults to, installed together: the rows of the index embedded in
+   * the server that declare this platform (`PluginIndexEntry.sandboxDefaultFor`), in index order;
+   * absent when none does.
    */
   recommended?: string[];
 }

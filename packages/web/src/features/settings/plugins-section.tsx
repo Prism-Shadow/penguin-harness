@@ -1,9 +1,5 @@
 /**
- * At the top, apart from everything under it, the Plugins page's "incompatible plugins only"
- * switch: a display preference of this browser, not server configuration, which commits when
- * flipped and which the page, open under this dialog, follows at once (incompatible-only.ts).
- *
- * Under it, ruled off, plugin options (admin only, server-global): one card per settings entry
+ * Plugin options (admin only, server-global): one card per settings entry
  * — a group a module contributes (the sandbox) or a loaded plugin's declared configuration —
  * drawn from its schema: a string, a secret, a boolean, a number, a choice, a list of lines or
  * a table (a row per preset, say; plugin-config-table.tsx) per field, so the page knows nothing
@@ -22,17 +18,17 @@
  * top switches between this server and the machines the Project holds a connection to, and
  * every read, save and action goes to the picked machine through this server's tunnel.
  * Nothing is copied between machines. Picking another machine replaces every card, so with an
- * unsaved card it asks first.
+ * unsaved card it asks first. A page opens on this server, except a plugin's page that only a
+ * machine has (`machine`), which opens on that machine.
  *
  * Values hydrate when the section mounts and every stored response is adopted as the new
  * truth; a card with unsaved edits keeps them against it. The plugin picks a change up through
  * its watch, so nothing here says "restart".
  *
  * The same page serves every page of the Settings dialog's Plugins group, each settings group as
- * a status page (plugin-group-page.tsx): the plugin sources page (`host: "sources"`, with the
- * browser switch above), the Agent sandbox page (`host: "sandbox"`) and a plugin's own page
- * (`plugin`, plugin-page.tsx). Which page draws which group is plugin-config-groups.ts, so each
- * group is drawn in exactly one place.
+ * a status page (plugin-group-page.tsx): the plugin sources page (`host: "sources"`), the Agent
+ * sandbox page (`host: "sandbox"`) and a plugin's own page (`plugin`, plugin-page.tsx). Which page
+ * draws which group is plugin-config-groups.ts, so each group is drawn in exactly one place.
  */
 import { useEffect, useRef, useState } from "react";
 import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
@@ -51,10 +47,6 @@ import {
 } from "../../lib/sandbox-backend-prompt";
 import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
 import { MachinePicker } from "../machines";
-import {
-  usePluginsIncompatibleOnly,
-  writePluginsIncompatibleOnly,
-} from "../../lib/plugins-incompatible-only";
 import { PluginCard } from "./plugin-config-card";
 import { cardsOn, type GroupPage } from "./plugin-config-groups";
 import { withLiveParts } from "./plugin-config-live";
@@ -62,9 +54,7 @@ import { SandboxBackendPrompt } from "./sandbox-backend-prompt";
 import {
   ConfirmModal,
   NoticeStrip,
-  SettingsGroup,
   SettingsSection,
-  ToggleRow,
   guardLeave,
   toastError,
   toastSuccess,
@@ -131,20 +121,17 @@ export function ConfigMachinePicker({
 const NO_MACHINES: readonly string[] = [];
 const NO_LABELS: ReadonlyMap<string, string> = new Map();
 
-/** The server's part of the page: the machine picker and the cards, under a rule. */
-const SERVER_PART = "space-y-4 border-t border-line-muted pt-4";
-
 export function PluginsSection({
   focus,
-  claimed,
   plugin,
+  machine: initialMachine = null,
   host = "sources",
 }: {
   focus?: string;
-  /** On plugin sources: the packages with a page of their own in the Plugins group. */
-  claimed?: ReadonlySet<string>;
   /** On a plugin's page: its package — only its settings groups. */
   plugin?: string;
+  /** The machine the page opens on: null for this server (a plugin only a machine has names it). */
+  machine?: string | null;
   /** Without `plugin`: which of the host's own pages this is. */
   host?: "sources" | "sandbox";
 } = {}) {
@@ -153,7 +140,7 @@ export function PluginsSection({
       ? { kind: "plugin", plugin }
       : host === "sandbox"
         ? { kind: "sandbox" }
-        : { kind: "sources", claimed: claimed ?? new Set() };
+        : { kind: "sources" };
   // The language on screen, as the dictionary switch tells it (a remount follows every switch).
   const locale = webLocale();
   const localized = (en: string | undefined, zhText: string | undefined) =>
@@ -175,7 +162,7 @@ export function PluginsSection({
   const machineIds = sessions?.machineIds ?? NO_MACHINES;
   const machineLabels = sessions?.machineLabels ?? NO_LABELS;
   /** The machine whose settings the page shows and saves: null for this server. */
-  const [machine, setMachine] = useState<string | null>(null);
+  const [machine, setMachine] = useState<string | null>(initialMachine);
   /** Why the picked machine's settings could not be read, when they could not. */
   const [loadError, setLoadError] = useState<string | null>(null);
   const nameOf = (id: string) => machineLabels.get(id) ?? id;
@@ -183,7 +170,6 @@ export function PluginsSection({
   /** The backend package the install prompt offers, while it is open. */
   const [offered, setOffered] = useState<string[] | null>(null);
   const [installing, setInstalling] = useState(false);
-  const incompatibleOnly = usePluginsIncompatibleOnly();
 
   /** The machine's answer becomes what every card shows; a card with unsaved edits keeps them. */
   const adopt = (list: PluginConfigEntry[]) => setEntries(list);
@@ -383,36 +369,20 @@ export function PluginsSection({
       />
     ) : null;
 
-  // A plugin's page has no switch above its groups to rule them off from.
-  const partClass = page.kind === "sources" ? SERVER_PART : "space-y-6";
-
-  // This browser's view of the Plugins page, ruled off from the server's settings below it; a
-  // plugin's own page has none.
-  const viewRow =
-    page.kind !== "sources" ? null : (
-      <SettingsGroup>
-        <ToggleRow
-          label={S.settings.pluginsIncompatibleOnly}
-          checked={incompatibleOnly}
-          onChange={(on) => writePluginsIncompatibleOnly(on)}
-        />
-      </SettingsGroup>
-    );
+  const partClass = "space-y-6";
 
   if (entries === null) {
     return (
       <SettingsSection>
-        {viewRow}
         {picker !== null && <div className={partClass}>{picker}</div>}
       </SettingsSection>
     );
   }
 
   // The cards this page draws; each group lands on exactly one page.
-  const cards = cardsOn(page, entries, machine !== null);
+  const cards = cardsOn(page, entries);
   return (
     <SettingsSection>
-      {viewRow}
       {(picker !== null || loadError !== null || cards.length > 0) && (
         <div className={partClass}>
           {picker}
@@ -422,14 +392,20 @@ export function PluginsSection({
             </NoticeStrip>
           )}
           <FocusCard focus={focus} ready={entries.length > 0} />
-          {plugin !== undefined && machine !== null && loadError === null && cards.length === 0 && (
-            <p className="text-sm text-fg-muted">
-              {/* A machine that names any group's plugin is new enough that this one has none there. */}
-              {entries.some((e) => e.plugin !== undefined)
-                ? S.settings.pluginPage.noneOnMachine(nameOf(machine))
-                : S.settings.pluginPage.onAdminPage(nameOf(machine), S.settings.pluginsTitle)}
-            </p>
-          )}
+          {plugin !== undefined &&
+            (machine !== null || initialMachine !== null) &&
+            loadError === null &&
+            cards.length === 0 && (
+              <p className="text-sm text-fg-muted">
+                {/* On this server, only a plugin a machine alone has shows nothing here; a machine
+                    that names any group's plugin is new enough that this one has none there. */}
+                {machine === null
+                  ? S.settings.pluginPage.notOnThisServer
+                  : entries.some((e) => e.plugin !== undefined)
+                    ? S.settings.pluginPage.noneOnMachine(nameOf(machine))
+                    : S.settings.pluginPage.onAdminPage(nameOf(machine), S.settings.pluginsTitle)}
+              </p>
+            )}
           {cards.map((card) => (
             <PluginCard
               key={card.name}

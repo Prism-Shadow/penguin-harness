@@ -13,6 +13,7 @@
     "repository": "https://github.com/Prism-Shadow/penguin-harness",
     "keywords": ["linux", "bubblewrap", "network-isolation", "path-masking"],
     "categories": ["sandbox"],
+    "sandboxDefaultFor": ["linux"],
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <path d=\"M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z\" />\n  <circle cx=\"10.4\" cy=\"10.3\" r=\"1.7\" />\n  <circle cx=\"14.2\" cy=\"12.3\" r=\"1.1\" />\n  <circle cx=\"11.3\" cy=\"14.9\" r=\"0.8\" />\n</svg>\n"
   },
   {
@@ -29,6 +30,7 @@
     "repository": "https://github.com/Prism-Shadow/penguin-harness",
     "keywords": ["macos", "seatbelt", "network-isolation", "path-masking"],
     "categories": ["sandbox"],
+    "sandboxDefaultFor": ["darwin"],
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <path d=\"M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z\" />\n  <path d=\"M8.6 15.4l6.8-6.8\" />\n  <rect x=\"10.4\" y=\"10.4\" width=\"3.2\" height=\"3.2\" rx=\"0.6\" />\n</svg>\n"
   },
   {
@@ -45,6 +47,7 @@
     "repository": "https://github.com/Prism-Shadow/penguin-harness",
     "keywords": ["windows", "wsl", "bubblewrap", "network-isolation", "path-masking"],
     "categories": ["sandbox"],
+    "sandboxDefaultFor": ["win32"],
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <path d=\"M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z\" />\n  <rect x=\"8.8\" y=\"8.6\" width=\"6.4\" height=\"6.4\" rx=\"0.8\" />\n  <path d=\"M12 8.6v6.4M8.8 11.8h6.4\" />\n</svg>\n"
   },
   {
@@ -61,6 +64,7 @@
     "repository": "https://github.com/Prism-Shadow/penguin-harness",
     "keywords": ["linux", "macos", "windows", "dsh", "filesystem-only"],
     "categories": ["sandbox"],
+    "sandboxDefaultFor": ["linux"],
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <path d=\"M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z\" />\n  <path d=\"M10.6 13.2l2.8-2.8\" />\n  <path d=\"M11.4 9.7l.8-.8a1.9 1.9 0 0 1 2.7 2.7l-.8.8\" />\n  <path d=\"M12.6 13.9l-.8.8a1.9 1.9 0 0 1-2.7-2.7l.8-.8\" />\n</svg>\n"
   }
 ]

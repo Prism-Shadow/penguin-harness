@@ -9,8 +9,9 @@
  *
  * Last on the rail, under its own heading, a page per plugin that has options for this viewer
  * (lib/plugin-pages.ts; plugin-page.tsx draws one). Which plugins have pages, and their names,
- * come from reads made once per opening (plugin-pages-index.ts); the group appears when they have
- * answered, all at once. A request naming a plugin page — its `plugin:<package>` key, the key a
+ * come from reads made once per opening (plugin-pages-index.ts); the group appears when this
+ * server's have answered, all at once, and a plugin only a machine has joins it once that machine
+ * answers. A request naming a plugin page — its `plugin:<package>` key, the key a
  * contributed page had before it joined its plugin's page, or the plugin management page focused
  * on a settings group a plugin page now draws — opens that page, scrolled to the part it named;
  * until the pages are known it shows an empty pane rather than another page.
@@ -50,6 +51,7 @@ import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
 import { mayNamePluginPage, pluginPageTarget, pluginPages } from "../../lib/plugin-pages";
 import { localizedText } from "../../lib/skill-use";
 import { useAuth } from "../../state/auth";
+import { useSessionsIfAny } from "../../state/sessions";
 import { ProfileSection } from "./profile-section";
 import { GeneralSection } from "./general-section";
 import { AppearanceSection } from "./appearance-section";
@@ -118,7 +120,9 @@ export function SettingsDialog({
   // A contributed page is there while its module's server half runs; the gates re-render this.
   useModuleGates();
   const contributed = shownSections();
-  const index = usePluginPagesIndex(open, isAdmin);
+  // The Project's connected machines, whose plugins may have pages too; none outside the providers.
+  const machineIds = useSessionsIfAny()?.machineIds;
+  const index = usePluginPagesIndex(open, isAdmin, machineIds);
   const pages =
     index === null ? [] : pluginPages({ isAdmin, locale, sections: contributed, ...index });
   const sections = visibleSettingsSections(
@@ -259,13 +263,7 @@ export function SettingsDialog({
         {current === "company" && <CompanySection />}
         {current === "agentApi" && <AgentApiSection />}
         {current === "plugins" && (
-          <PluginsSection
-            host="sources"
-            {...(focus !== undefined ? { focus } : {})}
-            // Only a page that draws this server's groups claims a package: another machine's groups
-            // for a plugin whose page has none of its own stay reachable here too.
-            claimed={new Set(pages.filter((p) => p.groups.length > 0).map((p) => p.package))}
-          />
+          <PluginsSection host="sources" {...(focus !== undefined ? { focus } : {})} />
         )}
         {current === "sandbox" && <PluginsSection host="sandbox" />}
         {current === "users" && <AdminUsersSection />}
