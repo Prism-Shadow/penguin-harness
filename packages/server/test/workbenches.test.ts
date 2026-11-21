@@ -32,6 +32,8 @@
  * An edited workbench:
  * - A file that disappears mid-read is a change, not a failed request.
  * - Concurrent first reads share the same loaded instance rather than replacing it for each reader.
+ * - Listed by id, one workbench loads alone and the Agent's others are not compiled; an unknown
+ *   id lists none.
  * - An edited folder is re-imported and committed once per loaded revision to the Agent State
  *   repository, made beside agent_state/ at the first load; a rollback restores a version's
  *   files exactly, keeps the state, and is itself the newest version.
@@ -838,6 +840,22 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     expect(results.every(([w]) => w?.error === null)).toBe(true);
     expect(new Set(results.map(([w]) => w!.loadedAt)).size).toBe(1);
     expect((await list())[0]?.loadedAt).toBe(results[0]![0]!.loadedAt);
+  });
+
+  it("lists one workbench by id and loads that one alone", async () => {
+    const other = path.join(path.dirname(dir), "other");
+    await writeDemo(other);
+    const res = await owner.get(`${base}?id=demo`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { workbenches: WorkbenchInfo[]; enabled: boolean };
+    expect(body.workbenches.map((w) => [w.id, w.error])).toEqual([["demo", null]]);
+    expect(body.enabled).toBe(true);
+    // Never compiled: a load writes its output and its status under `.build/`.
+    await expect(fs.stat(path.join(other, ".build"))).rejects.toMatchObject({ code: "ENOENT" });
+    const none = (await (await owner.get(`${base}?id=missing`)).json()) as {
+      workbenches: WorkbenchInfo[];
+    };
+    expect(none.workbenches).toEqual([]);
   });
 
   async function reload(): Promise<WorkbenchInfo> {

@@ -3052,6 +3052,22 @@ export const getWorkbenches = (projectId: string, agentId: string, machineId: st
     server: machineId,
   }).then((r) => ({ ...r, workbenches: iconsOn(r.workbenches, machineId) }));
 /**
+ * One workbench in the list's shape, loading that one alone: a page opened on its own (the App
+ * Center's window, the full page) waits for its own compile, not for every workbench of the
+ * Agent. A server older than `id` ignores it and answers the full list, so callers still pick
+ * the workbench out by id.
+ */
+export const getWorkbench = (
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  machineId: string | null,
+) =>
+  apiFetch<WorkbenchesResponse>(
+    `${workbenchesBase(projectId, agentId)}?${new URLSearchParams({ id: workbenchId })}`,
+    { server: machineId },
+  ).then((r) => ({ ...r, workbenches: iconsOn(r.workbenches, machineId) }));
+/**
  * The rows of the Agent's sidebar list: a shortcut for each workbench that runs, has a tab and is
  * not hidden from the sidebar, read from the files without compiling anything. Null from a server
  * older than the setting, which ignores `view` and answers the full list: everything it lists

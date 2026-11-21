@@ -445,6 +445,27 @@ export class WorkbenchService implements Workbenches {
     return out;
   }
 
+  async one(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<WorkbenchInfo | null> {
+    if (!isWorkbenchId(workbenchId)) return null;
+    await this.migrate(projectId, agentId);
+    this.watch(projectId, agentId);
+    const base = workbenchesDir(this.paths.root, projectId, agentId);
+    const folder = await readFolder(path.join(base, workbenchId), workbenchId);
+    if (folder === null) return null;
+    const { info, unloaded } = await this.settle(
+      projectId,
+      agentId,
+      folder,
+      !(await isSwitchedOff(base)),
+    );
+    if (unloaded) this.notify(projectId, agentId, info);
+    return info;
+  }
+
   async agentEnabled(projectId: string, agentId: string): Promise<boolean> {
     await this.migrate(projectId, agentId);
     return !(await isSwitchedOff(workbenchesDir(this.paths.root, projectId, agentId)));
