@@ -145,6 +145,7 @@
     "@prismshadow/penguin-hmr": "workspace:*",
     "@prismshadow/penguin-library-agent-api": "workspace:*",
     "@prismshadow/penguin-library-auth": "workspace:*",
+    "@prismshadow/penguin-library-cli": "workspace:*",
     "@prismshadow/penguin-library-db": "workspace:*",
     "@prismshadow/penguin-library-http": "workspace:*",
     "@prismshadow/penguin-library-machine": "workspace:*",

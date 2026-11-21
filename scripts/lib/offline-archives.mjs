@@ -49,7 +49,8 @@ export function integrityOf(bytes) {
 /**
  * Builds and packs each candidate into `<out>/offline/` and writes the index (see the header).
  * `pack(dir, into)` packs one package directory and answers the tarball's absolute path; `build`
- * runs the package's own build first. Throws when a built package has no `ifaces.json`.
+ * runs the package's own build first (awaited: it may answer a promise). Throws when a built
+ * package has no `ifaces.json`.
  */
 export async function stageOfflineArchives({ out, candidates, build, pack, log = () => {} }) {
   if (candidates.length === 0) return [];
@@ -57,7 +58,7 @@ export async function stageOfflineArchives({ out, candidates, build, pack, log =
   await fsp.mkdir(dir, { recursive: true });
   const rows = [];
   for (const candidate of candidates) {
-    build(candidate);
+    await build(candidate);
     const ifaces = path.join(candidate.dir, "ifaces.json");
     if (!fs.existsSync(ifaces)) {
       throw new Error(`${candidate.name} has no ifaces.json after its build: it cannot be carried`);
