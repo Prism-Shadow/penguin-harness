@@ -1,14 +1,21 @@
 /**
- * The Agent auth service over its repo and the HTTP surface's route-id gate: the grant a
- * session runs under is per HTTP route id (both HTTP and CLI governed by the one check — CLI
- * commands reach the server over HTTP), re-derived at the Agent's CURRENT generation, so a
- * role or grant change hot-reloads without re-issue and no stale grant outlives one request.
+ * The Agent auth service over its repo, the declarative role tree (`ROLE_TREE`), and the HTTP
+ * surface's route-id gate: the grant a session runs under is expanded from the role tree and
+ * extra grants at the Agent's CURRENT generation, so a role or grant change hot-reloads without
+ * re-issue and no stale grant outlives one request.
  */
 import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { AgentAuthService, AgentAuthPermissionProvider } from "../src/auth/agent-auth-service.js";
+import {
+  AGENT_AUTH_ROLES,
+  ALL_HTTP_ROUTE_IDS,
+  ROLE_TREE,
+  expandRoleGrant,
+  resolveHttpRouteId,
+} from "../src/auth/agent-roles.js";
 import { AgentAuthSessionsRepo } from "../src/db/repos/agent-auth-sessions.js";
 import { AgentAuthSessions, AgentAuthPermissions } from "../src/mechanisms/agent-auth.js";
 import { HttpModule, endpointOf } from "../src/http/app.js";
@@ -59,23 +66,82 @@ function service() {
 
 const NOW = new Date("2026-11-19T00:00:00Z");
 
+describe("the agent role tree and route catalog", () => {
+  it("expands domain tiers monotonically (session.read < session.maintain < session.all) and covers every registered HTTP route id", () => {
+    const readSet = new Set(expandRoleGrant("session.read").apiIds);
+    const maintainSet = new Set(expandRoleGrant("session.maintain").apiIds);
+    const allSet = new Set(expandRoleGrant("session.all").apiIds);
+
+    expect(readSet.has("session.get")).toBe(true);
+    expect(readSet.has("session.runTask")).toBe(false);
+    expect(maintainSet.has("session.get")).toBe(true);
+    expect(maintainSet.has("session.runTask")).toBe(true);
+    expect(maintainSet.has("session.delete")).toBe(false);
+    expect(allSet.has("session.runTask")).toBe(true);
+    expect(allSet.has("session.delete")).toBe(true);
+
+    for (const id of readSet) expect(maintainSet.has(id)).toBe(true);
+    for (const id of maintainSet) expect(allSet.has(id)).toBe(true);
+
+    // Every role node in ROLE_TREE expands cleanly without cycles, and the union of all nodes
+    // covers every route id in ALL_HTTP_ROUTE_IDS.
+    const covered = new Set<string>();
+    for (const roleId of AGENT_AUTH_ROLES) {
+      const node = ROLE_TREE[roleId];
+      expect(node).toBeDefined();
+      for (const r of expandRoleGrant(roleId).apiIds) {
+        covered.add(r);
+      }
+    }
+    for (const routeId of ALL_HTTP_ROUTE_IDS) {
+      expect(covered.has(routeId)).toBe(true);
+    }
+
+    // Composite roles nest monotonically: readonly < general < system-maintainer.
+    const readonlyIds = new Set(expandRoleGrant("readonly").apiIds);
+    const generalIds = new Set(expandRoleGrant("general").apiIds);
+    const maintainerIds = new Set(expandRoleGrant("system-maintainer").apiIds);
+    for (const id of readonlyIds) expect(generalIds.has(id)).toBe(true);
+    for (const id of generalIds) expect(maintainerIds.has(id)).toBe(true);
+    expect(expandRoleGrant("general").crossAgent).toBe(false);
+    expect(expandRoleGrant("system-maintainer").crossAgent).toBe(true);
+    expect(expandRoleGrant("system-maintainer").agentApi).toBe(true);
+  });
+
+  it("resolves group sub-routes to fine-grained route ids", () => {
+    expect(resolveHttpRouteId("sessions.agents", "GET", "/")).toBe("agent.list");
+    expect(resolveHttpRouteId("sessions.agents", "DELETE", "/:agentId")).toBe("agent.delete");
+    expect(resolveHttpRouteId("org", "POST", "/:orgId/tickets/:ticketId/start")).toBe(
+      "org.ticket.start",
+    );
+  });
+});
+
 describe("the agent auth service", () => {
-  it("issues a session and grants per route id; admin spans every endpoint", () => {
+  it("issues a session, expands tree roles and extra grants per route id, and hot-reloads on generation bump", () => {
     const { auth, repo } = service();
     const { token } = auth.issueSession("p", "a", NOW);
-    // general starts with an empty granted set: no endpoint passes.
-    expect(auth.allowsEndpoint("p", "a", "penguin.session.list")).toBe(false);
-    const ctx = auth.authenticate(token, NOW)!;
-    expect(ctx.grant.role).toBe("general");
-    expect(ctx.grant.allEndpoints).toBe(false);
-    // Grant one route id; the same token re-derives it without re-issue.
-    repo.bumpGeneration("p", "a", "general", ["penguin.session.list"], 1);
+    // Default role is general: includes session.maintain (session.list, session.runTask) but not session.delete.
+    expect(auth.allowsEndpoint("p", "a", "session.list")).toBe(true);
     expect(auth.allowsEndpoint("p", "a", "penguin.session.list")).toBe(true);
-    expect(auth.allowsEndpoint("p", "a", "penguin.session.delete")).toBe(false);
-    expect(auth.authenticate(token, NOW)!.grant.apiIds).toEqual(["penguin.session.list"]);
-    // The admin role spans every endpoint, granted set aside.
+    expect(auth.allowsEndpoint("p", "a", "session.delete")).toBe(false);
+
+    // Narrow to session.read + an extra sub-role (workspace.read) + one explicit route (session.delete).
+    repo.bumpGeneration("p", "a", "session.read", ["workspace.read", "session.delete"], 1);
+    expect(auth.allowsEndpoint("p", "a", "session.list")).toBe(true);
+    expect(auth.allowsEndpoint("p", "a", "session.runTask")).toBe(false);
+    expect(auth.allowsEndpoint("p", "a", "workspace.readFile")).toBe(true);
+    expect(auth.allowsEndpoint("p", "a", "workspace.writeFile")).toBe(false);
+    expect(auth.allowsEndpoint("p", "a", "session.delete")).toBe(true);
+
+    const ctx = auth.authenticate(token, NOW)!;
+    expect(ctx.grant.role).toBe("session.read");
+    expect(ctx.grant.generation).toBe(1);
+    expect(ctx.grant.allEndpoints).toBe(false);
+
+    // The admin role spans every endpoint.
     repo.bumpGeneration("p", "a", "admin", [], 2);
-    expect(auth.allowsEndpoint("p", "a", "penguin.session.delete")).toBe(true);
+    expect(auth.allowsEndpoint("p", "a", "admin.users.delete")).toBe(true);
   });
 
   it("refuses an unknown token and drops everything of an archived Agent", () => {
@@ -87,9 +153,10 @@ describe("the agent auth service", () => {
     expect(auth.generationOf("p", "a")).toBeNull();
   });
 
-  it("authorizes HTTP routes by their registered route id and enforces project scope", async () => {
+  it("authorizes single routes and multi-endpoint groups by fine-grained route id, enforcing project and cross-agent scope", async () => {
     const { auth: agentAuth, repo } = service();
     const { token } = agentAuth.issueSession("p1", "a1", new Date());
+    repo.bumpGeneration("p1", "a1", "session.read", [], 1);
 
     const sessionsGroup = new Hono<AppEnv>();
     sessionsGroup.get("/", (c) => c.json({ ok: "list", projectId: c.req.param("projectId") }));
@@ -97,6 +164,10 @@ describe("the agent auth service", () => {
       requireHuman(c);
       return c.json({ ok: "create" });
     });
+
+    const agentConfigGroup = new Hono<AppEnv>();
+    agentConfigGroup.get("/", (c) => c.json({ ok: "getConfig", agentId: c.req.param("agentId") }));
+    agentConfigGroup.put("/", (c) => c.json({ ok: "putConfig", agentId: c.req.param("agentId") }));
 
     const http = wire(HttpModule, {
       config: { trustProxy: false },
@@ -132,7 +203,7 @@ describe("the agent auth service", () => {
       contributions: {
         routes: [
           {
-            id: "penguin.session.list",
+            id: "session.list",
             from: "test",
             data: {
               method: "GET",
@@ -143,7 +214,7 @@ describe("the agent auth service", () => {
             code: endpointOf(sessionsGroup, "GET", "/"),
           },
           {
-            id: "penguin.session.create",
+            id: "session.create",
             from: "test",
             data: {
               method: "POST",
@@ -152,6 +223,16 @@ describe("the agent auth service", () => {
               order: 250,
             },
             code: endpointOf(sessionsGroup, "POST", "/"),
+          },
+          {
+            id: "sessions.agent-config",
+            from: "test",
+            data: {
+              prefix: "/api/projects/:projectId/agents/:agentId/config",
+              auth: "user",
+              order: 245,
+            },
+            code: agentConfigGroup,
           },
         ],
       },
@@ -164,34 +245,42 @@ describe("the agent auth service", () => {
           headers: {
             authorization: `Bearer ${bearer}`,
             origin: "http://localhost",
-            ...(method === "POST" ? { "content-type": "application/json" } : {}),
+            ...(method !== "GET" ? { "content-type": "application/json" } : {}),
           },
-          ...(method === "POST" ? { body: "{}" } : {}),
+          ...(method !== "GET" ? { body: "{}" } : {}),
         }),
       );
 
-    // Unlisted route id in grant -> 403 permission_required
-    const r1 = await req("GET", "/api/projects/p1/agents/a1/sessions", token);
-    expect(r1.status).toBe(403);
-    expect(await r1.json()).toMatchObject({ error: { code: "permission_required" } });
-
-    // Grant penguin.session.list -> GET passes for p1, refused for p2
-    repo.bumpGeneration("p1", "a1", "general", ["penguin.session.list"], 1);
-    const r2 = await req("GET", "/api/projects/p1/agents/a1/sessions", token);
-    expect(r2.status).toBe(200);
-    expect(await r2.json()).toEqual({ ok: "list", projectId: "p1" });
+    // session.read grants session.list for p1, refuses p2, and refuses session.create
+    const rList = await req("GET", "/api/projects/p1/agents/a1/sessions", token);
+    expect(rList.status).toBe(200);
+    expect(await rList.json()).toEqual({ ok: "list", projectId: "p1" });
 
     const rOtherProject = await req("GET", "/api/projects/p2/agents/a1/sessions", token);
     expect(rOtherProject.status).toBe(403);
 
-    // POST penguin.session.create is not granted -> 403 permission_required
-    const r3 = await req("POST", "/api/projects/p1/agents/a1/sessions", token);
-    expect(r3.status).toBe(403);
+    const rCreateDenied = await req("POST", "/api/projects/p1/agents/a1/sessions", token);
+    expect(rCreateDenied.status).toBe(403);
 
-    // system-maintainer with penguin.session.create passes requireHuman too
-    repo.bumpGeneration("p1", "a1", "system-maintainer", ["penguin.session.create"], 2);
-    const r4 = await req("POST", "/api/projects/p1/agents/a1/sessions", token);
-    expect(r4.status).toBe(200);
-    expect(await r4.json()).toEqual({ ok: "create" });
+    // Group sub-route resolution: general grants agent.config.get and agent.config.update on self (a1),
+    // but refuses mutating another agent (a2) without crossAgent.
+    repo.bumpGeneration("p1", "a1", "general", [], 2);
+    const rSelfPut = await req("PUT", "/api/projects/p1/agents/a1/config", token);
+    expect(rSelfPut.status).toBe(200);
+
+    const rOtherAgentGet = await req("GET", "/api/projects/p1/agents/a2/config", token);
+    expect(rOtherAgentGet.status).toBe(200);
+
+    const rOtherAgentPut = await req("PUT", "/api/projects/p1/agents/a2/config", token);
+    expect(rOtherAgentPut.status).toBe(403);
+
+    // system-maintainer has crossAgent + agentApi: passes both cross-agent PUT and requireHuman POST
+    repo.bumpGeneration("p1", "a1", "system-maintainer", [], 3);
+    const rMaintainerOtherPut = await req("PUT", "/api/projects/p1/agents/a2/config", token);
+    expect(rMaintainerOtherPut.status).toBe(200);
+
+    const rMaintainerCreate = await req("POST", "/api/projects/p1/agents/a1/sessions", token);
+    expect(rMaintainerCreate.status).toBe(200);
+    expect(await rMaintainerCreate.json()).toEqual({ ok: "create" });
   });
 });

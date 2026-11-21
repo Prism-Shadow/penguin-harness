@@ -48,7 +48,9 @@ export interface AgentAuthGrant {
   generation: number;
   /** true = the role spans every HTTP route the server registers (`admin`, `full-permissions`). */
   allEndpoints: boolean;
-  /** The explicitly granted HTTP route ids. */
+  /** true = the role permits mutating another Agent's config, skills, schedules, or vault in the same project. */
+  crossAgent?: boolean;
+  /** The effective HTTP route ids after expanding the role tree and explicit extra grants. */
   apiIds: readonly string[];
 }
 

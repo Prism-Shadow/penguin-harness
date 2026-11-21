@@ -14,6 +14,7 @@ export interface AgentRequestAuth {
     role: string;
     generation: number;
     allEndpoints: boolean;
+    crossAgent?: boolean;
     apiIds: readonly string[];
   };
   agentApi: boolean;

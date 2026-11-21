@@ -25,6 +25,7 @@ import type { Access, Projects } from "@prismshadow/penguin-library-project";
 import type { Errors } from "@prismshadow/penguin-library-observability";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { AgentAuth } from "../mechanisms/agent-auth.js";
+import { normalizeRouteId, resolveHttpRouteId } from "../auth/agent-roles.js";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -88,18 +89,26 @@ export function endpointOf(
 }
 
 /**
- * Checks whether an Agent-authenticated request is granted the matched route's `id` and,
- * when the route is scoped to `:projectId`, that it matches the Agent's own project.
+ * Checks whether an Agent-authenticated request is granted the matched route's `id`, that
+ * `:projectId` matches the Agent's own project, and that cross-Agent writes require `crossAgent`.
  */
-function checkRouteAuth(c: Context<AppEnv>, routeId: string): void {
+function checkRouteAuth(c: Context<AppEnv>, routeId: string, groupId?: string): void {
   const agentAuth = (c.var as AppEnv["Variables"]).agentAuth;
   if (agentAuth === undefined) return;
   const { grant } = agentAuth;
-  if (!grant.allEndpoints && !grant.apiIds.includes(routeId)) {
+  const normalized = normalizeRouteId(routeId);
+  const normalizedGroup = groupId !== undefined ? normalizeRouteId(groupId) : undefined;
+  if (
+    !grant.allEndpoints &&
+    !grant.apiIds.includes(normalized) &&
+    !grant.apiIds.includes(routeId) &&
+    (normalizedGroup === undefined ||
+      (!grant.apiIds.includes(normalizedGroup) && !grant.apiIds.includes(groupId!)))
+  ) {
     throw new HttpError(
       403,
       "permission_required",
-      `Agent role "${grant.role}" does not grant "${routeId}".`,
+      `Agent role "${grant.role}" does not grant "${normalized}".`,
     );
   }
   const routeProjectId = c.req.param("projectId");
@@ -114,10 +123,26 @@ function checkRouteAuth(c: Context<AppEnv>, routeId: string): void {
       `Agent session for project "${agentAuth.projectId}" cannot access project "${routeProjectId}".`,
     );
   }
+  const routeAgentId = c.req.param("agentId");
+  if (
+    !grant.allEndpoints &&
+    grant.crossAgent !== true &&
+    routeAgentId !== undefined &&
+    routeAgentId !== agentAuth.agentId &&
+    c.req.method !== "GET" &&
+    normalized !== "session.create"
+  ) {
+    throw new HttpError(
+      403,
+      "permission_required",
+      `Agent session for agent "${agentAuth.agentId}" cannot modify agent "${routeAgentId}".`,
+    );
+  }
 }
 
-function withRouteAuth(source: Hono<AppEnv>, routeId: string): Hono<AppEnv> {
-  if (routeId === "penguin.session.forward") return source;
+function withRouteAuth(source: Hono<AppEnv>, groupId: string): Hono<AppEnv> {
+  const normalizedGroup = normalizeRouteId(groupId);
+  if (normalizedGroup === "session.forward") return source;
   const gated = new Hono<AppEnv>();
   const sourceErr = (source as unknown as { errorHandler: ErrorHandler<AppEnv> }).errorHandler;
   const gatedErr = (gated as unknown as { errorHandler: ErrorHandler<AppEnv> }).errorHandler;
@@ -125,8 +150,17 @@ function withRouteAuth(source: Hono<AppEnv>, routeId: string): Hono<AppEnv> {
     gated.onError(sourceErr);
   }
   for (const route of source.routes) {
+    if (
+      route.method === "ALL" &&
+      route.path === "/*" &&
+      normalizedGroup !== "machines.server-proxy"
+    ) {
+      gated.on(route.method, route.path, route.handler);
+      continue;
+    }
+    const resolvedId = resolveHttpRouteId(normalizedGroup, route.method, route.path);
     gated.on(route.method, route.path, async (c, next) => {
-      checkRouteAuth(c, routeId);
+      checkRouteAuth(c, resolvedId, normalizedGroup);
       return route.handler(c, next);
     });
   }

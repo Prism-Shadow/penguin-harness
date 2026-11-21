@@ -51,22 +51,29 @@ An example of an Agent running commands inside a sandbox illustrates how the two
 2. **Executing system operations from the sandbox perspective (CLI = system permissions)**: When the Agent invokes shell commands or the `penguin` CLI inside the sandbox, the CLI runs locally inside the sandboxed process and operates strictly within the sandbox's terminal and filesystem view.
 3. **Acquiring Penguin capabilities over HTTP (HTTP = penguin permissions)**: When the CLI inside the sandbox calls the server, it authenticates with `PENGUIN_API_TOKEN`. The server verifies the Agent role and route `id` grant attached to that token, permitting only the endpoints granted to that role within the Agent's own project.
 
-### Route ID registration and Agent role grants
+### Route ID registration and the declarative Role Tree (`ROLE_TREE`)
 
-Every HTTP route contributed to the `HttpModule.routes` slot carries a dotted `id` used to manage authorization:
+Every HTTP route contributed to the `HttpModule.routes` slot carries a dotted `id` that serves as a leaf permission in the role tree:
 
 ```ts
 @Component({
   contributes: {
     "HttpModule.routes": [
-      { id: "penguin.session.list", method: "GET", prefix: "/api/projects/:projectId/sessions", auth: "user", order: 130 },
-      { id: "penguin.session.create", method: "POST", prefix: "/api/projects/:projectId/sessions", auth: "user", order: 130 },
+      { id: "session.list", method: "GET", prefix: "/api/projects/:projectId/agents/:agentId/sessions", auth: "user", order: 250 },
+      { id: "session.create", method: "POST", prefix: "/api/projects/:projectId/agents/:agentId/sessions", auth: "user", order: 250 },
     ],
   },
 })
 ```
 
-A route component binds individual route contributions to handlers on its `Hono` router using `endpointOf(group, method, subPath)`. Each Agent session binds a role template (`AgentAuthRole`: `general`, `system-maintainer`, `admin`, `full-permissions`) and a current grant (`AgentAuthGrant`), specifying whether the session spans all endpoints (`allEndpoints`), whether it reaches Agent API and key settings (`agentApi`), and which explicit route `id`s (`apiIds`) are granted.
+A route component binds single-endpoint contributions to handlers on its `Hono` router using `endpointOf(group, method, subPath)`. For multi-endpoint route groups mounted by prefix, the HTTP gate maps each `(method, subPath)` entry to its fine-grained route `id` via `resolveHttpRouteId(groupId, method, subPath)`.
+
+Role presets are organized as a declarative directed acyclic role tree (`ROLE_TREE`):
+
+- **Three-tier domain role nodes**: Every domain (`session`, `workspace`, `agent`, `memory`, `schedule`, `skill`, `plugin`, `workbench`, `model`, `vault`, `trace`, `benchmark`, `org`, `browser`, `machine`, `messaging`, `project`, `command`, `system`, `admin`) defines `<domain>.read`, `<domain>.maintain`, and `<domain>.all` nodes. `<domain>.maintain` binds `<domain>.read` and adds day-to-day write and execution routes; `<domain>.all` binds `<domain>.maintain` and adds deletion and administrative routes.
+- **Composite role nodes**: Standing personas (`none`, `readonly`, `general`, `system-maintainer`, `admin`, `full-permissions`) sit higher in the same tree, binding domain role nodes through their `roles` array.
+
+Each Agent session binds a role node ID (`AgentAuthRole`) and a current grant (`AgentAuthGrant`). On each request, `expandRoleGrant(role, extraGrants)` walks the role tree to compute the effective set of route `id`s (`apiIds`) alongside orthogonal capability flags (`allEndpoints`, `agentApi`, `crossAgent`).
 
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -75,24 +82,36 @@ A route component binds individual route contributions to handlers on its `Hono`
 
 The data shape for the `HttpModule.routes` slot contains five fields:
 
-- `id: string` — the unique identifier of the route, named by `<domain>.<resource>.<action>` (for example `penguin.agent.list`, `penguin.workspace.read`, `penguin.command.exec`, `penguin.config.providers.get`, `penguin.vault.set`).
-- `method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"` — an optional single-method constraint. When present, the host mounts the handler only for that HTTP method and path; when omitted, the host mounts the sub-router for the prefix.
+- `id: string` — the unique identifier of the route or route group, named by `<domain>.<action>` or `<domain>.<subdomain>.<action>` (for example `session.list`, `workspace.readFile`, `command.run`, `model.updateConfig`, `vault.set`, `org.ticket.start`).
+- `method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"` — an optional single-method constraint. When present, the host mounts the handler only for that HTTP method and path; when omitted, the host mounts the sub-router for the prefix and resolves each endpoint's fine-grained route `id` from `(groupId, method, subPath)`.
 - `prefix: string` — the path pattern mounted on the HTTP application.
 - `auth: "user" | "token" | "none"` — the authentication gate for the route (`"user"` accepts a human session, the local API token, or an authorized Agent session; `"token"` accepts only the local API token; `"none"` is public).
 - `order: number` — the mount order on the HTTP application.
 
 When a component defines several endpoints on one `Hono` group, `endpointOf(group, method, subPath)` builds a single-route `Hono` wrapper that preserves the group's middleware and error handler while dispatching only the declared method and path. This keeps related handlers in one component while giving every endpoint its own route `id` in the manifest.
 
-### Agent role templates and permission scopes
+### Declarative Role Tree (`ROLE_TREE`) and permission scopes
 
-Four fixed Agent role templates (`AgentAuthRole`) define the standing scopes:
+Each node in the role tree (`RoleTreeNode`) consists of child role references (`roles`), directly granted leaf route IDs (`routes`), and orthogonal capability flags (`flags`).
 
-| Role (`AgentAuthRole`) | `allEndpoints` | `agentApi` (passes `requireHuman`) | Endpoint and project scope |
-| --- | --- | --- | --- |
-| `general` (default) | `false` | `false` | Explicitly granted `apiIds` only, bounded to the Agent's own `:projectId` |
-| `system-maintainer` | `false` | `true` | Explicitly granted `apiIds` + Agent API/key endpoints, bounded to the Agent's own `:projectId` |
-| `admin` | `true` | `false` | All `auth: "user"` routes across projects, excluding `requireHuman` endpoints |
-| `full-permissions` | `true` | `true` | All `auth: "user"` routes across projects, including `requireHuman` endpoints |
+Every functional domain follows a three-tier progression:
+
+| Domain Role Tier | Tree Bind (`roles`) | Directly Granted Leaf Routes (`routes`) |
+| --- | --- | --- |
+| `<domain>.read` | `[]` | Read-only queries, listings, and event streams in the domain (for example `session.list`, `session.get`, `session.stream`) |
+| `<domain>.maintain` | `["<domain>.read"]` | Creation, update, execution, and collaboration routes in the domain (for example `session.create`, `session.runTask`, `session.steer`) |
+| `<domain>.all` | `["<domain>.maintain"]` | Deletion, purge, and high-impact administrative routes in the domain (for example `session.delete`, `session.deleteArchived`) |
+
+Six composite roles bind these domain nodes and capability flags into standing personas:
+
+| Composite Role (`AgentAuthRole`) | Bound Child Roles (`roles`) | `allEndpoints` | `agentApi` (passes `requireHuman`) | `crossAgent` (cross-Agent writes) |
+| --- | --- | --- | --- | --- |
+| `none` | `[]` | `false` | `false` | `false` |
+| `readonly` | All domain `*.read` nodes | `false` | `false` | `false` |
+| `general` (default) | `readonly` + `session.maintain`, `workspace.maintain`, `memory.maintain`, `schedule.maintain`, `workbench.maintain`, `org.maintain`, `browser.maintain`, `agent.config.get`, `agent.config.update` | `false` | `false` | `false` |
+| `system-maintainer` | `general` + `agent.maintain`, `skill.maintain`, `plugin.maintain`, `model.maintain`, `vault.maintain`, `trace.maintain`, `benchmark.maintain`, `machine.maintain`, `messaging.maintain` | `false` | `true` | `true` |
+| `admin` | `system-maintainer` + all domain `*.all` nodes | `true` | `false` | `true` |
+| `full-permissions` | `["admin"]` | `true` | `true` | `true` |
 
 ### Agent session storage and generation re-derivation
 
@@ -113,8 +132,9 @@ Every protected request entering `HttpModule` passes through two checks:
 2. **Route Authorization**:
    - Human user requests proceed under standard user and administrator checks.
    - Agent requests (`c.var.agentAuth` present) run `checkRouteAuth(c, route.id)` before the route handler:
-     - Endpoint check: requires `grant.allEndpoints === true` or `grant.apiIds.includes(route.id)`, returning `403 permission_required` otherwise.
+     - Endpoint check: requires `grant.allEndpoints === true` or `grant.apiIds.includes(routeId)`, returning `403 permission_required` otherwise.
      - Project isolation check: when `grant.allEndpoints === false` and the route carries a `:projectId` parameter, `:projectId` must equal `agentAuth.projectId`, returning `403 permission_required` otherwise.
+     - Cross-Agent write check: when `grant.allEndpoints === false` and `grant.crossAgent !== true`, a non-`GET` request carrying `:agentId !== agentAuth.agentId` (other than `session.create`) returns `403 permission_required`.
      - Human-only gate (`requireHuman`): permits Agent requests only when `agentAuth.agentApi === true` (`system-maintainer` or `full-permissions`), returning `403 human_required` otherwise.
 
 ### Boundary of the CLI surface

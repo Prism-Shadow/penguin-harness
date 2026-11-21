@@ -148,7 +148,7 @@ import { endpointOf } from "../app.js";
   contributes: {
     "HttpModule.routes": [
       {
-        id: "penguin.session.getHistory",
+        id: "session.getHistory",
         // After the Session forward (268), which answers a machine's Session first, and ahead
         // of the Session routes (270).
         method: "GET",
@@ -167,7 +167,7 @@ export class HistoryRoutes {
   @Use() private readonly channels!: Channels;
   @Use() private readonly liveStreams!: LiveStreams;
   @Use() private readonly auth!: Auth;
-  @Bind("penguin.session.getHistory") routes!: Hono<AppEnv>;
+  @Bind("session.getHistory") routes!: Hono<AppEnv>;
   setup() {
     const group = historyRoutes({
       sessions: this.sessionsRepo,

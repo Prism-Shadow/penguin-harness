@@ -19,8 +19,9 @@ import type { AgentAuthSessionRow } from "../db/repos/agent-auth-sessions.js";
 import { agentSessionTokenHash } from "../db/repos/agent-auth-sessions.js";
 import {
   DEFAULT_AGENT_AUTH_ROLE,
+  expandRoleGrant,
+  normalizeRouteId,
   roleHasAgentApi,
-  roleSpansAllEndpoints,
   type AgentAuthRole,
 } from "./agent-roles.js";
 
@@ -73,7 +74,12 @@ export class AgentAuthService implements AgentAuth {
   /** Whether the CURRENT grant reaches the HTTP route `apiId`. */
   allowsEndpoint(projectId: string, agentId: string, apiId: string): boolean {
     const grant = this.agentAuthPermissions.grantOf(projectId, agentId);
-    return grant?.allEndpoints === true || grant?.apiIds.includes(apiId) === true;
+    const normalized = normalizeRouteId(apiId);
+    return (
+      grant?.allEndpoints === true ||
+      grant?.apiIds.includes(normalized) === true ||
+      grant?.apiIds.includes(apiId) === true
+    );
   }
 
   /** The Agent's CURRENT generation row; null before its first session. */
@@ -117,11 +123,13 @@ export class AgentAuthPermissionProvider implements AgentAuthPermissions {
   grantOf(projectId: string, agentId: string): AgentAuthGrant | null {
     const current = this.agentAuthSessions.generationOf(projectId, agentId);
     if (current === null) return null;
+    const expanded = expandRoleGrant(current.role, current.apiIds);
     return {
       role: current.role,
       generation: current.generation,
-      allEndpoints: roleSpansAllEndpoints(current.role),
-      apiIds: current.apiIds,
+      allEndpoints: expanded.allEndpoints,
+      crossAgent: expanded.crossAgent,
+      apiIds: expanded.apiIds,
     };
   }
 }

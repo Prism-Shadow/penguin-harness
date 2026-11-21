@@ -305,7 +305,7 @@ export function sessionForwardRoutes(deps: {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "penguin.session.forward",
+        id: "session.forward",
         // Ahead of every endpoint that serves `/api/sessions` (270).
         prefix: "/api/sessions",
         auth: "user",
@@ -320,7 +320,7 @@ export class SessionForwardRoutes {
   @Use() private readonly sessionForward!: MachineSessionForward;
   @Use() private readonly liveStreams!: LiveStreams;
   @Use() private readonly auth!: Auth;
-  @Bind("penguin.session.forward") routes!: Hono<AppEnv>;
+  @Bind("session.forward") routes!: Hono<AppEnv>;
   setup() {
     this.routes = sessionForwardRoutes({
       sessions: this.sessionsRepo,

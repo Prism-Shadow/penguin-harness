@@ -97,14 +97,14 @@ import { endpointOf } from "../app.js";
   contributes: {
     "HttpModule.routes": [
       {
-        id: "penguin.command.list",
+        id: "command.list",
         method: "GET",
         prefix: "/api/command",
         auth: "user",
         order: 10,
       },
       {
-        id: "penguin.command.run",
+        id: "command.run",
         method: "POST",
         prefix: "/api/command/:command",
         auth: "user",
@@ -115,8 +115,8 @@ import { endpointOf } from "../app.js";
 })
 export class CommandRoutes {
   @Use() private readonly desktop!: Desktop;
-  @Bind("penguin.command.list") listRoute!: Hono<AppEnv>;
-  @Bind("penguin.command.run") runRoute!: Hono<AppEnv>;
+  @Bind("command.list") listRoute!: Hono<AppEnv>;
+  @Bind("command.run") runRoute!: Hono<AppEnv>;
   setup() {
     const group = commandRoutes({ shell: () => this.desktop.shell() });
     this.listRoute = endpointOf(group, "GET", "/");

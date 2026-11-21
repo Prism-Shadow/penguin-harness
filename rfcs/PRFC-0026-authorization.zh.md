@@ -51,22 +51,29 @@ Server 启动时在数据根下写入权限为 `0600` 的 `api-token` 与 `serve
 2. **在沙盒内执行本地系统操作（CLI = system permissions）**：Agent 在沙盒内运行 shell 命令或 `penguin` CLI 时，CLI 在沙盒进程内本地启动，只能看到并操作以沙盒为视角的终端与文件系统。
 3. **通过令牌调用受控的 Penguin 能力（HTTP = penguin permissions）**：当沙盒内的 CLI 请求 Server 时，它携带环境变量中的 Agent 会话令牌。Server 根据令牌对应的 Agent 角色与目标路由 `id` 校验权限，放行该角色允许的接口并把数据范围限制在该 Agent 所属的项目中。
 
-### 路由 ID 注册与 Agent 角色授权
+### 路由 ID 注册与声明式角色树（Role Tree Bind）
 
-每一条注册到 `HttpModule.routes` 槽的 HTTP 路由都带有一个点分结构的 `id`，这个 `id` 直接用于管理授权：
+每一条注册到 `HttpModule.routes` 槽的 HTTP 路由都带有一个点分结构的 `id`，这个 `id` 直接作为角色树的叶子节点用于管理授权：
 
 ```ts
 @Component({
   contributes: {
     "HttpModule.routes": [
-      { id: "penguin.session.list", method: "GET", prefix: "/api/projects/:projectId/sessions", auth: "user", order: 130 },
-      { id: "penguin.session.create", method: "POST", prefix: "/api/projects/:projectId/sessions", auth: "user", order: 130 },
+      { id: "session.list", method: "GET", prefix: "/api/projects/:projectId/agents/:agentId/sessions", auth: "user", order: 250 },
+      { id: "session.create", method: "POST", prefix: "/api/projects/:projectId/agents/:agentId/sessions", auth: "user", order: 250 },
     ],
   },
 })
 ```
 
-组件用 `endpointOf(group, method, subPath)` 将单条路由贡献绑定到 `Hono` 路由组上的对应处理器。每个 Agent 会话绑定一个角色模板（`AgentAuthRole`：`general`、`system-maintainer`、`admin`、`full-permissions`）与一份当前授权（`AgentAuthGrant`），声明该会话是否放行全部端点（`allEndpoints`）、是否允许访问 Agent 自身 API 与密钥设置（`agentApi`），以及允许访问的路由 `id` 列表（`apiIds`）。
+组件用 `endpointOf(group, method, subPath)` 将单条路由贡献绑定到 `Hono` 路由组上的对应处理器；对按前缀挂载的多端点路由组，鉴权网关通过 `resolveHttpRouteId(groupId, method, subPath)` 将每个 `(method, subPath)` 子路由映射为稳定的细粒度路由 `id`。
+
+角色预设组织为一棵声明式的有向无环角色树（`ROLE_TREE`）：
+
+- **域级三层角色节点**：每个业务域（如 `session`、`workspace`、`agent`、`memory`、`schedule`、`skill`、`plugin`、`workbench`、`model`、`vault`、`trace`、`benchmark`、`org`、`browser`、`machine`、`messaging`、`project`、`command`、`system`、`admin`）提供 `<domain>.read`、`<domain>.maintain`、`<domain>.all` 三层递进节点。`<domain>.maintain` 绑定 `<domain>.read` 子节点并追加日常维护写路由；`<domain>.all` 绑定 `<domain>.maintain` 子节点并追加删除与高危管理路由。
+- **复合角色节点**：顶层预设角色（`none`、`readonly`、`general`、`system-maintainer`、`admin`、`full-permissions`）作为同一棵树上的高层节点，通过 `roles` 数组绑定各域的角色节点。
+
+每个 Agent 会话绑定一个角色节点 ID（`AgentAuthRole`）与一份当前授权（`AgentAuthGrant`），在请求时由 `expandRoleGrant(role, extraGrants)` 递归展开角色树，计算出有效路由 `id` 集合（`apiIds`）以及正交能力标志（`allEndpoints`、`agentApi`、`crossAgent`）。
 
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -75,24 +82,36 @@ Server 启动时在数据根下写入权限为 `0600` 的 `api-token` 与 `serve
 
 `HttpModule.routes` 槽的数据类型包含五个字段：
 
-- `id: string`——路由的唯一标识，按 `<域>.<资源>.<动作>` 命名（例如 `penguin.agent.list`、`penguin.workspace.read`、`penguin.command.exec`、`penguin.config.providers.get`、`penguin.vault.set`）。
-- `method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"`——可选的单方法限定。指定时，宿主只在该 HTTP 方法与路径上挂载处理器；省略时，挂载整个子路由组。
+- `id: string`——路由或路由组的唯一标识，按 `<域>.<动作>` 或 `<域>.<子域>.<动作>` 命名（例如 `session.list`、`workspace.readFile`、`command.run`、`model.updateConfig`、`vault.set`、`org.ticket.start`）。
+- `method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"`——可选的单方法限定。指定时，宿主只在该 HTTP 方法与路径上挂载处理器；省略时，挂载整个子路由组，并在路由网关内按 `(groupId, method, subPath)` 解析出每个端点的细粒度路由 `id`。
 - `prefix: string`——挂载在 HTTP 应用上的路径模式。
 - `auth: "user" | "token" | "none"`——路由的鉴权门类（`"user"` 接受人类会话、本机 API 令牌或被授权的 Agent 会话；`"token"` 仅接受本机 API 令牌；`"none"` 为公开路由）。
 - `order: number`——路由挂载顺序。
 
 当一个路由组件在一个 `Hono` 实例上定义多个动作时，`endpointOf(group, method, subPath)` 构造一个只响应指定方法与路径的轻量 `Hono` 包装，保留原路由组的中间件与错误处理器，并将请求分发到目标处理器。这样既保持组件内部共享依赖，又让每条端点在清单中拥有独立的路由 `id`。
 
-### Agent 角色模板与权限范围
+### 声明式角色树（`ROLE_TREE`）与权限范围
 
-系统定义四种固定的 Agent 角色模板（`AgentAuthRole`）：
+角色树中的每个节点（`RoleTreeNode`）由三部分构成：继承的子角色节点列表 `roles`、直接授予的叶子路由 `routes`、以及正交能力标志 `flags`。
 
-| 角色（`AgentAuthRole`） | `allEndpoints` | `agentApi`（通过 `requireHuman`） | 端点与项目范围 |
-| --- | --- | --- | --- |
-| `general`（默认） | `false` | `false` | 仅限显式授予的 `apiIds`，且 `:projectId` 限于所属项目 |
-| `system-maintainer` | `false` | `true` | 显式授予的 `apiIds` + Agent API/密钥端点，`:projectId` 限于所属项目 |
-| `admin` | `true` | `false` | 全部 `auth: "user"` 路由（跨项目），不含 `requireHuman` 端点 |
-| `full-permissions` | `true` | `true` | 全部 `auth: "user"` 路由（跨项目），含 `requireHuman` 端点 |
+各业务域遵循统一的三层递进结构：
+
+| 域角色层级 | 树绑定关系（`roles`） | 直接授予的叶子路由（`routes`） |
+| --- | --- | --- |
+| `<domain>.read` | `[]` | 该域下的只读查询、列表与流式订阅路由（如 `session.list`、`session.get`、`session.stream`） |
+| `<domain>.maintain` | `["<domain>.read"]` | 该域下的创建、更新、执行与日常协作写路由（如 `session.create`、`session.runTask`、`session.steer`） |
+| `<domain>.all` | `["<domain>.maintain"]` | 该域下的删除、强制清理与高危管理路由（如 `session.delete`、`session.deleteArchived`） |
+
+在此基础上，六个顶层复合角色通过组合域角色节点与正交能力标志构成标准权限梯度：
+
+| 复合角色（`AgentAuthRole`） | 绑定的子角色节点（`roles`） | `allEndpoints` | `agentApi`（通过 `requireHuman`） | `crossAgent`（跨 Agent 写） |
+| --- | --- | --- | --- | --- |
+| `none` | `[]` | `false` | `false` | `false` |
+| `readonly` | 全部业务域的 `*.read` 节点 | `false` | `false` | `false` |
+| `general`（默认） | `readonly` + `session.maintain`、`workspace.maintain`、`memory.maintain`、`schedule.maintain`、`workbench.maintain`、`org.maintain`、`browser.maintain`、`agent.config.get`、`agent.config.update` | `false` | `false` | `false` |
+| `system-maintainer` | `general` + `agent.maintain`、`skill.maintain`、`plugin.maintain`、`model.maintain`、`vault.maintain`、`trace.maintain`、`benchmark.maintain`、`machine.maintain`、`messaging.maintain` | `false` | `true` | `true` |
+| `admin` | `system-maintainer` + 全部业务域的 `*.all` 节点 | `true` | `false` | `true` |
+| `full-permissions` | `["admin"]` | `true` | `true` | `true` |
 
 ### Agent 会话存储与按代（Generation）实时派生
 
@@ -113,9 +132,10 @@ Server 启动时在数据根下写入权限为 `0600` 的 `api-token` 与 `serve
 2. **路由级授权（Route Authorization）**：
    - 对人类用户请求：按既有的用户与管理员规则放行。
    - 对 Agent 请求（`c.var.agentAuth` 存在）：在路由入口执行 `checkRouteAuth(c, route.id)`：
-     - 校验端点授权：要求 `grant.allEndpoints === true` 或 `grant.apiIds.includes(route.id)`，未命中时返回 `403 permission_required`。
+     - 校验端点授权：要求 `grant.allEndpoints === true` 或 `grant.apiIds.includes(routeId)`，未命中时返回 `403 permission_required`。
      - 校验项目隔离：当 `grant.allEndpoints === false` 且路由包含 `:projectId` 参数时，要求 `:projectId === agentAuth.projectId`，跨项目访问返回 `403 permission_required`。
-     - 校验人类专属门（`requireHuman`）：仅当 `agentAuth.agentApi === true`（即 `system-maintainer` 或 `full-permissions` 角色）时放行，其余返回 `403 human_required`。
+     - 校验跨 Agent 写隔离：当 `grant.allEndpoints === false` 且 `grant.crossAgent !== true` 时，若路由带有 `:agentId` 参数且 `:agentId !== agentAuth.agentId`，除只读 `GET` 请求与跨 Agent 发起会话（`session.create`）外，其余修改其他 Agent 的写请求返回 `403 permission_required`。
+     - 校验人类专属门（`requireHuman`）：仅当 `agentAuth.agentApi === true`（如 `system-maintainer` 或 `full-permissions` 角色）时放行，其余返回 `403 human_required`。
 
 ### CLI 表面的边界划分
 
