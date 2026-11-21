@@ -371,10 +371,11 @@ describe("the installed-plugins routes on a machine without npm", () => {
   it("refuses a name neither the registry nor the index has, in the installer's own words", async () => {
     const res = await install("@acme/nowhere");
     expect(res.status).toBe(400);
-    const { message } = ((await res.json()) as { error: { message: string } }).error;
-    expect(message).toBe(
-      `@acme/nowhere is not on the registry ${OFFICIAL_REGISTRY}. The published plugin index lists no installable github channel for @acme/nowhere either.`,
-    );
+    const { code, message } = ((await res.json()) as { error: { code: string; message: string } })
+      .error;
+    // The not-published refusal leads with the cause; it never says npm said it.
+    expect(code).toBe("plugin_not_published");
+    expect(message).toBe("@acme/nowhere is not published on the npm registry yet.");
   });
 
   it("refuses a plugin with dependencies before fetching its tarball, saying why and how to get npm", async () => {

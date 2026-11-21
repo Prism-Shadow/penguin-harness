@@ -21,6 +21,7 @@
  * too old to keep them shows no section at all.
  */
 import { useEffect, useState } from "react";
+import { webLocale } from "@prismshadow/penguin-web-plugin";
 import type {
   PluginItem,
   PluginModuleRequest,
@@ -44,7 +45,6 @@ import { acceptPluginModuleRequests, usePluginModuleRequests } from "../../lib/p
 import { localizedText } from "../../lib/skill-use";
 import { S } from "../../lib/strings";
 import { toastApiError } from "../../lib/toast-api-error";
-import { useLocale } from "../../state/locale";
 import { SkillTile } from "../skills";
 
 /** Waiting rows first, newest first; then decided ones, the latest decision first. */
@@ -80,7 +80,8 @@ function stateOf(row: PluginModuleRequest): {
 }
 
 export function PluginModuleRequests({ machine }: { machine: string | null }) {
-  const { locale } = useLocale();
+  // Read like the Plugins section that holds it, so it renders outside the providers too.
+  const locale = webLocale();
   const ledger = usePluginModuleRequests(machine, true);
   /** The library of the server on screen, by plugin name: each row's tile and display name. */
   const [library, setLibrary] = useState<ReadonlyMap<string, PluginItem>>(new Map());
