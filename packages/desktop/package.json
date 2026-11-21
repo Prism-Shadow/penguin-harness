@@ -40,6 +40,7 @@
     "@penguinharness/opro-rsi-toolkit": "workspace:*",
     "@penguinharness/party-charades": "workspace:*",
     "@penguinharness/penguin-support": "workspace:*",
+    "@penguinharness/reading-desk": "workspace:*",
     "@penguinharness/rrsi-rsi-toolkit": "workspace:*",
     "@penguinharness/skill-porting": "workspace:*",
     "@penguinharness/skilladam-rsi-toolkit": "workspace:*",

@@ -3,5 +3,6 @@
   "compilerOptions": {
     "rootDir": "."
   },
-  "include": ["src", "test"]
+  "include": ["src", "test"],
+  "exclude": ["test/jobs.test.ts"]
 }

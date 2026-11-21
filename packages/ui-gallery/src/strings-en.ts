@@ -583,6 +583,11 @@ export const en: GalleryStrings = {
         description:
           "The Project's default-models dialog (chat, multimodal and tool groups, each row saying why it is empty when nothing can serve it), and the guide shown before any model has a key.",
       },
+      status: {
+        title: "Status page",
+        description:
+          "A plugin settings page's parts: the version element in every state (installed, preparing, failed, not installed, not supported here), the checklist's four row states with a row's own action and folded details, and the status strip with its summary pill and primary action.",
+      },
       retry: {
         title: "Retry",
         description:
@@ -936,6 +941,8 @@ export const en: GalleryStrings = {
       pages: { general: "General", appearance: "Appearance", account: "Profile" },
       pageBody: "The current page's settings go here.",
       pageRow: (n: number) => `Setting ${n}`,
+      /** A rail row's accessible name while its count shows. */
+      pageWaiting: (page: string, n: number) => `${page}, ${n} waiting`,
       appearanceInfo: "Theme, accent and density apply to this browser only.",
       drawer: "Drawer",
       openDrawer: "Open a drawer",
@@ -2176,6 +2183,45 @@ export const en: GalleryStrings = {
       keyText: "Already have an API key from a provider?",
       keyAction: "Add an API key",
       later: "Later",
+    },
+    status: {
+      versions: "Version element",
+      versionsHint:
+        "Name | version | platform as one segmented capsule; the state is a mark and a word, never red text; preparing shows a progress bar.",
+      checks: "Checklist",
+      checksHint:
+        "Each state has its own shape and says itself on hover; the row that needs a hand carries its button, a tool's own words fold under it.",
+      strip: "Status strip",
+      stripHint:
+        "The version element and the summary pill lead, the primary actions sit on the other end and wrap when there is no room.",
+      checksTitle: "Checks",
+      recheck: "Check again",
+      display: "Display",
+      accessibility: "Accessibility",
+      accessibilityText: "Session bus unreachable: start the server inside the desktop session",
+      windowManager: "Window manager",
+      windowManagerText: "No window is open to check it with",
+      automation: "Automation",
+      openSettings: "Open System Settings",
+      details: "Details",
+      downloading: "Downloading, 6.4 of 16.0 MB",
+      verifying: "Checking the download",
+      failedWhy: "The registry refused the download: 404",
+      unsupportedWhy: "agent-desktop runs on macOS, Windows and Linux, on x64 and arm64",
+      retry: "Retry",
+      install: "Install",
+      summary: "Needs action",
+      summaryHint: "One check still needs a hand",
+      exportLogs: "Export logs",
+      versionState: {
+        installed: "Installed",
+        preparing: "Preparing",
+        failed: "Install failed",
+        missing: "Not installed",
+        unsupported: "Not supported here",
+        unknown: "State unknown",
+      },
+      checkState: { ok: "OK", action: "Needs action", unknown: "Unknown", na: "Not applicable" },
     },
     machines: {
       pills: "Status pills",
