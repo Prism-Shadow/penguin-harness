@@ -401,7 +401,7 @@ describe("Task records", () => {
 
     const stream = await collect(session.switchModel({ provider: "custom", modelId: "model-b" }));
 
-    expect(stream.at(-1)?.type).toBe("session_meta");
+    expect((stream.at(-1)?.payload as { type?: string }).type).toBe("session_update");
     expect(kinds(stream).some(isTaskKind)).toBe(false);
     expect(kinds(written.slice(before)).some(isTaskKind)).toBe(false);
   });
