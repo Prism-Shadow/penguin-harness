@@ -51,6 +51,7 @@
     "@penguinharness/party-charades": "workspace:*",
     "@penguinharness/penguin-support": "workspace:*",
     "@penguinharness/penguin-testing-electron": "workspace:*",
+    "@penguinharness/reading-desk": "workspace:*",
     "@penguinharness/rrsi-rsi-toolkit": "workspace:*",
     "@penguinharness/sandbox-bwrap": "workspace:*",
     "@penguinharness/sandbox-dsh": "workspace:*",
