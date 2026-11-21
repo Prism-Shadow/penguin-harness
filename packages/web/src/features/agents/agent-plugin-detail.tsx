@@ -10,7 +10,10 @@
  *   kind is managed (its sub-page; the Tools tab for MCP servers), which closes the dialog;
  * - one line per part: its name and the version installed (a hook package's hook points, an MCP
  *   server's target and what it waits for, with the owner's Set up while it misses vault keys);
- * - a part the library ships and the Agent lacks, muted, marked "Missing".
+ * - a part the library ships and the Agent lacks, muted, marked "Missing";
+ * - for a plugin that also ships server modules, one line for the module: how it stands on the
+ *   Agent's server — running, off, awaiting the administrator, stopped, failed, waiting for a
+ *   restart — and the row's action for it (Enable server module, or Ask the administrator).
  *
  * Its footer holds the row's actions, each with its word. A plugin gone from the library has no
  * README or files to show: its detail is its status, what the Agent carries of it, and the owner's
@@ -37,6 +40,7 @@ import {
   MARKET_KEY,
   McpServerMarks,
   McpSetUpModal,
+  ModuleStatusMark,
   PluginDetailModal,
   artOf,
   hasParts,
@@ -47,7 +51,12 @@ import {
   type PluginRow,
 } from "../plugins";
 import type { AgentPluginActions } from "./agent-plugin-actions";
-import { AgentStatusMark, agentPluginActions } from "./agent-plugin-row";
+import {
+  AgentStatusMark,
+  ModuleActionButton,
+  agentPluginActions,
+  type AgentModule,
+} from "./agent-plugin-row";
 import type { PluginsSubPage } from "./plugins-subpages";
 
 /** Where each kind of part is managed. */
@@ -107,6 +116,8 @@ export function AgentPartsSection({
   agentName,
   isOwner,
   locale,
+  module,
+  actions,
   onManage,
   onReload,
 }: {
@@ -116,6 +127,9 @@ export function AgentPartsSection({
   agentName: string;
   isOwner: boolean;
   locale: "zh" | "en";
+  /** The plugin's server module on the Agent's server, when it ships one. */
+  module: AgentModule | undefined;
+  actions: AgentPluginActions;
   onManage: (to: PluginsSubPage | "tools") => void;
   /** Reads the lists again: a server's vault keys were set. */
   onReload: () => void;
@@ -207,6 +221,25 @@ export function AgentPartsSection({
             ))}
           </PartGroup>
         )}
+        {module !== undefined && (
+          <FactList label={S.agentPlugins.module.title}>
+            <FactRow
+              glyph={ICONS.server}
+              name={S.agentPlugins.module.title}
+              trailing={
+                <ModuleActionButton
+                  entry={entry}
+                  title={title}
+                  module={module}
+                  actions={actions}
+                  variant="ghost"
+                />
+              }
+            >
+              <ModuleStatusMark mark={module.mark} onMachine={module.onMachine} words="fact" />
+            </FactRow>
+          </FactList>
+        )}
       </div>
       {settingUp && keysMissing && plugin !== null && (
         <McpSetUpModal
@@ -234,6 +267,7 @@ export function AgentPluginDetail({
   isOwner,
   locale,
   actions,
+  module,
   onClose,
   onManage,
   onReload,
@@ -248,6 +282,8 @@ export function AgentPluginDetail({
   isOwner: boolean;
   locale: "zh" | "en";
   actions: AgentPluginActions;
+  /** The plugin's server module on the Agent's server, for a plugin the Agent carries that ships one. */
+  module?: AgentModule | undefined;
   onClose: () => void;
   onManage: (to: PluginsSubPage | "tools") => void;
   onReload: () => void;
@@ -269,6 +305,8 @@ export function AgentPluginDetail({
       agentName={agentName}
       isOwner={isOwner}
       locale={locale}
+      module={module}
+      actions={actions}
       onManage={onManage}
       onReload={onReload}
     />

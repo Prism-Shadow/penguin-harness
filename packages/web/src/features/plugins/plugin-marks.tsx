@@ -27,15 +27,22 @@ import type { IconRef } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { localizedText } from "../../lib/skill-use";
 import type { PluginRow } from "./plugin-groups";
-import type { LibraryUsage, PluginStatus } from "./plugin-status";
+import type {
+  AgentModuleMark,
+  AgentModuleMarkKind,
+  LibraryUsage,
+  PluginStatus,
+} from "./plugin-status";
 
-/** The glyph of each status: done, waiting, a fault, elsewhere, or not yet there. */
+/** The glyph of each status: done, waiting, a fault, stopped, elsewhere, or not yet there. */
 const STATUS_GLYPH: Record<PluginStatus, string> = {
   installed: ICONS.checkCircle,
   update: ICONS.rotateCw,
+  awaiting: ICONS.hand,
   restart: ICONS.hourglass,
   failed: ICONS.alertCircle,
   incompatible: ICONS.alertCircle,
+  stopped: ICONS.stopCircle,
   "not-here": ICONS.server,
   available: ICONS.download,
 };
@@ -44,9 +51,11 @@ const STATUS_GLYPH: Record<PluginStatus, string> = {
 const STATUS_TONE: Record<PluginStatus, ToneName | undefined> = {
   installed: "success",
   update: "attention",
+  awaiting: "attention",
   restart: "attention",
   failed: "danger",
   incompatible: "attention",
+  stopped: undefined,
   "not-here": undefined,
   available: undefined,
 };
@@ -132,7 +141,78 @@ export function statusHint(
       return S.plugins.statusHint.failed(mod?.error ?? "");
     case "not-here":
       return S.plugins.statusHint.unsynced;
+    case "awaiting":
+      return S.plugins.statusHint.awaiting;
+    case "stopped":
+      return S.plugins.statusHint.stopped;
   }
+}
+
+/**
+ * The glyph and tone of each mark a server module gets on an Agent, by what it means: off and
+ * stopped recede (settled, nothing running), an ask waiting for the administrator and a listing
+ * waiting for a restart are unfinished, a failed load is a fault. Shape tells the two unfinished
+ * ones apart — a raised hand for an ask, the hourglass for a restart — and so do their words. Off
+ * is the lifted plug, apart from the server glyph that leads the detail's line and the Enable
+ * action.
+ */
+const MODULE_MARK: Record<AgentModuleMarkKind | "running", { glyph: string; tone?: ToneName }> = {
+  running: { glyph: ICONS.checkCircle, tone: "success" },
+  off: { glyph: ICONS.plugLifted },
+  awaiting: { glyph: ICONS.hand, tone: "attention" },
+  stopped: { glyph: ICONS.stopCircle },
+  failed: { glyph: ICONS.alertCircle, tone: "danger" },
+  restart: { glyph: ICONS.hourglass, tone: "attention" },
+};
+
+/** What a server module's mark means, on hover: why it does not run, and what that leaves. */
+function moduleHint(mark: AgentModuleMark | null, onMachine: boolean): string {
+  const hint = S.agentPlugins.module.hint;
+  if (mark === null) return hint.running;
+  switch (mark.kind) {
+    case "off":
+      return onMachine && mark.action === null ? hint.offOnMachine : hint.off;
+    case "awaiting":
+      return hint.awaiting;
+    case "stopped":
+      return hint.stopped;
+    case "failed":
+      return hint.failed(mark.reason ?? "");
+    case "restart":
+      return hint.restart;
+  }
+}
+
+/**
+ * A server module's state on an Agent's server, as the UI package's status mark. `words` picks
+ * the wording: `row` names the module in its words (「服务端模块未启用」), for a row where it
+ * stands beside the plugin's own status; `fact` gives the state alone, for the detail's line that
+ * is already named after the module. `mark` null is a module that runs.
+ */
+export function ModuleStatusMark({
+  mark,
+  onMachine,
+  words,
+}: {
+  mark: AgentModuleMark | null;
+  onMachine: boolean;
+  words: "row" | "fact";
+}) {
+  const kind = mark?.kind ?? "running";
+  const { glyph, tone } = MODULE_MARK[kind];
+  return (
+    <StatusMark
+      glyph={glyph}
+      {...(tone !== undefined ? { tone } : {})}
+      label={
+        words === "row" && kind !== "running"
+          ? S.agentPlugins.module.mark[kind]
+          : S.agentPlugins.module.state[kind]
+      }
+      hint={moduleHint(mark, onMachine)}
+      data-testid="module-status"
+    />
+  );
 }
 
 /** One tag on a row's tag line: a category, "built in", where it runs. */
