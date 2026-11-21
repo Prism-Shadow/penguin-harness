@@ -4,7 +4,8 @@
  * - The shared index format is validated whole: a flat array of per-version entries in order;
  *   a non-array or one malformed entry fails the document, naming the source or the position
  *   (unlike a plugin list's per-entry tolerance).
- * - The builtin catalogue lists the sandbox backends that live in plugins/, each named,
+ * - The builtin catalogue lists the server modules that live in plugins/ (the sandbox backends
+ *   in their category, agent-state-git in none), each named,
  *   versioned, titled, described and licensed as the package names itself, described in both
  *   languages as its own card contribution describes it and drawn with its icon.svg (both of which
  *   it publishes), and serves each one's own shipped README.md; a listed package not on this
@@ -285,7 +286,7 @@ describe("httpPluginRegistry", () => {
 });
 
 /**
- * The index asserts a name, version, description and license for four packages that live
+ * The index asserts a name, version, description and license for the packages that live
  * beside it in this workspace, and their readmes are those packages' own README.md files.
  * None of that is enforced by anything the packages do, so it is asserted here: the listing
  * is the specifier a Project's list names, and a catalogue that describes
@@ -315,14 +316,14 @@ const GENERATOR = fileURLToPath(new URL("../../../scripts/gen-ifaces.mjs", impor
 type Card = NonNullable<LibraryContributions["card"]>;
 
 /**
- * The sandbox backends' cards as their builds write them: the generator each `build` runs, over
+ * The server modules' cards as their builds write them: the generator each `build` runs, over
  * the package's own compiler options with its entry alone as the root (its tests are not part of
  * its table), into a temp table read by core's reader. Generated here rather than read from the
  * packages — they are no dependency of the server, so nothing before this suite built them — and
  * from the source as it is, so a stale table cannot pass. Two at a time: each is a TypeScript
  * program of its own, beside the suite's other workers.
  */
-async function sandboxCards(dirs: readonly string[]): Promise<Map<string, Card>> {
+async function moduleCards(dirs: readonly string[]): Promise<Map<string, Card>> {
   const out = await mkdtemp(path.join(tmpdir(), "penguin-sandbox-tables-"));
   const cards = new Map<string, Card>();
   const generate = async (dir: string) => {
@@ -439,10 +440,10 @@ describe("the builtin catalogue and the packages it lists", () => {
   let cards: Map<string, Card>;
   beforeAll(async () => {
     const index = await builtinPluginRegistry().index();
-    cards = await sandboxCards(index.map((entry) => packages.get(entry.name)!.dir));
+    cards = await moduleCards(index.map((entry) => packages.get(entry.name)!.dir));
   });
 
-  it("lists the sandbox backends in plugins/, each named as that package names itself", async () => {
+  it("lists the server modules in plugins/, each named as that package names itself", async () => {
     const index = await builtinPluginRegistry().index();
     // Valid under the format every registry is held to.
     expect(parsePluginIndex(index, "builtin")).toEqual(index);
@@ -450,8 +451,10 @@ describe("the builtin catalogue and the packages it lists", () => {
     for (const entry of index) {
       const pkg = packages.get(entry.name);
       expect(pkg, `${entry.name} is listed but is no package in plugins/`).toBeDefined();
-      expect(entry.categories, entry.name).toHaveLength(1);
-      expect(entry.categories![0], entry.name).toBe("sandbox");
+      // A sandbox backend sits in its category; any other server module in none (Other).
+      expect(entry.categories, entry.name).toEqual(
+        pkg!.dir.startsWith("sandbox-") ? ["sandbox"] : undefined,
+      );
       expect(pkg!.manifest.version, entry.name).toBe(entry.version);
       expect(pkg!.manifest.description, entry.name).toBe(entry.description);
       expect(pkg!.manifest.license, entry.name).toBe(entry.license);
@@ -463,7 +466,7 @@ describe("the builtin catalogue and the packages it lists", () => {
    * package says of itself — its card contribution, in the ifaces.json its build writes, and its
    * icon.svg — and the package publishes both, for the card of a server it is installed on.
    */
-  it("describes each backend in both languages with the package's own card and icon.svg", async () => {
+  it("describes each module in both languages with the package's own card and icon.svg", async () => {
     for (const entry of await builtinPluginRegistry().index()) {
       const { dir, manifest } = packages.get(entry.name)!;
       const card = cards.get(dir)!;
@@ -475,8 +478,10 @@ describe("the builtin catalogue and the packages it lists", () => {
         shortDescription: card.shortDescription,
         shortDescriptionZh: card.shortDescriptionZh,
         icon: readFileSync(`${PLUGINS_DIR}${dir}/icon.svg`, "utf8"),
-        categories: [card.category],
       });
+      expect(entry.categories, entry.name).toEqual(
+        card.category === undefined ? undefined : [card.category],
+      );
       expect(manifest.files, entry.name).toContain("icon.svg");
       expect(manifest.files, entry.name).toContain("ifaces.json");
     }

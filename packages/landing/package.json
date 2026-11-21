@@ -30,6 +30,7 @@
     "@penguinharness/agent-company": "workspace:*",
     "@penguinharness/agent-development": "workspace:*",
     "@penguinharness/agent-evaluation": "workspace:*",
+    "@penguinharness/agent-state-git": "workspace:*",
     "@penguinharness/ape-rsi-toolkit": "workspace:*",
     "@penguinharness/awm-rsi-toolkit": "workspace:*",
     "@penguinharness/browser-automation": "workspace:*",
