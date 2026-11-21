@@ -1,9 +1,11 @@
 /**
- * Test doubles for the built-in browser's shell side: a fake `process.parentPort`, and a fake
- * shell behind it that speaks the desktop-browser protocol the way builtin-browser.ts does —
- * one reply per command, tab events pushed as its guests change. Its CDP answers come from a
- * handler each test supplies.
+ * Test doubles for the built-in browser's shell side: the shell's port (the host's generic fake,
+ * test/helpers/fake-shell-port.ts), a fake shell behind it that speaks the desktop-browser
+ * protocol the way builtin-browser.ts does — one reply per command, tab events pushed as its
+ * guests change — and the node that hands that port to a test app's browser module. Its CDP
+ * answers come from a handler each test supplies.
  */
+import type { ModuleClass } from "@prismshadow/penguin-core/kernel";
 import type {
   BuiltinBrowserTab,
   DesktopBrowserCommand,
@@ -11,37 +13,15 @@ import type {
   DesktopBrowserCookie,
   DesktopBrowserEvent,
 } from "../../src/api/types.js";
+import { ProcessShellPort } from "../../src/builtin-browser/module.js";
 import type { BrowserShellPort } from "../../src/builtin-browser/shell-link.js";
+import { FakePort } from "../helpers/fake-shell-port.js";
 
-type Listener = (e: { data: unknown }) => void;
+export { FakePort };
 
-/** `process.parentPort`, as the link uses it: frames out are recorded, frames in are emitted. */
-export class FakePort implements BrowserShellPort {
-  readonly sent: unknown[] = [];
-  onPost: ((message: unknown) => void) | null = null;
-  private readonly listeners = new Set<Listener>();
-
-  on(_event: "message", listener: Listener): void {
-    this.listeners.add(listener);
-  }
-
-  off(_event: "message", listener: Listener): void {
-    this.listeners.delete(listener);
-  }
-
-  postMessage(message: unknown): void {
-    this.sent.push(message);
-    this.onPost?.(message);
-  }
-
-  /** A frame from the shell. */
-  emit(data: unknown): void {
-    for (const listener of [...this.listeners]) listener({ data });
-  }
-
-  get listenerCount(): number {
-    return this.listeners.size;
-  }
+/** The test app's stand-in for the browser's shell port node: a fake shell's port, for `createTestApp({ nodes })`. */
+export function shellPortNode(port: BrowserShellPort): readonly [ModuleClass, object] {
+  return [ProcessShellPort, { current: () => port }];
 }
 
 export type CdpHandler = (

@@ -11,9 +11,12 @@
  *   subprotocol list, never in a URL.
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import type { BrowserExtensionPairRequest, BrowserExtensionPairResponse } from "../api/types.js";
+import type {
+  BrowserExtensionPairRequest,
+  BrowserExtensionPairResponse,
+} from "@prismshadow/penguin-server/api";
 import type { BrowserExtensionStore } from "@prismshadow/penguin-library-machine/browser-extensions";
-import { HttpError } from "../http/errors.js";
+import { HttpError } from "../plugin/index.js";
 
 export const PAIRING_CODE_TTL_MS = 10 * 60_000;
 /** Failed attempts at one code before it is burned. */
