@@ -17,7 +17,14 @@ import {
   buildRfcIndex,
   buildRfcSearchRecords,
   buildRfcTree,
+  collapsibleRfcTreeKeys,
+  countRfcTreeDescendantEntries,
   findRfcSearchMatchRanges,
+  readRfcTreeCollapsed,
+  readRfcTreeStyle,
+  RFC_TREE_COLLAPSED_STORAGE_KEY,
+  RFC_TREE_STYLE_STORAGE_KEY,
+  RFC_TREE_STYLES,
   rfcBodyMarkdown,
   rfcEntries,
   rfcEntryShortTitle,
@@ -27,6 +34,8 @@ import {
   searchRfcRecords,
   shortRfcNumber,
   shortRfcTitle,
+  writeRfcTreeCollapsed,
+  writeRfcTreeStyle,
 } from "../src/lib/rfcs";
 import type { RfcTreeNode } from "../src/lib/rfcs";
 import { rfcIndexMarkdown } from "../src/pages/rfcs";
@@ -239,6 +248,51 @@ describe("buildRfcIndex", () => {
     expect(md).toContain("- **Harness**");
     expect(md).toContain("([#1228](https://github.com/Prism-Shadow/penguin-harness/pull/1228))");
     expect(md).not.toContain("| --- |");
+  });
+
+  it("computes collapsible keys, descendant entry counts, and persists tree style and collapsed state", () => {
+    const keys = collapsibleRfcTreeKeys(rfcTree);
+    expect(keys).toEqual([
+      "meta",
+      "modules-and-plugins",
+      "PRFC-0001-module",
+      "PRFC-0003-plugin",
+      "harness",
+      "observability",
+      "agent",
+      "PRFC-0014-workflow",
+      "runtime",
+      "distribution",
+      "PRFC-0021-distros",
+    ]);
+    expect(rfcTree.map((n) => countRfcTreeDescendantEntries(n))).toEqual([1, 9, 14]);
+
+    const store = new Map<string, string>();
+    const mockStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+    };
+
+    expect(RFC_TREE_STYLES).toEqual(["outline", "cards", "terminal", "graph"]);
+    expect(readRfcTreeStyle(mockStorage)).toBe("outline");
+    writeRfcTreeStyle("cards", mockStorage);
+    expect(store.get(RFC_TREE_STYLE_STORAGE_KEY)).toBe("cards");
+    expect(readRfcTreeStyle(mockStorage)).toBe("cards");
+    store.set(RFC_TREE_STYLE_STORAGE_KEY, "invalid-style");
+    expect(readRfcTreeStyle(mockStorage)).toBe("outline");
+
+    const validSet = new Set(keys);
+    expect([...readRfcTreeCollapsed(validSet, mockStorage)]).toEqual([]);
+    writeRfcTreeCollapsed(["PRFC-0001-module", "runtime"], mockStorage);
+    expect(store.get(RFC_TREE_COLLAPSED_STORAGE_KEY)).toBe('["PRFC-0001-module","runtime"]');
+    expect([...readRfcTreeCollapsed(validSet, mockStorage)]).toEqual([
+      "PRFC-0001-module",
+      "runtime",
+    ]);
+    store.set(RFC_TREE_COLLAPSED_STORAGE_KEY, '["PRFC-0001-module","unknown-key",42]');
+    expect([...readRfcTreeCollapsed(validSet, mockStorage)]).toEqual(["PRFC-0001-module"]);
   });
 
   it("merges the language pair into one entry and skips non-PRFC files", () => {

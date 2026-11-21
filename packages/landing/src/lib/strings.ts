@@ -650,6 +650,17 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     statusClosed: "Closed",
     /** The row's link to the open design PR carrying a revision newer than the merged version. */
     openRevision: "未合并修订",
+    treeStyles: {
+      label: "视图风格",
+      outline: "大纲",
+      cards: "卡片",
+      terminal: "终端",
+      graph: "分支",
+    },
+    expandAll: "全部展开",
+    collapseAll: "全部折叠",
+    expandNode: (name: string) => `展开 ${name}`,
+    collapseNode: (name: string) => `折叠 ${name}`,
     notes: [
       "**Pull Request**：每篇 RFC 后附承载它的 `request-for-comments` PR（图标对应 GitHub PR 的 `Merged`、`Open`、`Draft` 状态，后接 `#PR-number`）；已合入主仓 `rfcs/` 的文档点击标题进入站内正文。",
       "**唯一索引**：上方树图由 `rfcs/` 目录与 `request-for-comments` PR 状态在构建期自动生成。",

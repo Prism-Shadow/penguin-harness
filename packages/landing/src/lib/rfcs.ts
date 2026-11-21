@@ -88,6 +88,12 @@ export interface RfcTreeNode {
   children?: RfcTreeNode[];
 }
 
+export type RfcTreeStyle = "outline" | "cards" | "terminal" | "graph";
+
+export const RFC_TREE_STYLES: readonly RfcTreeStyle[] = ["outline", "cards", "terminal", "graph"];
+export const RFC_TREE_STYLE_STORAGE_KEY = "penguin-rfc-tree-style-v1";
+export const RFC_TREE_COLLAPSED_STORAGE_KEY = "penguin-rfc-tree-collapsed-v1";
+
 export interface RfcSearchRecord {
   href: string;
   anchor: string;
@@ -442,6 +448,98 @@ export function buildRfcTree(entries: readonly RfcEntry[] = rfcEntries): RfcTree
 
 /** The hierarchical RFC tree rendered on the `/rfcs` index page. */
 export const rfcTree = buildRfcTree(rfcEntries);
+
+/** Every node key in `nodes` that has at least one child and can be collapsed or expanded. */
+export function collapsibleRfcTreeKeys(nodes: readonly RfcTreeNode[] = rfcTree): string[] {
+  const keys: string[] = [];
+  const visit = (list: readonly RfcTreeNode[]) => {
+    for (const node of list) {
+      if (node.children && node.children.length > 0) {
+        keys.push(node.key);
+        visit(node.children);
+      }
+    }
+  };
+  visit(nodes);
+  return keys;
+}
+
+/** Count how many RFC entries live inside `node`'s descendants (excluding `node.entry` itself). */
+export function countRfcTreeDescendantEntries(node: RfcTreeNode): number {
+  let count = 0;
+  for (const child of node.children ?? []) {
+    if (child.entry) count += 1;
+    count += countRfcTreeDescendantEntries(child);
+  }
+  return count;
+}
+
+function defaultStorage(): Storage | null {
+  try {
+    return typeof globalThis !== "undefined" && "localStorage" in globalThis
+      ? globalThis.localStorage
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Read the persisted RFC tree view style from storage, defaulting to `"outline"`. */
+export function readRfcTreeStyle(
+  storage: Pick<Storage, "getItem"> | null | undefined = defaultStorage(),
+): RfcTreeStyle {
+  try {
+    const raw = storage?.getItem(RFC_TREE_STYLE_STORAGE_KEY);
+    if (raw && (RFC_TREE_STYLES as readonly string[]).includes(raw)) {
+      return raw as RfcTreeStyle;
+    }
+  } catch {
+    // Ignore storage access errors.
+  }
+  return "outline";
+}
+
+/** Persist the selected RFC tree view style to storage. */
+export function writeRfcTreeStyle(
+  style: RfcTreeStyle,
+  storage: Pick<Storage, "setItem"> | null | undefined = defaultStorage(),
+): void {
+  try {
+    storage?.setItem(RFC_TREE_STYLE_STORAGE_KEY, style);
+  } catch {
+    // Ignore storage access errors.
+  }
+}
+
+/** Read the persisted set of collapsed RFC tree node keys from storage. */
+export function readRfcTreeCollapsed(
+  validKeys: ReadonlySet<string> = new Set(collapsibleRfcTreeKeys()),
+  storage: Pick<Storage, "getItem"> | null | undefined = defaultStorage(),
+): Set<string> {
+  try {
+    const raw = storage?.getItem(RFC_TREE_COLLAPSED_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(
+      parsed.filter((item): item is string => typeof item === "string" && validKeys.has(item)),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+/** Persist the set of collapsed RFC tree node keys to storage. */
+export function writeRfcTreeCollapsed(
+  collapsed: Iterable<string>,
+  storage: Pick<Storage, "setItem"> | null | undefined = defaultStorage(),
+): void {
+  try {
+    storage?.setItem(RFC_TREE_COLLAPSED_STORAGE_KEY, JSON.stringify([...collapsed]));
+  } catch {
+    // Ignore storage access errors.
+  }
+}
 
 /** Find an RFC entry by its route id (with or without the `.zh` suffix). */
 export function rfcEntryOf(id: string): RfcEntry | undefined {

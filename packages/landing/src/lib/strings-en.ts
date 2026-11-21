@@ -653,6 +653,17 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     statusClosed: "Closed",
     /** The row's link to the open design PR carrying a revision newer than the merged version. */
     openRevision: "unmerged revision",
+    treeStyles: {
+      label: "Tree style",
+      outline: "Outline",
+      cards: "Cards",
+      terminal: "Terminal",
+      graph: "Graph",
+    },
+    expandAll: "Expand all",
+    collapseAll: "Collapse all",
+    expandNode: (name: string) => `Expand ${name}`,
+    collapseNode: (name: string) => `Collapse ${name}`,
     notes: [
       "**Pull Request**: Each entry shows the `request-for-comments` PR carrying it (`[icon] #PR-number` with GitHub's `Merged`, `Open`, or `Draft` status icon); merged RFCs in `rfcs/` link to their in-site page.",
       "**Single index**: The tree above is generated from `rfcs/` and `request-for-comments` PR statuses at build time.",
