@@ -10,7 +10,7 @@
 - Start Date: 2026-09-02
 - PRFC PR: [Prism-Shadow/penguin-harness-design#107](https://github.com/Prism-Shadow/penguin-harness-design/pull/107)
 - Implementation PR: merged [#383](https://github.com/Prism-Shadow/penguin-harness/pull/383) (the plugin platform); in flight [#672](https://github.com/Prism-Shadow/penguin-harness/pull/672) (installing from npm), [#727](https://github.com/Prism-Shadow/penguin-harness/pull/727) (packaging built-in plugins), [#614](https://github.com/Prism-Shadow/penguin-harness/pull/614) (a Project's plugin table loaded by the platform), [#450](https://github.com/Prism-Shadow/penguin-harness/pull/450) (the plugin table synced to machines, per-machine plugin tables)
-- Related: PRFC-0001 "Module", PRFC-0002 "HMR v1", PRFC-0004 "Plugin Scope", PRFC-0005 "Plugin Versioning", PRFC-0010 "Fleet parity and hot loading"
+- Related: PRFC-0001 "Module", PRFC-0002 "Hot Module Replacement", PRFC-0004 "Plugin Scope", PRFC-0005 "Plugin Versioning", PRFC-0010 "Fleet parity and hot loading"
 
 ## Summary
 [summary]: #summary

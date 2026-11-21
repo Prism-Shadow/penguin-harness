@@ -1,4 +1,4 @@
-# PRFC-0009 Sandbox：策略 fail closed，后端是插件
+# PRFC-0009 Agent Sandbox
 
 [English](PRFC-0009-sandbox.md)
 
