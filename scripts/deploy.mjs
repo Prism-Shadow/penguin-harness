@@ -292,6 +292,10 @@ async function compileEntry(entry, outfile) {
       path.join(ROOT, "scripts/gen-ifaces.mjs"),
       "--project",
       path.join(ROOT, "packages", pkg, "tsconfig.ifaces.json"),
+      // The root config carries the workspace source mappings (core and server faces resolve
+      // from source, the way every target reads them).
+      "--project",
+      path.join(ROOT, "tsconfig.ifaces.json"),
       ...(pkg === "cli"
         ? ["--project", path.join(ROOT, "packages", "server", "tsconfig.json")]
         : []),

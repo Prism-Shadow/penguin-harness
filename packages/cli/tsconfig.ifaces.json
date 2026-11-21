@@ -1,4 +1,8 @@
 {
-  "extends": ["./tsconfig.json", "../../tsconfig.ifaces.json"],
-  "include": ["src", "../server/src/cli"]
+  "extends": [
+    "./tsconfig.json"
+  ],
+  "include": [
+    "src"
+  ]
 }
