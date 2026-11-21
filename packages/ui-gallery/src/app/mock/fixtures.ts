@@ -356,6 +356,11 @@ export interface UsageDay {
   requests: number;
   completed: number;
   aborted: number;
+  /**
+   * A plugin's tool requests (`<package>:<operation>`): requests and cost like the rest, but
+   * their Tokens stay out of the Token figures. Absent on a chat turn's day.
+   */
+  purpose?: string;
 }
 
 export function buildFixtures(lang: Lang, now: number): DemoFixtures {
@@ -1980,6 +1985,42 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         requests: notesRequests,
         completed: notesRequests,
         aborted: 0,
+      });
+    }
+    // The docs Agent's tool requests through the multimodal-tools plugin: an image every few
+    // days, web searches on the busy ones (MMSP counts a search as 1,000 prompt tokens).
+    if (day % 4 === 1) {
+      const images = 1 + Math.round(rnd() * 2);
+      usage.push({
+        date,
+        agentId: IDS.agents.docs,
+        sessionId: IDS.sessions.older[day % 4]!,
+        provider: "openai",
+        modelId: "gpt-image-2.5-flare",
+        cacheRead: 0,
+        cacheWrite: images * 120,
+        output: images * 4_200,
+        requests: images,
+        completed: images,
+        aborted: 0,
+        purpose: "@penguinharness/multimodal-tools:t2i",
+      });
+    }
+    if (busy && day % 2 === 0) {
+      const searches = 2 + Math.round(rnd() * 4);
+      usage.push({
+        date,
+        agentId: IDS.agents.docs,
+        sessionId: day === 0 ? IDS.sessions.done : IDS.sessions.older[day % 4]!,
+        provider: "deepseek",
+        modelId: "deepseek-search",
+        cacheRead: 0,
+        cacheWrite: searches * 1_000,
+        output: 0,
+        requests: searches,
+        completed: searches,
+        aborted: 0,
+        purpose: "@penguinharness/multimodal-tools:search",
       });
     }
   }

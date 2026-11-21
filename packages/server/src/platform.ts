@@ -152,6 +152,7 @@ import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
 import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
+import { AdminPluginRoutes } from "./http/routes/admin-plugins.js";
 import { NpmPluginPackages } from "./plugin/packages.js";
 import { PluginSourceSettings } from "./plugin/source-settings.js";
 import { PluginMirrorSettings } from "./plugin/mirror-settings.js";
@@ -555,6 +556,7 @@ export class CompanyModule {}
     PluginRegistryRoutes,
     NpmPluginPackages,
     InstalledPluginRoutes,
+    AdminPluginRoutes,
     PluginCliCommandsProvider,
     PluginMarketRoutes,
     SuggestIdRoutes,

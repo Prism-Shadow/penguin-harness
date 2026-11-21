@@ -33,8 +33,10 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "assets",
     "dist",
     "skills",
+    "workbenches",
     "icon.svg",
     "ifaces.json",
     "LICENSE",

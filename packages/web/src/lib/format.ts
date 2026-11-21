@@ -121,7 +121,8 @@ export function formatAverage(total: number, count: number): string {
 /**
  * Cost display (converted to the selected currency; prices are stored in
  * USD): null/undefined → `—`; 1 USD ≈ 7 CNY; decimal places scale with
- * magnitude (≥100 rounds to an integer, ≥1 uses two places, otherwise four).
+ * magnitude (≥100 rounds to an integer, ≥1 uses two places, otherwise four;
+ * below 0.001, four significant digits, so a nonzero cost never reads as zero).
  * `compact` (narrow screens): sub-unit amounts keep 2 significant digits
  * instead of 4 fixed decimals (`$0.1234` → `$0.12`, `$0.0012` stays
  * `$0.0012`) — significant digits, not fixed decimals, so a nonzero cost is
@@ -138,6 +139,15 @@ export function formatMoney(
   if (v === 0) return `${symbol}0`;
   const abs = Math.abs(v);
   if (opts?.compact && abs < 1) return `${symbol}${Number(v.toPrecision(2))}`;
+  // Below a tenth of a cent four fixed decimals would round a real charge (one search, a second of
+  // audio) to zero or to a tenth of a cent it is not: four significant digits instead.
+  if (abs < 0.001) {
+    const figure = Number(v.toPrecision(4)).toLocaleString("en-US", {
+      maximumSignificantDigits: 4,
+      useGrouping: false,
+    });
+    return `${symbol}${figure}`;
+  }
   const digits = abs >= 100 ? 0 : abs >= 1 ? 2 : 4;
   return `${symbol}${v.toFixed(digits)}`;
 }

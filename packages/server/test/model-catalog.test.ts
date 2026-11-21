@@ -31,7 +31,6 @@ import {
   MODEL_CATALOG,
   MODEL_PROVIDERS,
   PENGUIN_GO_BASE_URL,
-  PRESET_DEFAULT_MODEL,
   QWEN_OFF_PEAK,
   catalogEntryFor,
   catalogGroupConnection,
@@ -1192,12 +1191,10 @@ describe("off-peak schedules", () => {
     }
   });
 
-  it("usage on the default model of new Projects keeps a price once a Project drops its row, and so does every former default; any other model's does not", () => {
-    const ref = PRESET_DEFAULT_MODEL;
-    expect(retainedCatalogPricing(ref.provider, ref.model_id)).toEqual(
-      catalogEntryFor(ref.provider, ref.model_id)!.pricing,
-    );
-    for (const m of MODEL_CATALOG.filter((e) => e.wasDefault === true)) {
+  it("usage on every model new Projects were seeded with as their default keeps a price once a Project drops its row; any other model's does not", () => {
+    const former = MODEL_CATALOG.filter((e) => e.wasDefault === true);
+    expect(former.length).toBeGreaterThan(0);
+    for (const m of former) {
       expect(retainedCatalogPricing(m.provider, m.modelId), m.modelId).toBeDefined();
     }
     expect(retainedCatalogPricing("tokendance", "glm-5.3-flash")).toBeUndefined();

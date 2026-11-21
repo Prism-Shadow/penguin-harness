@@ -17,6 +17,7 @@ import {
   type OperationInput,
 } from "./operations.js";
 import { Polish } from "./polish.js";
+import { ReadAloud } from "./read-aloud.js";
 import { Runs, type Finished, type RunRecord } from "./runs.js";
 import { TEXT_BINDING, textModel } from "./text-model.js";
 import { ToolStore } from "./store.js";
@@ -46,11 +47,17 @@ export class Tools {
   readonly store: ToolStore;
   readonly runs: Runs;
   readonly polish: Polish;
+  readonly readAloud: ReadAloud;
 
   constructor(private readonly host: ToolsHost) {
     this.store = new ToolStore(host.root);
     this.runs = new Runs(host.requests, this.store);
     this.polish = new Polish(host.requests, host.bindings, host.models, this.store);
+    this.readAloud = new ReadAloud(
+      host.requests,
+      (projectId) => this.modelFor(projectId, "t2s"),
+      this.store,
+    );
   }
 
   /** The model an operation runs on in a Project; a 409 naming what to set when there is none. */

@@ -23,6 +23,7 @@ import type {
 } from "@prismshadow/penguin-core/plugin";
 import { providerDimensions, requestedDimensions } from "./dimensions.js";
 import { Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import { pluginHostFrom, pluginPackageOf } from "../plugin/host.js";
 import type { Slot, ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
 
 interface MountedProvider {
@@ -83,7 +84,11 @@ export class SandboxService {
    *   waiting. The default settings never consult a backend, so that window only
    *   exists for deployments flipping the mode in the first milliseconds after boot.
    */
-  constructor(registrations: Iterable<[string, SandboxProviderSource]> = []) {
+  constructor(
+    registrations: Iterable<[string, SandboxProviderSource]> = [],
+    /** The package of the plugin that registered a backend, by its name; read when asked. */
+    private readonly packageOf: (name: string) => string | undefined = () => undefined,
+  ) {
     const loads: Registration[] = [...registrations].map(([name, source]) => ({
       name,
       source,
@@ -186,6 +191,17 @@ export class SandboxService {
   /** The backends that declined because this host is not theirs (the config surface). */
   declined(): string[] {
     return [...this.declinedNames];
+  }
+
+  /**
+   * Every registered backend in routing order, with the package of the plugin that registered
+   * it when one did: what the settings page links each backend's line to (its plugin's page).
+   */
+  origins(): Array<{ name: string; package?: string }> {
+    return this.registrations.map(({ name }) => {
+      const pkg = this.packageOf(name);
+      return pkg === undefined ? { name } : { name, package: pkg };
+    });
   }
 
   /**
@@ -372,6 +388,7 @@ export abstract class Sandbox extends Interface<
     | "backends"
     | "failures"
     | "declined"
+    | "origins"
     | "retryFailed"
     | "confiner"
     | "confinerFor"
@@ -381,10 +398,17 @@ export abstract class Sandbox extends Interface<
 
 export interface SandboxSlots {
   /**
-   * A backend: its static half here (name, the dimensions it implements), its code half
-   * bound by the contributor — a provider, or a promise of one for backends that probe.
+   * A backend: its static half here (name, the dimensions it implements, and the platforms it is
+   * the default backend for, as `process.platform` names them), its code half bound by the
+   * contributor — a provider, or a promise of one for backends that probe. `defaultFor` is package
+   * metadata the plugin index repeats on the package's row (`sandboxDefaultFor`): the host offers
+   * the index's defaults for its platform when the sandbox is turned on with no backend, and names
+   * none of its own.
    */
-  providers: Slot<{ name: string; dimensions: SandboxDimension[] }, SandboxProviderSource>;
+  providers: Slot<
+    { name: string; dimensions: SandboxDimension[]; defaultFor?: string[] },
+    SandboxProviderSource
+  >;
 }
 
 @Module({
@@ -402,12 +426,19 @@ export interface SandboxSlots {
 })
 export class SandboxModule {
   @Provide() sandbox!: Sandbox;
-  setup({ contributions }: ClassCtx, context: Json) {
+  setup({ contributions, resources }: ClassCtx, context: Json) {
     const providers = (contributions.providers ?? []).map(
       (c) =>
         [c.data.name as string, c.code as SandboxProviderSource] as [string, SandboxProviderSource],
     );
-    const sandbox = new SandboxService(providers);
+    const contributor = new Map(
+      (contributions.providers ?? []).map((c) => [c.data.name as string, c.from]),
+    );
+    // The plugin host is claimed per read: what this generation loaded is recorded on it.
+    const sandbox = new SandboxService(providers, (name) => {
+      const from = contributor.get(name);
+      return from === undefined ? undefined : pluginPackageOf(pluginHostFrom(resources), from);
+    });
     // Parked settings ride the swap: without this every push would construct a fresh
     // service on defaults and silently un-confine a confining deployment.
     const parked = (context as { settings?: SandboxSettings } | null)?.settings;

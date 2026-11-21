@@ -7,6 +7,8 @@
  *   past — is refused with 400 on POST and PUT, and nothing is written.
  * - Settled tasks are archived into schedule/expired/: absent from the agent and Project listings
  *   and from the agent card's scheduleCount.
+ * - A task that names no model runs on the Project's default: in a Project with none it is refused
+ *   with 400 `no_default_model`, and nothing is written, while one naming its model is created.
  * - A schedule's creator is the person who saved it with their own sign-in: one saved with the
  *   local API token (an Agent's shell), a file found on disk, and a person's schedule edited on
  *   disk since have none; the person's next save names them again.
@@ -52,9 +54,38 @@ describe("schedules api", () => {
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" })).status,
     ).toBe(201);
+    // The default its owner chose (a new Project starts with none).
+    expect(
+      (
+        await owner.put(`/api/projects/${projectId}/models/default`, {
+          provider: "deepseek",
+          modelId: "deepseek-flash",
+        })
+      ).status,
+    ).toBe(200);
   });
   afterEach(async () => {
     await t.cleanup();
+  });
+
+  it("refuses a task naming no model while the Project has no default, and takes one naming its model", async () => {
+    const other = (await (
+      await owner.post("/api/projects", { projectId: "owner_a-bare", name: "no default yet" })
+    ).json()) as ProjectCreateResponse;
+    const bare = `/api/projects/${other.project.projectId}/agents/default_agent/schedules`;
+    const body = { name: "daily", prompt: "Write the report", enabled: true, startAt: FUTURE };
+    const refused = await owner.post(bare, body);
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as { error: { code: string } }).error.code).toBe(
+      "no_default_model",
+    );
+    expect(((await (await owner.get(bare)).json()) as SchedulesResponse).schedules).toEqual([]);
+    const named = await owner.post(bare, {
+      ...body,
+      provider: "deepseek",
+      modelId: "deepseek-flash",
+    });
+    expect(named.status).toBe(201);
   });
 
   it("POST creates (owner only) and lands TOML on disk; GET list and single item; DELETE cleans up", async () => {
@@ -201,7 +232,13 @@ describe("schedules api", () => {
     const body = { prompt: "p", enabled: true, startAt: FUTURE, period: "30m" };
     const agent = tokenClient(t.app, t.deps.authService.localApiToken()!);
     const own = "/api/projects/default_project/agents/default_agent/schedules";
-    const byToken = await agent.post(own, { ...body, name: "by-agent" });
+    // A new Project has no default model, so the schedule names its own.
+    const byToken = await agent.post(own, {
+      ...body,
+      name: "by-agent",
+      provider: "deepseek",
+      modelId: "deepseek-flash",
+    });
     expect(byToken.status).toBe(201);
     expect(((await byToken.json()) as ScheduleItem).creatorUserId).toBeUndefined();
 

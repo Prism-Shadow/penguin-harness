@@ -15,6 +15,9 @@
  *   on the loopback) is downloaded under a cap and checked against `dist.integrity`'s sha512
  *   **before** a byte of it is unpacked; a tarball that does not match moves to the next
  *   address, and a version that pins no sha512 is refused.
+ * - **An offline archive** the build carries (plugin/offline-archives.ts), its sha512 checked by
+ *   the caller: read from disk, kept in `archives/` and recorded as `file:archives/<tarball>`,
+ *   as npm records it.
  * - **A release channel** of the published index: its asset, checked against the entry's
  *   sha512 the same way, over the channel's addresses in order, then kept in `archives/` and
  *   recorded as `file:archives/<asset>` so a later npm run never has to fetch it again.
@@ -36,6 +39,7 @@ import path from "node:path";
 import * as tar from "tar";
 import {
   ARCHIVES_DIR,
+  CHECK_FETCH_TIMEOUT_MS,
   configuredNpmRegistry,
   digestOf,
   packageName,
@@ -206,6 +210,90 @@ function parseDocument(name: string) {
   };
 }
 
+/** A failure about the registry, naming it, so the answer can say which host it was. */
+function registryRefusal(
+  message: string,
+  registry: string,
+  reason: "unavailable" | "unreachable" | "other" = "other",
+): ReturnType<typeof refusal> {
+  const error = refusal(message, reason);
+  error.registry = registry;
+  return error;
+}
+
+/**
+ * A name's registry document over the registry and the mirrors the Plugin mirrors setting
+ * rewrites it into, each address within `timeoutMs`. A 404 is "unavailable", as npm's E404 is,
+ * so the index's channel or an offline archive may still answer; a 401 or 403 refuses to say;
+ * no address answering a document at all is "unreachable", as npm's network failures are.
+ */
+async function readDocument(
+  name: string,
+  io: WithoutNpm,
+  timeoutMs: number,
+): Promise<{ document: RegistryDocument; registry: string }> {
+  const registry = (io.registry ?? configuredNpmRegistry() ?? OFFICIAL_REGISTRY).replace(
+    /\/+$/,
+    "",
+  );
+  const documentUrl = `${registry}/${name.replace("/", "%2f")}`;
+  try {
+    const document = await fetchFirst(
+      [documentUrl, ...pluginProxyMirrors(documentUrl, io.mirrors ?? indexMirrorRules())],
+      {
+        fetch: io.fetch,
+        timeoutMs,
+        maxBytes: io.limits?.documentMaxBytes ?? DOCUMENT_MAX_BYTES,
+        mediaTypes: DOCUMENT_TYPES,
+      },
+      { take: parseDocument(name), settles: [401, 403, 404] },
+    );
+    return { document, registry };
+  } catch (err) {
+    if (!(err instanceof WalkError)) throw err;
+    if (err.settled === 404) {
+      throw registryRefusal(`${name} is not on the registry ${registry}`, registry, "unavailable");
+    }
+    if (err.settled !== null) {
+      throw registryRefusal(
+        `the registry ${registry} refused to answer for ${name} (${err.settled}); a private package installs through npm, with the credentials in its .npmrc`,
+        registry,
+      );
+    }
+    throw registryRefusal(
+      `could not read ${name} from the registry: ${err.message}`,
+      registry,
+      "unreachable",
+    );
+  }
+}
+
+/**
+ * Asks the registry whether it has a version of a name (`name`, `name@range`) before it is
+ * installed without npm — what `npm view` answers where there is npm (install.ts
+ * checkPluginSource): its document, each address within CHECK_FETCH_TIMEOUT_MS, and the version
+ * the spec picks. Throws "unavailable" or "unreachable" as readDocument does, and "unavailable"
+ * for a version the document does not have; anything else is the install's to report.
+ */
+export async function checkFromRegistry(specifier: string, io: WithoutNpm): Promise<void> {
+  let source: ReturnType<typeof parsePluginSource>;
+  try {
+    source = parsePluginSource(specifier);
+  } catch {
+    return;
+  }
+  if (source.kind === "link") return;
+  const { document, registry } = await readDocument(
+    source.name,
+    io,
+    io.limits?.timeoutMs ?? CHECK_FETCH_TIMEOUT_MS,
+  );
+  const picked = pickRegistryVersion(source.name, document, source.version);
+  if ("fault" in picked && picked.unavailable) {
+    throw registryRefusal(picked.fault, registry, "unavailable");
+  }
+}
+
 /**
  * Installs a registry name (`name`, `name@<version, range or tag>`) without npm (see the
  * header). A link refuses: npm is what fetches one.
@@ -225,39 +313,15 @@ export async function installFromRegistry(
     throw needsNpm(`Installing from the link ${specifier}`, ["npm is what fetches a link"], io);
   }
   const { name } = source;
-  const registry = (io.registry ?? configuredNpmRegistry() ?? OFFICIAL_REGISTRY).replace(
-    /\/+$/,
-    "",
-  );
   const mirrors = io.mirrors ?? indexMirrorRules();
-  const documentUrl = `${registry}/${name.replace("/", "%2f")}`;
-  let document: RegistryDocument;
-  try {
-    document = await fetchFirst(
-      [documentUrl, ...pluginProxyMirrors(documentUrl, mirrors)],
-      {
-        fetch: io.fetch,
-        timeoutMs: io.limits?.timeoutMs ?? DOCUMENT_TIMEOUT_MS,
-        maxBytes: io.limits?.documentMaxBytes ?? DOCUMENT_MAX_BYTES,
-        mediaTypes: DOCUMENT_TYPES,
-      },
-      { take: parseDocument(name), settles: [401, 403, 404] },
-    );
-  } catch (err) {
-    if (!(err instanceof WalkError)) throw err;
-    if (err.settled === 404) {
-      throw refusal(`${name} is not on the registry ${registry}`, "unavailable");
-    }
-    if (err.settled !== null) {
-      throw refusal(
-        `the registry ${registry} refused to answer for ${name} (${err.settled}); a private package installs through npm, with the credentials in its .npmrc`,
-      );
-    }
-    throw refusal(`could not read ${name} from the registry: ${err.message}`);
-  }
+  const { document, registry } = await readDocument(
+    name,
+    io,
+    io.limits?.timeoutMs ?? DOCUMENT_TIMEOUT_MS,
+  );
   const picked = pickRegistryVersion(name, document, source.version);
   if ("fault" in picked) {
-    throw refusal(picked.fault, picked.unavailable ? "unavailable" : "other");
+    throw registryRefusal(picked.fault, registry, picked.unavailable ? "unavailable" : "other");
   }
   const { version } = picked;
   const label = `${name}@${version}`;
@@ -358,6 +422,40 @@ export async function installChannel(
     },
   );
   return { name: channel.name, version: channel.version, withoutNpm: true };
+}
+
+/**
+ * Installs a package tarball already on this machine without npm — an offline archive the build
+ * carries, its sha512 checked by the caller — the way a release channel's verified asset is
+ * installed: unpacked and vetted (the package it says it is, nothing npm would have to do),
+ * placed, and kept in `archives/` under its own name, which the prefix records.
+ */
+export async function installTarball(
+  root: string,
+  file: string,
+  name: string,
+  io: WithoutNpm,
+): Promise<InstalledPackage> {
+  const bytes = new Uint8Array(await fs.readFile(file));
+  const files = unpack(name, bytes, io);
+  const manifest = manifestOf(files);
+  const version = typeof manifest.version === "string" ? manifest.version : "";
+  vetUnpacked(`${name}@${version}`, files, name, version, io);
+  const asset = path.basename(file);
+  await placePackage(
+    root,
+    name,
+    withExecutableBins(files, manifest),
+    `file:${ARCHIVES_DIR}/${asset}`,
+    {
+      beforeSwap: async () => {
+        const archives = path.join(pluginsPrefix(root), ARCHIVES_DIR);
+        await fs.mkdir(archives, { recursive: true });
+        await fs.writeFile(path.join(archives, asset), bytes);
+      },
+    },
+  );
+  return { name, version, withoutNpm: true };
 }
 
 /** The file name `npm pack` gives a package's tarball: `@scope/name` → `scope-name-<version>.tgz`. */

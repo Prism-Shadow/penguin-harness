@@ -96,6 +96,7 @@ import type {
   SshHostRequest,
   SshHostResponse,
   SshHostsResponse,
+  ModelRefDto,
   ModelsResponse,
   ModelsUpdateRequest,
   PresetSyncRequest,
@@ -150,6 +151,8 @@ import type {
   PluginInstallRequest,
   PluginModuleAskRequest,
   PluginModuleAskResponse,
+  PluginHoldersResponse,
+  PluginServerUninstallResponse,
   PluginModuleDecideRequest,
   PluginModuleRequestsResponse,
   PluginLibraryResponse,
@@ -281,6 +284,15 @@ import { ApiError, apiFetch, apiFetchStream, apiFetchWithMeta, apiUpload } from 
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
 import { activityCursorParam, type ActivityKey } from "../lib/session-grouping";
+import type {
+  SpokenReply,
+  ToolBindingUpdate,
+  ToolBindingsResponse,
+  ToolRun,
+  ToolRunRequest,
+  VoicePolishSettings,
+  VoicePolishUpdate,
+} from "./tool-types";
 
 // Auth & user -----------------------------------------------------------------
 
@@ -513,6 +525,94 @@ export const putDefaultModel = (projectId: string, body: DefaultModelUpdateReque
   apiFetch<DefaultModelResponse>(`/api/projects/${encodeURIComponent(projectId)}/models/default`, {
     method: "PUT",
     body,
+  });
+
+// Model tools: the platform's bindings and the multimodal tools plugin's routes ----------------
+
+const toolBindingsPath = (projectId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/models/tool-bindings`;
+const multimodalPath = (projectId: string, rest: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/multimodal-tools${rest}`;
+
+/** A JSON answer read through the abortable fetch path. */
+async function abortableJson<T>(
+  path: string,
+  options: { method?: "GET" | "POST"; body?: unknown; server: string | null; signal?: AbortSignal },
+): Promise<T> {
+  return (await (await apiFetchStream(path, options)).json()) as T;
+}
+
+/**
+ * Every tool-model binding the Project's enabled plugins declare, each with its model and the
+ * configured models it accepts (any member). `server` names the machine whose copy is read.
+ */
+export const getToolBindings = (projectId: string, server: string | null, signal?: AbortSignal) =>
+  abortableJson<ToolBindingsResponse>(toolBindingsPath(projectId), {
+    server,
+    ...(signal !== undefined ? { signal } : {}),
+  });
+
+/** Binds one key, or with `model: null` unbinds it (owner); answers the whole list. */
+export const patchToolBinding = (projectId: string, body: ToolBindingUpdate) =>
+  apiFetch<ToolBindingsResponse>(toolBindingsPath(projectId), { method: "PATCH", body });
+
+/** Transcribes a recording with the Project's speech-recognition model (any member). */
+export const transcribeRecording = (
+  projectId: string,
+  server: string | null,
+  body: ToolRunRequest,
+  signal?: AbortSignal,
+) =>
+  abortableJson<ToolRun>(multimodalPath(projectId, "/s2t/run"), {
+    method: "POST",
+    body,
+    server,
+    ...(signal !== undefined ? { signal } : {}),
+  });
+
+/** Transcript editing in the Project: the switch, the instructions and the model it runs on. */
+export const getVoicePolish = (projectId: string, server: string | null, signal?: AbortSignal) =>
+  abortableJson<VoicePolishSettings>(multimodalPath(projectId, "/voice-polish/settings"), {
+    server,
+    ...(signal !== undefined ? { signal } : {}),
+  });
+
+/** Changes what the update names (owner); answers the settings as stored. */
+export const patchVoicePolish = (projectId: string, body: VoicePolishUpdate) =>
+  apiFetch<VoicePolishSettings>(multimodalPath(projectId, "/voice-polish/settings"), {
+    method: "PATCH",
+    body,
+  });
+
+/** Edits one dictated transcript with the Project's text-generation model. */
+export const polishTranscript = (
+  projectId: string,
+  server: string | null,
+  body: { text: string; sessionId?: string },
+  signal?: AbortSignal,
+) =>
+  abortableJson<{ text: string; model: ModelRefDto }>(multimodalPath(projectId, "/voice-polish"), {
+    method: "POST",
+    body,
+    server,
+    ...(signal !== undefined ? { signal } : {}),
+  });
+
+/**
+ * A reply's audio in its Session: the stored one when this reply was read with this voice model
+ * before, else spoken now. Answers where to play it.
+ */
+export const readReplyAloud = (
+  projectId: string,
+  server: string | null,
+  body: { text: string; sessionId: string },
+  signal?: AbortSignal,
+) =>
+  abortableJson<SpokenReply>(multimodalPath(projectId, "/read-aloud"), {
+    method: "POST",
+    body,
+    server,
+    ...(signal !== undefined ? { signal } : {}),
   });
 
 /**
@@ -2006,6 +2106,21 @@ export const askPluginModule = (projectId: string, plugin: string) =>
   );
 
 /**
+ * A member's 「安装到 Agent」 of a plugin that is not on the server yet: a request for the
+ * administrator, who installs it on the server. 409 `plugin_on_server` when it is there already.
+ */
+export const askPluginPackage = (projectId: string, pkg: string, agentId: string | null) =>
+  apiFetch<PluginModuleAskResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/plugins/modules`,
+    {
+      method: "POST",
+      body: (agentId !== null
+        ? { package: pkg, agentId }
+        : { package: pkg }) satisfies PluginModuleAskRequest,
+    },
+  );
+
+/**
  * Uninstalls a whole plugin from the Agent on its server, in one request (Project owner): its
  * workbenches, its MCP server entries, its hook package and its Skills. The answer lists what was
  * removed, and `failed` what could not be (the rest is removed regardless). 404
@@ -3122,17 +3237,28 @@ export const installPlugin = (
 export type InstallProgressListener = (received: number, total: number | null) => void;
 
 /**
+ * A step of a server install as its stream reports it: the registry asked about a name before it
+ * installs, a source being tried, or the App re-assembling.
+ */
+export type InstallStage =
+  | { stage: "checking" }
+  | { stage: "installing"; source: "registry" | "link" | "channel" | "offline" }
+  | { stage: "loading" };
+
+/**
  * The same install as {@link installPlugin}, read as it arrives: the server answers a
- * `text/event-stream` whose `download` events carry the channel's bytes on their way in, `npm`
- * fires once the bytes are in and npm takes over, and `result` carries the finished list. An
- * `error` event carries the status the JSON answer would have had, and is raised as an
- * {@link ApiError} — a stream that ends with no `result` is a lost connection.
+ * `text/event-stream` that opens with `npm`, says the registry check, each source it tries and the
+ * App's re-assembly as `stage` events, carries a channel's bytes on their way in as `download` events, and ends with
+ * `result`, the finished list (a `ping` keeps a long install's stream alive). An `error` event
+ * carries the status the JSON answer would have had, and is raised as an {@link ApiError} — a
+ * stream that ends with no `result` is a lost connection.
  */
 export const installPluginStream = async (
   projectId: string,
   specifier: string,
   machineId: string | null,
   onProgress: InstallProgressListener,
+  onStage?: (stage: InstallStage) => void,
 ): Promise<InstalledPluginsResponse> => {
   const response = await apiFetchStream(pluginsPath(projectId), {
     method: "POST",
@@ -3144,6 +3270,8 @@ export const installPluginStream = async (
     if (event === "download") {
       const progress = JSON.parse(data) as { received: number; total: number | null };
       onProgress(progress.received, progress.total);
+    } else if (event === "stage") {
+      onStage?.(JSON.parse(data) as InstallStage);
     } else if (event === "error") {
       const failure = JSON.parse(data) as { status: number; code: string; message: string };
       throw new ApiError(failure.status, failure.code, failure.message);
@@ -3194,6 +3322,27 @@ async function* sseEvents(response: Response): AsyncGenerator<{ event: string; d
     void reader.cancel().catch(() => {});
   }
 }
+
+/**
+ * Who would lose a plugin if it were uninstalled from the server (admin): every Agent of every
+ * Project there that carries it, and whether the uninstall can run (`shipped`, `shared`).
+ * `server` names a machine through this server's tunnel; null is this server.
+ */
+export const getPluginHolders = (pkg: string, server: string | null) =>
+  apiFetch<PluginHoldersResponse>(`/api/admin/plugins/holders?package=${encodeURIComponent(pkg)}`, {
+    server,
+  });
+
+/**
+ * Uninstalls a plugin from the server (admin): from every Agent there first — their copies, local
+ * edits and workbench data included — then from the server itself. 409 `plugin_shipped`,
+ * `plugin_shared` or `module_failed`, 404 `plugin_not_installed`.
+ */
+export const uninstallPluginFromServer = (pkg: string, server: string | null) =>
+  apiFetch<PluginServerUninstallResponse>(`/api/admin/plugins?package=${encodeURIComponent(pkg)}`, {
+    method: "DELETE",
+    server,
+  });
 
 /**
  * Admin only: drops it from every table of this Project, or with `machineId` from that

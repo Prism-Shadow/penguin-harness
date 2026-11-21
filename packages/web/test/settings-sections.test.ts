@@ -10,6 +10,9 @@
  *   a password session against a desktop-mode server keeps the account page.
  * - A contributed page takes its place among the app's own by its order, inside its group; an
  *   admin-only one stays off a non-admin's rail; one reusing a key of the app's is dropped.
+ * - A contributed page in the plugin group takes no rail entry of its own (it is part of its
+ *   plugin's page); the plugin pages come last, under their own group, in the order given, for
+ *   an admin and a member alike.
  * - The rail lists an admin's groups once each, in page order, and a single group when only
  *   one remains (its cue to draw no heading).
  * - A requested page passes through when the viewer may open it; a forbidden or unknown page,
@@ -41,6 +44,8 @@ const APP_PAGES: Record<HostSettingsSectionKey, true> = {
   company: true,
   agentApi: true,
   plugins: true,
+  moduleRequests: true,
+  sandbox: true,
   users: true,
 };
 
@@ -111,8 +116,11 @@ describe("contributed pages", () => {
       "company",
       "chromeExtension",
       "agentApi",
-      "plugins",
       "users",
+      // The Plugins group, last: the host's own plugin pages.
+      "plugins",
+      "moduleRequests",
+      "sandbox",
     ]);
   });
 
@@ -127,9 +135,40 @@ describe("contributed pages", () => {
   });
 });
 
+describe("plugin pages on the rail", () => {
+  const PLUGIN_SECTION: SettingsSectionData = {
+    key: "pluginOwn",
+    group: "plugin",
+    plugin: "@acme/x",
+    visibility: "everyone",
+    icon: "plug",
+    order: 1,
+  };
+  const PAGES = [{ key: "plugin:@acme/x" }, { key: "plugin:@acme/a" }];
+  const withPages = (viewer: SettingsViewer) =>
+    visibleSettingsSections(viewer, [...CONTRIBUTED, PLUGIN_SECTION], PAGES);
+
+  it("leaves a plugin's own contributed page off the rail, and lists the plugin pages last in the order given", () => {
+    const viewer = { isAdmin: true, desktopMode: false, sessionVia: "password" } as const;
+    const sections = withPages(viewer);
+    expect(keys(sections)).not.toContain("pluginOwn");
+    expect(sections.slice(-2)).toEqual([
+      { key: "plugin:@acme/x", group: "plugin" },
+      { key: "plugin:@acme/a", group: "plugin" },
+    ]);
+    expect(settingsGroups(sections)).toEqual(["personal", "server", "plugin"]);
+  });
+
+  it("gives a member the pages it is handed after their own", () => {
+    const sections = withPages({ isAdmin: false, desktopMode: false, sessionVia: "password" });
+    expect(settingsGroups(sections)).toEqual(["personal", "plugin"]);
+    expect(keys(sections).slice(-2)).toEqual(["plugin:@acme/x", "plugin:@acme/a"]);
+  });
+});
+
 describe("settingsGroups", () => {
   it("lists an admin's groups once each, in page order", () => {
-    expect(settingsGroups(admin)).toEqual(["personal", "server"]);
+    expect(settingsGroups(admin)).toEqual(["personal", "server", "plugin"]);
   });
 
   it("collapses to a single group when only one remains, the rail's cue to draw no heading", () => {

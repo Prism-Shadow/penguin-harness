@@ -49,6 +49,7 @@ export * from "./components/feedback/load-failed/load-failed";
 // W1 — actions.
 export * from "./components/actions/close-button/close-button";
 export * from "./components/actions/button/button";
+export * from "./components/actions/button/inline-icon-button";
 export * from "./components/actions/link/link";
 export * from "./components/actions/text-action/text-action";
 export * from "./components/actions/copy-button/copy-button";
@@ -273,9 +274,13 @@ export * from "./components/chat/transcript-note/transcript-note";
 export * from "./components/chat/subagent-chip/subagent-chip";
 
 // W6-B — the composer: its card, chip row, toolbar triggers, action button and slash list, the
-// toolbar select, the context ring, the model picker, and the chips with remove buttons.
+// dictation button and its level meter, the toolbar select, the context ring, the model picker,
+// and the chips with remove buttons.
 export * from "./components/chat/composer/composer";
 export * from "./components/chat/composer/toolbar-trigger";
+export * from "./components/chat/composer/record-button";
+export * from "./components/chat/composer/microphone-meter";
+export * from "./components/chat/composer/microphone-levels";
 export * from "./components/chat/menu-select/menu-select";
 export * from "./components/chat/context-ring/context-ring";
 export * from "./components/chat/model-select/model-select";
@@ -341,6 +346,10 @@ export * from "./components/machines/machine-list/machine-list";
 export * from "./components/machines/machine-toolbar/machine-toolbar";
 export * from "./components/machines/add-machine/add-machine";
 
+// Models: the Project's default-models dialog, and the guide shown before any model has a key.
+export * from "./components/models/default-models-dialog/default-models-dialog";
+export * from "./components/models/model-setup-guide/model-setup-guide";
+
 // Reading and finding: the find-in-page machinery the app's find bar and the Markdown reader share
 // (the text matcher, the DOM index with its highlight paint and reveal, the control row), the
 // reader with its outline model, and the measured width a layout that follows its own room reads.
@@ -365,7 +374,16 @@ export * from "./components/data/meta-line/meta-line";
 export * from "./components/feedback/status-mark/status-mark";
 export * from "./components/actions/glyph-action/glyph-action";
 export * from "./components/data/fact-row/fact-row";
+// What a destructive action reaches, in its confirm: named up to a limit, the rest counted.
+export * from "./components/data/impact-list/impact-list";
 export * from "./components/navigation/sub-page-bar/sub-page-bar";
+
+// A status page — a plugin's page in Settings: the strip at its head, the version element of a
+// program the subject installs beside itself (with its "Details" fold), and the checklist of its
+// preconditions.
+export * from "./components/layout/status-strip/status-strip";
+export * from "./components/feedback/installed-version/installed-version";
+export * from "./components/data/checklist/checklist";
 
 // The showcase family, shared with the public sites (site.ts): the cover, the cover card and its
 // grid, the selected carousel and its turn-taking, and a product page's parts.

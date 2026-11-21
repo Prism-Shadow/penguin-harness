@@ -89,7 +89,7 @@ jobs:
           ref: ${{ inputs.ref || '' }}
       - uses: ./.github/actions/setup
       - name: CI selection and gate regressions
-        run: node --test scripts/test/ci-plan.test.mjs scripts/test/ci-gate.test.mjs
+        run: node --test scripts/test/ci-plan.test.mjs scripts/test/ci-gate.test.mjs scripts/test/offline-archives.test.mjs scripts/test/build-plugins.test.mjs
       - name: Code style (Prettier)
         run: pnpm format:check
 

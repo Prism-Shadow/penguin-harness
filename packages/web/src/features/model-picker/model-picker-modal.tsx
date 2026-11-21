@@ -45,6 +45,7 @@ import {
 
 import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
 import {
+  Button,
   Pill,
   ChoiceCheck,
   CloseButton,
@@ -97,6 +98,12 @@ export interface ModelPickerModalProps {
   /** Names the dialog for assistive tech ("Choose model", "Switch model"). */
   title: string;
   models: ModelInfo[];
+  /** `tool`: a tool binding's candidates, whose tool models are listed; `chat` leaves them out. */
+  purpose?: "chat" | "tool";
+  /** Offers a footer action that removes the assignment; absent where an empty value is no choice. */
+  onClear?: () => void;
+  /** That action's words, where removing the assignment means something more specific. */
+  clearLabel?: string;
   /** Currently selected (provider, modelId) pair; null = not yet chosen. */
   value: ModelRefDto | null;
   defaultModel?: ModelRefDto;
@@ -125,6 +132,9 @@ export function ModelPickerModal({ open, onClose, title, ...body }: ModelPickerM
 
 function ModelPickerBody({
   models,
+  purpose = "chat",
+  onClear,
+  clearLabel,
   value,
   defaultModel,
   projectId: explicitProjectId,
@@ -145,6 +155,8 @@ function ModelPickerBody({
     selected: value,
     defaultModel: defaultModel ?? null,
     groupOrder,
+    // A tool binding's picker lists its tool models; chat's leaves them out (visibleChatModels).
+    tools: purpose === "tool",
   };
   const groups = pickerGroups(models, visibility);
   const results = searching ? searchPickerGroups(models, { ...visibility, query }) : [];
@@ -442,14 +454,19 @@ function ModelPickerBody({
         </div>
       </div>
 
-      {/* On a phone the bar exists only for the toggle: the keyboard legend is desktop-only. */}
+      {/* On a phone the bar appears only when it holds an action. */}
       <div
         data-slot="foot"
         {...band}
-        className={`${showToggle ? "flex" : "hidden sm:flex"} shrink-0 items-center gap-3 border-t border-line px-4 py-2 text-xs text-fg-subtle`}
+        className={`${showToggle || onClear ? "flex" : "hidden sm:flex"} shrink-0 items-center gap-3 border-t border-line px-4 py-2 text-xs text-fg-subtle`}
       >
         {/* Models without a key: listed on request, as the dropdown's bottom row did. It turns
             back off too, since the rail grows by every key-less group while it is on. */}
+        {onClear && (
+          <Button size="xs" variant="ghost" onClick={onClear}>
+            {clearLabel ?? S.modelPicker.clearAssignment}
+          </Button>
+        )}
         {showToggle && (
           <button
             type="button"

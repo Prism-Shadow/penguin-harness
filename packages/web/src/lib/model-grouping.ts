@@ -42,6 +42,18 @@ export function sameModelRef(
   return !!a && !!b && a.provider === b.provider && a.modelId === b.modelId;
 }
 
+/**
+ * The model a new chat starts on: the Project's default, when it names a chat model of the table.
+ * Nothing otherwise — a Project with no default (a new one starts with none) leaves the new chat
+ * without a model until one is chosen, rather than running it on whichever model is listed first.
+ */
+export function defaultChatModel<T extends ModelRefValue & { chatEligible?: boolean }>(
+  models: readonly T[],
+  preferred: ModelRefValue | null | undefined,
+): T | undefined {
+  return models.find((m) => m.chatEligible !== false && sameModelRef(m, preferred));
+}
+
 /** Minimal row shape needed for grouping/filtering (models-page's RowState and the DTO's ModelInfo are both supersets of this). */
 export interface ModelRowLike {
   /** Vendor id (entry field): a value not in the catalog list is a user-defined group, forming its own group while keeping its original value. */
@@ -381,22 +393,27 @@ export interface VisibleChatModelsOptions {
   defaultModel?: ModelRefValue | null;
   /** The models page's stored group order; omitted = the catalog's automatic order. */
   groupOrder?: readonly string[];
+  /**
+   * The list is a tool binding's candidates (an image, speech or web operation), not chat's:
+   * the tool models stay in it.
+   */
+  tools?: boolean;
 }
 
 /**
  * Candidate list for the chat model picker: library order → drop the tool models (an image,
  * speech or web model the catalog marks, which cannot hold a conversation) unless one is the
- * selected model → keep only models with a key (hasConfiguredKey: its own, its group's or
+ * selected model or the list is a tool binding's (`tools`) → keep only models with a key (hasConfiguredKey: its own, its group's or
  * env-backed; plus the selected and the default model, unless showAll) → the query then filters
  * whatever is visible. When NO model has a key, the filter degrades to showAll (everything
  * listed), so the picker is never uselessly empty.
  */
 export function visibleChatModels<T extends ModelCredentialRowLike>(
   models: T[],
-  { showAll, query, selected, defaultModel, groupOrder }: VisibleChatModelsOptions,
+  { showAll, query, selected, defaultModel, groupOrder, tools }: VisibleChatModelsOptions,
 ): T[] {
   const ordered = orderModelsLikeLibrary(
-    models.filter((m) => m.chatEligible !== false || sameModelRef(m, selected)),
+    tools ? models : models.filter((m) => m.chatEligible !== false || sameModelRef(m, selected)),
     groupOrder,
   );
   const keep =

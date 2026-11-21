@@ -7,10 +7,10 @@
  *
  * Two implementations, one contract:
  *   - the builtin registry serves the index embedded in this package
- *     (builtin-index.json — the server modules the workspace ships: the four sandbox backends
- *     and agent-state-git, each row carrying
- *     the descriptions of the package's own card contribution and its icon, so its card renders
- *     on a server the package is not installed on);
+ *     (builtin-index.json — the server-module plugins of the workspace: the four sandbox
+ *     backends and agent-state-git the build ships, and the market-only ones it does not, such as
+ *     computer-use; each row carries the descriptions of the package's own card contribution and
+ *     its icon, so its card renders on a server the package is not installed on);
  *   - the HTTP registry fetches an `index.json` URL and runs it through the same
  *     validator, so a remote index is trusted no further than the embedded one — and less
  *     in one respect: its entries lose their `icon`, an SVG this server would serve as its own
@@ -109,6 +109,24 @@ export function builtinPluginRegistry(
   };
 }
 
+/**
+ * The sandbox backends the embedded index declares as defaults for `platform`
+ * (`sandboxDefaultFor`), in index order: what a server whose sandbox is turned on with no backend
+ * offers to install. Only the embedded index answers: the listing lets it win every name it
+ * carries, it is read without waiting on the network, and an offer to install a package as part
+ * of turning a setting on is something only what ships with this server supplies. A row without
+ * the field is the default for no platform.
+ */
+export function sandboxDefaultsFor(
+  platform: string,
+  entries: readonly Pick<IndexDocumentEntry, "name" | "sandboxDefaultFor">[] = parsePluginIndex(
+    builtinIndex,
+    BUILTIN_REGISTRY_SOURCE,
+  ),
+): string[] {
+  return entries.filter((e) => e.sandboxDefaultFor?.includes(platform) === true).map((e) => e.name);
+}
+
 /** The display fields an index entry may carry, which a package can also carry itself: its card's, and its icon. */
 export type PluginDisplay = Pick<
   PluginIndexEntry,
@@ -185,7 +203,20 @@ export function selectIndexChannel(
  */
 export function indexChannelLookup(
   readUrls: () => readonly string[],
-  { fetchImpl = fetch, ttlMs = INDEX_CACHE_TTL_MS, now = Date.now } = {},
+  {
+    fetchImpl = fetch,
+    ttlMs = INDEX_CACHE_TTL_MS,
+    now = Date.now,
+    attempts,
+    timeoutMs,
+  }: {
+    fetchImpl?: typeof fetch;
+    ttlMs?: number;
+    now?: () => number;
+    /** Per address (httpPluginRegistry): an install's lookup tries once, briefly — it already waited on npm. */
+    attempts?: number;
+    timeoutMs?: number;
+  } = {},
 ): (
   name: string,
   version?: string,
@@ -218,6 +249,8 @@ export function indexChannelLookup(
         try {
           const fromSource = await httpPluginRegistry([url, ...pluginProxyMirrors(url, mirrors)], {
             fetchImpl,
+            ...(attempts !== undefined ? { attempts } : {}),
+            ...(timeoutMs !== undefined ? { timeoutMs } : {}),
           }).index();
           const fresh = fromSource.filter((entry) => !registered.has(entry.name));
           for (const entry of fresh) registered.add(entry.name);

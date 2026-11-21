@@ -77,7 +77,7 @@ const AGENTS_PATH = `/api/projects/${PROJECT_ID}/agents`;
 
 /**
  * The plugin market with `plugin`'s manage-installs list open, over the plugin's detail: the
- * market card itself carries no Manage installs, its detail does.
+ * market card itself carries no Install on Agent, its detail does.
  */
 async function openInstalls(plugin: PluginItem, others: PluginItem[] = []) {
   // jsdom has no ResizeObserver, which the card grid's container queries do not need here.
@@ -94,7 +94,7 @@ async function openInstalls(plugin: PluginItem, others: PluginItem[] = []) {
     route: "/plugins",
     at: detailPath(plugin),
   });
-  const manage = `${en.skills.manageInstall} ${plugin.name}`;
+  const manage = `${en.plugins.installModel.installAgent} ${plugin.name}`;
   await waitFor(() => hasButton(manage));
   await click(button(manage));
   await waitFor(() => hasButton(`${en.skills.install} ${AGENT_ID}`));
@@ -113,7 +113,7 @@ async function openBlank() {
   await waitFor(() => dialogs().length === UNDER + 1);
 }
 
-const listTitle = (plugin: PluginItem) => en.skills.manageInstallTitle(plugin.title!);
+const listTitle = (plugin: PluginItem) => en.plugins.installModel.flowTitle(plugin.title!);
 const create = () => buttonIn(topDialog(), en.common.create);
 
 describe("installing a plugin on a new blank Agent", () => {

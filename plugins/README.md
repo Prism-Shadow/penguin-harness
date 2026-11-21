@@ -10,7 +10,7 @@ Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugin/
 | --- | --- |
 | Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
 | Office Productivity | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `plan`, `continual-learning`, `trace-lookup`, `agent-company`, `penguin-support`, `multimodal-tools` |
-| Utilities | `fridge-keeper`, `action-minutes` |
+| Utilities | `fridge-keeper`, `action-minutes`, `reading-desk` |
 | Entertainment | `tabletop-desk`, `party-charades`, `daily-draw` |
 | Software Development | `software-development`, `use-claude-code` |
 | AI App Development | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
@@ -18,6 +18,8 @@ Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugin/
 `multimodal-tools` is library content and a server module at once: its Skill teaches an Agent `penguin tools …`, and its server module serves those commands, declares the Project's tool-model bindings and calls the bound models through the platform's `ProjectModelRequests`; installing it on an Agent brings the module along (PRFC-0031).
 
 The four `sandbox-*` packages are not library content but server modules: Agent Sandbox backends that confine every command an Agent runs (`sandbox-bwrap` on Linux, `sandbox-seatbelt` on macOS, `sandbox-wsl` on Windows, `sandbox-dsh` on all three, file writes only). Each declares a card beside its `SandboxModule.providers` contribution (descriptions and the `sandbox` category; no skills or hooks) and carries an `icon.svg` for its card on the Plugins page, where an admin installs it on the server.
+
+`computer-use` is a server module and a library plugin at once, and the one plugin here the build does not ship (`MARKET_ONLY` in `scripts/build-plugins.mjs`): it is published to npm and listed in the server's embedded index, and an administrator installs it from the plugin market. It contributes the `penguin computer` command, a settings card on the Plugins page and the `computer-use` Skill, and downloads and verifies its own native program, [agent-desktop](https://github.com/vercel-labs/agent-desktop), on the machine that runs it.
 
 `agent-state-git` is a server module too: it contributes an engine to `AgentStateHistoryModule.engines`, so an Agent's workbench versions are written and read back by native Git — GitHub Desktop's build, as dugite pins it, fetched the first time the plugin runs on a host — instead of the built-in isomorphic-git. Its card has no category (Other); an admin installs it on the Plugins page.
 

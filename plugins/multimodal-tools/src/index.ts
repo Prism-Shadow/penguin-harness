@@ -74,6 +74,9 @@ const SWEEP_EVERY_MS = 24 * 60 * 60 * 1000;
         path: "skills/multimodal-tools",
       },
     ],
+    "PluginLibraryModule.workbenches": [
+      { id: "multimodal-tools.workbench.images", name: "images", path: "workbenches/images" },
+    ],
     "ToolModelBindingsProvider.bindings": [
       {
         id: "multimodal-tools.binding.t2t",
@@ -305,7 +308,7 @@ export class MultimodalToolCommands {
   }
 }
 
-/** The Web App's routes: runs, a Session's generated files, transcript editing. */
+/** The Web App's routes: runs, a Session's generated files, transcript editing, read-aloud. */
 @Component({
   contributes: {
     "HttpModule.routes": [

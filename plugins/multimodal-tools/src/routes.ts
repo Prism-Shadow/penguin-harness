@@ -7,11 +7,14 @@
  *   POST   /:operation/run                    run an operation (200 when done, 202 with `detach`)
  *   GET    /runs/:runId?sessionId=            a run in flight, or stored in the Session
  *   DELETE /runs/:runId                       stop a run in flight
+ *   GET    /sessions/:sessionId/runs          the Session's runs, newest first (Image Studio)
  *   GET    /sessions/:sessionId/files         the files the Session's runs generated
  *   GET    /sessions/:sessionId/files/:name   one of them, streamed
  *   GET    /voice-polish/settings             transcript editing in this Project
  *   PATCH  /voice-polish/settings             { enabled?, prompt? } (owner)
  *   POST   /voice-polish                      { text, sessionId? } → { text, model }
+ *   POST   /read-aloud                        { text, sessionId } → the reply's audio (read-aloud.ts)
+ *   GET    /sessions/:sessionId/read-aloud/:name   that audio, streamed
  *
  * A body is JSON; a file in it is `{ data: <base64>, mimeType }`, counted against the host's body
  * cap. A refusal answers `{ error: { code, message } }`, as the host's own routes do.
@@ -27,7 +30,7 @@ import {
   type Attachment,
   type OperationInput,
 } from "./operations.js";
-import { isFileName, isRunId } from "./store.js";
+import { isFileName, isRunId, isSpeechName } from "./store.js";
 import type { Tools } from "./tools.js";
 
 /** What the host's sign-in leaves on a request. */
@@ -169,6 +172,22 @@ export function toolRoutes(deps: RouteDeps): Hono<RouteEnv> {
     return c.json(record);
   });
 
+  app.get("/sessions/:sessionId/runs", async (c) => {
+    const projectId = projectOf(c, deps);
+    const sessionId = sessionOf(deps, projectId, c.req.param("sessionId"))!;
+    const tools = deps.tools();
+    // A stored run still marked running is read through the runs in flight, which say whether
+    // it still is.
+    const runs = await Promise.all(
+      (await tools.store.runs(projectId, sessionId)).map(async (run) =>
+        run.status === "running"
+          ? ((await tools.runs.get(projectId, run.id, sessionId)) ?? run)
+          : run,
+      ),
+    );
+    return c.json({ runs });
+  });
+
   app.get("/sessions/:sessionId/files", async (c) => {
     const projectId = projectOf(c, deps);
     const sessionId = sessionOf(deps, projectId, c.req.param("sessionId"))!;
@@ -229,6 +248,39 @@ export function toolRoutes(deps: RouteDeps): Hono<RouteEnv> {
     const sessionId = sessionOf(deps, projectId, b.sessionId);
     const text = optionalString(b, "text") ?? "";
     return c.json(await deps.tools().polish.run(projectId, sessionId, text, c.req.raw.signal));
+  });
+
+  app.post("/read-aloud", async (c) => {
+    const projectId = projectOf(c, deps);
+    const b = await body(c);
+    const sessionId = sessionOf(deps, projectId, b.sessionId);
+    if (sessionId === undefined)
+      throw badInput("Reading aloud keeps its audio in a Session: name a sessionId.");
+    const text = optionalString(b, "text") ?? "";
+    return c.json(await deps.tools().readAloud.speak(projectId, sessionId, text, c.req.raw.signal));
+  });
+
+  app.get("/sessions/:sessionId/read-aloud/:name", async (c) => {
+    const projectId = projectOf(c, deps);
+    const sessionId = sessionOf(deps, projectId, c.req.param("sessionId"))!;
+    const name = c.req.param("name");
+    const { store } = deps.tools();
+    const stored = isSpeechName(name)
+      ? await store.readSpeech(projectId, sessionId, name.slice(0, name.indexOf(".")))
+      : null;
+    const opened =
+      stored?.name === name ? await store.openSpeech(projectId, sessionId, name) : null;
+    if (stored === null || opened === null)
+      throw new ToolError(404, "file_not_found", "No such audio in this Session.");
+    return new Response(Readable.toWeb(opened.stream as Readable) as ReadableStream, {
+      headers: {
+        "Content-Type": stored.mimeType,
+        "Content-Length": String(opened.bytes),
+        "Cache-Control": "private, max-age=86400, immutable",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox; default-src 'none'",
+      },
+    });
   });
 
   return app;

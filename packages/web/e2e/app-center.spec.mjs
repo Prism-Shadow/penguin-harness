@@ -138,6 +138,71 @@ test.beforeAll(async ({ browser }) => {
   await seed.close();
 });
 
+test("an installed game's canvas captures the mouse on click only when its tab opts in", async ({
+  playwright,
+}) => {
+  // Chromium's headless window has no native pointer to capture. On display-less Linux
+  // this case can be run under xvfb-run.
+  test.skip(
+    process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY,
+    "Native pointer capture requires a window",
+  );
+  const browser = await playwright.chromium.launch({ headless: false });
+  try {
+    const page = await browser.newPage();
+    await provisionAndLogin(page.request, "pointergame", P);
+    await setAccountPrefs(page.request, { lang: "en" });
+    const projectId = (await (await page.request.get(`${BASE}/api/projects`)).json()).projects[0]
+      .projectId;
+    const base = `${BASE}/api/projects/${projectId}/agents/default_agent/workbenches`;
+    const gameHtml = `<!doctype html><canvas tabindex="0" width="400" height="200" aria-label="Game"></canvas>
+    <script>
+      const canvas = document.querySelector("canvas");
+      canvas.onclick = async () => {
+        try {
+          await canvas.requestPointerLock();
+          canvas.dataset.result = document.pointerLockElement === canvas ? "captured" : "released";
+        } catch (error) { canvas.dataset.result = error.name; canvas.title = error.message; }
+      };
+    </script>`;
+    for (const [name, optIn] of [
+      ["Board", false],
+      ["Game", true],
+    ]) {
+      const pkg = manifest(name);
+      const renderer = pkg.penguin.modules[0].contributes["WebModule.sessionTabs"][0].renderer;
+      if (optIn) renderer.iframe.pointerLock = true;
+      const id = pkg.name;
+      const imported = await page.request.post(`${base}/archive`, {
+        data: {
+          dataBase64: zip({
+            [`${id}/package.json`]: JSON.stringify(pkg),
+            [`${id}/index.ts`]: INDEX,
+            [`${id}/ui/index.html`]: gameHtml,
+          }).toString("base64"),
+          overwrite: true,
+        },
+      });
+      expect(imported.ok(), await imported.text()).toBeTruthy();
+      await page.goto(`${BASE}/apps`);
+      await page.getByRole("button", { name: new RegExp(`^${name},`) }).click();
+      const frame = page.getByRole("region", { name }).frameLocator("iframe");
+      const canvas = frame.locator("canvas");
+      expect(await canvas.evaluate(() => document.pointerLockElement)).toBeNull();
+      await page.bringToFront();
+      await canvas.focus();
+      await canvas.click();
+      await expect(canvas).toHaveAttribute("data-result", optIn ? "captured" : "SecurityError");
+      if (optIn) {
+        await canvas.evaluate(() => document.exitPointerLock());
+        await expect.poll(() => canvas.evaluate(() => document.pointerLockElement)).toBeNull();
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
 test("tiles drag into a folder, step through the menu, keep their order, and restore after asking", async ({
   page,
 }) => {

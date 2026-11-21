@@ -11,10 +11,12 @@ import type { DesktopService } from "../../services/desktop-service.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { pathParam, readJson, requireString } from "../validate.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { Desktop, Proxy } from "../../hmr/capabilities.js";
 import { adminSettingsRoutes } from "./admin-settings.js";
 import { adminPluginConfigRoutes } from "./admin-plugin-config.js";
 import { PluginConfigAdmin } from "../../plugin/config-page.js";
+import { pluginHostFrom, pluginPackageDisplayOf } from "../../plugin/host.js";
 import type { Admin } from "@prismshadow/penguin-library-auth";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 
@@ -95,8 +97,11 @@ export class AdminRoutes {
   @Bind("admin-api.users") usersRoutes!: Hono<AppEnv>;
   @Bind("admin-api.settings") settingsRoutes!: Hono<AppEnv>;
   @Bind("admin-api.plugin-config") pluginConfigRoutes!: Hono<AppEnv>;
-  setup() {
-    this.pluginConfigRoutes = adminPluginConfigRoutes(this.pluginConfigAdmin);
+  setup({ resources }: ClassCtx) {
+    this.pluginConfigRoutes = adminPluginConfigRoutes(this.pluginConfigAdmin, {
+      // The host is claimed per request: the plugins of this generation are recorded after setup.
+      icon: (plugin) => pluginPackageDisplayOf(pluginHostFrom(resources), plugin).icon,
+    });
     this.usersRoutes = adminUsersRoutes({
       adminService: this.admin,
       desktop: this.desktop.current() as DesktopService | null,
