@@ -67,7 +67,7 @@ import { UpdateCheckService } from "../src/services/update-check-service.js";
 import { RevealService } from "../src/services/reveal-path.js";
 import { NpmPluginPackages } from "../src/plugin/install.js";
 import type { PluginPackages } from "../src/mechanisms/plugins.js";
-import { DefaultMessagingTuning } from "@prismshadow/penguin-library-messaging/bridge";
+import { DefaultMessagingTuning } from "../src/runtime/messaging/module.js";
 import { FeishuSdkProvider } from "@prismshadow/penguin-library-messaging/feishu-connector";
 import type { FeishuSdk } from "@prismshadow/penguin-library-messaging/feishu-sdk";
 import { TelegramTransportProvider } from "@prismshadow/penguin-library-messaging/telegram-connector";
