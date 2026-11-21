@@ -78,7 +78,13 @@ import {
   SHELL_PLACEHOLDER,
   type SystemConfig,
 } from "./default-config.js";
-import { builtinProjectAgentPresets, type AgentPreset } from "./builtin-agents.js";
+import {
+  builtinProjectAgentPresets,
+  SYSTEM_AGENT_ID,
+  systemAgentPreset,
+  type AgentPreset,
+} from "./builtin-agents.js";
+import { isSystemAgentConfig } from "./system-agent.js";
 import { ensureUserMemoryDir, type SessionMemory } from "./memory.js";
 import {
   agentDir,
@@ -228,6 +234,7 @@ export async function loadAgentState(opts?: {
     ...defaultSystemConfig(),
     ...(preset?.name !== undefined ? { name: preset.name } : {}),
     ...(preset?.description !== undefined ? { description: preset.description } : {}),
+    ...(preset?.system === true ? { system: true } : {}),
   };
   const agentsMd = preset?.agentsMd ?? defaultAgentsMd();
   // Only installs the plugins specified by preset (a plain newly created Agent gets none
@@ -273,7 +280,7 @@ export async function loadAgentState(opts?: {
  * Calls the init-enabled `loadAgentState` for each one: an Agent whose directory already
  * exists (including a default_agent created earlier by the CLI) is only loaded, never
  * overwritten (preset only takes effect on initialization). Returns the list of built-in
- * Agent ids.
+ * Agent ids, without `system_agent` where an Agent of the user's holds that id.
  */
 export async function provisionProjectAgents(opts?: {
   root?: string;
@@ -283,15 +290,36 @@ export async function provisionProjectAgents(opts?: {
   for (const { agentId, preset } of builtinProjectAgentPresets(
     opts?.projectId ?? DEFAULT_PROJECT_ID,
   )) {
-    await loadAgentState({
+    const state = await loadAgentState({
       ...(opts?.root !== undefined ? { root: opts.root } : {}),
       ...(opts?.projectId !== undefined ? { projectId: opts.projectId } : {}),
       agentId,
       init: { preset },
     });
+    // An Agent of the user's that already held the system Agent's id is not built in.
+    if (preset.system === true && !isSystemAgentConfig(agentId, state.systemConfig)) continue;
     agentIds.push(agentId);
   }
   return agentIds;
+}
+
+/**
+ * Gives a Project made before the system Agent existed its system Agent, the way Project
+ * creation provisions it: initialized from its preset where the Project has no `system_agent`,
+ * while one that exists is only loaded, never changed (an Agent the user already named so stays
+ * theirs, system-agent.ts). Answers whether the Project's `system_agent` is the system Agent.
+ */
+export async function provisionSystemAgent(opts?: {
+  root?: string;
+  projectId?: string;
+}): Promise<boolean> {
+  const state = await loadAgentState({
+    ...(opts?.root !== undefined ? { root: opts.root } : {}),
+    ...(opts?.projectId !== undefined ? { projectId: opts.projectId } : {}),
+    agentId: SYSTEM_AGENT_ID,
+    init: { preset: systemAgentPreset() },
+  });
+  return isSystemAgentConfig(SYSTEM_AGENT_ID, state.systemConfig);
 }
 
 /**
@@ -300,8 +328,8 @@ export async function provisionProjectAgents(opts?: {
  * the current library version.
  *
  * Exact semantics: only the identity fields of the existing file are preserved — `name`,
- * `description`, `author` and the Agent State `version` (an invalid or missing version
- * normalizes to 1); **everything else is replaced by the defaults**: `system_prompt`, `max_turns`,
+ * `description`, `author`, the system Agent's `system` key and the Agent State `version` (an
+ * invalid or missing version normalizes to 1); **everything else is replaced by the defaults**: `system_prompt`, `max_turns`,
  * `model.*`, `compaction.*` (including its prompt) and `tools` (the builtin list and
  * `mcpServers` — a plugin's servers too: installing the plugin again puts them back). Keys
  * outside the default schema are dropped, and YAML comments are not
@@ -332,6 +360,8 @@ export async function resetSystemConfigToDefaults(
     ...(typeof prev.description === "string" ? { description: prev.description } : {}),
     // Kept as written, an unknown value included: who made the Agent is not a default.
     ...(prev.author !== undefined ? { author: prev.author } : {}),
+    // What the Agent is, not a default: the system Agent stays the system Agent.
+    ...(prev.system === true ? { system: true } : {}),
     ...defaultSystemConfig(),
     version: agentStateVersion(prev),
   };

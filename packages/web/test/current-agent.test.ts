@@ -22,4 +22,11 @@ describe("agentOf — the current Agent is always one of this server's", () => {
     expect(agentOf([agent("writer"), agent("reviewer")], "ema")?.agentId).toBe("writer");
     expect(agentOf([], "ema")).toBeNull();
   });
+
+  it("is never the system Agent, whether named, first in the list, or the only one", () => {
+    const system = { ...agent("system_agent"), system: true } as AgentSummary;
+    expect(agentOf([system, ...agents], "system_agent")?.agentId).toBe("default_agent");
+    expect(agentOf([system, agent("writer")], null)?.agentId).toBe("writer");
+    expect(agentOf([system], null)).toBeNull();
+  });
 });

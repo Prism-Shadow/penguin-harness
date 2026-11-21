@@ -363,6 +363,12 @@ export interface TestAppOptions {
   now?: () => Date;
   /** The plugins this app boots with (their modules and replacements), as the runtime would have loaded them. */
   plugins?: PluginHost;
+  /**
+   * What a hot push carried, as the runtime reports it (`hmr.assetsDir()`): its `plugins/` prefix
+   * is what makes a package built in. Set before the admin is seeded, so the adoption of
+   * `default_project` already sees the build's shipped packages.
+   */
+  assetsDir?: string;
   /** Runs before seeding the admin (for scenarios pre-populating a default_project config as the CLI would). */
   beforeSeed?: (root: string) => Promise<void>;
   /** Overrides merged onto the default test ServerConfig (e.g. `previewOrigin`). */
@@ -537,7 +543,7 @@ async function bootTestApp(
   root: string,
   options: Omit<TestAppOptions, "beforeSeed" | "config" | "durableDatabase">,
 ): Promise<TestApp> {
-  const { plugins, ...overrides } = options;
+  const { plugins, assetsDir, ...overrides } = options;
   let boot: ServerBoot | undefined;
   try {
     boot = await bootAppDeps(
@@ -556,6 +562,9 @@ async function bootTestApp(
       undefined,
       plugins,
     );
+    if (assetsDir !== undefined) {
+      (flattenForTests(boot).hmr as { assetsDir(): string | null }).assetsDir = () => assetsDir;
+    }
     // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).
     await flattenForTests(boot).authService.seedAdmin();
   } catch (error) {

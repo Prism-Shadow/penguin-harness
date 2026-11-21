@@ -156,6 +156,12 @@ import { PluginModules } from "./mechanisms/plugins.js";
 import { PluginModulesService } from "./services/plugin-modules.js";
 import { PluginModuleRoutes } from "./http/routes/plugin-modules.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
+import { SemanticIdModule } from "./services/semantic-id-kinds.js";
+import { StartPageModule } from "./http/routes/start-page.js";
+import { AppData, SystemAgentAppData } from "./services/app-data.js";
+import { AppSeeds, HostAppSeeds } from "./services/app-seeds.js";
+import { AgentTasks, HostAgentTasks } from "./services/agent-tasks.js";
+import { AgentSkills, InstalledAgentSkills } from "./services/agent-skills.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "./terminal/manager.js";
@@ -345,6 +351,8 @@ export class IdentityModule {}
     ProjectAccess,
     ProjectNotifier,
     ShippedBuiltinBenchmarkSeeds,
+    SystemAgentAppData,
+    HostAppSeeds,
     ProjectService,
     ProjectConfigService,
     ModelOAuthProvider,
@@ -366,6 +374,8 @@ export class IdentityModule {}
     ModelScopeAuth,
     InitialProjectProvisioner,
     ProjectEvents,
+    AppData,
+    AppSeeds,
   ],
 })
 export class ProjectsModule {}
@@ -384,6 +394,7 @@ export class ProjectsModule {}
     SessionApiRoutes,
     SchedulerRoutes,
     EventsRoutes,
+    HostAgentTasks,
   ],
   exports: [
     SessionIndex,
@@ -401,6 +412,7 @@ export class ProjectsModule {}
     OrgRuns,
     OrgSessions,
     ProjectRuns,
+    AgentTasks,
   ],
 })
 export class SessionRuntimeModule {}
@@ -485,9 +497,10 @@ export class TracesModule {}
     AgentService,
     MemoryService,
     BenchmarkService,
+    InstalledAgentSkills,
     AgentRoutes,
   ],
-  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks],
+  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks, AgentSkills],
 })
 export class AgentsModule {}
 
@@ -533,6 +546,7 @@ export class CompanyModule {}
     UpdateJobService,
     HarnessHistoryStore,
     HttpModule,
+    StartPageModule,
     WebModule,
     InstallRoutes,
     HandshakeRoutes,
@@ -549,6 +563,7 @@ export class CompanyModule {}
     NpmPluginPackages,
     InstalledPluginRoutes,
     PluginCliCommandsProvider,
+    SemanticIdModule,
     SuggestIdRoutes,
     LanguagesModule,
     LanguageRoutes,

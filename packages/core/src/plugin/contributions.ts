@@ -98,6 +98,18 @@ function entriesOf(
   return out;
 }
 
+/**
+ * Every entry the modules a package's default export reaches contribute to `slot`, read off its
+ * table alone (nothing is imported), with where each was declared: what a host reads of a
+ * package it does not run, such as the seeds a built-in plugin ships for a system app.
+ */
+export function slotEntries(
+  table: PluginTable,
+  slot: string,
+): Array<{ at: string; entry: Record<string, unknown> }> {
+  return entriesOf(table, slot);
+}
+
 /** Whether `rel` names a path inside the package: relative, not `.`, never climbing out, on any platform's spelling. */
 function insidePackage(rel: string): boolean {
   const normal = path.posix.normalize(rel.replace(/\\/g, "/"));

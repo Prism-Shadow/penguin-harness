@@ -13,7 +13,8 @@
  * the Agent State the Agent itself can rewrite. And the writes take the owner's sign-in, never
  * the local API token every tool subprocess holds (403 `human_required`, see requireHuman): an
  * Agent must not switch on its own exposure from its shell. The reads stay open to the token,
- * for `penguin agent api status` and `keys ls`.
+ * for `penguin agent api status` and `keys ls`. The system Agent has none of this: every route
+ * answers it 409 `system_agent_no_sessions`.
  */
 import { DEFAULT_API_CONCURRENT_RUNS } from "@prismshadow/penguin-library-agent-api";
 import type { ModelRefDto, AgentApi } from "@prismshadow/penguin-library-agent-api";
@@ -29,6 +30,7 @@ import type {
 import { requireHuman } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { mintAgentApiKey } from "../../amsp/keys.js";
+import { refuseSystemAgentSessions } from "../../services/system-agent.js";
 import { HttpError } from "../errors.js";
 import {
   badRequest,
@@ -50,7 +52,7 @@ import type { Settings } from "@prismshadow/penguin-library-setting";
 export interface AgentApiRouteDeps {
   agentApi: AgentApi;
   projectConfig: Pick<ProjectConfigStore, "loadConfig">;
-  agentConfigService: Pick<AgentConfig, "requireExists">;
+  agentConfigService: Pick<AgentConfig, "requireExists" | "isSystemAgent">;
   access: Pick<Access, "requireProjectAccess" | "requireProjectOwner">;
   settings: Pick<Settings, "getAgentApiEnabled">;
   now: () => Date;
@@ -100,6 +102,8 @@ export function agentApiRoutes(deps: AgentApiRouteDeps): Hono<AppEnv> {
     if (owner) deps.access.requireProjectOwner(c.var.user.userId, projectId);
     else deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
+    // The system Agent runs no Sessions, so there is nothing for programs to reach.
+    await refuseSystemAgentSessions(deps.agentConfigService, projectId, agentId);
     return { projectId, agentId };
   };
 

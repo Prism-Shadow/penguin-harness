@@ -131,6 +131,15 @@ describe("kernelUpdateTodo", () => {
     expect(kernelUpdateTodo([])).toBeNull();
   });
 
+  it("leaves out the system Agent, whose kernel nothing runs on", () => {
+    expect(
+      kernelUpdateTodo([
+        { agentId: "system_agent", kernelOutdated: true, system: true },
+        { agentId: "alpha", kernelOutdated: true },
+      ])?.items,
+    ).toEqual(["alpha"]);
+  });
+
   it("names the outdated Agents and counts them, ignoring the current ones", () => {
     expect(
       kernelUpdateTodo([
