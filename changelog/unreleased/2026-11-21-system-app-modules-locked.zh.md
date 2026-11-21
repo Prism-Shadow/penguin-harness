@@ -14,5 +14,5 @@
 - 管理员的停用，即以 `decline` 调用 `POST /api/admin/plugin-modules/decide`，返回 `409` `system_app_module_locked`。
 - 会让本服务端不再为某个 Project 运行这种模块的插件表写入，返回同一个 `409`，不写入任何内容。这包括对 `/api/projects/:projectId/plugins/installed` 的 `PUT` 与 `DELETE`，无论改的是共享表还是本服务端自己的表。只改其他机器自己的表的写入，交由那台机器判定。
 - 每一代启动时，在读取插件闭包之前，把这种模块重新列入配置里缺了它的每个 Project 的本服务端 `[plugins.<machineId>]` 表。与其他预装模块不同，手工移除不会保留。模块提供系统应用之前被管理员拒绝的请求行，由系统以 `builtin` 重新启用。
-- `GET /api/admin/plugin-modules` 把这样的行标为 `systemApp: true`。在设置 › 插件的服务端模块请求中，它的一行显示为「系统应用 · 内置」，不提供停用。预装模块的行属于每个 Project，不再显示为 Project 已删除。
+- `GET /api/admin/plugin-modules` 把这样的行标为 `systemApp: true`。在设置 › 插件的服务端模块请求中，它的一行显示为「系统应用，内置」，不提供停用。预装模块的行属于每个 Project，不再显示为 Project 已删除。
 - 文档在描述移除服务端插件与 `[plugins]` 表的地方写明了这条规则。

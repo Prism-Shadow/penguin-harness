@@ -907,7 +907,7 @@ export const en: Strings = {
         approval: "Enabled: the admin approved a member's request",
       },
       /** A module behind a system app: it always runs and offers no stop. */
-      systemApp: "System app · Built in",
+      systemApp: "System app, built in",
       systemAppHint:
         "It powers a system app in the App Center, so it always runs and can't be stopped",
       /** In place of a Project that was deleted, and of a requester that is no person. */

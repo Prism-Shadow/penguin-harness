@@ -14,7 +14,7 @@
  *   Project and keeps installs from bringing it back, while what the Agents carry stays;
  * - declined: Enable.
  *
- * A module behind a system app reads "System app · Built in" and has no action: it always runs,
+ * A module behind a system app reads "System app, built in" and has no action: it always runs,
  * and the server refuses to stop it. A preinstalled module's row belongs to every Project, so it
  * names none. A waiting row whose Project is gone can only be declined. The server answers each
  * decision with the whole list, which every reader of it takes at once (lib/plugin-modules.ts);

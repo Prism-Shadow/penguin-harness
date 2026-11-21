@@ -13,7 +13,7 @@
  *   with Enable.
  * - Given a stop the server answers with Projects whose shared table still lists the module, the
  *   toast names them.
- * - Given a preinstalled module behind a system app, the row reads "System app · Built in",
+ * - Given a preinstalled module behind a system app, the row reads "System app, built in",
  *   names no Project and offers no action.
  * - Given no request at all, the section says nothing waits.
  */

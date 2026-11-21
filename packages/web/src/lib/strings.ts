@@ -1056,7 +1056,7 @@ export const zh = {
         approval: "已启用：管理员批准了成员的请求",
       },
       /** A module behind a system app: it always runs and offers no stop. */
-      systemApp: "系统应用 · 内置",
+      systemApp: "系统应用，内置",
       systemAppHint: "它为应用中心里的一个系统应用提供服务，始终运行，不能停用",
       /** In place of a Project that was deleted, and of a requester that is no person. */
       projectGone: "Project 已删除",
