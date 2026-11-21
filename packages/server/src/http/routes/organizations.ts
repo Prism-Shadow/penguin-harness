@@ -235,6 +235,8 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
         ...(model !== undefined && model !== null ? { model } : {}),
       },
       c.var.user.userId,
+      // The creator brings the CEO's plugins' server modules along (PRFC-0031).
+      { userId: c.var.user.userId, isAdmin: c.var.user.isAdmin },
     );
     return c.json(detail, 201);
   });
@@ -359,17 +361,22 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
     const budget = optionalNumber(body, "budget", { nonNegative: true });
     const duties = optionalString(body, "duties", { maxLen: 2000 });
     const model = parseModel(body);
-    const item = await deps.orgService.hire(projectId, orgId, {
-      ...(agentId !== undefined ? { agentId } : {}),
-      ...(newAgent !== undefined ? { newAgent } : {}),
-      ...(name !== undefined ? { name } : {}),
-      title,
-      reportsTo,
-      ...(workspace !== undefined ? { workspace } : {}),
-      ...(budget !== undefined ? { budget } : {}),
-      ...(duties !== undefined ? { duties } : {}),
-      ...(model !== undefined && model !== null ? { model } : {}),
-    });
+    const item = await deps.orgService.hire(
+      projectId,
+      orgId,
+      {
+        ...(agentId !== undefined ? { agentId } : {}),
+        ...(newAgent !== undefined ? { newAgent } : {}),
+        ...(name !== undefined ? { name } : {}),
+        title,
+        reportsTo,
+        ...(workspace !== undefined ? { workspace } : {}),
+        ...(budget !== undefined ? { budget } : {}),
+        ...(duties !== undefined ? { duties } : {}),
+        ...(model !== undefined && model !== null ? { model } : {}),
+      },
+      { userId: c.var.user.userId, isAdmin: c.var.user.isAdmin },
+    );
     return c.json(item, 201);
   });
 
