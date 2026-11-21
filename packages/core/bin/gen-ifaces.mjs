@@ -7,6 +7,16 @@
  *
  *   penguin-gen-ifaces --project tsconfig.json --out ifaces.json   # a plugin package's build
  *   penguin-gen-ifaces ... --check                                 # CI: fail when the file on disk is stale
+ *   penguin-gen-ifaces ... --sources src                           # project only the files under src/
+ *
+ * `--sources <dir>` (repeatable) limits what is projected to the source files under those
+ * directories. Without it every source file of the program outside node_modules is projected,
+ * which is what a package whose program is its own sources wants. A plugin package that compiles
+ * against its host's SOURCES (a shipped plugin reaching the server's face through tsconfig
+ * `paths`, since depending on the server package would be a cycle) names its own `src`: the
+ * host's classes stay the host's, and each host interface one of its modules requires or provides
+ * is written into its table as a copy under the host's own key — the copy the loader compares
+ * with the running platform's table when it loads the plugin.
  *
  * Published with @prismshadow/penguin-core as the `penguin-gen-ifaces` bin, so a package
  * outside this repository builds its table the way the shipped plugins do; inside the repo,
@@ -83,6 +93,44 @@ const projects = args.flatMap((a, i) => (a === "--project" ? [args[i + 1]] : [])
 const outPath = opt("--out");
 const componentsOut = opt("--components-out");
 const checkOnly = args.includes("--check");
+/** The name in the package.json nearest above `fileName` (null when there is none). */
+const packageNames = new Map();
+function packageNameOf(fileName) {
+  for (let dir = path.dirname(fileName); ;) {
+    if (packageNames.has(dir)) return packageNames.get(dir);
+    const file = path.join(dir, "package.json");
+    if (fs.existsSync(file)) {
+      const name = JSON.parse(fs.readFileSync(file, "utf8")).name ?? null;
+      packageNames.set(dir, name);
+      return name;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+/**
+ * The package this table is generated for: the one around the first root file of the first
+ * `--project` (set when that project is read; a tsconfig may live outside the package it names).
+ */
+let ownPackage;
+
+/** `--sources <dir>`: the directories whose source files are projected (absolute, `/`-separated). */
+const sourceRoots = args.flatMap((a, i) =>
+  a === "--sources"
+    ? [
+        `${path
+          .resolve(args[i + 1])
+          .split(path.sep)
+          .join("/")}/`,
+      ]
+    : [],
+);
+/** A source file this run projects: not a declaration, not installed, and under --sources if given. */
+const projectsFile = (sf) =>
+  !sf.isDeclarationFile &&
+  !sf.fileName.includes("/node_modules/") &&
+  (sourceRoots.length === 0 || sourceRoots.some((root) => sf.fileName.startsWith(root)));
 if (projects.length === 0 || outPath === null) {
   console.error(
     "usage: gen-ifaces --project <tsconfig> [--project ...] --out <ifaces.json> [--components-out <cli-commands.gen.ts>] [--check]",
@@ -176,10 +224,9 @@ for (const project of projects) {
   );
   const program = ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options });
   const checker = program.getTypeChecker();
+  if (ownPackage === undefined) ownPackage = packageNameOf(parsed.fileNames[0] ?? configPath);
 
-  const sourceFiles = program
-    .getSourceFiles()
-    .filter((sf) => !sf.isDeclarationFile && !sf.fileName.includes("/node_modules/"));
+  const sourceFiles = program.getSourceFiles().filter(projectsFile);
   /** An `@Interface()` decorator, like every other decorator here a factory call. */
   const hasInterfaceDecorator = (d) =>
     (ts.getDecorators?.(d) ?? []).some(
@@ -410,7 +457,7 @@ for (const project of projects) {
     return null;
   };
   for (const sf of program.getSourceFiles()) {
-    if (sf.isDeclarationFile || sf.fileName.includes("/node_modules/")) continue;
+    if (!projectsFile(sf)) continue;
     const file = path.relative(process.cwd(), sf.fileName);
     const visit = (node) => {
       if (ts.isClassDeclaration(node) && node.name) {
@@ -465,9 +512,11 @@ for (const project of projects) {
   }
   // The plugin declaration: `export default { modules: [...], replaces: [...] }`, or a
   // default-exported binding initialized to that literal (`const plugin: Plugin = {...}`).
-  // Each element must be a module class of this package; anything else is refused.
+  // Each element must be a module class of this package; anything else is refused. Only the
+  // package's own files declare it: a default export in another package's file is that package's
+  // (the Web App's program compiles in the plugin web halves it lists, each with its own).
   for (const sf of program.getSourceFiles()) {
-    if (sf.isDeclarationFile || sf.fileName.includes("/node_modules/")) continue;
+    if (!projectsFile(sf) || packageNameOf(sf.fileName) !== ownPackage) continue;
     for (const st of sf.statements) {
       if (!ts.isExportAssignment(st) || st.isExportEquals) continue;
       let literal = unwrap(st.expression);
@@ -1158,7 +1207,19 @@ for (const project of projects) {
       );
       return "?";
     }
-    return `${moduleNameOf(decl.getSourceFile().fileName)}#${sym.getName()}`;
+    // An interface reached from source outside --sources (a plugin built against its host's
+    // sources) is not projected as the package's own, so it is written in as a copy: the copy is
+    // what the loader compares with the host's own table when it loads the plugin.
+    const declFile = decl.getSourceFile();
+    if (
+      sourceRoots.length > 0 &&
+      !declFile.isDeclarationFile &&
+      !declFile.fileName.includes("/node_modules/") &&
+      !projectsFile(declFile)
+    ) {
+      return keyOf(sym, decl);
+    }
+    return `${moduleNameOf(declFile.fileName)}#${sym.getName()}`;
   };
   /** The component a bare `@Use()` field is wired to: the one its type names, if any. */
   const componentOfType = (typeNode) => {
@@ -1271,6 +1332,11 @@ for (const project of projects) {
     }
     manifestOwner.set(meta.name, `${file}\0${className}`);
     manifests[m.name] = m;
+  }
+  // The copies the manifests asked for above (and what their signatures reach in turn).
+  while (pending.length > 0) {
+    const { symbol, decl, key } = pending.shift();
+    table[key] = ifaceOf(symbol, decl);
   }
   for (const { symbol, decl, owner, sf } of slotCompanions) {
     const ownerExp = checker

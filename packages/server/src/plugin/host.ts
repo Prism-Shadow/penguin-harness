@@ -122,6 +122,21 @@ export class PluginHost {
 }
 
 /**
+ * The names of the server modules plugins add to the generation `host` belongs to: every loaded
+ * plugin's modules and stand-ins, except those of a plugin this build left out
+ * (plugin/unsatisfied.ts). What `GET /api/contributions` lists as `modules`, so the Web App draws a
+ * plugin's web half only while its server half runs. Read when asked, not at boot: the host
+ * learns what was left out once the tree has booted.
+ */
+export function runningPluginModules(host: PluginHost): string[] {
+  // A host registered by a generation older than the record has none to give.
+  const unmet = typeof host.unsatisfied === "function" ? host.unsatisfied() : new Map();
+  return [...host.entries().values()]
+    .filter((plugin) => unmet.get(plugin.specifier)?.disabled !== true)
+    .flatMap((plugin) => [...plugin.modules, ...plugin.replaces].map((m) => m.manifest.name));
+}
+
+/**
  * Registry key for the loaded plugin host.
  *
  * Nothing about the host is the runtime's business: which plugins a deployment runs is

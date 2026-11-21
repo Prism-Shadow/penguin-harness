@@ -1,6 +1,8 @@
 /**
- * Every endpoint the Web App calls (`packages/web/src/api/endpoints.ts`), answered from the
- * demo store. Reads answer the fixtures; writes mutate them where the app shows the result
+ * Every endpoint the Web App calls (`packages/web/src/api/endpoints.ts`, the wrappers its
+ * features keep beside them, and those a plugin web half exports, such as the agent browser's
+ * `plugins/browser-automation/src/web/api.ts`), answered from the demo store. Reads answer the
+ * fixtures; writes mutate them where the app shows the result
  * (a renamed Session, a saved model table, a new schedule) and answer `demo_read_only` where
  * the operation would need a machine, a registry or a provider behind it. Each handler's
  * return is annotated with the contract type it stands for, so a DTO change fails here
@@ -152,6 +154,7 @@ import type {
 import { isThemeId } from "@prismshadow/penguin-ui";
 // The catalog decides which groups publish a balance, as it does on the server.
 import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
+import { declaredServerModules } from "../../../../web/src/lib/module-gate";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
@@ -196,13 +199,16 @@ function costOf(day: Pick<UsageDay, "cacheRead" | "cacheWrite" | "output" | "pro
 export const router = new Router();
 
 // The demo boots its own page table and has no server-side plugin contributions: no pages,
-// no file renderers, and nothing removed.
+// no file renderers and nothing removed. It stands in for every plugin's server half, so it
+// answers as running every server module a booted web module declared: a plugin's web half is
+// drawn in the gallery as it is on a server that runs its module.
 router.get("/api/contributions", (): ContributionsResponse => ({
   pages: [],
   fileRenderers: [],
   pageRemovals: [],
   agentTabs: [],
   sessionTabs: [],
+  modules: declaredServerModules(),
 }));
 
 // ---------------------------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 /**
  * The agent browser's user-channel events, as the one `/api/events` connection routes them
- * (state/sessions.tsx's applyUserEvent → features/builtin-browser/browser-events.ts): this
+ * (state/sessions.tsx's applyUserEvent → plugins/browser-automation/src/web/browser-events.ts): this
  * server's go to the browser layer, a machine's go nowhere — its server drives no browser on
  * this screen — and a resync tells the layer to re-read the registry.
  */
@@ -12,7 +12,7 @@ import {
   isBuiltinBrowserEvent,
   subscribeBuiltinBrowserEvents,
   subscribeBuiltinBrowserResync,
-} from "../src/features/builtin-browser/browser-events";
+} from "../../../plugins/browser-automation/src/web/browser-events";
 
 const EVENTS: BuiltinBrowserServerEvent[] = [
   { type: "builtin_browser_tabs", tabs: [], activeTabId: null, backend: "builtin" },

@@ -2,10 +2,11 @@
  * The server package's CLI module: the five resource commands (agent/project/schedule/cost/config)
  * as @Component contributions to the CLI's `CliCommandsModule.commands` slot, the org command
  * as a contribution to this package's own `CompanyCommandsModule.commands` slot
- * (`bootCompanyCommands()`), the browser command as a contribution to the browser module's
- * own `commands` slot (`bootBrowserCommands()`), and the server-backed command code they
- * share (connection client, stored sign-in, table renderer, approval parsing, agent
- * listing, `--root` resolution, language persistence).
+ * (`bootCompanyCommands()`), and the server-backed command code they share (approval parsing,
+ * agent listing, `--root` resolution, language persistence). `penguin browser` is not here: it is
+ * the browser-automation plugin's CLI module, which the CLI's build compiles in. The connection client,
+ * stored sign-in, terminal input and table renderer live in the CLI face
+ * (`@prismshadow/penguin-library-cli`) and are re-exported here.
  *
  * The CLI collects the contributions at boot (its generated table carries this package's
  * manifest) and imports the shared code back through this subpath; type-only DTO shapes the
@@ -34,33 +35,22 @@ export * from "./lang-config.js";
 export * from "./render.js";
 export * from "./server-session.js";
 export * from "./company.js";
-export * from "./browser.js";
-export * from "./browser-output.js";
-export * from "./commands/browser.js";
 export * from "./commands/agent.js";
 export * from "./commands/cost.js";
 export * from "./commands/project.js";
 export * from "./commands/schedule.js";
 export * from "./commands/config.js";
 export * from "./commands/org.js";
+export type {
+  ClientMessages,
+  ClientText,
+  CliHostMessages,
+} from "@prismshadow/penguin-library-cli/messages";
 
 // DTO shapes the CLI's own commands mention (type-only; nothing of the server loads at runtime).
 export type {
   AgentSummary,
   AgentsResponse,
-  BrowserBackend,
-  BrowserBackendInfo,
-  BuiltinBrowserExecResult,
-  BuiltinBrowserHistoryEntry,
-  BuiltinBrowserHistoryResponse,
-  BuiltinBrowserImportResult,
-  BuiltinBrowserImportSource,
-  BuiltinBrowserImportSourcesResponse,
-  BuiltinBrowserScanResult,
-  BuiltinBrowserScreenshot,
-  BuiltinBrowserStatus,
-  BuiltinBrowserTab,
-  BuiltinBrowserTabsResponse,
   GoalServerEvent,
   InstalledPlugin,
   InstalledPluginsResponse,

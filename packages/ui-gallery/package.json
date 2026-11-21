@@ -9,7 +9,7 @@
     "build": "pnpm --filter @prismshadow/penguin-web gen:ifaces && vite build",
     "preview": "vite preview",
     "typecheck": "pnpm --filter @prismshadow/penguin-web gen:ifaces && tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests",
+    "test": "pnpm --filter @prismshadow/penguin-web gen:ifaces && vitest run --passWithNoTests",
     "test:e2e": "playwright test -c e2e/playwright.config.mjs",
     "shots": "node scripts/shots.mjs"
   },
@@ -24,6 +24,7 @@
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-web": "workspace:*",
+    "@prismshadow/penguin-web-plugin": "workspace:*",
     "@prismshadow/skills": "workspace:*",
     "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^24.0.0",

@@ -1,5 +1,5 @@
 /**
- * The built-in browser's load as the window words it (features/builtin-browser/load.ts): sizes,
+ * The built-in browser's load as the window words it (plugins/browser-automation/src/web/load.ts): sizes,
  * the toolbar mark's warning for each of the server's verdicts, the heavy tabs' memory, and which
  * warnings are new (one toast each).
  */
@@ -10,11 +10,13 @@ import {
   heavyTabMemory,
   loadWarningText,
   newWarnings,
-} from "../src/features/builtin-browser/load";
-import { zh } from "../src/lib/strings";
-import { en } from "../src/lib/strings-en";
+} from "../../../plugins/browser-automation/src/web/load";
+import {
+  en as browserEn,
+  zh as browserZh,
+} from "../../../plugins/browser-automation/src/web/strings";
 
-const EN = en.builtinBrowser.load;
+const EN = browserEn.builtinBrowser.load;
 
 const GB = 1024 * 1024;
 
@@ -75,9 +77,9 @@ describe("loadWarningText", () => {
   });
 
   it("joins Chinese sentences without spaces", () => {
-    expect(loadWarningText(metrics({ warnings: ["memory"] }), 7, zh.builtinBrowser.load)).toBe(
-      "浏览器正在使用 2.1 GB 内存（7 个标签页）。请关闭不再需要的标签页。",
-    );
+    expect(
+      loadWarningText(metrics({ warnings: ["memory"] }), 7, browserZh.builtinBrowser.load),
+    ).toBe("浏览器正在使用 2.1 GB 内存（7 个标签页）。请关闭不再需要的标签页。");
   });
 });
 
