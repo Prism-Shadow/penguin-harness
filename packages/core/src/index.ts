@@ -67,7 +67,7 @@ export {
 export type { NpmPackage } from "./plugin/package-json.js";
 export { IFACES_FILE, packageEntry, readPluginTable } from "./plugin/table.js";
 export type { PluginDeclaration, PluginTable } from "./plugin/table.js";
-export { LIBRARY_SLOTS, libraryContributions } from "./plugin/contributions.js";
+export { LIBRARY_SLOTS, libraryContributions, slotEntries } from "./plugin/contributions.js";
 export type {
   LibraryContributions,
   LibraryHooksContribution,

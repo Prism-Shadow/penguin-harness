@@ -177,6 +177,8 @@ To install a server plugin:
 
 To remove one, select **Remove** and confirm. The plugin leaves the Project's list, and a package installed from npm is uninstalled once no Project asks for it. Removing stops the runs in progress the same way.
 
+A plugin that ships with PenguinHarness and provides a system app of the App Center cannot be removed or stopped. **Remove** is refused, and under **Server module requests** in [Settings › Plugins](/settings#plugins) its row reads **System app · Built in**, with no **Stop**. It runs in every Project, and a server start puts it back in a Project whose config lost it.
+
 Only admins see **Install** and **Remove**; everyone else sees the cards and their details. A plugin that ships with PenguinHarness installs without a download. A change applies without restarting the server: the server rebuilds its business surface around the new list, which is why runs in progress stop. Afterwards the card's status reads **Installed**, **Restart to load** when the server could not apply the change without a restart, or **Failed to load**, with the reason when you point at it.
 
 The lists are the `[plugins]` and `[plugins.<machineId>]` tables of the Project's config; see [Configuration Reference](/configuration#plugins). For the routes, see [Server API](/server-api#plugin-registry-and-project-plugins), and for how the server loads plugins, see [Server Boot and Subsystems](/server-boot#re-assembly).

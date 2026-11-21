@@ -1055,6 +1055,9 @@ export const zh = {
         admin: "已启用：由管理员启用",
         approval: "已启用：管理员批准了成员的请求",
       },
+      /** A module behind a system app: it always runs and offers no stop. */
+      systemApp: "系统应用 · 内置",
+      systemAppHint: "它为应用中心里的一个系统应用提供服务，始终运行，不能停用",
       /** In place of a Project that was deleted, and of a requester that is no person. */
       projectGone: "Project 已删除",
       system: "系统",
@@ -7378,6 +7381,7 @@ Benchmark：
         "该模型 ID 无法路由：厂商分组按模型 ID 开头的厂商前缀（gpt-、claude-、gemini-、glm-、kimi-、deepseek-、minimax-）路由。请在自定义分组中添加该模型，并选择或检测其接口协议。",
       unknown_skill: "所选目录下没有这个技能。",
       unknown_plugin: "该插件不在插件库中。",
+      system_app_module_locked: "该插件为应用中心里的系统应用提供服务，不能停用或移除。",
       goal_plugin_not_installed:
         "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装，并确认其钩子包已启用。",
       prompt_hook_not_installed:

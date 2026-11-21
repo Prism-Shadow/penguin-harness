@@ -83,6 +83,7 @@ import { PLUGINS_RESOURCE_ID, pluginHostFrom } from "../plugin/host.js";
 import type { PluginHost } from "../plugin/host.js";
 import { loadPluginHost, pluginBases } from "../plugin/loader.js";
 import { listPreinstalledOnce } from "../services/preinstall-once.js";
+import { relistSystemAppModules } from "../services/system-app-relist.js";
 import { PluginModulePreinstallsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-preinstalls";
 import { PluginModuleRequestsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-requests";
 import {
@@ -445,16 +446,22 @@ async function createInner(
   // had, once (PRFC-0030) — before the closure below is read, so this generation boots with
   // them and no re-assembly follows. Like the migrations above, it comes before any node.
   if (caps !== null && machineId !== null) {
+    // Before the tree, so built by hand over the same database the tree's repos use.
+    const ledger = wire(PluginModuleRequestsRepo, { db: caps.db });
+    const bases = pluginBases(caps.config.root, caps.hmr.assetsDir());
+    const now = () => new Date().toISOString();
+    const log = (line: string) => console.log(line);
     await listPreinstalledOnce({
-      // Before the tree, so built by hand over the same database the tree's repos use.
       preinstalls: wire(PluginModulePreinstallsRepo, { db: caps.db }),
-      ledger: wire(PluginModuleRequestsRepo, { db: caps.db }),
+      ledger,
       root: caps.config.root,
-      bases: pluginBases(caps.config.root, caps.hmr.assetsDir()),
+      bases,
       machineId,
-      now: () => new Date().toISOString(),
-      log: (line) => console.log(line),
+      now,
+      log,
     });
+    // A module behind a system app is listed again wherever a hand edit took it out, every boot.
+    await relistSystemAppModules({ ledger, root: caps.config.root, bases, machineId, now, log });
   }
 
   // Plugins are modules (see ../plugin/), and WHICH ones this App runs is configuration it

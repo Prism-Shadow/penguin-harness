@@ -189,6 +189,8 @@ export interface HybridPackage {
   index?: string;
   /** The card the class contributes too (`preinstall`, say); none when absent. */
   card?: Record<string, unknown>;
+  /** What else the class contributes, by slot key (a system app it provides, say). */
+  contributes?: Record<string, Array<Record<string, unknown>>>;
 }
 
 /** The files of a hybrid package, by path relative to its directory. */
@@ -219,6 +221,7 @@ export function hybridPackageFiles(pkg: HybridPackage): Record<string, string> {
               name,
               path: `skills/${name}`,
             })),
+            ...pkg.contributes,
           },
           children: [],
         },

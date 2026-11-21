@@ -906,6 +906,10 @@ export const en: Strings = {
         admin: "Enabled by the admin",
         approval: "Enabled: the admin approved a member's request",
       },
+      /** A module behind a system app: it always runs and offers no stop. */
+      systemApp: "System app · Built in",
+      systemAppHint:
+        "It powers a system app in the App Center, so it always runs and can't be stopped",
       /** In place of a Project that was deleted, and of a requester that is no person. */
       projectGone: "Project deleted",
       system: "System",
@@ -7077,6 +7081,8 @@ Scenarios:
         "This model ID cannot be routed: a vendor group routes a model by the vendor prefix its ID begins with (gpt-, claude-, gemini-, glm-, kimi-, deepseek-, minimax-). Add the model under a custom group and pick or detect its protocol.",
       unknown_skill: "This skill is not in the selected directory.",
       unknown_plugin: "This plugin is not in the plugin library.",
+      system_app_module_locked:
+        "This plugin powers a system app in the App Center, so it can't be stopped or removed.",
       goal_plugin_not_installed:
         "Goal mode needs the goal plugin — install it on this agent from the plugin library, and switch its hook package on.",
       prompt_hook_not_installed:
