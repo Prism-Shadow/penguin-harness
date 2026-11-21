@@ -146,6 +146,8 @@ import {
   type InstallsTarget,
 } from "./agent-installs";
 import { installOnAgent, toastWriteError, uninstallFromAgent } from "./agent-plugin-writes";
+import { toastInstall } from "../../lib/agent-plugin-install";
+import { useOnPluginModulesChanged, usePluginModuleRequests } from "../../lib/plugin-modules";
 import { StdioDisclosure, StdioInstallBody } from "./plugin-mcp";
 import { ImportPluginModal } from "./plugin-import-modal";
 import {
@@ -304,6 +306,8 @@ export function PluginsPage() {
   const isAdmin = user?.isAdmin === true;
   const isOwner = currentProject?.role === "owner";
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** The administrator's requests to run plugins' server modules on this server, for the notice. */
+  const moduleRequests = usePluginModuleRequests(null, isAdmin);
   /** The import dialog (admin) is open. */
   const [importOpen, setImportOpen] = useState(false);
   /** Free text over names, descriptions and keywords. */
@@ -444,6 +448,12 @@ export function PluginsPage() {
   const fallback = useRead(installedPlugins, fallbackKey, () =>
     api.getInstalledPlugins(projectId!, viewMachine!),
   );
+  // A module that changed on this server, or on a machine, changes what that server's rows say:
+  // its answer is read again (at once while it is in view).
+  useOnPluginModulesChanged((server) => {
+    if (projectId !== null) installedPlugins.invalidate(installedPluginsKey(projectId, server));
+    if (server !== null) void machineMarkets.find((m) => m.machineId === server)?.rereadRunning();
+  });
   /** Whether the machine in view is this server itself. */
   const viewingHere = viewMachine === selfId;
   /** This server's tables have not answered yet: every module row's status is a placeholder. */
@@ -468,8 +478,8 @@ export function PluginsPage() {
 
   /**
    * A server module change waiting for its confirmation (null = none). Applying one
-   * re-assembles the App, which stops the agent runs in flight in EVERY Project — the same
-   * cost a hot push has — so it is said before it is done.
+   * re-assembles the App for every Project on the server; the runs in flight carry on, but it
+   * changes what the whole server runs, so it is said before it is done.
    */
   const [pendingApply, setPendingApply] = useState<{
     specifier: string;
@@ -753,9 +763,12 @@ export function PluginsPage() {
           : `${agentDisplayName(target.agent)} ${S.chat.machineTag(target.machine.label)}`;
     try {
       if (on) {
-        await installOnAgent(where, [plugin.name]);
-        toastSuccess(
+        const done = await installOnAgent(where, [plugin.name]);
+        toastInstall(
           `${S.plugins.installedToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
+          plugin.name,
+          done.modules,
+          target?.machine?.label,
         );
       } else {
         // One request: the server takes every part apart. "Nothing of it is here" is the state
@@ -968,7 +981,20 @@ export function PluginsPage() {
       );
     }
   }
-  const statusOf = (row: PluginRow): PluginStatus => pluginStatus(row, usages.get(row.key) ?? null);
+  /** How the library's server modules stand on the server a row comes from: its own answer says. */
+  const moduleStatesOf = (row: PluginRow) =>
+    (row.origin === undefined
+      ? deployment
+      : (machineMarkets.find((m) => m.machineId === row.origin!.machineId)?.running ?? null)
+    )?.modules ?? [];
+  const statusOf = (row: PluginRow): PluginStatus =>
+    pluginStatus(
+      row,
+      usages.get(row.key) ?? null,
+      row.library?.modules === true
+        ? moduleStatesOf(row).find((m) => m.plugin === row.library!.name)
+        : undefined,
+    );
   const unsatisfiedCount = rows.filter((row) => row.module?.unsatisfied !== undefined).length;
   const searching = query.trim() !== "" || incompatibleOnly;
   /** The list the tabs split: every row, or the incompatible ones while the filter is on. */
@@ -1193,6 +1219,10 @@ export function PluginsPage() {
           </Notice>
         )}
         <IncompatibleNotice filtered={incompatibleOnly} unsatisfied={unsatisfiedCount} />
+        <ModuleRequestsNotice
+          waiting={isAdmin ? (moduleRequests.value?.pending ?? 0) : 0}
+          onView={() => setSettingsOpen(true)}
+        />
       </PageHeader>
       <SettingsDialog
         open={settingsOpen}
@@ -1504,6 +1534,31 @@ export function PluginsListControls({
         </Select>
       </div>
     </>
+  );
+}
+
+/**
+ * The administrator's notice beside the incompatible-plugins one, while members' requests to run a
+ * plugin's server module wait on this server: how many, and the way to Settings › Plugins, where
+ * they are decided. Nothing while none waits.
+ */
+export function ModuleRequestsNotice({
+  waiting,
+  onView,
+}: {
+  /** How many requests wait for a decision. */
+  waiting: number;
+  onView: () => void;
+}) {
+  if (waiting === 0) return null;
+  return (
+    <Notice
+      tone="attention"
+      className="mt-4"
+      action={{ label: S.plugins.moduleRequestsView, onClick: onView }}
+    >
+      {S.plugins.moduleRequestsNotice(waiting)}
+    </Notice>
   );
 }
 
