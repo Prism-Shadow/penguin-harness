@@ -103,6 +103,27 @@ describe("resolveReplyLink", () => {
     expect(resolveReplyLink("~/notes.md", WS)).toEqual({ kind: "none" });
     expect(resolveReplyLink("%E9%B9", WS)).toEqual({ kind: "none" });
   });
+
+  it("an internal /chat/:sessionId or /org route (or localhost equivalent) resolves as a route", () => {
+    expect(resolveReplyLink("/chat/session-2026-11-19-09-52-07-48a86320", WS)).toEqual({
+      kind: "route",
+      to: "/chat/session-2026-11-19-09-52-07-48a86320",
+    });
+    expect(resolveReplyLink("/org/tickets", WS)).toEqual({
+      kind: "route",
+      to: "/org/tickets",
+    });
+    expect(resolveReplyLink("http://localhost:17469/chat/2556a209", WS)).toEqual({
+      kind: "route",
+      to: "/chat/2556a209",
+    });
+    expect(
+      resolveReplyLink("http://127.0.0.1:17469/chat/session-2026-11-19-09-52-07-48a86320", WS),
+    ).toEqual({
+      kind: "route",
+      to: "/chat/session-2026-11-19-09-52-07-48a86320",
+    });
+  });
 });
 
 /** A click event carrying just what the handlers read. */
@@ -178,6 +199,22 @@ describe("replyLinkBehavior", () => {
     expect(event.preventDefault).toHaveBeenCalledOnce();
     expect(inReply.scrollIntoView).toHaveBeenCalledOnce();
     expect(elsewhere.scrollIntoView).not.toHaveBeenCalled();
+    expect(openFile).not.toHaveBeenCalled();
+  });
+
+  it("an internal route navigates in-place instead of being blocked", () => {
+    const openFile = vi.fn();
+    const openRoute = vi.fn();
+    const behavior = replyLinkBehavior("/chat/session-2026-11-19-09-52-07-48a86320", {
+      workspace: WS,
+      openFile,
+      openRoute,
+    });
+    expect(behavior.target).toBeUndefined();
+    const event = click();
+    behavior.onClick!(event);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(openRoute).toHaveBeenCalledExactlyOnceWith("/chat/session-2026-11-19-09-52-07-48a86320");
     expect(openFile).not.toHaveBeenCalled();
   });
 });

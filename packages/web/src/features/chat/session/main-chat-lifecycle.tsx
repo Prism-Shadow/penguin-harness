@@ -13,7 +13,7 @@ import { latestConversation, withoutOrgSessions } from "../../../lib/session-gro
 import { noteSessionSeen } from "../../../lib/session-seen";
 import { latestTaskHasSubagent, taskStartCount } from "../agent-topology";
 import { DRAFT_SESSION_ID } from "../draft-sessions";
-import { routeSessionOutcome, sessionForProject } from "../session-project";
+import { matchesSessionId, routeSessionOutcome, sessionForProject } from "../session-project";
 import { RouteProbe } from "../route-probe";
 import { machineForSession } from "../../../lib/session-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "../chat-defaults-event";
@@ -33,12 +33,17 @@ import {
 import { advancePanelTaskScope, createPanelTaskScope } from "../panel-task-scope";
 import { exitedProcessIds, reportableProcessFailure } from "../process-list";
 import { PROCESS_POLL_MS, STAT_PATHS_PER_REQUEST } from "./main-chat-helpers";
+import { orgKey } from "../../../lib/company-nav";
+import { deskRows } from "../../company/org-sessions";
+import { openTempSession } from "../../company/temp-session";
 import type { useMainChatTranscript } from "./main-chat-transcript";
 
 /** Exact consecutive main ChatPage statements 76..128; called once, in original order. */
 export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscript>) {
   const {
     navigate,
+    user,
+    company,
     setCurrentAgentId,
     reloadAgents,
     agents,
@@ -132,6 +137,42 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSessionId, selectedAgentId, selectedAgentKnown, setCurrentAgentId]);
+
+  const selectedOrgId = selected?.orgId ?? null;
+  const selectedTitle = selected?.title ?? "";
+  useEffect(() => {
+    if (!projectId || !selectedSessionId || !selectedAgentId || !selectedOrgId) return;
+    const desks = deskRows(
+      company.orgChart,
+      company.orgSessions.get(orgKey(projectId, selectedOrgId)),
+    );
+    openTempSession(
+      user?.userId ?? null,
+      projectId,
+      selectedOrgId,
+      {
+        sessionId: selectedSessionId,
+        agentId: selectedAgentId,
+        title: selectedTitle,
+      },
+      desks.map((d) => d.sessionId),
+    );
+  }, [
+    projectId,
+    selectedSessionId,
+    selectedAgentId,
+    selectedOrgId,
+    selectedTitle,
+    user?.userId,
+    company.orgChart,
+    company.orgSessions,
+  ]);
+
+  useEffect(() => {
+    if (!draft && selectedSessionId && routeSessionId && routeSessionId !== selectedSessionId) {
+      navigate(`/chat/${selectedSessionId}`, { replace: true });
+    }
+  }, [draft, selectedSessionId, routeSessionId, navigate]);
 
   // Agents tab AUTO-OPEN (the one automatic tab action): the pure tracker
   // (advancePanelTaskScope, unit-tested) brings the agents tab to the front on the CURRENT
@@ -322,9 +363,25 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
     // lifetime to one run is what made a deep link issue a dozen identical requests. One
     // lookup per Session in flight, the list's loading read when it settles, and an answer
     // about a Session the route has left dropped: see route-probe.ts.
+    let lookupId = routeSessionId;
+    for (const orgSnap of company.orgSessions.values()) {
+      const deskHit = orgSnap.desks.find((d) => matchesSessionId(d.sessionId, routeSessionId));
+      if (deskHit) {
+        lookupId = deskHit.sessionId;
+        break;
+      }
+      for (const t of orgSnap.tickets) {
+        const ticketHit = t.sessions.find((s) => matchesSessionId(s.sessionId, routeSessionId));
+        if (ticketHit) {
+          lookupId = ticketHit.sessionId;
+          break;
+        }
+      }
+      if (lookupId !== routeSessionId) break;
+    }
     routeProbe.run(
       probeKey,
-      async () => sessionForProject((await api.getSession(routeSessionId)).session, projectId),
+      async () => sessionForProject((await api.getSession(lookupId)).session, projectId),
       {
         found: (session, listLoading) => {
           setFetchedSession(session);

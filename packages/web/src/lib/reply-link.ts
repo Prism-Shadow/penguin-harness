@@ -31,10 +31,16 @@ export type ReplyLink =
   | { kind: "external" }
   | { kind: "anchor"; id: string }
   | { kind: "file"; path: string }
+  | { kind: "route"; to: string }
   | { kind: "none" };
 
 /** A URL scheme, as the URL parser reads one: a letter, then letters, digits, `+`, `.` or `-`, then `:`. */
 const SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+
+/** An internal SPA route (`/chat/<sessionId>` or `/org…`), or a localhost URL pointing to one. */
+const APP_ROUTE_RE = /^\/(?:chat\/[^\s/?#]+|org(?:\/[^\s?#]*)?)(?:[?#].*)?$/;
+const LOCALHOST_ROUTE_RE =
+  /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?(\/(?:chat\/[^\s/?#]+|org(?:\/[^\s?#]*)?)(?:[?#].*)?)$/i;
 
 const EXTERNAL: ReplyLink = { kind: "external" };
 const NONE: ReplyLink = { kind: "none" };
@@ -54,6 +60,9 @@ export function resolveReplyLink(href: string | undefined, workspace: string | n
     const id = decode(href.slice(1));
     return id === null || id === "" ? NONE : { kind: "anchor", id };
   }
+  const localRoute = LOCALHOST_ROUTE_RE.exec(href);
+  if (localRoute !== null) return { kind: "route", to: localRoute[1]! };
+  if (APP_ROUTE_RE.test(href)) return { kind: "route", to: href };
   if (href.startsWith("//") || SCHEME_RE.test(href)) return EXTERNAL;
   const decoded = decode(href.replace(/[?#].*$/, ""));
   if (decoded === null) return NONE;
@@ -67,6 +76,8 @@ export interface WorkspaceLinks {
   workspace: string | null;
   /** Opens a Workspace-relative path in the conversation's Files panel. */
   openFile: (path: string) => void;
+  /** Navigates to an internal SPA route (`/chat/<sessionId>`, `/org…`). */
+  openRoute?: (to: string) => void;
 }
 
 /** The attributes a rendered link adds on top of its own. */
@@ -116,6 +127,27 @@ export function replyLinkBehavior(href: string | undefined, links: WorkspaceLink
         onClick: (event) => {
           event.preventDefault();
           links.openFile(link.path);
+        },
+      };
+    case "route":
+      return {
+        onClick: (event) => {
+          if (
+            event.metaKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.altKey ||
+            (event.button !== undefined && event.button !== 0)
+          ) {
+            return;
+          }
+          event.preventDefault();
+          if (links.openRoute) {
+            links.openRoute(link.to);
+          } else if (typeof window !== "undefined") {
+            window.history.pushState({}, "", link.to);
+            window.dispatchEvent(new PopStateEvent("popstate"));
+          }
         },
       };
     case "anchor":

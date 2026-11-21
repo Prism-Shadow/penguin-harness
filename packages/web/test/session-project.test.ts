@@ -16,6 +16,7 @@
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
+  matchesSessionId,
   resolveRoutedSession,
   routeSessionOutcome,
   routedView,
@@ -86,6 +87,17 @@ describe("resolveRoutedSession", () => {
     // render that Project with project-a's conversation and Agent.
     expect(resolveRoutedSession("session-a", [], SESSION, "project-b")).toBeNull();
     expect(resolveRoutedSession("session-a", [SESSION], SESSION, "project-b")).toBeNull();
+  });
+
+  it("resolves an 8-hex short Session id against the full session-YYYY-MM-DD-HH-MM-SS-xxxxxxxx id", () => {
+    const full: SessionInfo = {
+      ...SESSION,
+      sessionId: "session-2026-11-10-10-40-17-2556a209",
+    };
+    expect(matchesSessionId(full.sessionId, "2556a209")).toBe(true);
+    expect(matchesSessionId(full.sessionId, "deadbeef")).toBe(false);
+    expect(resolveRoutedSession("2556a209", [full], null, "project-a")).toBe(full);
+    expect(resolveRoutedSession("2556a209", [], full, "project-a")).toBe(full);
   });
 });
 
