@@ -24,13 +24,13 @@
 import { HttpError } from "@prismshadow/penguin-library-http";
 import { optionalBoolean } from "@prismshadow/penguin-library-http/validate";
 import { maskApiKey } from "./mask.js";
-import type { MessagingBindingRow } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import type { MessagingBindingRow } from "./repos/messaging-bindings.js";
 import type { MessagingChannel } from "./connector.js";
 import type {
   MessagingBindingCommon,
   MessagingBindingInfo,
   MessagingDeliveryPatch,
-} from "@prismshadow/penguin-library-messaging/vocabulary";
+} from "./vocabulary.js";
 
 /**
  * One channel's contribution to the shared HTTP surface.

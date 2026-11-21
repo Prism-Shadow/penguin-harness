@@ -22,9 +22,9 @@ import { Hono } from "hono";
 import type {
   MessagingAccountHoldersResponse,
   MessagingAccountsResponse,
-} from "@prismshadow/penguin-library-messaging/vocabulary";
+} from "./vocabulary.js";
 import type { AppEnv } from "@prismshadow/penguin-library-http";
-import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
+import type { MessagingBindings } from "./messaging.js";
 import type { Access } from "@prismshadow/penguin-library-project";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import {
