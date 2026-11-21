@@ -33,11 +33,13 @@ import {
 import { ScryptHasher, PasswordHasher } from "./auth/password.js";
 import { LiveStreamRegistry, LiveStreams } from "./auth/live-streams.js";
 import {
-  DefaultMessagingTuning,
   Messaging,
   MessagingTaskRunner,
-  MessagingModule,
   QQScan,
+} from "@prismshadow/penguin-library-messaging/bridge";
+import {
+  DefaultMessagingTuning,
+  MessagingModule,
 } from "./runtime/messaging/module.js";
 import { MessagingAccountsModule } from "./runtime/messaging/module.js";
 import { FeishuSdkProvider } from "@prismshadow/penguin-library-messaging/feishu-connector";
