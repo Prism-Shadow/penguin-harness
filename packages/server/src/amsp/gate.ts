@@ -95,27 +95,40 @@ function segmentsOf(path: string, prefix: string): string[] | null {
   }
 }
 
-export function amspGate(prefix: string, deps: AmspGateDeps): MiddlewareHandler<AmspEnv> {
-  /**
-   * The caller, against the Agent's settings: the key it presents (null when it presents none),
-   * or the refusal. `notTheKeys` is the 404 a key of another Agent gets.
-   */
-  const authenticate = (
-    header: string | undefined,
-    api: AgentApiRow,
-    notTheKeys: () => HttpError,
-  ): string | null => {
-    if (header === undefined) {
-      if (!api.open) throw unauthorized("This Agent requires an API key.");
-      return null;
-    }
-    const token = bearerToken(header);
-    const key = token === null ? null : deps.agentApi.findKeyByHash(hashAgentApiKey(token));
-    if (key === null) throw unauthorized("Invalid API key.");
-    if (key.projectId !== api.projectId || key.agentId !== api.agentId) throw notTheKeys();
-    return key.keyId;
-  };
+/** The presented key, or keyless access to an open Agent; wrong-Agent keys receive a 404. */
+function authenticate(
+  deps: Pick<AmspGateDeps, "agentApi">,
+  header: string | undefined,
+  api: AgentApiRow,
+  notTheKeys: () => HttpError,
+): string | null {
+  if (header === undefined) {
+    if (!api.open) throw unauthorized("This Agent requires an API key.");
+    return null;
+  }
+  const token = bearerToken(header);
+  const key = token === null ? null : deps.agentApi.findKeyByHash(hashAgentApiKey(token));
+  if (key === null) throw unauthorized("Invalid API key.");
+  if (key.projectId !== api.projectId || key.agentId !== api.agentId) throw notTheKeys();
+  return key.keyId;
+}
 
+/** The Session gate, also re-run by an existing subscription before it sends more data. */
+export function requireApiSession(
+  deps: AmspGateDeps,
+  sessionId: string,
+  header: string | undefined,
+): AmspContext {
+  if (!isValidId(sessionId)) throw sessionNotFound();
+  const row = deps.sessions.findById(sessionId);
+  if (row === null || row.client !== "api") throw sessionNotFound();
+  const api = deps.agentApi.get(row.projectId, row.agentId);
+  if (api === null || !api.enabled) throw sessionNotFound();
+  const keyId = authenticate(deps, header, api, sessionNotFound);
+  return { projectId: row.projectId, agentId: row.agentId, keyId, session: row };
+}
+
+export function amspGate(prefix: string, deps: AmspGateDeps): MiddlewareHandler<AmspEnv> {
   return async (c, next) => {
     requireAgentApiOn(deps.settings);
     const segments = segmentsOf(c.req.path, prefix);
@@ -123,17 +136,10 @@ export function amspGate(prefix: string, deps: AmspGateDeps): MiddlewareHandler<
     if (segments !== null && segments[0] === "agents" && segments.length >= 3) {
       const [, projectId, agentId] = segments as [string, string, string];
       const api = await requireExposedAgent(deps, projectId, agentId);
-      const keyId = authenticate(header, api, agentNotFound);
+      const keyId = authenticate(deps, header, api, agentNotFound);
       c.set("amsp", { projectId, agentId, keyId, session: null });
     } else if (segments !== null && segments[0] === "sessions" && segments.length >= 2) {
-      const sessionId = segments[1]!;
-      if (!isValidId(sessionId)) throw sessionNotFound();
-      const row = deps.sessions.findById(sessionId);
-      if (row === null || row.client !== "api") throw sessionNotFound();
-      const api = deps.agentApi.get(row.projectId, row.agentId);
-      if (api === null || !api.enabled) throw sessionNotFound();
-      const keyId = authenticate(header, api, sessionNotFound);
-      c.set("amsp", { projectId: row.projectId, agentId: row.agentId, keyId, session: row });
+      c.set("amsp", requireApiSession(deps, segments[1]!, header));
     }
     await next();
   };

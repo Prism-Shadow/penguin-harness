@@ -1134,11 +1134,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   // records and the beat, none of the server events `/stream` adds (amsp/session-stream.ts).
   app.get("/:sessionId/amsp", (c) => {
     const row = resolveSession(c);
-    return amspSessionStream(
-      c,
-      deps.channels.get(row.sessionId),
-      streamRevocation(c, c.var.user, deps),
-    );
+    return amspSessionStream(c, deps.channels.get(row.sessionId), {
+      revocation: streamRevocation(c, c.var.user, deps),
+      authorize: () => {
+        resolveSession(c);
+      },
+    });
   });
 
   // The calls waiting on a decision, `?wait=` holding the answer until there is one: the Agent
@@ -1182,6 +1183,9 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     return sseEndpoint(c, channel, {
       initialEvents,
       revocation: streamRevocation(c, c.var.user, deps),
+      authorize: () => {
+        resolveSession(c);
+      },
     });
   });
 
