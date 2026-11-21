@@ -104,6 +104,18 @@ export function endpointOf(
   return app;
 }
 
+const ROUTE_ADMIN_GATE_PREFIXES = [
+  "admin.",
+  "cli.commands.",
+  "command.",
+  "plugin.",
+  "machine.",
+  "themes.",
+  "version.",
+  "messaging.",
+  "browser.",
+] as const;
+
 /**
  * Checks whether an Agent-authenticated request is granted the matched route's `id`,
  * evaluates any `<roleOrRoute>@<refinerId>` refiners bound to that route, and enforces
@@ -170,23 +182,29 @@ async function checkRouteAuth(
     if (!evalResult.ok) {
       throw new HttpError(403, evalResult.code, evalResult.message);
     }
-    return;
+  } else {
+    const routeAgentId = c.req.param("agentId");
+    if (
+      !grant.allEndpoints &&
+      grant.crossAgent !== true &&
+      routeAgentId !== undefined &&
+      routeAgentId !== agentAuth.agentId &&
+      c.req.method !== "GET" &&
+      normalized !== "session.create"
+    ) {
+      throw new HttpError(
+        403,
+        "permission_required",
+        `Agent session for agent "${agentAuth.agentId}" cannot modify agent "${routeAgentId}".`,
+      );
+    }
   }
 
-  const routeAgentId = c.req.param("agentId");
   if (
-    !grant.allEndpoints &&
-    grant.crossAgent !== true &&
-    routeAgentId !== undefined &&
-    routeAgentId !== agentAuth.agentId &&
-    c.req.method !== "GET" &&
-    normalized !== "session.create"
+    !c.var.user.isAdmin &&
+    ROUTE_ADMIN_GATE_PREFIXES.some((prefix) => normalized.startsWith(prefix))
   ) {
-    throw new HttpError(
-      403,
-      "permission_required",
-      `Agent session for agent "${agentAuth.agentId}" cannot modify agent "${routeAgentId}".`,
-    );
+    c.set("user", { ...c.var.user, isAdmin: true });
   }
 }
 
@@ -203,20 +221,38 @@ function withRouteAuth(
   if (sourceErr !== gatedErr) {
     gated.onError(sourceErr);
   }
+  const groupMiddlewares: MiddlewareHandler<AppEnv>[] = [];
+  let hasConcreteRoute = false;
   for (const route of source.routes) {
     if (
       route.method === "ALL" &&
       route.path === "/*" &&
       normalizedGroup !== "machines.server-proxy"
     ) {
-      gated.on(route.method, route.path, route.handler);
+      if (!hasConcreteRoute) {
+        groupMiddlewares.push(route.handler);
+      } else {
+        gated.on(route.method, route.path, route.handler);
+      }
       continue;
     }
+    hasConcreteRoute = true;
     const resolvedId = resolveHttpRouteId(normalizedGroup, route.method, route.path);
-    gated.on(route.method, route.path, async (c, next) => {
-      await checkRouteAuth(c, resolvedId, normalizedGroup, refinerRegistry);
-      return route.handler(c, next);
-    });
+    gated.on(
+      route.method,
+      route.path,
+      async (c, next) => {
+        await checkRouteAuth(c, resolvedId, normalizedGroup, refinerRegistry);
+        await next();
+      },
+      ...groupMiddlewares,
+      route.handler,
+    );
+  }
+  if (!hasConcreteRoute) {
+    for (const mw of groupMiddlewares) {
+      gated.on("ALL", "/*", mw);
+    }
   }
   return gated;
 }

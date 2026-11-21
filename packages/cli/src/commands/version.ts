@@ -22,7 +22,12 @@ export function registerVersionCommand(version: Command, t: Messages): void {
     .option("--server <url>", t.common.server)
     .option("--root <dir>", t.common.root)
     .action(async (options: { json?: boolean; server?: string; root?: string }) => {
-      if (options.json !== true) {
+      const inControlledSession = Boolean(
+        process.env.PENGUIN_SESSION_ID?.trim() &&
+          process.env.PENGUIN_API_URL?.trim() &&
+          process.env.PENGUIN_API_TOKEN?.trim(),
+      );
+      if (options.json !== true && !inControlledSession) {
         // The one-line form is a property of the artifact alone, so it never reads a root.
         process.stdout.write(`${buildInfo().describe}\n`);
         return;
@@ -32,6 +37,10 @@ export function registerVersionCommand(version: Command, t: Messages): void {
         t,
       );
       const report = await client.request<VersionReport>("GET", "/api/version");
+      if (options.json !== true) {
+        process.stdout.write(`${buildInfo().describe}\n`);
+        return;
+      }
       process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     });
 }

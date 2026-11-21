@@ -45,6 +45,8 @@ import type { Access } from "@prismshadow/penguin-library-project";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { UserDraftsStore } from "@prismshadow/penguin-library-auth";
 import type { AgentAuth } from "../../mechanisms/agent-auth.js";
+import type { AgentAuthRole } from "../../auth/agent-roles.js";
+import { DEFAULT_AGENT_AUTH_ROLE } from "../../auth/agent-roles.js";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import { deleteAgentEverywhere } from "../../services/agent-deletion.js";
 import { migrateEmployeeAuthors } from "../../services/agent-author-migration.js";
@@ -191,6 +193,49 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       agentId,
     );
     return c.json({ deletion } satisfies AgentDeleteResponse, 202);
+  });
+
+  app.get("/:agentId/auth", (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const current = deps.agentAuth.generationOf(projectId, agentId);
+    const grant = deps.agentAuth.currentGrant(projectId, agentId);
+    return c.json({
+      projectId,
+      agentId,
+      role: current?.role ?? DEFAULT_AGENT_AUTH_ROLE,
+      generation: current?.generation ?? 0,
+      apiIds: current?.apiIds ?? [],
+      effectiveApiCount: grant?.apiIds.length ?? 0,
+      allEndpoints: grant?.allEndpoints ?? false,
+    });
+  });
+
+  app.put("/:agentId/auth", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    const body = await readJson(c);
+    const role = requireString(body, "role", { minLen: 1, maxLen: 200, label: "role" });
+    const apiIds = optionalStringArray(body, "apiIds") ?? [];
+    const updated = deps.agentAuth.updateGrant(
+      projectId,
+      agentId,
+      role as AgentAuthRole,
+      apiIds,
+      new Date(),
+    );
+    const grant = deps.agentAuth.currentGrant(projectId, agentId);
+    return c.json({
+      projectId,
+      agentId,
+      role: updated.role,
+      generation: updated.generation,
+      apiIds: updated.apiIds,
+      effectiveApiCount: grant?.apiIds.length ?? 0,
+      allEndpoints: grant?.allEndpoints ?? false,
+    });
   });
 
   return app;

@@ -16,10 +16,15 @@ import { resolveRoot } from "@prismshadow/penguin-core";
 import { resetAdminPassword } from "@prismshadow/penguin-server/reset-admin-password";
 import type { Command } from "commander";
 import type { Messages } from "@prismshadow/penguin-server/cli";
+import { resolveConnection, ServerClient } from "@prismshadow/penguin-server/cli";
 
 /** Fills in `penguin server reset-admin-password`, on the node the host located by its key. */
 export function registerResetPasswordCommand(reset: Command, t: Messages): void {
   reset.action(async () => {
+    if (process.env.PENGUIN_API_URL?.trim()) {
+      const client = new ServerClient(await resolveConnection({}, t), t);
+      await client.request("GET", "/api/admin/users");
+    }
     const root = resolveRoot();
     const dbPath = process.env.PENGUIN_WEB_DB ?? path.join(root, "web.db");
     const result = await resetAdminPassword(root, dbPath);

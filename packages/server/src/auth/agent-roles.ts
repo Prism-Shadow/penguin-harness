@@ -89,6 +89,8 @@ export const HTTP_GROUP_ENDPOINT_IDS = {
   "sessions.agents GET /": "agent.list",
   "sessions.agents POST /": "agent.create",
   "sessions.agents DELETE /:agentId": "agent.delete",
+  "sessions.agents GET /:agentId/auth": "agent.auth.get",
+  "sessions.agents PUT /:agentId/auth": "agent.auth.update",
   "sessions.agent-deletions GET /:deletionId": "agent.getDeletion",
   "sessions.agent-config GET /": "agent.config.get",
   "sessions.agent-config PUT /": "agent.config.update",
@@ -795,6 +797,7 @@ export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
     routes: [
       "agent.list",
       "agent.getDeletion",
+      "agent.auth.get",
       "agent.config.get",
       "agent.avatar.get",
       "agent.archive.export",
@@ -1426,6 +1429,7 @@ export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
   "admin.maintain": {
     children: ["admin.read"],
     routes: [
+      "agent.auth.update",
       "admin.settings.update",
       "admin.settings.runProxyProbe",
       "admin.pluginConfig.update",

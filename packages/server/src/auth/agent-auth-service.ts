@@ -50,6 +50,7 @@ export class AgentAuthService implements AgentAuth {
   @Use() private readonly agentAuthSessions!: AgentAuthSessions;
   /** The Agent's per-route grant, derived at its CURRENT generation and role. */
   @Use() private readonly agentAuthPermissions!: AgentAuthPermissions;
+  private readonly activeTokens = new Map<string, string>();
 
   /**
    * Issues the Agent's session. Called when the Agent is created (and by the re-issue path);
@@ -70,8 +71,34 @@ export class AgentAuthService implements AgentAuth {
       now,
       ttlMs: AGENT_SESSION_TTL_MS,
     });
+    this.activeTokens.set(`${projectId}\0${agentId}`, out.token);
     const current = this.agentAuthSessions.generationOf(projectId, agentId);
     return { ...out, role: current?.role ?? DEFAULT_AGENT_AUTH_ROLE };
+  }
+
+  /** Returns a live session token for the Agent, issuing a new one when none is cached or valid. */
+  ensureSessionToken(projectId: string, agentId: string, now: Date): string {
+    const key = `${projectId}\0${agentId}`;
+    const cached = this.activeTokens.get(key);
+    if (cached !== undefined && this.authenticate(cached, now) !== null) {
+      return cached;
+    }
+    return this.issueSession(projectId, agentId, now).token;
+  }
+
+  /** Updates the Agent's role and explicit route grants (bumping its generation) and returns the new state. */
+  updateGrant(
+    projectId: string,
+    agentId: string,
+    role: AgentAuthRole,
+    apiIds: readonly string[],
+    now: Date,
+  ): { generation: number; role: AgentAuthRole; apiIds: readonly string[]; token: string } {
+    const current = this.agentAuthSessions.generationOf(projectId, agentId);
+    const nextGen = (current?.generation ?? 0) + 1;
+    this.agentAuthSessions.bumpGeneration(projectId, agentId, role, apiIds, nextGen);
+    const token = this.ensureSessionToken(projectId, agentId, now);
+    return { generation: nextGen, role, apiIds: [...apiIds], token };
   }
 
   /** The Agent's CURRENT grant, from its CURRENT generation and role. */
@@ -119,6 +146,7 @@ export class AgentAuthService implements AgentAuth {
 
   /** Drops the Agent's sessions AND its generation row (the Agent is archived). */
   revokeAll(projectId: string, agentId: string): void {
+    this.activeTokens.delete(`${projectId}\0${agentId}`);
     this.agentAuthSessions.deleteByAgent(projectId, agentId);
   }
 }

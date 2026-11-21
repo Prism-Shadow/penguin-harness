@@ -12,7 +12,7 @@ import path from "node:path";
 import { readMachineStatus } from "@prismshadow/penguin-server/machine-status";
 import type { Command } from "commander";
 import type { Messages } from "@prismshadow/penguin-server/cli";
-import { resolveRootOption } from "@prismshadow/penguin-server/cli";
+import { resolveConnection, resolveRootOption, ServerClient } from "@prismshadow/penguin-server/cli";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
@@ -22,6 +22,10 @@ import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-cor
 const node = (command: CliCommandProgram): Command => command as Command;
 export function registerStatusCommand(status: Command, t: Messages): void {
   status.option("--root <dir>", t.common.root).action(async (opts: { root?: string }) => {
+    if (process.env.PENGUIN_API_URL?.trim()) {
+      const client = new ServerClient(await resolveConnection({ root: opts.root }, t), t);
+      await client.request("GET", "/api/admin/settings");
+    }
     const root = resolveRootOption(opts.root);
     // PENGUIN_WEB_DB honored as everywhere else, or this reads an identity out of a
     // database the live server never writes to.

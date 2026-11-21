@@ -136,6 +136,7 @@ import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
 import { enabledMessagingChannel } from "./messaging/enabled-channel.js";
 import { MODELSCOPE_PROVIDER_ID } from "../model-catalog/catalog.js";
+import type { AgentAuth } from "../mechanisms/agent-auth.js";
 
 /**
  * 409 for when there's nothing to compact: give the specific reason rather than a
@@ -2918,6 +2919,7 @@ export class SessionsModule {
   @Use() private readonly messagingRepo!: MessagingBindings;
   /** Company-mode caches: which organization owns a Session (read at every command spawn). */
   @Use() private readonly orgCache!: OrgCache;
+  @Use() private readonly agentAuth!: AgentAuth;
   @Provide() manager!: Sessions;
   @Provide() sessionService!: SessionServiceIface;
   @Provide() env!: SessionEnv;
@@ -2966,7 +2968,12 @@ export class SessionsModule {
           config.host === "0.0.0.0" || config.host === "::"
             ? "127.0.0.1"
             : (loopbackHostRoles(config.host)?.app ?? config.host);
-        const token = authState.apiToken;
+        const hasAgentAuthGeneration =
+          this.agentAuth !== undefined &&
+          this.agentAuth.generationOf(ctx.projectId, ctx.agentId) !== null;
+        const token = hasAgentAuthGeneration
+          ? this.agentAuth.ensureSessionToken(ctx.projectId, ctx.agentId, this.clock.now())
+          : authState.apiToken;
         const orgId = orgCache.ownerOfSession(ctx.sessionId)?.orgId ?? null;
         return {
           PENGUIN_API_URL: `http://${host}:${config.port}`,

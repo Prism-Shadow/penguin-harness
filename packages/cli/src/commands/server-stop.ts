@@ -15,7 +15,7 @@
 import { liveServerLock, readServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
 import type { Messages } from "@prismshadow/penguin-server/cli";
-import { resolveRootOption } from "@prismshadow/penguin-server/cli";
+import { resolveConnection, resolveRootOption, ServerClient } from "@prismshadow/penguin-server/cli";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
@@ -46,6 +46,10 @@ interface StopResult {
 
 export function registerStopCommand(stop: Command, t: Messages): void {
   stop.option("--root <dir>", t.common.root).action(async (opts: { root?: string }) => {
+    if (process.env.PENGUIN_API_URL?.trim()) {
+      const client = new ServerClient(await resolveConnection({ root: opts.root }, t), t);
+      await client.request("PUT", "/api/admin/settings", {});
+    }
     const result = await stopServer(resolveRootOption(opts.root));
     process.stdout.write(JSON.stringify(result) + "\n");
     if (!result.ok) process.exitCode = 1;

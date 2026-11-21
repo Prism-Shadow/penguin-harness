@@ -133,4 +133,14 @@ export abstract class AgentAuth {
   abstract authenticate(bearer: string, now: Date): AgentAuthContext | null;
   /** Drops the Agent's sessions AND its generation row (the Agent is archived). */
   abstract revokeAll(projectId: string, agentId: string): void;
+  /** Returns a live session token for the Agent, issuing a new one when none is cached or valid. */
+  abstract ensureSessionToken(projectId: string, agentId: string, now: Date): string;
+  /** Updates the Agent's role and explicit route grants (bumping its generation) and returns the new state. */
+  abstract updateGrant(
+    projectId: string,
+    agentId: string,
+    role: AgentAuthRole,
+    apiIds: readonly string[],
+    now: Date,
+  ): { generation: number; role: AgentAuthRole; apiIds: readonly string[]; token: string };
 }
