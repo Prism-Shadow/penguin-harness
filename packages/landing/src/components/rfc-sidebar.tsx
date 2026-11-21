@@ -524,7 +524,7 @@ function GraphTreeView({
                   >
                     {node.label}
                   </span>
-                  <span className="rounded-full bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] leading-none tabular-nums text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                  <span className="rounded-full bg-gray-100 px-1.5 py-0.5 font-mono text-xs leading-none tabular-nums text-gray-500 dark:bg-gray-800 dark:text-gray-400">
                     {descendantCount}
                   </span>
                 </button>
@@ -539,7 +539,7 @@ function GraphTreeView({
                       type="button"
                       onClick={() => onToggle(node.key)}
                       aria-label={S.rfcs.expandNode(name)}
-                      className="cursor-pointer rounded-full bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] leading-none tabular-nums text-gray-600 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                      className="cursor-pointer rounded-full bg-gray-100 px-1.5 py-0.5 font-mono text-xs leading-none tabular-nums text-gray-600 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
                     >
                       +{hiddenChildCount}
                     </button>
@@ -597,7 +597,7 @@ export function RfcTreeView({ locale, headingId }: { locale: string; headingId?:
         >
           {S.rfcs.sectionAll}
         </h2>
-        <div className="inline-flex items-center gap-2 text-xs">
+        <div className="inline-flex items-center gap-3 text-xs">
           <button
             type="button"
             onClick={expandAll}
@@ -606,9 +606,6 @@ export function RfcTreeView({ locale, headingId }: { locale: string; headingId?:
           >
             {S.rfcs.expandAll}
           </button>
-          <span aria-hidden="true" className="text-gray-300 dark:text-gray-700">
-            ·
-          </span>
           <button
             type="button"
             onClick={collapseAll}

@@ -474,7 +474,14 @@ describe("refreshRfcPrStatusCache optimizations", () => {
         status: "merged" as const,
         baseRefName: "main",
         headRefOid: "sha-merged",
-        rfcs: [{ id: "PRFC-0001-module", number: "PRFC-0001", title: "PRFC-0001 Module" }],
+        rfcs: [
+          {
+            id: "PRFC-0001-module",
+            number: "PRFC-0001",
+            title: "PRFC-0001 Module",
+            version: "v1.0.0",
+          },
+        ],
       },
       {
         number: 1229,
@@ -483,7 +490,14 @@ describe("refreshRfcPrStatusCache optimizations", () => {
         status: "open" as const,
         baseRefName: "main",
         headRefOid: "sha-open",
-        rfcs: [{ id: "PRFC-0004-plugin-scope", number: "PRFC-0004", title: "PRFC-0004 Plugin Scope" }],
+        rfcs: [
+          {
+            id: "PRFC-0004-plugin-scope",
+            number: "PRFC-0004",
+            title: "PRFC-0004 Plugin Scope",
+            version: "v1.0.0",
+          },
+        ],
       },
     ],
   };
