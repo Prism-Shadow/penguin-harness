@@ -279,7 +279,12 @@ function contributedTabs(manifests: readonly Manifest[], uiBase: string): Workbe
         .join("/");
       tabs.push({
         ...tab,
-        renderer: { iframe: { src: `${uiBase}/${rest}` } },
+        renderer: {
+          iframe: {
+            src: `${uiBase}/${rest}`,
+            ...(tab.renderer.iframe.pointerLock === true ? { pointerLock: true } : {}),
+          },
+        },
       });
     }
   }
