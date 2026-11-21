@@ -192,14 +192,20 @@ describe("buildRfcIndex", () => {
       ["PRFC-0004-plugin-scope", "open"],
       ["PRFC-0025-module-pass", "draft"],
     ]);
+    expect(index[1]!.prNumber).toBe(1229);
+    expect(index[1]!.prTitle).toBe("docs(rfcs): draft RFC PRFC-0004 - plugin scope");
     expect(index[1]!.prHref).toBe("https://github.com/Prism-Shadow/penguin-harness/pull/1229");
+    expect(index[2]!.prNumber).toBe(1560);
     expect(index[2]!.prHref).toBe("https://github.com/Prism-Shadow/penguin-harness/pull/1560");
     expect(rfcEntryShortTitle(index[2]!, "en")).toBe("Module Pass");
   });
 
-  it("populates all 25 RFCs in rfcEntries with their GitHub PR statuses", () => {
+  it("populates all 25 RFCs in rfcEntries with their GitHub PR statuses, numbers, and titles", () => {
     expect(rfcEntries).toHaveLength(25);
-    expect(rfcEntries.find((e) => e.id === "PRFC-0001-module")?.status).toBe("merged");
+    const mod = rfcEntries.find((e) => e.id === "PRFC-0001-module");
+    expect(mod?.status).toBe("merged");
+    expect(mod?.prNumber).toBe(1228);
+    expect(mod?.prTitle).toContain("docs(rfcs):");
     expect(rfcEntries.find((e) => e.id === "PRFC-0004-plugin-scope")?.status).toBe("open");
     expect(
       rfcEntries.find((e) => e.id === "PRFC-0005-mechanisms-not-implementations")?.status,

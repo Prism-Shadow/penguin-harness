@@ -73,8 +73,11 @@ function findRfcPrsToLabel() {
       );
       if (!touchesRfc) continue;
       const hasLabel = (pr.labels?.nodes ?? []).some((l) => l.name === RFC_LABEL);
-      if (hasLabel) alreadyLabeled.push(pr.number);
-      else toLabel.push(pr.number);
+      if (hasLabel) {
+        alreadyLabeled.push(pr.number);
+      } else if (/^docs\b|PRFC/i.test(pr.title)) {
+        toLabel.push(pr.number);
+      }
     }
     const oldest = conn?.nodes?.[conn.nodes.length - 1];
     if (!conn?.pageInfo?.hasNextPage || (oldest && oldest.number < 1200)) break;

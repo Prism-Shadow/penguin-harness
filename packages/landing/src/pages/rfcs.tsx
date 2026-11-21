@@ -50,12 +50,13 @@ export function rfcIndexMarkdown(locale: string): string {
           : doc
             ? `[${entry.number}](${doc.href})`
             : entry.number;
-    const revision = entry.openRevision
-      ? locale === "zh"
-        ? `（[${S.rfcs.openRevision}](${entry.openRevision.href})）`
-        : ` ([${S.rfcs.openRevision}](${entry.openRevision.href}))`
-      : "";
-    return `| ${rfcCell} | ${shortTitle} | ${statusLabel(entry.status)}${revision} |`;
+    const prCell =
+      entry.prNumber && entry.prTitle && entry.prHref
+        ? `[#${entry.prNumber} ${entry.prTitle.replace(/\|/g, "\\|")}](${entry.prHref})`
+        : entry.prHref
+          ? `[${entry.prHref}](${entry.prHref})`
+          : statusLabel(entry.status);
+    return `| ${rfcCell} | ${shortTitle} | ${prCell} |`;
   };
   const lines = [
     ...(intro ? [intro, ""] : []),
@@ -115,7 +116,7 @@ export function RfcsPage() {
       </header>
       <SiteMarkdown
         variant="doc"
-        className="mt-6"
+        className="mt-6 [--md-table-prose-min:14rem]"
         remarkPlugins={SITE_DOC_REMARK_PLUGINS}
         components={RFC_MD_COMPONENTS}
         highlight={highlightSiteCode}

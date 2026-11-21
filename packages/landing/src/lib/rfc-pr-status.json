@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-21T02:45:28.562Z",
+  "updatedAt": "2026-11-21T03:25:58.805Z",
   "prs": [
     {
       "number": 1228,
@@ -310,38 +310,6 @@
           "number": "PRFC-0019",
           "title": "PRFC-0019 RSI Toolkits",
           "titleZh": "PRFC-0019 RSI 工具包"
-        }
-      ]
-    },
-    {
-      "number": 1488,
-      "title": "feat(server,web,ui): the App Center is a home screen — icon and name, drag to sort, folders, windowed, a context menu, install status",
-      "url": "https://github.com/Prism-Shadow/penguin-harness/pull/1488",
-      "status": "merged",
-      "baseRefName": "main",
-      "headRefOid": "79af94f7812d5155a84bcd528adf24c7aedbf02c",
-      "rfcs": [
-        {
-          "id": "PRFC-0020-agent-workbench",
-          "number": "PRFC-0020",
-          "title": "PRFC-0020 Agent Workbench: App Naming, Plugin Distribution, and Product Support",
-          "titleZh": "PRFC-0020 Agent Workbench：应用命名、插件分发与产品支持"
-        }
-      ]
-    },
-    {
-      "number": 1519,
-      "title": "refactor(cli): move the five resource command groups into the server package",
-      "url": "https://github.com/Prism-Shadow/penguin-harness/pull/1519",
-      "status": "merged",
-      "baseRefName": "main",
-      "headRefOid": "bd63745bc547864127cfefe51da048a926698bcb",
-      "rfcs": [
-        {
-          "id": "PRFC-0024-cli-modules",
-          "number": "PRFC-0024",
-          "title": "PRFC-0024 CLI Modules",
-          "titleZh": "PRFC-0024 CLI Modules：命令是归属于拥有它的进程的贡献"
         }
       ]
     },

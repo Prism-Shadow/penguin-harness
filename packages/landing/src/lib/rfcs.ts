@@ -51,6 +51,10 @@ export interface RfcEntry {
   title: string;
   titleZh?: string;
   status: RfcStatus;
+  /** The GitHub PR number carrying this RFC, when known from PR status records. */
+  prNumber?: number;
+  /** The GitHub PR title carrying this RFC, when known from PR status records. */
+  prTitle?: string;
   /** The GitHub PR carrying this RFC, when known from PR status records or provenance markers. */
   prHref?: string;
   /** The English and Chinese in-site pages; absent while unmerged in `rfcs/`. */
@@ -175,14 +179,17 @@ export function buildRfcIndex(
           ref,
           openRevisionHref: pr.status === "open" ? pr.url : undefined,
         });
-      } else {
-        if (existing.pr.status === "merged" && pr.status === "open") {
-          existing.openRevisionHref = pr.url;
-        } else {
+      } else if (existing.pr.status === "merged") {
+        if (pr.status === "merged") {
           existing.pr = pr;
           existing.ref = ref;
-          if (pr.status === "open") existing.openRevisionHref = pr.url;
+        } else if (pr.status === "open") {
+          existing.openRevisionHref = pr.url;
         }
+      } else {
+        existing.pr = pr;
+        existing.ref = ref;
+        if (pr.status === "open") existing.openRevisionHref = pr.url;
       }
     }
   }
@@ -212,6 +219,8 @@ export function buildRfcIndex(
       title: en?.title ?? zh!.title,
       titleZh: zh?.title,
       status,
+      ...(prInfo?.pr.number ? { prNumber: prInfo.pr.number } : {}),
+      ...(prInfo?.pr.title ? { prTitle: prInfo.pr.title } : {}),
       ...(prHref ? { prHref } : {}),
       en: linked(en),
       zh: linked(zh),
@@ -227,6 +236,8 @@ export function buildRfcIndex(
       title: ref.title,
       ...(ref.titleZh ? { titleZh: ref.titleZh } : {}),
       status: pr.status,
+      prNumber: pr.number,
+      prTitle: pr.title,
       prHref: pr.url,
     });
   }
@@ -287,6 +298,11 @@ const documents = import.meta.glob("../../../../rfcs/*.md", {
 
 /** The `request-for-comments` PR records, read at build time via `virtual:penguin-rfc-prs`. */
 export const rfcPrRecords = (rawPrRecords as RfcPrRecord[] | undefined) ?? [];
+
+/** Look up a `request-for-comments` PR record by its GitHub URL. */
+export function rfcPrOfUrl(url: string): RfcPrRecord | undefined {
+  return rfcPrRecords.find((pr) => pr.url === url);
+}
 
 /** The index the RFC pages render: every document pair and RFC PR, sorted by number. */
 export const rfcEntries = buildRfcIndex(documents, rfcPrRecords);
