@@ -14,8 +14,8 @@ import type {
   BuiltinBrowserUnavailableReason,
   DesktopBrowserCommand,
   DesktopBrowserEvent,
-} from "../api/types.js";
-import { HttpError } from "../http/errors.js";
+} from "@prismshadow/penguin-server/api";
+import { HttpError } from "../plugin/index.js";
 
 export interface BrowserLink {
   readonly backend: BrowserBackend;

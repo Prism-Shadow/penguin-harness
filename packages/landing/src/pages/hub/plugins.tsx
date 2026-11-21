@@ -17,6 +17,9 @@ const CATEGORY_ORDER = [
   "office-productivity",
   "software-development",
   "ai-app-development",
+  "learning-life",
+  "utilities",
+  "entertainment",
   "sandbox",
   "other",
 ];

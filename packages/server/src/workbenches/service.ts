@@ -50,6 +50,7 @@ import type {
 import {
   agentDir,
   installedPlugin,
+  listInstalledWorkbenches,
   PLUGIN_NAME_PATTERN,
   userText,
   workbenchCacheDir,
@@ -721,11 +722,23 @@ export class WorkbenchService implements Workbenches {
       // With the Agent-wide switch off none of its workbenches runs, so none has a tile.
       if (await isSwitchedOff(base)) continue;
       const agentName = (await this.agentConfig.readCardMeta(projectId, agentId)).name ?? agentId;
-      out.push(
-        ...(await agentShortcuts(projectId, { agentId, agentName }, base, (workbenchId) =>
-          this.building(key(projectId, agentId, workbenchId)),
-        )),
+      const shortcuts = await agentShortcuts(
+        projectId,
+        { agentId, agentName },
+        base,
+        (workbenchId) => this.building(key(projectId, agentId, workbenchId)),
       );
+      // The plugin that installed each, from its receipt; receipts that will not read name none,
+      // and the tiles still list.
+      const installedBy = new Map(
+        (await listInstalledWorkbenches(this.paths.root, projectId, agentId).catch(() => [])).map(
+          (w) => [w.name, w.plugin],
+        ),
+      );
+      for (const shortcut of shortcuts) {
+        const plugin = installedBy.get(shortcut.workbenchId);
+        out.push(plugin === undefined ? shortcut : { ...shortcut, plugin });
+      }
     }
     return out;
   }
