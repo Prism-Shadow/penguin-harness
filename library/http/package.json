@@ -64,6 +64,30 @@
       "types": "./dist/settle.d.ts",
       "import": "./dist/settle.js"
     },
+    "./socket-frames": {
+      "types": "./dist/socket-frames.d.ts",
+      "import": "./dist/socket-frames.js"
+    },
+    "./socket-credit-window": {
+      "types": "./dist/socket-credit-window.d.ts",
+      "import": "./dist/socket-credit-window.js"
+    },
+    "./socket-stream-answer": {
+      "types": "./dist/socket-stream-answer.d.ts",
+      "import": "./dist/socket-stream-answer.js"
+    },
+    "./socket-line-frames": {
+      "types": "./dist/socket-line-frames.d.ts",
+      "import": "./dist/socket-line-frames.js"
+    },
+    "./socket-sse-text": {
+      "types": "./dist/socket-sse-text.d.ts",
+      "import": "./dist/socket-sse-text.js"
+    },
+    "./event-stream": {
+      "types": "./dist/event-stream.d.ts",
+      "import": "./dist/event-stream.js"
+    },
     "./attribution": {
       "types": "./dist/attribution.d.ts",
       "import": "./dist/attribution.js"
