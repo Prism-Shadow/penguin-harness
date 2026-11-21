@@ -9,3 +9,7 @@ export { parseOrgKey } from "../../lib/company-nav";
 export { switchDeskModel } from "./desk-model";
 
 export { PathCapsulesProvider } from "./path-capsule";
+
+export { deskRows } from "./org-sessions";
+
+export { chatPath, openTempSession } from "./temp-session";
