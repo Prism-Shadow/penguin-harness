@@ -88,6 +88,12 @@
       ],
       "@prismshadow/penguin-library-http/settle": ["../../library/http/src/settle.ts"],
       "@prismshadow/penguin-library-http/validate": ["../../library/http/src/validate.ts"],
+      "@prismshadow/penguin-library-http/socket-frames": ["../../library/http/src/socket-frames.ts"],
+      "@prismshadow/penguin-library-http/socket-credit-window": ["../../library/http/src/socket-credit-window.ts"],
+      "@prismshadow/penguin-library-http/socket-stream-answer": ["../../library/http/src/socket-stream-answer.ts"],
+      "@prismshadow/penguin-library-http/socket-line-frames": ["../../library/http/src/socket-line-frames.ts"],
+      "@prismshadow/penguin-library-http/socket-sse-text": ["../../library/http/src/socket-sse-text.ts"],
+      "@prismshadow/penguin-library-http/event-stream": ["../../library/http/src/event-stream.ts"],
       "@prismshadow/penguin-library-workbench": ["../../library/workbench/src/index.ts"],
       "@prismshadow/penguin-library-workspace": ["../../library/workspace/src/index.ts"],
       "@prismshadow/penguin-library-workspace/contract": [
