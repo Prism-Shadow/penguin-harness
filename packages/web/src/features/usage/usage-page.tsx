@@ -38,6 +38,7 @@ import {
   Select,
   Skeleton,
   TodoNotice,
+  Waiting,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -438,11 +439,11 @@ export function UsagePage() {
           <SummaryCard title={S.usage.total} bucket={data.summary.total} currency={currency} />
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Waiting className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Skeleton className="h-24" />
           <Skeleton className="h-24" />
           <Skeleton className="h-24" />
-        </div>
+        </Waiting>
       )}
 
       {/* Time-series charts, all over the shared range + precision: requests +
@@ -492,7 +493,9 @@ export function UsagePage() {
           </ChartCard>
         </div>
       ) : (
-        <Skeleton className="h-64" />
+        <Waiting>
+          <Skeleton className="h-64" />
+        </Waiting>
       )}
 
       {/* Errors (a single full-width panel: stats + a recent-errors table) */}

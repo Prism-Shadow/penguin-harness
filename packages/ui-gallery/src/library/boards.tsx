@@ -36,9 +36,15 @@ import { StreamingBoard } from "./boards/streaming";
 import { TabsBoard } from "./boards/tabs";
 import { ToastsBoard } from "./boards/toasts";
 import { TooltipsBoard } from "./boards/tooltips";
+import type { LibraryPart } from "./frame";
 import type { TopicId } from "./topics";
 
-export const BOARDS: Readonly<Record<TopicId, ComponentType>> = {
+/** What a board is handed: the piece of it its frame opens alone, if any (frame.ts). */
+export interface BoardProps {
+  part?: LibraryPart;
+}
+
+export const BOARDS: Readonly<Record<TopicId, ComponentType<BoardProps>>> = {
   buttons: ButtonsBoard,
   inputs: InputsBoard,
   pickers: PickersBoard,

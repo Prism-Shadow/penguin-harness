@@ -84,6 +84,8 @@
  * | `ui-empty`         | an empty state; host: `EmptyState`                       | `data-form="page" \| "slot"`; descendants carry `data-slot="art" \| "title" \| "description" \| "action"`; the page form's `art` holds one drawing per style, direct children `data-set="line" \| "doodle"` |
  * | `ui-run`           | the conversation's run indicator in the chat toolbar;    | `data-state="running"`; descendants carry `data-slot="mark" \| "label"` |
  * |                    | host: `RunStatus`                                        |                                                       |
+ * | `ui-waiting`       | a waiting state: a page, a tab or a list whose data is   | `data-state="pending" \| "shown"` (laid out but hidden while pending); `data-form="rows" \| "page" \| "custom"`; its placeholder blocks are `[data-skeleton]` descendants |
+ * |                    | on the way; host: `Waiting`                              |                                                       |
  *
  * `ui-shell` is the one place a theme may paint a field of colour, and the field is one flat
  * colour, never a gradient: Frost lays a flat grey field behind the window and sets the
@@ -311,6 +313,17 @@
  * and on the folded rail (`RailItem`): a row like its neighbours in the base, Primer and Console,
  * and the one hero button where a pack says so. Doodle draws Material 3's connected button group
  * and its extended FAB.
+ *
+ * `ui-waiting` (2026-11-19) is the one waiting state, where a page, a tab, a settings page or a
+ * list stands while its data is on the way. The host holds its shape from the first frame and
+ * shows nothing for the first moments of a wait (`pending`), so a quick load never flashes a
+ * placeholder; then it is `shown`. The foundation hides it while pending, brings it in on the
+ * theme's entrance and lets its blocks breathe on the live timing, which is the wait Primer and
+ * Frost show. A pack may draw the blocks and that entrance its own way — a mask, a pseudo-element
+ * and motion on the blocks are its to use — and keeps each block's box, so nothing moves when the
+ * content lands, and its drawing at rest is the finished one, which is what reduced motion shows.
+ * Console types each line out behind a block cursor, in steps; Doodle scribbles each as a pencil
+ * wave that draws itself (2026-11-20).
  */
 export const HOOKS = [
   "ui-glass",
@@ -339,6 +352,7 @@ export const HOOKS = [
   "ui-avatar",
   "ui-segmented",
   "ui-action",
+  "ui-waiting",
 ] as const;
 
 export type HookName = (typeof HOOKS)[number];

@@ -55,7 +55,6 @@ import {
   PageFrame,
   PageHeader,
   Select,
-  Skeleton,
   Switch,
   Table,
   TableBody,
@@ -66,6 +65,7 @@ import {
   Tabs,
   Textarea,
   UpdateDot,
+  Waiting,
   toastSuccess,
   useFormDraft,
   type OptionMenuChoice,
@@ -360,11 +360,11 @@ export function AgentSettingsPage() {
     return <p className="p-6 text-sm text-red-600 dark:text-red-400">{error}</p>;
   }
   if (!data) {
+    // The page's own frame around the wait, so the header and the tabs land where it stood.
     return (
-      <div className="space-y-3 p-6">
-        <Skeleton className="h-6 w-64" />
-        <Skeleton className="h-32 w-full" />
-      </div>
+      <PageFrame width="sm">
+        <Waiting form="page" />
+      </PageFrame>
     );
   }
 
