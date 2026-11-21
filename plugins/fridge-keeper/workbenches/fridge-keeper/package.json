@@ -1,0 +1,43 @@
+{
+  "name": "fridge-keeper-workbench",
+  "version": "1.0.0",
+  "type": "module",
+  "penguin": {
+    "version": "2026.11.19.1",
+    "appCenter": {
+      "show": true,
+      "title": "Fridge Keeper",
+      "titleZh": "冰箱管家",
+      "icon": "ui/icon.svg"
+    },
+    "modules": [
+      {
+        "name": "Workbench",
+        "requires": {
+          "host": {
+            "iface": "@prismshadow/penguin-server#WorkbenchHost",
+            "from": "Host"
+          }
+        },
+        "provides": {
+          "main": "@prismshadow/penguin-server#WorkbenchMain"
+        },
+        "contributes": {
+          "WebModule.sessionTabs": [
+            {
+              "id": "fridge-keeper.main",
+              "key": "main",
+              "title": "Fridge Keeper",
+              "titleZh": "冰箱管家",
+              "renderer": {
+                "iframe": {
+                  "src": "ui/index.html"
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

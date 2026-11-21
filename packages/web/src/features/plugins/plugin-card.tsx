@@ -1,22 +1,33 @@
 /**
- * One plugin's card on the Plugins page — every plugin wears the same one, a library plugin of
- * Skills and hooks and a server module such as an Agent Sandbox backend alike: a rounded icon
- * tile (the plugin's own icon, else the puzzle piece) centred against its title (the package's
- * display name, else the plugin's name) and the one-line description (the "no description"
- * placeholder, in the same muted ink, when the package carries none), a metadata line
- * `v<npm version> · <status> · used by N agents` (the last for a plugin with Skills or hooks
- * only), and a tag line (plugin-marks.tsx `pluginTags`, the set an Agent's plugin row shows too) —
- * the category (outside the category's own section), "built in", where a module runs. The card
- * body opens the detail dialog; the actions sit beside it, light icon buttons whose words show
- * once the card is wide enough:
+ * One plugin's card — every plugin wears the same one, a library plugin of Skills and hooks and
+ * a server module such as an Agent Sandbox backend alike, in one of two layouts:
  *
- * - Skills / hooks / MCP servers (any member): the update nudge while an Agent is behind (the
- *   plugins trail's last stop, so it carries the dot), quick start, and "manage installs" — a
- *   dialog listing every Agent of the Project with Install / Installed (Uninstall on hover, for
- *   the Project owner, whose alone an uninstall is) / Update: this server's and each machine's own in one list, a machine's named `[SSH: alias]`
- *   after the Agent's name, every action on such a row going to that machine. A machine out of
- *   reach keeps its rows, greyed and inert with the reason, as it last answered; an Agent whose
- *   installs have not been answered yet keeps its row too, its Install held until they are.
+ * - `cover`, the market's grid (the UI package's `CoverCard`): the plugin's cover
+ *   (plugin-cover.tsx: the curation's picture, else the generated one), its title (the
+ *   package's display name, else the plugin's name) on one line, the one-line description on
+ *   two (the "no description" placeholder, in the same muted ink, when the package carries
+ *   none), the tag line — "Selected" first for a plugin the curation selects, then
+ *   plugin-marks.tsx `pluginTags` (the category outside its own tab, "built in", where a module
+ *   runs) — and the facts line, with the card's controls at its end. There the facts are marks:
+ *   `v<version>`, the status as its glyph alone and the people glyph with the count of Agents
+ *   using it, their words on hover and for assistive technology, since a card that narrow has
+ *   no room for the sentence beside two controls. A server module's unmet requirement, which
+ *   the row card writes on a line of its own, follows the status's hover sentence.
+ * - `row` (the default), for a list with no room for covers: the UI package's `EntityCard`, a
+ *   rounded icon tile beside the same words, the facts in words —
+ *   `v<npm version> · <status> · used by N agents`.
+ *
+ * The card body opens the detail; the actions sit beside it, light icon buttons whose words show
+ * once the card is wide enough (never on a cover card, their words in the hint). There is one
+ * install control, which opens the install flow (plugin-install-flow.tsx): the server first when
+ * the plugin is not there yet (an admin installs it, a member asks an admin), then the Agents —
+ * every Agent of the Project with Install / Installed (Uninstall on hover, for the Project owner,
+ * whose alone an uninstall is) / Update: this server's and each machine's own in one list, a
+ * machine's named `[SSH: alias]` after the Agent's name, every action on such a row going to that
+ * machine. A machine out of reach keeps its rows, greyed and inert with the reason, as it last
+ * answered; an Agent whose installs have not been answered yet keeps its row too, its Install held
+ * until they are. Beside it: the update nudge while an Agent is behind (the plugins trail's last
+ * stop, so it carries the dot) and quick start.
  *   Installing a plugin with a stdio MCP server on an Agent that lacks it asks first, showing the
  *   command it runs on the Agent's server, and an update's confirmation shows it too (the
  *   reinstall writes the servers again). Beside an Agent whose copy of the plugin's MCP
@@ -24,39 +35,49 @@
  *   which writes those values into the Agent's vault. The list's first row, 「新建空白 Agent」,
  *   opens the Create agent dialog over it, prefilled with the plugin (blank-agent.tsx); the new
  *   Agent then joins the list.
- * - A server module: Install, or Remove, for an admin only; a member reads the card and its
- *   dialog, with no way in to change the server.
+ * What changes the server itself lives in the detail, an admin's: uninstalling the plugin from the
+ * server (from every Agent first, which the page's confirm names), enabling or disabling a server
+ * module the build ships for this Project, and a package update.
  *
- * The dialog's footer repeats the same actions with their words, after Export — the package as
- * a zip another server imports, for any member whenever its package is on this server — and,
- * for an admin, Delete on a package an admin installed on the server.
+ * The detail's hero repeats the actions with their words, led by "Open" for a plugin whose
+ * workbench is installed on an Agent of this server (the App Center's window) — "Install on
+ * Agent" leads instead when there is nothing to open — and its footer bar holds Export: the
+ * package as a zip another server imports, for any member whenever its package is on this
+ * server.
+ *
+ * `surface="none"` draws no card at all, only the dialogs: the market opens a detail its link
+ * names even when the tab or the search hides that card. The detail is open while `detailOpen`
+ * says so when the caller passes it (the market keeps it in the URL), else the card keeps it
+ * itself.
  *
  * Until this server has said what its own Agents hold (or, for a module, what its tables list),
  * the status and "used by" on the metadata line are fixed-width placeholders, so the first answer
  * replaces a bar rather than a word.
  *
- * The card, its buttons, its status mark and its facts line are the UI package's (`EntityCard`,
- * `EntityCardAction`, `StatusMark` through plugin-marks.tsx, `MetaLine`); this module fills them
- * for one plugin and owns its dialogs.
+ * The card, its buttons, its status mark and its facts line are the UI package's (`EntityCard` /
+ * `CoverCard`, `EntityCardAction`, `StatusMark` through plugin-marks.tsx, `MetaLine`); this
+ * module fills them for one plugin and owns its dialogs.
  */
 import { useId, useState, type ReactNode } from "react";
 
-import type { AgentSummary, PluginItem, QuickStartItem } from "@prismshadow/penguin-server/api";
+import type {
+  AgentSummary,
+  PluginArt,
+  PluginItem,
+  QuickStartItem,
+} from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
   Button,
   ConfirmModal,
+  CoverCard,
   EntityCard,
   EntityCardAction,
-  GlyphIcon,
-  ICON_SIZE,
   ICONS,
-  Modal,
+  MetaLine,
   Pill,
   Skeleton,
 } from "@prismshadow/penguin-ui";
-import type { InstallStage } from "../../api/endpoints";
-import { toneInk } from "../../lib/tone";
 import * as api from "../../api/endpoints";
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
@@ -65,19 +86,33 @@ import { downloadArchive } from "../agents/archive-download";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName } from "../../state/project";
 import { SkillTile } from "../skills";
+import { MarketPluginCard } from "./plugin-market-card";
+import type { InstallStage } from "../../api/endpoints";
+import {
+  InstallFailureNote,
+  InstallFlow,
+  installStepWords,
+  type ServerStep,
+} from "./plugin-install-flow";
+import { PluginCover } from "./plugin-cover";
 import { PluginDetailModal, moduleOnThisServer } from "./plugin-detail";
 import type { PluginRow } from "./plugin-groups";
 import { McpServerMarks, McpSetUpModal, StdioInstallBody } from "./plugin-mcp";
 import {
   PluginStatusMark,
+  PluginTag,
+  PluginUsedByMark,
   pluginTags,
   rowIcon,
+  rowNote,
   rowShortDescription,
   rowTitle,
   rowVersion,
   statusHint,
 } from "./plugin-marks";
 import {
+  agentInstallable,
+  pluginComplete,
   installNeedsConfirm,
   pluginMcpState,
   stdioServers,
@@ -89,7 +124,7 @@ import { PluginUpdateParts } from "./plugin-update-parts";
 import { BlankAgentDialog, BlankAgentRow, type BlankAgentSource } from "./blank-agent";
 import { toastApiError } from "../../lib/toast-api-error";
 
-/** "Manage installs" button icon: the arrow landing in its tray. */
+/** The install control's icon: the arrow landing in its tray. */
 const INSTALL_ICON = ICONS.download;
 
 /**
@@ -143,6 +178,26 @@ export function pluginArchiveUrl(row: PluginRow): string | null {
 }
 
 export interface PluginCardProps {
+  /** `row` (default): the icon tile beside the words. `cover`: the market's cover card. */
+  layout?: "row" | "cover";
+  /** `none` draws no card, only its dialogs: a detail opened by a link to a hidden card. */
+  surface?: "card" | "none";
+  /** The market offers a versioned install and a quick-start draft on the selected Agent. */
+  marketCard?: boolean;
+  currentAgentId?: string;
+  /** Whether the detail is open, when the caller keeps it (the market: in the URL). */
+  detailOpen?: boolean;
+  /** The detail asks to open or close; with `detailOpen`, the caller decides. */
+  onDetailOpenChange?: (open: boolean) => void;
+  /** The curation's art for the plugin's package: the cover, and the detail's screenshots. */
+  art?: PluginArt | null;
+  /** The curation selects the plugin: a tag on the card, the eyebrow over the detail's name. */
+  selected?: boolean;
+  /**
+   * Opens an app (`<agentId>/<workbench>`) of the plugin's installed on an Agent of this server;
+   * absent, the detail offers no "Open".
+   */
+  onOpenApp?: (appId: string) => void;
   /** The surrounding group owns the card surface when false. */
   framed?: boolean;
   row: PluginRow;
@@ -155,9 +210,9 @@ export interface PluginCardProps {
    * already does. The detail dialog names it either way.
    */
   showCategory: boolean;
-  /** Every Agent a library plugin can go on, for the manage-installs dialog, in the Agents page's order. */
+  /** Every Agent a library plugin can go on, in the Agents page's order: the flow's Agent step. */
   targets: readonly InstallTarget[];
-  /** The manage-installs dialog's 「新建空白 Agent」 row (blank-agent.tsx); absent, the list has none. */
+  /** The install flow's 「新建空白 Agent」 row (blank-agent.tsx); absent, the list has none. */
   blankAgent?: BlankAgentSource | null;
   installed: InstalledMap;
   /** Targets whose installs are not known yet (not answered, or failed): their rows wait. */
@@ -181,31 +236,33 @@ export interface PluginCardProps {
   busy: boolean;
   /** The install under way is a channel download: bytes received so far, the total when known. */
   progress?: { received: number; total: number | null } | null;
-  /** The step the install under way has reached, as its stream says (api/endpoints.ts). */
+  /** The step the server install under way has reached, as its stream says (api/endpoints.ts). */
   stage?: InstallStage | null;
   /** Another row's is: one at a time, so this one is held rather than queued. */
   blocked: boolean;
-  /** The last server install of this row failed: why, said under the card with what to do next. */
+  /** The last server install of this row failed: why, with what to do next. */
   failure?: string | null;
   onDismissFailure?: () => void;
   /** The failure's next steps: the Plugin Sources settings, and the zip import. */
   onOpenSources?: () => void;
   onImportFile?: () => void;
-  /** Uninstalls it from the server (admin; the page confirms first, naming the Agents that lose it). */
-  onServerUninstall?: () => void;
   /**
-   * An Install in the Agent dialog of a plugin that is not on the server yet: the page installs it
-   * on the server first (an admin) or asks an admin to (a member), then on the Agent.
+   * Installs it on the server (an admin), or enables a shipped module: the flow's step 1, which
+   * says what it does, so the page asks nothing more.
    */
-  onInstallBeforeServer?: (key: string) => Promise<void>;
-  /** The Agent dialog's row whose install-before-server is running, and the words it shows. */
-  agentBusy?: { key: string; label: string } | null;
+  onInstallServer?: () => void;
+  /** Asks an admin to install it on the server (a member). */
+  onAskAdmin?: () => Promise<void>;
+  /** Uninstalls it from the server (an admin; the page confirms first, naming who loses it). */
+  onServerUninstall?: () => void;
   onQuickStart: (plugin: PluginItem) => void;
   /** `key` names an install target (see {@link InstallTarget}). */
   onToggleInstall: (key: string, plugin: PluginItem, on: boolean) => Promise<boolean>;
   onUpdateOutdated: (name: string, keys: string[]) => Promise<void>;
   /** Asks to install (true) or remove (false) the server module; the page confirms first. */
-  onModuleApply: (install: boolean) => void;
+  onModuleApply: (install: boolean, updateTo?: string) => void;
+  /** Package updates apply to the machine whose registry supplied the card. */
+  showPackageUpdates?: boolean;
   /** An Agent's vault changed under the plugin's MCP servers (Set up saved): its servers are read again. */
   onRepair?: (() => void) | null;
   onMcpChanged: (key: string) => void;
@@ -217,9 +274,15 @@ export function PluginCard(props: PluginCardProps) {
   const avatarSrc = useAgentAvatarSrc();
   const sharedId = useId();
   const plugin = row.library;
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [ownDetailOpen, setOwnDetailOpen] = useState(false);
+  const detailOpen = props.detailOpen ?? ownDetailOpen;
+  const setDetailOpen = (open: boolean) => {
+    if (props.onDetailOpenChange !== undefined) props.onDetailOpenChange(open);
+    if (props.detailOpen === undefined) setOwnDetailOpen(open);
+  };
+  // The install flow: the server first when the plugin is not there, then the Agents.
   const [installOpen, setInstallOpen] = useState(false);
-  // The Create agent dialog over the manage-installs list, opened by its first row.
+  // The Create agent dialog over the flow's Agent list, opened by its first row.
   const [blankOpen, setBlankOpen] = useState(false);
   // Agents pending an update confirmation (null = none): an update is an overwriting reinstall,
   // so it is confirmed against the list of parts it rewrites before it runs.
@@ -253,6 +316,38 @@ export function PluginCard(props: PluginCardProps) {
   // What the dialogs below call the plugin: what its card does.
   const title = rowTitle(row, locale);
   const behind = usage?.behind ?? [];
+  const currentId = props.currentAgentId;
+  const onAgent =
+    currentId !== undefined &&
+    plugin !== undefined &&
+    pluginComplete(plugin, installed.get(currentId));
+
+  // Where the package stands on this server: built in (the build ships it — never uninstalled
+  // from the server), on the server (an admin put it there, or a Project lists its module), or
+  // not here yet.
+  const builtIn =
+    row.module?.shipped === true || (plugin !== undefined && plugin.source !== "installed");
+  const onServer =
+    !builtIn &&
+    (plugin?.source === "installed" || (row.module !== undefined && row.module.state !== "none"));
+  /** Not on the server yet, and the build's offline archive says it carries Agent content. */
+  const preServerAgent =
+    plugin === undefined && !builtIn && row.module?.entry?.offline?.library === true;
+  /** It has something for Agents: two steps; a plugin of server modules alone has one. */
+  const agentContent = (plugin !== undefined && agentInstallable(plugin)) || preServerAgent;
+  /** The flow's server step, for this plugin and this reader. */
+  const serverStep: ServerStep =
+    plugin !== undefined || onServer || (builtIn && row.module?.state !== "none")
+      ? "done"
+      : builtIn
+        ? props.isAdmin
+          ? "enable"
+          : "held"
+        : props.isAdmin
+          ? "install"
+          : agentContent
+            ? "ask"
+            : "held";
 
   const confirmUpdate = async () => {
     if (pendingUpdate === null || plugin === undefined) return;
@@ -262,17 +357,6 @@ export function PluginCard(props: PluginCardProps) {
     setPendingUpdate(null);
   };
 
-  // Where the package stands on this server, by kind (05 「插件库」 「安装模型」): built in (the build
-  // ships it — never uninstalled from the server), on the server (an admin put it there, or a
-  // Project lists its module), or not here yet.
-  const builtIn =
-    row.module?.shipped === true || (plugin !== undefined && plugin.source !== "installed");
-  const onServer =
-    !builtIn &&
-    (plugin?.source === "installed" || (row.module !== undefined && row.module.state !== "none"));
-  /** Not on the server yet, and the build's offline archive says it carries Agent content. */
-  const preServerAgent =
-    plugin === undefined && !builtIn && row.module?.entry?.offline?.library === true;
   const archiveUrl = pluginArchiveUrl(row);
   const exportPlugin = async (url: string) => {
     try {
@@ -283,25 +367,88 @@ export function PluginCard(props: PluginCardProps) {
   };
 
   /**
-   * The card's actions: on the card their words show once it is wide (the glyph alone before
-   * that), in the dialog's footer always.
+   * The workbenches of the plugin that open here, by name: each installed from this plugin on an
+   * Agent of this server (the first such Agent in the list), opening as the caller says (the
+   * market: the App Center's window). Without `onOpenApp`, none does.
    */
-  const actions = (where: "card" | "footer"): ReactNode[] => {
+  const openWorkbench = new Map<string, () => void>();
+  const openApp = props.onOpenApp;
+  for (const workbench of openApp === undefined ? [] : (plugin?.workbenches ?? [])) {
+    const on = targets.find(
+      (t) =>
+        t.machine === null &&
+        installed.get(t.key)?.workbenches?.get(workbench.name)?.plugin === plugin!.name,
+    );
+    if (on === undefined) continue;
+    openWorkbench.set(workbench.name, () => openApp!(`${on.agent.agentId}/${workbench.name}`));
+  }
+  const [firstOpen] = openWorkbench.values();
+
+  /**
+   * The card's actions: on the card their words show once it is wide (the glyph alone before
+   * that). The detail splits them: its hero holds the main ones with their words, "Open" or
+   * "Install on Agent" primary and first, then an admin's changes to the server; its footer bar
+   * the export of the package.
+   */
+  const actions = (where: "card" | "hero" | "footer"): ReactNode[] => {
     const out: ReactNode[] = [];
     const words = where === "card" ? "wide" : "always";
-    // The dialog's first: what any member may take away — the package itself.
-    if (where === "footer" && archiveUrl !== null) {
-      out.push(
+    if (where === "footer") {
+      // What any member may take away — the package itself.
+      if (archiveUrl !== null) {
+        out.push(
+          <EntityCardAction
+            key="export"
+            glyph={ICONS.download}
+            label={S.plugins.exportPlugin}
+            name={`${S.plugins.exportPlugin} ${row.name}`}
+            hint={S.plugins.exportPluginHint}
+            words={words}
+            onClick={() => void exportPlugin(archiveUrl)}
+          />,
+        );
+      }
+      return out;
+    }
+    // The one install control: the flow, on the server's step while the plugin is not there. A
+    // member's, for a plugin of server modules alone, is held, saying why.
+    const installWords = agentContent
+      ? S.plugins.installModel.installAgent
+      : serverStep === "enable"
+        ? S.plugins.installModel.enableModule
+        : S.plugins.installModel.installServer;
+    const held = !agentContent && serverStep === "held";
+    const manage =
+      !agentContent && serverStep === "done" ? null : (
         <EntityCardAction
-          key="export"
-          glyph={ICONS.download}
-          label={S.plugins.exportPlugin}
-          name={`${S.plugins.exportPlugin} ${row.name}`}
-          hint={S.plugins.exportPluginHint}
-          words={words}
-          onClick={() => void exportPlugin(archiveUrl)}
-        />,
+          key="manage"
+          {...(where === "hero" && firstOpen === undefined ? { variant: "primary" as const } : {})}
+          glyph={INSTALL_ICON}
+          label={props.busy ? installStepWords(props.progress, props.stage) : installWords}
+          name={`${installWords} ${row.name}`}
+          // Under way, the step is said in words at every width: a spinner alone says nothing.
+          words={props.busy ? "always" : words}
+          busy={props.busy}
+          disabled={props.blocked || held}
+          {...(held ? { hint: S.plugins.installModel.adminOnly } : {})}
+          onClick={() => setInstallOpen(true)}
+        />
       );
+    if (where === "hero") {
+      if (firstOpen !== undefined && plugin !== undefined) {
+        out.push(
+          <EntityCardAction
+            key="open"
+            variant="primary"
+            glyph={ICONS.appWindow}
+            label={S.plugins.openApp}
+            name={`${S.plugins.openApp} ${plugin.name}`}
+            hint={S.plugins.openAppHint}
+            words={words}
+            onClick={firstOpen}
+          />,
+        );
+      } else if (manage !== null) out.push(manage);
     }
     if (plugin !== undefined && behind.length > 0) {
       // Light (secondary): an update nudge, not the card's primary action. The last stop on the
@@ -326,96 +473,59 @@ export function PluginCard(props: PluginCardProps) {
           glyph={ICONS.paperPlane}
           label={S.skills.quickInvoke}
           name={`${S.skills.quickInvoke} ${plugin.name}`}
-          hint={S.plugins.quickStartHint}
+          hint={onAgent ? S.plugins.quickStartHint : S.plugins.quickStartAfterInstall}
           words={words}
           disabled={!props.canQuickStart}
           onClick={() => props.onQuickStart(plugin)}
         />,
       );
     }
-    // The two installs, each with its own control (05 「插件库」 「安装模型」): the Agent's — any
-    // member, for a plugin with Agent content, even before it is on the server when the build
-    // carries it offline — and the server's.
-    if (plugin !== undefined || preServerAgent) {
-      out.push(
-        <EntityCardAction
-          key="agent"
-          glyph={ICONS.robot}
-          label={S.plugins.installModel.installAgent}
-          name={`${S.plugins.installModel.installAgent} ${row.name}`}
-          words={words}
-          disabled={!onServer && props.blocked}
-          onClick={() => setInstallOpen(true)}
-        />,
-      );
-    }
+    // In the hero it leads unless "Open" does.
+    if (manage !== null && (where === "card" || firstOpen !== undefined)) out.push(manage);
     const mod = row.module;
-    const words_ = S.plugins.installModel;
-    // A download reports itself: the percent while the total is known, a pulse before that;
-    // the other steps say which one the stream reached. npm's own fetches stay "installing".
-    const total = props.progress?.total ?? null;
-    const percent =
-      props.progress != null && total !== null && total > 0
-        ? Math.floor((props.progress.received / total) * 100)
-        : null;
-    const stepWords =
-      props.progress != null
-        ? S.plugins.downloading(percent)
-        : props.stage?.stage === "checking"
-          ? words_.checking
-          : props.stage?.stage === "loading"
-            ? words_.loading
-            : props.stage?.stage === "installing" && props.stage.source === "offline"
-              ? words_.fromOffline
-              : words_.installing;
-    /** A member's server control: held, saying why. */
-    const memberHold = props.isAdmin ? {} : { disabled: true, hint: words_.adminOnly };
-    if (builtIn) {
-      // Shipped with the build: never uninstalled from the server. A server module of it is
-      // enabled or disabled for this Project (its listing), by an admin.
-      if (mod !== undefined && props.isAdmin) {
-        const install = mod.state === "none";
-        const label = install
-          ? props.busy
-            ? stepWords
-            : words_.enableModule
-          : words_.disableModule;
-        const blockedWhy = install ? undefined : mod.removeBlocked;
+    // What changes the server itself is the detail's, an admin's: the package update, a shipped
+    // module's enable and disable for this Project, and the uninstall from the server.
+    if (where === "hero" && mod !== undefined && props.isAdmin) {
+      const localInstall = props.showPackageUpdates ? mod.entry?.localInstall : undefined;
+      const update = localInstall?.updateAvailable ? mod.entry : undefined;
+      if (update !== undefined) {
+        const label = S.plugins.updatePackageTo(update.version);
         out.push(
           <EntityCardAction
-            key={install ? "module-install" : "module-remove"}
+            key="package-update"
+            variant="secondary"
+            glyph={ICONS.rotateCw}
+            label={label}
+            name={`${label} ${row.name}`}
+            words={words}
+            busy={props.busy}
+            disabled={props.blocked}
+            onClick={() => props.onModuleApply(true, update.version)}
+          />,
+        );
+      }
+      if (builtIn && mod.state !== "none") {
+        // A removal another Project still needs says why it cannot run, as its marked hint.
+        const blockedWhy = mod.removeBlocked;
+        const label = S.plugins.installModel.disableModule;
+        out.push(
+          <EntityCardAction
+            key="module-remove"
             glyph={ICONS.server}
             label={label}
             name={`${label} ${row.name}`}
             {...(blockedWhy !== undefined ? { hint: blockedWhy } : {})}
-            words={props.busy ? "always" : words}
+            words={words}
             busy={props.busy}
-            aria-describedby={
-              !install && mod.shared === true ? `${sharedId}-tag ${sharedId}-hint` : undefined
-            }
+            aria-describedby={mod.shared === true ? `${sharedId}-tag ${sharedId}-hint` : undefined}
             disabled={props.blocked || blockedWhy !== undefined}
-            onClick={() => props.onModuleApply(install)}
+            onClick={() => props.onModuleApply(false)}
           />,
         );
       }
-    } else if (!onServer && mod !== undefined) {
-      const label = props.busy ? stepWords : words_.installServer;
-      out.push(
-        <EntityCardAction
-          key="server-install"
-          glyph={ICONS.server}
-          label={label}
-          name={`${label} ${row.name}`}
-          // Under way, the step is said in words at every width: a spinner alone says nothing.
-          words={props.busy ? "always" : words}
-          busy={props.busy}
-          disabled={props.blocked}
-          onClick={() => props.onModuleApply(true)}
-          {...memberHold}
-        />,
-      );
-    } else if (onServer) {
-      const label = words_.uninstallServer;
+    }
+    if (where === "hero" && onServer && props.isAdmin && props.onServerUninstall !== undefined) {
+      const label = S.plugins.installModel.uninstallServer;
       out.push(
         <EntityCardAction
           key="server-uninstall"
@@ -424,9 +534,8 @@ export function PluginCard(props: PluginCardProps) {
           name={`${label} ${row.name}`}
           words={words}
           busy={props.busy}
-          disabled={props.blocked || props.onServerUninstall === undefined}
-          onClick={() => props.onServerUninstall?.()}
-          {...memberHold}
+          disabled={props.blocked}
+          onClick={props.onServerUninstall}
         />,
       );
     }
@@ -447,73 +556,57 @@ export function PluginCard(props: PluginCardProps) {
   };
 
   const cardActions = actions("card");
+  const heroActions = actions("hero");
   const footerActions = actions("footer");
-  const tags = pluginTags(row, {
-    categoryTitle: props.showCategory ? categoryTitle : undefined,
-    sharedTagId: `${sharedId}-tag`,
-  });
-  return (
-    <EntityCard
-      {...(props.framed !== undefined ? { framed: props.framed } : {})}
-      data-plugin={row.name}
-      lead={
-        <SkillTile
-          icon={rowIcon(row)}
-          name={row.name}
-          fallback={ICONS.puzzle}
-          size={36}
-          glyph={20}
-        />
-      }
-      // The package's display name, else the plugin's name (its id), set in the UI font as a
-      // title; monospace is kept for what is code — the specifier on hover, the version.
-      title={rowTitle(row, locale)}
-      titleHint={row.module?.specifier ?? row.name}
-      description={description}
-      {...(props.failure != null
-        ? {
-            note: (
-              <InstallFailureNote
-                reason={props.failure}
-                onOpenSources={props.onOpenSources}
-                onImportFile={props.isAdmin ? props.onImportFile : undefined}
-                onDismiss={props.onDismissFailure}
-              />
-            ),
-          }
-        : row.module?.unsatisfied !== undefined
-          ? {
-              note:
-                row.module.state === "disabled"
-                  ? row.module.unsatisfied
-                  : S.plugins.runsPartly(row.module.unsatisfied),
-            }
-          : {})}
-      meta={[
-        version !== undefined && (
-          <span key="version" className="shrink-0 font-mono">
-            v{version}
-          </span>
-        ),
-        props.pending === true ? (
-          <Skeleton key="status" className="h-3 w-16 shrink-0" />
-        ) : (
-          <PluginStatusMark key="status" status={status} hint={hint} />
-        ),
-        usage !== null &&
-          (props.pending === true ? (
-            <Skeleton key="used-by" className="h-3 w-24 shrink-0" />
-          ) : (
-            <span key="used-by" className="min-w-0 truncate" data-testid="plugin-used-by">
-              {S.plugins.usedByAgents(usage.usedBy.length)}
-            </span>
-          )),
-      ]}
-      tags={tags}
-      actions={cardActions}
-      onOpen={() => setDetailOpen(true)}
-      onBodyClick={cardBodyClick(() => setDetailOpen(true))}
-    >
+  const selected = props.selected === true;
+  const tags = [
+    // The curation's pick, first: a plain tag, no colour of its own.
+    ...(selected ? [<PluginTag key="selected">{S.plugins.selected}</PluginTag>] : []),
+    ...pluginTags(row, {
+      categoryTitle: props.showCategory ? categoryTitle : undefined,
+      sharedTagId: `${sharedId}-tag`,
+    }),
+  ];
+  const cover = props.layout === "cover";
+  // What the build cannot run of a server module: the row card's note line. The cover card has
+  // none, so there the status's hover sentence carries it after its own.
+  const note = rowNote(row);
+  const meta = [
+    version !== undefined && (
+      <span key="version" className="shrink-0 font-mono">
+        v{version}
+      </span>
+    ),
+    props.pending === true ? (
+      <Skeleton key="status" className={`h-3 shrink-0 ${cover ? "w-4" : "w-16"}`} />
+    ) : cover ? (
+      // The cover card's facts share their line with its controls: the status is its glyph,
+      // its word and sentence on hover and for assistive technology.
+      <PluginStatusMark
+        key="status"
+        status={status}
+        hint={note === undefined ? hint : `${hint} ${note}`}
+        wordless
+      />
+    ) : (
+      <PluginStatusMark key="status" status={status} hint={hint} />
+    ),
+    usage !== null &&
+      (props.pending === true ? (
+        <Skeleton key="used-by" className={`h-3 shrink-0 ${cover ? "w-8" : "w-24"}`} />
+      ) : cover ? (
+        // Likewise the used-by count: the people glyph and the number, the sentence on hover.
+        <PluginUsedByMark key="used-by" count={usage.usedBy.length} />
+      ) : (
+        <span key="used-by" className="min-w-0 truncate" data-testid="plugin-used-by">
+          {S.plugins.usedByAgents(usage.usedBy.length)}
+        </span>
+      )),
+  ];
+  const quickStart = plugin === undefined ? null : libraryQuickStart(plugin);
+
+  const dialogs = (
+    <>
       {row.module?.shared === true && (
         <span id={`${sharedId}-hint`} className="sr-only">
           {S.plugins.sharedHint}
@@ -528,97 +621,93 @@ export function PluginCard(props: PluginCardProps) {
             categoryTitle,
             usedBy: usage === null ? null : usage.usedBy.length,
           }}
+          art={props.art ?? null}
+          selected={selected}
+          {...(heroActions.length > 0 ? { actions: <>{heroActions}</> } : {})}
+          quickStart={
+            plugin === undefined || quickStart === null
+              ? null
+              : {
+                  item: quickStart,
+                  onStart: () => props.onQuickStart(plugin),
+                  disabled: !props.canQuickStart,
+                }
+          }
+          openWorkbench={openWorkbench}
           footer={footerActions.length > 0 ? <>{footerActions}</> : null}
           onClose={() => setDetailOpen(false)}
         />
       )}
-      {installOpen && (plugin !== undefined || preServerAgent) && (
-        <Modal
-          open
-          title={S.plugins.installModel.installAgentTitle(title)}
+      {installOpen && (
+        <InstallFlow
+          title={title}
+          steps={agentContent ? 2 : 1}
+          server={serverStep}
+          busy={props.busy}
+          blocked={props.blocked}
+          progress={props.progress ?? null}
+          stage={props.stage ?? null}
+          failure={props.failure ?? null}
+          {...(props.onDismissFailure !== undefined
+            ? { onDismissFailure: props.onDismissFailure }
+            : {})}
+          {...(props.onOpenSources !== undefined ? { onOpenSources: props.onOpenSources } : {})}
+          {...(props.isAdmin && props.onImportFile !== undefined
+            ? { onImportFile: props.onImportFile }
+            : {})}
+          onServer={() => props.onInstallServer?.()}
+          onAsk={() => props.onAskAdmin?.() ?? Promise.resolve()}
+          agents={
+            plugin === undefined ? null : (
+              <>
+                {/* How the Agents' copies relate to the server, said before any click. */}
+                {!builtIn && (
+                  <p className="text-xs text-fg-muted">{S.plugins.installModel.onServer}</p>
+                )}
+                <div className="space-y-1">
+                  {props.blankAgent != null && (
+                    <BlankAgentRow
+                      disabled={props.projectId === null}
+                      onOpen={() => setBlankOpen(true)}
+                    />
+                  )}
+                  {targets.length === 0 && (
+                    <p className="py-1.5 text-xs text-gray-400">{S.common.loading}</p>
+                  )}
+                  {targets.map((t) => (
+                    <InstallRow
+                      key={t.key}
+                      agentId={t.agent.agentId}
+                      name={agentDisplayName(t.agent)}
+                      avatarSrc={avatarSrc(t.agent.agentId, t.machine?.machineId ?? null)}
+                      machine={t.machine?.label ?? null}
+                      installed={usage?.usedBy.includes(t.key) ?? false}
+                      outdated={behind.includes(t.key)}
+                      mcp={pluginMcpState(plugin, installed.get(t.key))}
+                      held={heldRow(t, props.unknown, props.failed)}
+                      isOwner={props.isOwner}
+                      onToggle={(on) => {
+                        // Install runs directly, unless it brings a stdio server: that runs a
+                        // command on the Agent's server, so it confirms first. Uninstall deletes
+                        // the installed files, so it confirms too.
+                        if (!on) setPendingUninstall(t.key);
+                        else if (installNeedsConfirm(plugin, installed.get(t.key))) {
+                          setPendingStdio(t.key);
+                        } else void props.onToggleInstall(t.key, plugin, true);
+                      }}
+                      onUpdate={() => setPendingUpdate([t.key])}
+                      onSetUp={() => setSetUpAgent(t.key)}
+                    />
+                  ))}
+                </div>
+              </>
+            )
+          }
           onClose={() => {
             setInstallOpen(false);
             setBlankOpen(false);
           }}
-        >
-          {/* How the Agent installs relate to the server, said before any click. */}
-          {!builtIn && (
-            <p className="mb-2 text-xs text-fg-muted">
-              {onServer
-                ? S.plugins.installModel.onServer
-                : props.isAdmin
-                  ? S.plugins.installModel.notOnServerAdmin
-                  : S.plugins.installModel.notOnServerMember}
-            </p>
-          )}
-          <div className="space-y-1">
-            {/* A blank Agent is created with the plugin, so the row needs the library's copy. */}
-            {props.blankAgent != null && plugin !== undefined && (
-              <BlankAgentRow
-                disabled={props.projectId === null}
-                onOpen={() => setBlankOpen(true)}
-              />
-            )}
-            {targets.length === 0 && (
-              <p className="py-1.5 text-xs text-gray-400">{S.common.loading}</p>
-            )}
-            {plugin === undefined &&
-              targets.map((t) => (
-                <InstallRow
-                  key={t.key}
-                  agentId={t.agent.agentId}
-                  name={agentDisplayName(t.agent)}
-                  avatarSrc={avatarSrc(t.agent.agentId, t.machine?.machineId ?? null)}
-                  machine={t.machine?.label ?? null}
-                  installed={false}
-                  outdated={false}
-                  mcp={null}
-                  // Before the server has it, only this server's Agents can take it: a machine's
-                  // Agent installs from that machine's own server.
-                  held={
-                    t.machine !== null
-                      ? { reason: S.plugins.installModel.machineFirst, off: true, busy: false }
-                      : props.agentBusy != null && props.agentBusy.key !== t.key
-                        ? { reason: props.agentBusy.label, off: false, busy: false }
-                        : null
-                  }
-                  {...(props.agentBusy?.key === t.key ? { busyLabel: props.agentBusy.label } : {})}
-                  isOwner={props.isOwner}
-                  onToggle={(on) => {
-                    if (on) void props.onInstallBeforeServer?.(t.key);
-                  }}
-                  onUpdate={() => {}}
-                  onSetUp={() => {}}
-                />
-              ))}
-            {plugin !== undefined &&
-              targets.map((t) => (
-                <InstallRow
-                  key={t.key}
-                  agentId={t.agent.agentId}
-                  name={agentDisplayName(t.agent)}
-                  avatarSrc={avatarSrc(t.agent.agentId, t.machine?.machineId ?? null)}
-                  machine={t.machine?.label ?? null}
-                  installed={usage?.usedBy.includes(t.key) ?? false}
-                  outdated={behind.includes(t.key)}
-                  mcp={pluginMcpState(plugin, installed.get(t.key))}
-                  held={heldRow(t, props.unknown, props.failed)}
-                  isOwner={props.isOwner}
-                  onToggle={(on) => {
-                    // Install runs directly, unless it brings a stdio server: that runs a command on
-                    // the Agent's server, so it confirms first. Uninstall deletes the installed
-                    // files, so it confirms too.
-                    if (!on) setPendingUninstall(t.key);
-                    else if (installNeedsConfirm(plugin, installed.get(t.key))) {
-                      setPendingStdio(t.key);
-                    } else void props.onToggleInstall(t.key, plugin, true);
-                  }}
-                  onUpdate={() => setPendingUpdate([t.key])}
-                  onSetUp={() => setSetUpAgent(t.key)}
-                />
-              ))}
-          </div>
-        </Modal>
+        />
       )}
       {/* A sibling of the list's dialog rather than inside it, so the list's panel never handles
           the create dialog's keys; opened later, it sits on top and takes the first Escape. */}
@@ -722,6 +811,157 @@ export function PluginCard(props: PluginCardProps) {
           onSaved={() => props.onMcpChanged(setUpAgent)}
         />
       )}
+    </>
+  );
+
+  if (props.surface === "none") return dialogs;
+  if (props.marketCard) {
+    const mod = row.module;
+    const local = props.showPackageUpdates ? mod?.entry?.localInstall : undefined;
+    const release = mod?.entry?.version;
+    const downloadUpdate =
+      Boolean(local?.updateAvailable) && release !== undefined && props.isAdmin;
+    const agentPackage = plugin !== undefined && agentInstallable(plugin);
+    const updateAgent = currentId !== undefined && behind.includes(currentId);
+    const download = !agentPackage && mod?.state === "none" && !local?.libraryOnly;
+    // How many Agents carry it, across the Project: the install action's one state. Installed
+    // anywhere, it is that count; installed nowhere, it is Install. Either opens the install
+    // flow — on the server's step while the plugin is not there, else on the Agents', where the
+    // Agents still without it (the current one too) are one click away. The action is one line
+    // and names one state, never Install beside a count. Until this server has said what its own
+    // Agents hold, it is Install, held: a count of the machines' Agents alone is one the first
+    // answer would overturn.
+    const count = props.pending === true ? 0 : (usage?.usedBy.length ?? 0);
+    const serverInstalled = mod?.state === "active" || mod?.state === "pending";
+    const badgeVersion = local?.version ?? version;
+    const installLabel = () => {
+      if (props.busy) return installStepWords(props.progress, props.stage, true);
+      // The badge keeps the local version. Name the destination only when it differs.
+      if (downloadUpdate && release !== undefined) return S.plugins.updatePackageTo(release);
+      if (updateAgent) return S.skills.updateAction;
+      if (agentPackage) return count > 0 ? S.plugins.marketAgentInstalls(count) : S.skills.install;
+      if (serverInstalled) return S.plugins.marketServerInstalled;
+      if (mod && mod.state !== "none" && !agentPackage) return S.plugins.status[status];
+      return S.skills.install;
+    };
+    const action = installLabel();
+    /** A member cannot act on the server: a package update, or a server module not here yet. */
+    const memberHeld = !props.isAdmin && (downloadUpdate || (download && serverStep === "held"));
+    /** What the control opens: the flow, while there is a step left to take in it. */
+    const flows = agentContent || serverStep !== "done";
+    const needAgent =
+      !props.canQuickStart || (currentId !== undefined && props.unknown?.has(currentId));
+    return (
+      <>
+        <MarketPluginCard
+          layout={cover ? "cover" : "row"}
+          name={row.name}
+          version={badgeVersion}
+          title={title}
+          description={description}
+          detailsLabel={title}
+          cover={<PluginCover row={row} art={props.art ?? null} />}
+          icon={
+            <SkillTile
+              icon={rowIcon(row)}
+              name={row.name}
+              fallback={ICONS.puzzle}
+              size={36}
+              glyph={20}
+            />
+          }
+          onOpen={() => setDetailOpen(true)}
+          install={{
+            label: action,
+            // While its own server install runs it stays live: it reopens the flow to watch.
+            disabled: props.pending === true || (props.blocked && !props.busy) || memberHeld,
+            ...(memberHeld ? { hint: S.plugins.installModel.adminOnly } : {}),
+            onClick: () => {
+              if (downloadUpdate) props.onModuleApply(true, release);
+              else if (updateAgent && !props.busy) setPendingUpdate([currentId!]);
+              else if (flows) setInstallOpen(true);
+              else setDetailOpen(true);
+            },
+          }}
+          quick={{
+            label: S.plugins.quickAction,
+            hint:
+              plugin === undefined
+                ? S.plugins.quickStartAfterInstall
+                : quickStart === null
+                  ? S.plugins.noQuickAction
+                  : onAgent
+                    ? S.plugins.quickStartHint
+                    : S.plugins.quickStartAfterInstall,
+            disabled: needAgent === true || !onAgent || quickStart === null,
+            onClick: () => {
+              if (plugin && onAgent && quickStart) props.onQuickStart(plugin);
+            },
+          }}
+        />
+        {dialogs}
+      </>
+    );
+  }
+  if (cover) {
+    return (
+      <CoverCard
+        // Its own container: the actions' words show only on a card wider than any grid gives
+        // one, so on the cover card they are glyphs, their words in the hint.
+        className="@container"
+        data-plugin={row.name}
+        cover={<PluginCover row={row} art={props.art ?? null} />}
+        title={title}
+        titleHint={row.module?.specifier ?? row.name}
+        description={description}
+        tags={tags}
+        meta={<MetaLine>{meta}</MetaLine>}
+        actions={cardActions}
+        onOpen={() => setDetailOpen(true)}
+      >
+        {dialogs}
+      </CoverCard>
+    );
+  }
+  return (
+    <EntityCard
+      {...(props.framed !== undefined ? { framed: props.framed } : {})}
+      data-plugin={row.name}
+      lead={
+        <SkillTile
+          icon={rowIcon(row)}
+          name={row.name}
+          fallback={ICONS.puzzle}
+          size={36}
+          glyph={20}
+        />
+      }
+      // The package's display name, else the plugin's name (its id), set in the UI font as a
+      // title; monospace is kept for what is code — the specifier on hover, the version.
+      title={title}
+      titleHint={row.module?.specifier ?? row.name}
+      description={description}
+      {...(props.failure != null
+        ? {
+            note: (
+              <InstallFailureNote
+                reason={props.failure}
+                onOpenSources={props.onOpenSources}
+                onImportFile={props.isAdmin ? props.onImportFile : undefined}
+                onDismiss={props.onDismissFailure}
+              />
+            ),
+          }
+        : note !== undefined
+          ? { note }
+          : {})}
+      meta={meta}
+      tags={tags}
+      actions={cardActions}
+      onOpen={() => setDetailOpen(true)}
+      onBodyClick={cardBodyClick(() => setDetailOpen(true))}
+    >
+      {dialogs}
     </EntityCard>
   );
 }
@@ -760,7 +1000,7 @@ export interface RowHold {
 }
 
 /**
- * One Agent row in the "manage installs" dialog: an Agent without the plugin shows "Install";
+ * One Agent row in the install flow's Agent step: an Agent without the plugin shows "Install";
  * one with it shows "Installed", switching to "Uninstall" on hover for the Project owner (the
  * same button carries the uninstall, which the server takes from the owner alone) and a plain
  * label for anyone else; a copy the server lists as behind additionally shows "Update" (reinstall =
@@ -782,7 +1022,6 @@ export function InstallRow({
   outdated,
   mcp,
   held = null,
-  busyLabel,
   isOwner,
   onToggle,
   onUpdate,
@@ -800,8 +1039,6 @@ export function InstallRow({
   mcp: { missingKeys: string[]; signIn: boolean } | null;
   /** Why the row cannot act right now; null when it can. */
   held?: RowHold | null;
-  /** The row's install is running: its button holds, saying which step it is at. */
-  busyLabel?: string;
   isOwner: boolean;
   onToggle: (on: boolean) => void;
   onUpdate: () => void;
@@ -892,10 +1129,9 @@ export function InstallRow({
           aria-label={`${S.skills.install} ${who}`}
           onClick={() => onToggle(true)}
           {...hold}
-          {...(busyLabel !== undefined ? { disabled: true } : {})}
-          {...(held?.busy === true || busyLabel !== undefined ? { "aria-busy": true } : {})}
+          {...(held?.busy === true ? { "aria-busy": true } : {})}
         >
-          {busyLabel ?? S.skills.install}
+          {S.skills.install}
         </Button>
       )}
     </div>
@@ -903,62 +1139,16 @@ export function InstallRow({
 }
 
 /**
- * Why a server install failed, under the card that was clicked, with what to do next instead of a
- * dead end (05 「插件库」 「安装从不卡住」): another registry or mirror in Plugin Sources, or a zip
- * import (an admin's). Attention ink with its mark, never red text; it stays until dismissed or
- * the next attempt.
- */
-export function InstallFailureNote({
-  reason,
-  onOpenSources,
-  onImportFile,
-  onDismiss,
-}: {
-  reason: string;
-  onOpenSources?: (() => void) | undefined;
-  onImportFile?: (() => void) | undefined;
-  onDismiss?: (() => void) | undefined;
-}) {
-  const words = S.plugins.installModel;
-  return (
-    <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1" data-testid="install-failure">
-      <span className={`inline-flex min-w-0 items-baseline gap-1 ${toneInk.attention}`}>
-        <GlyphIcon
-          d={ICONS.triangleAlert}
-          size={ICON_SIZE.inlineGlyph}
-          className="shrink-0 self-center"
-        />
-        <span className="min-w-0 break-words">{words.failedNote(reason)}</span>
-      </span>
-      {onOpenSources !== undefined && (
-        <Button variant="link" size="sm" onClick={onOpenSources}>
-          {words.sourcesSettings}
-        </Button>
-      )}
-      {onImportFile !== undefined && (
-        <Button variant="link" size="sm" onClick={onImportFile}>
-          {words.importFromFile}
-        </Button>
-      )}
-      {onDismiss !== undefined && (
-        <Button variant="link" size="sm" onClick={onDismiss}>
-          {words.dismiss}
-        </Button>
-      )}
-    </span>
-  );
-}
-
-/**
- * The body of a server install's confirm, or of a built-in module's enable or disable: what it
- * does, naming the plugin (the compact confirm card renders no title), then — in small, quiet
- * type, not a warning box — what it costs the runs in progress.
+ * The body of a server module's confirm — an install, a removal, or a shipped module's enable or
+ * disable for this Project: what it does to the server, naming the plugin (the compact confirm
+ * card renders no title), then — in small, quiet type, not a warning box — what it costs the runs
+ * in progress.
  */
 export function ModuleApplyBody({
   mode,
   name,
 }: {
-  mode: "install" | "enable" | "disable";
+  mode: "install" | "remove" | "enable" | "disable";
   name: string;
 }) {
   const words = S.plugins.installModel;
@@ -967,11 +1157,15 @@ export function ModuleApplyBody({
       <p>
         {mode === "install"
           ? S.plugins.applyConfirmInstallBody(name)
-          : mode === "enable"
-            ? words.enableBody(name)
-            : words.disableBody(name)}
+          : mode === "remove"
+            ? S.plugins.applyConfirmRemoveBody(name)
+            : mode === "enable"
+              ? words.enableBody(name)
+              : words.disableBody(name)}
       </p>
-      <p className="text-xs text-fg-muted">{S.plugins.applyConfirmWarning(mode !== "disable")}</p>
+      <p className="text-xs text-fg-muted">
+        {S.plugins.applyConfirmWarning(mode === "install" || mode === "enable")}
+      </p>
     </div>
   );
 }

@@ -451,6 +451,7 @@ export const zh = {
         "按主题换画法的图标：朴素为线性画法，白领为线性画法衬淡色块（双色调），极客为像素画",
       "ui-avatar":
         "按主题换画法的智能体缺省头像：同一只细棕线勾勒的蛋形小企鹅，朴素为圆角方块，白领为圆形，卡通为饼干形，极客为像素画",
+      "ui-showcase": "封面陈列：封面卡片、精选轮播与产品页首屏",
       "ui-segmented": "分段控件：并排的几个选项里选一个",
       "ui-action": "导航列表打头的主操作：新建对话",
     } satisfies Record<HookName, string>,
@@ -607,6 +608,11 @@ export const zh = {
         title: "附件",
         description:
           "对话里附加的图片与文件：输入框里待发送的、发出后消息里的、插话小块里的，以及窄屏、长文件名与加载失败。",
+      },
+      showcase: {
+        title: "封面陈列",
+        description:
+          "插件市场共用的陈列模块：各色调与底纹的生成封面，图片加载中、已加载与加载失败，封面卡片、精选轮播与产品页的各个部分。",
       },
       packs: {
         title: "主题包",
@@ -996,7 +1002,7 @@ export const zh = {
       pillText: "3 个可更新",
       statusMarks: "状态标记",
       statusMarksHint:
-        "图形带语气，文字保持次要墨色、不着色；悬停说明状态对这一项意味着什么。不需要处理的状态不带语气，图形退为浅色。",
+        "图形带语气，文字保持次要墨色、不着色；悬停说明状态对这一项意味着什么。不需要处理的状态不带语气，图形退为浅色。容不下文字时（封面卡片的信息行）只留图形，文字移到悬停说明之首，并照常读给辅助技术。",
       statusMarkSamples: {
         success: "已安装",
         attention: "可更新",
@@ -1279,6 +1285,9 @@ export const zh = {
       ] as readonly { id: string; name: string }[],
     },
     site: {
+      showcase: "插件市场",
+      showcaseHint:
+        "插件市场的封面卡片、精选轮播与产品页首屏，用站点自己的配色，与落地页的 /plugins 一致。",
       nav: "导航栏",
       navHint:
         "三站共用：行末的「更多」收着 AMSP 与主题包，悬停或按下展开，其中一页是当前页时「更多」标为当前页；手机菜单把这两页缩进列在「更多」之下。",
@@ -2268,6 +2277,115 @@ export const zh = {
       time: "14:05",
       copy: "复制消息",
       placeholder: "输入消息…",
+    },
+    showcase: {
+      generated: "生成封面",
+      generatedHint: "每种色调配每种底纹：图块上是一个内置插件自己的图标，角上是产品标志。",
+      logoOnly: "没有图标",
+      logoOnlyHint: "插件没有自己的图标时，产品标志占据中间的图块，角上不再重复；四种底纹各一。",
+      states: "状态",
+      statesHint:
+        "图片在途时先铺它主色的底，不画生成封面；加载完成后图片淡入；加载失败时换成生成封面。",
+      loading: "加载中：主色的底",
+      loaded: "已加载",
+      fallback: "加载失败：生成封面",
+      layoutLabel: "布局",
+      cardView: "卡片视图",
+      listView: "列表视图",
+      cards: "封面卡片",
+      cardsHint:
+        "短文字、带来源机器的超长文字、带标签与信息行和两个操作的卡片、什么都不带的卡片、Web App 市场的卡片（版本标签与两个单行文字操作的操作条，第二个不可用，悬停说明原因），以及列表读取中的占位。右上角的图标把本板的各个网格在卡片与列表之间切换。",
+      marketCaption:
+        "Web App 市场的卡片：列表里每张一行——图标块、名称与其下的描述，同一行末是安装操作（「安装」或几个 Agent 已装）与「快速调用」——放得下两行时并排两行。",
+      shortTitle: "目标模式",
+      shortDescription: "让会话循环推进一个目标直到完成。",
+      longTitle: "智能体公司：组织、员工协议、CEO、人事、财务、科研与镜像公司的完整操作手册",
+      origin: "实验室 GPU 机",
+      longDescription:
+        "把 Project 里的 Agent 组织成一家公司：先与用户一问一答地创建组织，再是每个工位会话与工单会话都遵循的员工协议，以及 CEO、人事与财务的操作手册。",
+      fullTitle: "PenguinHarness 问答助手",
+      fullDescription: "产品问答、来源引用与客服工作台。",
+      plainTitle: "数据分析",
+      plainDescription: "读表、清洗、作图，并写出结论。",
+      barTitle: "Bento 幻灯片",
+      barDescription: "一句话生成可直接演示的幻灯片。",
+      barInstall: "安装",
+      barInstalledOn: (n: number) => `${n} 个 Agent 已装`,
+      barQuickHint: "请先为当前智能体安装",
+      tagSelected: "精选",
+      tagCategory: "办公效率",
+      tagBuiltin: "内置",
+      installed: "已安装",
+      installedHint: "本 Project 有 Agent 装有它",
+      quickStart: "快速开始",
+      manage: "安装到 Agent",
+      carousel: "精选轮播",
+      carouselHint:
+        "三页。每 7 秒换页，指针悬停时暂停；键盘焦点进入或点选缩略图后停止，直到按「继续轮播」。系统设置减少动态效果时不自动换页，按钮显示「继续轮播」。",
+      carouselLabel: "精选插件",
+      carouselControlsCaption:
+        "只有控件（公开站点的精选插件）：只显示当前一页和它在几页中的位置，没有缩略图栏，其余封面轮到才加载",
+      eyebrow: "精选",
+      carouselLabels: {
+        previous: "上一个",
+        next: "下一个",
+        pause: "暂停轮播",
+        play: "继续轮播",
+        position: (index: number, count: number) => `第 ${index} 个，共 ${count} 个`,
+      },
+      viewDetails: "查看详情",
+      slides: [
+        {
+          title: "PenguinHarness 问答助手",
+          tagline: "产品问答、来源引用与客服工作台。",
+          description:
+            "回答关于 PenguinHarness 的问题，每个结论都引用文档或源码；附带一个客服工作台，按问题列表逐条处理对话。",
+        },
+        {
+          title: "Bento 幻灯片",
+          tagline: "从一句话到一套能直接放映的幻灯片。",
+          description:
+            "新建或修改 .bento.html 演示文稿：从零开始、从素材生成，或改进已有文件；文档本身是 JSON，便于 Agent 反复编辑。",
+        },
+        {
+          title: "目标模式",
+          tagline: "让会话循环推进一个目标直到完成。",
+          description: "每一轮重新注入目标并检查目标文件，直到完成、受阻或用完 Token 预算。",
+        },
+      ] as readonly { title: string; tagline: string; description: string }[],
+      product: "产品页",
+      productHint:
+        "插件详情按产品页排版：封面旁的首屏、截图、正文各节与一栏事实、包含内容，以及快速开始的提示词。",
+      openApp: "打开",
+      screenshots: "截图",
+      shotAnswer: "回答附带来源，点开即是原文件。",
+      shotDeck: "一句话生成的应用介绍幻灯片。",
+      about: "介绍",
+      aboutBody:
+        "回答关于 PenguinHarness 的问题：安装、配置、模型与插件。每个结论都附带它依据的文档或源码，点开即是原文件。客服工作台把待处理的问题排成一列，逐条打开对话、回答并标记完成。",
+      installs: "包含内容",
+      parts: [
+        {
+          name: "penguin-support",
+          kind: "Skill",
+          description: "按文档与源码回答产品问题，并给出引用。",
+        },
+        {
+          name: "客服工作台",
+          kind: "Workbench",
+          description: "问题列表、对话与回答在同一个窗口里。",
+        },
+      ] as readonly { name: string; kind: string; description: string }[],
+      prompt: "我刚装好 PenguinHarness，怎样给 Agent 配置一个 MCP 服务器？",
+      promptNote: "会预先选中 penguin-support",
+      send: "开始对话",
+      facts: {
+        version: "版本",
+        category: "类别",
+        author: "作者",
+        license: "许可证",
+        package: "包名",
+      },
     },
   },
 };

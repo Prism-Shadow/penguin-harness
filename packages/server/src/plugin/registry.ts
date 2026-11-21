@@ -7,7 +7,8 @@
  *
  * Two implementations, one contract:
  *   - the builtin registry serves the index embedded in this package
- *     (builtin-index.json — the four sandbox backends the workspace ships, each row carrying
+ *     (builtin-index.json — the server modules the workspace ships: the four sandbox backends
+ *     and agent-state-git, each row carrying
  *     the descriptions of the package's own card contribution and its icon, so its card renders
  *     on a server the package is not installed on);
  *   - the HTTP registry fetches an `index.json` URL and runs it through the same
@@ -21,7 +22,9 @@
  */
 import type { PluginIndexEntry } from "../api/types.js";
 import {
+  compareSemver,
   indexChannelOf,
+  isSemver,
   newestPerName,
   parsePluginIndex,
   type IndexChannel,
@@ -34,6 +37,7 @@ import { createHash } from "node:crypto";
 import type { IconImage } from "@prismshadow/penguin-core";
 import {
   compareVersions,
+  libraryParts,
   normalizeVersion,
   readPackageCard,
   userAgent,
@@ -108,7 +112,7 @@ export function builtinPluginRegistry(
 /** The display fields an index entry may carry, which a package can also carry itself: its card's, and its icon. */
 export type PluginDisplay = Pick<
   PluginIndexEntry,
-  "title" | "titleZh" | "descriptionZh" | "shortDescription" | "shortDescriptionZh"
+  "title" | "titleZh" | "descriptionZh" | "shortDescription" | "shortDescriptionZh" | "localInstall"
 > & { icon?: IconImage };
 
 /**
@@ -339,11 +343,35 @@ export function pluginProxyMirrors(url: string, rules: readonly PluginProxyRule[
 export async function localPluginDisplay(
   name: string,
   bases: readonly PluginBase[],
+  available?: IndexDocumentEntry,
 ): Promise<PluginDisplay> {
   const found = resolvePluginPackage(name, bases);
   if (found === null) return {};
   const { card, icon } = readPackageCard(found.dir);
   const display: PluginDisplay = {};
+  if (available && !found.base.builtin && !found.base.program) {
+    try {
+      const { version } = JSON.parse(await fs.readFile(found.manifest, "utf8")) as {
+        version?: unknown;
+      };
+      const entry = path.join(path.dirname(found.base.file), "node_modules", name);
+      if (typeof version === "string" && !(await fs.lstat(entry)).isSymbolicLink()) {
+        const parts = libraryParts(found.dir);
+        display.localInstall = {
+          version,
+          libraryOnly:
+            !parts.modules && (parts.workbenches || parts.skills || parts.mcp || parts.hooks),
+          updateAvailable:
+            indexChannelOf(available).fault === null &&
+            isSemver(version) &&
+            isSemver(available.version) &&
+            compareSemver(available.version, version) > 0,
+        };
+      }
+    } catch {
+      // The package can disappear during a registry read. Its index entry still lists.
+    }
+  }
   if (card.title !== undefined) display.title = card.title;
   if (card.titleZh !== undefined) display.titleZh = card.titleZh;
   if (card.descriptionZh !== undefined) display.descriptionZh = card.descriptionZh;

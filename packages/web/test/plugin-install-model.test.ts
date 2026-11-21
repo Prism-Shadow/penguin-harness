@@ -1,18 +1,20 @@
 // @vitest-environment jsdom
 /**
- * A plugin card's two installs (05 「插件库」 「安装模型」): the server's control and the Agent's.
+ * A plugin's one install control and its flow: the server first, then the Agents.
  *
- * - Given a server install under way, the control that was clicked says the step it is at —
- *   downloading with its percent, then installing from the offline archive, then loading the
- *   module — and takes no second press; it never sits on a word that says nothing.
- * - Given the last server install failed, the card says why and offers the next steps: the Plugin
- *   Sources settings, a zip import (an admin's only), and dismissing it.
- * - Given a plugin not on the server whose offline archive carries Agent content, the card offers
- *   Install on Agent; its dialog says, before any click, that the server install comes first (an
- *   admin) or that an admin is asked (a member); Install on this server's Agent hands that Agent
- *   to the page, and a machine's Agent is held, saying why.
- * - Given a plugin an admin put on the server, its dialog says uninstalling it from the server
- *   uninstalls it from every Agent, and the server control asks the page to uninstall it.
+ * - Given a server install under way, the card's install control says the step it is at, in its
+ *   one-line words — checking, downloading with its percent, installing, loading — never a word
+ *   that says nothing; the flow says the step whole.
+ * - Given a plugin not on the server whose offline archive carries Agent content, an admin's
+ *   Install opens the flow on step 1 of 2: it says what installing on the server does, and its
+ *   button hands the install to the page; while it runs the step shows its words and a bar; a
+ *   failure stays on the step with the next steps (Plugin Sources, a zip import, dismiss).
+ * - Given the same plugin, a member's flow ends at step 1: it asks an admin and says it did.
+ * - Given a plugin on the server, the flow opens on step 2 of 2, the Agents, saying that
+ *   uninstalling from the server uninstalls from every Agent; Install on an Agent hands it to the
+ *   page. Uninstalling from the server is the detail's, an admin's.
+ * - Given a module the build ships that another Project's shared table lists, the detail's
+ *   Disable server module is held and described by the shared tag and its hint.
  */
 import { createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -71,19 +73,14 @@ const installedRow: PluginRow = {
 const agent = (agentId: string): AgentSummary => ({ agentId }) as AgentSummary;
 
 const props = (over: Partial<PluginCardProps> = {}): PluginCardProps => ({
+  marketCard: true,
+  layout: "cover",
   row: marketRow,
   status: "available",
   usage: null,
   categoryTitle: "Office",
   showCategory: true,
-  targets: [
-    { key: "helper", agent: agent("helper"), machine: null },
-    {
-      key: "m1/helper",
-      agent: agent("helper"),
-      machine: { machineId: "m1", label: "gpu-box", live: true },
-    },
-  ],
+  targets: [{ key: "helper", agent: agent("helper"), machine: null }],
   installed: new Map(),
   canQuickStart: false,
   isAdmin: true,
@@ -104,29 +101,43 @@ const buttonNamed = (name: string) =>
   [...document.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === name);
 const buttonWithText = (text: string) =>
   [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === text);
+/** The market card's install control: its words, then the card's title. */
+const installControl = (label: string) => buttonNamed(`${label} · computer-use`);
+const dialog = () => document.querySelector('[role="dialog"]');
 
-describe("the server control under way", () => {
-  it("says each step the install reaches, and takes no second press", async () => {
+describe("the install control under way", () => {
+  it("says each step the server install reaches", async () => {
     const steps: Array<[Partial<PluginCardProps>, string]> = [
+      [{ stage: { stage: "checking" } }, words.stepShort.checking],
       [{ progress: { received: 40, total: 100 } }, en.plugins.downloading(40)],
-      [{ stage: { stage: "checking" } }, words.checking],
-      [{ stage: { stage: "installing", source: "offline" } }, words.fromOffline],
-      [{ stage: { stage: "loading" } }, words.loading],
-      [{ stage: { stage: "installing", source: "registry" } }, words.installing],
+      [{ stage: { stage: "installing", source: "offline" } }, words.stepShort.fromOffline],
+      [{ stage: { stage: "loading" } }, words.stepShort.loading],
     ];
     for (const [step, label] of steps) {
       const page = await show(props({ busy: true, ...step }));
-      const control = buttonNamed(`${label} computer-use`);
-      expect(control, label).toBeDefined();
-      expect(control!.disabled).toBe(true);
-      expect(control!.getAttribute("aria-busy")).toBe("true");
+      expect(installControl(label), label).toBeDefined();
       await page.unmount();
     }
   });
 });
 
-describe("a failed server install", () => {
-  it("says why under the card and offers the next steps", async () => {
+describe("the flow of a plugin not on the server", () => {
+  it("opens an admin's on step 1 of 2, and hands the server install to the page", async () => {
+    const onInstallServer = vi.fn();
+    await show(props({ onInstallServer }));
+    await click(installControl(en.skills.install)!);
+    expect(dialog()!.textContent).toContain("1/2");
+    expect(dialog()!.textContent).toContain(en.plugins.applyConfirmInstallBody("computer-use"));
+    await click(buttonWithText(words.installServer)!);
+    expect(onInstallServer).toHaveBeenCalledOnce();
+  });
+
+  it("shows the step's words while it runs, and a failure with its next steps", async () => {
+    const running = await show(props({ busy: true, stage: { stage: "checking" } }));
+    await click(installControl(words.stepShort.checking)!);
+    expect(dialog()!.querySelector('[role="status"]')?.textContent).toContain(words.checking);
+    await running.unmount();
+
     const p = props({
       failure: "@penguinharness/computer-use is not published on registry.npmjs.org yet.",
       onOpenSources: vi.fn(),
@@ -134,8 +145,8 @@ describe("a failed server install", () => {
       onDismissFailure: vi.fn(),
     });
     await show(p);
-    const note = document.querySelector('[data-testid="install-failure"]');
-    expect(note?.textContent).toContain(
+    await click(installControl(en.skills.install)!);
+    expect(dialog()!.querySelector('[data-testid="install-failure"]')?.textContent).toContain(
       words.failedNote("@penguinharness/computer-use is not published on registry.npmjs.org yet."),
     );
     await click(buttonWithText(words.sourcesSettings)!);
@@ -144,69 +155,64 @@ describe("a failed server install", () => {
     expect(p.onOpenSources).toHaveBeenCalledOnce();
     expect(p.onImportFile).toHaveBeenCalledOnce();
     expect(p.onDismissFailure).toHaveBeenCalledOnce();
-    // The control is back, ready for another try.
-    expect(buttonNamed(`${words.installServer} computer-use`)?.disabled).toBe(false);
   });
 
-  it("offers a member no zip import", async () => {
-    await show(
-      props({
-        isAdmin: false,
-        failure: "unreachable",
-        onOpenSources: vi.fn(),
-        onImportFile: vi.fn(),
-      }),
-    );
-    expect(buttonWithText(words.importFromFile)).toBeUndefined();
-  });
-});
-
-describe("installing on an Agent before the server has it", () => {
-  it("says the server install comes first, then hands this server's Agent to the page", async () => {
-    const onInstallBeforeServer = vi.fn(async () => undefined);
-    await show(props({ onInstallBeforeServer }));
-    await click(buttonNamed(`${words.installAgent} computer-use`)!);
-    const dialog = document.querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).toContain(words.notOnServerAdmin);
-    await click(buttonNamed(`${en.skills.install} helper`)!);
-    expect(onInstallBeforeServer).toHaveBeenCalledWith("helper");
-    // A machine's Agent installs from that machine's own server: held, saying so.
-    const there = buttonNamed(`${en.skills.install} helper ${en.chat.machineTag("gpu-box")}`)!;
-    expect(there.disabled).toBe(true);
-    expect(there.getAttribute("title") ?? there.getAttribute("data-tooltip")).toBe(
-      words.machineFirst,
-    );
-  });
-
-  it("tells a member an admin is asked", async () => {
-    await show(props({ isAdmin: false, onInstallBeforeServer: vi.fn(async () => undefined) }));
-    await click(buttonNamed(`${words.installAgent} computer-use`)!);
-    expect(document.querySelector('[role="dialog"]')!.textContent).toContain(
-      words.notOnServerMember,
-    );
-  });
-
-  it("shows the row's step while its server install runs", async () => {
-    await show(
-      props({
-        onInstallBeforeServer: vi.fn(async () => undefined),
-        agentBusy: { key: "helper", label: words.loading },
-      }),
-    );
-    await click(buttonNamed(`${words.installAgent} computer-use`)!);
-    const row = buttonNamed(`${en.skills.install} helper`)!;
-    expect(row.textContent).toBe(words.loading);
-    expect(row.disabled).toBe(true);
+  it("ends a member's at step 1: it asks an admin, and says it did", async () => {
+    const onAskAdmin = vi.fn(async () => undefined);
+    await show(props({ isAdmin: false, onAskAdmin }));
+    await click(installControl(en.skills.install)!);
+    expect(dialog()!.textContent).toContain(words.askBody);
+    expect(buttonWithText(words.installServer)).toBeUndefined();
+    await click(buttonWithText(words.askAdmin)!);
+    expect(onAskAdmin).toHaveBeenCalledOnce();
+    expect(dialog()!.textContent).toContain(words.asked);
   });
 });
 
 describe("a plugin on the server", () => {
-  it("says uninstalling from the server takes it from every Agent, and asks the page to", async () => {
+  it("opens the flow on its Agents, step 2 of 2", async () => {
+    const p = props({ row: installedRow, status: "installed", usage: { usedBy: [], behind: [] } });
+    await show(p);
+    await click(installControl(en.skills.install)!);
+    expect(dialog()!.textContent).toContain("2/2");
+    expect(dialog()!.textContent).toContain(words.onServer);
+    await click(buttonNamed(`${en.skills.install} helper`)!);
+    expect(p.onToggleInstall).toHaveBeenCalledWith("helper", LIBRARY, true);
+  });
+
+  it("leaves uninstalling from the server to the detail, an admin's", async () => {
     const onServerUninstall = vi.fn();
     await show(props({ row: installedRow, status: "installed", onServerUninstall }));
+    expect(buttonNamed(`${words.uninstallServer} computer-use`)).toBeUndefined();
+    await click(document.querySelector<HTMLElement>(".showcase-card-open")!);
     await click(buttonNamed(`${words.uninstallServer} computer-use`)!);
     expect(onServerUninstall).toHaveBeenCalledOnce();
-    await click(buttonNamed(`${words.installAgent} computer-use`)!);
-    expect(document.querySelector('[role="dialog"]')!.textContent).toContain(words.onServer);
+  });
+});
+
+describe("a shipped module another Project shares", () => {
+  it("holds the detail's Disable server module, described by the shared tag and its hint", async () => {
+    const shared: PluginRow = {
+      key: "module:@penguinharness/sandbox-bwrap",
+      name: "sandbox-bwrap",
+      category: "sandbox",
+      module: {
+        specifier: "@penguinharness/sandbox-bwrap",
+        entry: undefined,
+        state: "active",
+        shipped: true,
+        shared: true,
+        removeBlocked: en.plugins.sharedHint,
+      },
+    };
+    await show(props({ row: shared, status: "installed", layout: "row", marketCard: false }));
+    await click(document.querySelector<HTMLElement>("[data-plugin] button")!);
+    const disable = buttonNamed(`${words.disableModule} sandbox-bwrap`)!;
+    expect(disable.disabled).toBe(true);
+    const ids = disable.getAttribute("aria-describedby")!.split(" ");
+    expect(ids.map((id) => document.getElementById(id)?.textContent)).toEqual([
+      en.plugins.sharedTag,
+      en.plugins.sharedHint,
+    ]);
   });
 });

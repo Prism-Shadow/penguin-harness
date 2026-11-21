@@ -21,7 +21,11 @@ import { en } from "../src/lib/strings-en";
 import { setActiveStrings } from "../src/lib/strings";
 
 const context = vi.hoisted(() => ({ projectId: "A", machines: [] as string[] }));
-vi.mock("react-router", () => ({ useNavigate: () => vi.fn() }));
+vi.mock("react-router", () => ({
+  useNavigate: () => vi.fn(),
+  useLocation: () => ({ state: null }),
+  useSearchParams: () => [new URLSearchParams(), vi.fn()],
+}));
 vi.mock("../src/state/project", () => ({
   useProject: () => ({
     currentProject: { projectId: context.projectId, role: "owner" },
@@ -97,6 +101,8 @@ vi.mock("../src/api/endpoints", () => ({
   uninstallPlugin: vi.fn(),
   getPluginLibrary: vi.fn(),
   getPluginIndex: vi.fn(),
+  // A server without the market's curation: generated covers, no carousel.
+  getPluginMarket: vi.fn(() => Promise.reject(new Error("not found"))),
 }));
 import * as api from "../src/api/endpoints";
 import { INDEX_RECHECK_MS, PluginsPage } from "../src/features/plugins/plugins-page";

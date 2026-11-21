@@ -1,27 +1,32 @@
-# A plugin's server install and its Agent installs each get a control, and an install never hangs
+# One install control walks a plugin onto the server and then onto Agents, and an install never hangs
 
 - **Date:** 2026-11-20
 - **Type:** feature
-- **Scope:** `server`, `web`, `ui`, `ui-gallery`, `scripts`
+- **Scope:** `server`, `web`, `ui`, `ui-gallery`, `docs`, `plugins`, `scripts`
 - **PR:** [#1672](https://github.com/Prism-Shadow/penguin-harness/pull/1672)
 
 [中文版](2026-11-20-plugin-install-model.zh.md)
 
-The Plugins page card replaces the side-by-side Install and Manage installs with two named
-controls. **Server** installs the plugin on the server or uninstalls it from there. **Install on
-Agent** opens the per-Agent dialog. Uninstalling from the server now uninstalls the plugin from
-every Agent on that server first, and the confirm names how many Agents lose it, and which ones.
-Installing on an Agent a plugin the server does not have yet installs it on the server first; a
-member's click asks an admin instead. A server install shows its step on the control that was
-clicked and never sits on a frozen button. A failure says why under the card and offers what to
-do next.
+A plugin's card keeps one install control, which opens a two-step install flow: the server first
+when the plugin is not there yet, then the Agents. A bar across the top says where it stands
+(1/2, then 2/2), and the server step shows each step of its install in words. A member's flow ends
+at the server step with a request to an admin. Manage installs is now Install on Agent.
+Uninstalling from the server moves to the plugin's detail and uninstalls the plugin from every
+Agent on that server first; the confirm names how many Agents lose it, and which ones. A failure
+says why on the step that ran it and offers what to do next.
 
 ## Details
 
-- **Server control.** A market package shows Install on server, or Uninstall from server once it
-  is there; a member sees the control held, saying only an admin changes the server. A plugin the
-  build ships cannot be uninstalled from the server: its tag says so, and an admin enables or
-  disables its server module for the Project instead.
+- **The install flow.** The card's install control keeps the market's labels (Install, N Agents
+  installed, Update) and opens the flow. Step 1 installs the plugin on the server: an admin's
+  button runs the install without a second confirm, since the step says what it does, and the
+  flow moves on by itself when it lands; a server module the build ships is enabled there instead.
+  Already on the server, the flow opens on step 2, the Agents, with the 「新建空白 Agent」 row first.
+  A plugin of server modules alone has one step. Closing the flow does not stop the install; the
+  card's control says the current step meanwhile.
+- **In the detail.** An admin's changes to the server: Uninstall from server, a shipped module's
+  Disable server module, and the package update. A plugin the build ships cannot be uninstalled
+  from the server, and its tag says so.
 - **Uninstalling from the server.** `DELETE /api/admin/plugins?package=…` (admin) removes the
   plugin from every Agent of every Project on that server, local edits and workbench data
   included. It then takes the plugin out of each Project's table for that server and uninstalls
@@ -30,11 +35,9 @@ do next.
   uninstall (`409 plugin_shared`), and a plugin the build ships is refused (`409
   plugin_shipped`). With the machine picker on a machine, the uninstall runs on that machine
   through its tunnel.
-- **Installing on an Agent before the server has it.** The Agent dialog says first how it relates
-  to the server. For an admin, Install runs the server install, showing each step on that row,
-  and then installs on the Agent. For a member, it records a request
-  (`POST /api/projects/:projectId/plugins/modules` with `package`). The administrator's request
-  list holds Enable until the package is on the server.
+- **A member and a plugin not on the server.** Step 1's Ask an admin to install records a request
+  (`POST /api/projects/:projectId/plugins/modules` with `package` and the current Agent). The
+  administrator's request list holds Enable until the package is on the server.
 - **The install stream.** It sends `stage` events (`checking` while a name's registry is asked,
   each source tried, then `loading` before the App re-assembles) and the channel's `download` progress, which it had never sent before. A
   `ping` every 20 s means the 40 s idle cut of event streams no longer drops an install that is
@@ -50,7 +53,8 @@ do next.
   package's registry document, each address within 10 s, and the refusals name the registry's
   host. Once the registry has answered, the install runs with
   `--fetch-timeout=60000 --fetch-retries=1`. The index lookup an install makes tries each address
-  once, for 10 s. The note under the card links to Plugin Sources and to Import from file.
+  once, for 10 s. The failure note on the flow's server step links to Plugin Sources and to
+  Import from file.
 - **Offline archives carried by the build.** A repository plugin that the market lists but the
   build does not ship is packed into `offline/` beside the builtin prefix, with its sha512
   recorded. When the registry lacks the package, cannot be reached, or npm is missing, the market

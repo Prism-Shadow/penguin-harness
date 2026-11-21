@@ -38,7 +38,7 @@
  * - Installing a plugin with a stdio server asks first, and the question shows the command; an
  *   install of several plugins at once (a bulk update, a new Agent's plugins) names each plugin
  *   that runs one, with its commands.
- * - In Manage installs, an Agent whose copy waits for vault values says which; its owner gets
+ * - In the install flow, an Agent whose copy waits for vault values says which; its owner gets
  *   Set up, a member is told the owner sets them. Only the owner may uninstall: a member reads
  *   "Installed" with no Uninstall behind it. Saving writes the vault with every existing
  *   key kept, the new values added, an empty field left out.
@@ -84,7 +84,11 @@ import {
 } from "../src/features/plugins/plugin-groups";
 import { PluginStatusMark, rowTitle, webLink } from "../src/features/plugins/plugin-marks";
 import type { PluginStatus } from "../src/features/plugins/plugin-status";
-import { IncompatibleNotice, PluginsHeaderActions } from "../src/features/plugins/plugins-page";
+import {
+  IncompatibleNotice,
+  PluginsHeaderActions,
+  PluginsListControls,
+} from "../src/features/plugins/plugins-page";
 import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { LocaleProvider } from "../src/state/locale";
@@ -128,8 +132,6 @@ type HeaderProps = Parameters<typeof PluginsHeaderActions>[0];
 const headerProps = (overrides: Partial<HeaderProps> = {}): HeaderProps => ({
   query: "",
   onQuery: () => undefined,
-  groupBy: "category",
-  onGroupBy: () => undefined,
   isAdmin: false,
   machinePicker: null,
   onOpenSettings: () => undefined,
@@ -139,24 +141,19 @@ const headerProps = (overrides: Partial<HeaderProps> = {}): HeaderProps => ({
 const header = (isAdmin: boolean) => inLocale(PluginsHeaderActions, headerProps({ isAdmin }));
 
 describe("the plugins page header", () => {
-  it("offers a member the search box and the grouping select, and neither Import plugin nor Settings", () => {
+  it("offers a member the search box, and neither Import plugin nor Settings", () => {
     const html = header(false);
     expect(html).toContain(`aria-label="${en.plugins.searchPlaceholder}"`);
-    expect(buttonText(html, en.plugins.groupByLabel)).toBe(en.plugins.groupBy.category);
+    expect(html).not.toContain(`aria-label="${en.plugins.groupByLabel}"`);
     expect(buttonWords(html)).not.toContain(en.plugins.importPlugin);
     expect(buttonWords(html)).not.toContain(en.plugins.openSettings);
   });
 
-  it("offers an admin, after the search box and the grouping select, Import plugin and then Settings", () => {
+  it("offers an admin, after the search box, Import plugin and then Settings", () => {
     const html = header(true);
     const search = html.indexOf(`aria-label="${en.plugins.searchPlaceholder}"`);
     expect(search).toBeGreaterThanOrEqual(0);
-    expect(html.indexOf(`aria-label="${en.plugins.groupByLabel}"`)).toBeGreaterThan(search);
-    expect(buttonWords(html)).toEqual([
-      en.plugins.groupBy.category,
-      en.plugins.importPlugin,
-      en.plugins.openSettings,
-    ]);
+    expect(buttonWords(html)).toEqual([en.plugins.importPlugin, en.plugins.openSettings]);
   });
 });
 
@@ -241,22 +238,21 @@ const card = (row: PluginRow, isAdmin: boolean, overrides: Partial<PluginCardPro
 
 describe("a server module's card", () => {
   const words = en.plugins.installModel;
-  it("offers an admin Install on server for a market package, and Uninstall from server once it is there", () => {
+  it("offers an admin Install on server for a market package, and leaves uninstalling to the detail", () => {
     const available = card(moduleRow("none", false), true);
     expect(buttonText(available, `${words.installServer} sandbox-bwrap`)).toBe(words.installServer);
-    expect(buttonText(available, `${words.uninstallServer} sandbox-bwrap`)).toBeUndefined();
     const listed = card(moduleRow("active", false), true);
-    expect(buttonText(listed, `${words.uninstallServer} sandbox-bwrap`)).toBe(
-      words.uninstallServer,
-    );
+    for (const html of [available, listed]) {
+      expect(buttonText(html, `${words.uninstallServer} sandbox-bwrap`)).toBeUndefined();
+    }
     expect(buttonText(listed, `${words.installServer} sandbox-bwrap`)).toBeUndefined();
   });
 
-  it("offers an admin only enabling or disabling a module the build ships, never uninstalling it", () => {
+  it("offers an admin enabling a module the build ships, never uninstalling it, and leaves disabling to the detail", () => {
     const available = card(moduleRow("none"), true);
     expect(buttonText(available, `${words.enableModule} sandbox-bwrap`)).toBe(words.enableModule);
     const listed = card(moduleRow("active"), true);
-    expect(buttonText(listed, `${words.disableModule} sandbox-bwrap`)).toBe(words.disableModule);
+    expect(buttonText(listed, `${words.disableModule} sandbox-bwrap`)).toBeUndefined();
     for (const html of [available, listed]) {
       expect(buttonText(html, `${words.uninstallServer} sandbox-bwrap`)).toBeUndefined();
       expect(buttonText(html, `${words.installServer} sandbox-bwrap`)).toBeUndefined();
@@ -296,6 +292,67 @@ describe("a library plugin's card", () => {
     );
     expect(buttonText(html, `${en.skills.quickInvoke} data-analysis`)).toBe(en.skills.quickInvoke);
     expect(text(html)).toContain("v0.2.13");
+  });
+});
+
+describe("the market’s versioned actions", () => {
+  const current = { marketCard: true, currentAgentId: "alice", showPackageUpdates: true };
+  it("offers a verified package update before applying the new resources to the Agent", () => {
+    const newer = {
+      ...BWRAP,
+      version: "1.1.0",
+      localInstall: { version: "1.0.0", libraryOnly: true, updateAvailable: true },
+    };
+    const row = {
+      ...libraryRow,
+      module: { specifier: newer.name, state: "none" as const, shipped: false, entry: newer },
+    };
+    const html = card(row, true, current);
+    expect(buttonWords(html).slice(-2)).toEqual(["Update to v1.1.0", "Quick start"]);
+    expect(html).toContain('class="showcase-card-version">v1.0.0</span>');
+    expect(html).toContain(en.plugins.quickStartAfterInstall);
+  });
+  it("only enables a demo on the Agent that carries it", () => {
+    const installed = new Map([
+      [
+        "alice",
+        { skills: new Map([["data-analysis", "2026.10.04.1"]]), hooks: new Map(), mcp: new Map() },
+      ],
+    ]);
+    const usage = { usedBy: ["alice"], behind: [], lastSeen: [] };
+    const ready = card(libraryRow, false, { ...current, installed, usage });
+    expect(buttonWords(ready).slice(-2)).toEqual(["Installed on 1 Agent", "Quick start"]);
+    expect(ready).toContain(en.plugins.quickStartHint);
+    expect(ready).toContain('class="showcase-card-version">v0.2.13</span>');
+    // Another Agent has it: the count alone, never Install beside it; the demo waits.
+    const other = card(libraryRow, false, { ...current, installed, usage, currentAgentId: "bob" });
+    expect(buttonWords(other).slice(-2)).toEqual(["Installed on 1 Agent", "Quick start"]);
+    expect(other).toContain(en.plugins.quickStartAfterInstall);
+  });
+  it("distinguishes a running server plugin from a shipped or downloaded package", () => {
+    for (const layout of ["row", "cover"] as const) {
+      const props = { ...current, layout };
+      expect(buttonWords(card(moduleRow("active"), true, props)).at(-2)).toBe(
+        "Installed on server",
+      );
+      expect(buttonWords(card(moduleRow("none"), true, props)).at(-2)).toBe("Install");
+      expect(buttonWords(card(libraryRow, true, props)).at(-2)).toBe("Install");
+      const usage = { usedBy: ["alice", "bob"], behind: [], lastSeen: [] };
+      expect(buttonWords(card(libraryRow, true, { ...props, usage })).at(-2)).toBe(
+        "Installed on 2 Agents",
+      );
+    }
+  });
+  it("keeps a workbench with no example readable in both layouts", () => {
+    const row = {
+      ...libraryRow,
+      library: { ...LIBRARY, skills: [], workbenches: [{ name: "slides", version: "1" }] },
+    };
+    for (const layout of ["cover", "row"] as const) {
+      const html = card(row as PluginRow, true, { ...current, layout });
+      expect(html).toContain(en.plugins.noQuickAction);
+      expect(html).toMatch(/<button[^>]*disabled[^>]*aria-label="Quick start/);
+    }
   });
 });
 
@@ -381,10 +438,20 @@ describe("the grouping select", () => {
     });
   };
 
-  it("choosing to group by status in the header regroups the cards by status", () => {
+  const controls = (overrides: Partial<Parameters<typeof PluginsListControls>[0]> = {}) => ({
+    groupBy: "category" as PluginGroupBy,
+    onGroupBy: () => undefined,
+    sort: "featured" as const,
+    sorts: ["featured", "recent", "used", "name"] as const,
+    onSort: () => undefined,
+    locale: "en" as const,
+    ...overrides,
+  });
+
+  it("choosing to group by status at the tab row's end regroups the cards by status", () => {
     let chosen: PluginGroupBy = "category";
-    const tree = PluginsHeaderActions(
-      headerProps({
+    const tree = PluginsListControls(
+      controls({
         onGroupBy: (by) => {
           chosen = by;
         },
@@ -398,7 +465,7 @@ describe("the grouping select", () => {
   });
 
   it("shows the chosen grouping as its own phrase, under a name that says what it groups", () => {
-    const html = inLocale(PluginsHeaderActions, headerProps({ groupBy: "status" }));
+    const html = inLocale(PluginsListControls, controls({ groupBy: "status" }));
     expect(buttonText(html, en.plugins.groupByLabel)).toBe(en.plugins.groupBy.status);
   });
 });
@@ -432,7 +499,8 @@ describe("the detail dialog", () => {
     const html = sections(moduleRow("active"), { kind: "text", text: "# Requirements\n\nLinux." });
     expect(html).toContain("Bubblewrap sandbox backend.");
     expect(html).toContain("Requirements");
-    expect(html).toContain(BWRAP.name);
+    // The package name as it reads: the facts row lets a line break after the scope's slash.
+    expect(html.replace(/\/ /g, "/")).toContain(BWRAP.name);
     expect(html).not.toContain(en.plugins.detailFiles);
   });
 
@@ -504,10 +572,14 @@ describe("a plugin's display name", () => {
     expect(onCard).not.toMatch(/\bnotes\b/);
     expect(rowTitle(titled, "en")).toBe("Notes Pro");
     expect(rowTitle(titled, "zh")).toBe("笔记专业版");
-    expect(sections(titled, { kind: "none" })).toContain("@acme/notes");
-    // Without a display name the plugin's name stands, and no package line joins it.
+    // Counted as the name reads: the facts row lets a line break after the scope's slash.
+    const times = (text: string, part: string) => text.replace(/\/ /g, "/").split(part).length - 1;
+    // The package is the line under a display name, and a row of the facts column.
+    expect(times(sections(titled, { kind: "none" }), "@acme/notes")).toBe(2);
+    // Without a display name the plugin's name stands, and no package line joins it: the
+    // package is named in the facts column alone.
     expect(rowTitle(libraryRow, "en")).toBe("data-analysis");
-    expect(sections(libraryRow, { kind: "none" })).not.toContain(LIBRARY.package);
+    expect(times(sections(libraryRow, { kind: "none" }), LIBRARY.package)).toBe(1);
   });
 });
 
@@ -573,7 +645,9 @@ describe("the package's own details in the dialog", () => {
         repository: "javascript:alert(1)",
       },
     });
-    expect(text(html)).toContain("Acme Labs · MIT");
+    // Each in its own row of the facts column, under its label.
+    expect(text(html)).toContain(`${en.plugins.fact.author} Acme Labs`);
+    expect(text(html)).toContain(`${en.plugins.fact.license} MIT`);
     expect(links(html)).toEqual([
       { href: "https://acme.example/notes", name: en.plugins.detailHomepage, apart: true },
     ]);
@@ -587,7 +661,9 @@ describe("the package's own details in the dialog", () => {
       { href: "https://github.com/acme/notes", name: en.plugins.detailRepository, apart: true },
     ]);
     // A server module's come from its index entry; a package with none of them links nowhere.
-    expect(text(details(moduleRow("none", false)))).toContain("Prism Shadow · Apache-2.0");
+    const moduleFacts = text(details(moduleRow("none", false)));
+    expect(moduleFacts).toContain(`${en.plugins.fact.author} Prism Shadow`);
+    expect(moduleFacts).toContain(`${en.plugins.fact.license} Apache-2.0`);
     expect(links(details(libraryRow))).toEqual([]);
   });
 
@@ -729,35 +805,5 @@ describe("a plugin's MCP servers", () => {
       { key: "MAIL_CLIENT_ID", value: "replaced-id" },
       { key: "MAIL_CLIENT_SECRET", value: "new-secret" },
     ]);
-  });
-});
-
-describe("a shared plugin's accessible removal", () => {
-  const row = (_installed: boolean, shared?: boolean) => {
-    const r = moduleRow("active");
-    if (shared) Object.assign(r.module!, { shared: true, removeBlocked: en.plugins.sharedHint });
-    return card(r, true);
-  };
-  /** The opening tag of the row's Remove button. */
-  const removeButton = (html: string) =>
-    new RegExp(
-      `<button[^>]*aria-label="${en.plugins.installModel.disableModule} sandbox-bwrap"[^>]*>`,
-    ).exec(html)?.[0] ?? "";
-
-  it("describes a shared row's disabled Remove by its tag and hint", () => {
-    const html = row(true, true);
-    const button = removeButton(html);
-    expect(button).toContain('disabled=""');
-    const ids = /aria-describedby="([^"]+)"/.exec(button)?.[1]?.split(" ") ?? [];
-    const textOf = (id: string) =>
-      new RegExp(`id="${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*>([^<]*)<`).exec(html)?.[1];
-    expect(ids.map(textOf)).toEqual([en.plugins.sharedTag, en.plugins.sharedHint]);
-  });
-
-  it("leaves an own row's Remove enabled and undescribed", () => {
-    const button = removeButton(row(true));
-    expect(button).not.toBe("");
-    expect(button).not.toContain('disabled=""');
-    expect(button).not.toContain("aria-describedby");
   });
 });

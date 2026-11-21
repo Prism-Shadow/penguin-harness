@@ -75,7 +75,10 @@ const MAIL = {
 
 const AGENTS_PATH = `/api/projects/${PROJECT_ID}/agents`;
 
-/** The plugin market with `plugin`'s manage-installs list open. */
+/**
+ * The plugin market with `plugin`'s manage-installs list open, over the plugin's detail: the
+ * market card itself carries no Install on Agent, its detail does.
+ */
 async function openInstalls(plugin: PluginItem, others: PluginItem[] = []) {
   // jsdom has no ResizeObserver, which the card grid's container queries do not need here.
   vi.stubGlobal(
@@ -87,7 +90,10 @@ async function openInstalls(plugin: PluginItem, others: PluginItem[] = []) {
     },
   );
   const server = agentServer(undefined, { library: [plugin, ...others] });
-  const router = await mountAgentApp(h(PluginsPage), { route: "/plugins", at: "/plugins" });
+  const router = await mountAgentApp(h(PluginsPage), {
+    route: "/plugins",
+    at: detailPath(plugin),
+  });
   const manage = `${en.plugins.installModel.installAgent} ${plugin.name}`;
   await waitFor(() => hasButton(manage));
   await click(button(manage));
@@ -95,13 +101,19 @@ async function openInstalls(plugin: PluginItem, others: PluginItem[] = []) {
   return { server, router };
 }
 
+/** The market's address with `plugin`'s detail open. */
+const detailPath = (plugin: PluginItem) => `/plugins?plugin=${plugin.name}`;
+
+/** The detail, then the list over it: the dialogs open before Create agent. */
+const UNDER = 2;
+
 /** Presses the list's first row: Create agent opens over it. */
 async function openBlank() {
   await click(buttonIn(topDialog(), en.plugins.blankAgentCreate));
-  await waitFor(() => dialogs().length === 2);
+  await waitFor(() => dialogs().length === UNDER + 1);
 }
 
-const listTitle = (plugin: PluginItem) => en.plugins.installModel.installAgentTitle(plugin.title!);
+const listTitle = (plugin: PluginItem) => en.plugins.installModel.flowTitle(plugin.title!);
 const create = () => buttonIn(topDialog(), en.common.create);
 
 describe("installing a plugin on a new blank Agent", () => {
@@ -155,12 +167,12 @@ describe("installing a plugin on a new blank Agent", () => {
     await openBlank();
     await type(fieldIn(topDialog(), en.agent.id), "chart_maker");
     await click(create());
-    await waitFor(() => dialogs().length === 1);
+    await waitFor(() => dialogs().length === UNDER);
     expect(topDialog().textContent).toContain(listTitle(CHARTS));
     // Already Installed when the list shows again: the row never passes through Install.
     expect(hasButton(`${en.skills.uninstall} chart_maker`)).toBe(true);
     expect(hasButton(`${en.skills.install} chart_maker`)).toBe(false);
-    expect(whereIs(router)).toBe("/plugins");
+    expect(whereIs(router)).toBe(detailPath(CHARTS));
   });
 
   it("closes the untouched dialog on one Escape without asking, and the list on the next", async () => {
@@ -168,10 +180,12 @@ describe("installing a plugin on a new blank Agent", () => {
     await openBlank();
     await pressEscape();
     expect(hasButton(en.common.discard)).toBe(false);
-    expect(dialogs()).toHaveLength(1);
+    expect(dialogs()).toHaveLength(UNDER);
     expect(topDialog().textContent).toContain(listTitle(CHARTS));
     await pressEscape();
-    expect(dialogs()).toEqual([]);
+    // The list is closed; the detail it was opened from stays.
+    expect(dialogs()).toHaveLength(UNDER - 1);
+    expect(topDialog().textContent).not.toContain(listTitle(CHARTS));
   });
 
   it("asks before creating an Agent whose plugin runs a stdio server, and creates nothing until confirmed", async () => {
@@ -179,7 +193,7 @@ describe("installing a plugin on a new blank Agent", () => {
     await openBlank();
     await type(fieldIn(topDialog(), en.agent.id), "mailer");
     await click(create());
-    expect(dialogs()).toHaveLength(3);
+    expect(dialogs()).toHaveLength(UNDER + 2);
     expect(topDialog().textContent).toContain("node mail-server.js");
     expect(server.writes(AGENTS_PATH)).toEqual([]);
 

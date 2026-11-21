@@ -13,3 +13,5 @@ export { SkillTile } from "./skill-icon-view";
 export { SkillIcon } from "./skill-icon-view";
 
 export { skillTileColor } from "./skill-icon-view";
+
+export { skillTileHue } from "./skill-icon-view";

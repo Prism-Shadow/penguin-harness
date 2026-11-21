@@ -18,6 +18,8 @@ import { createElement, isValidElement, type ReactElement, type ReactNode } from
 
 import { renderToStaticMarkup } from "react-dom/server";
 import type { BuiltinBrowserServerEvent, BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
+// The browser reaches the app's own helpers through the plugin face; this hands them over.
+import "../src/web-app/plugin-host";
 import { normalizeAddress } from "../src/features/builtin-browser/address";
 import { BuiltinBrowserPanel } from "../src/features/builtin-browser/browser-panel";
 import {
@@ -31,7 +33,7 @@ import {
 } from "../src/features/builtin-browser/browser-state";
 import { dispatchBrowser } from "../src/features/builtin-browser/browser-store";
 import { NewTabPage, START_PAGE_SITES } from "../src/features/builtin-browser/new-tab-page";
-import { S } from "../src/lib/strings";
+import { S as B } from "../src/features/builtin-browser/strings";
 
 const BUILTIN = {
   backend: "builtin" as const,
@@ -110,7 +112,7 @@ describe("the panel", () => {
     const blank = panel();
     expect(blank).toContain('data-testid="builtin-browser-start-page"');
     for (const site of START_PAGE_SITES) {
-      expect(blank).toContain(S.builtinBrowser.startPage.sites[site.id]);
+      expect(blank).toContain(B.builtinBrowser.startPage.sites[site.id]);
     }
 
     load(hosting(21, "", tab(21, { url: "https://example.com/", title: "Example" })));

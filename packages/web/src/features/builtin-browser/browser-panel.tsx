@@ -19,7 +19,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button, EmptyState, useWindowShown } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
+import { S } from "./strings";
 import { isBlankUrl, isWebUrl } from "./address";
 import {
   activateBrowserTab,

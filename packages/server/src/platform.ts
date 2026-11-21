@@ -187,6 +187,7 @@ import {
 } from "@prismshadow/penguin-library-session";
 import { Workbenches } from "./mechanisms/workbenches.js";
 import { WorkbenchService } from "./workbenches/service.js";
+import { AgentStateHistoryModule } from "./workbenches/engines.js";
 import { WorkbenchRoutes } from "./workbenches/routes.js";
 import { ThemeRoutes } from "./http/routes/themes.js";
 import {
@@ -566,8 +567,12 @@ export class CompanyModule {}
 })
 export class ApiModule {}
 
+/**
+ * Workbenches, and the Agent State history behind their versions: `AgentStateHistoryModule`
+ * owns the `engines` slot a plugin contributes a faster engine to (./workbenches/engines.ts).
+ */
 @Module({
-  children: [WorkbenchService, WorkbenchRoutes],
+  children: [AgentStateHistoryModule, WorkbenchService, WorkbenchRoutes],
   exports: [Workbenches],
 })
 export class WorkbenchesModule {}
