@@ -3,6 +3,7 @@
 - **Date:** 2026-11-21
 - **Type:** fix
 - **Scope:** `server`, `web`
+- **PR:** [#1683](https://github.com/Prism-Shadow/penguin-harness/pull/1683)
 
 [English](2026-11-21-app-window-loads-one-workbench.md)
 
