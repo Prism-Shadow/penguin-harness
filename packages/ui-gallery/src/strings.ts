@@ -2013,13 +2013,27 @@ export const zh = {
       cardBuiltin: "内置",
       cardInstall: "安装",
       cardUpdate: "更新",
-      cardManage: "管理安装",
+      cardManage: "安装到 Agent",
       cardUninstall: "卸载",
       cardActionName: (verb: string, title: string) => `${verb} ${title}`,
       metaLine: "事实行",
       metaLineHint:
         "条目的几项事实排成一行，之间用间隔点；放不下时最后一项截断，其余保持原宽，从不换行。",
       metaLineUsedBy: "有 12 个 Agent 在用，其中 3 个在其他机器上，上次连上时的数据",
+      impactList: "确认里的影响清单",
+      impactListHint:
+        "危险操作的确认先说清它会波及什么：逐行列出名称与所在位置（次要墨色），最多五行，其余合计一行；询问期间显示一行等待说明。",
+      impactPending: "正在查找装有它的 Agent…",
+      impactMore: (n: number) => `还有 ${n} 个 Agent`,
+      impactItems: [
+        ["笔记助手", "PenguinHarness 演示"],
+        ["研究员", "PenguinHarness 演示"],
+        ["客服", "Mia 的 Project"],
+        ["翻译", "Mia 的 Project"],
+        ["审阅", "团队空间"],
+        ["排程", "团队空间"],
+        ["归档", "团队空间"],
+      ] as Array<[name: string, where: string]>,
       factRows: "详情里的事实行",
       factRowsHint:
         "每行一项：图形、名称、几项次要事实与行尾标记；最后一项事实占据剩余宽度并截断，标记保持原宽。缺失的部件整行用次要墨色。",

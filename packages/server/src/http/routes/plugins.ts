@@ -10,10 +10,17 @@
  *   GET    /api/plugins/registry/icon?name=…              # one listed entry's icon, as an image
  *   GET    /api/plugins/registry/readme?name=…            # one listed entry's long-form readme
  *   GET    /api/plugins/registry/archive?name=…           # one listed package on this server, as a zip
- *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library (any member)
+ *   GET    /api/projects/:p/agents/:a/plugins             # the Agent's installed parts, and how the library's server modules stand here (any member)
+ *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library, their server modules with them (any member)
  *   DELETE /api/projects/:p/agents/:a/plugins/:name       # uninstall all of one plugin (owner only)
  *   GET    /api/projects/:p/agents/:a/mcp-servers         # the Agent's MCP servers: target, provenance, what keeps each from connecting (any member)
  *   DELETE /api/projects/:p/agents/:a/mcp-servers/:name   # remove one MCP server entry, whoever added it (any member)
+ * A plugin that also ships server modules brings them along (PRFC-0031, services/plugin-modules.ts):
+ * after the Agent part is written, its modules are listed in this server's own table, or asked of
+ * the administrator — unless `skipModules`, which the Web App sends to a machine whose plugin list
+ * the hub owns. That step can re-assemble the App, so it is the install's last; what answers after
+ * it only reads files and the module statuses, which survive the swap.
+ *
  * Installing a plugin writes each of its skills to agent_state/skills/<name>/, its hook
  * package to agent_state/hooks/<plugin>/ (hooks.json + scripts) and its MCP servers into the
  * Agent's `tools.mcpServers` (each entry carrying the plugin's name); reinstalling overwrites
@@ -68,6 +75,7 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 import type { Config, Hmr } from "../../hmr/capabilities.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
+import type { ModuleActor, PluginModules } from "../../mechanisms/plugins.js";
 import type { Access } from "@prismshadow/penguin-library-project";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
@@ -85,6 +93,7 @@ import {
   withoutIcon,
 } from "../../plugin/registry.js";
 import { indexMirrorRules } from "../../plugin/mirror-settings.js";
+import { offlineArchives, type OfflineArchive } from "../../plugin/offline-archives.js";
 import type {
   CachedRegistry,
   IndexDocumentEntry,
@@ -113,6 +122,8 @@ export interface PluginsRouteDeps {
   library: PluginLibrary;
   /** An uninstall removes the plugin's workbenches the way a single removal does. */
   workbenches: Pick<Workbenches, "remove">;
+  /** A plugin's server modules, brought along by an install (PRFC-0031); absent in tests that build these routes alone. */
+  modules?: PluginModules;
 }
 import { errorBody, HttpError } from "../errors.js";
 import { iconRef, iconResponse } from "../icon-response.js";
@@ -209,6 +220,13 @@ export function pluginLibraryRoutes(library: PluginLibrary): Hono<AppEnv> {
 /** /api/projects/:p/agents/:a/plugins: install is a Project-member operation. */
 export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
+  const actorOf = (c: { var: AppEnv["Variables"] }): ModuleActor => ({
+    userId: c.var.user.userId,
+    isAdmin: c.var.user.isAdmin,
+  });
+  /** How the library's server modules stand here for the Project, when this server knows them. */
+  const modulesOf = async (projectId: string, viewer: ModuleActor) =>
+    deps.modules !== undefined ? { modules: await deps.modules.status(projectId, viewer) } : {};
   app.get("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
@@ -228,6 +246,7 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
       hooks: hooks.map((h) => toHookItem(h, agentHookIconRoute(projectId, agentId, h.name))),
       mcpServers: servers.map(toAgentMcpServerItem),
       workbenches,
+      ...(await modulesOf(projectId, actorOf(c))),
     } satisfies AgentPluginsInstallResponse);
   });
 
@@ -236,8 +255,10 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
-    const names = optionalStringArray(await readJson(c), "names") ?? [];
+    const body = await readJson(c);
+    const names = optionalStringArray(body, "names") ?? [];
     if (names.length === 0) throw badRequest("names must be a non-empty array.");
+    const skipModules = body.skipModules === true;
     // Verify every name up front before writing anything: an unknown name, or an MCP server
     // name the Agent already has from someone else, rejects the whole request rather than
     // leaving a half-installed state.
@@ -256,6 +277,13 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     // re-reads them on its next idle access, so the plugin works from the next Task. MCP
     // servers, like the rest of system_config.yaml, join at the next model context.
     deps.manager.invalidateAgentRuntimes(projectId, agentId);
+    // LAST of what needs this generation: the server modules may re-assemble the App. What
+    // follows reads files and module statuses only, which survive the swap.
+    const actor = actorOf(c);
+    const moduleActions =
+      deps.modules !== undefined && !skipModules
+        ? await deps.modules.ensure(projectId, names, actor, "install", agentId)
+        : [];
     const [skills, hooks, servers, workbenches] = await Promise.all([
       listInstalledSkills(root, projectId, agentId),
       listInstalledHooks(root, projectId, agentId),
@@ -268,6 +296,8 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
         skills: skills.map((s) => toSkillItem(s, agentSkillIconRoute(projectId, agentId, s.name))),
         hooks: hooks.map((h) => toHookItem(h, agentHookIconRoute(projectId, agentId, h.name))),
         mcpServers: servers.map(toAgentMcpServerItem),
+        ...(await modulesOf(projectId, actor)),
+        ...(deps.modules !== undefined ? { moduleActions } : {}),
       } satisfies AgentPluginsInstallResponse,
       201,
     );
@@ -369,6 +399,7 @@ export class PluginRoutes {
   @Use() private readonly manager!: ManagerIface;
   @Use() private readonly library!: PluginLibrary;
   @Use() private readonly workbenches!: Workbenches;
+  @Use() private readonly pluginModules!: PluginModules;
   @Bind("PluginRoutes.library") libraryRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-plugins") pluginRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-hooks") hookRoutes!: Hono<AppEnv>;
@@ -381,6 +412,7 @@ export class PluginRoutes {
       manager: this.manager,
       library: this.library,
       workbenches: this.workbenches,
+      modules: this.pluginModules,
     };
     this.libraryRoutes = pluginLibraryRoutes(this.library);
     this.pluginRoutes = agentPluginsRoutes(deps);
@@ -407,6 +439,8 @@ export interface PluginRoutesOptions {
   onCache?: (cache: CachedRegistry, url: string) => void;
   /** This server's plugin prefix (`<root>/plugins`), whose server modules from a link or a zip the listing adds; none without it. */
   prefix?: () => string | null;
+  /** The offline archives the build carries (plugin/offline-archives.ts): a listed entry with one says so. */
+  offline?: () => readonly OfflineArchive[];
 }
 
 /**
@@ -501,9 +535,22 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
   app.get("/", async (c) => {
     const { entries, failures, pending } = await listing();
     const here = bases();
-    const plugins = (await Promise.all(entries.map((entry) => described(entry, here)))).map(
-      (d) => d.entry,
-    );
+    // An entry the build carries an offline archive of installs without a registry, and says
+    // what it carries before it is on this server (05 「安装从不卡住」).
+    const archives = options.offline?.() ?? [];
+    const plugins = (await Promise.all(entries.map((entry) => described(entry, here)))).map((d) => {
+      const archive = archives.find((a) => a.name === d.entry.name);
+      return archive === undefined
+        ? d.entry
+        : {
+            ...d.entry,
+            offline: {
+              version: archive.version,
+              library: archive.library,
+              modules: archive.modules,
+            },
+          };
+    });
     const body: PluginIndexResponse = { plugins, failures, pending };
     return c.json(body);
   });
@@ -655,6 +702,7 @@ export class PluginRegistryRoutes {
       // Read per request: a push moves the shipped prefix to a new assets directory.
       bases: () => pluginBases(this.config.root, this.hmr.assetsDir()),
       prefix: () => pluginsPrefix(this.config.root),
+      offline: () => offlineArchives(pluginBases(this.config.root, this.hmr.assetsDir())),
       seed: parked ?? null,
       onCache: (cache, url) => {
         this.cache = cache;

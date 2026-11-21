@@ -2063,13 +2063,27 @@ export const en: GalleryStrings = {
       cardBuiltin: "Built in",
       cardInstall: "Install",
       cardUpdate: "Update",
-      cardManage: "Manage installs",
+      cardManage: "Install on Agent",
       cardUninstall: "Uninstall",
       cardActionName: (verb, title) => `${verb} ${title}`,
       metaLine: "Facts line",
       metaLineHint:
         "A thing's facts on one line, a middle dot between each; when they do not fit the last one truncates, the rest keep their width, and the line never wraps.",
       metaLineUsedBy: "used by 12 agents, 3 of them on other machines as last seen",
+      impactList: "Impact list in a confirm",
+      impactListHint:
+        "A destructive action's confirm says what it reaches first: one line per thing, its name and where it lives in quieter ink, five at most, the rest counted on one line; while it is being asked for, one waiting line.",
+      impactPending: "Looking for the Agents that have it…",
+      impactMore: (n: number) => `${n} more ${n === 1 ? "Agent" : "Agents"}`,
+      impactItems: [
+        ["Notes helper", "PenguinHarness demo"],
+        ["Researcher", "PenguinHarness demo"],
+        ["Support", "Mia's Project"],
+        ["Translator", "Mia's Project"],
+        ["Reviewer", "Team space"],
+        ["Scheduler", "Team space"],
+        ["Archivist", "Team space"],
+      ] as Array<[name: string, where: string]>,
       factRows: "Fact rows in a detail",
       factRowsHint:
         "One thing a row: a glyph, the name, a few quiet facts and the marks at the end; the last fact takes the remaining width and truncates, the marks keep theirs. A missing part is in muted ink throughout.",

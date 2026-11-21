@@ -204,7 +204,7 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
     expect(status.texts()).toEqual([INSTALLED]);
     expect(usedBy.texts()).toEqual([USED_BY_2]);
 
-    await click(button(`${en.skills.manageInstall} charts`));
+    await click(button(`${en.plugins.installModel.installAgent} charts`));
     const machineRow = () => button(`${en.skills.uninstall} ${MACHINE_HELPER}`);
     expect(machineRow().disabled).toBe(true);
     expect(machineRow().getAttribute("data-tooltip")).toContain(

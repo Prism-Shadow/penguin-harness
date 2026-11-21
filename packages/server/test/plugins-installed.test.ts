@@ -546,6 +546,7 @@ describe("installed plugins", () => {
               "unavailable",
             ),
           installFiles: async () => npmSays("not used", "other"),
+          installTarball: async () => npmSays("not used", "other"),
           remove: async () => {},
         },
         config: {},
@@ -564,10 +565,18 @@ describe("installed plugins", () => {
       expect(res.headers.get("content-type")).toContain("text/event-stream");
       const events = parseSSE(await res.text());
       // The first event hands the work to npm (npm's own download is npm's to report); the
-      // last one carries the finished answer.
+      // last one carries the finished answer; between them the stream says each source it
+      // tried — the registry, then the index's channel — and the channel's download.
       expect(events[0]).toEqual({ event: "npm", data: "{}" });
       expect(events.at(-1)!.event).toBe("result");
-      expect(events).toHaveLength(2);
+      expect(
+        events
+          .filter((e) => e.event === "stage")
+          .map((e) => (JSON.parse(e.data) as { source?: string }).source),
+      ).toEqual(["registry", "channel"]);
+      expect(events.slice(1, -1).every((e) => e.event === "stage" || e.event === "download")).toBe(
+        true,
+      );
       const result = JSON.parse(events.at(-1)!.data) as InstalledPluginsResponse;
       // A Skills-only package joins the library, not the Project's table.
       expect(result.installed).toMatchObject({
@@ -588,6 +597,7 @@ describe("installed plugins", () => {
       pluginPackages: {
         install: async () => npmSays("npm error code EACCES\nnpm error permission denied", "other"),
         installFiles: async () => npmSays("not used", "other"),
+        installTarball: async () => npmSays("not used", "other"),
         remove: async () => {},
       },
     });
@@ -596,8 +606,8 @@ describe("installed plugins", () => {
     const res = await postStream(cookie, "@acme/denied");
     expect(res.status).toBe(200); // the stream itself answers well
     const events = parseSSE(await res.text());
-    expect(events.map((e) => e.event)).toEqual(["npm", "error"]);
-    expect(JSON.parse(events[1]!.data)).toMatchObject({
+    expect(events.map((e) => e.event)).toEqual(["npm", "stage", "error"]);
+    expect(JSON.parse(events[2]!.data)).toMatchObject({
       status: 400,
       code: "plugin_install_failed",
       message: expect.stringContaining("npm: npm error code EACCES"),

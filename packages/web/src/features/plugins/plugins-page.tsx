@@ -38,11 +38,17 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import type { AgentSummary, PluginItem, QuickStartItem } from "@prismshadow/penguin-server/api";
+import type {
+  AgentSummary,
+  PluginHoldersResponse,
+  PluginItem,
+  QuickStartItem,
+} from "@prismshadow/penguin-server/api";
 import {
   Button,
   CollapsibleSection,
   ConfirmModal,
+  ImpactList,
   EntityCardGrid,
   GlyphIcon,
   ICONS,
@@ -54,6 +60,7 @@ import {
   Skeleton,
   SkeletonCard,
   TodoNotice,
+  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -103,6 +110,8 @@ import {
   type InstallsTarget,
 } from "./agent-installs";
 import { installOnAgent, toastWriteError, uninstallFromAgent } from "./agent-plugin-writes";
+import { toastInstall } from "../../lib/agent-plugin-install";
+import { useOnPluginModulesChanged, usePluginModuleRequests } from "../../lib/plugin-modules";
 import { StdioDisclosure, StdioInstallBody } from "./plugin-mcp";
 import { ImportPluginModal } from "./plugin-import-modal";
 import {
@@ -255,9 +264,39 @@ export function PluginsPage() {
     received: number;
     total: number | null;
   } | null>(null);
+  /** The step that install has reached, as its stream says: the source tried, or the re-assembly. */
+  const [installStage, setInstallStage] = useState<{
+    specifier: string;
+    stage: api.InstallStage;
+  } | null>(null);
+  /** The last server install that failed, per specifier: said under its card with the next steps. */
+  const [installFailures, setInstallFailures] = useState<ReadonlyMap<string, string>>(new Map());
+  const failInstall = (specifier: string, why: string | null) =>
+    setInstallFailures((m) => {
+      const next = new Map(m);
+      if (why === null) next.delete(specifier);
+      else next.set(specifier, why);
+      return next;
+    });
+  /**
+   * A server uninstall waiting for its confirmation (05 「插件库」 「安装模型」): the package, its
+   * name, the machine in view, and who would lose it — null until the server has said.
+   */
+  const [pendingServerUninstall, setPendingServerUninstall] = useState<{
+    specifier: string;
+    name: string;
+    machineId: string;
+    holders: PluginHoldersResponse | null;
+    error: string | null;
+  } | null>(null);
+  const [serverUninstalling, setServerUninstalling] = useState(false);
+  /** An Agent install that first puts the plugin on the server: the Agent row and its step's words. */
+  const [agentBusy, setAgentBusy] = useState<{ key: string; label: string } | null>(null);
   const isAdmin = user?.isAdmin === true;
   const isOwner = currentProject?.role === "owner";
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** The administrator's requests to run plugins' server modules on this server, for the notice. */
+  const moduleRequests = usePluginModuleRequests(null, isAdmin);
   /** The import dialog (admin) is open. */
   const [importOpen, setImportOpen] = useState(false);
   /** Free text over names, descriptions and keywords. */
@@ -348,6 +387,11 @@ export function PluginsPage() {
   const remote = useRead(installedPlugins, remoteKey, () =>
     api.getInstalledPlugins(projectId!, viewMachine!),
   );
+  // A module that changed on this server, or on a machine, changes what that server's rows say:
+  // its answer is read again (at once while it is in view).
+  useOnPluginModulesChanged((server) => {
+    if (projectId !== null) installedPlugins.invalidate(installedPluginsKey(projectId, server));
+  });
   const view: PluginView | undefined =
     viewMachine === undefined
       ? undefined
@@ -372,13 +416,15 @@ export function PluginsPage() {
 
   /**
    * A server module change waiting for its confirmation (null = none). Applying one
-   * re-assembles the App, which stops the agent runs in flight in EVERY Project — the same
-   * cost a hot push has — so it is said before it is done.
+   * re-assembles the App for every Project on the server; the runs in flight carry on, but it
+   * changes what the whole server runs, so it is said before it is done.
    */
   const [pendingApply, setPendingApply] = useState<{
     specifier: string;
     name: string;
     install: boolean;
+    /** The build ships it: the change enables or disables its module for this Project. */
+    shipped: boolean;
     projectId: string;
     machineId: string;
   } | null>(null);
@@ -400,6 +446,7 @@ export function PluginsPage() {
     }
     const { specifier, install } = target;
     setPendingSpecifier(specifier);
+    if (install) failInstall(specifier, null);
     try {
       const next = install
         ? await api.installPluginStream(
@@ -410,6 +457,12 @@ export function PluginsPage() {
             // the request itself runs on.
             (received, total) => {
               if (isCurrentVisit()) setInstallProgress({ specifier, received, total });
+            },
+            (stage) => {
+              if (!isCurrentVisit()) return;
+              setInstallStage({ specifier, stage });
+              // A download belongs to one source: the next step's words replace its percent.
+              setInstallProgress(null);
             },
           )
         : await api.uninstallPlugin(target.projectId, specifier, target.machineId);
@@ -428,8 +481,18 @@ export function PluginsPage() {
         if (!isCurrentVisit()) return;
       }
       installedPlugins.accept(installedPluginsKey(target.projectId, null), next);
+      // What landed may carry Agent content: the library (and the registry's rows) are read
+      // again, so the card offers 「安装到 Agent」 without a reload.
+      if (install) {
+        pluginLibrary.invalidate(LIBRARY_KEY);
+        pluginIndex.invalidate(INDEX_KEY);
+      }
       const row = next.plugins.find((p) => p.specifier === specifier);
-      if (install && row?.error !== undefined) {
+      if (install && next.loading === true) {
+        toastSuccess(S.plugins.installModel.loadingToast(specifier));
+      } else if (install && next.installed?.from === "offline") {
+        toastSuccess(S.plugins.installModel.offlineToast(specifier));
+      } else if (install && row?.error !== undefined) {
         toastFailure(
           toldFailure(S.plugins.deploymentFailedToast(specifier, row.error), {
             what: "a plugin failed to load after it was installed",
@@ -441,12 +504,143 @@ export function PluginsPage() {
         toastSuccess(install ? S.plugins.deploymentInstalledToast(specifier) : S.common.saved);
       }
     } catch (e) {
-      if (isCurrentVisit()) toastApiError(e);
+      // A failed install is said under its card, with the next steps; a failed removal toasts.
+      if (isCurrentVisit()) {
+        if (install) failInstall(specifier, apiErrorText(e));
+        else toastApiError(e);
+      }
     } finally {
       if (isCurrentVisit()) {
         setPendingSpecifier(null);
         setInstallProgress(null);
+        setInstallStage(null);
         setPendingApply(null);
+      }
+    }
+  };
+
+  /**
+   * From the server (admin): asks who would lose it first, for the confirm, then uninstalls it from
+   * every Agent there and from the server itself (05 「插件库」 「安装模型」). A machine in view is
+   * asked through this server's tunnel, and its listing in this Project's table for that machine
+   * goes too, so the fleet sync does not put it back.
+   */
+  const askServerUninstall = (specifier: string, name: string) => {
+    if (projectId === null || viewMachine === undefined) return;
+    const machineId = viewMachine;
+    const server = machineId === selfId ? null : machineId;
+    setPendingServerUninstall({ specifier, name, machineId, holders: null, error: null });
+    api.getPluginHolders(specifier, server).then(
+      (holders) =>
+        setPendingServerUninstall((p) => (p?.specifier === specifier ? { ...p, holders } : p)),
+      (e: unknown) =>
+        setPendingServerUninstall((p) =>
+          p?.specifier === specifier ? { ...p, error: apiErrorText(e) } : p,
+        ),
+    );
+  };
+  const runServerUninstall = async () => {
+    const target = pendingServerUninstall;
+    if (target === null || projectId === null) return;
+    const server = target.machineId === selfId ? null : target.machineId;
+    setServerUninstalling(true);
+    setPendingSpecifier(target.specifier);
+    try {
+      if (server !== null) await api.uninstallPlugin(projectId, target.specifier, server);
+      const done = await api.uninstallPluginFromServer(target.specifier, server);
+      const failed = done.agents.flatMap((a) =>
+        (a.failed ?? []).map((f) =>
+          S.agentPlugins.failedPart(`${a.agentName} · ${f.name}`, f.error),
+        ),
+      );
+      if (failed.length > 0) {
+        toastError(
+          S.plugins.installModel.uninstalledPartly(target.name, failed.join(S.todo.listSeparator)),
+        );
+      } else {
+        toastSuccess(S.plugins.installModel.uninstalledToast(target.name, done.agents.length));
+      }
+      setPendingServerUninstall(null);
+    } catch (e) {
+      toastApiError(e);
+    } finally {
+      setServerUninstalling(false);
+      setPendingSpecifier(null);
+      // The server, its library and every Agent's installs moved.
+      reloadServerPlugins();
+      if (server !== null) {
+        installedPlugins.invalidate(installedPluginsKey(projectId, server));
+        reloadMachineAgents(server);
+      } else void reloadAgents();
+      for (const t of installsTargets) rereadInstalls(projectId, t.machineId, t.agentId);
+    }
+  };
+
+  /**
+   * 「安装」 in the Agent dialog of a plugin that is not on the server yet: an admin's installs it on
+   * the server first — the row shows each step — then on the Agent; a member's asks an admin to.
+   */
+  const installBeforeServer = async (row: PluginRow, key: string) => {
+    if (projectId === null || row.module === undefined) return;
+    const specifier = row.module.specifier;
+    const words = S.plugins.installModel;
+    if (!isAdmin) {
+      try {
+        await api.askPluginPackage(projectId, specifier, agentIdOf(key));
+        toastSuccess(words.requestedToast(row.name));
+      } catch (e) {
+        toastApiError(e);
+      }
+      return;
+    }
+    // Listed for this server's own table, as the card's own install lists it: wait for the id.
+    if (selfId === undefined) return;
+    setAgentBusy({ key, label: words.installing });
+    setPendingSpecifier(specifier);
+    try {
+      const next = await api.installPluginStream(
+        projectId,
+        specifier,
+        selfId,
+        (received, total) => {
+          if (!isCurrentVisit()) return;
+          const percent = total !== null && total > 0 ? Math.floor((received / total) * 100) : null;
+          setAgentBusy({ key, label: S.plugins.downloading(percent) });
+        },
+        (stage) => {
+          if (!isCurrentVisit()) return;
+          setAgentBusy({
+            key,
+            label:
+              stage.stage === "loading"
+                ? words.loading
+                : stage.source === "offline"
+                  ? words.fromOffline
+                  : words.installing,
+          });
+        },
+      );
+      installedPlugins.accept(installedPluginsKey(projectId, null), next);
+      // The plugin is in the library now: read it, then install it on the Agent.
+      pluginLibrary.invalidate(LIBRARY_KEY);
+      pluginIndex.invalidate(INDEX_KEY);
+      await pluginLibrary.read(LIBRARY_KEY, () => api.getPluginLibrary(null));
+      const name = next.installed?.name.replace(/^@[^/]+\//, "") ?? row.name;
+      const plugin = (pluginLibrary.get(LIBRARY_KEY).value?.groups ?? [])
+        .flatMap((g) => g.plugins)
+        .find((p) => p.name === name);
+      if (plugin === undefined) {
+        toastSuccess(S.plugins.deploymentInstalledToast(specifier));
+        return;
+      }
+      setAgentBusy({ key, label: words.installing });
+      await toggleInstall(key, plugin, true);
+    } catch (e) {
+      if (isCurrentVisit()) failInstall(specifier, apiErrorText(e));
+    } finally {
+      if (isCurrentVisit()) {
+        setAgentBusy(null);
+        setPendingSpecifier(null);
       }
     }
   };
@@ -636,9 +830,12 @@ export function PluginsPage() {
           : `${agentDisplayName(target.agent)} ${S.chat.machineTag(target.machine.label)}`;
     try {
       if (on) {
-        await installOnAgent(where, [plugin.name]);
-        toastSuccess(
+        const done = await installOnAgent(where, [plugin.name]);
+        toastInstall(
           `${S.plugins.installedToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
+          plugin.name,
+          done.modules,
+          target?.machine?.label,
         );
       } else {
         // One request: the server takes every part apart. "Nothing of it is here" is the state
@@ -829,7 +1026,16 @@ export function PluginsPage() {
       );
     }
   }
-  const statusOf = (row: PluginRow): PluginStatus => pluginStatus(row, usages.get(row.key) ?? null);
+  /** How the library's server modules stand on the server in view: its own answer says. */
+  const moduleStates = (view?.remote ?? deployment)?.modules ?? [];
+  const statusOf = (row: PluginRow): PluginStatus =>
+    pluginStatus(
+      row,
+      usages.get(row.key) ?? null,
+      row.library?.modules === true
+        ? moduleStates.find((m) => m.plugin === row.library!.name)
+        : undefined,
+    );
   const unsatisfiedCount = rows.filter((row) => row.module?.unsatisfied !== undefined).length;
   const searching = query.trim() !== "" || incompatibleOnly;
   const visible = rows.filter(
@@ -841,7 +1047,9 @@ export function PluginsPage() {
   const card = (row: PluginRow) => (
     <PluginCard
       framed={groupBy === "none"}
-      key={row.key}
+      // Keyed by the package, not the row: a market row becomes a library row once the server has
+      // it, and the card (with its open Agent dialog) must stay mounted through that.
+      key={row.module?.specifier ?? row.library?.package ?? row.key}
       row={row}
       status={statusOf(row)}
       usage={usages.get(row.key) ?? null}
@@ -860,11 +1068,42 @@ export function PluginsPage() {
       isAdmin={isAdmin}
       isOwner={isOwner}
       projectId={projectId}
-      busy={row.module !== undefined && pendingSpecifier === row.module.specifier}
+      busy={
+        row.module !== undefined &&
+        pendingSpecifier === row.module.specifier &&
+        agentBusy === null &&
+        !serverUninstalling
+      }
       progress={
         row.module !== undefined && installProgress?.specifier === row.module.specifier
           ? installProgress
           : null
+      }
+      stage={
+        row.module !== undefined && installStage?.specifier === row.module.specifier
+          ? installStage.stage
+          : null
+      }
+      failure={
+        row.module !== undefined ? (installFailures.get(row.module.specifier) ?? null) : null
+      }
+      onDismissFailure={() => {
+        if (row.module !== undefined) failInstall(row.module.specifier, null);
+      }}
+      onOpenSources={() => setSettingsOpen(true)}
+      onImportFile={() => setImportOpen(true)}
+      {...(isAdmin
+        ? {
+            onServerUninstall: () =>
+              askServerUninstall(
+                row.module?.specifier ?? row.library?.package ?? row.name,
+                row.name,
+              ),
+          }
+        : {})}
+      onInstallBeforeServer={(key) => installBeforeServer(row, key)}
+      agentBusy={
+        row.module !== undefined && pendingSpecifier === row.module.specifier ? agentBusy : null
       }
       blocked={
         row.module !== undefined &&
@@ -872,7 +1111,6 @@ export function PluginsPage() {
           (pendingSpecifier !== null && pendingSpecifier !== row.module.specifier))
       }
       onQuickStart={quickStartLibrary}
-      onDeletePlugin={null}
       onToggleInstall={toggleInstall}
       onUpdateOutdated={updateOutdated}
       onModuleApply={(install) => {
@@ -881,6 +1119,7 @@ export function PluginsPage() {
             specifier: row.module.specifier,
             name: row.name,
             install,
+            shipped: row.module.shipped,
             projectId,
             machineId: viewMachine,
           });
@@ -982,6 +1221,10 @@ export function PluginsPage() {
           </Notice>
         )}
         <IncompatibleNotice filtered={incompatibleOnly} unsatisfied={unsatisfiedCount} />
+        <ModuleRequestsNotice
+          waiting={isAdmin ? (moduleRequests.value?.pending ?? 0) : 0}
+          onView={() => setSettingsOpen(true)}
+        />
       </PageHeader>
       <SettingsDialog
         open={settingsOpen}
@@ -1056,21 +1299,51 @@ export function PluginsPage() {
           <ConfirmModal
             open
             title={
-              pendingApply.install
+              !pendingApply.shipped
                 ? S.plugins.applyConfirmInstall(pendingApply.name)
-                : S.plugins.applyConfirmRemove(pendingApply.name)
+                : pendingApply.install
+                  ? S.plugins.installModel.enableTitle(pendingApply.name)
+                  : S.plugins.installModel.disableTitle(pendingApply.name)
             }
             tone={pendingApply.install ? "primary" : "danger"}
-            {...(pendingApply.install ? { glyph: ICONS.download } : {})}
-            confirmLabel={pendingApply.install ? S.plugins.install : S.plugins.uninstall}
+            {...(pendingApply.install ? { glyph: ICONS.server } : {})}
+            confirmLabel={
+              !pendingApply.shipped
+                ? S.plugins.installModel.installServer
+                : pendingApply.install
+                  ? S.plugins.installModel.enableModule
+                  : S.plugins.installModel.disableModule
+            }
             cancelLabel={S.common.cancel}
             busy={pendingSpecifier !== null}
             onClose={() => setPendingApply(null)}
             onConfirm={() => void runDeploymentInstall(pendingApply)}
           >
-            <ModuleApplyBody install={pendingApply.install} name={pendingApply.name} />
+            <ModuleApplyBody
+              mode={!pendingApply.shipped ? "install" : pendingApply.install ? "enable" : "disable"}
+              name={pendingApply.name}
+            />
           </ConfirmModal>
         )}
+      {/* From the server: it leaves every Agent first, which the confirm names before it runs. */}
+      {pendingServerUninstall !== null && (
+        <ConfirmModal
+          open
+          title={S.plugins.installModel.uninstallTitle(pendingServerUninstall.name)}
+          tone="danger"
+          confirmLabel={S.plugins.installModel.uninstallServer}
+          cancelLabel={S.common.cancel}
+          busy={serverUninstalling}
+          confirmDisabled={
+            pendingServerUninstall.holders === null ||
+            pendingServerUninstall.holders.shared.length > 0
+          }
+          onClose={() => setPendingServerUninstall(null)}
+          onConfirm={() => void runServerUninstall()}
+        >
+          <ServerUninstallBody target={pendingServerUninstall} />
+        </ConfirmModal>
+      )}
       {repairModal}
       {/* A library plugin's quick start on an Agent that lacks it: installing comes first, and is asked. */}
       {pendingQuickStart !== null && currentAgent && (
@@ -1182,6 +1455,31 @@ export function IncompatibleNotice({
 }
 
 /**
+ * The administrator's notice beside the incompatible-plugins one, while members' requests to run a
+ * plugin's server module wait on this server: how many, and the way to Settings › Plugins, where
+ * they are decided. Nothing while none waits.
+ */
+export function ModuleRequestsNotice({
+  waiting,
+  onView,
+}: {
+  /** How many requests wait for a decision. */
+  waiting: number;
+  onView: () => void;
+}) {
+  if (waiting === 0) return null;
+  return (
+    <Notice
+      tone="attention"
+      className="mt-4"
+      action={{ label: S.plugins.moduleRequestsView, onClick: onView }}
+    >
+      {S.plugins.moduleRequestsNotice(waiting)}
+    </Notice>
+  );
+}
+
+/**
  * The page header's actions, in the Agents page header's look: every control on the small rung,
  * so the row is one height, at the header's gap. For everyone (a member narrows and regroups the
  * list too): the search box, and beside it the grouping select, whose options each say what they
@@ -1257,5 +1555,54 @@ export function PluginsHeaderActions({
         </>
       )}
     </>
+  );
+}
+
+/**
+ * The server-uninstall confirm's body: how many Agents lose the plugin and which (named up to five,
+ * the rest counted), and that their copies go with it — or why it cannot run (a Project's shared
+ * table lists it). While the holders are being asked for, a line says so and the button waits.
+ */
+function ServerUninstallBody({
+  target,
+}: {
+  target: {
+    name: string;
+    holders: PluginHoldersResponse | null;
+    error: string | null;
+  };
+}) {
+  const words = S.plugins.installModel;
+  const holders = target.holders;
+  if (target.error !== null) {
+    return <p className="text-sm">{target.error}</p>;
+  }
+  if (holders !== null && holders.shared.length > 0) {
+    return (
+      <p className="text-sm">
+        {words.sharedRefused(holders.shared.map((p) => p.projectName).join(S.todo.listSeparator))}
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2 text-sm">
+      {holders !== null && <p>{words.uninstallBody(target.name, holders.agents.length)}</p>}
+      <ImpactList
+        items={
+          holders === null
+            ? null
+            : holders.agents.map((a) => ({
+                key: `${a.projectId}/${a.agentId}`,
+                name: a.agentName,
+                where: a.projectName,
+              }))
+        }
+        more={words.moreAgents}
+        pending={words.holdersLoading}
+      />
+      {holders !== null && holders.agents.length > 0 && (
+        <p className="text-xs text-fg-muted">{words.uninstallCopies}</p>
+      )}
+    </div>
   );
 }

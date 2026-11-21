@@ -88,7 +88,7 @@ async function openInstalls(plugin: PluginItem, others: PluginItem[] = []) {
   );
   const server = agentServer(undefined, { library: [plugin, ...others] });
   const router = await mountAgentApp(h(PluginsPage), { route: "/plugins", at: "/plugins" });
-  const manage = `${en.skills.manageInstall} ${plugin.name}`;
+  const manage = `${en.plugins.installModel.installAgent} ${plugin.name}`;
   await waitFor(() => hasButton(manage));
   await click(button(manage));
   await waitFor(() => hasButton(`${en.skills.install} ${AGENT_ID}`));
@@ -101,7 +101,7 @@ async function openBlank() {
   await waitFor(() => dialogs().length === 2);
 }
 
-const listTitle = (plugin: PluginItem) => en.skills.manageInstallTitle(plugin.title!);
+const listTitle = (plugin: PluginItem) => en.plugins.installModel.installAgentTitle(plugin.title!);
 const create = () => buttonIn(topDialog(), en.common.create);
 
 describe("installing a plugin on a new blank Agent", () => {

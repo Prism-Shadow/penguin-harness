@@ -148,6 +148,12 @@ import type {
   PasswordChangeRequest,
   PluginFilesResponse,
   PluginInstallRequest,
+  PluginModuleAskRequest,
+  PluginModuleAskResponse,
+  PluginHoldersResponse,
+  PluginServerUninstallResponse,
+  PluginModuleDecideRequest,
+  PluginModuleRequestsResponse,
   PluginLibraryResponse,
   PluginUninstallResponse,
   PrefsResponse,
@@ -373,6 +379,25 @@ export const adminRunPluginConfigAction = (
   server: string | null,
 ) =>
   apiFetch<PluginConfigActionResponse>("/api/admin/plugin-config/action", {
+    method: "POST",
+    body,
+    server,
+  });
+
+/**
+ * Every request to run a library plugin's server module on a server, and the administrator's
+ * decisions, with each module's state there (admin). `server` names the machine through this
+ * server's tunnel; null is this server. Requests are per server: nothing is merged across.
+ */
+export const adminGetPluginModuleRequests = (server: string | null) =>
+  apiFetch<PluginModuleRequestsResponse>("/api/admin/plugin-modules", { server });
+
+/**
+ * Enables one package's server module, or declines it — which stops an enabled one on that
+ * server (admin). Answers the list. 404 `unknown_request`, 409 `project_gone`.
+ */
+export const adminDecidePluginModule = (body: PluginModuleDecideRequest, server: string | null) =>
+  apiFetch<PluginModuleRequestsResponse>("/api/admin/plugin-modules/decide", {
     method: "POST",
     body,
     server,
@@ -1961,17 +1986,52 @@ export const getAgentPlugins = (projectId: string, agentId: string, machineId: s
     { server: machineId },
   ).then((r) => installedOn(r, machineId));
 
-/** With `machineId`, installs from THAT machine's library onto its Agent. */
+/**
+ * With `machineId`, installs from THAT machine's library onto its Agent. A plugin that also ships
+ * server modules brings them along on that server (`moduleActions` says how), unless
+ * `skipModules` — what a machine's Agent is sent, since the hub keeps that machine's plugin list.
+ */
 export const installAgentPlugins = (
   projectId: string,
   agentId: string,
   names: string[],
   machineId: string | null,
+  { skipModules = false }: { skipModules?: boolean } = {},
 ) =>
   apiFetch<AgentPluginsInstallResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
-    { method: "POST", body: { names } satisfies PluginInstallRequest, server: machineId },
+    {
+      method: "POST",
+      body: (skipModules ? { names, skipModules } : { names }) satisfies PluginInstallRequest,
+      server: machineId,
+    },
   ).then((r) => installedOn(r, machineId));
+
+/**
+ * A library plugin's server module, asked for by hand (any member): the server enables it, or
+ * asks the administrator to, by the rule an install applies. 404 `unknown_plugin`, 400
+ * `no_server_module`.
+ */
+export const askPluginModule = (projectId: string, plugin: string) =>
+  apiFetch<PluginModuleAskResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/plugins/modules`,
+    { method: "POST", body: { plugin } satisfies PluginModuleAskRequest },
+  );
+
+/**
+ * A member's 「安装到 Agent」 of a plugin that is not on the server yet: a request for the
+ * administrator, who installs it on the server. 409 `plugin_on_server` when it is there already.
+ */
+export const askPluginPackage = (projectId: string, pkg: string, agentId: string | null) =>
+  apiFetch<PluginModuleAskResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/plugins/modules`,
+    {
+      method: "POST",
+      body: (agentId !== null
+        ? { package: pkg, agentId }
+        : { package: pkg }) satisfies PluginModuleAskRequest,
+    },
+  );
 
 /**
  * Uninstalls a whole plugin from the Agent on its server, in one request (Project owner): its
@@ -3086,18 +3146,25 @@ export const installPlugin = (
 /** How a channel install reports its download as it arrives: bytes so far, the total when known. */
 export type InstallProgressListener = (received: number, total: number | null) => void;
 
+/** A step of a server install as its stream reports it: a source being tried, or the App re-assembling. */
+export type InstallStage =
+  | { stage: "installing"; source: "registry" | "link" | "channel" | "offline" }
+  | { stage: "loading" };
+
 /**
  * The same install as {@link installPlugin}, read as it arrives: the server answers a
- * `text/event-stream` whose `download` events carry the channel's bytes on their way in, `npm`
- * fires once the bytes are in and npm takes over, and `result` carries the finished list. An
- * `error` event carries the status the JSON answer would have had, and is raised as an
- * {@link ApiError} — a stream that ends with no `result` is a lost connection.
+ * `text/event-stream` that opens with `npm`, says each source it tries and the App's re-assembly
+ * as `stage` events, carries a channel's bytes on their way in as `download` events, and ends with
+ * `result`, the finished list (a `ping` keeps a long install's stream alive). An `error` event
+ * carries the status the JSON answer would have had, and is raised as an {@link ApiError} — a
+ * stream that ends with no `result` is a lost connection.
  */
 export const installPluginStream = async (
   projectId: string,
   specifier: string,
   machineId: string | null,
   onProgress: InstallProgressListener,
+  onStage?: (stage: InstallStage) => void,
 ): Promise<InstalledPluginsResponse> => {
   const response = await apiFetchStream(pluginsPath(projectId), {
     method: "POST",
@@ -3109,6 +3176,8 @@ export const installPluginStream = async (
     if (event === "download") {
       const progress = JSON.parse(data) as { received: number; total: number | null };
       onProgress(progress.received, progress.total);
+    } else if (event === "stage") {
+      onStage?.(JSON.parse(data) as InstallStage);
     } else if (event === "error") {
       const failure = JSON.parse(data) as { status: number; code: string; message: string };
       throw new ApiError(failure.status, failure.code, failure.message);
@@ -3139,8 +3208,8 @@ async function* sseEvents(response: Response): AsyncGenerator<{ event: string; d
         return;
       }
       buffer += decoder.decode(value, { stream: true });
-      let cut = buffer.indexOf("\n\n");
-      while (cut !== -1) {
+      // The next event's end is looked for again after each one is taken: the buffer has moved.
+      for (let cut = buffer.indexOf("\n\n"); cut !== -1; cut = buffer.indexOf("\n\n")) {
         const lines = buffer.slice(0, cut).split("\n");
         buffer = buffer.slice(cut + 2);
         const event = lines
@@ -3159,6 +3228,27 @@ async function* sseEvents(response: Response): AsyncGenerator<{ event: string; d
     void reader.cancel().catch(() => {});
   }
 }
+
+/**
+ * Who would lose a plugin if it were uninstalled from the server (admin): every Agent of every
+ * Project there that carries it, and whether the uninstall can run (`shipped`, `shared`).
+ * `server` names a machine through this server's tunnel; null is this server.
+ */
+export const getPluginHolders = (pkg: string, server: string | null) =>
+  apiFetch<PluginHoldersResponse>(`/api/admin/plugins/holders?package=${encodeURIComponent(pkg)}`, {
+    server,
+  });
+
+/**
+ * Uninstalls a plugin from the server (admin): from every Agent there first — their copies, local
+ * edits and workbench data included — then from the server itself. 409 `plugin_shipped`,
+ * `plugin_shared` or `module_failed`, 404 `plugin_not_installed`.
+ */
+export const uninstallPluginFromServer = (pkg: string, server: string | null) =>
+  apiFetch<PluginServerUninstallResponse>(`/api/admin/plugins?package=${encodeURIComponent(pkg)}`, {
+    method: "DELETE",
+    server,
+  });
 
 /**
  * Admin only: drops it from every table of this Project, or with `machineId` from that

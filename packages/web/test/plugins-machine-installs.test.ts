@@ -66,10 +66,10 @@ async function openInstalls(machines: FakeMachine[]) {
   await mountAgentApp(h(PluginsPage), { route: "/plugins", at: "/plugins" });
   await waitFor(() =>
     [...document.querySelectorAll("button")].some(
-      (b) => b.getAttribute("aria-label") === `${en.skills.manageInstall} charts`,
+      (b) => b.getAttribute("aria-label") === `${en.plugins.installModel.installAgent} charts`,
     ),
   );
-  await click(button(`${en.skills.manageInstall} charts`));
+  await click(button(`${en.plugins.installModel.installAgent} charts`));
   return server;
 }
 
@@ -115,7 +115,10 @@ describe("installing a library plugin on a machine's Agent", () => {
       (r) =>
         r.method === "POST" && r.path === `/api/projects/${PROJECT_ID}/agents/${AGENT_ID}/plugins`,
     );
-    expect(installsSent.map((r) => [r.machine, r.body])).toEqual([["gpu1", { names: ["charts"] }]]);
+    // The machine leaves its plugin tables to this server, which keeps its plugin list.
+    expect(installsSent.map((r) => [r.machine, r.body])).toEqual([
+      ["gpu1", { names: ["charts"], skipModules: true }],
+    ]);
     expect(server.skillsOn(null, AGENT_ID)).toEqual([]);
     await waitFor(() => offers(en.skills.uninstall, MACHINE_HELPER));
     expect(offers(en.skills.install, AGENT_ID)).toBe(true);

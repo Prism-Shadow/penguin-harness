@@ -265,7 +265,7 @@ test("clicking the current Project in the dropdown: Agent and Session lists must
   // id (agentId is the page state table's key): first uninstall the Default RSI Toolkit's one
   // skill from the current (target) Project via the API, then switch over from the initial
   // Project's plugin library page — before the fix, the old Project's snapshot would overwrite
-  // the freshly fetched data, so "Manage installation" would always show "Installed."
+  // the freshly fetched data, so "Install on Agent" would always show "Installed."
   const del = await page.request.delete(
     `${BASE}/api/projects/${projectId}/agents/default_agent/skills/agent-optimization`,
   );
@@ -279,14 +279,14 @@ test("clicking the current Project in the dropdown: Agent and Session lists must
   await expect(page).toHaveURL(/\/plugins$/);
   // The category sections are open on entry. agent-optimization is the Default RSI Toolkit's
   // only skill.
-  await page.getByRole("button", { name: "管理安装 default-rsi-toolkit" }).click();
+  await page.getByRole("button", { name: "安装到 Agent default-rsi-toolkit" }).click();
   await expect(page.getByRole("button", { name: "卸载 default_agent" })).toBeVisible();
   await page.keyboard.press("Escape");
 
   // Staying on the plugin library page while switching to target: the same-named default_agent's state must flip to "Install" (not installed).
   await page.getByRole("button", { name: U }).first().click();
   await byName.first().click();
-  await page.getByRole("button", { name: "管理安装 default-rsi-toolkit" }).click();
+  await page.getByRole("button", { name: "安装到 Agent default-rsi-toolkit" }).click();
   await expect(page.getByRole("button", { name: "安装 default_agent" })).toBeVisible();
   await page.keyboard.press("Escape");
 });

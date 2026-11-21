@@ -65,6 +65,9 @@ import type {
   GoalResponse,
   InstallResponse,
   InstalledPluginsResponse,
+  PluginModuleAskResponse,
+  PluginModuleRequestsResponse,
+  PluginHoldersResponse,
   MachinesResponse,
   MachinesUseResponse,
   McpServerTestResponse,
@@ -277,6 +280,53 @@ router
   .put("/api/admin/settings", ({ store, body }): ServerSettingsResponse => {
     store.f.serverSettings = { ...store.f.serverSettings, ...record(body) };
     return { settings: store.f.serverSettings };
+  })
+  .get("/api/admin/plugin-modules", ({ store }): PluginModuleRequestsResponse =>
+    moduleLedger(store),
+  )
+  // Who would lose a plugin uninstalled from the server: the demo's Agents that carry its Skills.
+  .get("/api/admin/plugins/holders", ({ store, query }): PluginHoldersResponse => {
+    const pkg = query.get("package") ?? "";
+    const plugin = libraryPlugins(store).find((p) => p.package === pkg) ?? null;
+    const skills = new Set((plugin?.skills ?? []).map((s) => s.name));
+    const agents = store.f.agents
+      .filter((a) => (store.f.installed[a.agentId]?.skills ?? []).some((s) => skills.has(s.name)))
+      .map((a) => ({
+        projectId: IDS.project,
+        projectName: store.f.project.name ?? IDS.project,
+        agentId: a.agentId,
+        agentName: a.name ?? a.agentId,
+      }));
+    return {
+      package: pkg,
+      plugin: plugin?.name ?? null,
+      onServer: plugin?.source === "installed",
+      shipped: plugin !== null && plugin.source !== "installed",
+      shared: [],
+      agents,
+    };
+  })
+  .delete("/api/admin/plugins", () => readOnly("uninstall a plugin from the server"))
+  // A decision as the server takes it: enabling lists the module (it runs), declining stops it; a
+  // waiting request whose Project is gone can only be declined.
+  .post("/api/admin/plugin-modules/decide", ({ store, body }): PluginModuleRequestsResponse => {
+    const pkg = str(record(body).package);
+    const decision = str(record(body).decision);
+    if (decision !== "enable" && decision !== "decline") {
+      fail(400, "invalid_request", "decision must be enable or decline.");
+    }
+    const row = store.f.pluginModuleRequests.find((r) => r.package === pkg);
+    if (row === undefined) fail(404, "unknown_request", `No request for ${pkg}.`);
+    if (decision === "enable" && row.projectId === null) {
+      fail(409, "project_gone", "The Project that asked for it is gone.");
+    }
+    const enable = decision === "enable";
+    row.decision = enable ? "enabled" : "declined";
+    row.decidedBy = store.f.user.userId;
+    row.decidedAt = new Date(store.f.now).toISOString();
+    if (enable) row.via = row.requestedBy !== store.f.user.userId ? "approval" : "admin";
+    row.state = enable ? "running" : "off";
+    return moduleLedger(store);
   })
   .get("/api/admin/plugin-config", ({ store }): PluginConfigResponse => ({
     plugins: store.f.pluginConfig,
@@ -2235,6 +2285,12 @@ const installedOf = (ctx: Ctx) => {
 
 const libraryPlugins = (store: DemoStore) => store.f.library.groups.flatMap((g) => g.plugins);
 
+/** The administrator's ledger of module requests, with how many wait. */
+const moduleLedger = (store: DemoStore): PluginModuleRequestsResponse => ({
+  requests: store.f.pluginModuleRequests,
+  pending: store.f.pluginModuleRequests.filter((r) => r.decision === null).length,
+});
+
 router
   .get("/api/plugins", ({ store }): PluginLibraryResponse => store.f.library)
   .get("/api/plugins/registry", ({ store }): PluginIndexResponse => store.f.pluginIndex)
@@ -2281,7 +2337,51 @@ router
     hooks: installedOf(ctx).hooks,
     mcpServers: mcpServerItems(ctx),
     workbenches: [],
+    modules: ctx.store.f.pluginModules,
   }))
+  // A plugin's server module asked for by hand: the demo's server runs what is asked of it.
+  .post("/api/projects/:projectId/plugins/modules", ({ store, body }): PluginModuleAskResponse => {
+    // A member's ask for a package not on the server yet: a waiting request for the admin.
+    const asked = record(body).package;
+    if (typeof asked === "string" && record(body).plugin === undefined) {
+      const plugin = asked.replace(/^@[^/]+\//, "");
+      if (!store.f.pluginModuleRequests.some((r) => r.package === asked)) {
+        store.f.pluginModuleRequests.push({
+          package: asked,
+          plugin,
+          projectId: IDS.project,
+          projectName: null,
+          agentId: typeof record(body).agentId === "string" ? str(record(body).agentId) : null,
+          requestedBy: store.f.user.userId,
+          requestedByName: null,
+          requestedAt: new Date(store.f.now).toISOString(),
+          decision: null,
+          decidedBy: null,
+          decidedAt: null,
+          via: null,
+          builtin: false,
+          state: "off",
+          onServer: false,
+        });
+      }
+      return { modules: store.f.pluginModules, moduleActions: [{ plugin, action: "requested" }] };
+    }
+    const name = str(record(body).plugin);
+    const plugin = libraryPlugins(store).find((p) => p.name === name);
+    if (plugin === undefined) fail(404, "unknown_plugin", `Plugin is not in the library: ${name}`);
+    if (plugin.modules !== true) {
+      fail(400, "no_server_module", `Plugin ${name} ships no server module.`);
+    }
+    for (const mod of store.f.pluginModules) {
+      if (mod.plugin !== name) continue;
+      mod.state = "running";
+      mod.listed = true;
+    }
+    return {
+      modules: store.f.pluginModules,
+      moduleActions: [{ plugin: name, action: "enabled" }],
+    };
+  })
   .post("/api/projects/:projectId/agents/:agentId/plugins", (ctx): unknown => {
     const installed = installedOf(ctx);
     const agent = agentOf(ctx);
@@ -2315,6 +2415,8 @@ router
         skills: installed.skills,
         hooks: installed.hooks,
         mcpServers: mcpServerItems(ctx),
+        modules: ctx.store.f.pluginModules,
+        moduleActions: [],
       } satisfies AgentPluginsInstallResponse,
       201,
     );
@@ -2949,10 +3051,10 @@ router
     store.f.appCenter = { ...store.f.appCenter, layout };
     return { layout };
   })
-  .get(
-    "/api/projects/:projectId/plugins/installed",
-    ({ store }): InstalledPluginsResponse => store.f.installedPlugins,
-  )
+  .get("/api/projects/:projectId/plugins/installed", ({ store }): InstalledPluginsResponse => ({
+    ...store.f.installedPlugins,
+    modules: store.f.pluginModules,
+  }))
   .put(
     "/api/projects/:projectId/plugins/installed",
     ({ store, body }): InstalledPluginsResponse => {

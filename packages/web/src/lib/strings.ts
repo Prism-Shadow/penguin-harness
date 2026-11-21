@@ -1038,7 +1038,40 @@ export const zh = {
     pluginPositionOn: "开启",
     pluginPositionOff: "关闭",
     pluginsInfo:
-      "开关下方是各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。顶部的开关只影响本浏览器在插件页列出哪些插件。",
+      "开关下方先是服务端模块请求，再是各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。顶部的开关只影响本浏览器在插件页列出哪些插件。",
+    /** The section of requests to run a library plugin's server module, and the decisions on them (admin). */
+    moduleRequests: {
+      title: "服务端模块请求",
+      info: "成员把带服务端模块的插件装到 Agent 上，而本服务端既未运行、构建也不自带该模块时，会在这里留下请求。启用会把它列入该 Project 在本服务端的插件表并重新装载服务器插件，正在运行的 Agent 不受影响。内置插件的模块随 Agent 安装自动启用，也记在这里。",
+      empty: "没有等待处理的请求",
+      waiting: "待处理",
+      waitingHint: "等待你启用或拒绝",
+      declined: "已拒绝",
+      declinedHint: "已拒绝或已停用：它不会随 Agent 安装再次启用，成员也不能再请求",
+      /** How an enabled module came to be enabled, and what that means on hover. */
+      via: { builtin: "内置自动", admin: "管理员", approval: "已批准" },
+      viaHint: {
+        builtin: "已启用：内置插件的模块随 Agent 安装自动启用",
+        admin: "已启用：由管理员启用",
+        approval: "已启用：管理员批准了成员的请求",
+      },
+      /** In place of a Project that was deleted, and of a requester that is no person. */
+      projectGone: "Project 已删除",
+      system: "系统",
+      sep: "、",
+      enable: "启用",
+      decline: "拒绝",
+      stop: "停用",
+      stopTitle: (name: string) => `停用 ${name} 的服务端模块？`,
+      stopBody: (name: string) =>
+        `将在本服务端停用 ${name} 的服务端模块，并阻止它随 Agent 安装再次启用。各 Agent 上的 Skill 等内容不受影响。`,
+      enabledToast: (name: string) => `已启用 ${name} 的服务端模块`,
+      declinedToast: (name: string) => `已拒绝 ${name} 的服务端模块请求`,
+      stoppedToast: (name: string) => `已在本服务端停用 ${name} 的服务端模块`,
+      /** A stop that leaves the module running: these Projects' shared tables still list it. */
+      stillListed: (name: string, projects: string) =>
+        `${name} 的服务端模块仍在运行：${projects} 的共享插件表仍列出它，可在插件页移除。`,
+    },
     /** The page's own switch, above the server's cards: a display preference of this browser. */
     pluginsIncompatibleOnly: "只显示不兼容的插件",
     /** A list field's editor: the row buttons and the add row. */
@@ -3441,7 +3474,7 @@ export const zh = {
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on Agents as a whole. */
   plugins: {
     builtin: "内置",
-    builtinHint: "随本次构建自带：安装它不需要下载，但仍需你点安装才会加载。",
+    builtinHint: "随本次构建自带，不能从服务端卸载：启用它不需要下载，但仍需你点启用才会加载。",
     installedRestart: "待重启",
     stateFailed: "加载失败",
     /** A module plugin the running build cannot run at all: it needs a module or interface this build lacks. */
@@ -3456,6 +3489,85 @@ export const zh = {
     incompatibleOnlyNotice: "当前只显示不兼容的插件。",
     /** That notice's action: turns the filter off. */
     incompatibleOnlyShowAll: "显示全部",
+    /** The admin's notice while members' requests to run a plugin's server module wait. */
+    moduleRequestsNotice: (n: number) => `${n} 个服务端模块等待启用`,
+    /** That notice's action: opens Settings › Plugins, where they are decided. */
+    moduleRequestsView: "查看",
+    /**
+     * What an install did about the plugin's server module, after the install's own sentence
+     * (`said`): enabled, asked of the admin, stopped by the admin, failed to start, or — on a
+     * machine whose build does not ship it — to be installed for that machine.
+     */
+    /**
+     * The two installs of a plugin and their controls (05 「插件库」 「安装模型」): the server's
+     * and an Agent's, with what each does said before the click.
+     */
+    installModel: {
+      enableTitle: (name: string) => `启用 ${name} 的服务端模块`,
+      enableBody: (name: string) =>
+        `将为本 Project 启用 ${name} 的服务端模块。它随构建自带，不需要下载。`,
+      disableTitle: (name: string) => `停用 ${name} 的服务端模块`,
+      disableBody: (name: string) =>
+        `将为本 Project 停用 ${name} 的服务端模块；仍有其他 Project 启用它时，它继续运行。`,
+      installAgentTitle: (name: string) => `把 ${name} 安装到 Agent`,
+      machineFirst: "先在插件页为这台机器安装它",
+      installServer: "安装到服务端",
+      uninstallServer: "从服务端卸载",
+      enableModule: "启用服务端模块",
+      disableModule: "停用服务端模块",
+      /** A member's server control: held, saying why. */
+      adminOnly: "只有管理员能改动服务端",
+      installAgent: "安装到 Agent",
+      /** The Agent dialog's first line: how it relates to the server. */
+      notOnServerAdmin: "它还不在服务端：装到第一个 Agent 时会先安装到服务端，所有 Project 共用。",
+      notOnServerMember:
+        "它还不在服务端：点「安装」会请管理员把它安装到服务端，装好后你再把它装到 Agent。",
+      onServer: "从服务端卸载会同时从所有 Agent 卸载。",
+      /** Progress on the clicked control. */
+      installing: "安装中…",
+      fromOffline: "从离线包安装…",
+      loading: "加载模块…",
+      /** The server-uninstall confirm. */
+      uninstallTitle: (name: string) => `从服务端卸载 ${name}`,
+      uninstallBody: (name: string, agents: number) =>
+        agents === 0
+          ? `将从服务端卸载 ${name}。没有 Agent 装有它。`
+          : `将从服务端卸载 ${name}，并同时从 ${agents} 个 Agent 卸载。`,
+      uninstallCopies: "这些 Agent 上的副本会被删除，包括本地改动，以及 Workbench 的数据与历史。",
+      holdersLoading: "正在查找装有它的 Agent…",
+      moreAgents: (n: number) => `还有 ${n} 个 Agent`,
+      sharedRefused: (projects: string) =>
+        `${projects} 的插件表为所有机器列入了它：先在 Project 配置中移除，再从服务端卸载。`,
+      uninstalledToast: (name: string, agents: number) =>
+        agents === 0
+          ? `已从服务端卸载 ${name}`
+          : `已从服务端卸载 ${name}，并从 ${agents} 个 Agent 卸载`,
+      uninstalledPartly: (name: string, parts: string) =>
+        `已从服务端卸载 ${name}；以下部件未能删除：${parts}`,
+      /** A machine too old for the cascade: its Agents keep their copies. */
+      machineKeepsCopies: (machine: string) =>
+        `${machine} 的服务端版本较旧，那里的 Agent 保留了各自的副本。`,
+      /** The failure note under the card, with what to do next. */
+      failedNote: (reason: string) => `安装失败：${reason}`,
+      sourcesSettings: "插件源设置",
+      importFromFile: "从文件导入",
+      dismiss: "关闭",
+      /** What an install from the Agent dialog did, when the plugin was not on the server. */
+      requestedToast: (name: string) => `已请管理员把 ${name} 安装到服务端，装好后即可装到 Agent`,
+      offlineToast: (name: string) => `已从随构建携带的离线包安装 ${name}`,
+      loadingToast: (name: string) => `已安装 ${name}，它的服务端模块仍在启动`,
+      /** The administrator's request row for a package not on the server yet. */
+      requestNotOnServer: "尚未安装到服务端：先在插件页把它安装到服务端，再启用。",
+      openPlugins: "打开插件页",
+    },
+    moduleInstall: {
+      enabled: (said: string) => `${said}。它的服务端模块已启用。`,
+      requested: (said: string) => `${said}。它的服务端模块需要管理员启用，已发出请求。`,
+      blocked: (said: string) => `${said}。管理员已停用它的服务端模块。`,
+      failed: (said: string, reason: string) => `${said}。但它的服务端模块未能启动：${reason}`,
+      onMachine: (said: string, machine: string) =>
+        `${said}。它的服务端模块未在 ${machine} 上运行，可在插件页为该机器安装。`,
+    },
     repair: "用 AI 修复",
     repairTitle: (name: string) => `用 AI 修复 ${name}？`,
     repairBody: (name: string) =>
@@ -3490,7 +3602,7 @@ export const zh = {
     applyConfirmRemoveBody: (name: string) =>
       `将从服务端移除 ${name}；仍有其他 Project 使用它时会保留。`,
     applyConfirmWarning: (install: boolean) =>
-      `${install ? "安装" : "移除"}会重新装载服务器插件，所有 Project 中正在进行的 Agent 运行都会被中止。`,
+      `${install ? "安装" : "移除"}会重新装载服务器插件；正在运行的 Agent 不受影响。`,
     pageTitle: "插件",
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "机器",
@@ -3532,10 +3644,12 @@ export const zh = {
     status: {
       update: "可更新",
       installed: "已安装",
+      awaiting: "待启用",
       restart: "待重启",
       failed: "加载失败",
       "not-here": "不在本机",
       incompatible: "不兼容",
+      stopped: "已停用",
       available: "可安装",
     },
     /** What a status means for this plugin, on hover over its glyph. */
@@ -3549,6 +3663,8 @@ export const zh = {
       failed: (reason: string) => `加载失败：${reason}`,
       elsewhere: (machines: string) => `只在 ${machines} 上运行，本机不运行`,
       unsynced: "已安装，尚未同步到该机器",
+      awaiting: "等待管理员启用它的服务端模块",
+      stopped: "管理员已停用它的服务端模块",
       /** Appended to a library status counted with Agents on a machine out of reach. */
       lastSeenOn: (n: number) => `（含 ${n} 个在不可达机器上的 Agent，按上次看到）`,
     },
@@ -3558,7 +3674,7 @@ export const zh = {
     /** In place of the description of a package that carries none. */
     noDescription: "暂无描述",
     /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
-    libraryBuiltinHint: "随本次构建自带；安装到 Agent 即可在那里使用。",
+    libraryBuiltinHint: "随本次构建自带，不能从服务端卸载；安装到 Agent 即可在那里使用。",
     /** Plugin count in the group header (small text to the right of the category name). */
     pluginCount: (n: number): string => `${n} 个插件`,
     /** Search box of the create dialog's plugin picker. */
@@ -3617,7 +3733,7 @@ export const zh = {
     /** A folder or a file inside a repository on the link tab, and the action that hands it to the agent tab. */
     importLinkSubpath: "仓库内的文件夹或文件请用「Agent 安装」。",
     importLinkAskAgent: "改为让 Agent 安装",
-    importCost: "含服务端模块的插件会重新装载服务器插件，中止所有 Project 中正在运行的 Agent。",
+    importCost: "含服务端模块的插件会重新装载服务器插件；正在运行的 Agent 不受影响。",
     /** On the npm, link and zip tabs: what installing runs, said plainly. */
     importScriptsRun: "安装脚本将在服务器上运行，请确认来源可信。",
     importAgentWhy:
@@ -3786,6 +3902,47 @@ export const zh = {
     uninstallPartly: (plugin: string, failed: string) =>
       `${plugin} 已卸载，但这些部件没能删除：${failed}`,
     updatedToast: (plugin: string, agent: string) => `已在 ${agent} 上更新 ${plugin}`,
+    /**
+     * A plugin's server module on the Agent's server: the row's mark (it names the module) and the
+     * detail line's state word (the line is named after it), what each means on hover, the two
+     * actions, and the toasts of an ask.
+     */
+    module: {
+      title: "服务端模块",
+      mark: {
+        off: "服务端模块未启用",
+        awaiting: "服务端模块待启用",
+        stopped: "服务端模块已停用",
+        failed: "服务端模块加载失败",
+        restart: "服务端模块待重启",
+      },
+      state: {
+        running: "运行中",
+        off: "未启用",
+        awaiting: "等待管理员启用",
+        stopped: "已停用",
+        failed: "加载失败",
+        restart: "待重启",
+      },
+      hint: {
+        running: "已在这台服务端运行：它的命令与页面可用。",
+        off: "服务端模块未启用：它的命令与页面暂不可用。",
+        offOnMachine: "服务端模块未在这台机器上启用：在插件页为这台机器安装它。",
+        awaiting: "等待管理员启用服务端模块。",
+        stopped: "管理员已停用该插件的服务端模块。",
+        failed: (reason: string) => `服务端模块加载失败：${reason}`,
+        restart: "服务端模块已列入，服务端重启后运行。",
+      },
+      enable: "启用服务端模块",
+      request: "请求管理员启用",
+      asked: {
+        enabled: (name: string) => `已启用 ${name} 的服务端模块`,
+        requested: (name: string) => `已请求管理员启用 ${name} 的服务端模块`,
+        blocked: (name: string) => `管理员已停用 ${name} 的服务端模块`,
+        failed: (name: string, reason: string) => `${name} 的服务端模块未能启动：${reason}`,
+        onMachine: (name: string) => `${name} 的服务端模块需要在插件页为这台机器安装`,
+      },
+    },
     /** A plugin's detail: what of it is on this Agent, by kind, and where each kind is managed. */
     onAgentTitle: "在这个 Agent 上",
     partKinds: {

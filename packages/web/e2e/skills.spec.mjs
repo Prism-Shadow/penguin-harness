@@ -168,9 +168,9 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   await expect(sectionHeader).toHaveAttribute("aria-expanded", "true");
   await expect(section.locator("[inert]")).toHaveCount(0);
 
-  // —— Manage installation Modal: an Agent row + Install/Installed (clicking Installed uninstalls) ——
-  await page.getByRole("button", { name: "管理安装 data-analysis" }).click();
-  const dialog = page.locator("div").filter({ hasText: "管理安装：data-analysis" }).last();
+  // —— Install on Agent Modal: an Agent row + Install/Installed (clicking Installed uninstalls) ——
+  await page.getByRole("button", { name: "安装到 Agent data-analysis" }).click();
+  const dialog = page.getByRole("dialog").filter({ hasText: "安装到 Agent" });
   // default_agent (display name General Agent) has everything preinstalled -> "已安装"
   // ("Installed", whose accessible name is the uninstall action); agent_helper has nothing
   // installed -> "安装" ("Install").
