@@ -5,7 +5,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Auth } from "@prismshadow/penguin-library-auth";
 import { HttpError } from "../errors.js";
 import { readJson } from "../validate.js";
-import { mediaType } from "../media-type.js";
+import { mediaType } from "@prismshadow/penguin-library-http/media-type";
 
 export interface RemoteSessionResponse {
   cookieName: typeof SESSION_COOKIE;

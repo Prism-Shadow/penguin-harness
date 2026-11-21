@@ -532,7 +532,13 @@ export function DraftView({
   // The composer's switches the draft's Agent offers, and the ones on (prompt-modes.ts).
   const promptModes = usePromptModes(projectId, resolvedAgentId, workspaceMachine);
   const switches = useMemo<ComposerSwitches>(
-    () => ({ modes: promptModes, on: offered(promptHooks, promptModes), onChange: setPromptHooks }),
+    () => ({
+      modes: promptModes.modes,
+      on: offered(promptHooks, promptModes.modes),
+      onChange: setPromptHooks,
+      offers: promptModes.offers,
+      install: promptModes.install,
+    }),
     [promptModes, promptHooks],
   );
   useEffect(() => {

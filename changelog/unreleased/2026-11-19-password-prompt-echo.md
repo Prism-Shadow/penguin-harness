@@ -3,7 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** fix
 - **Scope:** `cli`
-- **PR:** [#1639](https://github.com/Prism-Shadow/penguin-harness/pull/1639)
+- **PR:** [#1643](https://github.com/Prism-Shadow/penguin-harness/pull/1643)
 
 [中文版](2026-11-19-password-prompt-echo.zh.md)
 

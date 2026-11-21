@@ -41,7 +41,7 @@ import {
 } from "../src/auth/middleware.js";
 import { Hono } from "hono";
 import { identityFrom } from "../src/terminal/identity.js";
-import { mediaType } from "../src/http/media-type.js";
+import { mediaType } from "@prismshadow/penguin-library-http/media-type";
 import { handleError } from "../src/http/errors.js";
 import { generateInitialAdminPassword } from "../src/auth/service.js";
 import {
