@@ -14,21 +14,21 @@ The repository's README section *Running a task (for agents)*, which the stateme
 | `SHA` | The full 40-character lowercase commit in the Task link; the run-rules link and checkout sentence name the same commit |
 | `TASK_PATH`, `TASK` | `-p <TASK_PATH>` and `-i <TASK>` of the launch |
 | `HARBOR_VERSION` | `harbor==<HARBOR_VERSION>` of the launch |
-| `AGENT` | `-a <AGENT>` of the launch: the adapter inside the repository's `agents/` |
+| `AGENT` | `-a <AGENT>` of the launch: the adapter import path. A shared adapter link identifies its separate checkout (§A.7); older Cases use the task repository's `agents/` |
 | `RUN_TIMEOUT`, `MAX_TURNS` | `--ak run_timeout=<RUN_TIMEOUT>` and `--ak max_turns=<MAX_TURNS>` of the launch: the per-trial soft timeout and turn cap |
 | The time-budget line | `--ak time_budget_note='<sentence>'`: present only where the benchmark's measured runs told the agent its time budget; the adapter puts the sentence before the task's instruction |
 | The host line | `--allow-agent-host <model provider API host>`: present only for a task whose agent phase has no network (§B.3) |
 | The overlay line | `--extra-docker-compose <overlay>`: present only where the repository allows the shared network (§A.9) |
 
-Require an explicit full commit for task sources: branch links such as `main`, tags and abbreviated hashes are `benchmark_invalid`. The Task link, run-rules link and checkout sentence must agree. Record the repository URL and commit with the evaluation, and pass that `SHA` to every worker. All cells and later evaluations of the same package use that checkout. This requirement applies to running tasks; the display package may be fetched from `main`.
+Require an explicit full commit for task sources: branch links such as `main`, tags and abbreviated hashes are `benchmark_invalid`. The Task link, run-rules link and checkout sentence must agree. Record the task repository and commit with the evaluation. When the statement also links the shared adapter, record that link and its own full 40-character lowercase commit. Workers use the same revisions. All cells and later evaluations of the same package use that checkout. This requirement applies to running tasks; the display package may be fetched from `main`.
 
 The Case id without its `CASE-NNN-` prefix must equal `TASK`; otherwise the Case is `benchmark_invalid`. A statement with both the host line and the overlay line is `benchmark_invalid` as well: the repository never allows the shared network for a task without network.
 
 ## A. The caller: shared setup once, then the cells
 
-The agent that fans out the cells performs steps 1–10 once, before its first `run_subagent` for the Benchmark, then runs the cells as "Running the cells" below says. A worker that finds no ready checkout does not race it: it takes the same lock, and either waits behind whoever holds it or, holding it, performs these steps itself. A checkout is named by the commit it holds and, once ready, is never changed or deleted, apart from the install bundle step 10 adds under its `bundles/` — cells of this evaluation and of any other read it at the same time.
+The agent that fans out the cells performs steps 1–10 once, before its first `run_subagent` for the Benchmark, then runs the cells as "Running the cells" below says. A worker that finds no ready checkout does not race it: it takes the same lock, and either waits behind whoever holds it or, holding it, performs these steps itself. A checkout is named by the commit it holds and, once ready, is never changed or deleted, apart from the install bundle step 10 adds to the adapter checkout — cells of this evaluation and of any other read it at the same time.
 
-1. **Tools.** Require `docker info` to reach a daemon as the current user, `docker compose version` to report v2, `uv --version` (it provides `uvx`), `tar`, `python3`, and `curl` or `git`. When one is missing the evaluation cannot run on this machine: a caller says which tool is missing and stops; a worker returns `evaluation_failed`.
+1. **Tools.** Require `docker info` to reach a daemon as the current user, `docker compose version` to report v2, `uv --version` (it provides `uvx`), `tar`, `python3`, and `curl` or `git` (a separate shared adapter requires `git`). When one is missing the evaluation cannot run on this machine: a caller says which tool is missing and stops; a worker returns `evaluation_failed`.
 2. **The checkout's place,** named by the pinned commit:
 
    ```bash
@@ -49,7 +49,15 @@ The agent that fans out the cells performs steps 1–10 once, before its first `
 
    For another host, or when the archive fails, start again from a fresh empty `$TMP` with git: `git -C "$TMP" init -q && git -C "$TMP" fetch -q --depth 1 "<REPO>" "$SHA" && git -C "$TMP" checkout -q FETCH_HEAD`. Then, inside `$TMP`, `uvx --from harbor==<HARBOR_VERSION> harbor --version` downloads and caches the pinned Harbor (nothing is installed globally). There is no setup step: the repository commits every task directory. Run Harbor and its Python only from inside a checkout, never from the home directory, where a stray Python file can shadow the standard library.
 6. **Publish,** in one rename: `touch "$TMP/.penguin-ready"`, then `[ -e "$CHECKOUT" ] || mv "$TMP" "$CHECKOUT"`, then `[ ! -e "$TMP" ] || rm -r "$TMP"` (nothing is left there unless another process published first) and `rmdir "$CHECKOUT.lock"`. When a step fails before this, remove `$TMP` and the lock: no checkout is ever seen half-made. Delete with `rm -r`, never `rm -rf`: PenguinHarness's default command policy holds any command that contains a recursive force delete, the whole command with it, until a person allows it, and an unattended Session refuses it.
-7. **The run rules.** Read the section *Running a task (for agents)* of `$CHECKOUT/README.md`: the text the statement links, at the same commit. The steps below and §B carry it out; follow it for anything this file does not cover. Use helper paths from that README and the overlay path from the Case's launch; the examples below use the `agents/` layout.
+7. **Run rules and adapter.** Read *Running a task (for agents)* in the data checkout's `README.md`. For a Case with a shared adapter, the statement links `https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/<adapter-commit>/agents`. Use that repository and its own full commit. Cache the adapter checkout at `$CHECKOUT_ROOT/adapters/$ADAPTER_SHA`, separately from full task checkouts. Create the parent directory and reuse the lock, ready marker and atomic publish in steps 3–6 for this destination. When preparing its empty temporary directory, fetch only the adapter files:
+
+   ```bash
+   git clone --filter=blob:none --sparse --no-checkout https://github.com/Prism-Shadow/penguin-harness-benchmark.git "$TMP"
+   git -C "$TMP" sparse-checkout set agents
+   git -C "$TMP" checkout --detach "$ADAPTER_SHA"
+   ```
+
+   Set `ADAPTER_CHECKOUT` to the published adapter checkout. For a Case without a shared adapter link, set `ADAPTER_CHECKOUT="$CHECKOUT"`. Export `ADAPTER_DIR="$ADAPTER_CHECKOUT/agents"`. Run Harbor from the data checkout, using the adapter's Python modules, helpers and optional Compose overlay from `ADAPTER_DIR`.
 8. **Images,** optional. Pre-pull the selected tasks' prebuilt images once with `docker pull <image>`, using `environment.docker_image` and `verifier.environment.docker_image` from their `task.toml` files under `$CHECKOUT/$TASK_PATH`. Skip fields that are absent; tasks without prebuilt images build their own.
 9. **The shared network,** only when the statement's launch has the overlay line. That Compose overlay puts a trial's main container on one existing bridge network, `penguin-bench`, instead of a network of its own, so these trials stop using up the host's Docker address pools. Create the network once per host as the run rules say, unless it exists:
 
@@ -62,10 +70,10 @@ The agent that fans out the cells performs steps 1–10 once, before its first `
 
     ```bash
     PENGUIN_VERSION="$(penguin version --json | python3 -I -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
-    BUNDLE="$CHECKOUT/bundles/penguin-cli-$PENGUIN_VERSION-node-24.18.0-linux-$(uname -m).tar.gz"
-    mkdir -p "$CHECKOUT/bundles"
+    BUNDLE="$ADAPTER_CHECKOUT/bundles/penguin-cli-$PENGUIN_VERSION-node-24.18.0-linux-$(uname -m).tar.gz"
+    mkdir -p "$ADAPTER_CHECKOUT/bundles"
     if [ -n "$PENGUIN_VERSION" ] && [ ! -f "$BUNDLE" ] && mkdir "$BUNDLE.lock" 2>/dev/null; then
-      (cd "$CHECKOUT" && agents/make_install_bundle.sh "$BUNDLE" "$PENGUIN_VERSION") || echo "bundle build failed: cells install from the network"
+      "$ADAPTER_DIR/make_install_bundle.sh" "$BUNDLE" "$PENGUIN_VERSION" || echo "bundle build failed: cells install from the network"
       rmdir "$BUNDLE.lock"
     fi
     ```
@@ -92,14 +100,14 @@ Then halve the limit, down to one, and put the cell first among the unstarted ce
 
 ## B. One cell: one Harbor trial
 
-Prepare as `SKILL.md` says — the request, the required files, `status`, the version check, the configured `thinking_level`, the Statement and Rubric snapshots, the Rubric total — but create no Workspace and copy nothing. Read the statement's values as "What the statement gives" says. Resolve `PROJECT_DIR`, `PROJECT_ID` and `PENGUIN_HOME` exactly as `SKILL.md`'s Run step does, and `CHECKOUT` as §A does; when `$CHECKOUT/.penguin-ready` is missing, go through §A from its lock step. Read the run rules (§A.7) unless this Session already has. Then:
+Prepare as `SKILL.md` says — the request, the required files, `status`, the version check, the configured `thinking_level`, the Statement and Rubric snapshots, the Rubric total — but create no Workspace and copy nothing. Read the statement's values as "What the statement gives" says. Resolve `PROJECT_DIR`, `PROJECT_ID` and `PENGUIN_HOME` exactly as `SKILL.md`'s Run step does, and `CHECKOUT` as §A does; when `$CHECKOUT/.penguin-ready` is missing, go through §A from its lock step. Resolve the adapter and export its absolute `ADAPTER_DIR` in this worker as in §A.7. Read the linked run rules unless this Session already has. Then:
 
 1. **The task.** Require `$CHECKOUT/$TASK_PATH/$TASK/task.toml`; otherwise return `benchmark_invalid`.
 2. **The thinking level.** The adapter takes `low`, `medium`, `high`, `xhigh` or `max`. A Test Agent configured with any other level cannot be evaluated here: return `evaluation_failed`.
 3. **The model's host,** only when the statement's launch has the host line. The agent of a task without network reaches its model only through Harbor's allowlist, so the line names the one host that model's requests go to. The repository's helper prints it for the requested model, from the same Project configuration the adapter copies:
 
    ```bash
-   HOST="$(cd "$CHECKOUT" && uvx --from harbor==<HARBOR_VERSION> python agents/agent_host.py \
+   HOST="$(cd "$CHECKOUT" && uvx --from harbor==<HARBOR_VERSION> python "$ADAPTER_DIR/agent_host.py" \
      --host-penguin-home "$PENGUIN_HOME" --host-project-id "$PROJECT_ID" -m "<provider>/<model_id>")"
    ```
 
@@ -122,7 +130,7 @@ Prepare as `SKILL.md` says — the request, the required files, `status`, the ve
 
    ```bash
    cd "$CHECKOUT"
-   export PYTHONPATH="$PWD/agents"
+   export PYTHONPATH="$ADAPTER_DIR"
    uvx --from harbor==<HARBOR_VERSION> harbor run -p <TASK_PATH> -i "$TASK" \
      -a <AGENT> -m "<provider>/<model_id>" \
      --ak thinking=<thinking_level> --ak penguin_version="$PENGUIN_VERSION" \

@@ -181,6 +181,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.activityDisplayMode",
+    scope: "browser",
+    why: "How this browser displays thinking and tool steps.",
+  },
+  {
+    kind: "exact",
     key: "penguin.toolAliases",
     scope: "browser",
     why: "Whether tool cards name the built-in tools by their short alias; a display choice of this browser, naming nothing on the server.",
@@ -202,6 +208,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.sidebarCollapsed",
     scope: "browser",
     why: "Whether the sidebar is a narrow rail; chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.sidebarWidth",
+    scope: "browser",
+    why: "How wide the sidebar was dragged, in px; the same chrome layout, holds no entity.",
   },
   {
     kind: "exact",

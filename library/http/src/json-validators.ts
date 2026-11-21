@@ -20,7 +20,7 @@
  */
 import { createHash } from "node:crypto";
 import type { MiddlewareHandler } from "hono";
-import type { AppEnv } from "../auth/middleware.js";
+import type { AppEnv } from "./app-env.js";
 import { isJsonAnswer, replaceAnswer } from "./json-answer.js";
 
 /** The weak ETag of one JSON answer: its content type and bytes, hashed. */

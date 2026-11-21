@@ -15,6 +15,7 @@ import {
   libraryPluginPackage,
   libraryPluginReadme,
   loadLibraryPlugins,
+  loadDefaultInstallPlugins,
   loadPluginGroups,
   loadPreinstalledPlugins,
 } from "@prismshadow/penguin-core";
@@ -39,6 +40,8 @@ export abstract class PluginLibrary {
   abstract get(name: string): LibraryPlugin | undefined;
   /** What default_agent gets at creation: every plugin whose card does not opt out. */
   abstract preinstalled(): LibraryPlugin[];
+  /** What every new Agent gets at creation: the plugins whose card sets `defaultInstall`. */
+  abstract defaultInstalled(): LibraryPlugin[];
   /** A plugin's README.md: undefined when the library has no such plugin, null when it ships none. */
   abstract readme(name: string): string | null | undefined;
   /** Where a plugin's package is on this machine, with its npm name and version (what an export zips). */
@@ -48,7 +51,7 @@ export abstract class PluginLibrary {
 }
 
 export interface PluginLibrarySlots {
-  /** The package's card: display name, descriptions, category, icon, preinstall, quick start. */
+  /** The package's card: display name, descriptions, category, icon, preinstall, default install, quick start. */
   cards: PluginCard;
   /** One Skill: the directory holding its SKILL.md. */
   skills: SkillContribution;
@@ -73,6 +76,9 @@ class DiskPluginLibrary implements PluginLibrary {
   }
   preinstalled(): LibraryPlugin[] {
     return loadPreinstalledPlugins();
+  }
+  defaultInstalled(): LibraryPlugin[] {
+    return loadDefaultInstallPlugins();
   }
   readme(name: string): string | null | undefined {
     return libraryPluginReadme(name);
