@@ -1,5 +1,14 @@
 // Text stays in this browser. EPUB and Word archives are read entry by entry in memory.
 const LIMIT = 32 * 1024 * 1024;
+
+/**
+ * A random id. `crypto.randomUUID` exists only in a secure context, and the app is often opened
+ * over plain HTTP from another computer on the network, where it is missing.
+ */
+export function newId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 const decoder = new TextDecoder();
 const chapterHeading =
   /^(?:#{1,3}\s+|第[零〇一二三四五六七八九十百千万\d]+[章节回卷篇部]|(?:chapter|part)\s+(?:\d+|[ivxlcdm]+)\b)/i;
@@ -174,5 +183,5 @@ export async function importBook(file) {
     book = { title, chapters: chaptersFromText(text, title) };
   } else throw new Error("format");
   if (!book.chapters.length) throw new Error("noText");
-  return { ...book, id: crypto.randomUUID(), imported: Date.now() };
+  return { ...book, id: newId(), imported: Date.now() };
 }

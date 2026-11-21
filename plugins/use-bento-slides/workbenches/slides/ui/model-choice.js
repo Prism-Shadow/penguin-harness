@@ -24,6 +24,8 @@ export function setupModelChoice({
   refreshTalk,
 }) {
   let defaultModel = null;
+  /** Whether the app has answered for the Project's default model (and so whether null means none). */
+  let defaultKnown = false;
   let startModel = null;
   let startPicking = false;
   let railControl;
@@ -34,20 +36,16 @@ export function setupModelChoice({
     const open = currentDeck();
     const talk = currentTalk();
     const busy = open?.choosingModel || open?.pendingModel || talk.status === "compacting";
+    // With no default model there is nothing for "Project default" to mean: ask for a choice.
+    const fallback = defaultKnown && defaultModel === null ? S.pickModel : S.defaultModel;
     railControl?.(
       open?.model ?? defaultModel,
-      S.defaultModel,
+      fallback,
       S.chooseModel,
       !open || Boolean(busy) || (talk.status !== null && talk.status !== "idle"),
       !!open?.choosingModel,
     );
-    startControl?.(
-      startModel ?? defaultModel,
-      S.defaultModel,
-      S.chooseModel,
-      startPicking,
-      startPicking,
-    );
+    startControl?.(startModel ?? defaultModel, fallback, S.chooseModel, startPicking, startPicking);
     $("send").disabled = Boolean(busy);
     $("rail-reset").disabled = Boolean(busy);
   }
@@ -130,6 +128,13 @@ export function setupModelChoice({
     draw();
   }
 
+  /**
+   * Whether a request would find no model: the app says the Project has no default model, and
+   * neither the deck's Session (`deck`, or null on the start page) nor the start page names one.
+   */
+  const needsModel = (deck) =>
+    defaultKnown && defaultModel === null && !(deck ? deck.model : startModel);
+
   /** The model chosen on the start page for the next new presentation: null for the Project default. */
   const startChoice = () => startModel;
   /** Once a presentation has opened on it, the start page goes back to the Project default. */
@@ -146,7 +151,9 @@ export function setupModelChoice({
       void loadSdk()
         .then((api) => api?.getChatModel?.())
         .then((model) => {
+          if (model === undefined) return;
           defaultModel = model;
+          defaultKnown = true;
           draw();
         })
         .catch(() => {
@@ -157,5 +164,12 @@ export function setupModelChoice({
       /* Plain static previews do not have the workbench UI runtime. */
     });
 
-  return { draw, readSessionModel, startChoice, clearStartChoice };
+  return {
+    draw,
+    readSessionModel,
+    startChoice,
+    clearStartChoice,
+    needsModel,
+    pick: (start) => void choose(start),
+  };
 }

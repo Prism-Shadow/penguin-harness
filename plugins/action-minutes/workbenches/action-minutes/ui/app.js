@@ -15,6 +15,7 @@ import {
   brief,
   today,
   displayDay,
+  confirmAction,
 } from "./desk-kit.js";
 import { followUp } from "./follow-up.js";
 let view = "follow";
@@ -36,7 +37,19 @@ desk(t("Action Minutes", "会议行动簿"), (minutes, { send, draw }) => {
     field(t("Meeting title", "会议名称"), input("title", { required: true })),
     field(t("Date", "会议日期"), input("day", { type: "date", required: true, value: today() })),
   );
-  if (!meeting) return [section(t("New meeting", "新建会议"), add)];
+  if (!meeting)
+    return [
+      section(
+        t("New meeting", "新建会议"),
+        hint(
+          t(
+            "Create a meeting, then record its decisions and action items. Open action items gather under Follow-up.",
+            "先建一场会议，再记下会上的决定和行动项。没做完的行动项会集中到「跟进」里。",
+          ),
+        ),
+        add,
+      ),
+    ];
   const openMeeting = (id) => {
     selected = id;
     view = "meeting";
@@ -169,8 +182,13 @@ desk(t("Action Minutes", "会议行动簿"), (minutes, { send, draw }) => {
     section(meeting.title, hint(displayDay(meeting.day))),
     node("div", { className: "columns" }, tasks, decisions),
     row(
-      button(t("Delete meeting", "删除会议"), () => {
-        if (confirm(t("Delete this meeting and its minutes?", "删除这场会议及其全部纪要？")))
+      button(t("Delete meeting", "删除会议"), async () => {
+        if (
+          await confirmAction(
+            t("Delete this meeting and its minutes?", "删除这场会议及其全部纪要？"),
+            t("Delete meeting", "删除会议"),
+          )
+        )
           void act({ type: "delete-meeting" });
       }),
     ),
