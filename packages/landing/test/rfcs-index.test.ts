@@ -16,16 +16,20 @@ import { MAX_AGE_MS, refreshRfcPrStatusCache } from "../scripts/rfcs/pr-status.m
 import {
   buildRfcIndex,
   buildRfcSearchRecords,
+  buildRfcTree,
   findRfcSearchMatchRanges,
   rfcBodyMarkdown,
   rfcEntries,
   rfcEntryShortTitle,
   rfcEntryTitle,
   rfcPagerFor,
+  rfcTree,
   searchRfcRecords,
   shortRfcNumber,
   shortRfcTitle,
 } from "../src/lib/rfcs";
+import type { RfcTreeNode } from "../src/lib/rfcs";
+import { rfcIndexMarkdown } from "../src/pages/rfcs";
 
 const DESIGN_PR = "https://github.com/Prism-Shadow/penguin-harness-design/pull/12";
 const UNMERGED_PR = "https://github.com/Prism-Shadow/penguin-harness-design/pull/279";
@@ -218,6 +222,23 @@ describe("buildRfcIndex", () => {
       "https://github.com/Prism-Shadow/penguin-harness/pull/1649",
     );
     expect(rfcEntries.find((e) => e.id === "PRFC-0025-module-pass")?.status).toBe("draft");
+  });
+
+  it("organizes all 24 RFCs into the Meta, Modules & Plugins, and Harness tree view without tables", () => {
+    expect(rfcTree.map((n) => n.label)).toEqual(["Meta", "Modules & Plugins", "Harness"]);
+    const collectIds = (nodes: readonly RfcTreeNode[]): string[] =>
+      nodes.flatMap((n) => [...(n.entry ? [n.entry.id] : []), ...collectIds(n.children ?? [])]);
+    const treeIds = collectIds(rfcTree);
+    expect(treeIds).toHaveLength(rfcEntries.length);
+    expect(new Set(treeIds)).toEqual(new Set(rfcEntries.map((e) => e.id)));
+    const customTree = buildRfcTree(rfcEntries);
+    expect(customTree).toHaveLength(3);
+    const md = rfcIndexMarkdown("en");
+    expect(md).toContain("- **Meta**");
+    expect(md).toContain("- **Modules & Plugins**");
+    expect(md).toContain("- **Harness**");
+    expect(md).toContain("([#1228](https://github.com/Prism-Shadow/penguin-harness/pull/1228))");
+    expect(md).not.toContain("| --- |");
   });
 
   it("merges the language pair into one entry and skips non-PRFC files", () => {

@@ -29,10 +29,11 @@ import {
   rfcEntryShortTitle,
   rfcPagerFor,
   rfcPrOfUrl,
+  rfcTree,
   searchRfcRecords,
   shortRfcNumber,
 } from "../lib/rfcs";
-import type { RfcStatus } from "../lib/rfcs";
+import type { RfcEntry, RfcStatus, RfcTreeNode } from "../lib/rfcs";
 import { S } from "../lib/strings";
 
 export function RfcSidebar({
@@ -131,7 +132,13 @@ export function RfcPager({ activeId }: { activeId: string }) {
   );
 }
 
-function RfcPrStatusIcon({ status }: { status: RfcStatus }) {
+function RfcPrStatusIcon({
+  status,
+  className = "inline-block shrink-0 translate-y-[3px]",
+}: {
+  status: RfcStatus;
+  className?: string;
+}) {
   const color =
     status === "merged"
       ? "text-purple-600 dark:text-purple-400"
@@ -143,11 +150,11 @@ function RfcPrStatusIcon({ status }: { status: RfcStatus }) {
   return (
     <svg
       viewBox="0 0 16 16"
-      width="16"
-      height="16"
+      width="15"
+      height="15"
       fill="currentColor"
       aria-label={status}
-      className={`inline-block shrink-0 translate-y-[3px] ${color}`}
+      className={`${className} ${color}`}
     >
       {status === "merged" ? (
         <path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z" />
@@ -159,6 +166,287 @@ function RfcPrStatusIcon({ status }: { status: RfcStatus }) {
         <path d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 14a2.25 2.25 0 1 1 0-4.5 2.25 2.25 0 0 1 0 4.5ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM14 7.5a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm0-4.25a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z" />
       )}
     </svg>
+  );
+}
+
+interface FlatTreeRow {
+  node: RfcTreeNode;
+  depth: number;
+  isFirstRoot: boolean;
+  continuingTracks: readonly boolean[];
+  parentContinues: boolean;
+  selfContinues: boolean;
+}
+
+function flattenRfcTree(roots: readonly RfcTreeNode[]): FlatTreeRow[] {
+  const rows: FlatTreeRow[] = [];
+  const visit = (
+    node: RfcTreeNode,
+    depth: number,
+    isFirstRoot: boolean,
+    rootIsLast: boolean,
+    continuingTracks: readonly boolean[],
+    parentContinues: boolean,
+  ) => {
+    const children = node.children ?? [];
+    const hasChildren = children.length > 0;
+    const selfContinues = hasChildren || (depth === 0 && !rootIsLast);
+    rows.push({
+      node,
+      depth,
+      isFirstRoot,
+      continuingTracks,
+      parentContinues,
+      selfContinues,
+    });
+    children.forEach((child, idx) => {
+      const childIsLast = idx === children.length - 1;
+      const trackContinues = !childIsLast || (depth === 0 && !rootIsLast);
+      const nextContinuing =
+        depth === 0 ? [] : [...continuingTracks, parentContinues];
+      visit(child, depth + 1, false, rootIsLast, nextContinuing, trackContinues);
+    });
+  };
+  roots.forEach((root, idx) => {
+    visit(root, 0, idx === 0, idx === roots.length - 1, [], false);
+  });
+  return rows;
+}
+
+function RfcPrBadge({
+  href,
+  number,
+  status,
+}: {
+  href: string;
+  number: number;
+  status: RfcStatus;
+}) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-xs text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+    >
+      <RfcPrStatusIcon status={status} className="shrink-0" />
+      <span>#{number}</span>
+    </a>
+  );
+}
+
+/** Git-graph style hierarchical view of all RFCs grouped under Meta, Modules & Plugins, and Harness. */
+export function RfcTreeView({ locale }: { locale: string }) {
+  const rows = useMemo(() => flattenRfcTree(rfcTree), []);
+  const LANE = 22;
+  const CY = 16;
+  const xOf = (d: number) => d * LANE + 10;
+
+  return (
+    <div
+      role="tree"
+      aria-label={S.rfcs.sectionAll}
+      className="my-4 rounded-xl border border-gray-200/80 bg-gray-50/40 px-4 py-3 dark:border-gray-800/80 dark:bg-gray-900/30"
+    >
+      {rows.map((row) => {
+        const { node, depth, isFirstRoot, continuingTracks, parentContinues, selfContinues } = row;
+        const cx = xOf(depth);
+        const px = depth > 0 ? xOf(depth - 1) : cx;
+        const railWidth = (depth + 1) * LANE + 6;
+        const entry = node.entry;
+        const doc = entry ? rfcDocForLocale(entry, locale) : undefined;
+        const shortTitle = entry ? rfcEntryShortTitle(entry, locale) : undefined;
+        const openRevPr = entry?.openRevision ? rfcPrOfUrl(entry.openRevision.href) : undefined;
+
+        return (
+          <div
+            key={node.key}
+            role="treeitem"
+            aria-level={depth + 1}
+            className="flex min-h-8 items-stretch"
+          >
+            <div className="relative shrink-0 self-stretch" style={{ width: `${railWidth}px` }}>
+              <svg
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full overflow-visible text-gray-300 dark:text-gray-700"
+              >
+                {depth === 0 && !isFirstRoot && (
+                  <line
+                    x1={cx}
+                    y1={0}
+                    x2={cx}
+                    y2={CY}
+                    stroke="currentColor"
+                    strokeWidth={1.75}
+                  />
+                )}
+                {continuingTracks.map((continues, d) =>
+                  continues ? (
+                    <line
+                      key={d}
+                      x1={xOf(d)}
+                      y1={0}
+                      x2={xOf(d)}
+                      y2="100%"
+                      stroke="currentColor"
+                      strokeWidth={1.75}
+                    />
+                  ) : null,
+                )}
+                {depth > 0 && parentContinues && (
+                  <line
+                    x1={px}
+                    y1={0}
+                    x2={px}
+                    y2="100%"
+                    stroke="currentColor"
+                    strokeWidth={1.75}
+                  />
+                )}
+                {depth > 0 && (
+                  <path
+                    d={`M ${px} 0 L ${px} 6 C ${px} 13, ${cx - 8} ${CY}, ${cx} ${CY}`}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.75}
+                    strokeLinecap="round"
+                  />
+                )}
+                {selfContinues && (
+                  <line
+                    x1={cx}
+                    y1={CY}
+                    x2={cx}
+                    y2="100%"
+                    stroke="currentColor"
+                    strokeWidth={1.75}
+                  />
+                )}
+                {!entry ? (
+                  depth === 0 ? (
+                    <>
+                      <circle
+                        cx={cx}
+                        cy={CY}
+                        r={5}
+                        className="fill-white stroke-gray-800 dark:fill-gray-950 dark:stroke-gray-200"
+                        strokeWidth={2}
+                      />
+                      <circle
+                        cx={cx}
+                        cy={CY}
+                        r={2}
+                        className="fill-gray-800 dark:fill-gray-200"
+                      />
+                    </>
+                  ) : (
+                    <circle
+                      cx={cx}
+                      cy={CY}
+                      r={4}
+                      className="fill-white stroke-gray-500 dark:fill-gray-950 dark:stroke-gray-400"
+                      strokeWidth={1.75}
+                    />
+                  )
+                ) : entry.status === "merged" ? (
+                  <circle
+                    cx={cx}
+                    cy={CY}
+                    r={4.5}
+                    className="fill-purple-600 stroke-white dark:fill-purple-400 dark:stroke-gray-950"
+                    strokeWidth={1.5}
+                  />
+                ) : entry.status === "open" ? (
+                  <circle
+                    cx={cx}
+                    cy={CY}
+                    r={4.5}
+                    className="fill-emerald-600 stroke-white dark:fill-emerald-400 dark:stroke-gray-950"
+                    strokeWidth={1.5}
+                  />
+                ) : (
+                  <circle
+                    cx={cx}
+                    cy={CY}
+                    r={4}
+                    className="fill-white stroke-gray-400 dark:fill-gray-950 dark:stroke-gray-500"
+                    strokeWidth={1.75}
+                  />
+                )}
+              </svg>
+            </div>
+
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1 py-1">
+              {!entry ? (
+                <span
+                  className={
+                    depth === 0
+                      ? "text-sm font-semibold text-gray-900 dark:text-gray-100"
+                      : "text-sm font-medium text-gray-700 dark:text-gray-300"
+                  }
+                >
+                  {node.label}
+                </span>
+              ) : (
+                <>
+                  {entry.status === "merged" && doc ? (
+                    <Link
+                      to={`/rfcs/${entry.id}`}
+                      className="group inline-flex items-baseline gap-2 text-sm"
+                    >
+                      <span className="font-mono text-xs text-gray-500 group-hover:text-brand-700 dark:text-gray-400 dark:group-hover:text-brand-300">
+                        {entry.number}
+                      </span>
+                      <span className="font-medium text-gray-900 group-hover:text-brand-700 dark:text-gray-100 dark:group-hover:text-brand-300">
+                        {shortTitle}
+                      </span>
+                    </Link>
+                  ) : entry.prHref ? (
+                    <a
+                      href={entry.prHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="group inline-flex items-baseline gap-2 text-sm"
+                    >
+                      <span className="font-mono text-xs text-gray-500 group-hover:text-brand-700 dark:text-gray-400 dark:group-hover:text-brand-300">
+                        {entry.number}
+                      </span>
+                      <span className="font-medium text-gray-800 group-hover:text-brand-700 dark:text-gray-200 dark:group-hover:text-brand-300">
+                        {shortTitle}
+                      </span>
+                    </a>
+                  ) : (
+                    <span className="inline-flex items-baseline gap-2 text-sm">
+                      <span className="font-mono text-xs text-gray-500 dark:text-gray-400">
+                        {entry.number}
+                      </span>
+                      <span className="font-medium text-gray-800 dark:text-gray-200">
+                        {shortTitle}
+                      </span>
+                    </span>
+                  )}
+
+                  {entry.prNumber && entry.prHref && (
+                    <RfcPrBadge
+                      href={entry.prHref}
+                      number={entry.prNumber}
+                      status={entry.status}
+                    />
+                  )}
+                  {openRevPr && openRevPr.number !== entry.prNumber && (
+                    <RfcPrBadge
+                      href={openRevPr.url}
+                      number={openRevPr.number}
+                      status={openRevPr.status}
+                    />
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -194,9 +482,9 @@ export function RfcMdLink({ href = "", children }: { href?: string; children?: R
   if (/^https?:\/\//.test(href)) {
     const pr = rfcPrOfUrl(href);
     const text = typeof children === "string" ? children : "";
-    if (pr && text.startsWith(`#${pr.number} `)) {
+    if (pr && (text === `#${pr.number}` || text.startsWith(`#${pr.number} `))) {
       return (
-        <span className="flex items-baseline gap-1.5">
+        <span className="inline-flex items-baseline gap-1">
           <RfcPrStatusIcon status={pr.status} />
           <a href={href} target="_blank" rel="noreferrer" className="min-w-0">
             {children}

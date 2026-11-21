@@ -11,68 +11,59 @@ import {
   SITE_DOC_REMARK_PLUGINS,
   SiteCopyButton,
   SiteMarkdown,
+  slugifyHeading,
   useActiveTocEntry,
   useSiteLocale,
 } from "@prismshadow/penguin-ui/site";
-import { RFC_MD_COMPONENTS, RfcShell } from "../components/rfc-sidebar";
+import { RFC_MD_COMPONENTS, RfcShell, RfcTreeView } from "../components/rfc-sidebar";
 import { useDocumentMeta } from "../lib/document-meta";
-import { REPO_URL } from "../lib/links";
 import {
   repositoryHref,
   rfcDocForLocale,
-  rfcEntries,
   rfcEntryShortTitle,
   rfcReadmeParts,
+  rfcTree,
 } from "../lib/rfcs";
-import type { RfcEntry, RfcStatus } from "../lib/rfcs";
+import type { RfcTreeNode } from "../lib/rfcs";
 import { S } from "../lib/strings";
 
-const statusLabel = (status: RfcStatus): string =>
-  status === "merged"
-    ? S.rfcs.statusMerged
-    : status === "open"
-      ? S.rfcs.statusOpen
-      : status === "draft"
-        ? S.rfcs.statusDraft
-        : S.rfcs.statusClosed;
+function formatTreeMarkdown(nodes: readonly RfcTreeNode[], locale: string, depth = 0): string[] {
+  const indent = "  ".repeat(depth);
+  const lines: string[] = [];
+  for (const node of nodes) {
+    if (!node.entry) {
+      lines.push(`${indent}- **${node.label}**`);
+    } else {
+      const entry = node.entry;
+      const doc = rfcDocForLocale(entry, locale);
+      const shortTitle = rfcEntryShortTitle(entry, locale);
+      const rfcLink =
+        entry.status === "merged" && doc
+          ? `[${entry.number}](/rfcs/${entry.id})`
+          : entry.prHref
+            ? `[${entry.number}](${entry.prHref})`
+            : entry.number;
+      const prBadge =
+        entry.prNumber && entry.prHref ? ` ([#${entry.prNumber}](${entry.prHref}))` : "";
+      lines.push(`${indent}- ${rfcLink} ${shortTitle}${prBadge}`);
+    }
+    if (node.children?.length) {
+      lines.push(...formatTreeMarkdown(node.children, locale, depth + 1));
+    }
+  }
+  return lines;
+}
 
-/** The index page's body as Markdown: README intro, the RFC table, the file table, and the README sections. */
+/** The index page's body as Markdown: README intro, the RFC tree, and the README sections. */
 export function rfcIndexMarkdown(locale: string): string {
   const { intro, tail } = rfcReadmeParts(locale);
-  const row = (entry: RfcEntry): string => {
-    const doc = rfcDocForLocale(entry, locale);
-    const shortTitle = rfcEntryShortTitle(entry, locale);
-    const rfcCell =
-      entry.status === "merged" && doc
-        ? `[${entry.number}](/rfcs/${entry.id})`
-        : entry.prHref
-          ? `[${entry.number}](${entry.prHref})`
-          : doc
-            ? `[${entry.number}](${doc.href})`
-            : entry.number;
-    const prCell =
-      entry.prNumber && entry.prTitle && entry.prHref
-        ? `[#${entry.prNumber} ${entry.prTitle.replace(/\|/g, "\\|")}](${entry.prHref})`
-        : entry.prHref
-          ? `[${entry.prHref}](${entry.prHref})`
-          : statusLabel(entry.status);
-    return `| ${rfcCell} | ${shortTitle} | ${prCell} |`;
-  };
   const lines = [
     ...(intro ? [intro, ""] : []),
     `## ${S.rfcs.sectionAll}`,
     "",
-    `| ${S.rfcs.colRfc} | ${S.rfcs.colTitle} | ${S.rfcs.colStatus} |`,
-    "| --- | --- | --- |",
-    ...rfcEntries.map(row),
+    ...formatTreeMarkdown(rfcTree, locale),
     "",
     ...S.rfcs.notes.map((note) => `- ${note}`),
-    "",
-    `| ${S.rfcs.colFile} | ${S.rfcs.colContent} |`,
-    "| --- | --- |",
-    ...S.rfcs.files.map((f) => `| [\`${f.file}\`](${REPO_URL}/${f.path}) | ${f.content} |`),
-    "",
-    `- ${S.rfcs.bilingualNote}`,
     ...(tail ? ["", tail] : []),
     "",
   ];
@@ -82,11 +73,17 @@ export function rfcIndexMarkdown(locale: string): string {
 export function RfcsPage() {
   const { locale } = useSiteLocale();
   useDocumentMeta(`${S.rfcs.title} | ${S.siteName}`, S.rfcs.description);
+  const { intro, tail } = useMemo(() => rfcReadmeParts(locale), [locale]);
   const body = useMemo(() => rfcIndexMarkdown(locale), [locale]);
+  const postTreeMarkdown = useMemo(
+    () => [...S.rfcs.notes.map((note) => `- ${note}`), ...(tail ? ["", tail] : [])].join("\n"),
+    [tail],
+  );
   const copyText = `# ${S.rfcs.title}\n\n${S.rfcs.description}\n\n${body}`;
   const toc = useMemo(() => extractToc(body), [body]);
   const { activeId, pinTo } = useActiveTocEntry(toc);
   const readmeFile = locale === "zh" ? "README.zh.md" : "README.md";
+  const allSectionId = slugifyHeading(S.rfcs.sectionAll);
 
   return (
     <RfcShell
@@ -114,14 +111,34 @@ export function RfcsPage() {
           {S.rfcs.description}
         </p>
       </header>
+      {intro && (
+        <SiteMarkdown
+          variant="doc"
+          className="mt-6"
+          remarkPlugins={SITE_DOC_REMARK_PLUGINS}
+          components={RFC_MD_COMPONENTS}
+          highlight={highlightSiteCode}
+        >
+          {intro}
+        </SiteMarkdown>
+      )}
+      <section className="mt-8">
+        <h2
+          id={allSectionId}
+          className="scroll-mt-24 text-xl font-semibold tracking-tight text-gray-900 dark:text-gray-100"
+        >
+          {S.rfcs.sectionAll}
+        </h2>
+        <RfcTreeView locale={locale} />
+      </section>
       <SiteMarkdown
         variant="doc"
-        className="mt-6 [--md-table-prose-min:14rem]"
+        className="mt-4"
         remarkPlugins={SITE_DOC_REMARK_PLUGINS}
         components={RFC_MD_COMPONENTS}
         highlight={highlightSiteCode}
       >
-        {body}
+        {postTreeMarkdown}
       </SiteMarkdown>
     </RfcShell>
   );

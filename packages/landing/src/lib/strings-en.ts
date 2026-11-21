@@ -654,9 +654,8 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     /** The row's link to the open design PR carrying a revision newer than the merged version. */
     openRevision: "unmerged revision",
     notes: [
-      "**Pull Request**: Lists the `request-for-comments` PR carrying each RFC (`[icon] #number title` with GitHub's `Merged`, `Open`, `Draft`, or `Closed` status icon); merged RFCs in `rfcs/` link to their in-site page in the first column.",
-      "**Unmerged RFCs**: A proposed RFC is an `Open` or `Draft` PR and a withdrawn RFC is a `Closed` PR; each lands in `rfcs/` when its PR merges.",
-      "**Single index**: The table above is generated from `rfcs/` and `request-for-comments` PR statuses at build time.",
+      "**Pull Request**: Each entry shows the `request-for-comments` PR carrying it (`[icon] #PR-number` with GitHub's `Merged`, `Open`, or `Draft` status icon); merged RFCs in `rfcs/` link to their in-site page.",
+      "**Single index**: The tree above is generated from `rfcs/` and `request-for-comments` PR statuses at build time.",
     ],
     colFile: "File",
     colContent: "Holds",

@@ -81,6 +81,13 @@ export interface RfcPagerItem {
   title: string;
 }
 
+export interface RfcTreeNode {
+  key: string;
+  label?: string;
+  entry?: RfcEntry;
+  children?: RfcTreeNode[];
+}
+
 export interface RfcSearchRecord {
   href: string;
   anchor: string;
@@ -307,6 +314,134 @@ export function rfcPrOfUrl(url: string): RfcPrRecord | undefined {
 
 /** The index the RFC pages render: every document pair and RFC PR, sorted by number. */
 export const rfcEntries = buildRfcIndex(documents, rfcPrRecords);
+
+interface RfcTreeSpec {
+  key: string;
+  label?: string;
+  rfcId?: string;
+  children?: RfcTreeSpec[];
+}
+
+const RFC_TREE_SPEC: readonly RfcTreeSpec[] = [
+  {
+    key: "meta",
+    label: "Meta",
+    children: [{ key: "PRFC-0022-rfc-invariant", rfcId: "PRFC-0022-rfc-invariant" }],
+  },
+  {
+    key: "modules-and-plugins",
+    label: "Modules & Plugins",
+    children: [
+      {
+        key: "PRFC-0001-module",
+        rfcId: "PRFC-0001-module",
+        children: [
+          { key: "PRFC-0010-ui-modules", rfcId: "PRFC-0010-ui-modules" },
+          { key: "PRFC-0024-cli-modules", rfcId: "PRFC-0024-cli-modules" },
+          { key: "PRFC-0025-module-pass", rfcId: "PRFC-0025-module-pass" },
+        ],
+      },
+      {
+        key: "PRFC-0003-plugin",
+        rfcId: "PRFC-0003-plugin",
+        children: [
+          { key: "PRFC-0004-plugin-scope", rfcId: "PRFC-0004-plugin-scope" },
+          { key: "PRFC-0005-plugin-versioning", rfcId: "PRFC-0005-plugin-versioning" },
+          { key: "PRFC-0006-plugin-distribution", rfcId: "PRFC-0006-plugin-distribution" },
+          { key: "PRFC-0012-chat-bots", rfcId: "PRFC-0012-chat-bots" },
+        ],
+      },
+    ],
+  },
+  {
+    key: "harness",
+    label: "Harness",
+    children: [
+      {
+        key: "observability",
+        label: "Observability",
+        children: [{ key: "PRFC-0008-telemetry", rfcId: "PRFC-0008-telemetry" }],
+      },
+      {
+        key: "agent",
+        label: "Agent",
+        children: [
+          { key: "PRFC-0009-sandbox", rfcId: "PRFC-0009-sandbox" },
+          { key: "PRFC-0015-agent-state", rfcId: "PRFC-0015-agent-state" },
+          {
+            key: "PRFC-0014-workflow",
+            rfcId: "PRFC-0014-workflow",
+            children: [
+              { key: "PRFC-0020-agent-workbench", rfcId: "PRFC-0020-agent-workbench" },
+            ],
+          },
+          { key: "PRFC-0017-session-surface", rfcId: "PRFC-0017-session-surface" },
+          { key: "PRFC-0018-amsp", rfcId: "PRFC-0018-amsp" },
+          { key: "PRFC-0019-rsi-toolkits", rfcId: "PRFC-0019-rsi-toolkits" },
+          { key: "PRFC-0016-company-proposals", rfcId: "PRFC-0016-company-proposals" },
+        ],
+      },
+      {
+        key: "runtime",
+        label: "Runtime",
+        children: [
+          { key: "PRFC-0002-hmr", rfcId: "PRFC-0002-hmr" },
+          { key: "PRFC-0007-schema-migrations", rfcId: "PRFC-0007-schema-migrations" },
+          { key: "PRFC-0011-single-socket", rfcId: "PRFC-0011-single-socket" },
+        ],
+      },
+      {
+        key: "distribution",
+        label: "Distribution",
+        children: [
+          {
+            key: "PRFC-0021-distros",
+            rfcId: "PRFC-0021-distros",
+            children: [{ key: "PRFC-0023-harness-meta", rfcId: "PRFC-0023-harness-meta" }],
+          },
+        ],
+      },
+    ],
+  },
+];
+
+/** Build the hierarchical RFC tree (Meta, Modules & Plugins, Harness) from an entry list. */
+export function buildRfcTree(entries: readonly RfcEntry[] = rfcEntries): RfcTreeNode[] {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const placed = new Set<string>();
+
+  const buildNode = (spec: RfcTreeSpec): RfcTreeNode | null => {
+    const entry = spec.rfcId ? byId.get(spec.rfcId) : undefined;
+    if (spec.rfcId && !entry) return null;
+    if (entry) placed.add(entry.id);
+    const children = (spec.children ?? [])
+      .map(buildNode)
+      .filter((child): child is RfcTreeNode => child !== null);
+    if (!entry && children.length === 0) return null;
+    return {
+      key: spec.key,
+      ...(spec.label ? { label: spec.label } : {}),
+      ...(entry ? { entry } : {}),
+      ...(children.length > 0 ? { children } : {}),
+    };
+  };
+
+  const tree = RFC_TREE_SPEC.map(buildNode).filter((node): node is RfcTreeNode => node !== null);
+  const unplaced = entries.filter((entry) => !placed.has(entry.id));
+  if (unplaced.length > 0) {
+    const harness = tree.find((node) => node.key === "harness");
+    const extraNodes = unplaced.map((entry) => ({ key: entry.id, entry }));
+    if (harness) {
+      harness.children = [...(harness.children ?? []), ...extraNodes];
+    } else {
+      tree.push({ key: "harness", label: "Harness", children: extraNodes });
+    }
+  }
+  return tree;
+}
+
+/** The hierarchical RFC tree rendered on the `/rfcs` index page. */
+export const rfcTree = buildRfcTree(rfcEntries);
 
 /** Find an RFC entry by its route id (with or without the `.zh` suffix). */
 export function rfcEntryOf(id: string): RfcEntry | undefined {

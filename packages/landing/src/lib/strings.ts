@@ -651,9 +651,8 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     /** The row's link to the open design PR carrying a revision newer than the merged version. */
     openRevision: "未合并修订",
     notes: [
-      "**Pull Request**：列出承载每篇 RFC 的 `request-for-comments` PR（图标对应 GitHub PR 的 `Merged`、`Open`、`Draft`、`Closed` 状态，后接 `#编号 标题`）；已合入主仓 `rfcs/` 的文档在第一列链向站内正文。",
-      "**未合入的 RFC**：提议中的 RFC 是 `Open` 或 `Draft` 状态的 PR，撤回的 RFC 是 `Closed` 状态的 PR；合入后随各自的 PR 落入 `rfcs/`。",
-      "**唯一索引**：上表由 `rfcs/` 目录与 `request-for-comments` PR 状态在构建期自动生成。",
+      "**Pull Request**：每篇 RFC 后附承载它的 `request-for-comments` PR（图标对应 GitHub PR 的 `Merged`、`Open`、`Draft` 状态，后接 `#PR-number`）；已合入主仓 `rfcs/` 的文档点击标题进入站内正文。",
+      "**唯一索引**：上方树图由 `rfcs/` 目录与 `request-for-comments` PR 状态在构建期自动生成。",
     ],
     colFile: "文件",
     colContent: "内容",
