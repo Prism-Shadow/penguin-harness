@@ -626,13 +626,18 @@ export class WorkbenchService implements Workbenches {
     workbenchId: string,
     rel: string,
   ): Promise<WorkbenchUiRuntimeFile | null> {
-    if (!isWorkbenchId(workbenchId)) return null;
+    if (!(await this.exists(projectId, agentId, workbenchId))) return null;
+    return (await this.runtime()?.file(rel)) ?? null;
+  }
+
+  async exists(projectId: string, agentId: string, workbenchId: string): Promise<boolean> {
+    if (!isWorkbenchId(workbenchId)) return false;
     await this.migrate(projectId, agentId);
     const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
     // A folder without package.json is not a workbench (./store.ts).
-    if (!(await isFile(path.join(dir, "package.json")))) return null;
+    if (!(await isFile(path.join(dir, "package.json")))) return false;
     await this.refuseIfOff(projectId, agentId, workbenchId, dir);
-    return (await this.runtime()?.file(rel)) ?? null;
+    return true;
   }
 
   async iconSvg(
