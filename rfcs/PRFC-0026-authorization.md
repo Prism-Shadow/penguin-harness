@@ -81,15 +81,45 @@ Each Agent session binds a role identifier and a current grant (`AgentAuthGrant`
 
 ### HTTP route contribution shape and `endpointOf`
 
-The data shape for the `HttpModule.routes` slot contains five fields:
+The data shape for the `HttpModule.routes` slot contains the following fields:
 
 - `id: string` — the unique identifier of the route or route group, named by `<domain>.<action>` or `<domain>.<subdomain>.<action>` (for example `session.list`, `workspace.readFile`, `command.run`, `model.updateConfig`, `vault.set`, `org.ticket.start`).
 - `method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"` — an optional single-method constraint. When present, the host mounts the handler only for that HTTP method and path; when omitted, the host mounts the sub-router for the prefix and resolves each endpoint's fine-grained route `id` from `(groupId, method, subPath)`.
 - `prefix: string` — the path pattern mounted on the HTTP application.
 - `auth: "user" | "token" | "none"` — the authentication gate for the route (`"user"` accepts a human session, the local API token, or an authorized Agent session; `"token"` accepts only the local API token; `"none"` is public).
 - `order: number` — the mount order on the HTTP application.
+- `endpoints?: Readonly<Record<string, string>>` — an optional sub-route map (`"METHOD /subpath"` -> fine-grained route `id`) for multi-endpoint Hono route groups, allowing modules and plugins to register fine-grained endpoint IDs directly in their route contribution.
+- `roles?: readonly string[]` — an optional list of role bindings (supporting `<roleId>@<refinerId>`, such as `["readonly"]` or `["myPlugin.maintain", "general@self"]`) that grants this route (and any sub-routes in `endpoints`) directly to the named role nodes.
 
 When a component defines several endpoints on one `Hono` group, `endpointOf(group, method, subPath)` builds a single-route `Hono` wrapper that preserves the group's middleware and error handler while dispatching only the declared method and path. This keeps related handlers in one component while giving every endpoint its own route `id` in the manifest.
+
+### Extensible Role Registry (`RoleRegistry`) and `HttpModule.roles` slot
+
+The role tree is managed by an extensible `RoleRegistry`. Core modules and external plugins contribute `RoleContribution` entries to the `HttpModule.roles` (or `AgentAuthPermissionProvider.roles`) slot to define new role nodes or extend existing roles additively without editing a central static table:
+
+```ts
+@Component({
+  contributes: {
+    "HttpModule.roles": [
+      {
+        id: "myPlugin.read",
+        routes: ["myPlugin.items.list"],
+        parents: ["readonly"],
+      },
+      {
+        id: "myPlugin.maintain",
+        children: ["myPlugin.read"],
+        routes: ["myPlugin.items.update"],
+        parents: ["general@self", "system-maintainer"],
+      },
+    ],
+  },
+})
+```
+
+- `role?: string` — the target role ID, defaulting to the contribution entry's `id`. When multiple modules extend the same existing role (such as `"readonly"`), each keeps a globally unique contribution `id` while targeting the shared role via `role`.
+- `children?: readonly string[]`, `routes?: readonly string[]`, `flags?: RoleFlags` — merged by set union into the target role node, supporting dotted route wildcards such as `myPlugin.*` and `agents.messaging.*.get`.
+- `parents?: readonly string[]` — attaches the target role into each named parent role's `children` (supporting an optional `@<refinerId>` suffix on the parent entry, for example `"general@self"`, which injects `<role>@self` into `general`).
 
 ### Declarative Role Tree (`ROLE_TREE`) and permission scopes
 
@@ -218,8 +248,7 @@ Business CLI subcommands (including `penguin config model`, `penguin config vaul
 ## Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-- How HTTP routes contributed by third-party plugins declare which non-admin Agent roles may call them.
-- Whether `apiIds` allowlists should support dotted prefix wildcards such as `penguin.session.*`.
+- None at this time.
 
 ## Future possibilities
 [future-possibilities]: #future-possibilities

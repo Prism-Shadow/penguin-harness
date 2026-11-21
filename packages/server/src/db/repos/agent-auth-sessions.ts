@@ -8,7 +8,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
 import {
-  isAgentAuthRole,
+  DEFAULT_AGENT_AUTH_ROLE,
   parseRefinedGrant,
   type AgentAuthRole,
 } from "../../auth/agent-roles.js";
@@ -183,14 +183,12 @@ export class AgentAuthSessionsRepo implements AgentAuthSessions {
       .run(at);
   }
 
-  /** A role the table names that this build knows (including `<role>@<refinerId>`); unknown ones fall back to `general`. */
+  /** Normalizes a stored or requested role identifier (preserving `<role>@<refinerId>`); empty strings fall back to `general`. */
   private coerceRole(role: string): AgentAuthRole {
     const parsed = parseRefinedGrant(role);
-    if (isAgentAuthRole(parsed.target)) {
-      return (
-        parsed.refinerId !== null ? `${parsed.target}@${parsed.refinerId}` : parsed.target
-      ) as AgentAuthRole;
+    if (parsed.target !== "") {
+      return parsed.refinerId !== null ? `${parsed.target}@${parsed.refinerId}` : parsed.target;
     }
-    return "general";
+    return DEFAULT_AGENT_AUTH_ROLE;
   }
 }

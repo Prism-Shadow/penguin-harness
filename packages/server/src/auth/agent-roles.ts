@@ -1,793 +1,747 @@
 /**
- * Agent auth role presets and HTTP route ID bindings.
+ * Extensible Agent authorization role registry (`RoleRegistry`), declarative role tree
+ * (`ROLE_TREE`), and fine-grained HTTP route catalog (`ALL_HTTP_ROUTE_IDS`).
  *
- * Every `auth: "user"` HTTP endpoint on the server has a fine-grained route ID
- * (`<domain>.<action>` or `<domain>.<subresource>.<action>`). Roles form a directed
- * acyclic tree bind (`ROLE_TREE`):
- * - Domain roles follow a 3-tier ladder (`<domain>.read` -> `<domain>.maintain` -> `<domain>.all`),
- *   where each tier binds its lower tier as a child role and adds only the routes introduced at
- *   that tier.
- * - Composite persona roles (`none`, `readonly`, `general`, `system-maintainer`, `admin`,
- *   `full-permissions`) bind domain role nodes in the same tree.
- * - Extra grants (`apiIds` on a generation row) may name either a role node in `ROLE_TREE`
- *   (expanding its entire subtree) or a single leaf HTTP route ID.
+ * Built-in server domains are organized into 20 domain triples (`<domain>.read`,
+ * `<domain>.maintain`, `<domain>.all`) and 6 composite persona roles (`none`, `readonly`,
+ * `general`, `system-maintainer`, `admin`, `full-permissions`). External modules and plugins
+ * extend the role tree and route catalog without modifying this file by contributing:
+ * - `"HttpModule.roles"` (or `"AgentAuthPermissionProvider.roles"`): defines new role nodes,
+ *   merges additional `routes` / `children` / `flags` into existing roles (via `role`), or
+ *   grafts new roles into parent roles such as `readonly`, `general@self`, or `system-maintainer`
+ *   (via `parents`).
+ * - `"HttpModule.routes"`: declares optional `endpoints` (`"METHOD /subpath"` -> fine-grained
+ *   route ID) for multi-endpoint Hono groups and optional `roles` (e.g. `["readonly"]` or
+ *   `["myPlugin.maintain", "general@self"]`) to bind routes directly into role nodes.
  */
 
-/** Single-method `"HttpModule.routes"` entry IDs (`command.ts`, `history.ts`, `history-lines.ts`, `sessions.ts`). */
-export const DIRECT_HTTP_ROUTE_IDS = [
-  "command.list",
-  "command.run",
-  "session.getHistory",
-  "session.getHistoryLines",
-  "session.getTraceBody",
-  "session.list",
+const BUILTIN_DIRECT_HTTP_ROUTE_IDS = [
+  "admin.pluginConfig.action",
+  "admin.pluginConfig.get",
+  "admin.pluginConfig.update",
+  "admin.settings.get",
+  "admin.settings.listProxyProbes",
+  "admin.settings.runProxyProbe",
+  "admin.settings.update",
+  "admin.users.create",
+  "admin.users.delete",
+  "admin.users.list",
+  "admin.users.setPassword",
+  "agentDeletions.get",
+  "agents.messaging.feishu.get",
+  "agents.messaging.feishu.update",
+  "agents.messaging.qq.get",
+  "agents.messaging.qq.update",
+  "agents.messaging.telegram.get",
+  "agents.messaging.telegram.update",
+  "agents.messaging.wechat.get",
+  "agents.messaging.wechat.scanPoll",
+  "agents.messaging.wechat.scanStart",
+  "agents.messaging.wechat.update",
+  "auth.login",
+  "auth.logout",
+  "command.exec",
+  "desktop.Current",
+  "desktop.pickDirectory",
+  "desktop.privacy.open",
+  "desktop.status",
+  "desktop.update.check",
+  "desktop.update.download",
+  "desktop.update.install",
+  "desktop.window.action",
+  "health",
+  "me.get",
+  "me.updateAvatar",
+  "me.updateDisplayName",
+  "me.updatePassword",
+  "messaging.listAccountHolders",
+  "messaging.listAccounts",
+  "modelRegistry.get",
+  "oauth.anthropic.authorize",
+  "oauth.anthropic.callback",
+  "oauth.anthropic.disconnect",
+  "oauth.codex.authorize",
+  "oauth.codex.callback",
+  "oauth.codex.complete",
+  "oauth.codex.disconnect",
+  "projects.create",
+  "projects.delete",
+  "projects.list",
+  "session.archive",
   "session.create",
-  "session.listBatch",
-  "session.archiveWorkspace",
-  "workspace.listFiles",
-  "workspace.readFile",
-  "workspace.writeFile",
-  "workspace.deleteFile",
-  "workspace.createFile",
-  "workspace.moveFile",
-  "workspace.searchFiles",
-  "workspace.revealFile",
-  "session.get",
-  "session.update",
-  "session.fork",
   "session.delete",
-  "session.getScratchpadFile",
-  "session.getTraceImage",
-  "session.getMessages",
-  "session.getAmsp",
-  "session.listApprovals",
-  "session.stream",
+  "session.export",
+  "session.forward",
+  "session.get",
+  "session.history",
+  "session.list",
+  "session.rename",
   "session.runTask",
   "session.steer",
-  "session.deleteSteer",
-  "session.messageSubagent",
-  "session.abortSubagent",
-  "session.deleteFollowUp",
-  "session.interrupt",
-  "session.getGoal",
-  "session.resolveApproval",
-  "session.backgroundToolCall",
-  "session.abort",
-  "session.listProcesses",
-  "session.killProcess",
-  "session.deleteProcess",
-  "session.retryNow",
-  "session.retry",
-  "session.compact",
-  "session.switchModel",
-  "session.listFiles",
-  "session.readFile",
-  "session.writeFile",
-  "session.deleteFile",
-  "session.createFile",
-  "session.moveFile",
-  "session.searchFiles",
-  "session.revealFile",
-  "session.previewFileRedirect",
-  "session.statFiles",
-  "session.getContext",
-  "session.listTraces",
-  "session.getTrace",
-  "session.getTraceAnalysis",
-  "session.listArchivedGroups",
-  "session.listArchived",
+  "session.stop",
+  "session.stream",
+  "session.truncate",
   "session.unarchive",
-  "session.deleteArchived",
+  "session.updateModel",
+  "session.updateSandbox",
+  "session.updateThinkingLevel",
+  "session.uploadAttachments",
+  "session.uploadImages",
+  "setup.complete",
+  "setup.status",
+  "skills.global.list",
+  "System.Config",
+  "usage.daily",
+  "usage.get",
+  "usage.stats",
 ] as const;
 
-/**
- * Fine-grained route IDs for multi-route `"HttpModule.routes"` groups, keyed by
- * `"<groupId> <METHOD> <subPath>"`.
- */
-export const HTTP_GROUP_ENDPOINT_IDS = {
-  // Agent lifecycle & config
-  "sessions.agents GET /": "agent.list",
-  "sessions.agents POST /": "agent.create",
-  "sessions.agents DELETE /:agentId": "agent.delete",
-  "sessions.agents GET /:agentId/auth": "agent.auth.get",
-  "sessions.agents PUT /:agentId/auth": "agent.auth.update",
-  "sessions.agent-deletions GET /:deletionId": "agent.getDeletion",
-  "sessions.agent-config GET /": "agent.config.get",
-  "sessions.agent-config PUT /": "agent.config.update",
-  "sessions.agent-config POST /mcp-test": "agent.config.mcpTest",
-  "sessions.agent-config POST /kernel-update": "agent.config.kernelUpdate",
-  "sessions.agent-config POST /reset": "agent.config.reset",
-  "agents.avatar GET /": "agent.avatar.get",
-  "agents.avatar PUT /": "agent.avatar.update",
-  "agents.archive GET /:agentId/archive": "agent.archive.export",
-  "agents.archive POST /import": "agent.archive.import",
-  "agents.api GET /": "agent.api.get",
-  "agents.api PUT /": "agent.api.update",
-  "agents.api POST /keys": "agent.api.createKey",
-  "agents.api DELETE /keys/:keyId": "agent.api.deleteKey",
-  "amsp.try POST /": "agent.api.try",
-
-  // Memory
-  "agents.memory GET /": "memory.get",
-  "agents.memory POST /template-placeholder": "memory.templatePlaceholder",
-  "agents.memory GET /scopes/:scopeKey/files": "memory.listFiles",
-  "agents.memory GET /scopes/:scopeKey/files/:filePath{.+}": "memory.readFile",
-  "agents.memory GET /scopes/:scopeKey/export": "memory.export",
-  "agents.memory POST /scopes/:scopeKey/import": "memory.import",
-  "agents.memory DELETE /scopes/:scopeKey/files/:filePath{.+}": "memory.deleteFile",
-
-  // Schedules
-  "schedules GET /": "schedule.list",
-  "schedules POST /": "schedule.create",
-  "schedules POST /template-placeholder": "schedule.templatePlaceholder",
-  "schedules GET /:name": "schedule.get",
-  "schedules PUT /:name": "schedule.update",
-  "schedules DELETE /:name": "schedule.delete",
-  "schedules.project-routes GET /": "schedule.listProject",
-
-  // Skills
-  "agents.skills GET /": "skill.list",
-  "agents.skills POST /template-placeholder": "skill.templatePlaceholder",
-  "agents.skills POST /archive": "skill.importArchive",
-  "agents.skills GET /:name/archive": "skill.exportArchive",
-  "agents.skills GET /:name/icon": "skill.getIcon",
-  "agents.skills DELETE /:name": "skill.delete",
-  "projects.dir-skills GET /": "skill.listDir",
-  "projects.dir-skills GET /icon": "skill.getDirIcon",
-
-  // Plugins, hooks & MCP servers
-  "plugins.library GET /": "plugin.library.list",
-  "plugins.library GET /:plugin/files": "plugin.library.listFiles",
-  "plugins.library GET /:plugin/readme": "plugin.library.getReadme",
-  "plugins.library GET /:plugin/archive": "plugin.library.getArchive",
-  "plugins.library GET /:plugin/icon": "plugin.library.getIcon",
-  "plugin-registry GET /": "plugin.registry.list",
-  "plugin-registry GET /icon": "plugin.registry.getIcon",
-  "plugin-registry GET /readme": "plugin.registry.getReadme",
-  "plugin-registry GET /archive": "plugin.registry.getArchive",
-  "installed-plugins GET /": "plugin.installed.list",
-  "installed-plugins POST /": "plugin.installed.install",
-  "installed-plugins POST /link": "plugin.installed.link",
-  "installed-plugins POST /archive": "plugin.installed.importArchive",
-  "installed-plugins PUT /": "plugin.installed.setEnabled",
-  "installed-plugins DELETE /": "plugin.installed.uninstall",
-  "plugins.agent-plugins GET /": "plugin.agent.list",
-  "plugins.agent-plugins POST /": "plugin.agent.install",
-  "plugins.agent-plugins DELETE /:name": "plugin.agent.uninstall",
-  "plugins.agent-hooks GET /": "plugin.hook.list",
-  "plugins.agent-hooks POST /archive": "plugin.hook.importArchive",
-  "plugins.agent-hooks GET /:name/archive": "plugin.hook.exportArchive",
-  "plugins.agent-hooks GET /:name/icon": "plugin.hook.getIcon",
-  "plugins.agent-hooks DELETE /:name": "plugin.hook.delete",
-  "plugins.agent-mcp-servers GET /": "plugin.mcp.list",
-  "plugins.agent-mcp-servers DELETE /:name": "plugin.mcp.delete",
-
-  // Workbenches & App Center
-  "workbenches GET /": "workbench.list",
-  "workbenches PUT /enabled": "workbench.setAllEnabled",
-  "workbenches PUT /:id/enabled": "workbench.setEnabled",
-  "workbenches POST /archive": "workbench.importArchive",
-  "workbenches GET /:id/archive": "workbench.exportArchive",
-  "workbenches POST /:id/reload": "workbench.reload",
-  "workbenches GET /:id/history": "workbench.getHistory",
-  "workbenches POST /:id/rollback": "workbench.rollback",
-  "workbenches PATCH /:id/sidebar": "workbench.updateSidebar",
-  "workbenches PATCH /:id/app-center": "workbench.updateAppCenter",
-  "workbenches GET /:id/app-center/icon": "workbench.getAppCenterIcon",
-  "workbenches DELETE /:id": "workbench.delete",
-  "workbenches GET /:id/ui/*": "workbench.serveUi",
-  "workbenches GET /:id/sdk/ui/*": "workbench.serveSdkUi",
-  "workbenches GET /:id/sdk/:file": "workbench.serveSdkFile",
-  "workbenches ALL /:id/api/*": "workbench.callApi",
-  "workbenches.app-center GET /": "workbench.appCenter.list",
-  "workbenches.app-center PUT /layout": "workbench.appCenter.updateLayout",
-
-  // Models, OAuth, Platform Auth & Chat Defaults
-  "sessions.models GET /": "model.list",
-  "sessions.models PUT /": "model.update",
-  "sessions.models PUT /providers/:provider": "model.updateProvider",
-  "sessions.models POST /sync-presets": "model.syncPresets",
-  "sessions.models GET /balance": "model.getBalance",
-  "sessions.models PUT /default": "model.setDefault",
-  "sessions.models POST /test": "model.test",
-  "sessions.models POST /detect": "model.detect",
-  "sessions.models POST /list": "model.listRemote",
-  "sessions.models POST /detect-vision": "model.detectVision",
-  "sessions.model-oauth GET /": "model.oauth.list",
-  "sessions.model-oauth POST /start": "model.oauth.start",
-  "sessions.model-oauth POST /:flowId/code": "model.oauth.submitCode",
-  "sessions.model-oauth GET /:flowId": "model.oauth.getStatus",
-  "sessions.platform-auth POST /start": "model.platformAuth.start",
-  "sessions.platform-auth POST /sync": "model.platformAuth.sync",
-  "sessions.platform-auth GET /:flowId/status": "model.platformAuth.getStatus",
-  "sessions.platform-auth POST /:flowId/retry": "model.platformAuth.retry",
-  "sessions.platform-auth POST /:flowId/cancel": "model.platformAuth.cancel",
-  "sessions.modelscope-auth POST /start": "model.modelscopeAuth.start",
-  "sessions.modelscope-auth GET /:flowId/status": "model.modelscopeAuth.getStatus",
-  "sessions.modelscope-auth POST /:flowId/retry": "model.modelscopeAuth.retry",
-  "sessions.modelscope-auth POST /:flowId/cancel": "model.modelscopeAuth.cancel",
-  "sessions.chat-defaults GET /": "model.chatDefaults.get",
-  "sessions.chat-defaults PUT /": "model.chatDefaults.update",
-
-  // Vault
-  "sessions.vault GET /": "vault.get",
-  "sessions.vault PUT /": "vault.update",
-  "sessions.vault PUT /entries/:key": "vault.setEntry",
-  "sessions.vault DELETE /entries/:key": "vault.deleteEntry",
-  "sessions.vault POST /template-placeholder": "vault.templatePlaceholder",
-
-  // Traces & Usage
-  "agents.traces GET /": "trace.list",
-  "agents.traces GET /:sessionId/:index": "trace.get",
-  "agents.traces GET /:sessionId/:index/analysis": "trace.getAnalysis",
-  "agents.traces GET /:sessionId/:index/download": "trace.download",
-  "agents.traces POST /import": "trace.import",
-  "sessions.usage GET /": "usage.get",
-  "sessions.usage GET /model-totals": "usage.getModelTotals",
-  "sessions.usage GET /errors": "usage.listErrors",
-  "sessions.usage DELETE /errors": "usage.clearErrors",
-
-  // Benchmarks
-  "agents.benchmarks GET /": "benchmark.list",
-  "agents.benchmarks POST /": "benchmark.create",
-  "agents.benchmarks DELETE /:benchmarkId": "benchmark.delete",
-  "agents.benchmarks POST /archive": "benchmark.importArchive",
-  "agents.benchmarks GET /:benchmarkId/archive": "benchmark.exportArchive",
-  "agents.benchmarks GET /:benchmarkId/cases": "benchmark.listCases",
-  "agents.benchmarks GET /:benchmarkId/cases/:caseId/files": "benchmark.listCaseFiles",
-  "agents.benchmarks GET /:benchmarkId/cases/:caseId/files/content": "benchmark.readCaseFile",
-  "agents.benchmarks GET /:benchmarkId/cases/:caseId/rubric/files": "benchmark.listRubricFiles",
-  "agents.benchmarks GET /:benchmarkId/cases/:caseId/rubric/files/content":
-    "benchmark.readRubricFile",
-
-  // Organizations
-  "org GET /": "org.list",
-  "org POST /": "org.create",
-  "org GET /:orgId": "org.get",
-  "org PATCH /:orgId": "org.update",
-  "org DELETE /:orgId": "org.delete",
-  "org GET /:orgId/chart": "org.getChart",
-  "org POST /:orgId/employees": "org.employee.hire",
-  "org PATCH /:orgId/employees/:agentId": "org.employee.update",
-  "org GET /:orgId/employees/:agentId/avatar": "org.employee.getAvatar",
-  "org PUT /:orgId/employees/:agentId/avatar": "org.employee.updateAvatar",
-  "org DELETE /:orgId/employees/:agentId": "org.employee.remove",
-  "org GET /:orgId/employees/:agentId/desk": "org.employee.getDesk",
-  "org POST /:orgId/employees/:agentId/desk": "org.employee.startDesk",
-  "org GET /:orgId/handbook": "org.handbook.get",
-  "org PUT /:orgId/handbook": "org.handbook.update",
-  "org GET /:orgId/handbook/files": "org.handbook.listFiles",
-  "org GET /:orgId/handbook/files/:path{.+}": "org.handbook.readFile",
-  "org PUT /:orgId/handbook/files/:path{.+}": "org.handbook.writeFile",
-  "org DELETE /:orgId/handbook/files/:path{.+}": "org.handbook.deleteFile",
-  "org GET /:orgId/calendar": "org.calendar.list",
-  "org POST /:orgId/calendar": "org.calendar.create",
-  "org GET /:orgId/calendar/:agentId/:name": "org.calendar.get",
-  "org PUT /:orgId/calendar/:agentId/:name": "org.calendar.update",
-  "org DELETE /:orgId/calendar/:agentId/:name": "org.calendar.delete",
-  "org GET /:orgId/tickets": "org.ticket.list",
-  "org POST /:orgId/tickets": "org.ticket.create",
-  "org GET /:orgId/tickets/:ticketId": "org.ticket.get",
-  "org PUT /:orgId/tickets/:ticketId": "org.ticket.update",
-  "org POST /:orgId/tickets/:ticketId/move": "org.ticket.move",
-  "org POST /:orgId/tickets/:ticketId/block": "org.ticket.block",
-  "org POST /:orgId/tickets/:ticketId/unblock": "org.ticket.unblock",
-  "org POST /:orgId/tickets/:ticketId/progress": "org.ticket.progress",
-  "org POST /:orgId/tickets/:ticketId/start": "org.ticket.start",
-  "org POST /:orgId/tickets/:ticketId/attach": "org.ticket.attach",
-  "org GET /:orgId/channels": "org.channel.list",
-  "org POST /:orgId/channels": "org.channel.create",
-  "org GET /:orgId/channels/:channelId": "org.channel.get",
-  "org PATCH /:orgId/channels/:channelId": "org.channel.update",
-  "org POST /:orgId/channels/:channelId/members": "org.channel.addMember",
-  "org DELETE /:orgId/channels/:channelId/members/:principal": "org.channel.removeMember",
-  "org GET /:orgId/channels/:channelId/messages": "org.channel.listMessages",
-  "org POST /:orgId/channels/:channelId/messages": "org.channel.postMessage",
-  "org POST /:orgId/channels/:channelId/read": "org.channel.markRead",
-  "org GET /:orgId/finance": "org.finance.get",
-  "org GET /:orgId/sessions": "org.session.list",
-
-  // Built-in Browser
-  "builtin-browser.routes GET /status": "browser.getStatus",
-  "builtin-browser.routes GET /backend": "browser.getBackend",
-  "builtin-browser.routes PUT /backend": "browser.setBackend",
-  "builtin-browser.routes POST /extension/pairings": "browser.createExtensionPairing",
-  "builtin-browser.routes GET /extension": "browser.listExtensions",
-  "builtin-browser.routes DELETE /extension/:id": "browser.revokeExtension",
-  "builtin-browser.routes GET /tabs": "browser.listTabs",
-  "builtin-browser.routes POST /tabs": "browser.openTab",
-  "builtin-browser.routes POST /tabs/session": "browser.openSessionTab",
-  "builtin-browser.routes POST /tabs/claim": "browser.claimTabs",
-  "builtin-browser.routes POST /tabs/on-screen": "browser.setOnScreen",
-  "builtin-browser.routes POST /tabs/:tab/activate": "browser.activateTab",
-  "builtin-browser.routes DELETE /tabs/:tab": "browser.closeTab",
-  "builtin-browser.routes POST /tabs/:tab/navigate": "browser.navigate",
-  "builtin-browser.routes POST /tabs/:tab/scan": "browser.scan",
-  "builtin-browser.routes POST /tabs/:tab/exec": "browser.exec",
-  "builtin-browser.routes POST /tabs/:tab/click": "browser.click",
-  "builtin-browser.routes POST /tabs/:tab/type": "browser.type",
-  "builtin-browser.routes POST /tabs/:tab/screenshot": "browser.screenshot",
-  "builtin-browser.routes POST /tabs/:tab/cdp": "browser.cdp",
-  "builtin-browser.routes GET /import/sources": "browser.listImportSources",
-  "builtin-browser.routes POST /import": "browser.importData",
-  "builtin-browser.routes GET /settings": "browser.getSettings",
-  "builtin-browser.routes PUT /settings": "browser.updateSettings",
-  "builtin-browser.routes GET /history": "browser.getHistory",
-  "builtin-browser.routes DELETE /history": "browser.clearHistory",
-  "builtin-browser.routes POST /clear-data": "browser.clearData",
-
-  // Machines
-  "machines GET /": "machine.list",
-  "machines GET /events": "machine.events",
-  "machines POST /use": "machine.use",
-  "machines POST /stop-using": "machine.stopUsing",
-  "machines GET /ssh-hosts": "machine.listSshHosts",
-  "machines POST /ssh-hosts": "machine.createSshHost",
-  "machines GET /ssh-hosts/:alias": "machine.getSshHost",
-  "machines PUT /ssh-hosts/:alias": "machine.updateSshHost",
-  "machines POST /add": "machine.add",
-  "machines POST /probe": "machine.probe",
-  "machines POST /:machineId/install": "machine.install",
-  "machines POST /:machineId/connect": "machine.connect",
-  "machines POST /:machineId/reconnect": "machine.reconnect",
-  "machines POST /:machineId/stop-reconnecting": "machine.stopReconnecting",
-  "machines GET /:machineId/dirs": "machine.listDirs",
-  "machines POST /:machineId/release": "machine.release",
-  "machines POST /:machineId/restart": "machine.restart",
-  "machines POST /:machineId/stop": "machine.stop",
-  "machines POST /:machineId/uninstall": "machine.uninstall",
-  "machines POST /:machineId/sync": "machine.sync",
-  "machines POST /:machineId/diagnose": "machine.diagnose",
-  "machines POST /:machineId/disconnect": "machine.disconnect",
-  "machines.server-proxy ALL /*": "machine.proxy",
-
-  // Messaging (`agents.messaging.<channel>.*` & account listings)
-  "messaging.accounts GET /accounts": "messaging.listAccounts",
-  "messaging.account-holders GET /account-holders": "messaging.listAccountHolders",
-  "messaging.session-routes GET /:sessionId/messaging": "messaging.session.list",
-  "messaging.session-routes GET /:sessionId/messaging/feishu": "agents.messaging.feishu.get",
-  "messaging.session-routes PUT /:sessionId/messaging/feishu": "agents.messaging.feishu.update",
-  "messaging.session-routes POST /:sessionId/messaging/feishu/state":
-    "agents.messaging.feishu.setState",
-  "messaging.session-routes DELETE /:sessionId/messaging/feishu": "agents.messaging.feishu.delete",
-  "messaging.session-routes POST /:sessionId/messaging/feishu/test": "agents.messaging.feishu.test",
-  "messaging.session-routes POST /:sessionId/messaging/feishu/test-message":
-    "agents.messaging.feishu.testMessage",
-  "messaging.session-routes GET /:sessionId/messaging/telegram": "agents.messaging.telegram.get",
-  "messaging.session-routes PUT /:sessionId/messaging/telegram": "agents.messaging.telegram.update",
-  "messaging.session-routes POST /:sessionId/messaging/telegram/state":
-    "agents.messaging.telegram.setState",
-  "messaging.session-routes DELETE /:sessionId/messaging/telegram":
-    "agents.messaging.telegram.delete",
-  "messaging.session-routes POST /:sessionId/messaging/telegram/test":
-    "agents.messaging.telegram.test",
-  "messaging.session-routes POST /:sessionId/messaging/telegram/test-message":
-    "agents.messaging.telegram.testMessage",
-  "messaging.session-routes GET /:sessionId/messaging/qq": "agents.messaging.qq.get",
-  "messaging.session-routes PUT /:sessionId/messaging/qq": "agents.messaging.qq.update",
-  "messaging.session-routes POST /:sessionId/messaging/qq/state": "agents.messaging.qq.setState",
-  "messaging.session-routes DELETE /:sessionId/messaging/qq": "agents.messaging.qq.delete",
-  "messaging.session-routes POST /:sessionId/messaging/qq/scan": "agents.messaging.qq.scanStart",
-  "messaging.session-routes POST /:sessionId/messaging/qq/scan/poll":
-    "agents.messaging.qq.scanPoll",
-  "messaging.session-routes POST /:sessionId/messaging/qq/scan/cancel":
-    "agents.messaging.qq.scanCancel",
-  "messaging.session-routes POST /:sessionId/messaging/qq/test": "agents.messaging.qq.test",
-  "messaging.session-routes POST /:sessionId/messaging/qq/test-message":
-    "agents.messaging.qq.testMessage",
-  "messaging.session-routes GET /:sessionId/messaging/wechat": "agents.messaging.wechat.get",
-  "messaging.session-routes PUT /:sessionId/messaging/wechat": "agents.messaging.wechat.update",
-  "messaging.session-routes POST /:sessionId/messaging/wechat/state":
-    "agents.messaging.wechat.setState",
-  "messaging.session-routes DELETE /:sessionId/messaging/wechat": "agents.messaging.wechat.delete",
-  "messaging.session-routes POST /:sessionId/messaging/wechat/scan":
-    "agents.messaging.wechat.scanStart",
-  "messaging.session-routes POST /:sessionId/messaging/wechat/scan/poll":
-    "agents.messaging.wechat.scanPoll",
-  "messaging.session-routes POST /:sessionId/messaging/wechat/scan/verify":
-    "agents.messaging.wechat.scanVerify",
-  "messaging.session-routes POST /:sessionId/messaging/wechat/scan/cancel":
-    "agents.messaging.wechat.scanCancel",
-  "messaging.session-routes POST /:sessionId/messaging/wechat/test": "agents.messaging.wechat.test",
-  "messaging.session-routes POST /:sessionId/messaging/wechat/test-message":
-    "agents.messaging.wechat.testMessage",
-  "agents.messaging.feishu GET /": "agents.messaging.feishu.get",
-  "agents.messaging.feishu PUT /": "agents.messaging.feishu.update",
-  "agents.messaging.feishu POST /state": "agents.messaging.feishu.setState",
-  "agents.messaging.feishu DELETE /": "agents.messaging.feishu.delete",
-  "agents.messaging.feishu POST /test": "agents.messaging.feishu.test",
-  "agents.messaging.feishu POST /test-message": "agents.messaging.feishu.testMessage",
-  "agents.messaging.telegram GET /": "agents.messaging.telegram.get",
-  "agents.messaging.telegram PUT /": "agents.messaging.telegram.update",
-  "agents.messaging.telegram POST /state": "agents.messaging.telegram.setState",
-  "agents.messaging.telegram DELETE /": "agents.messaging.telegram.delete",
-  "agents.messaging.telegram POST /test": "agents.messaging.telegram.test",
-  "agents.messaging.telegram POST /test-message": "agents.messaging.telegram.testMessage",
-  "agents.messaging.qq GET /": "agents.messaging.qq.get",
-  "agents.messaging.qq PUT /": "agents.messaging.qq.update",
-  "agents.messaging.qq POST /state": "agents.messaging.qq.setState",
-  "agents.messaging.qq DELETE /": "agents.messaging.qq.delete",
-  "agents.messaging.qq POST /scan": "agents.messaging.qq.scanStart",
-  "agents.messaging.qq POST /scan/poll": "agents.messaging.qq.scanPoll",
-  "agents.messaging.qq POST /scan/cancel": "agents.messaging.qq.scanCancel",
-  "agents.messaging.qq POST /test": "agents.messaging.qq.test",
-  "agents.messaging.qq POST /test-message": "agents.messaging.qq.testMessage",
-  "agents.messaging.wechat GET /": "agents.messaging.wechat.get",
-  "agents.messaging.wechat PUT /": "agents.messaging.wechat.update",
-  "agents.messaging.wechat POST /state": "agents.messaging.wechat.setState",
-  "agents.messaging.wechat DELETE /": "agents.messaging.wechat.delete",
-  "agents.messaging.wechat POST /scan": "agents.messaging.wechat.scanStart",
-  "agents.messaging.wechat POST /scan/poll": "agents.messaging.wechat.scanPoll",
-  "agents.messaging.wechat POST /scan/verify": "agents.messaging.wechat.scanVerify",
-  "agents.messaging.wechat POST /scan/cancel": "agents.messaging.wechat.scanCancel",
-  "agents.messaging.wechat POST /test": "agents.messaging.wechat.test",
-  "agents.messaging.wechat POST /test-message": "agents.messaging.wechat.testMessage",
-
-  // Projects, Members, Dirs & Command Policy
-  "projects GET /": "project.list",
-  "projects POST /": "project.create",
-  "projects PATCH /:projectId": "project.update",
-  "projects DELETE /:projectId": "project.delete",
-  "projects.members GET /": "project.member.list",
-  "projects.members POST /": "project.member.add",
-  "projects.members DELETE /:userId": "project.member.remove",
-  "projects.dirs GET /": "project.dir.list",
-  "projects.dirs POST /access": "project.dir.checkAccess",
-  "suggest-id POST /": "project.suggestId",
-  "sessions.command-policy GET /": "project.commandPolicy.get",
-  "sessions.command-policy PUT /": "project.commandPolicy.update",
-
-  // Plugin CLI Commands
-  "cli.commands GET /": "cli.commands.list",
-  "cli.commands POST /run": "cli.commands.run",
-
-  // System, Version, Profile, Themes, Languages & Desktop
-  "version GET /": "version.get",
-  "version GET /history": "version.listHistory",
-  "version GET /history/ifaces/:hash": "version.getHistoryIfaces",
-  "version GET /history/diff": "version.getHistoryDiff",
-  "version POST /history/rollback": "version.rollback",
-  "version GET /update-check": "version.getUpdateCheck",
-  "version GET /update": "version.getUpdate",
-  "version POST /update": "version.startUpdate",
-  "version POST /restart": "version.restart",
-  "handshake GET /": "handshake.get",
-  "events GET /": "events.stream",
-  "web.contributions GET /": "web.contributions.list",
-  "languages GET /": "languages.list",
-  "languages GET /:id/grammar": "languages.getGrammar",
-  "themes GET /": "themes.list",
-  "themes GET /:id/files/*": "themes.getFile",
-  "themes POST /": "themes.create",
-  "themes DELETE /:id": "themes.delete",
-  "themes GET /:id/export": "themes.export",
-  "me GET /": "me.get",
-  "me PUT /password": "me.updatePassword",
-  "me PUT /profile": "me.updateProfile",
-  "me GET /prefs": "me.getPrefs",
-  "me PUT /prefs": "me.updatePrefs",
-  "me GET /background-image": "me.getBackgroundImage",
-  "me PUT /background-image": "me.updateBackgroundImage",
-  "me GET /drafts": "me.getDrafts",
-  "me PATCH /drafts": "me.updateDrafts",
-  "desktop.update GET /": "desktop.update.get",
-  "desktop.update POST /check": "desktop.update.check",
-  "desktop.update POST /download": "desktop.update.download",
-  "desktop.update POST /install": "desktop.update.install",
-  "desktop.tray GET /": "desktop.tray.get",
-  "desktop.tray PUT /": "desktop.tray.update",
-  "desktop.privacy POST /": "desktop.privacy.open",
-  "desktop.window POST /": "desktop.window.action",
-
-  // Server Admin
-  "admin.users GET /": "admin.users.list",
-  "admin.users POST /": "admin.users.create",
-  "admin.users POST /:userId/password": "admin.users.setPassword",
-  "admin.users DELETE /:userId": "admin.users.delete",
-  "admin.settings GET /": "admin.settings.get",
-  "admin.settings PUT /": "admin.settings.update",
-  "admin.settings GET /proxy-probe": "admin.settings.listProxyProbes",
-  "admin.settings POST /proxy-probe/:provider": "admin.settings.runProxyProbe",
-  "admin.plugin-config GET /": "admin.pluginConfig.get",
-  "admin.plugin-config PUT /": "admin.pluginConfig.update",
-  "admin.plugin-config POST /action": "admin.pluginConfig.action",
-} as const;
-
-export type DirectHttpRouteId = (typeof DIRECT_HTTP_ROUTE_IDS)[number];
-export type GroupHttpRouteId =
-  (typeof HTTP_GROUP_ENDPOINT_IDS)[keyof typeof HTTP_GROUP_ENDPOINT_IDS];
-export type HttpRouteId = DirectHttpRouteId | GroupHttpRouteId;
-
-/** Every fine-grained `auth: "user"` HTTP route ID registered on the server. */
-export const ALL_HTTP_ROUTE_IDS: readonly HttpRouteId[] = [
-  ...new Set<HttpRouteId>([...DIRECT_HTTP_ROUTE_IDS, ...Object.values(HTTP_GROUP_ENDPOINT_IDS)]),
-];
-
-const LEGACY_MESSAGING_CHANNEL_PREFIXES = [
-  ["agents.feishu", "agents.messaging.feishu"],
-  ["agents.telegram", "agents.messaging.telegram"],
-  ["agents.qq", "agents.messaging.qq"],
-  ["agents.wechat", "agents.messaging.wechat"],
-  ["messaging.feishu.", "agents.messaging.feishu."],
-  ["messaging.telegram.", "agents.messaging.telegram."],
-  ["messaging.qq.", "agents.messaging.qq."],
-  ["messaging.wechat.", "agents.messaging.wechat."],
-] as const;
+export const DIRECT_HTTP_ROUTE_IDS: readonly string[] = [...BUILTIN_DIRECT_HTTP_ROUTE_IDS];
 
 /**
- * Normalizes an endpoint or role ID:
- * - strips an optional legacy `"penguin."` prefix
- * - normalizes `agents.<channel>` / `messaging.<channel>.*` to `agents.messaging.<channel>.*`
+ * Built-in mapping from multi-endpoint `HttpModule.routes` group contribution IDs + `"METHOD /subpath"`
+ * to fine-grained route IDs. External modules and plugins can register additional group mappings
+ * via `HttpModule.routes` (`endpoints`) or `RoleRegistry.registerGroupEndpoints`.
  */
-export function normalizeRouteId(routeId: string): string {
-  const stripped = routeId.startsWith("penguin.") ? routeId.slice("penguin.".length) : routeId;
-  for (const [legacyPrefix, canonicalPrefix] of LEGACY_MESSAGING_CHANNEL_PREFIXES) {
-    if (stripped === legacyPrefix) {
-      return canonicalPrefix;
-    }
-    if (legacyPrefix.endsWith(".") && stripped.startsWith(legacyPrefix)) {
-      return `${canonicalPrefix}${stripped.slice(legacyPrefix.length)}`;
-    }
-    if (!legacyPrefix.endsWith(".") && stripped.startsWith(`${legacyPrefix}.`)) {
-      return `${canonicalPrefix}.${stripped.slice(legacyPrefix.length + 1)}`;
-    }
-  }
-  return stripped;
-}
+const BUILTIN_HTTP_GROUP_ENDPOINT_IDS: Readonly<
+  Record<string, Readonly<Record<string, string>>>
+> = {
+  "sessions.agents": {
+    "GET /": "agent.list",
+    "POST /": "agent.create",
+    "POST /:agentId/duplicate": "agent.duplicate",
+    "DELETE /:agentId": "agent.delete",
+    "GET /:agentId/auth": "agent.auth.get",
+    "PUT /:agentId/auth": "agent.auth.update",
+  },
+  "sessions.agent-config": {
+    "GET /": "agent.config.get",
+    "PUT /": "agent.config.update",
+    "PUT /avatar": "agent.avatar.update",
+  },
+  "sessions.agent-Export": {
+    "GET /:agentId/export": "agent.export",
+    "POST /import/preview": "agent.import.preview",
+    "POST /import": "agent.import.apply",
+  },
+  "sessions.workspace": {
+    "GET /:sessionId/files": "workspace.listFiles",
+    "GET /:sessionId/file": "workspace.readFile",
+    "PUT /:sessionId/file": "workspace.writeFile",
+    "GET /:sessionId/raw": "workspace.readRawFile",
+    "POST /:sessionId/files/upload": "workspace.uploadFiles",
+    "POST /:sessionId/directory": "workspace.createDirectory",
+    "DELETE /:sessionId/files": "workspace.deleteEntry",
+    "GET /:sessionId/download": "workspace.downloadArchive",
+    "GET /:sessionId/stat": "workspace.statFile",
+  },
+  "sessions.archived": {
+    "GET /archived-sessions": "session.archived.list",
+    "GET /archived-sessions/:sessionId/messages": "session.archived.messages",
+  },
+  "sessions.subagents": {
+    "GET /:sessionId/subagents": "session.subagents.list",
+  },
+  "sessions.fork": {
+    "POST /:sessionId/fork": "session.fork",
+  },
+  "sessions.btw": {
+    "POST /:sessionId/btw": "session.btw",
+  },
+  "sessions.shell-exec": {
+    "POST /:sessionId/shell-exec": "session.shellExec",
+  },
+  "sessions.title-Regenerate": {
+    "POST /:sessionId/regenerate-title": "session.regenerateTitle",
+  },
+  "sessions.active-Ids": {
+    "GET /active-ids": "session.activeIds",
+  },
+  "sessions.memory": {
+    "GET /:sessionId/memory": "memory.session.list",
+    "GET /:sessionId/memory/file": "memory.session.readFile",
+  },
+  "agents.memory": {
+    "GET /:agentId/memory": "memory.agent.list",
+    "GET /:agentId/memory/file": "memory.agent.readFile",
+    "PUT /:agentId/memory/file": "memory.agent.writeFile",
+    "DELETE /:agentId/memory/file": "memory.agent.deleteFile",
+  },
+  schedules: {
+    "GET /": "schedule.list",
+    "GET /runs": "schedule.runs",
+    "PUT /:name": "schedule.upsert",
+    "DELETE /:name": "schedule.delete",
+  },
+  "schedules.session": {
+    "GET /:sessionId/schedule": "schedule.session.list",
+    "GET /:sessionId/schedule/runs": "schedule.session.runs",
+    "PUT /:sessionId/schedule/:name": "schedule.session.upsert",
+    "DELETE /:sessionId/schedule/:name": "schedule.session.delete",
+  },
+  "skills.agent": {
+    "GET /": "skill.agent.list",
+    "GET /:skillName": "skill.agent.get",
+    "GET /:skillName/files/*": "skill.agent.readFile",
+    "POST /": "skill.agent.create",
+    "PUT /:skillName": "skill.agent.update",
+    "PUT /:skillName/enabled": "skill.agent.setEnabled",
+    "POST /enable-all": "skill.agent.enableAll",
+    "POST /disable-all": "skill.agent.disableAll",
+    "DELETE /:skillName": "skill.agent.delete",
+    "POST /install": "skill.agent.install",
+    "POST /upload": "skill.agent.upload",
+  },
+  "skills.session": {
+    "GET /:sessionId/skills": "skill.session.list",
+    "GET /:sessionId/skills/:skillName": "skill.session.get",
+    "PUT /:sessionId/skills/:skillName/enabled": "skill.session.setEnabled",
+    "POST /:sessionId/skills/enable-all": "skill.session.enableAll",
+    "POST /:sessionId/skills/disable-all": "skill.session.disableAll",
+    "DELETE /:sessionId/skills/:skillName": "skill.session.delete",
+    "POST /:sessionId/skills/install": "skill.session.install",
+    "POST /:sessionId/skills/upload": "skill.session.upload",
+  },
+  "skills.hub": {
+    "GET /registry": "skill.hub.registry",
+    "GET /search": "skill.hub.search",
+    "POST /import": "skill.hub.import",
+  },
+  "plugins.installed": {
+    "GET /": "plugin.installed.list",
+    "POST /install": "plugin.installed.install",
+    "POST /upload": "plugin.installed.upload",
+    "POST /reinstall": "plugin.installed.reinstall",
+    "POST /:id/upgrade": "plugin.installed.upgrade",
+    "DELETE /:id": "plugin.installed.uninstall",
+  },
+  "plugins.marketplace": {
+    "GET /": "plugin.marketplace.list",
+  },
+  "plugins.agent": {
+    "GET /": "plugin.agent.list",
+    "PUT /:pluginId/enabled": "plugin.agent.setEnabled",
+    "PUT /:pluginId/config": "plugin.agent.updateConfig",
+    "POST /:pluginId/action": "plugin.agent.action",
+  },
+  "plugins.project": {
+    "GET /": "plugin.project.list",
+    "PUT /:pluginId/enabled": "plugin.project.setEnabled",
+    "PUT /:pluginId/config": "plugin.project.updateConfig",
+    "POST /:pluginId/action": "plugin.project.action",
+  },
+  "plugins.mount": {
+    "GET /:projectId/agents/:agentId/plugins/:pluginId/ui/*": "plugin.mount.agentUi",
+    "ALL /:projectId/agents/:agentId/plugins/:pluginId/api": "plugin.mount.agentApi",
+    "ALL /:projectId/agents/:agentId/plugins/:pluginId/api/*": "plugin.mount.agentApi",
+    "GET /:projectId/plugins/:pluginId/ui/*": "plugin.mount.projectUi",
+    "ALL /:projectId/plugins/:pluginId/api": "plugin.mount.projectApi",
+    "ALL /:projectId/plugins/:pluginId/api/*": "plugin.mount.projectApi",
+  },
+  "cli.commands": {
+    "GET /": "cli.commands.list",
+    "POST /:pluginId/:name": "cli.commands.invoke",
+  },
+  workbenches: {
+    "GET /:projectId/agents/:agentId/workbenches": "workbench.list",
+    "GET /:projectId/agents/:agentId/workbenches/:id/meta": "workbench.meta",
+    "POST /:projectId/agents/:agentId/workbenches/:id/duplicate": "workbench.duplicate",
+    "GET /:projectId/agents/:agentId/workbenches/:id/versions": "workbench.versions.list",
+    "POST /:projectId/agents/:agentId/workbenches/:id/versions": "workbench.versions.create",
+    "POST /:projectId/agents/:agentId/workbenches/:id/versions/:version/restore":
+      "workbench.versions.restore",
+    "GET /:projectId/agents/:agentId/workbenches/:id/ui/*": "workbench.ui",
+    "ALL /:projectId/agents/:agentId/workbenches/:id/api": "workbench.api",
+    "ALL /:projectId/agents/:agentId/workbenches/:id/api/*": "workbench.api",
+  },
+  "models.config": {
+    "GET /config": "model.config.get",
+    "PUT /config/default-model": "model.config.setDefaultModel",
+    "PUT /config/default-image-model": "model.config.setDefaultImageModel",
+    "PUT /config/default-speech-model": "model.config.setDefaultSpeechModel",
+    "PUT /config/attachment-limits": "model.config.setAttachmentLimits",
+    "PUT /config/sandbox": "model.config.setSandbox",
+    "PUT /config/providers/:provider": "model.config.updateProvider",
+    "DELETE /config/providers/:provider": "model.config.deleteProvider",
+    "POST /config/providers/:provider/test": "model.config.testProvider",
+    "POST /config/custom-models": "model.config.addCustomModel",
+    "PUT /config/custom-models/:modelId": "model.config.updateCustomModel",
+    "DELETE /config/custom-models/:modelId": "model.config.deleteCustomModel",
+    "POST /config/custom-models/:modelId/test": "model.config.testCustomModel",
+  },
+  vault: {
+    "GET /:agentId/vault": "vault.agent.list",
+    "PUT /:agentId/vault/:key": "vault.agent.set",
+    "DELETE /:agentId/vault/:key": "vault.agent.delete",
+    "GET /sessions/:sessionId/vault": "vault.session.list",
+    "PUT /sessions/:sessionId/vault/:key": "vault.session.set",
+    "DELETE /sessions/:sessionId/vault/:key": "vault.session.delete",
+  },
+  traces: {
+    "GET /": "trace.list",
+    "GET /stats": "trace.stats",
+    "GET /:traceId": "trace.get",
+    "DELETE /:traceId": "trace.delete",
+    "POST /cleanup": "trace.cleanup",
+  },
+  benchmarks: {
+    "GET /": "benchmark.list",
+    "POST /": "benchmark.create",
+    "GET /:id": "benchmark.get",
+    "DELETE /:id": "benchmark.delete",
+    "GET /:id/runs": "benchmark.runs.list",
+    "POST /:id/runs": "benchmark.runs.start",
+    "GET /:id/runs/:runId": "benchmark.runs.get",
+    "POST /:id/runs/:runId/stop": "benchmark.runs.stop",
+    "DELETE /:id/runs/:runId": "benchmark.runs.delete",
+    "GET /:id/runs/:runId/stream": "benchmark.runs.stream",
+    "GET /:id/leaderboard": "benchmark.leaderboard",
+    "POST /:id/runs/:runId/cases/:caseId/analyze": "benchmark.cases.analyze",
+    "POST /:id/runs/:runId/analyze": "benchmark.runs.analyze",
+    "POST /:id/runs/:runId/optimize": "benchmark.runs.optimize",
+    "POST /:id/runs/:runId/Export- findings": "benchmark.runs.exportFindings",
+  },
+  org: {
+    "GET /": "org.list",
+    "POST /": "org.create",
+    "GET /:orgId": "org.get",
+    "PUT /:orgId": "org.update",
+    "DELETE /:orgId": "org.delete",
+    "GET /:orgId/members": "org.member.list",
+    "POST /:orgId/members": "org.member.add",
+    "GET /:orgId/members/stats": "org.member.stats",
+    "GET /:orgId/members/:agentId": "org.member.get",
+    "PUT /:orgId/members/:agentId": "org.member.update",
+    "DELETE /:orgId/members/:agentId": "org.member.remove",
+    "POST /:orgId/members/:agentId/avatar": "org.member.uploadAvatar",
+    "GET /:orgId/members/:agentId/avatar": "org.member.getAvatar",
+    "GET /:orgId/channels": "org.channel.list",
+    "POST /:orgId/channels": "org.channel.create",
+    "PUT /:orgId/channels/reorder": "org.channel.reorder",
+    "GET /:orgId/channels/:channelId": "org.channel.get",
+    "PUT /:orgId/channels/:channelId": "org.channel.update",
+    "DELETE /:orgId/channels/:channelId": "org.channel.delete",
+    "POST /:orgId/channels/:channelId/members": "org.channel.addMember",
+    "DELETE /:orgId/channels/:channelId/members/:agentId": "org.channel.removeMember",
+    "GET /:orgId/channels/:channelId/messages": "org.channel.listMessages",
+    "POST /:orgId/channels/:channelId/messages": "org.channel.postMessage",
+    "GET /:orgId/stream": "org.stream",
+    "GET /:orgId/tickets": "org.ticket.list",
+    "POST /:orgId/tickets": "org.ticket.create",
+    "GET /:orgId/tickets/:ticketId": "org.ticket.get",
+    "PUT /:orgId/tickets/:ticketId": "org.ticket.update",
+    "DELETE /:orgId/tickets/:ticketId": "org.ticket.delete",
+    "POST /:orgId/tickets/:ticketId/transition": "org.ticket.transition",
+    "POST /:orgId/tickets/:ticketId/assign": "org.ticket.assign",
+    "POST /:orgId/tickets/:ticketId/start": "org.ticket.start",
+    "POST /:orgId/tickets/:ticketId/add-session": "org.ticket.addSession",
+    "GET /:orgId/calendar": "org.calendar.list",
+    "POST /:orgId/calendar": "org.calendar.create",
+    "PUT /:orgId/calendar/:eventId": "org.calendar.update",
+    "DELETE /:orgId/calendar/:eventId": "org.calendar.delete",
+    "GET /:orgId/finance": "org.finance.summary",
+    "PUT /:orgId/finance/budgets/:agentId": "org.finance.setBudget",
+    "POST /:orgId/finance/unpause/:agentId": "org.finance.unpause",
+    "GET /:orgId/proposals": "org.proposal.list",
+    "POST /:orgId/proposals": "org.proposal.create",
+    "GET /:orgId/proposals/verify-queue": "org.proposal.verifyQueue",
+    "GET /:orgId/proposals/Settings": "org.proposal.getSettings",
+    "PUT /:orgId/proposals/Settings": "org.proposal.updateSettings",
+    "POST /:orgId/proposals/verify-batch": "org.proposal.verifyBatch",
+    "GET /:orgId/proposals/:number": "org.proposal.get",
+    "PUT /:orgId/proposals/:number": "org.proposal.update",
+    "DELETE /:orgId/proposals/:number": "org.proposal.delete",
+    "POST /:orgId/proposals/:number/ready": "org.proposal.ready",
+    "POST /:orgId/proposals/:number/approve": "org.proposal.approve",
+    "POST /:orgId/proposals/:number/reject": "org.proposal.reject",
+    "POST /:orgId/proposals/:number/reopen": "org.proposal.reopen",
+    "POST /:orgId/proposals/:number/revise": "org.proposal.revise",
+    "POST /:orgId/proposals/:number/implement": "org.proposal.implement",
+    "POST /:orgId/proposals/:number/impl": "org.proposal.setImpl",
+    "POST /:orgId/proposals/:number/verify": "org.proposal.verify",
+    "POST /:orgId/proposals/:number/merge": "org.proposal.merge",
+    "POST /:orgId/proposals/:number/confirm": "org.proposal.confirm",
+    "POST /:orgId/proposals/:number/Feedback": "org.proposal.feedback",
+    "POST /:orgId/proposals/:number/inline-comments": "org.proposal.addInlineComment",
+    "PUT /:orgId/proposals/:number/inline-comments/:commentId": "org.proposal.updateInlineComment",
+    "DELETE /:orgId/proposals/:number/inline-comments/:commentId":
+      "org.proposal.deleteInlineComment",
+    "GET /:orgId/roadmaps": "org.roadmap.list",
+    "POST /:orgId/roadmaps": "org.roadmap.create",
+    "GET /:orgId/roadmaps/:number": "org.roadmap.get",
+    "PUT /:orgId/roadmaps/:number": "org.roadmap.update",
+    "DELETE /:orgId/roadmaps/:number": "org.roadmap.delete",
+    "POST /:orgId/roadmaps/:number/items": "org.roadmap.upsertItem",
+    "DELETE /:orgId/roadmaps/:number/items/:itemId": "org.roadmap.deleteItem",
+    "POST /:orgId/roadmaps/:number/items/:itemId/approve": "org.roadmap.approveItem",
+    "POST /:orgId/roadmaps/:number/items/:itemId/unapprove": "org.roadmap.unapproveItem",
+    "POST /:orgId/roadmaps/:number/wake-moderator": "org.roadmap.wakeModerator",
+  },
+  "builtin-browser": {
+    "GET /": "browser.status",
+    "PUT /backend": "browser.setBackend",
+    "GET /tabs": "browser.tabs.list",
+    "POST /tabs": "browser.tabs.open",
+    "DELETE /tabs/:tabId": "browser.tabs.close",
+    "POST /tabs/:tabId/activate": "browser.tabs.activate",
+    "POST /tabs/:tabId/navigate": "browser.tabs.navigate",
+    "POST /tabs/:tabId/back": "browser.tabs.back",
+    "POST /tabs/:tabId/forward": "browser.tabs.forward",
+    "POST /tabs/:tabId/reload": "browser.tabs.reload",
+    "POST /tabs/:tabId/click": "browser.tabs.click",
+    "POST /tabs/:tabId/type": "browser.tabs.type",
+    "POST /tabs/:tabId/press": "browser.tabs.press",
+    "POST /tabs/:tabId/scroll": "browser.tabs.scroll",
+    "POST /tabs/:tabId/eval": "browser.tabs.eval",
+    "GET /tabs/:tabId/snapshot": "browser.tabs.snapshot",
+    "GET /tabs/:tabId/screenshot": "browser.tabs.screenshot",
+    "POST /cookies/import": "browser.cookies.import",
+    "POST /handoff": "browser.handoff",
+    "GET /stream": "browser.stream",
+  },
+  machines: {
+    "GET /": "machine.list",
+    "POST /": "machine.create",
+    "POST /order": "machine.reorder",
+    "POST /test-connection": "machine.testConnection",
+    "GET /ssh-config-hosts": "machine.listSshConfigHosts",
+    "POST /import-ssh-config": "machine.importSshConfig",
+    "GET /:machineId": "machine.get",
+    "PUT /:machineId": "machine.update",
+    "DELETE /:machineId": "machine.delete",
+    "POST /:machineId/connect": "machine.connect",
+    "POST /:machineId/disconnect": "machine.disconnect",
+    "GET /:machineId/stats": "machine.stats",
+    "GET /:machineId/stats/stream": "machine.statsStream",
+    "GET /:machineId/processes": "machine.processes",
+    "DELETE /:machineId/processes/:pid": "machine.killProcess",
+    "GET /:machineId/files": "machine.listFiles",
+    "GET /:machineId/files/content": "machine.readFile",
+    "PUT /:machineId/files/content": "machine.writeFile",
+    "POST /:machineId/files/mkdir": "machine.mkdir",
+    "POST /:machineId/files/rename": "machine.renameFile",
+    "DELETE /:machineId/files": "machine.deleteFile",
+    "GET /:machineId/files/download": "machine.downloadFile",
+    "POST /:machineId/files/upload": "machine.uploadFile",
+    "GET /:machineId/ports": "machine.listPorts",
+    "POST /:machineId/ports": "machine.addPortForward",
+    "DELETE /:machineId/ports/:forwardId": "machine.removePortForward",
+    "GET /:machineId/server": "machine.serverStatus",
+    "POST /:machineId/server/install": "machine.serverInstall",
+    "POST /:machineId/server/start": "machine.serverStart",
+    "POST /:machineId/server/stop": "machine.serverStop",
+    "POST /:machineId/server/restart": "machine.serverRestart",
+    "POST /:machineId/server/upgrade": "machine.serverUpgrade",
+    "GET /:machineId/server/logs": "machine.serverLogs",
+  },
+  "machines.server-proxy": {
+    "ALL /*": "machine.serverProxy",
+  },
+  themes: {
+    "GET /": "themes.list",
+    "GET /:id": "themes.get",
+    "POST /": "themes.save",
+    "DELETE /:id": "themes.delete",
+  },
+  version: {
+    "GET /": "version.get",
+    "POST /check": "version.check",
+    "POST /update": "version.startUpdate",
+    "POST /rollback": "version.rollback",
+    "POST /restart": "version.restart",
+  },
+};
 
 /**
- * Parses a grant specification that may carry an `@<refinerId>` suffix
- * (e.g. `"agent.maintain@self"` or `"agent.maintain@withAsk"`).
+ * Legacy route prefix aliases normalized to canonical route prefixes.
+ * Additional aliases can be registered via `RoleRegistry.registerRouteAlias`.
  */
-export function parseRefinedGrant(spec: string): {
-  target: string;
-  refinerId: string | null;
-} {
-  const trimmed = spec.trim();
-  const atIndex = trimmed.indexOf("@");
-  if (atIndex === -1) {
-    return { target: normalizeRouteId(trimmed), refinerId: null };
-  }
-  const rawTarget = trimmed.slice(0, atIndex).trim();
-  const rawRefiner = trimmed.slice(atIndex + 1).trim();
-  return {
-    target: normalizeRouteId(rawTarget),
-    refinerId: rawRefiner !== "" ? rawRefiner : null,
-  };
-}
+const BUILTIN_ROUTE_PREFIX_ALIASES: Readonly<Record<string, string>> = {
+  "agents.feishu": "agents.messaging.feishu",
+  "agents.qq": "agents.messaging.qq",
+  "agents.telegram": "agents.messaging.telegram",
+  "agents.wechat": "agents.messaging.wechat",
+  "messaging.feishu": "agents.messaging.feishu",
+  "messaging.qq": "agents.messaging.qq",
+  "messaging.telegram": "agents.messaging.telegram",
+  "messaging.wechat": "agents.messaging.wechat",
+  "messaging.accounts": "messaging.listAccounts",
+  "messaging.account-holders": "messaging.listAccountHolders",
+};
 
 /**
- * Resolves a `(groupId, method, subPath)` route to its fine-grained HTTP route ID,
- * falling back to `normalizeRouteId(groupId)` for single-endpoint registrations.
+ * Built-in role identifiers: 20 domain triples (`<domain>.read`, `<domain>.maintain`,
+ * `<domain>.all`) plus 6 composite persona roles (`none`, `readonly`, `general`,
+ * `system-maintainer`, `admin`, `full-permissions`).
  */
-export function resolveHttpRouteId(groupId: string, method: string, subPath: string): string {
-  const normalizedGroup = normalizeRouteId(groupId);
-  const normalizedPath = subPath === "" ? "/" : subPath;
-  const key = `${normalizedGroup} ${method.toUpperCase()} ${normalizedPath}` as keyof typeof HTTP_GROUP_ENDPOINT_IDS;
-  const rawKey = `${groupId} ${method.toUpperCase()} ${normalizedPath}` as keyof typeof HTTP_GROUP_ENDPOINT_IDS;
-  return HTTP_GROUP_ENDPOINT_IDS[key] ?? HTTP_GROUP_ENDPOINT_IDS[rawKey] ?? normalizedGroup;
-}
-
-/**
- * All role presets in the Role Tree:
- * - Domain 3-tier presets (`<domain>.read` -> `<domain>.maintain` -> `<domain>.all`)
- * - Organization sub-domain presets (`org.<subresource>.read` -> `maintain` -> `all`)
- * - Composite persona presets (`none`, `readonly`, `general`, `system-maintainer`, `admin`, `full-permissions`)
- */
-export const AGENT_AUTH_ROLES = [
-  // Composite / Persona roles
-  "none",
-  "readonly",
-  "general",
-  "system-maintainer",
-  "admin",
-  "full-permissions",
-
-  // Domain 3-tier roles
+export const BUILTIN_AGENT_AUTH_ROLES = [
+  // 1. session
   "session.read",
   "session.maintain",
   "session.all",
+  // 2. workspace
   "workspace.read",
   "workspace.maintain",
   "workspace.all",
+  // 3. agent
   "agent.read",
   "agent.maintain",
   "agent.all",
+  // 4. memory
   "memory.read",
   "memory.maintain",
   "memory.all",
+  // 5. schedule
   "schedule.read",
   "schedule.maintain",
   "schedule.all",
+  // 6. skill
   "skill.read",
   "skill.maintain",
   "skill.all",
+  // 7. plugin
   "plugin.read",
   "plugin.maintain",
   "plugin.all",
+  // 8. workbench
   "workbench.read",
   "workbench.maintain",
   "workbench.all",
+  // 9. model
   "model.read",
   "model.maintain",
   "model.all",
+  // 10. vault
   "vault.read",
   "vault.maintain",
   "vault.all",
+  // 11. trace
   "trace.read",
   "trace.maintain",
   "trace.all",
+  // 12. benchmark
   "benchmark.read",
   "benchmark.maintain",
   "benchmark.all",
+  // 13. org
   "org.read",
   "org.maintain",
   "org.all",
-  "org.employee.read",
-  "org.employee.maintain",
-  "org.employee.all",
-  "org.handbook.read",
-  "org.handbook.maintain",
-  "org.handbook.all",
-  "org.calendar.read",
-  "org.calendar.maintain",
-  "org.calendar.all",
-  "org.ticket.read",
-  "org.ticket.maintain",
-  "org.channel.read",
-  "org.channel.maintain",
-  "org.channel.all",
-  "org.finance.read",
+  // 14. browser
   "browser.read",
   "browser.maintain",
   "browser.all",
+  // 15. machine
   "machine.read",
   "machine.maintain",
   "machine.all",
+  // 16. agents.messaging & messaging
   "agents.messaging.read",
   "agents.messaging.maintain",
   "agents.messaging.all",
   "messaging.read",
   "messaging.maintain",
   "messaging.all",
+  // 17. project
   "project.read",
   "project.maintain",
   "project.all",
+  // 18. command
   "command.read",
   "command.maintain",
   "command.all",
+  // 19. system
   "system.read",
   "system.maintain",
   "system.all",
+  // 20. admin
   "admin.read",
   "admin.maintain",
   "admin.all",
+  // Composite / persona roles
+  "none",
+  "readonly",
+  "general",
+  "system-maintainer",
+  "admin",
+  "full-permissions",
 ] as const;
 
-export type AgentAuthRole = (typeof AGENT_AUTH_ROLES)[number];
+export type BuiltinAgentAuthRole = (typeof BUILTIN_AGENT_AUTH_ROLES)[number];
 
-/** Role reference in `ROLE_TREE`, optionally refined via `<role>@<refinerId>`. */
-export type RoleChildRef = AgentAuthRole | `${AgentAuthRole}@${string}`;
+/**
+ * Open role identifier type: includes all `BuiltinAgentAuthRole` values as well as custom roles
+ * contributed by modules and plugins via `"HttpModule.roles"` or `"AgentAuthPermissionProvider.roles"`.
+ */
+export type AgentAuthRole = string;
 
-/** Leaf route reference in `ROLE_TREE`, optionally refined via `<routeId>@<refinerId>`. */
-export type RoleRouteRef = HttpRouteId | `${HttpRouteId}@${string}`;
+/** A role reference in `RoleNode.children`, optionally qualified by `@<refinerId>` (e.g. `agent.maintain@self`). */
+export type RoleChildRef = string;
 
-/** The role a newly created Agent's session runs under, absent an explicit grant. */
+/**
+ * Default role assigned to newly created Agents (`general`): grants full day-to-day
+ * session, workspace, org, browser, command, and self-scoped agent/memory/schedule/workbench
+ * maintenance while withholding cross-Agent mutation and global system administration.
+ */
 export const DEFAULT_AGENT_AUTH_ROLE: AgentAuthRole = "general";
 
 export interface RoleFlags {
-  /** Reaches every HTTP route without enumerating leaf route IDs. */
-  readonly allEndpoints?: boolean;
-  /** Reaches human-gated Agent API settings and key endpoints. */
-  readonly agentApi?: boolean;
-  /** Reaches mutating Agent-scoped routes of other Agents in the same Project. */
-  readonly crossAgent?: boolean;
+  /** true = reaches every HTTP route without naming it (`admin`, `full-permissions`). */
+  allEndpoints?: boolean;
+  /** true = reaches human-gated endpoints (`requireHuman`) such as session creation/deletion and model key management. */
+  agentApi?: boolean;
+  /** true = may mutate Agent-scoped resources of other Agents in the same Project. */
+  crossAgent?: boolean;
 }
 
 export interface RoleNode {
-  /** Child roles in the Role Tree inherited by this role (supports `<role>@<refinerId>`). */
-  readonly children?: readonly RoleChildRef[];
-  /** Leaf HTTP route IDs bound directly at this role node (supports `<routeId>@<refinerId>`). */
-  readonly routes?: readonly RoleRouteRef[];
-  /** Capability flags granted by this role node. */
-  readonly flags?: RoleFlags;
+  /** Child roles (or route IDs) whose permissions are inherited by this role, optionally suffixed with `@<refinerId>`. */
+  children?: readonly RoleChildRef[];
+  /** Direct HTTP route IDs (or `<prefix>.*` wildcard patterns) granted at this role node, optionally suffixed with `@<refinerId>`. */
+  routes?: readonly string[];
+  /** Special capability flags carried by this role node. */
+  flags?: RoleFlags;
 }
 
 /**
- * The declarative Role Tree Bind (`ROLE_TREE`).
- * Each leaf route ID is bound once at the lowest role node that permits it; higher tiers
- * and composite roles inherit routes transitively through `children`.
+ * Declarative role contribution for `"HttpModule.roles"` or `"AgentAuthPermissionProvider.roles"`.
+ *
+ * - When defining a new role node, the contribution entry `id` is used as the role ID unless
+ *   `role` is explicitly specified (allowing multiple contributions with globally unique `id`s
+ *   to extend the same role node, such as `"readonly"` or `"general"`).
+ * - `children`, `routes`, and `flags` are merged additively (set union) into the target role node.
+ * - `parents` grafts the target role into each named parent role's `children` (supporting
+ *   optional `@<refinerId>` on the parent entry, e.g. `parents: ["general@self", "system-maintainer"]`).
  */
-export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
+export interface RoleContribution {
+  /** Target role ID to define or extend; defaults to the contribution entry `id`. */
+  role?: string;
+  /** Child roles or route IDs inherited by this role, optionally suffixed with `@<refinerId>`. */
+  children?: readonly string[];
+  /** Direct HTTP route IDs (or `<prefix>.*` wildcard patterns) granted by this role, optionally suffixed with `@<refinerId>`. */
+  routes?: readonly string[];
+  /** Special capability flags carried by this role. */
+  flags?: RoleFlags;
+  /**
+   * Parent roles that should inherit this role (e.g. `["readonly"]` or `["general@self"]`).
+   * When a parent entry carries `@<refinerId>` (such as `"general@self"`), the parent role
+   * inherits `<targetRole>@<refinerId>`.
+   */
+  parents?: readonly string[];
+}
+
+/**
+ * Route-level authorization metadata declared on `"HttpModule.routes"` contributions or registered
+ * programmatically via `RoleRegistry.registerRoute`.
+ */
+export interface RouteRoleRegistration {
+  /** The `"HttpModule.routes"` contribution `id`. */
+  id: string;
+  /** Optional `"METHOD /subpath"` -> fine-grained route ID mapping for multi-endpoint Hono route groups. */
+  endpoints?: Readonly<Record<string, string>>;
+  /**
+   * Optional role IDs (or `<roleId>@<refinerId>`, e.g. `["readonly"]` or `["myPlugin.maintain", "general@self"]`)
+   * that are granted this route (and any sub-routes declared in `endpoints`).
+   */
+  roles?: readonly string[];
+}
+
+/** Parsed `<target>` and optional `@<refinerId>` suffix from a role or route grant entry. */
+export interface RefinedGrantRef {
+  target: string;
+  refinerId: string | null;
+}
+
+/**
+ * Splits a grant entry such as `"agent.maintain@self"` or `"session.delete@withAsk"`
+ * into `{ target, refinerId }`. When no `@<refinerId>` is present, `refinerId` is `null`.
+ */
+export function parseRefinedGrant(spec: string): RefinedGrantRef {
+  const trimmed = spec.trim();
+  const atIdx = trimmed.indexOf("@");
+  if (atIdx <= 0 || atIdx === trimmed.length - 1) {
+    return { target: trimmed, refinerId: null };
+  }
+  const target = trimmed.slice(0, atIdx).trim();
+  const refinerId = trimmed.slice(atIdx + 1).trim();
+  return {
+    target,
+    refinerId: refinerId !== "" ? refinerId : null,
+  };
+}
+
+/** Result of expanding a role and extra grants against a `RoleRegistry`. */
+export interface ExpandedRoleGrant {
+  allEndpoints: boolean;
+  agentApi: boolean;
+  crossAgent: boolean;
+  apiIds: string[];
+  routeRefiners: Record<string, string[]>;
+}
+
+const BUILTIN_ROLE_TREE: Readonly<Record<BuiltinAgentAuthRole, RoleNode>> = {
   // ---------------------------------------------------------------------------
   // 1. session (read -> maintain -> all)
   // ---------------------------------------------------------------------------
   "session.read": {
     routes: [
       "session.list",
-      "session.listBatch",
       "session.get",
-      "session.getScratchpadFile",
-      "session.getTraceImage",
-      "session.getMessages",
-      "session.getAmsp",
-      "session.listApprovals",
+      "session.history",
       "session.stream",
-      "session.getGoal",
-      "session.listProcesses",
-      "session.listFiles",
-      "session.readFile",
-      "session.searchFiles",
-      "session.previewFileRedirect",
-      "session.statFiles",
-      "session.getContext",
-      "session.listTraces",
-      "session.getTrace",
-      "session.getTraceAnalysis",
-      "session.getHistory",
-      "session.getHistoryLines",
-      "session.getTraceBody",
-      "session.listArchivedGroups",
-      "session.listArchived",
+      "session.export",
+      "session.activeIds",
+      "session.subagents.list",
+      "session.archived.list",
+      "session.archived.messages",
     ],
   },
   "session.maintain": {
     children: ["session.read"],
     routes: [
       "session.create",
-      "session.update",
-      "session.fork",
       "session.runTask",
       "session.steer",
-      "session.deleteSteer",
-      "session.messageSubagent",
-      "session.abortSubagent",
-      "session.deleteFollowUp",
-      "session.interrupt",
-      "session.resolveApproval",
-      "session.backgroundToolCall",
-      "session.abort",
-      "session.killProcess",
-      "session.deleteProcess",
-      "session.retryNow",
-      "session.retry",
-      "session.compact",
-      "session.switchModel",
-      "session.writeFile",
-      "session.createFile",
-      "session.moveFile",
-      "session.revealFile",
+      "session.stop",
+      "session.rename",
+      "session.truncate",
+      "session.fork",
+      "session.btw",
+      "session.shellExec",
+      "session.regenerateTitle",
+      "session.archive",
       "session.unarchive",
+      "session.updateModel",
+      "session.updateThinkingLevel",
+      "session.updateSandbox",
+      "session.uploadImages",
+      "session.uploadAttachments",
     ],
   },
   "session.all": {
     children: ["session.maintain"],
-    routes: [
-      "session.delete",
-      "session.deleteFile",
-      "session.archiveWorkspace",
-      "session.deleteArchived",
-    ],
+    routes: ["session.delete", "session.forward"],
   },
 
   // ---------------------------------------------------------------------------
   // 2. workspace (read -> maintain -> all)
   // ---------------------------------------------------------------------------
   "workspace.read": {
-    routes: ["workspace.listFiles", "workspace.readFile", "workspace.searchFiles"],
+    routes: [
+      "workspace.listFiles",
+      "workspace.readFile",
+      "workspace.readRawFile",
+      "workspace.statFile",
+      "workspace.downloadArchive",
+    ],
   },
   "workspace.maintain": {
     children: ["workspace.read"],
-    routes: [
-      "workspace.writeFile",
-      "workspace.createFile",
-      "workspace.moveFile",
-      "workspace.revealFile",
-    ],
+    routes: ["workspace.writeFile", "workspace.uploadFiles", "workspace.createDirectory"],
   },
   "workspace.all": {
     children: ["workspace.maintain"],
-    routes: ["workspace.deleteFile"],
+    routes: ["workspace.deleteEntry"],
   },
 
   // ---------------------------------------------------------------------------
@@ -796,34 +750,24 @@ export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
   "agent.read": {
     routes: [
       "agent.list",
-      "agent.getDeletion",
-      "agent.auth.get",
       "agent.config.get",
-      "agent.avatar.get",
-      "agent.archive.export",
-      "agent.api.get",
+      "agent.auth.get",
+      "agent.export",
+      "agentDeletions.get",
     ],
   },
   "agent.maintain": {
     children: ["agent.read"],
-    routes: [
-      "agent.create",
-      "agent.config.update",
-      "agent.config.mcpTest",
-      "agent.config.kernelUpdate",
-      "agent.avatar.update",
-      "agent.archive.import",
-      "agent.api.try",
-    ],
+    routes: ["agent.config.update", "agent.avatar.update"],
   },
   "agent.all": {
     children: ["agent.maintain"],
     routes: [
+      "agent.create",
+      "agent.duplicate",
       "agent.delete",
-      "agent.config.reset",
-      "agent.api.update",
-      "agent.api.createKey",
-      "agent.api.deleteKey",
+      "agent.import.preview",
+      "agent.import.apply",
     ],
   },
 
@@ -831,30 +775,40 @@ export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
   // 4. memory (read -> maintain -> all)
   // ---------------------------------------------------------------------------
   "memory.read": {
-    routes: ["memory.get", "memory.listFiles", "memory.readFile", "memory.export"],
+    routes: [
+      "memory.session.list",
+      "memory.session.readFile",
+      "memory.agent.list",
+      "memory.agent.readFile",
+    ],
   },
   "memory.maintain": {
     children: ["memory.read"],
-    routes: ["memory.templatePlaceholder", "memory.import"],
+    routes: ["memory.agent.writeFile"],
   },
   "memory.all": {
     children: ["memory.maintain"],
-    routes: ["memory.deleteFile"],
+    routes: ["memory.agent.deleteFile"],
   },
 
   // ---------------------------------------------------------------------------
   // 5. schedule (read -> maintain -> all)
   // ---------------------------------------------------------------------------
   "schedule.read": {
-    routes: ["schedule.list", "schedule.get", "schedule.listProject"],
+    routes: [
+      "schedule.list",
+      "schedule.runs",
+      "schedule.session.list",
+      "schedule.session.runs",
+    ],
   },
   "schedule.maintain": {
     children: ["schedule.read"],
-    routes: ["schedule.create", "schedule.templatePlaceholder", "schedule.update"],
+    routes: ["schedule.upsert", "schedule.session.upsert"],
   },
   "schedule.all": {
     children: ["schedule.maintain"],
-    routes: ["schedule.delete"],
+    routes: ["schedule.delete", "schedule.session.delete"],
   },
 
   // ---------------------------------------------------------------------------
@@ -862,20 +816,37 @@ export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
   // ---------------------------------------------------------------------------
   "skill.read": {
     routes: [
-      "skill.list",
-      "skill.exportArchive",
-      "skill.getIcon",
-      "skill.listDir",
-      "skill.getDirIcon",
+      "skills.global.list",
+      "skill.agent.list",
+      "skill.agent.get",
+      "skill.agent.readFile",
+      "skill.session.list",
+      "skill.session.get",
+      "skill.hub.registry",
+      "skill.hub.search",
     ],
   },
   "skill.maintain": {
     children: ["skill.read"],
-    routes: ["skill.templatePlaceholder", "skill.importArchive"],
+    routes: [
+      "skill.agent.create",
+      "skill.agent.update",
+      "skill.agent.setEnabled",
+      "skill.agent.enableAll",
+      "skill.agent.disableAll",
+      "skill.agent.install",
+      "skill.agent.upload",
+      "skill.session.setEnabled",
+      "skill.session.enableAll",
+      "skill.session.disableAll",
+      "skill.session.install",
+      "skill.session.upload",
+      "skill.hub.import",
+    ],
   },
   "skill.all": {
     children: ["skill.maintain"],
-    routes: ["skill.delete"],
+    routes: ["skill.agent.delete", "skill.session.delete"],
   },
 
   // ---------------------------------------------------------------------------
@@ -883,40 +854,34 @@ export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
   // ---------------------------------------------------------------------------
   "plugin.read": {
     routes: [
-      "plugin.library.list",
-      "plugin.library.listFiles",
-      "plugin.library.getReadme",
-      "plugin.library.getArchive",
-      "plugin.library.getIcon",
-      "plugin.registry.list",
-      "plugin.registry.getIcon",
-      "plugin.registry.getReadme",
-      "plugin.registry.getArchive",
       "plugin.installed.list",
+      "plugin.marketplace.list",
       "plugin.agent.list",
-      "plugin.hook.list",
-      "plugin.hook.exportArchive",
-      "plugin.hook.getIcon",
-      "plugin.mcp.list",
+      "plugin.project.list",
+      "plugin.mount.agentUi",
+      "plugin.mount.projectUi",
     ],
   },
   "plugin.maintain": {
     children: ["plugin.read"],
     routes: [
-      "plugin.agent.install",
-      "plugin.hook.importArchive",
-      "plugin.installed.install",
-      "plugin.installed.link",
-      "plugin.installed.importArchive",
-      "plugin.installed.setEnabled",
+      "plugin.agent.setEnabled",
+      "plugin.agent.updateConfig",
+      "plugin.agent.action",
+      "plugin.project.setEnabled",
+      "plugin.project.updateConfig",
+      "plugin.project.action",
+      "plugin.mount.agentApi",
+      "plugin.mount.projectApi",
     ],
   },
   "plugin.all": {
     children: ["plugin.maintain"],
     routes: [
-      "plugin.agent.uninstall",
-      "plugin.hook.delete",
-      "plugin.mcp.delete",
+      "plugin.installed.install",
+      "plugin.installed.upload",
+      "plugin.installed.reinstall",
+      "plugin.installed.upgrade",
       "plugin.installed.uninstall",
     ],
   },
@@ -927,74 +892,57 @@ export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
   "workbench.read": {
     routes: [
       "workbench.list",
-      "workbench.exportArchive",
-      "workbench.getHistory",
-      "workbench.getAppCenterIcon",
-      "workbench.serveUi",
-      "workbench.serveSdkUi",
-      "workbench.serveSdkFile",
-      "workbench.appCenter.list",
+      "workbench.meta",
+      "workbench.versions.list",
+      "workbench.ui",
     ],
   },
   "workbench.maintain": {
     children: ["workbench.read"],
     routes: [
-      "workbench.setAllEnabled",
-      "workbench.setEnabled",
-      "workbench.importArchive",
-      "workbench.reload",
-      "workbench.rollback",
-      "workbench.updateSidebar",
-      "workbench.updateAppCenter",
-      "workbench.callApi",
-      "workbench.appCenter.updateLayout",
+      "workbench.duplicate",
+      "workbench.versions.create",
+      "workbench.versions.restore",
+      "workbench.api",
     ],
   },
   "workbench.all": {
     children: ["workbench.maintain"],
-    routes: ["workbench.delete"],
   },
 
   // ---------------------------------------------------------------------------
   // 9. model (read -> maintain -> all)
   // ---------------------------------------------------------------------------
   "model.read": {
-    routes: [
-      "model.list",
-      "model.getBalance",
-      "model.test",
-      "model.detect",
-      "model.listRemote",
-      "model.detectVision",
-      "model.oauth.list",
-      "model.oauth.getStatus",
-      "model.platformAuth.getStatus",
-      "model.modelscopeAuth.getStatus",
-      "model.chatDefaults.get",
-    ],
+    routes: ["modelRegistry.get", "model.config.get"],
   },
   "model.maintain": {
     children: ["model.read"],
     routes: [
-      "model.setDefault",
-      "model.syncPresets",
-      "model.platformAuth.sync",
-      "model.chatDefaults.update",
+      "model.config.setDefaultModel",
+      "model.config.setDefaultImageModel",
+      "model.config.setDefaultSpeechModel",
+      "model.config.setAttachmentLimits",
+      "model.config.testProvider",
+      "model.config.addCustomModel",
+      "model.config.updateCustomModel",
+      "model.config.testCustomModel",
     ],
   },
   "model.all": {
     children: ["model.maintain"],
     routes: [
-      "model.update",
-      "model.updateProvider",
-      "model.oauth.start",
-      "model.oauth.submitCode",
-      "model.platformAuth.start",
-      "model.platformAuth.retry",
-      "model.platformAuth.cancel",
-      "model.modelscopeAuth.start",
-      "model.modelscopeAuth.retry",
-      "model.modelscopeAuth.cancel",
+      "model.config.setSandbox",
+      "model.config.updateProvider",
+      "model.config.deleteProvider",
+      "model.config.deleteCustomModel",
+      "oauth.anthropic.authorize",
+      "oauth.anthropic.callback",
+      "oauth.anthropic.disconnect",
+      "oauth.codex.authorize",
+      "oauth.codex.callback",
+      "oauth.codex.complete",
+      "oauth.codex.disconnect",
     ],
   },
 
@@ -1002,38 +950,30 @@ export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
   // 10. vault (read -> maintain -> all)
   // ---------------------------------------------------------------------------
   "vault.read": {
-    routes: ["vault.get"],
+    routes: ["vault.agent.list", "vault.session.list"],
   },
   "vault.maintain": {
     children: ["vault.read"],
-    routes: ["vault.update", "vault.setEntry", "vault.templatePlaceholder"],
+    routes: ["vault.agent.set", "vault.session.set"],
   },
   "vault.all": {
     children: ["vault.maintain"],
-    routes: ["vault.deleteEntry"],
+    routes: ["vault.agent.delete", "vault.session.delete"],
   },
 
   // ---------------------------------------------------------------------------
-  // 11. trace & usage (read -> maintain -> all)
+  // 11. trace (read -> maintain -> all)
   // ---------------------------------------------------------------------------
   "trace.read": {
-    routes: [
-      "trace.list",
-      "trace.get",
-      "trace.getAnalysis",
-      "trace.download",
-      "usage.get",
-      "usage.getModelTotals",
-      "usage.listErrors",
-    ],
+    routes: ["trace.list", "trace.stats", "trace.get"],
   },
   "trace.maintain": {
     children: ["trace.read"],
-    routes: ["trace.import"],
+    routes: ["trace.cleanup"],
   },
   "trace.all": {
     children: ["trace.maintain"],
-    routes: ["usage.clearErrors"],
+    routes: ["trace.delete"],
   },
 
   // ---------------------------------------------------------------------------
@@ -1042,137 +982,119 @@ export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
   "benchmark.read": {
     routes: [
       "benchmark.list",
-      "benchmark.exportArchive",
-      "benchmark.listCases",
-      "benchmark.listCaseFiles",
-      "benchmark.readCaseFile",
-      "benchmark.listRubricFiles",
-      "benchmark.readRubricFile",
+      "benchmark.get",
+      "benchmark.runs.list",
+      "benchmark.runs.get",
+      "benchmark.runs.stream",
+      "benchmark.leaderboard",
     ],
   },
   "benchmark.maintain": {
     children: ["benchmark.read"],
-    routes: ["benchmark.create", "benchmark.importArchive"],
+    routes: [
+      "benchmark.create",
+      "benchmark.runs.start",
+      "benchmark.runs.stop",
+      "benchmark.cases.analyze",
+      "benchmark.runs.analyze",
+      "benchmark.runs.optimize",
+      "benchmark.runs.exportFindings",
+    ],
   },
   "benchmark.all": {
     children: ["benchmark.maintain"],
-    routes: ["benchmark.delete"],
+    routes: ["benchmark.delete", "benchmark.runs.delete"],
   },
 
   // ---------------------------------------------------------------------------
-  // 13. org & sub-domains (employee, handbook, calendar, ticket, channel, finance)
+  // 13. org (read -> maintain -> all)
   // ---------------------------------------------------------------------------
-  "org.employee.read": {
-    routes: ["org.employee.getAvatar", "org.employee.getDesk"],
-  },
-  "org.employee.maintain": {
-    children: ["org.employee.read"],
-    routes: [
-      "org.employee.hire",
-      "org.employee.update",
-      "org.employee.updateAvatar",
-      "org.employee.startDesk",
-    ],
-  },
-  "org.employee.all": {
-    children: ["org.employee.maintain"],
-    routes: ["org.employee.remove"],
-  },
-
-  "org.handbook.read": {
-    routes: ["org.handbook.get", "org.handbook.listFiles", "org.handbook.readFile"],
-  },
-  "org.handbook.maintain": {
-    children: ["org.handbook.read"],
-    routes: ["org.handbook.update", "org.handbook.writeFile"],
-  },
-  "org.handbook.all": {
-    children: ["org.handbook.maintain"],
-    routes: ["org.handbook.deleteFile"],
-  },
-
-  "org.calendar.read": {
-    routes: ["org.calendar.list", "org.calendar.get"],
-  },
-  "org.calendar.maintain": {
-    children: ["org.calendar.read"],
-    routes: ["org.calendar.create", "org.calendar.update"],
-  },
-  "org.calendar.all": {
-    children: ["org.calendar.maintain"],
-    routes: ["org.calendar.delete"],
-  },
-
-  "org.ticket.read": {
-    routes: ["org.ticket.list", "org.ticket.get"],
-  },
-  "org.ticket.maintain": {
-    children: ["org.ticket.read"],
-    routes: [
-      "org.ticket.create",
-      "org.ticket.update",
-      "org.ticket.move",
-      "org.ticket.block",
-      "org.ticket.unblock",
-      "org.ticket.progress",
-      "org.ticket.start",
-      "org.ticket.attach",
-    ],
-  },
-
-  "org.channel.read": {
-    routes: ["org.channel.list", "org.channel.get", "org.channel.listMessages"],
-  },
-  "org.channel.maintain": {
-    children: ["org.channel.read"],
-    routes: [
-      "org.channel.create",
-      "org.channel.update",
-      "org.channel.addMember",
-      "org.channel.postMessage",
-      "org.channel.markRead",
-    ],
-  },
-  "org.channel.all": {
-    children: ["org.channel.maintain"],
-    routes: ["org.channel.removeMember"],
-  },
-
-  "org.finance.read": {
-    routes: ["org.finance.get"],
-  },
-
   "org.read": {
-    children: [
-      "org.employee.read",
-      "org.handbook.read",
-      "org.calendar.read",
-      "org.ticket.read",
-      "org.channel.read",
-      "org.finance.read",
+    routes: [
+      "org.list",
+      "org.get",
+      "org.member.list",
+      "org.member.stats",
+      "org.member.get",
+      "org.member.getAvatar",
+      "org.channel.list",
+      "org.channel.get",
+      "org.channel.listMessages",
+      "org.stream",
+      "org.ticket.list",
+      "org.ticket.get",
+      "org.calendar.list",
+      "org.finance.summary",
+      "org.proposal.list",
+      "org.proposal.verifyQueue",
+      "org.proposal.getSettings",
+      "org.proposal.get",
+      "org.roadmap.list",
+      "org.roadmap.get",
     ],
-    routes: ["org.list", "org.get", "org.getChart", "org.session.list"],
   },
   "org.maintain": {
-    children: [
-      "org.read",
-      "org.employee.maintain",
-      "org.handbook.maintain",
-      "org.calendar.maintain",
-      "org.ticket.maintain",
-      "org.channel.maintain",
+    children: ["org.read"],
+    routes: [
+      "org.update",
+      "org.member.add",
+      "org.member.update",
+      "org.member.uploadAvatar",
+      "org.channel.create",
+      "org.channel.reorder",
+      "org.channel.update",
+      "org.channel.addMember",
+      "org.channel.removeMember",
+      "org.channel.postMessage",
+      "org.ticket.create",
+      "org.ticket.update",
+      "org.ticket.transition",
+      "org.ticket.assign",
+      "org.ticket.start",
+      "org.ticket.addSession",
+      "org.calendar.create",
+      "org.calendar.update",
+      "org.calendar.delete",
+      "org.finance.setBudget",
+      "org.finance.unpause",
+      "org.proposal.create",
+      "org.proposal.update",
+      "org.proposal.ready",
+      "org.proposal.reopen",
+      "org.proposal.revise",
+      "org.proposal.implement",
+      "org.proposal.setImpl",
+      "org.proposal.verify",
+      "org.proposal.verifyBatch",
+      "org.proposal.feedback",
+      "org.proposal.addInlineComment",
+      "org.proposal.updateInlineComment",
+      "org.proposal.deleteInlineComment",
+      "org.roadmap.create",
+      "org.roadmap.update",
+      "org.roadmap.upsertItem",
+      "org.roadmap.deleteItem",
+      "org.roadmap.approveItem",
+      "org.roadmap.unapproveItem",
+      "org.roadmap.wakeModerator",
     ],
-    routes: ["org.update"],
   },
   "org.all": {
-    children: [
-      "org.maintain",
-      "org.employee.all",
-      "org.handbook.all",
-      "org.calendar.all",
-      "org.channel.all",
+    children: ["org.maintain"],
+    routes: [
+      "org.create",
+      "org.delete",
+      "org.member.remove",
+      "org.channel.delete",
+      "org.ticket.delete",
+      "org.proposal.updateSettings",
+      "org.proposal.delete",
+      "org.proposal.approve",
+      "org.proposal.reject",
+      "org.proposal.merge",
+      "org.proposal.confirm",
+      "org.roadmap.delete",
     ],
-    routes: ["org.create", "org.delete"],
   },
 
   // ---------------------------------------------------------------------------
@@ -1180,44 +1102,34 @@ export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
   // ---------------------------------------------------------------------------
   "browser.read": {
     routes: [
-      "browser.getStatus",
-      "browser.getBackend",
-      "browser.listExtensions",
-      "browser.listTabs",
-      "browser.listImportSources",
-      "browser.getSettings",
-      "browser.getHistory",
+      "browser.status",
+      "browser.tabs.list",
+      "browser.tabs.snapshot",
+      "browser.tabs.screenshot",
+      "browser.stream",
     ],
   },
   "browser.maintain": {
     children: ["browser.read"],
     routes: [
-      "browser.openTab",
-      "browser.openSessionTab",
-      "browser.claimTabs",
-      "browser.setOnScreen",
-      "browser.activateTab",
-      "browser.closeTab",
-      "browser.navigate",
-      "browser.scan",
-      "browser.exec",
-      "browser.click",
-      "browser.type",
-      "browser.screenshot",
-      "browser.cdp",
+      "browser.tabs.open",
+      "browser.tabs.close",
+      "browser.tabs.activate",
+      "browser.tabs.navigate",
+      "browser.tabs.back",
+      "browser.tabs.forward",
+      "browser.tabs.reload",
+      "browser.tabs.click",
+      "browser.tabs.type",
+      "browser.tabs.press",
+      "browser.tabs.scroll",
+      "browser.tabs.eval",
+      "browser.handoff",
     ],
   },
   "browser.all": {
     children: ["browser.maintain"],
-    routes: [
-      "browser.setBackend",
-      "browser.createExtensionPairing",
-      "browser.revokeExtension",
-      "browser.importData",
-      "browser.updateSettings",
-      "browser.clearHistory",
-      "browser.clearData",
-    ],
+    routes: ["browser.setBackend", "browser.cookies.import"],
   },
 
   // ---------------------------------------------------------------------------
@@ -1226,96 +1138,84 @@ export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
   "machine.read": {
     routes: [
       "machine.list",
-      "machine.events",
-      "machine.listSshHosts",
-      "machine.getSshHost",
-      "machine.listDirs",
-      "machine.probe",
-      "machine.diagnose",
+      "machine.get",
+      "machine.stats",
+      "machine.statsStream",
+      "machine.processes",
+      "machine.listFiles",
+      "machine.readFile",
+      "machine.downloadFile",
+      "machine.listPorts",
+      "machine.serverStatus",
+      "machine.serverLogs",
+      "machine.listSshConfigHosts",
     ],
   },
   "machine.maintain": {
     children: ["machine.read"],
     routes: [
-      "machine.use",
-      "machine.stopUsing",
+      "machine.reorder",
+      "machine.testConnection",
       "machine.connect",
-      "machine.reconnect",
-      "machine.stopReconnecting",
       "machine.disconnect",
-      "machine.restart",
-      "machine.stop",
-      "machine.sync",
+      "machine.writeFile",
+      "machine.mkdir",
+      "machine.renameFile",
+      "machine.uploadFile",
+      "machine.addPortForward",
+      "machine.removePortForward",
+      "machine.serverStart",
+      "machine.serverStop",
+      "machine.serverRestart",
     ],
   },
   "machine.all": {
     children: ["machine.maintain"],
     routes: [
-      "machine.add",
-      "machine.createSshHost",
-      "machine.updateSshHost",
-      "machine.install",
-      "machine.uninstall",
-      "machine.release",
-      "machine.proxy",
+      "machine.create",
+      "machine.importSshConfig",
+      "machine.update",
+      "machine.delete",
+      "machine.killProcess",
+      "machine.deleteFile",
+      "machine.serverInstall",
+      "machine.serverUpgrade",
+      "machine.serverProxy",
     ],
   },
 
   // ---------------------------------------------------------------------------
-  // 16. messaging & agents.messaging (read -> maintain -> all)
+  // 16. agents.messaging & messaging (read -> maintain -> all)
   // ---------------------------------------------------------------------------
   "agents.messaging.read": {
     routes: [
       "agents.messaging.feishu.get",
-      "agents.messaging.telegram.get",
       "agents.messaging.qq.get",
+      "agents.messaging.telegram.get",
       "agents.messaging.wechat.get",
+      "agents.messaging.wechat.scanPoll",
+      "agents.messaging.*.get",
+      "agents.messaging.*.scanPoll",
     ],
   },
   "agents.messaging.maintain": {
     children: ["agents.messaging.read"],
     routes: [
       "agents.messaging.feishu.update",
-      "agents.messaging.feishu.setState",
-      "agents.messaging.feishu.test",
-      "agents.messaging.feishu.testMessage",
-      "agents.messaging.telegram.update",
-      "agents.messaging.telegram.setState",
-      "agents.messaging.telegram.test",
-      "agents.messaging.telegram.testMessage",
       "agents.messaging.qq.update",
-      "agents.messaging.qq.setState",
-      "agents.messaging.qq.scanStart",
-      "agents.messaging.qq.scanPoll",
-      "agents.messaging.qq.scanCancel",
-      "agents.messaging.qq.test",
-      "agents.messaging.qq.testMessage",
+      "agents.messaging.telegram.update",
       "agents.messaging.wechat.update",
-      "agents.messaging.wechat.setState",
       "agents.messaging.wechat.scanStart",
-      "agents.messaging.wechat.scanPoll",
-      "agents.messaging.wechat.scanVerify",
-      "agents.messaging.wechat.scanCancel",
-      "agents.messaging.wechat.test",
-      "agents.messaging.wechat.testMessage",
+      "agents.messaging.*.update",
+      "agents.messaging.*.scanStart",
     ],
   },
   "agents.messaging.all": {
     children: ["agents.messaging.maintain"],
-    routes: [
-      "agents.messaging.feishu.delete",
-      "agents.messaging.telegram.delete",
-      "agents.messaging.qq.delete",
-      "agents.messaging.wechat.delete",
-    ],
   },
   "messaging.read": {
     children: ["agents.messaging.read"],
-    routes: [
-      "messaging.listAccounts",
-      "messaging.listAccountHolders",
-      "messaging.session.list",
-    ],
+    routes: ["messaging.listAccounts", "messaging.listAccountHolders"],
   },
   "messaging.maintain": {
     children: ["messaging.read", "agents.messaging.maintain"],
@@ -1328,37 +1228,30 @@ export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
   // 17. project (read -> maintain -> all)
   // ---------------------------------------------------------------------------
   "project.read": {
-    routes: [
-      "project.list",
-      "project.member.list",
-      "project.dir.list",
-      "project.dir.checkAccess",
-      "project.suggestId",
-      "project.commandPolicy.get",
-    ],
+    routes: ["projects.list"],
   },
   "project.maintain": {
     children: ["project.read"],
-    routes: ["project.create", "project.update", "project.member.add"],
+    routes: ["projects.create"],
   },
   "project.all": {
     children: ["project.maintain"],
-    routes: ["project.delete", "project.member.remove", "project.commandPolicy.update"],
+    routes: ["projects.delete"],
   },
 
   // ---------------------------------------------------------------------------
   // 18. command (read -> maintain -> all)
   // ---------------------------------------------------------------------------
   "command.read": {
-    routes: ["command.list", "cli.commands.list"],
+    routes: ["cli.commands.list"],
   },
   "command.maintain": {
     children: ["command.read"],
-    routes: ["command.run"],
+    routes: ["cli.commands.invoke"],
   },
   "command.all": {
     children: ["command.maintain"],
-    routes: ["cli.commands.run"],
+    routes: ["command.exec"],
   },
 
   // ---------------------------------------------------------------------------
@@ -1366,37 +1259,31 @@ export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
   // ---------------------------------------------------------------------------
   "system.read": {
     routes: [
-      "version.get",
-      "version.listHistory",
-      "version.getHistoryIfaces",
-      "version.getHistoryDiff",
-      "version.getUpdateCheck",
-      "version.getUpdate",
-      "handshake.get",
-      "events.stream",
-      "web.contributions.list",
-      "languages.list",
-      "languages.getGrammar",
-      "themes.list",
-      "themes.getFile",
-      "themes.export",
+      "health",
+      "System.Config",
+      "setup.status",
       "me.get",
-      "me.getPrefs",
-      "me.getBackgroundImage",
-      "me.getDrafts",
-      "desktop.update.get",
-      "desktop.tray.get",
+      "usage.get",
+      "usage.daily",
+      "usage.stats",
+      "themes.list",
+      "themes.get",
+      "version.get",
+      "desktop.status",
+      "desktop.Current",
     ],
   },
   "system.maintain": {
     children: ["system.read"],
     routes: [
-      "me.updateProfile",
-      "me.updatePrefs",
-      "me.updateBackgroundImage",
-      "me.updateDrafts",
-      "themes.create",
-      "desktop.tray.update",
+      "setup.complete",
+      "auth.login",
+      "auth.logout",
+      "me.updateDisplayName",
+      "me.updateAvatar",
+      "themes.save",
+      "version.check",
+      "desktop.pickDirectory",
       "desktop.window.action",
     ],
   },
@@ -1538,82 +1425,520 @@ export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
   },
 };
 
-export function isAgentAuthRole(value: string): value is AgentAuthRole {
-  return Object.hasOwn(ROLE_TREE, value);
+interface MutableRoleNode {
+  children: string[];
+  routes: string[];
+  flags: RoleFlags;
 }
 
 /**
- * Expands a primary `role` (which may itself carry `<role>@<refinerId>`) and optional
- * `extraGrants` (which may name additional `AgentAuthRole` tree nodes or individual HTTP
- * route IDs, with optional `@<refinerId>`) into the effective route set, capability flags,
- * and per-route refiner map (`routeRefiners`).
- *
- * Rules for `@refiner` propagation:
- * 1. If a leaf route is granted unconditionally along any tree path (no `@refiner`), it is
- *    permitted unconditionally and omitted from `routeRefiners`.
- * 2. When `<role>@<refinerId>` is applied to a `.maintain` or `.all` role node, the inherited
- *    `.read` base tier remains unconditional (unless the caller explicitly wrote `<domain>.read@<refinerId>`),
- *    so read-only queries are not unnecessarily gated by write refiners like `@withAsk`.
+ * Checks whether a route grant pattern (exact ID, `"*"`, `"<prefix>.*"`, or segment glob like
+ * `"agents.messaging.*.get"`) matches a target `routeId`.
  */
-export function expandRoleGrant(
-  role: string,
-  extraGrants: readonly string[] = [],
-): {
-  allEndpoints: boolean;
-  agentApi: boolean;
-  crossAgent: boolean;
-  apiIds: string[];
-  routeRefiners: Record<string, string[]>;
-} {
-  const visited = new Set<string>();
-  const allRoutes = new Set<string>();
-  const unconditionalRoutes = new Set<string>();
-  const refinedRouteMap = new Map<string, Set<string>>();
-  let allEndpoints = false;
-  let agentApi = false;
-  let crossAgent = false;
+export function routePatternMatches(
+  pattern: string,
+  routeId: string,
+  registry: RoleRegistry = DEFAULT_ROLE_REGISTRY,
+): boolean {
+  const normPattern = registry.normalizeRouteId(pattern);
+  const normRoute = registry.normalizeRouteId(routeId);
+  if (normPattern === normRoute || normPattern === "*") return true;
+  if (!normPattern.includes("*")) return false;
+  if (normPattern.endsWith(".*") && !normPattern.slice(0, -2).includes("*")) {
+    const prefix = normPattern.slice(0, -1);
+    return normRoute.startsWith(prefix) && normRoute.length > prefix.length;
+  }
+  const parts = normPattern.split("*");
+  const regexSource =
+    "^" +
+    parts.map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join("[^.]+") +
+    "$";
+  return new RegExp(regexSource).test(normRoute);
+}
 
-  const recordRoute = (routeId: string, refinerId: string | null): void => {
-    const normalized = normalizeRouteId(routeId);
-    allRoutes.add(normalized);
-    if (refinerId === null) {
-      unconditionalRoutes.add(normalized);
-    } else {
-      let set = refinedRouteMap.get(normalized);
-      if (set === undefined) {
-        set = new Set<string>();
-        refinedRouteMap.set(normalized, set);
+/**
+ * Checks whether `grantedApiIds` (from an `AgentAuthGrant`) authorizes `routeId` (or its
+ * enclosing `groupId`), supporting both exact route IDs and wildcard patterns (`<prefix>.*`).
+ */
+export function matchesRouteGrant(
+  grantedApiIds: readonly string[],
+  routeId: string,
+  groupId?: string,
+  registry: RoleRegistry = DEFAULT_ROLE_REGISTRY,
+): boolean {
+  const normalized = registry.normalizeRouteId(routeId);
+  const normalizedGroup = groupId !== undefined ? registry.normalizeRouteId(groupId) : undefined;
+  for (const granted of grantedApiIds) {
+    if (
+      granted === normalized ||
+      granted === routeId ||
+      routePatternMatches(granted, normalized, registry)
+    ) {
+      return true;
+    }
+    if (
+      normalizedGroup !== undefined &&
+      (granted === normalizedGroup ||
+        granted === groupId ||
+        routePatternMatches(granted, normalizedGroup, registry))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Resolves the list of `@<refinerId>` IDs required for `routeId` (or `groupId`) under an
+ * `AgentAuthGrant`. Unconditional exact grants take precedence over refined wildcard grants.
+ */
+export function resolveRouteRefiners(
+  routeRefiners: Readonly<Record<string, readonly string[]>> | undefined,
+  grantedApiIds: readonly string[],
+  routeId: string,
+  groupId?: string,
+  registry: RoleRegistry = DEFAULT_ROLE_REGISTRY,
+): readonly string[] | undefined {
+  if (routeRefiners === undefined) return undefined;
+  const normalized = registry.normalizeRouteId(routeId);
+  const normalizedGroup = groupId !== undefined ? registry.normalizeRouteId(groupId) : undefined;
+
+  const direct =
+    (Object.hasOwn(routeRefiners, normalized) ? routeRefiners[normalized] : undefined) ??
+    (Object.hasOwn(routeRefiners, routeId) ? routeRefiners[routeId] : undefined) ??
+    (normalizedGroup !== undefined && Object.hasOwn(routeRefiners, normalizedGroup)
+      ? routeRefiners[normalizedGroup]
+      : undefined);
+  if (direct !== undefined) return direct;
+
+  if (
+    grantedApiIds.includes(normalized) ||
+    grantedApiIds.includes(routeId) ||
+    (normalizedGroup !== undefined &&
+      (grantedApiIds.includes(normalizedGroup) ||
+        (groupId !== undefined && grantedApiIds.includes(groupId))))
+  ) {
+    return undefined;
+  }
+
+  const matched = new Set<string>();
+  for (const [pattern, refiners] of Object.entries(routeRefiners)) {
+    if (!pattern.includes("*")) continue;
+    if (
+      routePatternMatches(pattern, normalized, registry) ||
+      (normalizedGroup !== undefined && routePatternMatches(pattern, normalizedGroup, registry))
+    ) {
+      for (const r of refiners) matched.add(r);
+    }
+  }
+  return matched.size > 0 ? [...matched] : undefined;
+}
+
+/**
+ * Dynamic, extensible registry of Agent authorization roles, route-group sub-endpoint mappings,
+ * and route-to-role bindings.
+ *
+ * Each `RoleRegistry` starts pre-seeded with the 20 built-in domain triples, 6 composite roles,
+ * and built-in HTTP route catalog, and can be extended by module/plugin slot contributions
+ * (`"HttpModule.roles"`, `"HttpModule.routes"`, `"AgentAuthPermissionProvider.roles"`) or
+ * programmatic calls (`registerRole`, `registerRoles`, `registerRoute`, `registerGroupEndpoints`).
+ */
+export class RoleRegistry {
+  private readonly tree: Record<string, MutableRoleNode> = {};
+  private readonly roleList: string[] = [];
+  private readonly groupEndpoints: Record<string, Record<string, string>> = {};
+  private readonly allRoutesList: string[] = [];
+  private readonly allRoutesSet = new Set<string>();
+  private readonly prefixAliases: Record<string, string> = {};
+
+  constructor() {
+    for (const [from, to] of Object.entries(BUILTIN_ROUTE_PREFIX_ALIASES)) {
+      this.prefixAliases[from] = to;
+    }
+    for (const routeId of BUILTIN_DIRECT_HTTP_ROUTE_IDS) {
+      this.recordKnownRouteId(routeId);
+    }
+    for (const [groupId, map] of Object.entries(BUILTIN_HTTP_GROUP_ENDPOINT_IDS)) {
+      const cloned: Record<string, string> = {};
+      for (const [methodPath, routeId] of Object.entries(map)) {
+        cloned[methodPath] = routeId;
+        this.recordKnownRouteId(routeId);
       }
-      set.add(refinerId);
+      this.groupEndpoints[groupId] = cloned;
     }
-  };
-
-  const visitRole = (r: AgentAuthRole, inheritedRefiner: string | null, isRootRefined: boolean): void => {
-    const isReadTier = r === "readonly" || r.endsWith(".read");
-    const effectiveRefiner =
-      inheritedRefiner !== null && isReadTier && !isRootRefined ? null : inheritedRefiner;
-    const visitKey = `${r}@${effectiveRefiner ?? ""}`;
-    if (visited.has(visitKey)) return;
-    visited.add(visitKey);
-
-    const node = ROLE_TREE[r];
-    if (node === undefined) return;
-    if (effectiveRefiner === null) {
-      if (node.flags?.allEndpoints) allEndpoints = true;
-      if (node.flags?.agentApi) agentApi = true;
-      if (node.flags?.crossAgent) crossAgent = true;
+    for (const roleId of BUILTIN_AGENT_AUTH_ROLES) {
+      const seed = BUILTIN_ROLE_TREE[roleId];
+      this.tree[roleId] = {
+        children: seed.children !== undefined ? [...seed.children] : [],
+        routes: seed.routes !== undefined ? [...seed.routes] : [],
+        flags: seed.flags !== undefined ? { ...seed.flags } : {},
+      };
+      this.roleList.push(roleId);
     }
-    if (node.routes !== undefined) {
+  }
+
+  /** Live view of the role tree in this registry. */
+  get roleTree(): Readonly<Record<string, RoleNode>> {
+    return this.tree;
+  }
+
+  /** Live list of all role IDs registered in this registry. */
+  get roles(): readonly string[] {
+    return this.roleList;
+  }
+
+  /** Live mapping of multi-endpoint group IDs to `"METHOD /subpath"` -> fine-grained route ID. */
+  get groupEndpointIds(): Readonly<Record<string, Readonly<Record<string, string>>>> {
+    return this.groupEndpoints;
+  }
+
+  /** Live list of all concrete HTTP route IDs registered in this registry. */
+  get allHttpRouteIds(): readonly string[] {
+    return this.allRoutesList;
+  }
+
+  private recordKnownRouteId(routeId: string): void {
+    if (routeId === "" || routeId.includes("*") || this.allRoutesSet.has(routeId)) return;
+    this.allRoutesSet.add(routeId);
+    this.allRoutesList.push(routeId);
+  }
+
+  private ensureRoleNode(roleId: string): MutableRoleNode {
+    let node = this.tree[roleId];
+    if (node === undefined) {
+      node = { children: [], routes: [], flags: {} };
+      this.tree[roleId] = node;
+      this.roleList.push(roleId);
+    }
+    return node;
+  }
+
+  /** Whether `value` is a registered role node in this registry. */
+  isRole(value: string): boolean {
+    return Object.hasOwn(this.tree, value);
+  }
+
+  /** Registers a legacy or shorthand route prefix alias (e.g. `"agents.slack"` -> `"agents.messaging.slack"`). */
+  registerRouteAlias(fromPrefix: string, toPrefix: string): void {
+    const from = fromPrefix.trim().replace(/^penguin\./, "");
+    const to = toPrefix.trim().replace(/^penguin\./, "");
+    if (from !== "" && to !== "") {
+      this.prefixAliases[from] = to;
+    }
+  }
+
+  /**
+   * Normalizes a route ID by stripping the optional `"penguin."` namespace prefix and mapping
+   * registered prefix aliases (such as `"agents.<channel>.*"` -> `"agents.messaging.<channel>.*"`).
+   */
+  normalizeRouteId(routeId: string): string {
+    const trimmed = routeId.trim();
+    const stripped = trimmed.startsWith("penguin.") ? trimmed.slice("penguin.".length) : trimmed;
+    for (const [aliasFrom, canonicalTo] of Object.entries(this.prefixAliases)) {
+      if (stripped === aliasFrom) return canonicalTo;
+      if (stripped.startsWith(`${aliasFrom}.`)) {
+        return `${canonicalTo}${stripped.slice(aliasFrom.length)}`;
+      }
+    }
+    return stripped;
+  }
+
+  /**
+   * Resolves the fine-grained route ID for a sub-route inside an `HttpModule.routes` contribution.
+   * Checks registered `groupEndpointIds`, dynamic `messaging.session-routes` and
+   * `agents.messaging.<channel>` patterns, and falls back to the normalized contribution ID.
+   */
+  resolveHttpRouteId(routeContributionId: string, method: string, subPath: string): string {
+    const upperMethod = method.toUpperCase();
+    const normSubPath = subPath === "" ? "/" : subPath;
+    const key = `${upperMethod} ${normSubPath}`;
+    const normGroupId = this.normalizeRouteId(routeContributionId);
+
+    const groupMap = this.groupEndpoints[routeContributionId] ?? this.groupEndpoints[normGroupId];
+    const mapped = groupMap?.[key] ?? groupMap?.[`${upperMethod} ${subPath}`];
+    if (mapped !== undefined) return mapped;
+
+    if (routeContributionId === "messaging.session-routes" || normGroupId === "messaging.session-routes") {
+      const m = /^\/:sessionId\/messaging\/([a-z0-9_-]+)(?:\/([a-z0-9_-]+))?$/i.exec(normSubPath);
+      if (m !== null && m[1] !== undefined) {
+        const channel = m[1].toLowerCase();
+        const tail = m[2]?.toLowerCase();
+        if (tail === undefined && upperMethod === "GET") return `agents.messaging.${channel}.get`;
+        if (tail === undefined && upperMethod === "PUT") return `agents.messaging.${channel}.update`;
+        if (tail === "scan" && upperMethod === "POST") {
+          return `agents.messaging.${channel}.scanStart`;
+        }
+        if (tail === "scan" && upperMethod === "GET") return `agents.messaging.${channel}.scanPoll`;
+      }
+    }
+
+    const aliasedPrefix = this.prefixAliases[routeContributionId] ?? this.prefixAliases[normGroupId];
+    const candidatePrefix = aliasedPrefix ?? normGroupId;
+    if (candidatePrefix.startsWith("agents.messaging.")) {
+      if (upperMethod === "GET" && normSubPath === "/") return `${candidatePrefix}.get`;
+      if (upperMethod === "PUT" && normSubPath === "/") return `${candidatePrefix}.update`;
+      if (upperMethod === "POST" && normSubPath === "/scan") return `${candidatePrefix}.scanStart`;
+      if (upperMethod === "GET" && normSubPath === "/scan") return `${candidatePrefix}.scanPoll`;
+    }
+
+    return normGroupId;
+  }
+
+  /**
+   * Registers or extends a role node in this registry.
+   * - `contribution.role` overrides `roleId` as the target role name (so multiple slot
+   *   contributions with distinct `id`s can extend the same role node).
+   * - `children`, `routes`, and `flags` are merged additively (set union).
+   * - `parents` attaches the target role into each named parent role's `children`
+   *   (preserving any `@<refinerId>` suffix on the parent entry, e.g. `"general@self"`).
+   */
+  registerRole(roleId: string, contribution: RoleContribution): void {
+    const rawTarget = (contribution.role ?? roleId).trim();
+    const targetRole = parseRefinedGrant(rawTarget).target;
+    if (targetRole === "") return;
+
+    const node = this.ensureRoleNode(targetRole);
+
+    if (contribution.children !== undefined) {
+      for (const childSpec of contribution.children) {
+        const trimmed = childSpec.trim();
+        if (trimmed !== "" && !node.children.includes(trimmed)) {
+          node.children.push(trimmed);
+        }
+      }
+    }
+
+    if (contribution.routes !== undefined) {
+      for (const routeSpec of contribution.routes) {
+        const trimmed = routeSpec.trim();
+        if (trimmed === "") continue;
+        const parsed = parseRefinedGrant(trimmed);
+        if (parsed.target === "") continue;
+        const normTarget = this.normalizeRouteId(parsed.target);
+        const normalizedSpec =
+          parsed.refinerId !== null ? `${normTarget}@${parsed.refinerId}` : normTarget;
+        if (!node.routes.includes(normalizedSpec)) {
+          node.routes.push(normalizedSpec);
+        }
+        this.recordKnownRouteId(normTarget);
+      }
+    }
+
+    if (contribution.flags !== undefined) {
+      if (contribution.flags.allEndpoints) node.flags.allEndpoints = true;
+      if (contribution.flags.agentApi) node.flags.agentApi = true;
+      if (contribution.flags.crossAgent) node.flags.crossAgent = true;
+    }
+
+    if (contribution.parents !== undefined) {
+      for (const parentSpec of contribution.parents) {
+        const parsedParent = parseRefinedGrant(parentSpec);
+        if (parsedParent.target === "") continue;
+        const parentNode = this.ensureRoleNode(parsedParent.target);
+        const childRef =
+          parsedParent.refinerId !== null ? `${targetRole}@${parsedParent.refinerId}` : targetRole;
+        if (!parentNode.children.includes(childRef)) {
+          parentNode.children.push(childRef);
+        }
+      }
+    }
+  }
+
+  /**
+   * Registers a batch of role contributions from either a `{ [roleId]: RoleContribution }` record
+   * or an array of `"HttpModule.roles"` / `"AgentAuthPermissionProvider.roles"` slot entries.
+   */
+  registerRoles(
+    input:
+      | Readonly<Record<string, RoleContribution>>
+      | ReadonlyArray<
+          { readonly id: string; readonly data?: RoleContribution } & RoleContribution
+        >,
+  ): void {
+    if (Array.isArray(input)) {
+      for (const item of input) {
+        const contrib: RoleContribution = item.data !== undefined ? item.data : item;
+        this.registerRole(item.id, contrib);
+      }
+      return;
+    }
+    const record = input as Readonly<Record<string, RoleContribution>>;
+    for (const [roleId, contrib] of Object.entries(record)) {
+      this.registerRole(roleId, contrib);
+    }
+  }
+
+  /**
+   * Registers or merges `"METHOD /subpath"` -> fine-grained route ID mappings for a multi-endpoint
+   * `HttpModule.routes` group contribution.
+   */
+  registerGroupEndpoints(groupId: string, endpoints: Readonly<Record<string, string>>): void {
+    const rawGroup = groupId.trim();
+    if (rawGroup === "") return;
+    const normGroup = this.normalizeRouteId(rawGroup);
+    const existing = this.groupEndpoints[normGroup] ?? this.groupEndpoints[rawGroup] ?? {};
+    const merged: Record<string, string> = { ...existing };
+
+    for (const [rawMethodPath, rawEndpointId] of Object.entries(endpoints)) {
+      const trimmedKey = rawMethodPath.trim();
+      const spaceIdx = trimmedKey.indexOf(" ");
+      const normalizedKey =
+        spaceIdx > 0
+          ? `${trimmedKey.slice(0, spaceIdx).toUpperCase()} ${trimmedKey.slice(spaceIdx + 1).trim() || "/"}`
+          : trimmedKey;
+      const normEndpointId = this.normalizeRouteId(rawEndpointId);
+      if (normalizedKey !== "" && normEndpointId !== "") {
+        merged[normalizedKey] = normEndpointId;
+        this.recordKnownRouteId(normEndpointId);
+      }
+    }
+
+    this.groupEndpoints[normGroup] = merged;
+    if (rawGroup !== normGroup) {
+      this.groupEndpoints[rawGroup] = merged;
+    }
+  }
+
+  /**
+   * Registers a route contribution's sub-endpoint mappings (`endpoints`) and direct role bindings
+   * (`roles`, supporting `<roleId>@<refinerId>` such as `"general@self"` or `"readonly"`).
+   */
+  registerRoute(registration: RouteRoleRegistration): void {
+    const rawId = registration.id.trim();
+    if (rawId === "") return;
+    const normId = this.normalizeRouteId(rawId);
+
+    const leafRouteIds: string[] = [];
+    if (registration.endpoints !== undefined && Object.keys(registration.endpoints).length > 0) {
+      this.registerGroupEndpoints(rawId, registration.endpoints);
+      for (const epId of Object.values(registration.endpoints)) {
+        const normEp = this.normalizeRouteId(epId);
+        if (normEp !== "" && !leafRouteIds.includes(normEp)) {
+          leafRouteIds.push(normEp);
+        }
+      }
+    } else {
+      const existingGroup = this.groupEndpoints[normId] ?? this.groupEndpoints[rawId];
+      if (existingGroup !== undefined) {
+        for (const epId of Object.values(existingGroup)) {
+          if (!leafRouteIds.includes(epId)) leafRouteIds.push(epId);
+        }
+      } else {
+        this.recordKnownRouteId(normId);
+      }
+    }
+    if (!leafRouteIds.includes(normId)) {
+      leafRouteIds.push(normId);
+    }
+
+    if (registration.roles !== undefined) {
+      for (const roleSpec of registration.roles) {
+        const parsedRole = parseRefinedGrant(roleSpec);
+        if (parsedRole.target === "") continue;
+        const roleNode = this.ensureRoleNode(parsedRole.target);
+        for (const leafId of leafRouteIds) {
+          const routeEntry =
+            parsedRole.refinerId !== null ? `${leafId}@${parsedRole.refinerId}` : leafId;
+          if (!roleNode.routes.includes(routeEntry)) {
+            roleNode.routes.push(routeEntry);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Registers a batch of route registrations or `"HttpModule.routes"` slot contribution entries.
+   */
+  registerRoutes(
+    routes: ReadonlyArray<
+      RouteRoleRegistration & {
+        readonly data?: {
+          readonly endpoints?: Readonly<Record<string, string>>;
+          readonly roles?: readonly string[];
+        };
+      }
+    >,
+  ): void {
+    for (const item of routes) {
+      const endpoints = item.endpoints ?? item.data?.endpoints;
+      const roles = item.roles ?? item.data?.roles;
+      this.registerRoute({
+        id: item.id,
+        ...(endpoints !== undefined ? { endpoints } : {}),
+        ...(roles !== undefined ? { roles } : {}),
+      });
+    }
+  }
+
+  /**
+   * Expands a primary `role` (which may carry `<role>@<refinerId>`) and optional `extraGrants`
+   * (additional role nodes, route IDs, or `<prefix>.*` wildcards, with optional `@<refinerId>`)
+   * into the effective route set, capability flags, and per-route refiner map (`routeRefiners`).
+   */
+  expandRoleGrant(role: string, extraGrants: readonly string[] = []): ExpandedRoleGrant {
+    const visited = new Set<string>();
+    const allRoutes = new Set<string>();
+    const unconditionalRoutes = new Set<string>();
+    const refinedRouteMap = new Map<string, Set<string>>();
+    let allEndpoints = false;
+    let agentApi = false;
+    let crossAgent = false;
+
+    const recordSingleRoute = (normalized: string, refinerId: string | null): void => {
+      allRoutes.add(normalized);
+      if (refinerId === null) {
+        unconditionalRoutes.add(normalized);
+      } else {
+        let set = refinedRouteMap.get(normalized);
+        if (set === undefined) {
+          set = new Set<string>();
+          refinedRouteMap.set(normalized, set);
+        }
+        set.add(refinerId);
+      }
+    };
+
+    const recordRoute = (routeId: string, refinerId: string | null): void => {
+      const normalized = this.normalizeRouteId(routeId);
+      if (normalized === "") return;
+      recordSingleRoute(normalized, refinerId);
+      if (normalized.includes("*")) {
+        for (const knownRoute of this.allRoutesList) {
+          if (routePatternMatches(normalized, knownRoute, this)) {
+            recordSingleRoute(knownRoute, refinerId);
+          }
+        }
+      }
+    };
+
+    const visitRole = (
+      r: string,
+      inheritedRefiner: string | null,
+      isRootRefined: boolean,
+    ): void => {
+      const isReadTier = r === "readonly" || r.endsWith(".read");
+      const effectiveRefiner =
+        inheritedRefiner !== null && isReadTier && !isRootRefined ? null : inheritedRefiner;
+      const visitKey = `${r}@${effectiveRefiner ?? ""}`;
+      if (visited.has(visitKey)) return;
+      visited.add(visitKey);
+
+      const node = this.tree[r];
+      if (node === undefined) return;
+      if (effectiveRefiner === null) {
+        if (node.flags.allEndpoints) allEndpoints = true;
+        if (node.flags.agentApi) agentApi = true;
+        if (node.flags.crossAgent) crossAgent = true;
+      }
       for (const routeSpec of node.routes) {
         const parsed = parseRefinedGrant(routeSpec);
         const routeRefiner = parsed.refinerId ?? effectiveRefiner;
         recordRoute(parsed.target, routeRefiner);
       }
-    }
-    if (node.children !== undefined) {
       for (const childSpec of node.children) {
         const parsed = parseRefinedGrant(childSpec);
-        if (isAgentAuthRole(parsed.target)) {
+        if (this.isRole(parsed.target)) {
           const childRefiner = parsed.refinerId ?? effectiveRefiner;
           const childRootRefined = parsed.refinerId !== null;
           visitRole(parsed.target, childRefiner, childRootRefined);
@@ -1621,58 +1946,140 @@ export function expandRoleGrant(
           recordRoute(parsed.target, parsed.refinerId ?? effectiveRefiner);
         }
       }
+    };
+
+    const applyGrantSpec = (spec: string): void => {
+      const parsed = parseRefinedGrant(spec);
+      if (parsed.target === "") return;
+      if (this.isRole(parsed.target)) {
+        visitRole(parsed.target, parsed.refinerId, parsed.refinerId !== null);
+      } else {
+        recordRoute(parsed.target, parsed.refinerId);
+      }
+    };
+
+    applyGrantSpec(role);
+    for (const item of extraGrants) {
+      applyGrantSpec(item);
     }
-  };
 
-  const applyGrantSpec = (spec: string): void => {
-    const parsed = parseRefinedGrant(spec);
-    if (parsed.target === "") return;
-    if (isAgentAuthRole(parsed.target)) {
-      visitRole(parsed.target, parsed.refinerId, parsed.refinerId !== null);
-    } else {
-      recordRoute(parsed.target, parsed.refinerId);
-    }
-  };
-
-  applyGrantSpec(role);
-  for (const item of extraGrants) {
-    applyGrantSpec(item);
-  }
-
-  const routeRefiners: Record<string, string[]> = {};
-  if (!allEndpoints) {
-    for (const [routeId, refiners] of refinedRouteMap.entries()) {
-      if (!unconditionalRoutes.has(routeId) && refiners.size > 0) {
-        routeRefiners[routeId] = [...refiners];
+    const routeRefiners: Record<string, string[]> = {};
+    if (!allEndpoints) {
+      for (const [routeId, refiners] of refinedRouteMap.entries()) {
+        if (!unconditionalRoutes.has(routeId) && refiners.size > 0) {
+          routeRefiners[routeId] = [...refiners];
+        }
       }
     }
+
+    return {
+      allEndpoints,
+      agentApi,
+      crossAgent,
+      apiIds: [...allRoutes],
+      routeRefiners,
+    };
   }
 
-  return {
-    allEndpoints,
-    agentApi,
-    crossAgent,
-    apiIds: [...allRoutes],
-    routeRefiners,
-  };
+  /** Whether the role reaches every route without its granted set naming it. */
+  roleSpansAllEndpoints(role: string): boolean {
+    return this.expandRoleGrant(role).allEndpoints;
+  }
+
+  /** Whether the role carries the Agent's own API settings and keys (human-gated endpoints). */
+  roleHasAgentApi(role: string): boolean {
+    return this.expandRoleGrant(role).agentApi;
+  }
+
+  /** Whether the role may mutate Agent-scoped resources of other Agents in the same Project. */
+  roleCanManageOtherAgents(role: string): boolean {
+    return this.expandRoleGrant(role).crossAgent;
+  }
 }
 
 /**
- * The roles whose sessions may reach EVERY route the server registers, the granted set aside.
+ * Default process-wide `RoleRegistry` instance backing `ROLE_TREE`, `AGENT_AUTH_ROLES`,
+ * `HTTP_GROUP_ENDPOINT_IDS`, `ALL_HTTP_ROUTE_IDS`, and the top-level helper functions.
  */
+export const DEFAULT_ROLE_REGISTRY = new RoleRegistry();
+
+/** Declarative Role Tree (`ROLE_TREE`) backed by `DEFAULT_ROLE_REGISTRY`. */
+export const ROLE_TREE: Readonly<Record<string, RoleNode>> = DEFAULT_ROLE_REGISTRY.roleTree;
+
+/** All registered role IDs in `DEFAULT_ROLE_REGISTRY`. */
+export const AGENT_AUTH_ROLES: readonly string[] = DEFAULT_ROLE_REGISTRY.roles;
+
+/** Group endpoint sub-route map backed by `DEFAULT_ROLE_REGISTRY`. */
+export const HTTP_GROUP_ENDPOINT_IDS: Readonly<
+  Record<string, Readonly<Record<string, string>>>
+> = DEFAULT_ROLE_REGISTRY.groupEndpointIds;
+
+/** Complete list of concrete HTTP route IDs registered in `DEFAULT_ROLE_REGISTRY`. */
+export const ALL_HTTP_ROUTE_IDS: readonly string[] = DEFAULT_ROLE_REGISTRY.allHttpRouteIds;
+
+/**
+ * Normalizes a route ID by stripping the optional `"penguin."` namespace prefix and mapping
+ * registered prefix aliases in `DEFAULT_ROLE_REGISTRY`.
+ */
+export function normalizeRouteId(routeId: string): string {
+  return DEFAULT_ROLE_REGISTRY.normalizeRouteId(routeId);
+}
+
+/**
+ * Resolves the fine-grained route ID for a sub-route inside an `HttpModule.routes` contribution
+ * against `DEFAULT_ROLE_REGISTRY`.
+ */
+export function resolveHttpRouteId(
+  routeContributionId: string,
+  method: string,
+  subPath: string,
+): string {
+  return DEFAULT_ROLE_REGISTRY.resolveHttpRouteId(routeContributionId, method, subPath);
+}
+
+/** Whether `value` is a registered role node in `DEFAULT_ROLE_REGISTRY` (or `registry` when provided). */
+export function isAgentAuthRole(
+  value: string,
+  registry: RoleRegistry = DEFAULT_ROLE_REGISTRY,
+): value is AgentAuthRole {
+  return registry.isRole(value);
+}
+
+/**
+ * Expands a primary `role` (which may carry `<role>@<refinerId>`) and optional `extraGrants`
+ * against `DEFAULT_ROLE_REGISTRY` (or `registry` when provided).
+ */
+export function expandRoleGrant(
+  role: string,
+  extraGrants: readonly string[] = [],
+  registry: RoleRegistry = DEFAULT_ROLE_REGISTRY,
+): ExpandedRoleGrant {
+  return registry.expandRoleGrant(role, extraGrants);
+}
+
+/** The built-in roles whose sessions may reach EVERY route the server registers. */
 export const ALL_ENDPOINT_ROLES: readonly AgentAuthRole[] = ["admin", "full-permissions"];
 
 /** Whether the role reaches every route without its granted set naming it. */
-export function roleSpansAllEndpoints(role: string): boolean {
-  return expandRoleGrant(role).allEndpoints;
+export function roleSpansAllEndpoints(
+  role: string,
+  registry: RoleRegistry = DEFAULT_ROLE_REGISTRY,
+): boolean {
+  return registry.roleSpansAllEndpoints(role);
 }
 
 /** Whether the role carries the Agent's own API settings and keys (human-gated endpoints). */
-export function roleHasAgentApi(role: string): boolean {
-  return expandRoleGrant(role).agentApi;
+export function roleHasAgentApi(
+  role: string,
+  registry: RoleRegistry = DEFAULT_ROLE_REGISTRY,
+): boolean {
+  return registry.roleHasAgentApi(role);
 }
 
 /** Whether the role may mutate Agent-scoped resources of other Agents in the same Project. */
-export function roleCanManageOtherAgents(role: string): boolean {
-  return expandRoleGrant(role).crossAgent;
+export function roleCanManageOtherAgents(
+  role: string,
+  registry: RoleRegistry = DEFAULT_ROLE_REGISTRY,
+): boolean {
+  return registry.roleCanManageOtherAgents(role);
 }

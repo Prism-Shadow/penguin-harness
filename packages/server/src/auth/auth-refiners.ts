@@ -32,10 +32,9 @@ import {
   type Opaque,
 } from "@prismshadow/penguin-core/kernel";
 import {
-  ALL_HTTP_ROUTE_IDS,
-  expandRoleGrant,
-  isAgentAuthRole,
-  normalizeRouteId,
+  DEFAULT_ROLE_REGISTRY,
+  RoleRegistry,
+  routePatternMatches,
 } from "./agent-roles.js";
 
 /** The authenticated Agent session context passed to `AuthRefiner.authenticate`. */
@@ -93,7 +92,10 @@ export interface CompiledRefinerScope {
 }
 
 /** Compiles a refiner scope declaration into an O(1) route matcher. */
-export function compileRefinerScope(scopeInput?: AuthRefinerScopeInput): CompiledRefinerScope {
+export function compileRefinerScope(
+  scopeInput?: AuthRefinerScopeInput,
+  roleRegistry: RoleRegistry = DEFAULT_ROLE_REGISTRY,
+): CompiledRefinerScope {
   const rawList =
     scopeInput === undefined
       ? ["*"]
@@ -111,12 +113,12 @@ export function compileRefinerScope(scopeInput?: AuthRefinerScopeInput): Compile
       if (trimmed === "*") wildcard = true;
       continue;
     }
-    const normalized = normalizeRouteId(trimmed);
+    const normalized = roleRegistry.normalizeRouteId(trimmed);
     if (normalized === "*") {
       wildcard = true;
       continue;
     }
-    if (normalized.endsWith(".*")) {
+    if (normalized.endsWith(".*") && !normalized.slice(0, -2).includes("*")) {
       prefixes.push(normalized.slice(0, -1));
       continue;
     }
@@ -124,16 +126,16 @@ export function compileRefinerScope(scopeInput?: AuthRefinerScopeInput): Compile
       prefixes.push(normalized);
       continue;
     }
-    // If the scope names a Role Tree node (e.g. "agent.maintain"), include all leaf routes in that role
-    // as well as the prefix if it names a domain root.
-    if (isAgentAuthRole(normalized)) {
-      for (const routeId of expandRoleGrant(normalized).apiIds) {
+    // If the scope names a Role Tree node (e.g. "agent.maintain" or a custom plugin role),
+    // include all leaf routes in that role as well as the prefix if it names a domain root.
+    if (roleRegistry.isRole(normalized)) {
+      for (const routeId of roleRegistry.expandRoleGrant(normalized).apiIds) {
         exactRouteIds.add(routeId);
       }
       continue;
     }
     // Check if it is a known leaf route ID; if it is a bare domain name (e.g. "agent"), treat as prefix "agent."
-    if ((ALL_HTTP_ROUTE_IDS as readonly string[]).includes(normalized)) {
+    if (roleRegistry.allHttpRouteIds.includes(normalized) || normalized.includes("*")) {
       exactRouteIds.add(normalized);
     } else {
       exactRouteIds.add(normalized);
@@ -150,14 +152,23 @@ export function compileRefinerScope(scopeInput?: AuthRefinerScopeInput): Compile
 }
 
 /** Checks whether a compiled refiner scope covers `routeId`. */
-export function matchesRefinerScope(scope: CompiledRefinerScope, routeId: string): boolean {
+export function matchesRefinerScope(
+  scope: CompiledRefinerScope,
+  routeId: string,
+  roleRegistry: RoleRegistry = DEFAULT_ROLE_REGISTRY,
+): boolean {
   if (scope.wildcard) return true;
-  const normalized = normalizeRouteId(routeId);
+  const normalized = roleRegistry.normalizeRouteId(routeId);
   if (scope.exactRouteIds.has(normalized) || scope.exactRouteIds.has(routeId)) {
     return true;
   }
   for (const prefix of scope.prefixes) {
     if (normalized.startsWith(prefix) || routeId.startsWith(prefix)) {
+      return true;
+    }
+  }
+  for (const pattern of scope.exactRouteIds) {
+    if (pattern.includes("*") && routePatternMatches(pattern, normalized, roleRegistry)) {
       return true;
     }
   }
@@ -191,6 +202,7 @@ export function matchesRefinerScope(scope: CompiledRefinerScope, routeId: string
           "command.",
           "trace.",
           "benchmark.",
+          "*",
         ],
       },
     ],
@@ -293,7 +305,10 @@ export const ADMIN_REPAIR_INSTRUCTION =
   "Please start the agent with admin permission to repair its authorization configuration.";
 
 /** Extracts one or more `RegisteredAuthRefiner` entries from a class or descriptor. */
-function resolveRefinerInput(input: AuthRefinerInput): RegisteredAuthRefiner[] {
+function resolveRefinerInput(
+  input: AuthRefinerInput,
+  roleRegistry: RoleRegistry = DEFAULT_ROLE_REGISTRY,
+): RegisteredAuthRefiner[] {
   if (typeof input === "function") {
     const cls = input as AuthRefinerClass & {
       readonly id?: string;
@@ -323,7 +338,7 @@ function resolveRefinerInput(input: AuthRefinerInput): RegisteredAuthRefiner[] {
     if (contributedEntries.length > 0) {
       return contributedEntries.map((entry) => ({
         id: entry.id,
-        scope: compileRefinerScope(entry.scope ?? instance.scope ?? cls.scope),
+        scope: compileRefinerScope(entry.scope ?? instance.scope ?? cls.scope, roleRegistry),
         refiner: instance,
       }));
     }
@@ -337,7 +352,7 @@ function resolveRefinerInput(input: AuthRefinerInput): RegisteredAuthRefiner[] {
     return [
       {
         id: fallbackId,
-        scope: compileRefinerScope(instance.scope ?? cls.scope),
+        scope: compileRefinerScope(instance.scope ?? cls.scope, roleRegistry),
         refiner: instance,
       },
     ];
@@ -358,7 +373,7 @@ function resolveRefinerInput(input: AuthRefinerInput): RegisteredAuthRefiner[] {
   return [
     {
       id: desc.id,
-      scope: compileRefinerScope(desc.scope),
+      scope: compileRefinerScope(desc.scope, roleRegistry),
       refiner: refinerObj,
     },
   ];
@@ -383,6 +398,7 @@ function resolveRefinerInput(input: AuthRefinerInput): RegisteredAuthRefiner[] {
 export class AuthRefinerRegistry {
   private readonly byId = new Map<string, RegisteredAuthRefiner[]>();
   private readonly orderIndex = new Map<string, number>();
+  private readonly roleRegistry: RoleRegistry;
 
   constructor(
     refinerList: readonly AuthRefinerInput[] = [],
@@ -391,7 +407,9 @@ export class AuthRefinerRegistry {
       readonly data: Record<string, unknown>;
       readonly code?: unknown;
     }> = [],
+    roleRegistry: RoleRegistry = DEFAULT_ROLE_REGISTRY,
   ) {
+    this.roleRegistry = roleRegistry;
     let rank = 0;
     const register = (entry: RegisteredAuthRefiner) => {
       if (entry.id === "") return;
@@ -406,7 +424,7 @@ export class AuthRefinerRegistry {
 
     // 1. User-supplied ordered list takes top priority in exact list order.
     for (const item of refinerList) {
-      for (const entry of resolveRefinerInput(item)) {
+      for (const entry of resolveRefinerInput(item, this.roleRegistry)) {
         register(entry);
       }
     }
@@ -425,14 +443,14 @@ export class AuthRefinerRegistry {
       const rawScope = c.data.scope as AuthRefinerScopeInput | undefined;
       register({
         id: c.id,
-        scope: compileRefinerScope(rawScope),
+        scope: compileRefinerScope(rawScope, this.roleRegistry),
         refiner: code,
       });
     }
 
     // 3. Ensure built-in defaults (`withAsk`, `self`) are always present as fallback.
     for (const builtin of DEFAULT_AUTH_REFINERS) {
-      for (const entry of resolveRefinerInput(builtin)) {
+      for (const entry of resolveRefinerInput(builtin, this.roleRegistry)) {
         register(entry);
       }
     }
@@ -462,7 +480,7 @@ export class AuthRefinerRegistry {
       return { status: "undefined" };
     }
     for (const candidate of candidates) {
-      if (matchesRefinerScope(candidate.scope, routeId)) {
+      if (matchesRefinerScope(candidate.scope, routeId, this.roleRegistry)) {
         return { status: "matched", entry: candidate };
       }
     }

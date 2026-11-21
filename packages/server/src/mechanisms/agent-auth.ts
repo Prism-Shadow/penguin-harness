@@ -13,7 +13,12 @@
  * a role or grant change hot-reloads without re-issue and no stale grant outlives one request.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { AgentAuthRole } from "../auth/agent-roles.js";
+import type { Slot } from "@prismshadow/penguin-core/kernel";
+import type {
+  AgentAuthRole,
+  RoleContribution,
+  RouteRoleRegistration,
+} from "../auth/agent-roles.js";
 import type { AgentAuthContext } from "../auth/agent-auth-service.js";
 
 /** One issued session, as surfaces show it (never the raw token). */
@@ -48,6 +53,8 @@ export interface AgentAuthGrant {
   generation: number;
   /** true = the role spans every HTTP route the server registers (`admin`, `full-permissions`). */
   allEndpoints: boolean;
+  /** true = the role reaches human-gated endpoints (`requireHuman`) such as session creation/deletion. */
+  agentApi?: boolean;
   /** true = the role permits mutating another Agent's config, skills, schedules, or vault in the same project. */
   crossAgent?: boolean;
   /** The effective HTTP route ids after expanding the role tree and explicit extra grants. */
@@ -65,11 +72,23 @@ export interface AgentAuthGenerationRow {
   apiIds: readonly string[];
 }
 
+export interface AgentAuthPermissionsSlots {
+  /**
+   * Declarative role node definitions or extensions (`RoleContribution`) contributed to
+   * `AgentAuthPermissionProvider.roles`.
+   */
+  roles: Slot<RoleContribution>;
+}
+
 /** The per-route grant face: what AgentAuthPermissionProvider implements. */
 @Interface()
 export abstract class AgentAuthPermissions {
   /** The Agent's CURRENT grant, from its CURRENT generation and role. */
   abstract grantOf(projectId: string, agentId: string): AgentAuthGrant | null;
+  /** Registers or extends a role node in the permission provider's role registry. */
+  abstract registerRole(roleId: string, contribution: RoleContribution): void;
+  /** Registers a route's sub-endpoint mappings and direct role bindings. */
+  abstract registerRoute(registration: RouteRoleRegistration): void;
 }
 
 /** AgentAuthSessions: the mechanism AgentAuthSessionsRepo implements. */
@@ -143,4 +162,8 @@ export abstract class AgentAuth {
     apiIds: readonly string[],
     now: Date,
   ): { generation: number; role: AgentAuthRole; apiIds: readonly string[]; token: string };
+  /** Registers or extends a role node in the permission provider's role registry. */
+  abstract registerRole(roleId: string, contribution: RoleContribution): void;
+  /** Registers a route's sub-endpoint mappings and direct role bindings. */
+  abstract registerRoute(registration: RouteRoleRegistration): void;
 }

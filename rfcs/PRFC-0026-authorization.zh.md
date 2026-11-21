@@ -81,15 +81,45 @@ Server 启动时在数据根下写入权限为 `0600` 的 `api-token` 与 `serve
 
 ### HTTP 路由贡献形状与 `endpointOf`
 
-`HttpModule.routes` 槽的数据类型包含五个字段：
+`HttpModule.routes` 槽的数据类型包含以下字段：
 
 - `id: string`——路由或路由组的唯一标识，按 `<域>.<动作>` 或 `<域>.<子域>.<动作>` 命名（例如 `session.list`、`workspace.readFile`、`command.run`、`model.updateConfig`、`vault.set`、`org.ticket.start`）。
 - `method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"`——可选的单方法限定。指定时，宿主只在该 HTTP 方法与路径上挂载处理器；省略时，挂载整个子路由组，并在路由网关内按 `(groupId, method, subPath)` 解析出每个端点的细粒度路由 `id`。
 - `prefix: string`——挂载在 HTTP 应用上的路径模式。
 - `auth: "user" | "token" | "none"`——路由的鉴权门类（`"user"` 接受人类会话、本机 API 令牌或被授权的 Agent 会话；`"token"` 仅接受本机 API 令牌；`"none"` 为公开路由）。
 - `order: number`——路由挂载顺序。
+- `endpoints?: Readonly<Record<string, string>>`——可选的多端点子路由映射表（键为 `"METHOD /subpath"`，值为细粒度路由 `id`），让模块或插件在贡献 Hono 路由组时直接注册子端点 `id`。
+- `roles?: readonly string[]`——可选的角色绑定列表（支持 `<roleId>@<refinerId>`，例如 `["readonly"]` 或 `["myPlugin.maintain", "general@self"]`），将当前路由（及 `endpoints` 中的子路由）直接授予指定角色节点。
 
 当一个路由组件在一个 `Hono` 实例上定义多个动作时，`endpointOf(group, method, subPath)` 构造一个只响应指定方法与路径的轻量 `Hono` 包装，保留原路由组的中间件与错误处理器，并将请求分发到目标处理器。这样既保持组件内部共享依赖，又让每条端点在清单中拥有独立的路由 `id`。
+
+### 可扩展角色注册表（`RoleRegistry`）与 `HttpModule.roles` 槽
+
+角色树由可扩展的 `RoleRegistry` 管理。核心模块与外部插件通过 `HttpModule.roles`（或 `AgentAuthPermissionProvider.roles`）槽贡献 `RoleContribution` 条目，按并集方式定义新角色节点或扩展既有角色，无需修改中心静态表：
+
+```ts
+@Component({
+  contributes: {
+    "HttpModule.roles": [
+      {
+        id: "myPlugin.read",
+        routes: ["myPlugin.items.list"],
+        parents: ["readonly"],
+      },
+      {
+        id: "myPlugin.maintain",
+        children: ["myPlugin.read"],
+        routes: ["myPlugin.items.update"],
+        parents: ["general@self", "system-maintainer"],
+      },
+    ],
+  },
+})
+```
+
+- `role?: string`——目标角色名，默认取贡献条目的 `id`；当多个模块扩展同一个既有角色（如 `"readonly"`）时，各自保持全局唯一的 `id` 并通过 `role` 指向同一角色节点。
+- `children?: readonly string[]`、`routes?: readonly string[]`、`flags?: RoleFlags`——向目标角色节点按集合并集追加子角色、路由（支持点分通配符如 `myPlugin.*` 与 `agents.messaging.*.get`）与能力标志。
+- `parents?: readonly string[]`——将当前角色挂载到指定父角色的 `children` 中（支持在父角色项上附加 `@<refinerId>`，例如 `"general@self"` 会向 `general` 注入 `<role>@self`）。
 
 ### 声明式角色树（`ROLE_TREE`）与权限范围
 
@@ -218,8 +248,7 @@ CLI 持有本地进程的 system permissions，而 Penguin 的业务状态归 Se
 ## Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-- 插件贡献的 HTTP 路由如何声明自己可被哪些非管理员 Agent 角色访问。
-- 角色的 `apiIds` 白名单是否支持按点分前缀通配（例如 `penguin.session.*`）。
+- 当前无未决问题。
 
 ## Future possibilities
 [future-possibilities]: #future-possibilities

@@ -13,10 +13,13 @@ import {
   AGENT_AUTH_ROLES,
   ALL_HTTP_ROUTE_IDS,
   ROLE_TREE,
+  RoleRegistry,
   expandRoleGrant,
+  matchesRouteGrant,
   normalizeRouteId,
   parseRefinedGrant,
   resolveHttpRouteId,
+  resolveRouteRefiners,
 } from "../src/auth/agent-roles.js";
 import {
   ADMIN_REPAIR_INSTRUCTION,
@@ -573,5 +576,279 @@ describe("auth refiners (<roleOrRoute>@<refinerId>)", () => {
     expect(reg.has("self")).toBe(true);
     expect(reg.has("withAsk")).toBe(true);
     expect(reg.has("missing")).toBe(false);
+  });
+});
+
+describe("extensible role registry and HttpModule.roles / HttpModule.routes slots", () => {
+  it("allows modules and plugins to register custom roles, graft into parent roles, map group sub-endpoints, and match wildcards", () => {
+    const registry = new RoleRegistry();
+
+    // Register multi-endpoint route group + direct role bindings via registerRoute
+    registry.registerRoute({
+      id: "billing.invoices",
+      endpoints: {
+        "GET /": "billing.invoices.list",
+        "POST /": "billing.invoices.create",
+        "DELETE /:id": "billing.invoices.delete",
+      },
+    });
+
+    // Register domain role tiers and graft them into composite roles (`readonly`, `general@self`, `system-maintainer`)
+    registry.registerRoles([
+      {
+        id: "billing.read",
+        routes: ["billing.invoices.list"],
+        parents: ["readonly"],
+      },
+      {
+        id: "billing.maintain",
+        children: ["billing.read"],
+        routes: ["billing.invoices.create"],
+        parents: ["general@self", "system-maintainer"],
+      },
+      {
+        id: "billing.all",
+        children: ["billing.maintain"],
+        routes: ["billing.invoices.delete"],
+        parents: ["admin"],
+      },
+      // Separate contribution with a distinct entry id extending an existing role via `role`
+      {
+        id: "pluginA.extendReadonly",
+        role: "readonly",
+        routes: ["pluginA.status.get"],
+      },
+    ]);
+
+    expect(registry.resolveHttpRouteId("billing.invoices", "GET", "/")).toBe(
+      "billing.invoices.list",
+    );
+    expect(registry.resolveHttpRouteId("billing.invoices", "DELETE", "/:id")).toBe(
+      "billing.invoices.delete",
+    );
+
+    const readonlyGrant = registry.expandRoleGrant("readonly");
+    expect(readonlyGrant.apiIds).toContain("billing.invoices.list");
+    expect(readonlyGrant.apiIds).toContain("pluginA.status.get");
+    expect(readonlyGrant.apiIds).not.toContain("billing.invoices.create");
+
+    // `general` inherited `billing.maintain@self`: `.read` stays unconditional, `.maintain` write gets `@self`
+    const generalGrant = registry.expandRoleGrant("general");
+    expect(generalGrant.apiIds).toContain("billing.invoices.list");
+    expect(generalGrant.apiIds).toContain("billing.invoices.create");
+    expect(generalGrant.routeRefiners["billing.invoices.list"]).toBeUndefined();
+    expect(generalGrant.routeRefiners["billing.invoices.create"]).toEqual(["self"]);
+
+    // Wildcard route grant (`billing.*@withAsk`) with unconditional override on `billing.invoices.list`
+    const wildcardGrant = registry.expandRoleGrant("none", [
+      "billing.*@withAsk",
+      "billing.invoices.list",
+    ]);
+    expect(matchesRouteGrant(wildcardGrant.apiIds, "billing.invoices.list", undefined, registry)).toBe(
+      true,
+    );
+    expect(
+      matchesRouteGrant(wildcardGrant.apiIds, "billing.invoices.delete", undefined, registry),
+    ).toBe(true);
+    expect(
+      matchesRouteGrant(wildcardGrant.apiIds, "billing.futureEndpoint", undefined, registry),
+    ).toBe(true);
+    expect(
+      resolveRouteRefiners(
+        wildcardGrant.routeRefiners,
+        wildcardGrant.apiIds,
+        "billing.invoices.list",
+        undefined,
+        registry,
+      ),
+    ).toBeUndefined();
+    expect(
+      resolveRouteRefiners(
+        wildcardGrant.routeRefiners,
+        wildcardGrant.apiIds,
+        "billing.invoices.delete",
+        undefined,
+        registry,
+      ),
+    ).toEqual(["withAsk"]);
+    expect(
+      resolveRouteRefiners(
+        wildcardGrant.routeRefiners,
+        wildcardGrant.apiIds,
+        "billing.futureEndpoint",
+        undefined,
+        registry,
+      ),
+    ).toEqual(["withAsk"]);
+
+    // Dynamic messaging channels are automatically covered by `agents.messaging.read` / `agents.messaging.maintain`
+    const msgRead = registry.expandRoleGrant("agents.messaging.read");
+    expect(
+      matchesRouteGrant(msgRead.apiIds, "agents.messaging.slack.get", undefined, registry),
+    ).toBe(true);
+    expect(
+      matchesRouteGrant(msgRead.apiIds, "agents.messaging.slack.update", undefined, registry),
+    ).toBe(false);
+    const msgMaintain = registry.expandRoleGrant("agents.messaging.maintain");
+    expect(
+      matchesRouteGrant(msgMaintain.apiIds, "agents.messaging.slack.update", undefined, registry),
+    ).toBe(true);
+  });
+
+  it("wires HttpModule.roles and HttpModule.routes (endpoints & roles) into AgentAuthService and HTTP route authorization", async () => {
+    const { auth: agentAuth } = service();
+    const now = new Date();
+    const { token } = agentAuth.issueSession("p1", "a1", now);
+
+    const pluginGroup = new Hono<AppEnv>();
+    pluginGroup.get("/", (c) => c.json({ ok: "list", agentId: c.req.param("agentId") }));
+    pluginGroup.put("/", (c) => c.json({ ok: "update", agentId: c.req.param("agentId") }));
+    pluginGroup.delete("/:itemId", (c) => {
+      if (!c.var.user.isAdmin) {
+        return c.json({ error: "admin_gate_not_elevated" }, 403);
+      }
+      return c.json({
+        ok: "delete",
+        agentId: c.req.param("agentId"),
+        itemId: c.req.param("itemId"),
+      });
+    });
+
+    const healthGroup = new Hono<AppEnv>();
+    healthGroup.get("/", (c) => c.json({ ok: "plugin-health" }));
+
+    const http = wire(HttpModule, {
+      config: { trustProxy: false },
+      log: { line: () => {} },
+      auth: {
+        sessionTtlMs: 1000,
+        authenticateApiToken: () => null,
+        authenticateWithMeta: () => null,
+        sessionIsLive: () => false,
+      },
+      agentAuth,
+      errors: { record: () => {} },
+      settings: {
+        getAttachmentLimitsMb: () => ({
+          attachmentMaxMb: DEFAULT_ATTACHMENT_MAX_MB,
+          attachmentTotalMb: DEFAULT_ATTACHMENT_TOTAL_MB,
+        }),
+      },
+      access: {},
+      projects: {
+        findById: (projectId: string) =>
+          projectId === "p1" ? { projectId: "p1", ownerUserId: "u1", createdAt: "" } : null,
+      },
+      users: {
+        findById: (userId: string) =>
+          userId === "u1" ? { userId: "u1", isAdmin: true } : null,
+      },
+    });
+
+    http.setup({
+      contributions: {
+        roles: [
+          {
+            id: "myPlugin.read",
+            from: "myPlugin",
+            data: {
+              routes: ["myPlugin.items.list"],
+              parents: ["readonly"],
+            },
+          },
+          {
+            id: "myPlugin.maintain",
+            from: "myPlugin",
+            data: {
+              children: ["myPlugin.read"],
+              routes: ["myPlugin.items.update"],
+              parents: ["general@self", "system-maintainer"],
+            },
+          },
+          {
+            id: "myPlugin.operator",
+            from: "myPlugin",
+            data: {
+              children: ["myPlugin.maintain"],
+              routes: ["myPlugin.items.delete"],
+              flags: { crossAgent: true },
+            },
+          },
+        ],
+        routes: [
+          {
+            id: "myPlugin.items",
+            from: "myPlugin",
+            data: {
+              prefix: "/api/projects/:projectId/agents/:agentId/my-plugin/items",
+              auth: "user",
+              order: 600,
+              endpoints: {
+                "GET /": "myPlugin.items.list",
+                "PUT /": "myPlugin.items.update",
+                "DELETE /:itemId": "myPlugin.items.delete",
+              },
+            },
+            code: pluginGroup,
+          },
+          {
+            id: "myPlugin.health",
+            from: "myPlugin",
+            data: {
+              method: "GET",
+              prefix: "/api/my-plugin/health",
+              auth: "user",
+              order: 601,
+              roles: ["readonly"],
+            },
+            code: endpointOf(healthGroup, "GET", "/"),
+          },
+        ],
+      },
+    } as unknown as ClassCtx);
+
+    const req = (method: string, path: string) =>
+      http.http.fetch(
+        new Request(`http://localhost${path}`, {
+          method,
+          headers: {
+            authorization: `Bearer ${token}`,
+            origin: "http://localhost",
+            ...(method !== "GET" ? { "content-type": "application/json" } : {}),
+          },
+          ...(method !== "GET" ? { body: "{}" } : {}),
+        }),
+      );
+
+    // 1. Default `general` role inherited `myPlugin.maintain@self` (and `readonly` -> `myPlugin.read` + `myPlugin.health`):
+    expect(agentAuth.allowsEndpoint("p1", "a1", "myPlugin.items.list")).toBe(true);
+    expect(agentAuth.allowsEndpoint("p1", "a1", "myPlugin.items.update")).toBe(true);
+    expect(agentAuth.allowsEndpoint("p1", "a1", "myPlugin.items.delete")).toBe(false);
+    expect(agentAuth.allowsEndpoint("p1", "a1", "myPlugin.health")).toBe(true);
+
+    expect((await req("GET", "/api/my-plugin/health")).status).toBe(200);
+    expect((await req("GET", "/api/projects/p1/agents/a2/my-plugin/items")).status).toBe(200);
+    expect((await req("PUT", "/api/projects/p1/agents/a1/my-plugin/items")).status).toBe(200);
+    // `@self` blocks mutating another agent (`a2`)
+    expect((await req("PUT", "/api/projects/p1/agents/a2/my-plugin/items")).status).toBe(403);
+    // `DELETE` is not in `myPlugin.maintain`
+    expect((await req("DELETE", "/api/projects/p1/agents/a1/my-plugin/items/item-1")).status).toBe(
+      403,
+    );
+
+    // 2. Assigning custom role `myPlugin.operator` via `updateGrant` preserves the custom role name
+    //    in the DB repo and grants `DELETE` across agents in `p1`:
+    const updated = agentAuth.updateGrant("p1", "a1", "myPlugin.operator", [], now);
+    expect(updated.role).toBe("myPlugin.operator");
+    expect(agentAuth.currentGrant("p1", "a1")?.role).toBe("myPlugin.operator");
+    expect(agentAuth.allowsEndpoint("p1", "a1", "myPlugin.items.delete")).toBe(true);
+
+    const delRes = await req("DELETE", "/api/projects/p1/agents/a2/my-plugin/items/item-99");
+    expect(delRes.status).toBe(200);
+    expect(await delRes.json()).toEqual({
+      ok: "delete",
+      agentId: "a2",
+      itemId: "item-99",
+    });
   });
 });

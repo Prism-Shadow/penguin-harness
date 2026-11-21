@@ -25,7 +25,13 @@ import type { Access, Projects } from "@prismshadow/penguin-library-project";
 import type { Errors } from "@prismshadow/penguin-library-observability";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { AgentAuth } from "../mechanisms/agent-auth.js";
-import { normalizeRouteId, resolveHttpRouteId } from "../auth/agent-roles.js";
+import {
+  DEFAULT_ROLE_REGISTRY,
+  RoleRegistry,
+  matchesRouteGrant,
+  resolveRouteRefiners,
+  type RoleContribution,
+} from "../auth/agent-roles.js";
 import {
   AuthRefinerRegistry,
   type AuthRefiner,
@@ -59,12 +65,32 @@ export interface HttpSlots {
    * A route group or single-method endpoint. `auth: "user"` accepts a cookie, the local API
    * token, or an Agent auth session whose grant includes the route's `id`; `"token"` accepts
    * only the local API token, without renewing cookies; `"none"` is public. `order` is the
-   * mount position (a stable number, since Hono matches in order). The code half is the Hono app.
+   * mount position (a stable number, since Hono matches in order).
+   * - `endpoints` (optional) maps `"METHOD /subpath"` to fine-grained route IDs for multi-endpoint
+   *   Hono route groups so external modules and plugins need not edit a central route table.
+   * - `roles` (optional) binds this route (and any `endpoints` sub-routes) directly into the named
+   *   role nodes (supporting `<roleId>@<refinerId>` such as `["myPlugin.maintain", "general@self"]`).
+   * The code half is the Hono app.
    */
   routes: Slot<
-    { method?: HttpMethod; prefix: string; auth: "user" | "token" | "none"; order: number },
+    {
+      method?: HttpMethod;
+      prefix: string;
+      auth: "user" | "token" | "none";
+      order: number;
+      endpoints?: Readonly<Record<string, string>>;
+      roles?: readonly string[];
+    },
     Opaque<"Hono", Hono<AppEnv>>
   >;
+  /**
+   * Declarative role node definitions or extensions (`RoleContribution`).
+   * Allows modules and plugins to define new domain roles (`<domain>.read`, `<domain>.maintain`,
+   * `<domain>.all`), merge additional `routes` / `children` / `flags` into existing roles (via `role`),
+   * or graft roles into composite parent roles like `readonly`, `general@self`, or
+   * `system-maintainer` (via `parents`).
+   */
+  roles: Slot<RoleContribution>;
   /**
    * An auth refiner (`<roleOrRoute>@<refinerId>`) contributed by a component or plugin.
    * `scope` declares the route IDs, role node names, or domain prefixes (e.g. `["agent."]`)
@@ -107,17 +133,14 @@ export function endpointOf(
   return app;
 }
 
-const ROUTE_ADMIN_GATE_PREFIXES = [
-  "admin.",
-  "cli.commands.",
-  "command.",
-  "plugin.",
-  "machine.",
-  "themes.",
-  "version.",
-  "messaging.",
-  "browser.",
-] as const;
+/**
+ * Routes where `c.var.user.isAdmin` inside the handler controls session sandbox ceiling
+ * escalation (`session.create`, `session.updateSandbox`) or global error visibility (`usage.*`),
+ * rather than acting as a coarse route-level admin gate. All other routes that have already
+ * passed fine-grained `checkRouteAuth` elevate `c.var.user.isAdmin` so built-in and plugin
+ * handlers with internal `if (!c.var.user.isAdmin)` checks honor the explicit route grant.
+ */
+const NON_ELEVATED_USER_ROUTE_PREFIXES = ["session.", "usage."] as const;
 
 /**
  * Checks whether an Agent-authenticated request is granted the matched route's `id`,
@@ -129,18 +152,17 @@ async function checkRouteAuth(
   routeId: string,
   groupId: string | undefined,
   refinerRegistry: AuthRefinerRegistry,
+  roleRegistry: RoleRegistry = DEFAULT_ROLE_REGISTRY,
 ): Promise<void> {
   const agentAuth = (c.var as AppEnv["Variables"]).agentAuth;
   if (agentAuth === undefined) return;
   const { grant } = agentAuth;
-  const normalized = normalizeRouteId(routeId);
-  const normalizedGroup = groupId !== undefined ? normalizeRouteId(groupId) : undefined;
+  const normalized = roleRegistry.normalizeRouteId(routeId);
+  const normalizedGroup =
+    groupId !== undefined ? roleRegistry.normalizeRouteId(groupId) : undefined;
   if (
     !grant.allEndpoints &&
-    !grant.apiIds.includes(normalized) &&
-    !grant.apiIds.includes(routeId) &&
-    (normalizedGroup === undefined ||
-      (!grant.apiIds.includes(normalizedGroup) && !grant.apiIds.includes(groupId!)))
+    !matchesRouteGrant(grant.apiIds, normalized, normalizedGroup, roleRegistry)
   ) {
     throw new HttpError(
       403,
@@ -161,10 +183,13 @@ async function checkRouteAuth(
     );
   }
 
-  const refinerIds =
-    grant.routeRefiners?.[normalized] ??
-    grant.routeRefiners?.[routeId] ??
-    (normalizedGroup !== undefined ? grant.routeRefiners?.[normalizedGroup] : undefined);
+  const refinerIds = resolveRouteRefiners(
+    grant.routeRefiners,
+    grant.apiIds,
+    normalized,
+    normalizedGroup,
+    roleRegistry,
+  );
   if (!grant.allEndpoints && refinerIds !== undefined && refinerIds.length > 0) {
     const rawParams = (c.req.param() ?? {}) as Record<string, string>;
     const refinerCtx: AuthRefinerContext = {
@@ -210,7 +235,7 @@ async function checkRouteAuth(
 
   if (
     !c.var.user.isAdmin &&
-    ROUTE_ADMIN_GATE_PREFIXES.some((prefix) => normalized.startsWith(prefix))
+    !NON_ELEVATED_USER_ROUTE_PREFIXES.some((prefix) => normalized.startsWith(prefix))
   ) {
     c.set("user", { ...c.var.user, isAdmin: true });
   }
@@ -220,8 +245,9 @@ function withRouteAuth(
   source: Hono<AppEnv>,
   groupId: string,
   refinerRegistry: AuthRefinerRegistry,
+  roleRegistry: RoleRegistry = DEFAULT_ROLE_REGISTRY,
 ): Hono<AppEnv> {
-  const normalizedGroup = normalizeRouteId(groupId);
+  const normalizedGroup = roleRegistry.normalizeRouteId(groupId);
   if (normalizedGroup === "session.forward") return source;
   const gated = new Hono<AppEnv>();
   const sourceErr = (source as unknown as { errorHandler: ErrorHandler<AppEnv> }).errorHandler;
@@ -245,12 +271,12 @@ function withRouteAuth(
       continue;
     }
     hasConcreteRoute = true;
-    const resolvedId = resolveHttpRouteId(normalizedGroup, route.method, route.path);
+    const resolvedId = roleRegistry.resolveHttpRouteId(normalizedGroup, route.method, route.path);
     gated.on(
       route.method,
       route.path,
       async (c, next) => {
-        await checkRouteAuth(c, resolvedId, normalizedGroup, refinerRegistry);
+        await checkRouteAuth(c, resolvedId, normalizedGroup, refinerRegistry, roleRegistry);
         await next();
       },
       ...groupMiddlewares,
@@ -285,7 +311,39 @@ export class HttpModule {
   private readonly refiners?: readonly AuthRefinerInput[];
   @Provide() http!: Http;
   setup({ contributions }: ClassCtx) {
-    const routes = [...(contributions.routes ?? [])]
+    const roleRegistry = new RoleRegistry();
+    const roleContribs = (contributions.roles ?? []) as ReadonlyArray<{
+      readonly id: string;
+      readonly data: RoleContribution;
+    }>;
+    for (const rc of roleContribs) {
+      roleRegistry.registerRole(rc.id, rc.data);
+      this.agentAuth?.registerRole?.(rc.id, rc.data);
+    }
+
+    const rawRoutes = contributions.routes ?? [];
+    for (const c of rawRoutes) {
+      const endpoints = c.data.endpoints as Readonly<Record<string, string>> | undefined;
+      const roles = c.data.roles as readonly string[] | undefined;
+      if (endpoints !== undefined || roles !== undefined) {
+        const reg = {
+          id: c.id,
+          ...(endpoints !== undefined ? { endpoints } : {}),
+          ...(roles !== undefined ? { roles } : {}),
+        };
+        roleRegistry.registerRoute(reg);
+        this.agentAuth?.registerRoute?.(reg);
+      }
+    }
+
+    const hasCustomRolesOrRoutes =
+      roleContribs.length > 0 ||
+      rawRoutes.some((c) => c.data.endpoints !== undefined || c.data.roles !== undefined);
+    const agentAuthSynced =
+      typeof this.agentAuth?.registerRole === "function" &&
+      typeof this.agentAuth?.registerRoute === "function";
+
+    const routes = [...rawRoutes]
       .map((c) => ({
         id: c.id,
         ...(c.data.method !== undefined ? { method: c.data.method as HttpMethod } : {}),
@@ -299,12 +357,32 @@ export class HttpModule {
     const refinerRegistry = new AuthRefinerRegistry(
       this.refiners,
       contributions.authRefiners ?? [],
+      roleRegistry,
     );
 
     const agentAuthHook =
       this.agentAuth !== undefined
         ? {
-            authenticate: (bearer: string, now: Date) => this.agentAuth.authenticate(bearer, now),
+            authenticate: (bearer: string, now: Date) => {
+              const ctx = this.agentAuth.authenticate(bearer, now);
+              if (ctx === null || !hasCustomRolesOrRoutes || agentAuthSynced) return ctx;
+              const reExpanded = roleRegistry.expandRoleGrant(ctx.grant.role, ctx.grant.apiIds);
+              return {
+                ...ctx,
+                agentApi: Boolean(ctx.agentApi || reExpanded.agentApi),
+                grant: {
+                  ...ctx.grant,
+                  allEndpoints: Boolean(ctx.grant.allEndpoints || reExpanded.allEndpoints),
+                  agentApi: Boolean(ctx.grant.agentApi || reExpanded.agentApi),
+                  crossAgent: Boolean(ctx.grant.crossAgent || reExpanded.crossAgent),
+                  apiIds: reExpanded.apiIds,
+                  routeRefiners: {
+                    ...ctx.grant.routeRefiners,
+                    ...reExpanded.routeRefiners,
+                  },
+                },
+              };
+            },
             resolveUser: (projectId: string) => {
               const project = this.projects?.findById(projectId);
               if (project !== null && project !== undefined) {
@@ -326,6 +404,7 @@ export class HttpModule {
         ...(agentAuthHook !== undefined ? { agentAuth: agentAuthHook } : {}),
       }),
       refinerRegistry,
+      roleRegistry,
     );
     const asUser = new Map<string, Hono<AppEnv>>();
     const enteredAs = (userId: string): Hono<AppEnv> => {
@@ -344,6 +423,7 @@ export class HttpModule {
             await next();
           },
           refinerRegistry,
+          roleRegistry,
         );
         asUser.set(userId, app);
       }
@@ -368,6 +448,7 @@ export class HttpModule {
     }[],
     gate: MiddlewareHandler<AppEnv>,
     refinerRegistry: AuthRefinerRegistry,
+    roleRegistry: RoleRegistry,
   ): Hono<AppEnv> {
     const errors = this.errors;
     const access = this.access;
@@ -451,7 +532,7 @@ export class HttpModule {
       if (r.method !== undefined) {
         if (r.auth === "user") {
           app.on(r.method, r.prefix, once, async (c, next) => {
-            await checkRouteAuth(c, r.id, undefined, refinerRegistry);
+            await checkRouteAuth(c, r.id, undefined, refinerRegistry, roleRegistry);
             await next();
           });
         }
@@ -460,7 +541,7 @@ export class HttpModule {
       } else {
         if (r.auth === "user") {
           app.use(`${r.prefix.replace(/\/$/, "")}/*`, once);
-          app.route(r.prefix, withRouteAuth(r.app, r.id, refinerRegistry));
+          app.route(r.prefix, withRouteAuth(r.app, r.id, refinerRegistry, roleRegistry));
         } else {
           if (r.auth === "token") app.use(`${r.prefix.replace(/\/$/, "")}/*`, tokenGate);
           app.route(r.prefix, r.app);

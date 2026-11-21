@@ -9,6 +9,7 @@
  * HTTP and CLI alike, since CLI commands reach the server over HTTP.
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type {
   AgentAuth,
   AgentAuthGrant,
@@ -19,10 +20,12 @@ import type { AgentAuthSessionRow } from "../db/repos/agent-auth-sessions.js";
 import { agentSessionTokenHash } from "../db/repos/agent-auth-sessions.js";
 import {
   DEFAULT_AGENT_AUTH_ROLE,
-  expandRoleGrant,
-  normalizeRouteId,
+  RoleRegistry,
+  matchesRouteGrant,
   roleHasAgentApi,
   type AgentAuthRole,
+  type RoleContribution,
+  type RouteRoleRegistration,
 } from "./agent-roles.js";
 
 /** How long an Agent session lives; the Agent re-derives nothing about this — it is a lease. */
@@ -112,12 +115,18 @@ export class AgentAuthService implements AgentAuth {
   /** Whether the CURRENT grant reaches the HTTP route `apiId`. */
   allowsEndpoint(projectId: string, agentId: string, apiId: string): boolean {
     const grant = this.agentAuthPermissions.grantOf(projectId, agentId);
-    const normalized = normalizeRouteId(apiId);
-    return (
-      grant?.allEndpoints === true ||
-      grant?.apiIds.includes(normalized) === true ||
-      grant?.apiIds.includes(apiId) === true
-    );
+    if (grant === null) return false;
+    return grant.allEndpoints === true || matchesRouteGrant(grant.apiIds, apiId);
+  }
+
+  /** Registers or extends a role node in the permission provider's role registry. */
+  registerRole(roleId: string, contribution: RoleContribution): void {
+    this.agentAuthPermissions.registerRole(roleId, contribution);
+  }
+
+  /** Registers a route's sub-endpoint mappings and direct role bindings. */
+  registerRoute(registration: RouteRoleRegistration): void {
+    this.agentAuthPermissions.registerRoute(registration);
   }
 
   /** The Agent's CURRENT generation row; null before its first session. */
@@ -143,7 +152,7 @@ export class AgentAuthService implements AgentAuth {
       projectId: row.projectId,
       agentId: row.agentId,
       grant,
-      agentApi: roleHasAgentApi(grant.role),
+      agentApi: grant.agentApi ?? roleHasAgentApi(grant.role),
     };
   }
 
@@ -158,15 +167,34 @@ export class AgentAuthService implements AgentAuth {
 @Component()
 export class AgentAuthPermissionProvider implements AgentAuthPermissions {
   @Use() private readonly agentAuthSessions!: AgentAuthSessions;
+  private readonly roleRegistry = new RoleRegistry();
+
+  setup({ contributions }: ClassCtx): void {
+    const roles = contributions.roles as
+      | ReadonlyArray<{ readonly id: string; readonly data: RoleContribution }>
+      | undefined;
+    if (roles !== undefined) {
+      this.roleRegistry.registerRoles(roles);
+    }
+  }
+
+  registerRole(roleId: string, contribution: RoleContribution): void {
+    this.roleRegistry.registerRole(roleId, contribution);
+  }
+
+  registerRoute(registration: RouteRoleRegistration): void {
+    this.roleRegistry.registerRoute(registration);
+  }
 
   grantOf(projectId: string, agentId: string): AgentAuthGrant | null {
     const current = this.agentAuthSessions.generationOf(projectId, agentId);
     if (current === null) return null;
-    const expanded = expandRoleGrant(current.role, current.apiIds);
+    const expanded = this.roleRegistry.expandRoleGrant(current.role, current.apiIds);
     return {
       role: current.role,
       generation: current.generation,
       allEndpoints: expanded.allEndpoints,
+      agentApi: expanded.agentApi,
       crossAgent: expanded.crossAgent,
       apiIds: expanded.apiIds,
       routeRefiners: expanded.routeRefiners,
