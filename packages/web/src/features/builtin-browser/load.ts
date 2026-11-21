@@ -7,7 +7,7 @@ import type {
   BuiltinBrowserLoadWarning,
   BuiltinBrowserMetrics,
 } from "@prismshadow/penguin-server/api";
-import { S, type Strings } from "../../lib/strings";
+import { S, type BrowserStrings } from "./strings";
 
 const MB_KB = 1024;
 const GB_KB = 1024 * 1024;
@@ -26,7 +26,7 @@ export function formatMemory(kb: number): string {
 export function loadWarningText(
   metrics: BuiltinBrowserMetrics | null,
   tabCount: number,
-  t: Strings["builtinBrowser"]["load"] = S.builtinBrowser.load,
+  t: BrowserStrings["builtinBrowser"]["load"] = S.builtinBrowser.load,
 ): string | null {
   if (metrics === null || metrics.warnings.length === 0) return null;
   const { warnings, system } = metrics;

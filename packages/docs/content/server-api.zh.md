@@ -151,8 +151,8 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | GET | `/api/admin/settings/proxy-probe` | 可达性探测的目标：`{targets: [{provider, url}]}`。不发起任何请求 |
 | POST | `/api/admin/settings/proxy-probe/:provider` | 经服务器的出站链路探测其中一个目标，不发送任何凭证：`{probe: {provider, url, outcome, ms, status?}}` |
 | GET | `/api/admin/plugin-config` | 模块声明的每个设置分组，沙盒的排在最前：`{plugins: [{name, configuration, values, parent?, notices?}]}`。见[插件设置](#插件设置) |
-| PUT | `/api/admin/plugin-config` | 保存一个分组的值：`{name, values}`。返回全部分组，与 GET 相同 |
-| POST | `/api/admin/plugin-config/action` | 执行某个分组的一个动作：`{name, action}`。返回执行结果，以及执行后的全部分组 |
+| PUT | `/api/admin/plugin-config` | 保存一个分组的值：`{name, values}`。返回全部分组，与 GET 相同。需要人的登录：本机 API token 得到 `403` `human_required` |
+| POST | `/api/admin/plugin-config/action` | 执行某个分组的一个动作：`{name, action}`。返回执行结果，以及执行后的全部分组。与 PUT 一样需要人的登录 |
 
 只要有 HTTP 响应返回，探测的 `outcome` 就是 `reachable`，否则为 `timeout`、`dns`、`refused`、`tls` 或 `network`。`:provider` 不在目标列表里时返回 `404` `probe_target_not_found`。
 
@@ -700,11 +700,11 @@ interface AgentApiKeyInfo {
 | GET | `/api/cli/commands` | 每条插件命令，连同所属包：`{commands: [{package, key, summary, access, files?}]}`——`key` 是命令路径（`a.b.c` 等价于 `penguin a b c ARGS`），`summary` 每种语言一行，`access` 为 `admin` 或 `member`，`files` 列出终端读取并发送其文件的选项（`read`），以及终端保存交回文件所用的选项（`write`） |
 | POST | `/api/cli/commands/run` | 将 `args` 对一个包中调用方可运行的命令解析，应答它们打印的内容、退出码与交回的文件 |
 
-运行请求是 `{package, args, language, prog, projectId?, sessionId?, files?}`：`package` 是列表所示名称的插件包，`args` 是本应跟在程序名之后的参数，`language`（`"en"` 或 `"zh"`）用于 summary 与命令自己的输出，`prog` 是用法行打印的程序名（`penguin`，或 `penguin exec <插件>`）。`projectId` 与 `sessionId` 是调用方上下文：server 校验调用方能看到该 Project（否则 `404`）、该 Session 属于这个 Project（否则 `404 session_not_found`），成员命令必须有 Project（否则 `400 project_required`）。`files` 是 `[{value, name, data}]`，终端为 `read` 选项读取的每个文件一项，按选项值原样为键，字节为 base64；它们计入请求体上限。应答是 `{exitCode, stdout, stderr, files?}`，其中 `files` 为 `[{name, mimeType?, data}]`——只含文件名，总计至多 64 MiB。
+运行请求是 `{package, args, language, prog, projectId?, sessionId?, files?}`：`package` 是列表所示名称的插件包，`args` 是本应跟在程序名之后的参数，`language`（`"en"` 或 `"zh"`）用于 summary 与命令自己的输出，`prog` 是用法行打印的程序名（`penguin`，或 `penguin exec <插件>`）。`projectId` 与 `sessionId` 是调用方上下文：server 校验调用方能看到该 Project（否则 `404`）、该 Session 属于这个 Project（否则 `404 session_not_found`），成员命令必须有 Project（否则 `400 project_required`）。声明 `requiresProjectListing` 的命令只在该 Project 为本机列出了其插件时运行（否则 `403 plugin_not_enabled`）。声明 `tokenCaller: "session-driver"` 的命令，对本机 API token 以所指 Session（子 Agent 的 Session 取其根 Session）中正在进行的运行的发起者——一位已登录的人——的身份运行，并改为检查此人对该 Project 的访问权，而不是 token 的：没有 `sessionId` 答 `403 session_required`；没有运行在进行、运行不是已登录的人发起的（token、无人署名的定时任务、Agent API、公司模式、目标模式）、运行被他人插话过，或驱动者不能打开该 Project，答 `403 driver_unknown`。人自己的登录从不被替换，其余命令一律把 token 视为管理员。Session 由调用方指明，因此 Agent 可以借用它所指明的 Project 中另一个 Session 里正在进行的运行的发起者——在每个 Session 有自己的凭据之前，这是已知的局限。`files` 是 `[{value, name, data}]`，终端为 `read` 选项读取的每个文件一项，按选项值原样为键，字节为 base64；它们计入请求体上限。应答是 `{exitCode, stdout, stderr, files?}`，其中 `files` 为 `[{name, mimeType?, data}]`——只含文件名，总计至多 64 MiB。
 
 每次运行都只用被点名包的命令新建一个命令程序：每条命令位于其 key 定位的节点上、以所请求语言的 summary 作描述，`args` 对这个程序解析。无参数时打印该包的帮助并以 0 退出；用法错误按 commander 的原样报出、带 commander 自己的退出码；命令自身失败以退出码 1 返回、消息在 stderr 上。输出是缓冲的，不作流式传输：命令通过 context 写下的一切，以及程序为帮助与用法错误打印的一切，在运行结束时随应答一次到达。一次运行不会波及 server——失败的命令不影响 server 与它的其他路由。
 
-错误：调用者非管理员时 `403` `admin_required`，请求体形状不符时 `400` `bad_request`，没有该名称的插件贡献 CLI 命令时 `404` `unknown_package`。
+错误：调用者非管理员时 `403` `admin_required`，以及上述 `403` `plugin_not_enabled`、`session_required` 与 `driver_unknown`，请求体形状不符时 `400` `bad_request`，没有该名称的插件贡献 CLI 命令时 `404` `unknown_package`。
 
 CLI 自己就按这份列表分派：首个词不属于 CLI 自有命令时，与列表中的 key 比对，恰有一个包命中即运行，两个及以上命中则逐候选报出一行 `penguin exec <包>:<id> …`——见 [penguin exec](/cli#penguin-exec)。
 

@@ -18,7 +18,7 @@
  * - With a configured model credential, it opens and runs Sessions the SDK's way, inside
  *   its own Project only, with allow-all: nobody is there to answer an ask. Its Sessions
  *   are archived with workbench provenance, including before their first run after a restart.
- * - A Session that only talks is opened with deny-all: the model's tool call in it is denied
+ * - A Session that only talks can select its own model and deny-all: that model's tool call is denied
  *   and the model reads the denial, while one opened without the option still runs its calls;
  *   a mode that would wait for a person is refused by name.
  * - Agent counts include installed workbenches and follow removal without a compiler load.
@@ -57,6 +57,10 @@
  *   are no longer listed; another workbench's data stays.
  * - A legacy Workflow package loads through the new route after one-time conversion, with its state intact.
  *
+ * With an engine a plugin contributes to `AgentStateHistoryModule.engines`:
+ * - A large workbench's load is written by it, and a restore read through it; the restore a
+ *   member asked for is authored under their display name.
+ *
  * Every load runs the TypeScript compiler, so the loaded-once group shares one app and one
  * compile; each editing scenario gets an Agent of its own within the editing group's one app.
  * Keep independent edits in separate cases: six or seven compiler runs under one deadline
@@ -74,7 +78,8 @@ import {
   sharedWorkbenchDirs,
   workbenchStateDir,
 } from "@prismshadow/penguin-core";
-import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
+import { parseManifest } from "@prismshadow/penguin-core/kernel";
+import type { IfaceTable, ModuleDef } from "@prismshadow/penguin-core/kernel";
 import type {
   WorkbenchInfo,
   WorkbenchVersion,
@@ -83,6 +88,11 @@ import type {
   ArchivedSessionsResponse,
   AgentsResponse,
 } from "../src/api/types.js";
+import nodeFs from "node:fs";
+import git from "isomorphic-git";
+import type { AgentStateEngine, AgentStateEngineSource } from "@prismshadow/penguin-core/plugin";
+import { PluginHost } from "../src/plugin/host.js";
+import { builtinEngine } from "../src/workbenches/repo.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { MOCK_MODEL_ID, requestText, startMockLLM } from "./live-session.js";
@@ -151,8 +161,12 @@ export default {
                 if (req.path === "/talk") {
                   // The mode is whatever the page sent, cast past its type as plain JavaScript could.
                   const mode = req.query["mode"];
+                  const modelId = req.query["model"];
                   const opened = await host
-                    .createSession(mode === undefined ? {} : { approvalMode: mode as "deny-all" })
+                    .createSession({
+                      ...(mode === undefined ? {} : { approvalMode: mode as "deny-all" }),
+                      ...(modelId ? { model: { provider: "custom", modelId } } : {}),
+                    })
                     .catch((e: Error) => e.message);
                   if (typeof opened !== "string") {
                     await host.run(opened.sessionId, [{ text: "read the probe: " + (mode ?? "default") }]);
@@ -560,37 +574,49 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
       return { toolUse: { id: `toolu_${mode}`, name: "read_file", input: { file_path: probe } } };
     });
     try {
+      const talkModel = "claude-bento-quiet";
       const configured = await owner.put(`/api/projects/${PROJECT}/models`, {
         defaultModel: { provider: "custom", modelId: MOCK_MODEL_ID },
-        models: [
-          {
-            provider: "custom",
-            modelId: MOCK_MODEL_ID,
-            apiKey: "sk-mock",
-            baseUrl: mock.url,
-            contextWindow: 200_000,
-          },
-        ],
+        models: [MOCK_MODEL_ID, talkModel].map((modelId) => ({
+          provider: "custom",
+          modelId,
+          apiKey: "sk-mock",
+          baseUrl: mock.url,
+          contextWindow: 200_000,
+        })),
       });
       expect(configured.status).toBe(200);
       /** What the model was told the tool call came to, once the Session's turn has ended. */
-      const talk = async (mode?: string) => {
-        const res = await owner.get(`${BASE}/demo/api/talk${mode ? `?mode=${mode}` : ""}`);
+      const talk = async (mode?: string, model?: string) => {
+        const query = new URLSearchParams({
+          ...(mode ? { mode } : {}),
+          ...(model ? { model } : {}),
+        });
+        const res = await owner.get(`${BASE}/demo/api/talk?${query}`);
         const { opened } = (await res.json()) as {
           opened: { sessionId: string; approvalMode: string } | string;
         };
         if (typeof opened === "string") return { opened, toolResult: null };
         await waitFor(() => t.deps.manager.statusOf(opened.sessionId) === "idle", 20_000);
-        const answered = mock.requests
-          .map(requestText)
-          .find(
-            (text) => text.includes('"tool_result"') && text.includes(`toolu_${mode ?? "default"}`),
-          );
-        return { opened, toolResult: answered ?? null };
+        const answered = mock.requests.find((req) => {
+          const text = requestText(req);
+          return text.includes('"tool_result"') && text.includes(`toolu_${mode ?? "default"}`);
+        });
+        return {
+          opened,
+          model: answered?.model,
+          toolResult: answered ? requestText(answered) : null,
+        };
       };
 
-      const quiet = await talk("deny-all");
-      expect(quiet.opened).toMatchObject({ approvalMode: "deny-all", source: "workbench" });
+      const quiet = await talk("deny-all", talkModel);
+      expect(quiet.opened).toMatchObject({
+        provider: "custom",
+        modelId: talkModel,
+        approvalMode: "deny-all",
+        source: "workbench",
+      });
+      expect(quiet.model).toBe(talkModel);
       expect(quiet.toolResult).toContain("Tool call denied by user.");
       expect(quiet.toolResult).not.toContain("the probe was read");
 
@@ -1264,5 +1290,77 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     expect((await owner.delete(`${base}/demo`)).status).toBe(404);
     // The removal is a commit of its own: the history walk stops there.
     expect(await versions()).toEqual([]);
+  });
+});
+
+describe("an engine a plugin contributes", { timeout: 30_000 }, () => {
+  it("writes a load's version, reads the history and a restore, and the member's restore is under their name", async () => {
+    const calls: string[] = [];
+    const engine: AgentStateEngine = {
+      name: "recording",
+      fasterFrom: { commit: 40, read: 40 },
+      commit: (c) => {
+        calls.push("commit");
+        return builtinEngine.commit(c);
+      },
+      readBlobs: (at, oids) => {
+        calls.push("readBlobs");
+        return builtinEngine.readBlobs(at, oids);
+      },
+    };
+    let cacheDir = "";
+    const source: AgentStateEngineSource = (host) => {
+      cacheDir = host.cacheDir;
+      return engine;
+    };
+    const module: ModuleDef = {
+      manifest: parseManifest({
+        name: "RecordingEngine",
+        requires: {},
+        provides: {},
+        contributes: {
+          "AgentStateHistoryModule.engines": [{ id: "recording.engine", name: "recording" }],
+        },
+        children: [],
+      }),
+      create: () => ({ api: {}, bind: { "recording.engine": source } }),
+    };
+    const plugins = new PluginHost();
+    plugins.use({ specifier: "recording-engine", modules: [module], replaces: [] });
+    const logged: string[] = [];
+    const t = await createTestApp({ plugins, log: (line) => logged.push(line) });
+    try {
+      const owner = apiClient(t.app, (await provisionUser(t.app, "owner")).cookie);
+      expect((await owner.post("/api/projects", { projectId: PROJECT, name: "wf" })).status).toBe(
+        201,
+      );
+      const dir = path.join(agentStateDir(t.root, PROJECT, AGENT), "workbenches", "demo");
+      await writeDemo(dir);
+      // Large enough that a commit and a restore are worth handing to this engine (`fasterFrom`).
+      for (let i = 0; i < 40; i++) {
+        await fs.writeFile(path.join(dir, "ui", `page-${i}.html`), `<p>${i}</p>`);
+      }
+      expect(cacheDir).toBe(path.join(t.root, "cache", "recording.engine"));
+      await waitFor(() => logged.some((line) => line.includes("recording records Agent State")));
+
+      const [v1] = await listOf(owner);
+      expect(calls).toEqual(["commit"]);
+      await fs.writeFile(path.join(dir, "ui", "index.html"), "<h1>demo v2</h1>");
+      await owner.post(`${BASE}/demo/reload`);
+      expect(
+        (await owner.put("/api/me/profile", { displayName: "Ada Lovelace" })).status,
+      ).toBeLessThan(300);
+      const back = await owner.post(`${BASE}/demo/rollback`, { revision: v1!.revision });
+      expect(back.status, await back.text()).toBe(200);
+
+      expect(calls).toEqual(["commit", "commit", "readBlobs", "commit"]);
+      const gitdir = path.join(agentDir(t.root, PROJECT, AGENT), "agent_state.git");
+      const tip = await git.resolveRef({ fs: nodeFs, gitdir, ref: "HEAD" });
+      const { commit } = await git.readCommit({ fs: nodeFs, gitdir, oid: tip });
+      expect(commit.author.name).toBe("Ada Lovelace");
+      expect(commit.message).toBe(`workbench demo @${v1!.revision}\n`);
+    } finally {
+      await t.cleanup();
+    }
   });
 });

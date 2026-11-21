@@ -334,6 +334,11 @@ export function agentServer(
     machines?: FakeMachine[];
     /** This server's plugin library (by default empty). */
     library?: PluginItem[];
+    /**
+     * The plugin market's curation (GET /api/plugins/market), with its popularity figures; by
+     * default none, which answers 404 as a server older than the market does.
+     */
+    market?: unknown;
     /** Scheduled tasks the Agent already has, on a machine when one is named (this server's otherwise). */
     schedules?: Array<{ machineId?: string; item: ScheduleItem }>;
     /** List {@link OTHER_PROJECT_ID} beside the Agent's Project. */
@@ -662,6 +667,7 @@ export function agentServer(
       return json({ groups: [{ id: "all", title: "All", plugins: libraryOf(request.machine) }] });
     }
     if (path === "/api/plugins/registry") return json({ plugins: [], failures: [], pending: [] });
+    if (path === "/api/plugins/market" && options.market !== undefined) return json(options.market);
     if (path === `/api/projects/${PROJECT_ID}/plugins/installed` && method === "GET") {
       return json({
         machineId: request.machine ?? "local-machine",
