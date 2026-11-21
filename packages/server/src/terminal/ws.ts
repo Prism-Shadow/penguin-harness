@@ -21,7 +21,11 @@ import { TLSSocket } from "node:tls";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
 import { parseCookieHeader, sessionCookies } from "../auth/middleware.js";
-import { acceptsOrigin, publicOrigin, sameOriginSite } from "../http/public-origin.js";
+import {
+  acceptsOrigin,
+  publicOrigin,
+  sameOriginSite,
+} from "@prismshadow/penguin-library-http/public-origin";
 import type { ServerHmrHost } from "../hmr/platform.js";
 import type { Auth } from "@prismshadow/penguin-library-auth";
 import { API_SOCKET_PATH } from "../api/types.js";

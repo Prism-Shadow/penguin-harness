@@ -94,6 +94,7 @@ import { usePluginRepair } from "./plugin-repair";
 import { samePluginTarget, viewedMachine } from "./viewed-machine";
 import { SettingsDialog } from "../settings";
 import { pickDefaultAgent } from "../ai-create";
+import { pluginPickItems } from "../agents";
 import { toneInk } from "../../lib/tone";
 import { appWindowPath } from "../../lib/app-center-path";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
@@ -123,6 +124,7 @@ import {
 } from "./plugin-reads";
 import {
   agentInstalls,
+  readNewAgentInstalls,
   rereadInstalls,
   useAgentInstalls,
   type InstallsTarget,
@@ -231,6 +233,11 @@ export function PluginsPage() {
   );
   const groups = library.value?.groups ?? null;
   const error = groups === null ? library.failure : null;
+  /** The same library as the Create agent dialog's picker rows, for 「新建空白 Agent」. */
+  const pickLibrary = useMemo(
+    () => (groups === null ? null : pluginPickItems(groups.flatMap((g) => g.plugins))),
+    [groups],
+  );
   // A return to the same Project is a new visit, not permission for an old reply: a write that
   // answers in a later visit is not taken (its Project's list is read again on entry anyway).
   const projectVisit = useRef({ projectId, generation: 0 });
@@ -595,6 +602,21 @@ export function PluginsPage() {
     agentsLoading ||
     targets.some((t) => t.machine === null && unknown.has(t.key) && !unreadable.has(t.key));
 
+  /**
+   * A blank Agent was created from a card's manage-installs dialog, on this server: its installs
+   * are read first and the Agent list after, so its row joins the list already reading Installed.
+   * A failed list read is said; the Agent exists either way.
+   */
+  const blankAgentCreated = async (agent: AgentSummary) => {
+    if (!projectId) return;
+    await readNewAgentInstalls(projectId, null, agent.agentId);
+    try {
+      await reloadAgents();
+    } catch (e) {
+      toastApiError(e);
+    }
+  };
+
   /** Reads one target's lists again (Set up wrote its vault): what its MCP servers wait for moved. */
   const refreshAgentMcp = (key: string) => {
     if (!projectId) return;
@@ -909,6 +931,7 @@ export function PluginsPage() {
     // Outside its category's own tab, a card names its category.
     showCategory: groupBy !== "category" || activeTab === ALL_TAB,
     targets,
+    blankAgent: { library: pickLibrary, onCreated: blankAgentCreated },
     installed,
     unknown,
     failed: unreadable,

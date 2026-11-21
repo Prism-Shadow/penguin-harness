@@ -12,6 +12,7 @@
  * the server (randomHex8).
  */
 import { randomBytes } from "node:crypto";
+import { isWindowsReservedName } from "@prismshadow/penguin-core";
 
 /** 8-character lowercase hex random string (used for server-generated ids like session_id / temporary workspace). */
 export function randomHex8(): string {
@@ -20,6 +21,15 @@ export function randomHex8(): string {
 
 /** General semantic id rule: starts with a lowercase letter, followed by lowercase letters, digits, or underscores only, 2-64 chars (no hyphen). */
 export const SEMANTIC_ID_PATTERN = /^[a-z][a-z0-9_]{1,63}$/;
+
+/**
+ * Whether an id may be CREATED: the general rule, and not a name Windows reserves (`con`, `nul`,
+ * `com1`…). Only creation applies the second half; an id already on disk is read with
+ * {@link SEMANTIC_ID_PATTERN} alone, so it keeps opening after an upgrade.
+ */
+export function isNewSemanticId(id: string): boolean {
+  return SEMANTIC_ID_PATTERN.test(id) && !isWindowsReservedName(id);
+}
 
 /** Username tightens the general rule to 2-32 chars: leaves headroom for the default Project id `<username>-default_project`. */
 export const USERNAME_PATTERN = /^[a-z][a-z0-9_]{1,31}$/;
@@ -33,3 +43,6 @@ export const PROJECT_ID_MAX_LENGTH = 64;
 /** Human-readable description of the rule (reused in error messages). */
 export const SEMANTIC_ID_RULE =
   "starts with a lowercase letter; lowercase letters, digits and underscores only";
+
+/** What a new id adds to {@link SEMANTIC_ID_RULE}. */
+export const NEW_ID_RULE = "not a name Windows reserves (con, prn, aux, nul, com1–com9, lpt1–lpt9)";

@@ -7,7 +7,8 @@
  * listed from git (`dataFiles`) without being downloaded.
  * The dev server reuses the last clone while it is fresh (see `fresh`). PENGUIN_BENCHMARK_REPO names a local
  * checkout to read instead, with no network (developing both repositories, or a machine that
- * cannot reach GitHub). The clone lives in this package's node_modules cache, never in git.
+ * cannot reach GitHub). The clone lives in this package's node_modules cache. External data
+ * repositories share its lifetime. An offline index can use data checkouts beside it.
  */
 import { execFileSync } from "node:child_process";
 import {
@@ -55,7 +56,7 @@ export function benchmarkRepo({ refresh = false } = {}) {
   const cached = existsSync(join(CHECKOUT, "packages"));
   if (!refresh && cached && fresh(CHECKOUT)) return CHECKOUT;
   try {
-    return clone();
+    return clone(REPOSITORY, CHECKOUT, SPARSE, "main");
   } catch (error) {
     // Offline in dev: an old clone still serves, but say so.
     if (refresh || !cached) throw error;
@@ -83,9 +84,9 @@ function fresh(dir) {
   }
 }
 
-function clone() {
-  mkdirSync(CACHE_DIR, { recursive: true });
-  const temp = mkdtempSync(join(CACHE_DIR, "clone-"));
+function clone(repository, checkout, patterns, branch) {
+  mkdirSync(dirname(checkout), { recursive: true });
+  const temp = mkdtempSync(join(dirname(checkout), "clone-"));
   try {
     const git = (args) => execFileSync("git", args, { stdio: "pipe" });
     git([
@@ -95,50 +96,75 @@ function clone() {
       "--config=core.longpaths=true",
       "--depth=1",
       "--filter=blob:none",
-      "--sparse",
-      "--branch=main",
-      REPOSITORY,
+      "--no-checkout",
+      ...(branch ? ["--branch", branch] : []),
+      repository,
       temp,
     ]);
-    git(["-C", temp, "sparse-checkout", "set", "--no-cone", ...SPARSE]);
-    rmSync(CHECKOUT, { recursive: true, force: true });
-    renameSync(temp, CHECKOUT);
+    git(["-C", temp, "sparse-checkout", "set", "--no-cone", ...patterns]);
+    git(["-C", temp, "checkout", "--quiet"]);
+    if (checkout === CHECKOUT) rmSync(checkout, { recursive: true, force: true });
+    renameSync(temp, checkout);
   } catch (error) {
+    // Another reader may have finished the same data checkout first.
+    if (checkout === CHECKOUT || !existsSync(join(checkout, ".git"))) {
+      throw new Error(
+        `Could not clone ${repository} (set PENGUIN_BENCHMARK_REPO to build offline)`,
+        {
+          cause: error,
+        },
+      );
+    }
+  } finally {
     rmSync(temp, { recursive: true, force: true });
-    throw new Error(
-      `Could not clone ${REPOSITORY} (set PENGUIN_BENCHMARK_REPO to a local checkout to build offline): ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
   }
-  return CHECKOUT;
+  return checkout;
 }
 
 /**
- * Every file under the checkout's `data/`, as paths from the repository root. A git checkout
+ * Files under a prefix, or the whole repository for an empty prefix. A git checkout
  * answers from its tree, which lists the files a sparse clone never downloaded; a plain folder
  * (a test fixture, an exported copy) is walked.
  */
-export function dataFiles(repo) {
+export function dataFiles(repo, prefix = "data") {
   if (existsSync(join(repo, ".git"))) {
     try {
       const out = execFileSync(
         "git",
-        ["-C", repo, "ls-tree", "-r", "--name-only", "HEAD", "--", "data"],
+        ["-C", repo, "ls-tree", "-rz", "--name-only", "HEAD", "--", ...(prefix ? [prefix] : [])],
         {
           encoding: "utf8",
           maxBuffer: 64 * 1024 * 1024,
           stdio: ["ignore", "pipe", "pipe"],
         },
       );
-      return out.split("\n").filter(Boolean);
+      return out.split("\0").filter(Boolean);
     } catch {
       // Not a usable repository after all: fall back to what is on disk.
     }
   }
-  const root = join(repo, "data");
+  const root = join(repo, prefix);
   if (!existsSync(root)) return [];
   return readdirSync(root, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
-    .map((entry) => relative(repo, join(entry.parentPath, entry.name)).split(sep).join("/"));
+    .map((entry) => relative(repo, join(entry.parentPath, entry.name)).split(sep).join("/"))
+    .filter((path) => !path.startsWith(".git/") && path !== ".git");
+}
+
+/** Read a GitHub data repository from its default branch, once per index checkout. */
+export function externalDataRepo(index, url) {
+  const match = /^https:\/\/github\.com\/([\w-]+)\/([\w-][\w.-]*?)(?:\.git)?\/?$/i.exec(url);
+  if (!match) return undefined;
+  const [, owner, name] = match;
+  const repository = `https://github.com/${owner}/${name}`;
+  const cache = join(CHECKOUT, ".git", "hub-data", owner, name);
+  let root = cache;
+  if (process.env.PENGUIN_BENCHMARK_REPO || resolve(index) !== CHECKOUT) {
+    const sibling = join(dirname(resolve(index)), name);
+    if (existsSync(sibling)) root = sibling;
+    else if (!existsSync(join(cache, ".git"))) return undefined;
+  } else if (!existsSync(join(cache, ".git"))) {
+    clone(repository, cache, ["/README.md", "**/tasks/*/instruction.md"]);
+  }
+  return { root, tree: `${repository}/tree/HEAD`, files: dataFiles(root, "") };
 }

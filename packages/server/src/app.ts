@@ -66,8 +66,8 @@ import { UiPrefsRepo } from "@prismshadow/penguin-library-setting/repos/ui-prefs
 import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
 import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
 import { authMiddleware, jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
-import { originRule } from "./http/public-origin.js";
-import { WEB_APP_CSP } from "./http/page-csp.js";
+import { originRule } from "@prismshadow/penguin-library-http/public-origin";
+import { WEB_APP_CSP } from "@prismshadow/penguin-library-http/page-csp";
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
@@ -80,7 +80,7 @@ import { newAuthRuntimeState } from "./auth/runtime-state.js";
 import { AuthSessionsRepo } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
 import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
-import { attributedProjectId } from "./http/attribution.js";
+import { attributedProjectId } from "@prismshadow/penguin-library-http/attribution";
 import { STREAM_IDLE_MS } from "./http/sse.js";
 import { installRoutes } from "./http/routes/install.js";
 import { ChannelHub } from "./runtime/channel.js";
@@ -118,7 +118,6 @@ import { AgentService } from "./services/agent-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
-import { ModelOAuthService } from "./services/model-oauth-service.js";
 import { ProjectService } from "./services/project-service.js";
 import { SessionService } from "./services/session-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
@@ -733,7 +732,7 @@ function staticResponse(
     "Cache-Control": cacheControlFor(servedPath),
     ETag: responseEtag,
   };
-  // The page's own policy (http/page-csp.ts), on HTML only: a header governs the document it
+  // The page's own policy (@prismshadow/penguin-library-http/page-csp), on HTML only: a header governs the document it
   // arrives with, and the scripts, stylesheets and fonts are not documents. On the 304 too: a
   // revalidation updates the stored response's headers, so a shell cached before the policy
   // existed picks it up without a re-download.

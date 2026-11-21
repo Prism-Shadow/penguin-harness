@@ -10,6 +10,7 @@
 import type {
   AgentApiSettings,
   AppCenterResponse,
+  WorkbenchInfo,
   AppCenterShortcut,
   AgentConfigResponse,
   AgentSummary,
@@ -284,15 +285,16 @@ export interface DemoFixtures {
   library: PluginLibraryResponse;
   pluginFiles: Record<string, Record<string, string>>;
   /**
-   * Per Agent: its Skills and hook packages, the workbenches library plugins installed on it,
-   * and whether its Agent-wide workbench switch is off.
+   * Installed parts and the workbench settings for each Agent in this demo, and the workbenches
+   * library plugins installed on it (`pluginWorkbenches`, the Agent's plugin listing).
    */
   installed: Record<
     string,
     {
       skills: SkillMetadataItem[];
       hooks: HookItem[];
-      workbenches?: Array<{ name: string; plugin: string; version: string }>;
+      workbenches?: WorkbenchInfo[];
+      pluginWorkbenches?: Array<{ name: string; plugin: string; version: string }>;
       workbenchesOff?: boolean;
     }
   >;
@@ -1093,7 +1095,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         plugin.skills.map((s) => ({ ...s, ...(plugin.icon ? { icon: plugin.icon } : {}) })),
       ),
       hooks: [],
-      workbenches: (supportPlugin.workbenches ?? []).map((w) => ({
+      pluginWorkbenches: (supportPlugin.workbenches ?? []).map((w) => ({
         ...w,
         plugin: supportPlugin.name,
       })),
