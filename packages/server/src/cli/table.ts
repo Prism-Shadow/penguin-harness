@@ -54,6 +54,7 @@ export function relativeTime(iso: string, now: Date = new Date()): string {
   const then = Date.parse(iso);
   if (Number.isNaN(then)) return iso;
   const seconds = Math.floor((now.getTime() - then) / 1000);
+  if (seconds < 0) return formatLocalDate(new Date(then));
   if (seconds < 60) return "now";
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;

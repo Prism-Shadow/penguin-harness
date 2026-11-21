@@ -250,6 +250,17 @@ describe("penguin session ls", () => {
     const rows = JSON.parse(out()) as Array<{ sessionId: string }>;
     expect(rows).toHaveLength(1);
   });
+
+  it("prints the local date instead of 'now' when lastActiveAt is ahead of the clock", async () => {
+    server.addSession({
+      sessionId: "session-2099-06-15-12-00-00-f0000001",
+      title: "ClockSkew",
+      lastActiveAt: "2099-06-15T12:00:00.000Z",
+    });
+    expect(await cli(["session", "ls"])).toBe(0);
+    expect(out()).toContain("2099-06-15");
+    expect(out()).not.toMatch(/\bnow\b/);
+  });
 });
 
 describe("penguin session input", () => {
