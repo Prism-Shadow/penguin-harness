@@ -33,6 +33,7 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "assets",
     "dist",
     "skills",
     "icon.svg",

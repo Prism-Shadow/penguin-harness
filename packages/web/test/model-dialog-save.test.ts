@@ -36,10 +36,11 @@
  * - A model with no key anywhere names the variable its client reads when the server reports it
  *   set, and otherwise asks for a key; the key field is never left without a placeholder.
  * - The price fields say a model left without prices is not costed.
- * - The settings dialog offers one "Set as default model": a chat model becomes the default chat
- *   model, however many multimodal jobs it could also do; a tool model becomes the default for
- *   every job it can do, after a confirmation naming them, and once it holds them all the button
- *   takes it off them instead.
+ * - A chat model's settings offer "Set as default model", however many jobs it could also do; a
+ *   tool model's offer "Use model", which chooses it for every job it can do after a confirmation
+ *   naming them, then "Stop using model". A model chosen for any job, web search included, wears
+ *   In use on its card.
+ * - The group speed test reads a tool model's latency and leaves a video model out, saying why.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
@@ -141,6 +142,8 @@ function modelsServer(
   const puts: ModelsUpdateRequest[] = [];
   /** Every binding change asked for (PATCH models/tool-bindings), as sent. */
   const patches: ToolBindingUpdate[] = [];
+  /** Every connection or speed test asked for (POST models/test), by model id. */
+  const tests: string[] = [];
   /** Every endpoint listing asked for (POST models/list), as sent. */
   const lists: EndpointModelListRequest[] = [];
   /** While set, a listing's answer waits for it. */
@@ -156,6 +159,10 @@ function modelsServer(
     if (req.path === "/api/projects/p1/agents") return json({ agents: [] });
     if (req.path === "/api/projects/p1/usage/model-totals") return json({ totals: [] });
     if (req.path === "/api/projects/p1/models" && req.method === "GET") return json(table);
+    if (req.path === "/api/projects/p1/models/test" && req.method === "POST") {
+      tests.push((req.body as { modelId: string }).modelId);
+      return json({ ok: true, latencyMs: 820, ttftMs: 600 });
+    }
     if (bindings && req.path === "/api/projects/p1/models/tool-bindings") {
       if (req.method === "PATCH") {
         const change = req.body as ToolBindingUpdate;
@@ -208,6 +215,7 @@ function modelsServer(
   return {
     puts,
     patches,
+    tests,
     lists,
     refuseNext: () => {
       refuse = true;
@@ -480,7 +488,7 @@ describe("the model config dialog", () => {
     );
   });
 
-  it("offers one Set as default model, for the chat default or for every job a tool model can do", async () => {
+  it("offers Set as default model for a chat model, Use model then Stop using model for a tool model", async () => {
     const parakeet = model({
       provider: "custom",
       modelId: "parakeet-asr",
@@ -489,52 +497,104 @@ describe("the model config dialog", () => {
       clientType: "openai-transcription",
       credential: { baseUrl: "https://atlas.example/v1" },
     });
+    const seeker = model({
+      provider: "custom",
+      modelId: "seeker-search",
+      displayName: "Seeker Search",
+      chatEligible: false,
+      credential: { baseUrl: "https://atlas.example/v1" },
+    });
+    const ref = (m: ModelInfo) => ({ provider: m.provider, modelId: m.modelId });
     const binding = (key: string, title: string, candidate: ModelInfo): ToolBinding => ({
       key,
       title: { en: title, zh: title },
       package: MULTIMODAL_TOOLS_PACKAGE,
-      candidates: [{ provider: candidate.provider, modelId: candidate.modelId }],
+      candidates: [ref(candidate)],
     });
     const server = await openModelsPage(
-      [ATLAS, parakeet],
+      [ATLAS, parakeet, seeker],
       [],
-      [binding("t2t", "Text generation", ATLAS), binding("s2t", "Speech recognition", parakeet)],
+      [
+        binding("t2t", "Text generation", ATLAS),
+        { ...binding("search", "Web search", seeker), model: ref(seeker) },
+        binding("s2t", "Speech recognition", parakeet),
+      ],
     );
-    /** The open dialog's buttons that set or remove a default, by their words. */
-    const defaultButtons = () =>
+    /** The open dialog's buttons that choose a model for something, by their words. */
+    const choiceButtons = () =>
       [...dialogs()[0]!.querySelectorAll("button")]
         .map((b) => b.textContent?.trim() ?? "")
-        .filter((words) => /default/i.test(words));
+        .filter((words) =>
+          [en.models.setDefault, en.models.useModel, en.models.stopUsing].includes(words),
+        );
+    const tagsOf = (name: string) => card(name)!.closest('[data-slot="card"]')!.textContent ?? "";
 
-    // A tool model: one button, asked first, naming the jobs it takes.
+    // A tool model bound to web search wears In use, like any other binding.
+    await waitFor(() => tagsOf("Seeker Search").includes(en.models.inUse));
+
+    // A tool model: Use model, asked first, naming the jobs it takes.
     await click(card("Parakeet")!);
-    await waitFor(() => hasButton(en.models.setDefault));
-    expect(defaultButtons()).toEqual([en.models.setDefault]);
-    await click(button(en.models.setDefault));
+    await waitFor(() => hasButton(en.models.useModel));
+    expect(choiceButtons()).toEqual([en.models.useModel]);
+    await click(button(en.models.useModel));
     await waitFor(() => dialogs().length === 2);
-    expect(dialogs()[1]!.getAttribute("aria-label")).toBe(en.models.confirmDefaultTitle);
+    expect(dialogs()[1]!.getAttribute("aria-label")).toBe(en.models.useModel);
     expect(dialogs()[1]!.textContent).toContain("Speech recognition");
     await click(button(en.common.confirm));
     await waitFor(() => dialogs().length === 0);
-    expect(server.patches).toEqual([
-      { key: "s2t", model: { provider: "custom", modelId: "parakeet-asr" } },
-    ]);
+    expect(server.patches).toEqual([{ key: "s2t", model: ref(parakeet) }]);
+    expect(tagsOf("Parakeet")).toContain(en.models.inUse);
 
-    // Holding every job it can do, it offers to step down instead.
+    // Chosen for every job it can do, it offers to stop instead.
     await click(card("Parakeet")!);
     await waitFor(() => dialogs().length === 1);
-    expect(defaultButtons()).toEqual([en.defaultModels.removeDefault]);
+    expect(choiceButtons()).toEqual([en.models.stopUsing]);
     await pressEscape();
     await waitFor(() => dialogs().length === 0);
 
-    // A chat model that could also take text generation: the same words set the chat default.
+    // A chat model that could also take text generation sets the chat default only.
     await editAtlas();
-    expect(defaultButtons()).toEqual([en.models.setDefault]);
+    expect(choiceButtons()).toEqual([en.models.setDefault]);
     await click(button(en.models.setDefault));
     await click(button(en.common.confirm));
     await waitFor(() => server.puts.length === 1);
-    expect(server.puts[0]!.defaultModel).toEqual({ provider: "custom", modelId: "atlas-1" });
+    expect(server.puts[0]!.defaultModel).toEqual(ref(ATLAS));
     expect(server.patches).toHaveLength(1);
+  });
+
+  it("reads a tool model's latency in the group speed test and leaves a video model out", async () => {
+    const parakeet = model({
+      provider: "custom",
+      modelId: "parakeet-asr",
+      displayName: "Parakeet",
+      chatEligible: false,
+      credential: { baseUrl: "https://atlas.example/v1" },
+    });
+    const reel = model({
+      provider: "custom",
+      modelId: "reel-video",
+      displayName: "Reel Camera",
+      chatEligible: false,
+      credential: { baseUrl: "https://atlas.example/v1" },
+    });
+    const binding = (key: string, candidate: ModelInfo): ToolBinding => ({
+      key,
+      title: { en: key, zh: key },
+      package: MULTIMODAL_TOOLS_PACKAGE,
+      candidates: [{ provider: candidate.provider, modelId: candidate.modelId }],
+    });
+    const server = await openModelsPage(
+      [ATLAS, parakeet, reel],
+      [],
+      [binding("s2t", parakeet), binding("t2v", reel)],
+    );
+    const tagsOf = (name: string) => card(name)!.closest('[data-slot="card"]')!.textContent ?? "";
+    await click(button(`${en.models.speedTest} ${providerInfo("custom")!.label}`));
+    await click(button(en.models.speedTestStart));
+    await waitFor(() => tagsOf("Parakeet").includes("820ms") && tagsOf("Atlas").includes("600ms"));
+
+    expect(tagsOf("Reel Camera")).toContain(en.models.speedSkipped);
+    expect(server.tests).toEqual(["atlas-1", "parakeet-asr"]);
   });
 
   it("holds an import while its base URL is blank, and says so under a field that asks for one", async () => {

@@ -69,7 +69,8 @@ export const zh = {
 
   defaultModels: {
     /** The dialog's title, and the Models header's button that opens it. */
-    title: "默认模型",
+    title: "默认模型设置",
+    /** Behind the "?" beside the dialog's title. */
     intro: "新对话、多模态工具与语音交互默认使用这些模型。每项选好即保存。",
     introMember: "新对话、多模态工具与语音交互默认使用这些模型。只有 Project 所有者可以更改。",
     /** The sentence when the first-run guide opened the dialog. */
@@ -84,20 +85,6 @@ export const zh = {
     empty: "连接一个提供这类模型的供应商",
     emptyAction: "前往模型库",
     done: "完成",
-    /**
-     * A tool model's "Set as default model" (models.setDefault): the default for every multimodal
-     * operation it can serve, asked first.
-     */
-    setMultimodalHint: (operations: readonly string[]) =>
-      `设为本项目以下各项的默认模型：${operations.join("、")}`,
-    confirmMultimodal: (name: string, operations: readonly string[]) =>
-      `确定把「${name}」设为以下各项的默认模型？${operations.join("、")}。`,
-    multimodalSet: (operations: readonly string[]) => `已设为默认：${operations.join("、")}`,
-    /** The same button once the tool model holds every multimodal default it can serve. */
-    removeDefault: "移除默认模型",
-    removeMultimodalHint: (operations: readonly string[]) =>
-      `不再作为本项目以下各项的默认模型：${operations.join("、")}`,
-    multimodalRemoved: (operations: readonly string[]) => `已移除默认：${operations.join("、")}`,
     /** Text generation with nothing bound: it runs on the default chat model. */
     followsDefault: (model: string) => `跟随默认对话模型（${model}）`,
     followDefault: "跟随默认对话模型",
@@ -2836,6 +2823,12 @@ export const zh = {
     speedTestStart: "开始测速",
     speedPending: "测速中…",
     speedFailed: "测速失败",
+    /** A model that is not chatted with: how long its one request took. */
+    latencyTitle: "完成这次请求用的时间",
+    /** A model the group test leaves out, the reason on hover. */
+    speedSkipped: "不测速",
+    speedSkipVideo: "生成视频要等几分钟，费用也高，测速时跳过。",
+    speedSkipUnused: "这个模型不能对话，本项目也没有用到它的功能，无法测速。",
     ttftTitle: "首 token 延迟(TTFT)",
     tpsTitle: "输出速率(TPS)",
     modelCount: (n: number): string => `${n} 个模型`,
@@ -3170,10 +3163,21 @@ export const zh = {
     confirmDefaultTitle: "设为默认模型",
     confirmDefault: (name: string): string =>
       `确定把「${name}」设为默认模型？新建的 Session 将默认使用它。`,
-    /** The tag on a model that is the Project's default for anything (chat, a multimodal job). */
+    /** The tag on the Project's default chat model. */
     default: "默认",
-    /** The tag's hover: what the model is the default for. */
-    defaultFor: (jobs: readonly string[]) => `默认用于：${jobs.join("、")}`,
+    /** The tag on a model chosen for some multimodal job or tool, which its hover names. */
+    inUse: "使用中",
+    usedFor: (jobs: readonly string[]) => `用于：${jobs.join("、")}`,
+    /** A model that cannot chat: chosen for every job it can do, asked first. */
+    useModel: "使用模型",
+    useHint: (jobs: readonly string[]) => `在本项目用于：${jobs.join("、")}`,
+    confirmUse: (name: string, jobs: readonly string[]) =>
+      `确定让「${name}」用于以下各项？${jobs.join("、")}。`,
+    used: (jobs: readonly string[]) => `已用于：${jobs.join("、")}`,
+    /** The same button once it is chosen for every job it can do. */
+    stopUsing: "取消使用模型",
+    stopUsingHint: (jobs: readonly string[]) => `不再用于：${jobs.join("、")}`,
+    stoppedUsing: (jobs: readonly string[]) => `已不再用于：${jobs.join("、")}`,
     setDefault: "设为默认模型",
     remove: "删除模型",
     readOnlyHint: "member 只读；模型与 credential 修改仅 owner 可执行",
@@ -7302,7 +7306,7 @@ Benchmark：
     },
     modelCredentialMissing: (modelId: string) =>
       `模型 ${modelId} 还没有可用的 API key，请先在「模型」页为它配置`,
-    noDefaultModel: "该 Project 还没有默认模型，请先在模型库的「默认模型」中设置",
+    noDefaultModel: "该 Project 还没有默认模型，请先在模型库的「默认模型设置」中设置",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
       invalid_credentials: "用户名或密码错误。",

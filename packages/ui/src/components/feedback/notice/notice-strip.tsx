@@ -39,8 +39,8 @@ export const NOTICE_TONE: Readonly<Record<NoticeStripTone, NoticeTone>> = {
   neutral: "neutral",
 };
 
-/** A tone's tint and the ink that reads on it. */
-const TONE_CLASS: Readonly<Record<NoticeStripTone, string>> = {
+/** A tone's tint and the ink that reads on it (also the composer banner's band). */
+export const NOTICE_TONE_CLASS: Readonly<Record<NoticeStripTone, string>> = {
   info: "bg-tone-info-bg text-tone-info-fg",
   success: "bg-tone-success-bg text-tone-success-fg",
   attention: "bg-tone-attention-bg text-tone-attention-fg",
@@ -78,7 +78,7 @@ export function NoticeStrip({
       data-tone={NOTICE_TONE[tone]}
       data-banner={banner ? "" : undefined}
       data-wallpaper-surface={Tag === "button" ? undefined : "tone"}
-      className={`ui-notice ${className} border-line ${TONE_CLASS[tone]}`}
+      className={`ui-notice ${className} border-line ${NOTICE_TONE_CLASS[tone]}`}
     >
       {children}
     </Tag>

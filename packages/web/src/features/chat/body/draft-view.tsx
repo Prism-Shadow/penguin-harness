@@ -49,7 +49,7 @@ import {
   type RefObject,
 } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { Notice } from "@prismshadow/penguin-ui";
+import { ComposerBanner, Notice } from "@prismshadow/penguin-ui";
 import type {
   AgentModelConfigDto,
   AgentSummary,
@@ -943,16 +943,13 @@ export function DraftView({
   const vision = modelInfo?.vision !== false;
 
   // No default model, and none chosen for this chat: Send waits for one (ChatInput's canSend),
-  // and an attention notice says so, with the way to the Default models dialog for the owner (a
-  // member is told whom to ask). The dashboard shows it in its version line's place.
-  const noDefaultNotice = models &&
+  // and the composer's top band says so, with the way to the Default model settings dialog for
+  // the owner (a member is told whom to ask).
+  const noDefaultBanner = models &&
     chatModels.length > 0 &&
     !models.defaultModel &&
     modelRef === null && (
-      <Notice
-        tone="attention"
-        role="status"
-        className="anim-fade"
+      <ComposerBanner
         {...(currentProject?.role === "owner"
           ? { action: { label: S.defaultModels.composerAction, onClick: requestDefaultModels } }
           : {})}
@@ -960,7 +957,7 @@ export function DraftView({
         {currentProject?.role === "owner"
           ? S.defaultModels.composerNone
           : S.defaultModels.composerNoneMember}
-      </Notice>
+      </ComposerBanner>
     );
 
   // The composer and the ownership pills under it, which the dashboard sets between its brand
@@ -1005,6 +1002,7 @@ export function DraftView({
         {...(cached.goal === true ? { initialGoal: true } : {})}
         goalPlugin={goalPlugin}
         switches={switches}
+        {...(noDefaultBanner ? { banner: noDefaultBanner } : {})}
         onSkillsChange={onSkillsChange}
         initialText={cached.text ?? ""}
         onTextChange={onTextChange}
@@ -1057,7 +1055,6 @@ export function DraftView({
         <StartDashboard
           projectId={projectId}
           composer={composer}
-          {...(noDefaultNotice ? { notice: noDefaultNotice } : {})}
           skillsLoaded={skillsLoaded}
           fill={fillComposer}
           exampleText={exampleText}

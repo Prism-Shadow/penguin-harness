@@ -11,6 +11,8 @@
  *
  * - A section's title is its eyebrow; a `quiet` section's rows read in the muted ink, the way a
  *   secondary group of a settings page does.
+ * - What the defaults are is behind a "?" beside the title (`info`); a sentence over the rows
+ *   (`intro`) is for why the dialog opened on its own, which the reader needs to see.
  * - A row may carry a hint: a line that stays under its title (what the default is used for).
  * - The dialog writes nothing itself: each picker commits its own pick (a picker on its own row
  *   commits on change), so the foot holds one button that closes the dialog.
@@ -47,7 +49,9 @@ export interface DefaultModelSection {
 export interface DefaultModelsDialogProps {
   open: boolean;
   title: string;
-  /** A sentence over the rows: what the defaults are, or why the dialog opened. */
+  /** What the defaults are and when they save, behind a "?" beside the title. */
+  info?: ReactNode;
+  /** A sentence kept over the rows: why the dialog opened by itself. */
   intro?: ReactNode;
   sections: readonly DefaultModelSection[];
   /** The foot's one button, which closes the dialog. */
@@ -115,6 +119,7 @@ export function DefaultModelSections({ sections }: { sections: readonly DefaultM
 export function DefaultModelsDialog({
   open,
   title,
+  info,
   intro,
   sections,
   doneLabel,
@@ -125,6 +130,7 @@ export function DefaultModelsDialog({
     <Modal
       open={open}
       title={title}
+      {...(info !== undefined ? { titleInfo: info } : {})}
       onClose={onClose}
       widthClass="sm:max-w-2xl"
       {...(closeLabel !== undefined ? { closeLabel } : {})}

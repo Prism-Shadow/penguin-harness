@@ -2077,14 +2077,14 @@ export const zh = {
       memoryFromPlugin: "由插件 Continual learning 写入",
     },
     models: {
-      dialog: "默认模型弹窗",
+      dialog: "默认模型设置弹窗",
       dialogHint:
         "每行一个选择器，只列出能承担该项的模型；没有候选时写明原因并给出去处。工具一组较淡。",
-      openDialog: "打开「默认模型」",
+      openDialog: "打开「默认模型设置」",
       guide: "连接引导",
-      guideHint: "还没有任何模型有 key 时先出现它；连接或填好 key 后换成「默认模型」弹窗。",
+      guideHint: "还没有任何模型有 key 时先出现它；连接或填好 key 后换成「默认模型设置」弹窗。",
       openGuide: "打开引导",
-      title: "默认模型",
+      title: "默认模型设置",
       intro: "新对话、多模态工具与语音交互默认使用这些模型。每项选好即保存。",
       chat: "对话",
       multimodal: "多模态",

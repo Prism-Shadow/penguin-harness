@@ -2129,15 +2129,15 @@ export const en: GalleryStrings = {
       memoryFromPlugin: "Written by the Continual learning plugin",
     },
     models: {
-      dialog: "Default models dialog",
+      dialog: "Default model settings dialog",
       dialogHint:
         "One picker per row, listing only the models that can serve it; a row nothing can serve says why and where to go. The tool group reads quieter.",
-      openDialog: "Open Default models",
+      openDialog: "Open Default model settings",
       guide: "Connect guide",
       guideHint:
         "Shown first while no model has a key; once one is connected or a key is set, the default-models dialog takes its place.",
       openGuide: "Open the guide",
-      title: "Default models",
+      title: "Default model settings",
       intro:
         "New chats, the multimodal tools and voice use these models by default. Each one is saved as you pick it.",
       chat: "Chat",

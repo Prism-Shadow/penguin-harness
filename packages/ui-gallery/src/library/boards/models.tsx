@@ -63,7 +63,7 @@ export function ModelsBoard() {
         <DefaultModelsDialog
           open={dialog}
           title={t.title}
-          intro={t.intro}
+          info={t.intro}
           doneLabel={t.done}
           onClose={() => setDialog(false)}
           sections={[

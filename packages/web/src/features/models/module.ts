@@ -1,6 +1,6 @@
 /**
  * The models page, the pinned group's balance on the sidebar's account row, and the Project's
- * 「默认模型」 dialog with the first-run guide before it, mounted beside every page.
+ * Default model settings dialog with the first-run guide before it, mounted beside every page.
  */
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import type { NavBadge } from "../../lib/sidebar-contributions";

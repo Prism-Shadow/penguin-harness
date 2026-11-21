@@ -1,13 +1,11 @@
 /**
  * The Project's default models (features/models/default-models.tsx, lib/model-onboarding.ts).
  *
- * - The multimodal defaults a model can take (what a tool model's "Set as default model" sets)
- *   are the operations it can serve — image understanding when it can read images for another
- *   model, and each multimodal binding of the multimodal tools plugin that accepts it — marking
- *   the ones it already holds; web search, page reading and other plugins' bindings are tools,
- *   never part of it.
- * - A model that is the default for anything, chat or a multimodal job, carries one Default tag
- *   naming every job in its tooltip, chat first; one that is the default for nothing has none.
+ * - The bindings a model can serve (what a tool model's "Use model" takes) are every binding that
+ *   accepts it — the multimodal rows first, then web search, page reading and other plugins'
+ *   bindings — each marked when the model is chosen for it; image understanding is not one.
+ * - Default marks the default chat model alone; In use marks a model chosen for any binding and
+ *   names them on hover; a model can carry both.
  * - A new chat starts on the Project's default, and on nothing when there is none.
  * - A Project with no default opens, for its owner, the default-models dialog when some chat model
  *   has a key behind it (an environment key counts), else the guide to connecting a provider; a
@@ -16,7 +14,7 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { MULTIMODAL_TOOLS_PACKAGE, type ToolBinding } from "../src/api/tool-types";
-import { multimodalTargets, VISION_ROW } from "../src/features/models/default-models";
+import { usageTargets } from "../src/features/models/default-models";
 import { defaultChatModel } from "../src/lib/model-grouping";
 import { modelTags } from "../src/lib/model-tags";
 import {
@@ -55,55 +53,39 @@ const bindings: ToolBinding[] = [
   { ...binding("t2i", "Sketches", [chat]), package: "@example/sketch" },
 ];
 
-describe("the multimodal defaults a model can take", () => {
-  it("a chat model that reads images takes text generation and image understanding, never web search", () => {
-    setActiveStrings(en);
-    expect(multimodalTargets({ ...chat, vision: true }, bindings, undefined, "en")).toEqual([
+describe("the bindings a model can serve", () => {
+  it("lists the multimodal rows first, then the tools, never image understanding", () => {
+    expect(usageTargets(chat, bindings, "en")).toEqual([
       { key: "t2t", title: "Text generation", current: false },
-      { key: VISION_ROW, title: "Image understanding", current: false },
+      { key: "search", title: "Web search", current: false },
+      { key: "t2i", title: "Sketches", current: false },
     ]);
   });
 
-  it("marks what a model already holds, and leaves image understanding to models that read images", () => {
-    expect(multimodalTargets({ ...chat, vision: false }, bindings, chat, "en")).toEqual([
-      { key: "t2t", title: "Text generation", current: false },
-    ]);
-    expect(multimodalTargets({ ...asr, chatEligible: false }, bindings, undefined, "en")).toEqual([
+  it("marks what a model is chosen for, a tool model's search included", () => {
+    expect(usageTargets(asr, bindings, "en")).toEqual([
       { key: "s2t", title: "Speech recognition", current: true },
     ]);
-  });
-
-  it("a model only a tool accepts takes nothing, so its dialog offers no multimodal action", () => {
-    expect(
-      multimodalTargets({ ...search, chatEligible: false }, bindings, undefined, "en"),
-    ).toEqual([]);
+    const bound = bindings.map((b) => (b.key === "search" ? { ...b, model: search } : b));
+    expect(usageTargets(search, bound, "en")).toEqual([
+      { key: "search", title: "Web search", current: true },
+    ]);
   });
 });
 
-describe("the Default tag", () => {
-  it("is one tag for every job a model is the default for, naming them, and none for no job", () => {
+describe("the Default and In use tags", () => {
+  it("marks the default chat model, and names what a model is used for, both on one model", () => {
     setActiveStrings(en);
     const tags = modelTags({
       isDefault: true,
       vision: true,
       free: false,
-      defaultFor: ["Text generation", "Image understanding"],
+      inUse: ["Text generation"],
     });
-    expect(tags.map((tag) => tag.label)).toEqual(["Default", "Vision"]);
-    expect(tags[0]?.title).toBe("Default for: Chat, Text generation, Image understanding");
-    expect(
-      modelTags({
-        isDefault: false,
-        vision: false,
-        free: false,
-        defaultFor: ["Speech recognition"],
-      }),
-    ).toEqual([
-      expect.objectContaining({ label: "Default", title: "Default for: Speech recognition" }),
-    ]);
-    expect(modelTags({ isDefault: false, vision: true, free: false, defaultFor: [] })).toEqual([
-      expect.objectContaining({ key: "vision" }),
-    ]);
+    expect(tags.map((tag) => tag.label)).toEqual(["Default", "In use", "Vision"]);
+    expect(tags[0]?.title).toBeUndefined();
+    expect(tags[1]?.title).toBe("Used for: Text generation");
+    expect(modelTags({ isDefault: false, vision: false, free: false, inUse: [] })).toEqual([]);
   });
 });
 

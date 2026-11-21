@@ -1,5 +1,5 @@
 /**
- * The Project's 「默认模型」 dialog, wired to the server: the UI package draws the dialog
+ * The Project's Default model settings dialog, wired to the server: the UI package draws the dialog
  * (DefaultModelsDialog), this module fills its rows.
  *
  * - **Chat**: the default chat model (`PUT /models/default`), a picker over the chat models.
@@ -61,47 +61,32 @@ export function servesVision(model: Pick<ModelInfo, "vision" | "chatEligible">):
   return model.vision !== false && model.chatEligible !== false;
 }
 
-/** One multimodal default a model can take: its row, its name, and whether it already holds it. */
-export interface MultimodalTarget {
+/** One binding a model can serve: its key, its name, and whether the model is bound to it. */
+export interface UsageTarget {
   key: string;
   title: string;
   current: boolean;
 }
 
 /**
- * The multimodal defaults a model can serve, in the dialog's order: image understanding when it
- * can read images for another model, and each multimodal binding that accepts it. What a tool
- * model's "Set as default model" sets, what its confirmation names, and what its Default tag
- * lists.
+ * The bindings a model can serve, in the dialog's order — the multimodal rows first, then every
+ * tool binding (web search, page reading, any plugin's) — each marked when the model is bound to
+ * it: what a tool model's "Use model" binds, what its confirmation names, and what its In use tag
+ * lists. Image understanding is not among them: the vision model has its own Proxy vision tag.
  */
-export function multimodalTargets(
-  model: ModelRefDto & Pick<ModelInfo, "vision" | "chatEligible">,
+export function usageTargets(
+  model: ModelRefDto,
   bindings: readonly ToolBinding[] | null | undefined,
-  visionModel: ModelRefDto | undefined,
   locale: "zh" | "en",
-): MultimodalTarget[] {
-  const out: MultimodalTarget[] = [];
-  for (const key of MULTIMODAL_ROWS) {
-    if (key === VISION_ROW) {
-      if (servesVision(model)) {
-        out.push({
-          key,
-          title: S.voice.imageUnderstanding,
-          current: sameModelRef(visionModel, model),
-        });
-      }
-      continue;
-    }
-    const binding = bindings?.find((b) => b.key === key && isMultimodalBinding(b));
-    if (binding?.candidates.some((c) => sameModelRef(c, model))) {
-      out.push({
-        key,
-        title: binding.title[locale],
-        current: sameModelRef(binding.model, model),
-      });
-    }
-  }
-  return out;
+): UsageTarget[] {
+  const all = bindings ?? [];
+  const ordered = [
+    ...MULTIMODAL_ROWS.flatMap((key) => all.filter((b) => b.key === key && isMultimodalBinding(b))),
+    ...all.filter((b) => !isMultimodalBinding(b)),
+  ];
+  return ordered
+    .filter((b) => b.candidates.some((c) => sameModelRef(c, model)))
+    .map((b) => ({ key: b.key, title: b.title[locale], current: sameModelRef(b.model, model) }));
 }
 
 const refKey = (model: ModelRefDto) => JSON.stringify([model.provider, model.modelId]);
@@ -326,7 +311,7 @@ export function ProjectDefaultModelsDialog({
   userId: string | null;
   owner: boolean;
   open: boolean;
-  /** Replaces the dialog's own sentence (the onboarding says why it opened). */
+  /** A sentence kept over the rows: why the dialog opened by itself (the onboarding). */
   intro?: string;
   onClose: () => void;
   /** Where a row nothing can serve sends the reader: the Models page. */
@@ -346,7 +331,8 @@ export function ProjectDefaultModelsDialog({
     <DefaultModelsDialog
       open={open}
       title={S.defaultModels.title}
-      intro={intro ?? (owner ? S.defaultModels.intro : S.defaultModels.introMember)}
+      info={owner ? S.defaultModels.intro : S.defaultModels.introMember}
+      {...(intro !== undefined ? { intro } : {})}
       sections={sections ? [sections.chat, sections.multimodal, sections.tools] : []}
       doneLabel={S.defaultModels.done}
       onClose={onClose}

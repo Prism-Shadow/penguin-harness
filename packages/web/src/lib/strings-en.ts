@@ -52,7 +52,7 @@ export const en: Strings = {
   },
 
   defaultModels: {
-    title: "Default models",
+    title: "Default model settings",
     intro:
       "New chats, the multimodal tools and voice use these models by default. Each one is saved as you pick it.",
     introMember:
@@ -67,16 +67,6 @@ export const en: Strings = {
     empty: "Connect a provider that offers this kind of model",
     emptyAction: "Go to Models",
     done: "Done",
-    setMultimodalHint: (operations: readonly string[]) =>
-      `Make it this Project's default for: ${operations.join(", ")}`,
-    confirmMultimodal: (name: string, operations: readonly string[]) =>
-      `Make "${name}" the default model for ${operations.join(", ")}?`,
-    multimodalSet: (operations: readonly string[]) => `Default for: ${operations.join(", ")}`,
-    removeDefault: "Remove as default model",
-    removeMultimodalHint: (operations: readonly string[]) =>
-      `Stop using it as this Project's default for: ${operations.join(", ")}`,
-    multimodalRemoved: (operations: readonly string[]) =>
-      `No longer the default for: ${operations.join(", ")}`,
     followsDefault: (model: string) => `Follows the default chat model (${model})`,
     followDefault: "Follow the default chat model",
     guideTitle: "Connect a model provider first",
@@ -2639,6 +2629,11 @@ export const en: Strings = {
     speedTestStart: "Start",
     speedPending: "Testing…",
     speedFailed: "Test failed",
+    latencyTitle: "How long the request took",
+    speedSkipped: "Not tested",
+    speedSkipVideo: "Generating a video takes minutes and costs more, so the speed test skips it.",
+    speedSkipUnused:
+      "This model can't chat and nothing in this Project uses it, so it can't be tested.",
     ttftTitle: "Time to first token (TTFT)",
     tpsTitle: "Output rate (TPS)",
     modelCount: (n: number): string => `${n} model${n === 1 ? "" : "s"}`,
@@ -2918,7 +2913,15 @@ export const en: Strings = {
     confirmDefault: (name: string): string =>
       `Make "${name}" the default model? New sessions will use it by default.`,
     default: "Default",
-    defaultFor: (jobs: readonly string[]) => `Default for: ${jobs.join(", ")}`,
+    inUse: "In use",
+    usedFor: (jobs: readonly string[]) => `Used for: ${jobs.join(", ")}`,
+    useModel: "Use model",
+    useHint: (jobs: readonly string[]) => `Use it in this Project for: ${jobs.join(", ")}`,
+    confirmUse: (name: string, jobs: readonly string[]) => `Use "${name}" for ${jobs.join(", ")}?`,
+    used: (jobs: readonly string[]) => `Now used for: ${jobs.join(", ")}`,
+    stopUsing: "Stop using model",
+    stopUsingHint: (jobs: readonly string[]) => `Stop using it for: ${jobs.join(", ")}`,
+    stoppedUsing: (jobs: readonly string[]) => `No longer used for: ${jobs.join(", ")}`,
     setDefault: "Set as default model",
     remove: "Delete model",
     readOnlyHint: "Members have read-only access; only owners can change models and credentials",
@@ -6979,7 +6982,7 @@ Scenarios:
     modelCredentialMissing: (modelId: string) =>
       `Model ${modelId} has no API key yet — configure it on the Models page first`,
     noDefaultModel:
-      "This project has no default model yet — set one under Default models on the Models page",
+      "This project has no default model yet — set one under Default model settings on the Models page",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
       invalid_credentials: "Incorrect username or password.",

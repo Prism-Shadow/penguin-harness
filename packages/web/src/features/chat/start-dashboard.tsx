@@ -11,8 +11,7 @@
  *   server — each opening the page that lists them. Each is read again whenever the page mounts,
  *   so a plugin installed or a Benchmark imported elsewhere shows on coming back; a count that
  *   has not arrived reads "—". Where the column is too narrow for both (a phone), the panel sits
- *   under the version line. While the draft has a notice to show (no default model yet), the
- *   notice takes the version line's place, beside the logo, and the version line is hidden.
+ *   under the version line.
  * - **Examples and shortcuts.** The example folders and the user's own shortcuts, one folder
  *   open at a time (example-tasks.ts, shortcuts-folder.tsx): the folders down one column and the
  *   open folder's rows beside them, so switching folders moves nothing; stacked on a phone. Every
@@ -32,10 +31,10 @@
  * softened in Frost, the section title is the theme's eyebrow, the h1 is its display title.
  *
  * The page carries the `ui-start` hook, so a theme may also dress it as a whole: the brand block
- * (`brand`: the logo, the `title`, `tagline` and `version` or `notice`, and beside them the
- * `counts` panel with each `count`), the `composer` (the composer card's own slot), and the
- * `examples` block with its `folders` grid, each `folder` row (example-folder-row.tsx), the open
- * folder's `rows` and each `row`. The wrapper is a plain block, so the page lays out exactly as its parts did.
+ * (`brand`: the logo, the `title`, `tagline` and `version`, and beside them the `counts` panel
+ * with each `count`), the `composer` (the composer card's own slot), and the `examples` block
+ * with its `folders` grid, each `folder` row (example-folder-row.tsx), the open folder's `rows`
+ * and each `row`. The wrapper is a plain block, so the page lays out exactly as its parts did.
  */
 import { Fragment, useState } from "react";
 import type { ReactNode } from "react";
@@ -81,8 +80,6 @@ export interface StartDashboardProps {
   projectId: string;
   /** The composer and the pills under it: set between the brand and the examples. */
   composer: ReactNode;
-  /** Shown in the version line's place, which is hidden meanwhile (no default model yet). */
-  notice?: ReactNode;
   /** Whether the Agent's Skills have been read: until then nothing knows what a fill would pin. */
   skillsLoaded: boolean;
   /** Put a prompt in the composer with the Skills it pins; nothing is sent. */
@@ -96,7 +93,6 @@ export interface StartDashboardProps {
 export function StartDashboard({
   projectId,
   composer,
-  notice,
   skillsLoaded,
   exampleText = null,
   fill,
@@ -110,20 +106,11 @@ export function StartDashboard({
     <div className="ui-start">
       {/* The logo spans the name, slogan and version line. The version starts at the name's
           left edge and reaches under the counts at `@2xl`; below that, the counts take their
-          own third row. A notice takes the version line's cell, so it never covers the logo. */}
+          own third row. */}
       <div data-slot="brand" className="@container mb-10">
         <div className="grid grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)] items-center gap-x-3 @2xl:grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)_auto]">
           <StartBrand />
-          {notice !== undefined ? (
-            <div
-              data-slot="notice"
-              className="col-start-2 row-start-2 mt-1.5 min-w-0 @2xl:col-end-4"
-            >
-              {notice}
-            </div>
-          ) : (
-            <VersionLine />
-          )}
+          <VersionLine />
           <Card
             data-slot="counts"
             padding="none"

@@ -1,14 +1,13 @@
 // @vitest-environment jsdom
 /**
  * The new-chat page of a Project with models but no default model (features/chat/draft-view.tsx):
- * an attention notice in the start page's version line says so, the version line hidden while it
- * shows, and Send waits until the chat has a model.
+ * an attention band at the top of the composer card says so, the start page's version line stays,
+ * and Send waits until the chat has a model.
  *
  * - Given an owner, and no model chosen for the chat, the notice reads 「还没有默认模型」 with one
  *   button, 「设置默认模型」, that asks for the 「默认模型」 dialog; Send stays off with text typed.
  * - Given a member, the notice tells them to ask an owner and offers no button.
- * - Given a default model set while the page is open, the notice goes, the version line returns
- *   and Send comes on.
+ * - Given a default model set while the page is open, the notice goes and Send comes on.
  * - Given a model chosen for this chat earlier, there is no notice and Send is on.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -47,7 +46,7 @@ const notice = () =>
     el.textContent?.includes(S.defaultModels.composerNone),
   );
 
-/** The start page's version line under the logo, which the notice takes the place of. */
+/** The start page's version line under the logo, which stays while the notice shows. */
 const versionLine = () => document.querySelector('[data-slot="version"]');
 
 /** The draft page, mounted and loaded, with `text` typed. */
@@ -70,7 +69,9 @@ describe("a new chat in a Project with no default model", () => {
 
       expect(notice()!.textContent).toContain(S.defaultModels.composerNone);
       expect(notice()!.textContent).not.toContain(S.defaultModels.composerNoneMember);
-      expect(versionLine()).toBeNull();
+      // The composer's own top band, not a card of its own beside the logo.
+      expect(notice()!.closest('[data-slot="composer"]')).not.toBeNull();
+      expect(versionLine()).not.toBeNull();
       expect(send().disabled).toBe(true);
 
       await click(button(S.defaultModels.composerAction));
@@ -87,7 +88,6 @@ describe("a new chat in a Project with no default model", () => {
 
     expect(notice()!.textContent).toContain(S.defaultModels.composerNoneMember);
     expect(hasButton(S.defaultModels.composerAction)).toBe(false);
-    expect(versionLine()).toBeNull();
     expect(send().disabled).toBe(true);
   });
 
@@ -100,7 +100,6 @@ describe("a new chat in a Project with no default model", () => {
     await waitFor(() => notice() === undefined && !send().disabled, 40);
 
     expect(notice()).toBeUndefined();
-    expect(versionLine()).not.toBeNull();
     expect(send().disabled).toBe(false);
   });
 

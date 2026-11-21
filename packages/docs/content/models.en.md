@@ -135,7 +135,7 @@ Every built-in group except **Custom**, **vLLM**, **OpenRouter**, **TokenDance**
 
 ### Edit or delete a model
 
-Select the model's card to open **Model settings**. Change the fields, select **Confirm**, and confirm the save. From the same dialog you can **Test connection**, **Set as default model**, or **Delete model**.
+Select the model's card to open **Model settings**. Change the fields, select **Confirm**, and confirm the save. From the same dialog you can **Test connection**, **Set as default model** (a chat model) or **Use model** (any other model), or **Delete model**.
 
 The API key, base URL and protocol stay in view. The context window, **Max output tokens**, prices, **Vision support** and **Fast mode** sit in **Details**, collapsed by default each time the dialog opens. An API key or base URL the model leaves to its group reads "Leave blank to use the group's setting", without the group's value. An API key with nothing to fall back on, meaning no key of its own, no group key that reaches it and no environment variable the server sets, reads "Enter an API key", or "Leave blank to use no API key" for a model its client calls without a key (vLLM, a self-hosted MMSP server).
 
@@ -296,20 +296,22 @@ The same settings are available as `penguin config model add --provider <group>`
 
 ## Set the default model
 
-New conversations use the Project's default model unless you pick another one. A new Project has none until you choose it. When you open such a Project, **Default models** opens by itself if some chat model already has a key, including a key in the server's environment. Otherwise a guide asks you to connect TokenDance or Penguin Go, or to add a key, and **Default models** opens once a key is set. Until there is a default, a new conversation waits for you to choose its model.
+New conversations use the Project's default model unless you pick another one. A new Project has none until you choose it. When you open such a Project, **Default model settings** opens by itself if some chat model already has a key, including a key in the server's environment. Otherwise a guide asks you to connect TokenDance or Penguin Go, or to add a key, and **Default model settings** opens once a key is set. Until there is a default, a new conversation shows "No default model yet" at the top of the message box and waits for you to choose its model.
 
-- Select **Default models** in the page header and choose the **Default chat model**. Each choice is saved as you make it.
+- Select **Default model settings** in the page header and choose the **Default chat model**. Each choice is saved as you make it; the **?** beside the dialog's title says so.
 - Or select the model's card to open **Model settings**, then select **Set as default model** and confirm. Setting the default also saves any unsaved changes in the dialog.
 
 The first model added to a table without a default becomes the default automatically.
 
-**Default models** also holds the multimodal defaults (text generation, image generation, image understanding, video generation, speech recognition and speech synthesis) and, in a quieter group, the tool defaults (web search and reading a web page). Each picker lists only the models that can do that job. Project settings › **Multimodal models** shows the same rows. In the settings of a model that cannot chat, such as a speech or image model, **Set as default model** makes it the default for every multimodal job it can do, after you confirm, and names the ones it took; once it holds them all, the button reads **Remove as default model**. A model that is a default for anything carries a **Default** tag, and hovering it shows what for.
+**Default model settings** also holds the models used for the multimodal jobs (text generation, image generation, image understanding, video generation, speech recognition and speech synthesis) and, in a quieter group, the tools (web search and reading a web page). Each picker lists only the models that can do that job. Project settings › **Multimodal models** shows the same rows. In the settings of a model that cannot chat, such as a speech, search or image model, **Use model** chooses it for every job it can do, after you confirm, and names the ones it took; once it is used for all of them, the button reads **Stop using model**.
+
+A card's **Default** tag marks the default chat model. Its **In use** tag marks a model chosen for a multimodal job or a tool; hover the tag to see which. A chat model can carry both. The proxy vision model has its own tag.
 
 ### Set the proxy vision model
 
 A model without vision cannot see images. When it reads an image with `read_file`, a proxy vision model describes the image for it. There is none by default.
 
-In **Default models** or Project settings › **Multimodal models**, choose the model for **Image understanding**. Only models with **Vision support** on are listed.
+In **Default model settings** or Project settings › **Multimodal models**, choose the model for **Image understanding**. Only models with **Vision support** on are listed.
 
 The proxy vision role is cleared when that model is deleted or its vision is turned off. For a model with `vision = false`, such as `deepseek-v4-pro`, the text-only member of the DeepSeek group, images from the conversation are saved to the Session scratchpad and handed over as a file path in the text. `read_file` passes an image to the proxy vision model for a description instead of returning it. See [Tools & Approval](/tools).
 
@@ -326,8 +328,11 @@ To compare the models in a group:
 
 PenguinHarness sends one real request to each model in turn, which uses a small amount of your API quota, and shows on each card:
 
-- the time to first token, in milliseconds: green under 1000, yellow up to 3000, red above;
-- the output rate, in Tokens per second: green at 40 or more, yellow at 15 or more, red below.
+- for a chat model, the time to first token, in milliseconds: green under 1000, yellow up to 3000, red above;
+- for a chat model, the output rate, in Tokens per second: green at 40 or more, yellow at 15 or more, red below;
+- for a model that cannot chat, how long its request took. A speech recognizer transcribes a short spoken sentence, a speech synthesizer reads a word aloud, a search model runs one search, a page reader fetches one page, and an image model draws one small picture.
+
+A video model is not tested and its card says **Not tested**: a video takes minutes and costs more. Neither is a model that cannot chat when nothing in the Project uses it.
 
 While the test runs, the same icon stops it (**Stop speed test**): the model being measured finishes, no further request is sent, and the results so far stay. Results stay only on the page and are gone after a reload.
 

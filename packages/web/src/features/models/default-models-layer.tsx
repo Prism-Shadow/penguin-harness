@@ -1,6 +1,6 @@
 /**
- * The 「默认模型」 dialog and the first-run guide before it, mounted once beside every page
- * (`WebAppModule.layers`).
+ * The Default model settings dialog and the first-run guide before it, mounted once beside every
+ * page (`WebAppModule.layers`).
  *
  * - The dialog opens on a request (lib/default-models-request.ts): the Models page's header, the
  *   composer's reminder, a connect flow that left the Project with keys and no default.

@@ -87,7 +87,7 @@ function networkOf(policy: SandboxSettings): SessionSandbox["network"] {
  * the CLI, the Agent API — so it names both ways out.
  */
 export const NO_DEFAULT_MODEL_MESSAGE =
-  "This Project has no default model. Name the model for this Session (provider and model id), or set the Project's default model first: Default models on the Models page, or `penguin config model default --provider <group> --model-id <id>`.";
+  "This Project has no default model. Name the model for this Session (provider and model id), or set the Project's default model first: Default model settings on the Models page, or `penguin config model default --provider <group> --model-id <id>`.";
 
 export function sessionSandboxOf(
   policy: SandboxSettings,
