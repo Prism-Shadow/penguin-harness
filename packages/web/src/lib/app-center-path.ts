@@ -5,6 +5,15 @@
  */
 export const APP_CENTER_PATH = "/apps";
 
+/** Machine ids and Agent ids are opaque; local links keep their original key. */
+export function locatedAppKey(
+  agentId: string,
+  workbenchId: string,
+  machineId?: string | null,
+): string {
+  return `${machineId ? machineId + ":" : ""}${agentId}/${workbenchId}`;
+}
+
 /** Whether a full page's `returnTo` is the App Center: its grid, or one of its windows. */
 export function isAppCenterPath(path: unknown): path is string {
   return typeof path === "string" && /^\/apps(?:\?[^#]*)?$/.test(path);

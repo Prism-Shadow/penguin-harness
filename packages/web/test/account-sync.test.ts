@@ -81,6 +81,23 @@ describe("reading the account's preferences into the cache", () => {
     expect(plan.image).toBe("fetch");
   });
 
+  it("restores the account's reasoning mode independently from its theme and uploads a pending local edit", () => {
+    const store = memoryStorage({
+      "penguin.activityDisplayMode": "expanded",
+      "penguin.themeId": "geek",
+    });
+    const account = { activityDisplayMode: "compact" as const, themeId: "modern" };
+    const restored = planPrefs(account, store, { importing: false, pending: new Set() });
+    expect(restored.cache).toContainEqual(["penguin.activityDisplayMode", "compact"]);
+    expect(restored.cache).toContainEqual(["penguin.themeId", "modern"]);
+    const pending = planPrefs(account, store, {
+      importing: false,
+      pending: new Set(["activityDisplayMode"]),
+    });
+    expect(pending.cache).not.toContainEqual(["penguin.activityDisplayMode", "compact"]);
+    expect(pending.upload).toEqual(["activityDisplayMode"]);
+  });
+
   it("caches a theme this build does not ship as the account holds it, and paints the initial theme", () => {
     // A pack another build of the server imported, or one since removed: the account's choice is
     // cached as it is, so it survives this browser, and reading it falls back without a write.

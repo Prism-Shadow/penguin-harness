@@ -78,7 +78,7 @@ export interface BenchmarkTask {
   statement: string;
   /** The rubric's README.md (Markdown). */
   rubric: string;
-  /** The task's folder under `data/`, when it has one. */
+  /** The task's folder, when its files can be identified. */
   data?: TaskData;
 }
 
@@ -93,7 +93,7 @@ export interface TaskData {
 }
 
 export interface BenchmarkData {
-  /** `data/<benchmark-id>/` on GitHub. */
+  /** The data repository or dataset folder on GitHub. */
   url: string;
   /** Its README.md (Markdown). */
   readme?: string;
@@ -110,6 +110,7 @@ export interface HubLink {
 
 export interface BenchmarkDetail extends BenchmarkSummary {
   references: string[];
+  dataUrl?: string;
   tasks: BenchmarkTask[];
   data?: BenchmarkData;
   /** Leaderboards with an entry measured on this benchmark. */

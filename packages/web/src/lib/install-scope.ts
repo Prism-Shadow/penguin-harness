@@ -36,6 +36,7 @@
  * being fixed. The practical consequence, which the changelog states plainly: state that is
  * ALREADY stale when this ships stays stale; only wipes from here on are handled.
  */
+import { forgetCatalogs } from "./catalog-storage";
 import * as api from "../api/endpoints";
 
 /** Where this browser records the data root it last saw. Never swept — it IS the marker. */
@@ -174,6 +175,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.activityDisplayMode",
+    scope: "browser",
+    why: "How this browser displays thinking and tool steps.",
+  },
+  {
+    kind: "exact",
     key: "penguin.toolAliases",
     scope: "browser",
     why: "Whether tool cards name the built-in tools by their short alias; a display choice of this browser, naming nothing on the server.",
@@ -195,6 +202,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.sidebarCollapsed",
     scope: "browser",
     why: "Whether the sidebar is a narrow rail; chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.sidebarWidth",
+    scope: "browser",
+    why: "How wide the sidebar was dragged, in px; the same chrome layout, holds no entity.",
   },
   {
     kind: "exact",
@@ -365,6 +378,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.pinnedSessions.",
     scope: "install",
     why: "Pinned Session ids.",
+  },
+  {
+    kind: "family",
+    key: "penguin.catalog.",
+    scope: "install",
+    why: "What each machine last answered the App Center (sessionStorage, lib/catalog-storage.ts): it names that machine's Agents and apps, so a sweep forgets the tab's copies too (forgetCatalogs).",
   },
   {
     kind: "family",
@@ -654,7 +673,10 @@ export function reconcileInstallScope(
   if (stored === installId) return "unchanged";
 
   const swept = stored !== null;
-  if (swept) sweep(storage);
+  if (swept) {
+    sweep(storage);
+    forgetCatalogs(() => true);
+  }
   try {
     storage.setItem(INSTALL_ID_KEY, installId);
   } catch {
@@ -758,6 +780,7 @@ export function reactToInstallIdChange(
   if (change.oldValue === null || change.newValue === null) return false;
   if (change.oldValue === change.newValue) return false;
   sweep(storage);
+  forgetCatalogs(() => true);
   return true;
 }
 

@@ -34,7 +34,7 @@ export type { ShellPort } from "../services/desktop-update-port.js";
 export type { UpgradeCaller, WebSocketUpgrade } from "../http/upgrade-endpoints.js";
 export type { MeRoutes, MeRoutesSlots, OwnedPref } from "../http/routes/me.js";
 export { HttpError, badRequest, errorBody, isHttpError } from "../http/errors.js";
-export { publicOriginOf } from "../http/public-origin.js";
+export { publicOriginOf } from "@prismshadow/penguin-library-http/public-origin";
 export { requireHuman } from "../auth/require-human.js";
 export { userChannelKey } from "../http/user-channel.js";
 export { ensureInstallId } from "../install-id.js";

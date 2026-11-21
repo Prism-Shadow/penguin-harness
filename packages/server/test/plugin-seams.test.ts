@@ -38,6 +38,7 @@ import http from "node:http";
 import type { IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Duplex } from "node:stream";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import WebSocket, { WebSocketServer } from "ws";
@@ -56,11 +57,14 @@ import { foreignHono } from "./helpers/foreign-hono.js";
 
 /**
  * The errors module as a plugin bundles it: a second copy, its classes distinct from the host's.
- * The query makes it another module instance; held in a variable so the compiler, which knows no
- * such path, does not resolve it.
+ * The class lives in the HTTP vocabulary package (the server's http/errors.ts re-exports it), so
+ * the copy is of that package's source module. The query makes it another module instance; held in
+ * a variable so the compiler, which knows no such path, does not resolve it.
  */
-const copySpecifier = "../src/http/errors.js?plugin-copy";
-const copy = (await import(copySpecifier)) as typeof import("../src/http/errors.js");
+const copySpecifier = `${fileURLToPath(new URL("../../../library/http/src/errors.ts", import.meta.url))}?plugin-copy`;
+const copy = (await import(
+  copySpecifier
+)) as typeof import("@prismshadow/penguin-library-http/errors");
 
 const FOREIGN = "https://elsewhere.example";
 const ACME_PREF_MESSAGE = "acmeChoice is set by PUT /api/acme/choice, not the prefs.";
