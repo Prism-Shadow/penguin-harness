@@ -42,7 +42,6 @@ import type { useMainChatTranscript } from "./main-chat-transcript";
 export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscript>) {
   const {
     navigate,
-    user,
     company,
     setCurrentAgentId,
     reloadAgents,
