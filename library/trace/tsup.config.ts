@@ -10,6 +10,8 @@ export default defineConfig({
     "src/trace-index.ts",
     "src/trace-service.ts",
     "src/trace-head.ts",
+    "src/cost.ts",
+    "src/dates.ts",
     "src/session-id.ts",
     "src/titles.ts",
     "src/listing.ts",

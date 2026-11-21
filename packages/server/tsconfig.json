@@ -329,7 +329,9 @@
       "@prismshadow/penguin-library-trace/trace-head": ["../../library/trace/src/trace-head.ts"],
       "@prismshadow/penguin-library-trace/session-id": ["../../library/trace/src/session-id.ts"],
       "@prismshadow/penguin-library-trace/titles": ["../../library/trace/src/titles.ts"],
-      "@prismshadow/penguin-library-trace/listing": ["../../library/trace/src/listing.ts"]
+      "@prismshadow/penguin-library-trace/listing": ["../../library/trace/src/listing.ts"],
+      "@prismshadow/penguin-library-trace/cost": ["../../library/trace/src/cost.ts"],
+      "@prismshadow/penguin-library-trace/dates": ["../../library/trace/src/dates.ts"]
     }
   },
   "include": ["src", "test"]

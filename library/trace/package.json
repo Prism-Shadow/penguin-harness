@@ -44,6 +44,14 @@
       "types": "./dist/trace-head.d.ts",
       "import": "./dist/trace-head.js"
     },
+    "./cost": {
+      "types": "./dist/cost.d.ts",
+      "import": "./dist/cost.js"
+    },
+    "./dates": {
+      "types": "./dist/dates.d.ts",
+      "import": "./dist/dates.js"
+    },
     "./session-id": {
       "types": "./dist/session-id.d.ts",
       "import": "./dist/session-id.js"
@@ -104,9 +112,7 @@
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-library-session": "workspace:*",
     "@prismshadow/penguin-library-http": "workspace:*",
-    "@prismshadow/penguin-library-observability": "workspace:*",
-    "@prismshadow/penguin-library-model": "workspace:*",
-    "@prismshadow/penguin-library-project": "workspace:*"
+    "@prismshadow/penguin-library-model": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.3.0",

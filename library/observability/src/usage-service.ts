@@ -44,11 +44,7 @@ import type {
 } from "./observability.js";
 import type { CostParts } from "@prismshadow/penguin-library-trace";
 import type { ErrorFilter } from "./repos/errors.js";
-import {
-  catalogEntryFor,
-  offPeakAt,
-  offPeakScheduledRefs,
-} from "@prismshadow/penguin-library-model/model-catalog/catalog";
+import { offPeakScheduledRefs } from "@prismshadow/penguin-library-model/model-catalog/catalog";
 import type {
   UsageModelSums,
   UsageGroupModelSums,
@@ -64,6 +60,14 @@ import {
   formatLocalDate,
   localDateMinusDays,
 } from "./dates.js";
+import { ratesAt } from "@prismshadow/penguin-library-trace/cost";
+import {
+  requestCostUsd,
+  requestCostParts,
+  sumCostParts,
+  ZERO_COST_PARTS,
+} from "@prismshadow/penguin-library-trace/cost";
+import type { PricingLookup, TieredRates } from "@prismshadow/penguin-library-trace/cost";
 import { badRequest } from "@prismshadow/penguin-library-http/validate";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
@@ -76,31 +80,19 @@ import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
  */
 const ERROR_RECENT_N = 10;
 
-/** The three pricing buckets (usd_per_mtok convention), returned by the pricing lookup callback. */
-export interface PricingRates {
-  cacheRead: number;
-  cacheWrite: number;
-  output: number;
-}
-
-/**
- * What one Model costs, in the tiers it can be billed in.
- *
- * `offPeak` differs from `peak` only for a catalog row on a time-based schedule whose stored
- * price is still the catalog's own. Both are returned together because a query spans time: a
- * week that straddles the boundary contains Tokens of both kinds, and each half is priced at
- * the rate it actually ran at rather than at whichever tier is in force when it is read.
- */
-export interface TieredRates {
-  peak: PricingRates;
-  offPeak: PricingRates;
-}
-
-export type PricingLookup = (
-  projectId: string,
-  provider: string,
-  modelId: string,
-) => Promise<TieredRates | undefined>;
+// The pricing vocabulary and the cost math moved to the trace domain package
+// (@prismshadow/penguin-library-trace/cost, services+http+cli restack S9) — the usage
+// queries and the trace analysis price their records with the same helpers. Re-exported
+// so this subpath's importers keep their spelling.
+export type { PricingRates, TieredRates } from "@prismshadow/penguin-library-model";
+export type { PricingLookup } from "@prismshadow/penguin-library-trace/cost";
+export {
+  requestCostUsd,
+  ZERO_COST_PARTS,
+  requestCostParts,
+  sumCostParts,
+  ratesAt,
+} from "@prismshadow/penguin-library-trace/cost";
 
 /** One page of the error detail table (see {@link UsageService.queryErrors}). */
 
@@ -110,67 +102,6 @@ export type PricingLookup = (
  * panel has. No `kind`: the panel offers no such control, so a clear has no narrowing the
  * reader could have seen.
  */
-
-/** The "model price" formula: the three buckets at the given rates (USD per million Tokens), in USD. */
-export function requestCostUsd(
-  counts: { cacheRead: number; cacheWrite: number; output: number },
-  rates: PricingRates,
-): number {
-  return (
-    (counts.cacheRead * rates.cacheRead +
-      counts.cacheWrite * rates.cacheWrite +
-      counts.output * rates.output) /
-    1e6
-  );
-}
-
-/** A cost split with nothing in any bucket: where a running sum of splits starts. */
-export const ZERO_COST_PARTS: CostParts = { cacheRead: 0, cacheWrite: 0, output: 0 };
-
-/**
- * {@link requestCostUsd} kept bucket by bucket: each bucket's Tokens at its own rate, in USD.
- * Given the rates a cost was priced at, the parts add up to that cost.
- */
-export function requestCostParts(
-  counts: { cacheRead: number; cacheWrite: number; output: number },
-  rates: PricingRates,
-): CostParts {
-  return {
-    cacheRead: (counts.cacheRead * rates.cacheRead) / 1e6,
-    cacheWrite: (counts.cacheWrite * rates.cacheWrite) / 1e6,
-    output: (counts.output * rates.output) / 1e6,
-  };
-}
-
-/** Two cost splits added bucket by bucket. */
-export function sumCostParts(a: CostParts, b: CostParts): CostParts {
-  return {
-    cacheRead: a.cacheRead + b.cacheRead,
-    cacheWrite: a.cacheWrite + b.cacheWrite,
-    output: a.output + b.output,
-  };
-}
-
-/**
- * The rates one usage record is billed at, decided from the record's own timestamp: the
- * off-peak tier when the reference carries a catalog schedule and `at` falls outside its peak
- * windows, the peak tier otherwise. For a reference with no schedule, or whose stored price is
- * no longer the catalog's, the two tiers are the same figure (see project-config-service's
- * `tieredRates`), so the decision changes nothing there. `peakExpr` in the usage repo is this
- * rule written in SQL for the aggregations; the two must agree record for record, which is why
- * an unreadable timestamp — which the repo never stores — takes the peak tier rather than
- * inventing a discount.
- */
-export function ratesAt(
-  tiered: TieredRates,
-  provider: string,
-  modelId: string,
-  at: Date,
-): PricingRates {
-  const schedule = catalogEntryFor(provider, modelId)?.offPeakDiscount;
-  if (schedule === undefined || Number.isNaN(at.getTime())) return tiered.peak;
-  return offPeakAt(schedule, at) ? tiered.offPeak : tiered.peak;
-}
 
 /** Cost formula: sum of the three buckets at the tier these Tokens ran in, USD per million. */
 function costOf(sums: UsageModelSums, tiered: TieredRates): number {

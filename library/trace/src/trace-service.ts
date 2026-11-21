@@ -71,17 +71,16 @@ import type {
   TraceSessionRow,
 } from "./repos/trace-index.js";
 import { HttpError } from "@prismshadow/penguin-library-http/errors";
-import { formatLocalDate } from "@prismshadow/penguin-library-observability/dates";
+import { formatLocalDate } from "./dates.js";
 import {
   ratesAt,
   requestCostParts,
   requestCostUsd,
   sumCostParts,
   ZERO_COST_PARTS,
-} from "@prismshadow/penguin-library-observability/usage-service";
+  type PricingLookup,
+} from "./cost.js";
 import type { TieredRates } from "@prismshadow/penguin-library-model";
-import type { PricingLookup } from "@prismshadow/penguin-library-observability/usage-service";
-import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import {
   cloneScanState,
   deserializePrefix,
@@ -358,7 +357,11 @@ export class TraceService implements Traces {
   @Use() private readonly sessions?: SessionIndex;
   /** The shared in-process Session-origin registry, single source of truth for `source` (narrow tests may omit). */
   @Use() private readonly sources?: SessionOrigins;
-  @Use() private readonly projectConfig?: ProjectConfigStore;
+  /**
+   * The Project's pricing table, read structurally (the server's ProjectConfigStore satisfies
+   * it; narrow tests wire their own or none — without pricing the analysis carries no cost).
+   */
+  @Use() private readonly projectConfig?: { getPricing: PricingLookup };
   /**
    * The Project's current price for a paired reference — the same lookup the cost center
    * prices `usage_records` with, so the analysis' per-turn cost and the toolbar's figure come

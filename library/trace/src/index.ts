@@ -21,3 +21,12 @@ export {
 export type { TraceSessionIndex } from "./trace-service.js";
 export { sessionIdCreatedAt } from "./session-id.js";
 export { fallbackTitle } from "./titles.js";
+export {
+  requestCostUsd,
+  ZERO_COST_PARTS,
+  requestCostParts,
+  sumCostParts,
+  ratesAt,
+} from "./cost.js";
+export type { PricingLookup } from "./cost.js";
+export { formatLocalDate } from "./dates.js";

@@ -4,13 +4,8 @@
  * (today / last 7 days / last 30 days).
  */
 
-/** Format a time as a local `yyyy-mm-dd` (4-digit year, zero-padded 2-digit month/day). */
-export function formatLocalDate(date: Date): string {
-  const year = date.getFullYear().toString().padStart(4, "0");
-  const month = (date.getMonth() + 1).toString().padStart(2, "0");
-  const day = date.getDate().toString().padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
+export { formatLocalDate } from "@prismshadow/penguin-library-trace/dates";
+import { formatLocalDate } from "@prismshadow/penguin-library-trace/dates";
 
 /** Subtract N days from a local date (used for the start of the last-7-days / last-30-days windows). */
 export function localDateMinusDays(date: Date, days: number): string {
