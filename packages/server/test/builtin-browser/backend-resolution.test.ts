@@ -43,7 +43,7 @@ import {
   waitFor,
 } from "../helpers.js";
 import type { TestApp } from "../helpers.js";
-import { FakeShell, tab } from "./fake-shell.js";
+import { FakeShell, shellPortNode, tab } from "./fake-shell.js";
 
 let t: TestApp | null = null;
 afterEach(async () => {
@@ -128,7 +128,7 @@ describe("a server without the desktop shell", () => {
 describe("the desktop", () => {
   it("starts an admin on the built-in browser, switches them to Chrome, and tells their windows", async () => {
     const shell = new FakeShell();
-    t = await createDesktopApp({ browserShellPort: shell.port });
+    t = await createDesktopApp({ nodes: [shellPortNode(shell.port)] });
     const events: BuiltinBrowserServerEvent[] = [];
     t.deps.channels
       .get(userChannelKey("admin"))
@@ -161,7 +161,7 @@ describe("the desktop", () => {
 
   it("never lets a member drive the built-in browser", async () => {
     const shell = new FakeShell();
-    t = await createDesktopApp({ browserShellPort: shell.port });
+    t = await createDesktopApp({ nodes: [shellPortNode(shell.port)] });
     // The desktop manages no accounts, but its data root may hold one `penguin web` created.
     t.deps.tree.api<Users>("IdentityModule", "Users").insert({
       userId: "bob",
@@ -199,7 +199,7 @@ describe("the desktop", () => {
       if (method === "Page.getLayoutMetrics") await gate;
       return {};
     };
-    t = await createDesktopApp({ browserShellPort: shell.port });
+    t = await createDesktopApp({ nodes: [shellPortNode(shell.port)] });
     const admin = apiClient(t.app, await desktopLoginCookie(t.app));
     await admin.get("/api/builtin-browser/status");
 

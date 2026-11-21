@@ -288,6 +288,14 @@ export type ServerEvent =
    */
   | { type: "tool_bindings_changed"; projectId: string }
   /**
+   * A library plugin's server module changed on this server, through an Agent install or the
+   * administrator's decision (PRFC-0031): it was enabled, asked for, declined or stopped. No
+   * payload: a page re-reads what it shows (an Agent's plugins, the Plugins page, the
+   * administrator's request list). To the administrator, and to the users of the Project the
+   * row belongs to; never a toast.
+   */
+  | { type: "plugin_modules_changed" }
+  /**
    * A Session now exists. On the user channel for every creation — the CLI, another tab,
    * a schedule, an agent spawning a child — so the list learns about rows it did not make;
    * and on the parent Session's channel for a subagent, which no list shows. `source` is what

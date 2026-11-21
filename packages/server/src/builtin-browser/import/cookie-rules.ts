@@ -2,7 +2,7 @@
  * The rules every imported cookie passes, whichever browser it came from: the `domains`
  * filter, and the shape the shell's `set-cookies` takes (Electron's CookiesSetDetails).
  */
-import type { DesktopBrowserCookie } from "../../api/types.js";
+import type { DesktopBrowserCookie } from "@prismshadow/penguin-server/api";
 
 export type SameSite = NonNullable<DesktopBrowserCookie["sameSite"]>;
 
