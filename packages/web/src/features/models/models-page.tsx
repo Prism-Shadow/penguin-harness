@@ -2956,12 +2956,7 @@ export function ModelCard({
 // ---------------------------------------------------------------------------
 
 type DialogAction =
-  | "save"
-  | "setDefault"
-  | "setVisionModel"
-  | "setMultimodal"
-  | "removeMultimodal"
-  | "remove";
+  "save" | "setDefault" | "setVisionModel" | "setMultimodal" | "removeMultimodal" | "remove";
 
 /**
  * Confirmation text per action (S is a live runtime binding, must be read at render time, not
