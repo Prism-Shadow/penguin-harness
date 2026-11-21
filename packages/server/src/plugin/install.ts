@@ -46,6 +46,14 @@ const INSTALL_TIMEOUT_MS = 180_000;
 const CHANNEL_TIMEOUT_MS = 15_000;
 /** npm's own per-request window and retries (see `install`). */
 const FETCH_TIMEOUT_MS = 60_000;
+/** The pre-check's npm per-request window (see `checkPluginSource`). */
+const CHECK_FETCH_TIMEOUT_MS = 10_000;
+/**
+ * The pre-check's kill window, a little above its request window. It is what actually bounds a
+ * registry that drops packets: npm's fetch timeout does not cover the TCP connect, which the
+ * operating system holds for minutes.
+ */
+const CHECK_TIMEOUT_MS = 12_000;
 /**
  * The asset address npm last installed from and whose install verified for each channel URL,
  * tried first next time. Memory, not a speed test: the walk still tries one address at a time
@@ -74,9 +82,10 @@ export class PluginInstallError extends Error {
    * package (or the requested version of it) does not exist on the registry, the one outcome
    * a published-index channel may stand in for; "unreachable" — the registry (or a proxy on
    * the way) did not answer: refused, unresolved, reset or timed out, including npm killed at
-   * its window; "missing" — there is no npm on this machine at all; "other" — everything else
-   * (a refusing registry, a dependency that will not resolve, a failed lifecycle script), where
-   * no fallback is the answer and the failure is reported as is. Undefined on errors that did
+   * its window, or a proxy answered that it could not reach the registry; "missing" — there is
+   * no npm on this machine at all; "other" — everything else (a refusing registry, a dependency
+   * that will not resolve, a failed lifecycle script), where no fallback is the answer and the
+   * failure is reported as is. Undefined on errors that did
    * not come from npm at all.
    */
   reason?: "unavailable" | "unreachable" | "missing" | "other";
@@ -288,9 +297,10 @@ export function npmFailureKind(
   const text = stderr ?? "";
   if (/npm (?:error|ERR!) code (E404|ETARGET)\b/m.test(text)) return "unavailable";
   // What a registry that cannot be reached looks like to npm: the connection refused, reset or
-  // timed out, the name unresolved, or the fetch timed out (`--fetch-timeout`).
+  // timed out, the name unresolved, or the fetch timed out (`--fetch-timeout`) — or an http(s)
+  // proxy on the way answering 502 or 504 because it could not reach the registry either.
   if (
-    /npm (?:error|ERR!) (?:code|errno) (ETIMEDOUT|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ERR_SOCKET_TIMEOUT|EPROXY)\b/m.test(
+    /npm (?:error|ERR!) (?:code|errno) (ETIMEDOUT|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ERR_SOCKET_TIMEOUT|EPROXY|E502|E504)\b/m.test(
       text,
     ) ||
     /network (?:request|timeout) .*(?:failed|timed out)|ERR_SOCKET_TIMEOUT/m.test(text)
@@ -321,6 +331,34 @@ const install = (prefix: string, spec: string) =>
     "--",
     spec,
   ]);
+
+/**
+ * Asks the registry whether it has a version of a name (`name`, `name@range`) before that name
+ * is installed: `npm view`, so npm's own configuration, the `--registry` the install passes and
+ * any proxy apply exactly as they will to the install. The answer is bounded by a short window
+ * (CHECK_TIMEOUT_MS) and no retry, so a registry that does not answer, or does not have the
+ * name, fails within seconds rather than within the install's window; one that has it hands
+ * over to the install, whose tarballs may legitimately take longer. A failure is npm's, with
+ * npm's reason (npmFailureKind).
+ */
+export async function checkPluginSource(root: string, spec: string): Promise<void> {
+  const prefix = await ensurePrefix(root);
+  await npm(
+    prefix,
+    [
+      ...(npmRegistry !== undefined ? [`--registry=${npmRegistry}`] : []),
+      "view",
+      "--json",
+      `--fetch-timeout=${CHECK_FETCH_TIMEOUT_MS}`,
+      "--fetch-retries=0",
+      "--",
+      spec,
+      "version",
+    ],
+    prefix,
+    CHECK_TIMEOUT_MS,
+  );
+}
 
 /**
  * Installs (or upgrades) one package into the root's plugin prefix. Returns the version npm
@@ -856,6 +894,11 @@ function pinnedDigest(integrity: string): string | null {
  */
 @Component()
 export class NpmPluginPackages implements PluginPackages {
+  /** Whether the registry has a name, asked before it is installed (see checkPluginSource). */
+  check(root: string, spec: string): Promise<void> {
+    return checkPluginSource(root, spec);
+  }
+
   /** By name or by link (see installPluginSource). */
   install(root: string, source: string): Promise<InstalledPackage> {
     return installPluginSource(root, source);

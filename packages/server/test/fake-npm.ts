@@ -4,7 +4,8 @@
  * prefix's package.json; a name or link resolves to the package a test registered for it, a
  * tarball to the package a test registered under its file name, and anything else fails the way
  * npm does — a name the registry does not have as npm's "unavailable" (E404), every name as
- * "unreachable" while the test says the registry does not answer.
+ * "unreachable" while the test says the registry does not answer. The registry check before a
+ * name installs answers the same way, and is recorded apart from the installs.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -17,6 +18,8 @@ const bytes = (value: string | Uint8Array) => (typeof value === "string" ? strTo
 
 export function fakeNpm() {
   const calls: string[] = [];
+  /** The names the registry was asked about before they installed, in order. */
+  const checks: string[] = [];
   /** The packages taken back out of the prefix, in order. */
   const removed: string[] = [];
   /** What a name or a link installs. */
@@ -29,6 +32,21 @@ export function fakeNpm() {
    * neither — a failure npm gives no reason for.
    */
   const registry = { down: false, says404: false };
+  /** How npm fails a name or link the registry cannot serve right now; null when it can. */
+  const refusal = (source: string): PluginInstallError | null => {
+    if (registry.down && !source.includes(":")) {
+      const err = new PluginInstallError(
+        "npm error code ETIMEDOUT\nnpm error network request to https://registry.npmjs.org failed",
+      );
+      err.reason = "unreachable";
+      err.registry = "https://registry.npmjs.org";
+      return err;
+    }
+    if (links.has(source)) return null;
+    const err = new PluginInstallError(`404 Not Found - GET ${source}`);
+    if (registry.says404) err.reason = "unavailable";
+    return err;
+  };
   const place = async (root: string, files: Files, spec: string): Promise<InstalledPackage> => {
     const prefix = path.join(root, "plugins");
     const manifest = JSON.parse(strFromU8(bytes(files["package.json"]!))) as {
@@ -53,27 +71,21 @@ export function fakeNpm() {
   };
   return {
     calls,
+    checks,
     removed,
     links,
     tarballs,
     registry,
+    check: async (_root: string, spec: string) => {
+      checks.push(spec);
+      const err = refusal(spec);
+      if (err !== null) throw err;
+    },
     install: async (root: string, source: string) => {
       calls.push(source);
-      if (registry.down && !source.includes(":")) {
-        const err = new PluginInstallError(
-          "npm error code ETIMEDOUT\nnpm error network request to https://registry.npmjs.org failed",
-        );
-        err.reason = "unreachable";
-        err.registry = "https://registry.npmjs.org";
-        throw err;
-      }
-      const files = links.get(source);
-      if (files === undefined) {
-        const err = new PluginInstallError(`404 Not Found - GET ${source}`);
-        if (registry.says404) err.reason = "unavailable";
-        throw err;
-      }
-      return place(root, files, source);
+      const err = refusal(source);
+      if (err !== null) throw err;
+      return place(root, links.get(source)!, source);
     },
     installFiles: async (root: string, files: Record<string, Uint8Array>) => {
       calls.push("<zip>");

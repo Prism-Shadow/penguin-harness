@@ -121,8 +121,12 @@ export type InstallProgress = (received: number, total: number | null) => void;
 /** Where an install is getting the package from, as the install stream's `stage` events say. */
 export type InstallSource = "registry" | "link" | "channel" | "offline";
 
-/** A step of an install, as the stream reports it (05 「安装从不卡住」). */
-export type InstallStage = { stage: "installing"; source: InstallSource } | { stage: "loading" };
+/**
+ * A step of an install, as the stream reports it (05 「安装从不卡住」): asking the registry about a
+ * name before it installs, a source being tried, the App re-assembling.
+ */
+export type InstallStage =
+  { stage: "checking" } | { stage: "installing"; source: InstallSource } | { stage: "loading" };
 
 /**
  * A failure of `installNamedOrChanneled`: npm's words, then what the fallback said, as one message
@@ -143,7 +147,11 @@ function failureLike(
 }
 
 /**
- * Installs by name or link, npm first. A name npm cannot serve can still come from two places,
+ * Installs by name or link, npm first. A name is asked about first (`check`, a short `npm view`):
+ * a registry that does not answer, or does not have the name, fails that within seconds, and the
+ * install itself — whose window is long, since tarballs may legitimately be slow — never starts.
+ * Its failure takes the same way on as the install's would; any other answer leaves the install
+ * to run and to report in its own words. A name npm cannot serve can still come from two places,
  * in this order:
  *
  * - The OFFLINE ARCHIVE the build carries for it (plugin/offline-archives.ts) — when npm answered
@@ -180,10 +188,24 @@ export async function installNamedOrChanneled(
     offline?: (name: string, version?: string) => OfflineArchive | null;
     installTarball?: (root: string, file: string, name: string) => Promise<InstalledPackage>;
     onStage?: (stage: InstallStage) => void;
+    /** Asks the registry about a name before it installs; absent = no pre-check. */
+    check?: (root: string, spec: string) => Promise<void>;
   },
 ): Promise<InstalledPackage> {
-  io.onStage?.({ stage: "installing", source: source.kind === "name" ? "registry" : "link" });
   try {
+    if (source.kind === "name" && io.check !== undefined) {
+      io.onStage?.({ stage: "checking" });
+      try {
+        await io.check(root, source.spec);
+      } catch (err) {
+        // Not published, not reached or no npm at all: the install could only say the same, and
+        // about a registry that does not answer only after its own long window. Any other answer
+        // (a refusal, an auth failure) is the install's to report in its own words.
+        const other = err instanceof PluginInstallError && (err.reason ?? "other") === "other";
+        if (!other) throw err;
+      }
+    }
+    io.onStage?.({ stage: "installing", source: source.kind === "name" ? "registry" : "link" });
     return await io.install(root, source.spec);
   } catch (err) {
     if (!(err instanceof PluginInstallError) || source.kind !== "name") throw err;
@@ -521,8 +543,9 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
   };
 
   /**
-   * The route's install of a specifier: npm first, then the offline archive the build carries, then
-   * the published index's channel (installNamedOrChanneled). `onStage` hears each source tried.
+   * The route's install of a specifier: a name's pre-check and npm first, then the offline archive
+   * the build carries, then the published index's channel (installNamedOrChanneled). `onStage`
+   * hears the pre-check and each source tried.
    */
   const installSpecifier = (
     source: PluginSource,
@@ -533,6 +556,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     return viaNpm(
       () =>
         installNamedOrChanneled(deps.root, source, {
+          check: (root, spec) => deps.packages.check(root, spec),
           install: (root, spec) => deps.packages.install(root, spec),
           channelOf: deps.channelOf,
           installChannel: (root, channel, opts) =>
@@ -743,12 +767,12 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     if (!(c.req.header("accept") ?? "").includes("text/event-stream")) {
       return c.json(await performInstall(projectId, viewerOf(c), source, machineId));
     }
-    // The same install, read as it arrives (05 「安装从不卡住」): `npm` at once, `stage` as each
-    // source is tried and before the App re-assembles, `download` while a channel's bytes come
-    // in (npm's own download is npm's to report), `result` the finished list. A `ping` every
-    // INSTALL_BEAT_MS keeps a long install's stream from reading as dead: the event-stream
-    // socket is cut after 40 s of silence (app.ts), and the page would be told the install
-    // failed while it carried on. A failure that the JSON answer would have carried as a status
+    // The same install, read as it arrives (05 「安装从不卡住」): `npm` at once, `stage` while a
+    // name's registry is asked, as each source is tried and before the App re-assembles,
+    // `download` while a channel's bytes come in (npm's own download is npm's to report),
+    // `result` the finished list. A `ping` every INSTALL_BEAT_MS keeps a long install's stream
+    // from reading as dead: the event-stream socket is cut after 40 s of silence (app.ts), and
+    // the page would be told the install failed while it carried on. A failure that the JSON answer would have carried as a status
     // rides as an `error` event with that status, so the page raises the same error either way.
     return eventStream(c, async (sink) => {
       sink.beat(INSTALL_BEAT_MS);

@@ -3294,6 +3294,7 @@ export const en: Strings = {
       notOnServerMember:
         "It is not on the server yet: Install asks an admin to install it on the server; once it is there, install it on the Agent.",
       onServer: "Uninstalling it from the server uninstalls it from every Agent.",
+      checking: "Checking the plugin source…",
       installing: "Installing…",
       fromOffline: "Installing from the offline archive…",
       loading: "Loading module…",

@@ -15,6 +15,11 @@ import type { InstalledPackage } from "../plugin/install.js";
  */
 @Interface()
 export abstract class PluginPackages {
+  /**
+   * Asks the registry whether it has a name (`name`, `name@range`) before it is installed, within
+   * a short window; throws npm's failure.
+   */
+  abstract check(root: string, spec: string): Promise<void>;
   /** A registry name (`name`, `name@range`) or a link npm fetches; answers which package that was. */
   abstract install(root: string, source: string): Promise<InstalledPackage>;
   /** An uploaded package's files, relative path → bytes (checked by the caller). */

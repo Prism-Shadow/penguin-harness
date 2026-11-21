@@ -109,6 +109,7 @@ describe("the server control under way", () => {
   it("says each step the install reaches, and takes no second press", async () => {
     const steps: Array<[Partial<PluginCardProps>, string]> = [
       [{ progress: { received: 40, total: 100 } }, en.plugins.downloading(40)],
+      [{ stage: { stage: "checking" } }, words.checking],
       [{ stage: { stage: "installing", source: "offline" } }, words.fromOffline],
       [{ stage: { stage: "loading" } }, words.loading],
       [{ stage: { stage: "installing", source: "registry" } }, words.installing],

@@ -2,10 +2,13 @@
  * A plugin's server install and its Agent installs (05 「插件库」 「安装模型」 「安装从不卡住」).
  *
  * An install never hangs, and says why it failed:
+ * - Given the registry has the name, when an admin installs it, then the registry is asked first
+ *   (the stream says so) and the install runs after.
  * - Given npm answers that the name is not published and the build carries an offline archive of
  *   it, when an admin installs it by name, then it installs from the archive, and the answer and
  *   the stream say so.
  * - Given the registry does not answer, the same install also comes from the archive.
+ * - In both, the registry check says so and the install by name never starts.
  * - Given the archive's bytes do not match the sha512 recorded with them, nothing installs and the
  *   refusal says the archive was not used.
  * - Given npm answers 404 and there is no archive, the refusal is `plugin_not_published`, naming
@@ -135,6 +138,19 @@ describe("a plugin's server and Agent installs", () => {
     ).skills.map((s) => s.name);
 
   describe("an install never hangs", () => {
+    it("asks the registry about a name first, then installs it", async () => {
+      await boot();
+      npm.links.set(NOTES, notesPackage());
+      const events = parseSSE(await (await postStream(NOTES)).text());
+      expect(events.filter((e) => e.event === "stage").map((e) => JSON.parse(e.data))).toEqual([
+        { stage: "checking" },
+        { stage: "installing", source: "registry" },
+      ]);
+      expect(events.at(-1)!.event).toBe("result");
+      expect(npm.checks).toEqual([NOTES]);
+      expect(npm.calls).toEqual([NOTES]);
+    });
+
     it("installs from the build's offline archive when the registry has not published it", async () => {
       await boot();
       npm.registry.says404 = true;
@@ -142,12 +158,13 @@ describe("a plugin's server and Agent installs", () => {
       const events = parseSSE(await (await postStream(NOTES)).text());
       expect(events.map((e) => e.event)).toEqual(["npm", "stage", "stage", "result"]);
       expect(events.slice(1, 3).map((e) => JSON.parse(e.data))).toEqual([
-        { stage: "installing", source: "registry" },
+        { stage: "checking" },
         { stage: "installing", source: "offline" },
       ]);
       const result = JSON.parse(events.at(-1)!.data) as InstalledPluginsResponse;
       expect(result.installed).toMatchObject({ name: NOTES, version: "1.0.0", from: "offline" });
-      expect(npm.calls).toEqual([NOTES, "<tarball acme-notes-1.0.0.tgz>"]);
+      expect(npm.checks).toEqual([NOTES]);
+      expect(npm.calls).toEqual(["<tarball acme-notes-1.0.0.tgz>"]);
       expect(await libraryNames()).toContain("notes");
     });
 
@@ -162,6 +179,7 @@ describe("a plugin's server and Agent installs", () => {
       expect(((await res.json()) as InstalledPluginsResponse).installed).toMatchObject({
         from: "offline",
       });
+      expect(npm.calls).toEqual(["<tarball acme-notes-1.0.0.tgz>"]);
     });
 
     it("refuses an offline archive whose bytes do not match its recorded sha512", async () => {
@@ -178,7 +196,7 @@ describe("a plugin's server and Agent installs", () => {
           message: expect.stringContaining("does not match the sha512 recorded with it"),
         },
       });
-      expect(npm.calls).toEqual([NOTES]);
+      expect(npm.calls).toEqual([]);
       expect(await libraryNames()).not.toContain("notes");
     });
 
@@ -205,6 +223,7 @@ describe("a plugin's server and Agent installs", () => {
           message: expect.stringMatching(/^registry\.npmjs\.org did not answer\./),
         },
       });
+      expect(npm.calls).toEqual([]);
     });
 
     it("keeps a long install's stream alive with a ping before its result", async () => {

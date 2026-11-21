@@ -361,11 +361,13 @@ export function PluginCard(props: PluginCardProps) {
     const stepWords =
       props.progress != null
         ? S.plugins.downloading(percent)
-        : props.stage?.stage === "loading"
-          ? words_.loading
-          : props.stage?.stage === "installing" && props.stage.source === "offline"
-            ? words_.fromOffline
-            : words_.installing;
+        : props.stage?.stage === "checking"
+          ? words_.checking
+          : props.stage?.stage === "loading"
+            ? words_.loading
+            : props.stage?.stage === "installing" && props.stage.source === "offline"
+              ? words_.fromOffline
+              : words_.installing;
     /** A member's server control: held, saying why. */
     const memberHold = props.isAdmin ? {} : { disabled: true, hint: words_.adminOnly };
     if (builtIn) {

@@ -3146,15 +3146,19 @@ export const installPlugin = (
 /** How a channel install reports its download as it arrives: bytes so far, the total when known. */
 export type InstallProgressListener = (received: number, total: number | null) => void;
 
-/** A step of a server install as its stream reports it: a source being tried, or the App re-assembling. */
+/**
+ * A step of a server install as its stream reports it: the registry asked about a name before it
+ * installs, a source being tried, or the App re-assembling.
+ */
 export type InstallStage =
+  | { stage: "checking" }
   | { stage: "installing"; source: "registry" | "link" | "channel" | "offline" }
   | { stage: "loading" };
 
 /**
  * The same install as {@link installPlugin}, read as it arrives: the server answers a
- * `text/event-stream` that opens with `npm`, says each source it tries and the App's re-assembly
- * as `stage` events, carries a channel's bytes on their way in as `download` events, and ends with
+ * `text/event-stream` that opens with `npm`, says the registry check, each source it tries and the
+ * App's re-assembly as `stage` events, carries a channel's bytes on their way in as `download` events, and ends with
  * `result`, the finished list (a `ping` keeps a long install's stream alive). An `error` event
  * carries the status the JSON answer would have had, and is raised as an {@link ApiError} — a
  * stream that ends with no `result` is a lost connection.

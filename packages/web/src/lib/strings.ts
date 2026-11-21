@@ -3524,6 +3524,7 @@ export const zh = {
         "它还不在服务端：点「安装」会请管理员把它安装到服务端，装好后你再把它装到 Agent。",
       onServer: "从服务端卸载会同时从所有 Agent 卸载。",
       /** Progress on the clicked control. */
+      checking: "检查插件源…",
       installing: "安装中…",
       fromOffline: "从离线包安装…",
       loading: "加载模块…",

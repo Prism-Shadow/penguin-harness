@@ -612,11 +612,13 @@ export function PluginsPage() {
           setAgentBusy({
             key,
             label:
-              stage.stage === "loading"
-                ? words.loading
-                : stage.source === "offline"
-                  ? words.fromOffline
-                  : words.installing,
+              stage.stage === "checking"
+                ? words.checking
+                : stage.stage === "loading"
+                  ? words.loading
+                  : stage.source === "offline"
+                    ? words.fromOffline
+                    : words.installing,
           });
         },
       );

@@ -103,6 +103,8 @@ describe("npmFailureKind", () => {
       "npm error code ENOTFOUND\nnpm error network request to https://registry.npmmirror.com/x failed, reason: getaddrinfo ENOTFOUND",
       "npm error code ERR_SOCKET_TIMEOUT\nnpm error network Socket timeout",
       "npm error code ECONNRESET\nnpm error network aborted",
+      // An http(s) proxy that could not reach the registry either.
+      "npm error code E502\nnpm error 502 Bad Gateway - GET http://10.255.255.1:4873/x",
     ]) {
       expect(npmFailureKind(stderr), stderr).toBe("unreachable");
     }

@@ -35,14 +35,19 @@ do next.
   and then installs on the Agent. For a member, it records a request
   (`POST /api/projects/:projectId/plugins/modules` with `package`). The administrator's request
   list holds Enable until the package is on the server.
-- **The install stream.** It sends `stage` events (each source tried, then `loading` before the
-  App re-assembles) and the channel's `download` progress, which it had never sent before. A
+- **The install stream.** It sends `stage` events (`checking` while a name's registry is asked,
+  each source tried, then `loading` before the App re-assembles) and the channel's `download` progress, which it had never sent before. A
   `ping` every 20 s means the 40 s idle cut of event streams no longer drops an install that is
   still running. An answer waits at most 60 s for the re-assembly, and a module that starts
   longer than that is reported as still starting (`loading`).
-- **Specific failures.** npm runs with `--fetch-timeout=60000 --fetch-retries=1`. A package that
-  is not on the registry answers `400 plugin_not_published` ("… is not published on <registry>
-  yet"). A registry that does not answer gives `400 plugin_source_unreachable`. The index lookup
+- **Specific failures.** Before a package installs by name, npm asks the registry about it
+  (`npm view`, with the install's own registry and proxy), with a 10 s request window and no
+  retry, and is stopped at 12 s. A package that is not on the registry then answers
+  `400 plugin_not_published` ("… is not published on <registry> yet"), and a registry that does
+  not answer, or a proxy that cannot reach it, gives `400 plugin_source_unreachable`, both within
+  seconds and without starting the install; an offline archive is installed instead when the build
+  carries one. Once the registry has answered, the install runs with
+  `--fetch-timeout=60000 --fetch-retries=1`. The index lookup
   an install makes tries each address once, for 10 s. The note under the card links to Plugin
   Sources and to Import from file.
 - **Offline archives carried by the build.** A repository plugin that the market lists but the
