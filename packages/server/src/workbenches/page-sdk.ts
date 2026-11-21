@@ -6,7 +6,9 @@
  * - `amsp.js` is AMSP's browser build, byte for byte: the records, `SessionReader`,
  *   `HttpTransport` and the rest of `@prismshadow/amsp`, one ES module with nothing to resolve.
  * - `workbench.js` re-exports it and adds the signed-in reader's door already pointed at this
- *   server: `apiBase`, `transport`, `followSession(id, { tailLimit? })`, `abortSession(id)`.
+ *   server: `apiBase`, `transport`, `followSession(id, { tailLimit? })`, `abortSession(id)`; and
+ *   two questions for the app the page is framed in, `chooseChatModel(current?)` (the app's model
+ *   picker) and `getChatModel(current?)` (a model's name), asked with `postMessage` on an id.
  *
  * The browser build reaches this module as an import, never as a file read beside a package:
  * the desktop app and a hot-pushed build run the server as one bundled file with no
@@ -63,6 +65,61 @@ export function followSession(sessionId, options = {}) {
   return new SessionReader(transport, sessionId, {
     ...options,
     streamPath: sessionPath(sessionId) + "/amsp",
+  });
+}
+
+/**
+ * Opens the app's chat model picker over this page. Resolves to { provider, modelId, label }, or
+ * null when the person closes it without choosing.
+ */
+export function chooseChatModel(current = null) {
+  return askChatModel("choose", current);
+}
+
+/** A model's { provider, modelId, label } as the app names it (the Project default when none is given), or null. */
+export function getChatModel(current = null) {
+  return askChatModel("get", current);
+}
+
+// The app answers a request on its id, as the page's parent: the app acknowledges it at once, so
+// a page with no app above it, or one that does not know the request, is told within a few seconds.
+const CHAT_MODEL_ACK_MS = 3000;
+let chatModelAsks = 0;
+
+function askChatModel(op, current) {
+  return new Promise((resolve, reject) => {
+    const unavailable = () => {
+      const error = new Error("Open this workbench in PenguinHarness to choose a model.");
+      error.name = "WorkbenchHostUnavailable";
+      return error;
+    };
+    if (window.parent === window) {
+      reject(unavailable());
+      return;
+    }
+    const id = "chat-model-" + ++chatModelAsks + "-" + Date.now().toString(36);
+    const stop = () => {
+      clearTimeout(timer);
+      window.removeEventListener("message", onReply);
+    };
+    const timer = setTimeout(() => {
+      stop();
+      reject(unavailable());
+    }, CHAT_MODEL_ACK_MS);
+    function onReply(event) {
+      const data = event.data;
+      if (event.source !== window.parent || !data || data.type !== "penguin:chat-model-reply") return;
+      if (data.id !== id) return;
+      if (data.accepted === true) {
+        clearTimeout(timer);
+        return;
+      }
+      stop();
+      if (typeof data.error === "string") reject(new Error(data.error));
+      else resolve(data.model || null);
+    }
+    window.addEventListener("message", onReply);
+    window.parent.postMessage({ type: "penguin:chat-model", id, op, current }, "*");
   });
 }
 

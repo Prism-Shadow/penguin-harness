@@ -14,6 +14,8 @@
 import { act, createElement, Fragment, useSyncExternalStore } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
+// The browser reaches the app's own helpers through the plugin face; this hands them over.
+import "../src/web-app/plugin-host";
 import { BuiltinBrowserLayer } from "../src/features/builtin-browser/browser-layer";
 import { BuiltinBrowserPanel } from "../src/features/builtin-browser/browser-panel";
 import {

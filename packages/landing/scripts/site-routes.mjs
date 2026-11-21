@@ -86,7 +86,8 @@ export function pageRoutes() {
 /**
  * The Plugins, Benchmarks and Leaderboards pages: each list and one page per entry, read from the
  * same files the build read (the benchmark repository's clone the build just made, or
- * PENGUIN_BENCHMARK_REPO). Each shell names its page; the share image is the site's own.
+ * PENGUIN_BENCHMARK_REPO; the market document and plugin index it fetched, hub/published.mjs).
+ * Each shell names its page; the share image is the site's own.
  */
 export function hubRoutes() {
   return hubRouteList(loadHub()).map(({ route, title, description }) => ({

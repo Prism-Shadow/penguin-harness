@@ -9,8 +9,8 @@
  */
 import type { BrowserBackendInfo } from "@prismshadow/penguin-server/api";
 import { GlyphIcon, ICONS, ICON_SIZE, MenuItem } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
+import { S } from "./strings";
+import { toneInk } from "@prismshadow/penguin-web-plugin";
 
 /** How the user's Chrome stands, as the row says it. */
 export type ChromeStanding = "connected" | "disconnected" | "unpaired" | "disabled";
