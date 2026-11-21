@@ -29,11 +29,11 @@ import {
   parseMarketDocument,
   resolvePluginMarketUrl,
 } from "../../plugin/market.js";
-import { indexMirrorRules } from "../../plugin/mirror-settings.js";
 import type { MarketSnapshot, MarketSource } from "../../plugin/market.js";
 import { marketPictureDir, marketPictures } from "../../plugin/market-pictures.js";
 import type { MarketPicture, MarketPictures } from "../../plugin/market-pictures.js";
 import { bundledCoversDir, readBundledPicture } from "../../plugin/market-covers.js";
+import { indexMirrorRules } from "../../plugin/mirror-settings.js";
 import { errorBody } from "../errors.js";
 
 /** The headers a picture is answered with, beside its content type. */
@@ -147,10 +147,12 @@ export class PluginMarketRoutes {
       this.config.pluginMarketUrl !== undefined
         ? this.config.pluginMarketUrl
         : resolvePluginMarketUrl(process.env.PENGUIN_PLUGIN_MARKET);
+    // The mirrors the plugin index fetches try after a source's own URL (Settings › Plugins).
+    const proxy = () => indexMirrorRules();
     const log = (line: string) => this.log.line(line);
     this.source = marketSource({
       url,
-      proxy: indexMirrorRules,
+      proxy,
       seed: reseed((context as { market?: unknown } | null)?.market),
       onFailure: (message) => log(`[plugin-market] ${message}`),
     });
@@ -159,11 +161,7 @@ export class PluginMarketRoutes {
     let covers: string | null | undefined;
     this.routes = pluginMarketRoutes({
       source: this.source,
-      pictures: marketPictures({
-        dir: marketPictureDir(this.config.root),
-        proxy: indexMirrorRules,
-        log,
-      }),
+      pictures: marketPictures({ dir: marketPictureDir(this.config.root), proxy, log }),
       bundled: () =>
         covers === undefined ? (covers = bundledCoversDir(this.hmr.assetsDir())) : covers,
     });
