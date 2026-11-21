@@ -11,7 +11,7 @@
  * - `agentState`: `agent_state/`, `agent_state.git/` and `snapshots/`.
  * - `workspaces`: an Agent's `workspaces/` (temporary and Test Workspaces).
  * - `scratchpads`: an Agent's `scratchpad/`.
- * - `caches`: an Agent's `shared_env/`, and the data root's `.cache/`.
+ * - `caches`: an Agent's `shared_env/` and `app/cache/`, and the data root's `.cache/`.
  * - `logs`: the data root's `logs/`.
  * - `plugins`: the data root's `plugins/`.
  * - `other`: everything else (Benchmarks, organizations, `web.db`, `hmr/`, `machines/`, …).
@@ -89,7 +89,7 @@ export interface StorageUsage {
  * What a cleanup item is:
  * - `scratchpad`: `<agent>/scratchpad/<sessionId>/`;
  * - `workspace`: `<agent>/workspaces/<name>/`;
- * - `agentCache`: `<agent>/shared_env/<name>/`;
+ * - `agentCache`: `<agent>/shared_env/<name>/` or `<agent>/app/cache/<workbenchId>/`;
  * - `serverCache`: `<root>/.cache/<name>/` (admins only).
  */
 export type StorageCleanupKind = "scratchpad" | "workspace" | "agentCache" | "serverCache";

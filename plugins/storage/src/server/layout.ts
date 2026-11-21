@@ -11,9 +11,8 @@
  * {@link CACHE_LOCATIONS} is the one list of folders whose contents can be regenerated, and so
  * cleaned: each is measured as `caches`, and each entry in it is a cleanup item of its own, with
  * the check that says when it may go. A new cache folder joins the Storage page by being added
- * here through its own helper — the workbench cache folders `<agentDir>/app/cache/<id>/`
- * (PRFC-0028) once they ship, with a check that their workbench is not running; `app/data/` then
- * joins {@link agentParts} as Agent State, and the server's `run/` stays `other`.
+ * here through its own helper. A workbench's other folders, `app/data/` and the server's `run/`,
+ * are `other`.
  */
 import path from "node:path";
 import type { DataLayout } from "@prismshadow/penguin-server/plugin";
@@ -121,6 +120,21 @@ export const CACHE_LOCATIONS: readonly CacheLocation[] = [
     scope: "agent",
     kind: "agentCache",
     dir: (layout, projectId, agentId) => layout.sharedEnvDir(projectId!, agentId!),
+    selected: false,
+    inUse: (guards, entry) =>
+      entry.projectId !== undefined &&
+      entry.agentId !== undefined &&
+      guards.agentInUse(entry.projectId, entry.agentId),
+  },
+  {
+    // The disposable files of the Agent's workbenches, one folder per workbench
+    // (`app/cache/<id>/`, PRFC-0028): anything a workbench can make again. Like a tool
+    // environment, a folder waits until none of the Agent's Sessions is in use, and is not ticked
+    // to begin with: a download a workbench's page has not fetched yet may wait in it.
+    key: "app/cache",
+    scope: "agent",
+    kind: "agentCache",
+    dir: (layout, projectId, agentId) => layout.workbenchCachesDir(projectId!, agentId!),
     selected: false,
     inUse: (guards, entry) =>
       entry.projectId !== undefined &&

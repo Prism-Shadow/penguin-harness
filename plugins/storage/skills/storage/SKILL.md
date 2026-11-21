@@ -1,7 +1,7 @@
 ---
 name: storage
 description: "See how much disk space PenguinHarness's data root uses — by category, by Project and by agent — and which scratchpads, temporary Workspaces and caches could be cleaned up, with `penguin storage`. Use it when the user asks what takes space, why the disk is filling, or what can be deleted. The removal itself is the user's: they confirm it in Settings › Storage."
-version: 2026.11.20.1
+version: 2026.11.21.1
 ---
 
 # Storage
@@ -28,7 +28,7 @@ The command waits for a measurement under way to end. The categories:
 | Agent State | the agents' configuration, Skills, history and snapshots | no |
 | Temporary Workspaces | folders made for chats started without a Workspace | the ones no chat works in |
 | Scratchpads | one folder per chat: attachments, plans, hand-off files | a deleted chat's; an idle chat's after warning the user |
-| Caches | the agents' tool environments (`shared_env/`) and the server's `.cache/` | yes, they are fetched or installed again |
+| Caches | the agents' tool environments (`shared_env/`), their apps' caches (`app/cache/`) and the server's `.cache/` | yes, they are fetched, installed or made again |
 | Logs, Plugins | the server's logs and installed plugin packages | no, they are measured only |
 
 Answer with the few largest categories and Projects, in the units the command prints.

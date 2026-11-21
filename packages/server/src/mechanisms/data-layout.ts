@@ -35,6 +35,8 @@ export abstract class DataLayout {
   abstract workspacesDir(projectId: string, agentId: string): string;
   /** The Agent's reusable tool environments, one folder per environment. */
   abstract sharedEnvDir(projectId: string, agentId: string): string;
+  /** The folder holding the disposable files of the Agent's workbenches, one per workbench id. */
+  abstract workbenchCachesDir(projectId: string, agentId: string): string;
   /** Where a Project's folders wait while their contents are removed (`agents/.deleting/`). */
   abstract deletingDir(projectId: string): string;
   /** The npm prefix the server installs plugins into. */

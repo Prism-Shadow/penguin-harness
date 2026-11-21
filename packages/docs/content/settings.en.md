@@ -196,7 +196,7 @@ The first section, **This server** for an admin and **My Projects** for a member
 | **Agent State** | Each agent's `agent_state/`, its history (`agent_state.git/`) and its snapshots |
 | **Temporary workspaces** | Each agent's `workspaces/`: the folders made for chats started without a Workspace, and the evaluation Skill's Test Workspaces |
 | **Scratchpads** | Each agent's `scratchpad/`: one folder per chat, holding its attachments, plans and hand-off files |
-| **Caches** | Each agent's tool environments in `shared_env/`, and the server's `.cache/` |
+| **Caches** | Each agent's tool environments in `shared_env/` and its apps' disposable files in `app/cache/`, and the server's `.cache/` |
 | **Logs** | The server's `logs/`, measured but never cleaned here |
 | **Plugins** | The installed plugin packages, measured but never cleaned here |
 | **Other** | Everything else: Benchmarks, organizations, the database, the hot-update store, machines and theme packs |
@@ -212,7 +212,7 @@ The first section, **This server** for an admin and **My Projects** for a member
 | **Scratchpads of deleted chats** | Scratchpads whose chat is gone, untouched for a day | Yes |
 | **Scratchpads of idle chats** | Scratchpads of chats that are not running and were last active before the number of days at the top (7 by default). Attached images and files in those chats stop showing, and a continued chat can no longer find its plans and attachments | No |
 | **Orphaned temporary workspaces** | Temporary workspaces no chat works in, untouched for a day. A temporary workspace a chat still has is never listed, since without it the chat cannot continue; delete the chat first | Yes |
-| **Agent caches** | An agent's tool environments, while none of its chats is running. The agent installs them again the next time it needs them | No |
+| **Agent caches** | An agent's tool environments and its apps' caches, while none of its chats is running. The agent or the app makes them again the next time they are needed | No |
 | **Server caches** | What the server keeps in `.cache/` and fetches again when it is missing. Admins only | Yes |
 
 Tick what to remove and select **Delete**; the confirmation names how many items go and how much space they free. Each item is checked again as it is removed: one that started being used meanwhile is skipped, and the message says so. Nothing a running chat uses is ever removed.

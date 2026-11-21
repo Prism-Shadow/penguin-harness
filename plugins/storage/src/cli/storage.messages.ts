@@ -68,7 +68,7 @@ export const storageEn: StorageText = {
       "Review what can be removed safely now (a dry run); --yes removes what the review ticks",
     olderThan:
       "an idle chat's scratchpad is one last active more than this many days ago (1–3650, default 7)",
-    all: "with --yes, also remove what the review leaves unticked (idle chats' scratchpads, Agents' tool environments)",
+    all: "with --yes, also remove what the review leaves unticked (idle chats' scratchpads, Agents' tool environments and app caches)",
     yes: "remove the chosen items instead of only listing them",
     head: (scope, used, measuredAt) =>
       `${scope === "server" ? "This server" : "My Projects"}: ${used} used${
@@ -139,7 +139,7 @@ export const storageZh: StorageText = {
     refresh: "先重新测量再显示",
     cleanDesc: "审阅现在可以安全删除的内容（只列出）；加 --yes 删除审阅中勾选的项",
     olderThan: "闲置对话的草稿区：最近活动早于这么多天（1–3650，默认 7）",
-    all: "与 --yes 同用时，连审阅中不勾选的项（闲置对话的草稿区、Agent 的工具环境）一起删除",
+    all: "与 --yes 同用时，连审阅中不勾选的项（闲置对话的草稿区、Agent 的工具环境与应用缓存）一起删除",
     yes: "删除选中的项，而不只是列出",
     head: (scope, used, measuredAt) =>
       `${scope === "server" ? "本机" : "我的 Project"}：已用 ${used}${

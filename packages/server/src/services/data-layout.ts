@@ -2,8 +2,10 @@
  * The data root's layout over this server's root: every path from the helpers that define it —
  * core's for the Projects and Agents, the server's for its own folders.
  */
+import path from "node:path";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import {
+  agentAppDir,
   agentDir,
   agentStateDir,
   agentsDir,
@@ -63,6 +65,10 @@ export class RootDataLayout implements DataLayout {
   }
   sharedEnvDir(projectId: string, agentId: string): string {
     return sharedEnvDir(this.paths.root, projectId, agentId);
+  }
+  workbenchCachesDir(projectId: string, agentId: string): string {
+    // The parent of core's workbenchCacheDir: `<agentDir>/app/cache`.
+    return path.join(agentAppDir(this.paths.root, projectId, agentId), "cache");
   }
   deletingDir(projectId: string): string {
     return deletingDir(this.paths.root, projectId);
