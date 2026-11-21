@@ -3,6 +3,9 @@
  *
  *   GET    /                       the Agent's workbenches, disabled ones included, and the
  *                                  Agent-wide switch (loads any that run and changed on disk)
+ *   GET    /?id=<id>               the same answer for that one workbench alone (none when there
+ *                                  is no such workbench): only it is loaded, so a page opened on
+ *                                  its own does not wait for the Agent's other workbenches
  *   GET    /?view=sidebar          the rows of the Agent's sidebar list: a shortcut for each
  *                                  workbench that runs, has a tab and is not hidden from the
  *                                  sidebar (manifests and load status only: nothing is compiled)
@@ -489,6 +492,15 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     if (c.req.query("view") === "sidebar") {
       const apps = await deps.workbenches.sidebar(projectId, agentId);
       return c.json({ apps } satisfies WorkbenchSidebarResponse);
+    }
+    const only = c.req.query("id");
+    if (only !== undefined) {
+      const workbench = await deps.workbenches.one(projectId, agentId, only);
+      const enabled = await deps.workbenches.agentEnabled(projectId, agentId);
+      return c.json({
+        workbenches: workbench === null ? [] : [workbench],
+        enabled,
+      } satisfies WorkbenchesResponse);
     }
     const workbenches = await deps.workbenches.list(projectId, agentId);
     const enabled = await deps.workbenches.agentEnabled(projectId, agentId);

@@ -172,6 +172,16 @@ export abstract class WorkbenchHost {
 export abstract class Workbenches {
   /** Every workbench of the Agent, disabled ones included; the ones that run are loaded when stale. */
   abstract list(projectId: string, agentId: string): Promise<WorkbenchInfo[]>;
+  /**
+   * One workbench as {@link list} gives it, loaded when it runs and is stale; null when the
+   * Agent has no such workbench. The Agent's other workbenches are neither read nor loaded, so
+   * a page opened on its own waits for its own compile alone.
+   */
+  abstract one(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<WorkbenchInfo | null>;
   /** The Agent-wide switch: false while `.disabled` sits beside the workbench folders. */
   abstract agentEnabled(projectId: string, agentId: string): Promise<boolean>;
   /**
