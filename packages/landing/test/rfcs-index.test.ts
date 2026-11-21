@@ -1,21 +1,24 @@
 /**
- * The RFC index's reading of the documents' provenance markers.
+ * The RFC index's reading of the documents' provenance markers and `request-for-comments` GitHub
+ * PR status records.
  *
- * - A landed document (its marker names where it landed, or says it is native to this repository)
+ * - A merged document (its marker names where it landed, or says it is native to this repository)
  *   links its in-site page, carrying the raw document the page renders.
- * - A document carried by an open design PR links to that PR and carries no in-site page.
- * - A document whose marker names nothing is drafting: the row shows without a link.
- * - An open design PR carrying a revision newer than the landed version is recorded as the
- *   entry's open revision.
- * - The English and Chinese versions of one document merge into one entry, sorted by number;
- *   the index skips files that are not PRFC documents (the surface's README and template).
+ * - A document or PR record carried by an open, draft, or closed RFC PR links to that PR and
+ *   carries no in-site page.
+ * - A document whose marker names nothing and has no PR record is a draft without a link.
+ * - An open RFC PR carrying a revision newer than the merged version is recorded as the entry's
+ *   open revision.
+ * - Build-time PR status refresh caches results for 24 hours and never re-fetches merged PRs.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { MAX_AGE_MS, refreshRfcPrStatusCache } from "../scripts/rfcs/pr-status.mjs";
 import {
   buildRfcIndex,
   buildRfcSearchRecords,
   findRfcSearchMatchRanges,
   rfcBodyMarkdown,
+  rfcEntries,
   rfcEntryShortTitle,
   rfcEntryTitle,
   rfcPagerFor,
@@ -80,7 +83,6 @@ const landedWithUnmerged = landedEn
   .replace("PRFC-0001", "PRFC-0003")
   .replace(
     "\n\n## Motivation",
-    // The marker lives in the header, under the Source block — as the real PRFC-0003 carries it.
     "\n> **Unmerged revision**: the open design PR [#279](https://github.com/Prism-Shadow/penguin-harness-design/pull/279) carries one unmerged revision against this document.\n\n## Motivation",
   );
 
@@ -93,9 +95,9 @@ const drafting = [
 ].join("\n");
 
 describe("buildRfcIndex", () => {
-  it("classifies a landed document by its marker and links into the repository", () => {
+  it("classifies a landed document as merged and links into the in-site page", () => {
     const entry = buildRfcIndex({ "PRFC-0001-module.md": landedEn })[0]!;
-    expect(entry.status).toBe("landed");
+    expect(entry.status).toBe("merged");
     expect(entry.title).toBe("PRFC-0001 Module");
     expect(entry.number).toBe("PRFC-0001");
     expect(entry.en?.href).toBe("/rfcs/PRFC-0001-module");
@@ -104,16 +106,16 @@ describe("buildRfcIndex", () => {
     expect(entry.zh).toBeUndefined();
   });
 
-  it("reads the Chinese marker too, and a native document is landed", () => {
+  it("reads the Chinese marker too, and a native document is merged", () => {
     const index = buildRfcIndex({
       "PRFC-0001-module.zh.md": landedZh,
       "PRFC-0021-distros.md": nativeLanded,
     });
     expect(index.map((entry) => entry.number)).toEqual(["PRFC-0001", "PRFC-0021"]);
-    expect(index[0]!.status).toBe("landed");
+    expect(index[0]!.status).toBe("merged");
     expect(index[0]!.titleZh).toBe("PRFC-0001 模块");
     expect(index[0]!.zh?.href).toBe("/rfcs/PRFC-0001-module.zh");
-    expect(index[1]!.status).toBe("landed");
+    expect(index[1]!.status).toBe("merged");
   });
 
   it("a document carried by an open design PR links to that PR, not the repository", () => {
@@ -123,17 +125,90 @@ describe("buildRfcIndex", () => {
     expect(entry.en?.href).not.toContain("/blob/main/");
   });
 
-  it("a document with no marker is drafting and shows without a link", () => {
+  it("a document with no marker is draft and shows without a link", () => {
     const entry = buildRfcIndex({ "PRFC-0006-a-draft.md": drafting })[0]!;
-    expect(entry.status).toBe("drafting");
+    expect(entry.status).toBe("draft");
     expect(entry.en).toBeUndefined();
     expect(entry.zh).toBeUndefined();
   });
 
   it("an open design PR carrying a newer revision is the entry's open revision", () => {
     const entry = buildRfcIndex({ "PRFC-0003-plugin.md": landedWithUnmerged })[0]!;
-    expect(entry.status).toBe("landed");
+    expect(entry.status).toBe("merged");
     expect(entry.openRevision?.href).toBe(UNMERGED_PR);
+  });
+
+  it("merges request-for-comments GitHub PR records and ignores non-main base branches", () => {
+    const index = buildRfcIndex({ "PRFC-0001-module.md": landedEn }, [
+      {
+        number: 1229,
+        title: "docs(rfcs): draft RFC PRFC-0004 - plugin scope",
+        url: "https://github.com/Prism-Shadow/penguin-harness/pull/1229",
+        status: "open",
+        baseRefName: "main",
+        headRefOid: "abc",
+        rfcs: [
+          {
+            id: "PRFC-0004-plugin-scope",
+            number: "PRFC-0004",
+            title: "PRFC-0004 Plugin Scope",
+            titleZh: "PRFC-0004 插件的作用域",
+          },
+        ],
+      },
+      {
+        number: 1559,
+        title: "docs: define module, pass, and plugin semantics",
+        url: "https://github.com/Prism-Shadow/penguin-harness/pull/1559",
+        status: "merged",
+        baseRefName: "feat/compile-module-pass",
+        headRefOid: "def",
+        rfcs: [
+          {
+            id: "PRFC-0025-module-pass",
+            number: "PRFC-0025",
+            title: "PRFC-0025 Module Pass: immutable operators before boot",
+          },
+        ],
+      },
+      {
+        number: 1560,
+        title: "feat: add module passes",
+        url: "https://github.com/Prism-Shadow/penguin-harness/pull/1560",
+        status: "draft",
+        baseRefName: "main",
+        headRefOid: "ghi",
+        rfcs: [
+          {
+            id: "PRFC-0025-module-pass",
+            number: "PRFC-0025",
+            title: "PRFC-0025 Module Pass: immutable operators before boot",
+          },
+        ],
+      },
+    ]);
+    expect(index.map((e) => [e.id, e.status])).toEqual([
+      ["PRFC-0001-module", "merged"],
+      ["PRFC-0004-plugin-scope", "open"],
+      ["PRFC-0025-module-pass", "draft"],
+    ]);
+    expect(index[1]!.prHref).toBe("https://github.com/Prism-Shadow/penguin-harness/pull/1229");
+    expect(index[2]!.prHref).toBe("https://github.com/Prism-Shadow/penguin-harness/pull/1560");
+    expect(rfcEntryShortTitle(index[2]!, "en")).toBe("Module Pass");
+  });
+
+  it("populates all 25 RFCs in rfcEntries with their GitHub PR statuses", () => {
+    expect(rfcEntries).toHaveLength(25);
+    expect(rfcEntries.find((e) => e.id === "PRFC-0001-module")?.status).toBe("merged");
+    expect(rfcEntries.find((e) => e.id === "PRFC-0004-plugin-scope")?.status).toBe("open");
+    expect(
+      rfcEntries.find((e) => e.id === "PRFC-0005-mechanisms-not-implementations")?.status,
+    ).toBe("closed");
+    expect(rfcEntries.find((e) => e.id === "PRFC-0005-plugin-versioning")?.status).toBe("open");
+    expect(rfcEntries.find((e) => e.id === "PRFC-0024-cli-modules")?.openRevision?.href).toBe(
+      "https://github.com/Prism-Shadow/penguin-harness/pull/1649",
+    );
+    expect(rfcEntries.find((e) => e.id === "PRFC-0025-module-pass")?.status).toBe("draft");
   });
 
   it("merges the language pair into one entry and skips non-PRFC files", () => {
@@ -157,6 +232,7 @@ describe("buildRfcIndex", () => {
     expect(shortRfcNumber("PRFC-0001")).toBe("0001");
     expect(shortRfcTitle("PRFC-0001 Module")).toBe("Module");
     expect(shortRfcTitle("PRFC-0024: CLI Modules")).toBe("CLI Modules");
+    expect(shortRfcTitle("PRFC-0008 Telemetry: Let the System Itself Say")).toBe("Telemetry");
     expect(rfcEntryTitle(entry, "en")).toBe("PRFC-0001 Module");
     expect(rfcEntryTitle(entry, "zh")).toBe("PRFC-0001 模块");
     expect(rfcEntryShortTitle(entry, "en")).toBe("Module");
@@ -171,7 +247,7 @@ describe("buildRfcIndex", () => {
     expect(body).toContain("## Motivation");
   });
 
-  it("builds previous/next pagination across the index and landed RFCs", () => {
+  it("builds previous/next pagination across the index and merged RFCs", () => {
     const fromIndex = rfcPagerFor("index", "en", "RFC index");
     expect(fromIndex.prev).toBeUndefined();
     expect(fromIndex.next?.href).toBe("/rfcs/PRFC-0001-module");
@@ -190,5 +266,77 @@ describe("buildRfcIndex", () => {
     expect(hits.some((h) => h.record.href === "/rfcs/PRFC-0001-module")).toBe(true);
     const ranges = findRfcSearchMatchRanges("PRFC-0001 Module system", "module");
     expect(ranges).toEqual([{ start: 10, end: 16 }]);
+  });
+});
+
+describe("refreshRfcPrStatusCache optimizations", () => {
+  const baseTime = Date.parse("2026-11-20T00:00:00.000Z");
+  const sampleCache = {
+    updatedAt: new Date(baseTime).toISOString(),
+    prs: [
+      {
+        number: 1228,
+        title: "docs(rfcs): move the landed design RFCs into the repository",
+        url: "https://github.com/Prism-Shadow/penguin-harness/pull/1228",
+        status: "merged" as const,
+        baseRefName: "main",
+        headRefOid: "sha-merged",
+        rfcs: [{ id: "PRFC-0001-module", number: "PRFC-0001", title: "PRFC-0001 Module" }],
+      },
+      {
+        number: 1229,
+        title: "docs(rfcs): draft RFC PRFC-0004 - plugin scope",
+        url: "https://github.com/Prism-Shadow/penguin-harness/pull/1229",
+        status: "open" as const,
+        baseRefName: "main",
+        headRefOid: "sha-open",
+        rfcs: [{ id: "PRFC-0004-plugin-scope", number: "PRFC-0004", title: "PRFC-0004 Plugin Scope" }],
+      },
+    ],
+  };
+
+  it("reuses the cache without querying GitHub when younger than 24 hours", () => {
+    const graphql = vi.fn();
+    const result = refreshRfcPrStatusCache({
+      cache: sampleCache,
+      now: baseTime + MAX_AGE_MS - 1000,
+      graphql,
+    });
+    expect(result.fetched).toBe(false);
+    expect(result.cache).toBe(sampleCache);
+    expect(graphql).not.toHaveBeenCalled();
+  });
+
+  it("after 24 hours, queries only open PRs and never re-fetches merged PRs", () => {
+    const graphql = vi.fn((_query: string) => ({
+      repository: {
+        openPrs: { nodes: [] },
+        pr_1229: {
+          number: 1229,
+          title: "docs(rfcs): draft RFC PRFC-0004 - plugin scope",
+          url: "https://github.com/Prism-Shadow/penguin-harness/pull/1229",
+          state: "MERGED",
+          isDraft: false,
+          baseRefName: "main",
+          headRefOid: "sha-open",
+          files: { nodes: [{ path: "rfcs/PRFC-0004-plugin-scope.md" }] },
+        },
+      },
+    }));
+    const result = refreshRfcPrStatusCache({
+      cache: sampleCache,
+      now: baseTime + MAX_AGE_MS + 1000,
+      graphql,
+    });
+    expect(result.fetched).toBe(true);
+    expect(graphql).toHaveBeenCalledTimes(1);
+    const query = String(graphql.mock.calls[0]?.[0] ?? "");
+    expect(query).toContain("states: [OPEN]");
+    expect(query).toContain("pr_1229: pullRequest(number: 1229)");
+    expect(query).not.toContain("1228");
+    expect(result.cache.prs.map((p) => [p.number, p.status])).toEqual([
+      [1228, "merged"],
+      [1229, "merged"],
+    ]);
   });
 });

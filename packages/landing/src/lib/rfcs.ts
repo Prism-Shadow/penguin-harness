@@ -1,15 +1,32 @@
 /**
- * The RFC index: the repository's rfcs/ surface, read at build time, one entry per PRFC document
- * pair. Each document's status comes from the marker under its title — the Source block a landed
- * document carries, or the design PR a draft names. The site renders each document as its own
- * page; the index links there and keeps no second copy of the documents' content.
+ * The RFC index: the repository's rfcs/ surface and its `request-for-comments` GitHub PR statuses,
+ * read at build time, one entry per PRFC document pair. Merged documents render as in-site pages;
+ * open, draft, and closed RFCs link to the GitHub PRs carrying them.
  */
+import { prs as rawPrRecords } from "virtual:penguin-rfc-prs";
 import { slugifyHeading } from "@prismshadow/penguin-ui/site";
 import type { SiteSearchRange } from "@prismshadow/penguin-ui/site";
 import { REPO_URL } from "./links";
 
-/** Where an RFC stands: landed in the repository, carried by an open design PR, or still a draft. */
-export type RfcStatus = "landed" | "open" | "drafting";
+/** GitHub pull-request status of an RFC (`request-for-comments`). */
+export type RfcStatus = "merged" | "open" | "draft" | "closed";
+
+export interface RfcPrDocRef {
+  id: string;
+  number: string;
+  title: string;
+  titleZh?: string;
+}
+
+export interface RfcPrRecord {
+  number: number;
+  title: string;
+  url: string;
+  status: RfcStatus;
+  baseRefName: string;
+  headRefOid: string;
+  rfcs: RfcPrDocRef[];
+}
 
 /** One language version of a document: the in-site page that renders it, and the raw document. */
 export interface RfcDocument {
@@ -34,10 +51,12 @@ export interface RfcEntry {
   title: string;
   titleZh?: string;
   status: RfcStatus;
-  /** The English and Chinese in-site pages; absent while drafting (the row names it without a link). */
+  /** The GitHub PR carrying this RFC, when known from PR status records or provenance markers. */
+  prHref?: string;
+  /** The English and Chinese in-site pages; absent while unmerged in `rfcs/`. */
   en?: RfcDocument;
   zh?: RfcDocument;
-  /** An open design PR carrying a revision newer than this landed version, if its marker names one. */
+  /** An open PR carrying a revision newer than this merged version, if any. */
   openRevision?: ExternalDocument;
 }
 
@@ -107,7 +126,7 @@ export function parseRfcDocument(file: string, raw: string): ParsedDocument | nu
     id: file.replace(/\.zh\.md$|\.md$/, ""),
     zh: file.endsWith(".zh.md"),
     title,
-    status: landed ? "landed" : prHref ? "open" : "drafting",
+    status: landed ? "merged" : prHref ? "open" : "draft",
     prHref,
     openRevisionHref,
   };
@@ -119,12 +138,15 @@ export function repositoryHref(file: string): string {
 }
 
 /**
- * Build the index from the rfcs/ directory's raw documents: pairs merged, sorted by number. Each
- * version's href names the in-site page that renders it — `/rfcs/<id>` for the English document,
- * `/rfcs/<id>.zh` for the Chinese one. A drafting document shows without a link; an open one
- * links to the design PR carrying it instead.
+ * Build the index from the rfcs/ directory's raw documents and the `request-for-comments` GitHub PR
+ * records: pairs merged, sorted by number. Each merged version's href names the in-site page that
+ * renders it (`/rfcs/<id>` or `/rfcs/<id>.zh`); unmerged RFCs from PR records carry the PR's
+ * GitHub status (`open`, `draft`, or `closed`) and link to that PR.
  */
-export function buildRfcIndex(documents: Record<string, string>): RfcEntry[] {
+export function buildRfcIndex(
+  documents: Record<string, string>,
+  prRecords: readonly RfcPrRecord[] = [],
+): RfcEntry[] {
   const pairs = new Map<string, { en?: ParsedDocument; zh?: ParsedDocument }>();
   for (const [path, raw] of Object.entries(documents)) {
     const file = path.slice(path.lastIndexOf("/") + 1);
@@ -134,29 +156,84 @@ export function buildRfcIndex(documents: Record<string, string>): RfcEntry[] {
     pair[parsed.zh ? "zh" : "en"] = parsed;
     pairs.set(parsed.id, pair);
   }
-  const entries: RfcEntry[] = [];
+
+  const mainPrs = prRecords
+    .filter((pr) => !pr.baseRefName || pr.baseRefName === "main")
+    .slice()
+    .sort((a, b) => a.number - b.number);
+
+  const prByRfcId = new Map<
+    string,
+    { pr: RfcPrRecord; ref: RfcPrDocRef; openRevisionHref?: string }
+  >();
+  for (const pr of mainPrs) {
+    for (const ref of pr.rfcs ?? []) {
+      const existing = prByRfcId.get(ref.id);
+      if (!existing) {
+        prByRfcId.set(ref.id, {
+          pr,
+          ref,
+          openRevisionHref: pr.status === "open" ? pr.url : undefined,
+        });
+      } else {
+        if (existing.pr.status === "merged" && pr.status === "open") {
+          existing.openRevisionHref = pr.url;
+        } else {
+          existing.pr = pr;
+          existing.ref = ref;
+          if (pr.status === "open") existing.openRevisionHref = pr.url;
+        }
+      }
+    }
+  }
+
+  const entriesById = new Map<string, RfcEntry>();
   for (const [id, { en, zh }] of pairs) {
-    const status = en?.status ?? zh?.status ?? "drafting";
+    const prInfo = prByRfcId.get(id);
+    const docStatus = en?.status ?? zh?.status ?? "draft";
+    const status: RfcStatus =
+      docStatus === "merged" ? "merged" : (prInfo?.pr.status ?? docStatus);
     const linked = (doc?: ParsedDocument): RfcDocument | undefined => {
-      if (!doc || status === "drafting") return undefined;
+      if (!doc || status === "draft" || status === "closed") return undefined;
       if (status === "open") {
-        return doc.prHref ? { href: doc.prHref, file: doc.file, raw: doc.raw } : undefined;
+        const href = prInfo?.pr.url ?? doc.prHref;
+        return href ? { href, file: doc.file, raw: doc.raw } : undefined;
       }
       return { href: inSiteHref(doc.id, doc.zh), file: doc.file, raw: doc.raw };
     };
-    const openRevisionHref = en?.openRevisionHref ?? zh?.openRevisionHref;
-    entries.push({
+    const openRevisionHref =
+      (status === "merged" ? prInfo?.openRevisionHref : undefined) ??
+      en?.openRevisionHref ??
+      zh?.openRevisionHref;
+    const prHref = prInfo?.pr.url ?? en?.prHref ?? zh?.prHref;
+    entriesById.set(id, {
       id,
       number: id.match(/^PRFC-\d+/)?.[0] ?? id,
       title: en?.title ?? zh!.title,
       titleZh: zh?.title,
       status,
+      ...(prHref ? { prHref } : {}),
       en: linked(en),
       zh: linked(zh),
       openRevision: openRevisionHref ? { href: openRevisionHref } : undefined,
     });
   }
-  return entries.sort((a, b) => a.number.localeCompare(b.number) || a.id.localeCompare(b.id));
+
+  for (const [id, { pr, ref }] of prByRfcId) {
+    if (entriesById.has(id)) continue;
+    entriesById.set(id, {
+      id,
+      number: ref.number || (id.match(/^PRFC-\d+/)?.[0] ?? id),
+      title: ref.title,
+      ...(ref.titleZh ? { titleZh: ref.titleZh } : {}),
+      status: pr.status,
+      prHref: pr.url,
+    });
+  }
+
+  return [...entriesById.values()].sort(
+    (a, b) => a.number.localeCompare(b.number) || a.id.localeCompare(b.id),
+  );
 }
 
 function inSiteHref(id: string, zh: boolean): string {
@@ -168,9 +245,11 @@ export function shortRfcNumber(number: string): string {
   return number.replace(/^PRFC-/, "");
 }
 
-/** An RFC's title without its leading `PRFC-NNNN` prefix (for sidebar and table rows). */
+/** An RFC's title without its leading `PRFC-NNNN` prefix or `: subtitle` (for sidebar and table rows). */
 export function shortRfcTitle(title: string): string {
-  return title.replace(/^PRFC-\d+\s*[:：—–-]?\s*/, "").trim() || title;
+  const withoutNumber = title.replace(/^PRFC-\d+\s*[:：—–-]?\s*/, "").trim();
+  const withoutSubtitle = withoutNumber.replace(/\s*[:：]\s*.+$/, "").trim();
+  return withoutSubtitle || withoutNumber || title;
 }
 
 /** The full H1 title of an RFC entry in the active locale. */
@@ -206,8 +285,11 @@ const documents = import.meta.glob("../../../../rfcs/*.md", {
   eager: true,
 }) as Record<string, string>;
 
-/** The index the RFC pages render: every document pair, sorted by number. */
-export const rfcEntries = buildRfcIndex(documents);
+/** The `request-for-comments` PR records, read at build time via `virtual:penguin-rfc-prs`. */
+export const rfcPrRecords = (rawPrRecords as RfcPrRecord[] | undefined) ?? [];
+
+/** The index the RFC pages render: every document pair and RFC PR, sorted by number. */
+export const rfcEntries = buildRfcIndex(documents, rfcPrRecords);
 
 /** Find an RFC entry by its route id (with or without the `.zh` suffix). */
 export function rfcEntryOf(id: string): RfcEntry | undefined {
@@ -243,7 +325,7 @@ export function rfcReadmeParts(locale: string): { intro: string; tail: string } 
   };
 }
 
-/** Previous / next pagination across the RFC index and every landed RFC in sidebar order. */
+/** Previous / next pagination across the RFC index and every merged RFC in sidebar order. */
 export function rfcPagerFor(
   activeId: string,
   locale: string,
@@ -253,7 +335,7 @@ export function rfcPagerFor(
   const pages: RfcPagerItem[] = [
     { id: "index", href: "/rfcs", title: indexLabel },
     ...rfcEntries
-      .filter((entry) => entry.status === "landed" && rfcDocForLocale(entry, locale))
+      .filter((entry) => entry.status === "merged" && rfcDocForLocale(entry, locale))
       .map((entry) => ({
         id: entry.id,
         href: `/rfcs/${entry.id}`,
@@ -407,7 +489,7 @@ export function buildRfcSearchRecords(
   const pages = [
     { href: "/rfcs", title: indexPage.title, body: indexPage.body },
     ...rfcEntries
-      .filter((entry) => entry.status === "landed" && rfcDocForLocale(entry, locale))
+      .filter((entry) => entry.status === "merged" && rfcDocForLocale(entry, locale))
       .map((entry) => ({
         href: `/rfcs/${entry.id}`,
         title: rfcEntryTitle(entry, locale),

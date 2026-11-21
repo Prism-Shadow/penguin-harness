@@ -28,11 +28,13 @@ import type { RfcEntry, RfcStatus } from "../lib/rfcs";
 import { S } from "../lib/strings";
 
 const statusLabel = (status: RfcStatus): string =>
-  status === "landed"
-    ? S.rfcs.statusLanded
+  status === "merged"
+    ? S.rfcs.statusMerged
     : status === "open"
       ? S.rfcs.statusOpen
-      : S.rfcs.statusDrafting;
+      : status === "draft"
+        ? S.rfcs.statusDraft
+        : S.rfcs.statusClosed;
 
 /** The index page's body as Markdown: README intro, the RFC table, the file table, and the README sections. */
 export function rfcIndexMarkdown(locale: string): string {
@@ -41,11 +43,13 @@ export function rfcIndexMarkdown(locale: string): string {
     const doc = rfcDocForLocale(entry, locale);
     const shortTitle = rfcEntryShortTitle(entry, locale);
     const rfcCell =
-      entry.status === "landed" && doc
+      entry.status === "merged" && doc
         ? `[${entry.number}](/rfcs/${entry.id})`
-        : entry.status === "open" && doc
-          ? `[${entry.number}](${doc.href})`
-          : entry.number;
+        : entry.prHref
+          ? `[${entry.number}](${entry.prHref})`
+          : doc
+            ? `[${entry.number}](${doc.href})`
+            : entry.number;
     const revision = entry.openRevision
       ? locale === "zh"
         ? `（[${S.rfcs.openRevision}](${entry.openRevision.href})）`

@@ -71,7 +71,7 @@ export function RfcSidebar({
             </Link>
           </li>
           {rfcEntries
-            .filter((entry) => entry.status === "landed" && rfcDocForLocale(entry, locale))
+            .filter((entry) => entry.status === "merged" && rfcDocForLocale(entry, locale))
             .map((entry) => {
               const active = !isIndex && activeId === entry.id;
               return (
@@ -146,12 +146,15 @@ export function RfcMdLink({ href = "", children }: { href?: string; children?: R
     const targetId = rfcMatch[1]!;
     const hash = rfcMatch[2] ?? "";
     const entry = rfcEntryOf(targetId);
-    if (entry?.status === "open" && entry.en?.href) {
-      return (
-        <a href={entry.en.href} target="_blank" rel="noreferrer">
-          {children}
-        </a>
-      );
+    if (entry && entry.status !== "merged") {
+      const externalHref = entry.prHref ?? entry.en?.href;
+      if (externalHref) {
+        return (
+          <a href={externalHref} target="_blank" rel="noreferrer">
+            {children}
+          </a>
+        );
+      }
     }
     return <Link to={`/rfcs/${targetId}${hash}`}>{children}</Link>;
   }

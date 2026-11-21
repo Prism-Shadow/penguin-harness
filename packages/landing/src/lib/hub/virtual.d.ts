@@ -10,3 +10,8 @@ declare module "virtual:penguin-hub" {
   export const benchmarkDetails: unknown;
   export const leaderboardDetails: unknown;
 }
+
+declare module "virtual:penguin-rfc-prs" {
+  export const updatedAt: string;
+  export const prs: unknown;
+}
