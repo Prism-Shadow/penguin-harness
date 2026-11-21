@@ -21,9 +21,6 @@ export const en: Strings = {
       "The penguin tools CLI uses the models chosen here. Image understanding is the Project's vision model, which also reads images for models without vision. In chat, dictation uses Speech recognition, read-aloud uses Speech synthesis, and polishing uses Text generation.",
     imageUnderstanding: "Image understanding",
     unbound: "Not set",
-    noModels: "No compatible models",
-    noTools: "The multimodal tools plugin is off in this Project. Turn it on on the Plugins page.",
-    inUseFor: (operations: readonly string[]) => `In use: ${operations.join(", ")}`,
     dictation: "Dictation",
     polish: "Polish dictation",
     polishWith: (model: string, provider: string) => `Polished by ${model} (${provider})`,
@@ -70,14 +67,12 @@ export const en: Strings = {
     empty: "Connect a provider that offers this kind of model",
     emptyAction: "Go to Models",
     done: "Done",
-    setMultimodal: "Set as default multimodal model",
     setMultimodalHint: (operations: readonly string[]) =>
       `Make it this Project's default for: ${operations.join(", ")}`,
-    confirmMultimodalTitle: "Set as default multimodal model",
     confirmMultimodal: (name: string, operations: readonly string[]) =>
       `Make "${name}" the default model for ${operations.join(", ")}?`,
     multimodalSet: (operations: readonly string[]) => `Default for: ${operations.join(", ")}`,
-    removeMultimodal: "Remove as default multimodal model",
+    removeDefault: "Remove as default model",
     removeMultimodalHint: (operations: readonly string[]) =>
       `Stop using it as this Project's default for: ${operations.join(", ")}`,
     multimodalRemoved: (operations: readonly string[]) =>
@@ -2914,7 +2909,7 @@ export const en: Strings = {
     confirmDefault: (name: string): string =>
       `Make "${name}" the default model? New sessions will use it by default.`,
     default: "Default",
-    multimodalBadge: "Default multimodal",
+    defaultFor: (jobs: readonly string[]) => `Default for: ${jobs.join(", ")}`,
     setDefault: "Set as default model",
     remove: "Delete model",
     readOnlyHint: "Members have read-only access; only owners can change models and credentials",

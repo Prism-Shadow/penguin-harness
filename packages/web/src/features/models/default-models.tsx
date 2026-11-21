@@ -14,6 +14,10 @@
  * Each picker lists only the models that can serve its row, and commits its pick at once; a row
  * nothing can serve says so and points at the Models page, where a provider is connected. A
  * member sees the same rows, read-only.
+ *
+ * The rows come from one builder, `useDefaultModelRows`: the dialog shows all three groups, and
+ * Project settings › Multimodal models shows the multimodal and tool groups, so the two lists
+ * cannot differ in order, names, candidates or empty states.
  */
 import { useCallback, useEffect, useState } from "react";
 import type { ModelInfo, ModelRefDto, ModelsResponse } from "@prismshadow/penguin-server/api";
@@ -66,8 +70,9 @@ export interface MultimodalTarget {
 
 /**
  * The multimodal defaults a model can serve, in the dialog's order: image understanding when it
- * can read images for another model, and each multimodal binding that accepts it. What
- * 「设为默认多模态模型」 sets, and what its confirmation names.
+ * can read images for another model, and each multimodal binding that accepts it. What a tool
+ * model's "Set as default model" sets, what its confirmation names, and what its Default tag
+ * lists.
  */
 export function multimodalTargets(
   model: ModelRefDto & Pick<ModelInfo, "vision" | "chatEligible">,
@@ -101,35 +106,46 @@ export function multimodalTargets(
 
 const refKey = (model: ModelRefDto) => JSON.stringify([model.provider, model.modelId]);
 
-export function ProjectDefaultModelsDialog({
+/** The rows of the Project's default models, by group. */
+export interface DefaultModelGroups {
+  chat: DefaultModelSection;
+  multimodal: DefaultModelSection;
+  /** Web search, page reading and other plugins' bindings: shown quieter. */
+  tools: DefaultModelSection;
+}
+
+/**
+ * The Project's default models as rows, read from the server while `active`: the chat default,
+ * the multimodal defaults and the tool defaults, each a section of `DefaultModelSections`. Null
+ * sections until the table is read; the tool rows join once the bindings are.
+ */
+export function useDefaultModelRows({
   projectId,
   userId,
   owner,
-  open,
-  intro,
-  onClose,
+  active,
   onOpenModels,
 }: {
   projectId: string;
+  /** Whose new-chat draft pin a chat default releases; null leaves drafts alone. */
   userId: string | null;
   owner: boolean;
-  open: boolean;
-  /** Replaces the dialog's own sentence (the onboarding says why it opened). */
-  intro?: string;
-  onClose: () => void;
+  active: boolean;
   /** Where a row nothing can serve sends the reader: the Models page. */
   onOpenModels: () => void;
 }) {
   const { locale } = useLocale();
-  const tools = useToolBindings(open ? projectId : null, null);
+  const tools = useToolBindings(active ? projectId : null, null);
   const [table, setTable] = useState<ModelsResponse | null>(null);
+  const [tableError, setTableError] = useState("");
   const [writing, setWriting] = useState(false);
   const load = useCallback(() => {
-    api.getModels(projectId, null).then(setTable, (e: unknown) => toastError(apiErrorText(e)));
+    setTableError("");
+    api.getModels(projectId, null).then(setTable, (e: unknown) => setTableError(apiErrorText(e)));
   }, [projectId]);
   useEffect(() => {
-    if (open) load();
-  }, [open, load]);
+    if (active) load();
+  }, [active, load]);
 
   const busy = writing || tools.busy || !owner;
   const adopt = (next: ModelsResponse) => {
@@ -256,9 +272,9 @@ export function ProjectDefaultModelsDialog({
     const binding = bindings.find((b) => b.key === key && isMultimodalBinding(b));
     return binding ? [bindingRow(binding)] : [];
   });
-  const sections: DefaultModelSection[] = table
-    ? [
-        {
+  const sections: DefaultModelGroups | null = table
+    ? {
+        chat: {
           key: "chat",
           title: S.defaultModels.chat,
           rows: [
@@ -272,21 +288,66 @@ export function ProjectDefaultModelsDialog({
             ),
           ],
         },
-        { key: "multimodal", title: S.defaultModels.multimodal, rows: multimodal },
-        {
+        multimodal: { key: "multimodal", title: S.defaultModels.multimodal, rows: multimodal },
+        tools: {
           key: "tools",
           title: S.defaultModels.tools,
           quiet: true,
           rows: bindings.filter((b) => !isMultimodalBinding(b)).map(bindingRow),
         },
-      ]
-    : [];
+      }
+    : null;
+  return {
+    table,
+    /** The bindings the enabled plugins declare; null until read. */
+    bindings: tools.bindings,
+    tableError,
+    toolsError: tools.error,
+    /** A write is in flight. */
+    saving: writing || tools.busy,
+    reload: () => {
+      tools.reload();
+      load();
+    },
+    sections,
+  };
+}
+
+export function ProjectDefaultModelsDialog({
+  projectId,
+  userId,
+  owner,
+  open,
+  intro,
+  onClose,
+  onOpenModels,
+}: {
+  projectId: string;
+  userId: string | null;
+  owner: boolean;
+  open: boolean;
+  /** Replaces the dialog's own sentence (the onboarding says why it opened). */
+  intro?: string;
+  onClose: () => void;
+  /** Where a row nothing can serve sends the reader: the Models page. */
+  onOpenModels: () => void;
+}) {
+  const { sections, tableError } = useDefaultModelRows({
+    projectId,
+    userId,
+    owner,
+    active: open,
+    onOpenModels,
+  });
+  useEffect(() => {
+    if (tableError) toastError(tableError);
+  }, [tableError]);
   return (
     <DefaultModelsDialog
       open={open}
       title={S.defaultModels.title}
       intro={intro ?? (owner ? S.defaultModels.intro : S.defaultModels.introMember)}
-      sections={sections}
+      sections={sections ? [sections.chat, sections.multimodal, sections.tools] : []}
       doneLabel={S.defaultModels.done}
       onClose={onClose}
       closeLabel={S.common.close}

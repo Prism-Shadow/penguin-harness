@@ -26,7 +26,7 @@ export const TAG_TONE = {
 } as const satisfies Record<string, ToneName>;
 
 export interface ModelTag {
-  key: "default" | "multimodal" | "vision" | "visionModel" | "fastMode" | "free" | "discount";
+  key: "default" | "vision" | "visionModel" | "fastMode" | "free" | "discount";
   label: string;
   /** Hover text, for a mark whose word needs a sentence behind it (a discount's terms). */
   title?: string;
@@ -41,15 +41,16 @@ const toneOf = (group: MarkGroup) => ({ tone: TAG_TONE[group] });
 
 /** What a list knows about one model, from which its marks follow. */
 export interface ModelTagFacts {
-  /** The Project's default model. */
+  /** The Project's default chat model. */
   isDefault: boolean;
   /** Accepts image input (the effective annotation: unset counts as supported). */
   vision: boolean;
   /**
-   * The multimodal jobs this model is the Project's default for (text generation, speech
-   * recognition …), by name; absent or empty when none. Only the models page shows it.
+   * The other jobs this model is the Project's default for (text generation, speech recognition
+   * …), by name; absent or empty when none. Only the models page knows them. They share the chat
+   * default's one Default mark, whose hover names every job.
    */
-  multimodal?: readonly string[];
+  defaultFor?: readonly string[];
   /** The Project's vision proxy for read_file. Only the models page shows it. */
   isVisionModel?: boolean;
   /** Fast mode (premium serving tier) is on for this entry. */
@@ -61,6 +62,23 @@ export interface ModelTagFacts {
 }
 
 /**
+ * The Default mark, when the model is the Project's default for anything: its hover names what
+ * for, chat first.
+ */
+export function defaultTag(
+  facts: Pick<ModelTagFacts, "isDefault" | "defaultFor">,
+): ModelTag | undefined {
+  const jobs = [...(facts.isDefault ? [S.defaultModels.chat] : []), ...(facts.defaultFor ?? [])];
+  if (jobs.length === 0) return undefined;
+  return {
+    key: "default",
+    label: S.models.default,
+    title: S.models.defaultFor(jobs),
+    ...toneOf("status"),
+  };
+}
+
+/**
  * Every mark `facts` earns, in a fixed order rather than by which happen to be true, so the eye
  * can learn where to look: what this Project chose (default, vision proxy) before what the
  * model is (vision, fast, free) before what it costs today (the discount).
@@ -68,14 +86,7 @@ export interface ModelTagFacts {
 export function modelTags(facts: ModelTagFacts): ModelTag[] {
   const { discount } = facts;
   const tags: Array<ModelTag | false | undefined> = [
-    facts.isDefault && { key: "default", label: S.models.default, ...toneOf("status") },
-    facts.multimodal !== undefined &&
-      facts.multimodal.length > 0 && {
-        key: "multimodal",
-        label: S.models.multimodalBadge,
-        title: S.voice.inUseFor(facts.multimodal),
-        ...toneOf("status"),
-      },
+    defaultTag(facts),
     facts.vision && { key: "vision", label: S.models.visionBadge, ...toneOf("capability") },
     facts.isVisionModel && {
       key: "visionModel",

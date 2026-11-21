@@ -164,7 +164,7 @@ import {
   loadModelGroupOrder,
   saveModelGroupOrder,
 } from "../../lib/model-group-order";
-import { TAG_TONE, modelTags } from "../../lib/model-tags";
+import { TAG_TONE, defaultTag, modelTags } from "../../lib/model-tags";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -956,7 +956,7 @@ export function ModelsPage() {
   const [visionModel, setVisionModel] = useState<ModelRefDto | undefined>(undefined);
   /** The plugins' tool bindings, read again whenever the table changes (it changes the candidates). */
   const toolBindings = useToolBindings(rows ? projectId : null, null, { refreshKey: rows });
-  /** The multimodal defaults a row can serve: what its dialog's 「设为默认多模态模型」 sets. */
+  /** The multimodal defaults a row can serve: what a tool model's "Set as default model" sets. */
   const multimodalOf = (row: RowState | undefined): MultimodalTarget[] =>
     row
       ? multimodalTargets(
@@ -1120,10 +1120,10 @@ export function ModelsPage() {
   }, [load]);
 
   /**
-   * 「设为默认多模态模型」: the model becomes the Project's default for every multimodal operation it
-   * can serve and is not yet the default for — image understanding by moving the vision model
-   * (the whole table, its only write), the plugin's bindings one by one — and one toast names the
-   * ones it took. A refused write is its own toast; the rest still go. Resolves with whether any
+   * A tool model's "Set as default model": the model becomes the Project's default for every
+   * multimodal operation it can serve and is not yet the default for — image understanding by
+   * moving the vision model (the whole table, its only write), the plugin's bindings one by one —
+   * and one toast names the ones it took. A refused write is its own toast; the rest still go. Resolves with whether any
    * landed, which closes the dialog.
    */
   const setMultimodalDefault = async (ref: ModelRefDto): Promise<boolean> => {
@@ -1142,9 +1142,9 @@ export function ModelsPage() {
   };
 
   /**
-   * 「移除默认多模态模型」: the model stops being the Project's default for every multimodal operation
-   * it holds — the vision model cleared (the whole table), each binding unbound — and one toast
-   * names them. A refused write is its own toast; the rest still go.
+   * A tool model's "Remove as default model": the model stops being the Project's default for
+   * every multimodal operation it holds — the vision model cleared (the whole table), each binding
+   * unbound — and one toast names them. A refused write is its own toast; the rest still go.
    */
   const removeMultimodalDefault = async (ref: ModelRefDto): Promise<boolean> => {
     const row = rows?.find((r) => sameModelRef(rowRef(r), ref));
@@ -2703,6 +2703,16 @@ function AddGroupDialog({
 // ---------------------------------------------------------------------------
 
 /**
+ * The multimodal defaults a model's Default tag names after chat. Image understanding alone does
+ * not earn the tag: that model is the vision proxy, which has a tag of its own.
+ */
+function markedDefaults(isDefault: boolean, held: readonly MultimodalTarget[]): string[] {
+  return isDefault || held.some((target) => target.key !== VISION_ROW)
+    ? held.map((target) => target.title)
+    : [];
+}
+
+/**
  * Card: display name + lifetime Token spend + status badges; context / pricing / key status folded
  * into one line of small text; group speed-test results (TTFT / TPS, tone-colored) ride the
  * title row's right edge. All three lines are one click target opening the config dialog (the
@@ -2735,7 +2745,7 @@ export function ModelCard({
   /** Bumped on the hour (see useHourTick): the cue to re-read a time-of-day price. */
   hourTick: number;
   onOpen: () => void;
-  /** The multimodal defaults this model holds (default-models.tsx): its tag and the tag's tooltip. */
+  /** The multimodal defaults this model holds (default-models.tsx), named by its Default tag. */
   multimodal?: readonly MultimodalTarget[];
   /** Opens the config dialog with this row already moved to the custom group; absent for a member, who cannot write the config. */
   onMoveToCustom?: () => void;
@@ -2786,13 +2796,9 @@ export function ModelCard({
    */
   const tags = modelTags({
     isDefault,
+    defaultFor: markedDefaults(isDefault, multimodal ?? []),
     // A tool model's image input is no chat capability: no "vision" tag on it.
     vision: row.vision && row.chatEligible !== false,
-    // Tagged when it holds a multimodal binding, its tooltip naming every default it holds; the
-    // vision proxy alone has a tag of its own.
-    multimodal: multimodal?.some((target) => target.key !== VISION_ROW)
-      ? multimodal.map((target) => target.title)
-      : [],
     isVisionModel,
     fastMode: row.fastMode,
     free: isFreeModel(row),
@@ -2971,9 +2977,10 @@ const CONFIRM_TITLE: Record<DialogAction, () => string> = {
   save: () => S.models.confirmCancelPromotionTitle,
   setDefault: () => S.models.confirmDefaultTitle,
   setVisionModel: () => S.models.confirmVisionModelTitle,
-  setMultimodal: () => S.defaultModels.confirmMultimodalTitle,
+  // A tool model's "Set as default model": the same title as a chat model's, its operations named.
+  setMultimodal: () => S.models.confirmDefaultTitle,
   // Never asked (it only takes the model off its own assignments); kept for the record's shape.
-  removeMultimodal: () => S.defaultModels.removeMultimodal,
+  removeMultimodal: () => S.defaultModels.removeDefault,
   remove: () => S.models.confirmDeleteTitle,
 };
 const CONFIRM_BODY: Record<
@@ -3525,12 +3532,15 @@ function ModelDialog({
    * opened to make (that move is where it opened, so closing asks nothing about it).
    */
   const changed = draft.dirty || movedToCustom;
-  /** The multimodal operations it can serve that another model holds: what 「设为默认多模态模型」 sets. */
+  /** The multimodal operations it can serve that another model holds: what a tool model sets. */
   const pendingMultimodal = multimodal.filter((target) => !target.current);
-  /** The ones it holds: what 「移除默认多模态模型」 takes it off, and its header tag. */
+  /** The ones it holds: what a tool model's "Remove as default model" takes it off. */
   const heldMultimodal = multimodal.filter((target) => target.current);
-  /** It holds a multimodal binding (the vision proxy alone has a tag of its own). */
-  const heldBinding = heldMultimodal.some((target) => target.key !== VISION_ROW);
+  /** The header's Default tag, naming every job it is the default for. */
+  const defaultMark = defaultTag({
+    isDefault,
+    defaultFor: markedDefaults(isDefault, heldMultimodal),
+  });
   // Errors show once there is something to save; an empty model id is marked by its asterisk.
   const shownErrors: FieldErrors =
     changed && form.modelId.trim() === ""
@@ -3841,26 +3851,39 @@ function ModelDialog({
    */
   const slots: Record<ModelDialogSlot, ReactNode> = {
     // Model-level actions: test connectivity (for a new model, fill in the id and key to verify
-    // before saving) / set as, or remove as, the default for every multimodal operation it can
-    // serve / set default / remove. Each multimodal default one by one is the 「默认模型」 dialog's.
+    // before saving) / set as, or remove as, the default model / remove. Each default one by one,
+    // a chat model's multimodal ones included, is the Default models dialog's.
     actions: canEdit && (
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" disabled={testing || !form.modelId.trim()} onClick={() => void runTest()}>
           {testing ? S.models.testing : S.models.testConnection}
         </Button>
-        {/* One button beside the test: 「设为」 while some multimodal operation it can serve has
-            another default (asked first), 「移除」 once it holds them all (at once: it only takes
-            this model off its own assignments). A binding names the saved model, so it waits
-            while the draft holds unsaved edits. */}
+        {/* One button beside the test, worded the same for every model. A chat model becomes the
+            default chat model: that writes the draft with it, so it waits for the draft to be
+            valid, like Save. A tool model cannot hold a chat: it becomes the default for every
+            multimodal operation it can serve while another model holds one (asked first), and
+            once it holds them all the button takes it off them (at once: it only takes this model
+            off its own assignments). A binding names the saved model, so those wait while the
+            draft holds unsaved edits. */}
         {!isNew &&
-          (pendingMultimodal.length > 0 ? (
+          (form.chatEligible !== false ? (
+            !isDefault && (
+              <Button
+                size="sm"
+                disabled={saving || !valid}
+                onClick={() => setConfirming("setDefault")}
+              >
+                {S.models.setDefault}
+              </Button>
+            )
+          ) : pendingMultimodal.length > 0 ? (
             <Button
               size="sm"
               title={S.defaultModels.setMultimodalHint(pendingMultimodal.map((t) => t.title))}
               disabled={saving || changed || multimodalBusy}
               onClick={() => setConfirming("setMultimodal")}
             >
-              {S.defaultModels.setMultimodal}
+              {S.models.setDefault}
             </Button>
           ) : (
             heldMultimodal.length > 0 && (
@@ -3870,17 +3893,10 @@ function ModelDialog({
                 disabled={saving || changed || multimodalBusy}
                 onClick={() => void submit("removeMultimodal")}
               >
-                {S.defaultModels.removeMultimodal}
+                {S.defaultModels.removeDefault}
               </Button>
             )
           ))}
-        {/* Setting the default writes the draft with it, so it waits for the draft to be valid,
-            like Save; removing writes nothing of the draft. A tool model cannot hold a chat. */}
-        {!isNew && !isDefault && form.chatEligible !== false && (
-          <Button size="sm" disabled={saving || !valid} onClick={() => setConfirming("setDefault")}>
-            {S.models.setDefault}
-          </Button>
-        )}
         {!isNew && (
           <>
             <span className="min-w-0 flex-1" />
@@ -4295,18 +4311,11 @@ function ModelDialog({
                   {form.modelId}
                 </span>
               )}
-              {(isDefault ||
-                heldBinding ||
-                (form.vision && form.chatEligible !== false) ||
-                isVisionModel) && (
+              {(defaultMark || (form.vision && form.chatEligible !== false) || isVisionModel) && (
                 <span className="flex flex-wrap items-center gap-1 pt-0.5">
-                  {isDefault && <Pill tone={TAG_TONE.status}>{S.models.default}</Pill>}
-                  {heldBinding && (
-                    <Pill
-                      tone={TAG_TONE.status}
-                      tooltip={S.voice.inUseFor(heldMultimodal.map((t) => t.title))}
-                    >
-                      {S.models.multimodalBadge}
+                  {defaultMark && (
+                    <Pill tone={defaultMark.tone} tooltip={defaultMark.title}>
+                      {defaultMark.label}
                     </Pill>
                   )}
                   {form.vision && form.chatEligible !== false && (

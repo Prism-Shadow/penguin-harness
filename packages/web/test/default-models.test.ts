@@ -1,12 +1,13 @@
 /**
  * The Project's default models (features/models/default-models.tsx, lib/model-onboarding.ts).
  *
- * - A model's 「设为默认多模态模型」 covers the multimodal operations it can serve — image
- *   understanding when it can read images for another model, and each multimodal binding of the
- *   multimodal tools plugin that accepts it — marking the ones it already holds; web search, page
- *   reading and other plugins' bindings are tools, never part of it.
- * - A model that is the default for some multimodal job carries a 「默认多模态」 tag naming them in
- *   its tooltip, beside its other marks; one that holds none carries no such tag.
+ * - The multimodal defaults a model can take (what a tool model's "Set as default model" sets)
+ *   are the operations it can serve — image understanding when it can read images for another
+ *   model, and each multimodal binding of the multimodal tools plugin that accepts it — marking
+ *   the ones it already holds; web search, page reading and other plugins' bindings are tools,
+ *   never part of it.
+ * - A model that is the default for anything, chat or a multimodal job, carries one Default tag
+ *   naming every job in its tooltip, chat first; one that is the default for nothing has none.
  * - A new chat starts on the Project's default, and on nothing when there is none.
  * - A Project with no default opens, for its owner, the default-models dialog when some chat model
  *   has a key behind it (an environment key counts), else the guide to connecting a provider; a
@@ -79,18 +80,28 @@ describe("the multimodal defaults a model can take", () => {
   });
 });
 
-describe("the default multimodal tag", () => {
-  it("marks a model that holds multimodal defaults, naming them, and no other", () => {
+describe("the Default tag", () => {
+  it("is one tag for every job a model is the default for, naming them, and none for no job", () => {
     setActiveStrings(en);
     const tags = modelTags({
       isDefault: true,
       vision: true,
       free: false,
-      multimodal: ["Text generation", "Image understanding"],
+      defaultFor: ["Text generation", "Image understanding"],
     });
-    expect(tags.map((tag) => tag.label)).toEqual(["Default", "Default multimodal", "Vision"]);
-    expect(tags[1]?.title).toBe("In use: Text generation, Image understanding");
-    expect(modelTags({ isDefault: false, vision: true, free: false, multimodal: [] })).toEqual([
+    expect(tags.map((tag) => tag.label)).toEqual(["Default", "Vision"]);
+    expect(tags[0]?.title).toBe("Default for: Chat, Text generation, Image understanding");
+    expect(
+      modelTags({
+        isDefault: false,
+        vision: false,
+        free: false,
+        defaultFor: ["Speech recognition"],
+      }),
+    ).toEqual([
+      expect.objectContaining({ label: "Default", title: "Default for: Speech recognition" }),
+    ]);
+    expect(modelTags({ isDefault: false, vision: true, free: false, defaultFor: [] })).toEqual([
       expect.objectContaining({ key: "vision" }),
     ]);
   });

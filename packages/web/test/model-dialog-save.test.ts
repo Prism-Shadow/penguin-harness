@@ -36,6 +36,10 @@
  * - A model with no key anywhere names the variable its client reads when the server reports it
  *   set, and otherwise asks for a key; the key field is never left without a placeholder.
  * - The price fields say a model left without prices is not costed.
+ * - The settings dialog offers one "Set as default model": a chat model becomes the default chat
+ *   model, however many multimodal jobs it could also do; a tool model becomes the default for
+ *   every job it can do, after a confirmation naming them, and once it holds them all the button
+ *   takes it off them instead.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
@@ -50,6 +54,11 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { toastStore } from "@prismshadow/penguin-ui";
+import {
+  MULTIMODAL_TOOLS_PACKAGE,
+  type ToolBinding,
+  type ToolBindingUpdate,
+} from "../src/api/tool-types";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
@@ -121,10 +130,17 @@ const deepseek = (envKeyMasked?: string) =>
  */
 type Listing = string[] | EndpointModelListResponse;
 
-function modelsServer(models: ModelInfo[] = [ATLAS], listing: Listing = []) {
+function modelsServer(
+  models: ModelInfo[] = [ATLAS],
+  listing: Listing = [],
+  /** The plugins' tool bindings; absent, the route is not there. */
+  bindings?: ToolBinding[],
+) {
   let table: ModelsResponse = { providers: {}, models };
   let refuse = false;
   const puts: ModelsUpdateRequest[] = [];
+  /** Every binding change asked for (PATCH models/tool-bindings), as sent. */
+  const patches: ToolBindingUpdate[] = [];
   /** Every endpoint listing asked for (POST models/list), as sent. */
   const lists: EndpointModelListRequest[] = [];
   /** While set, a listing's answer waits for it. */
@@ -140,6 +156,18 @@ function modelsServer(models: ModelInfo[] = [ATLAS], listing: Listing = []) {
     if (req.path === "/api/projects/p1/agents") return json({ agents: [] });
     if (req.path === "/api/projects/p1/usage/model-totals") return json({ totals: [] });
     if (req.path === "/api/projects/p1/models" && req.method === "GET") return json(table);
+    if (bindings && req.path === "/api/projects/p1/models/tool-bindings") {
+      if (req.method === "PATCH") {
+        const change = req.body as ToolBindingUpdate;
+        patches.push(change);
+        bindings = bindings.map((b) => {
+          if (b.key !== change.key) return b;
+          const { model: _bound, ...rest } = b;
+          return change.model ? { ...rest, model: change.model } : rest;
+        });
+      }
+      return json({ bindings });
+    }
     if (req.path === "/api/projects/p1/models" && req.method === "PUT") {
       const body = req.body as ModelsUpdateRequest;
       puts.push(body);
@@ -179,6 +207,7 @@ function modelsServer(models: ModelInfo[] = [ATLAS], listing: Listing = []) {
   });
   return {
     puts,
+    patches,
     lists,
     refuseNext: () => {
       refuse = true;
@@ -203,8 +232,8 @@ const card = (name: string) =>
     .find((s) => s.textContent === name)
     ?.closest("button") ?? undefined;
 
-async function openModelsPage(models?: ModelInfo[], listing?: Listing) {
-  const server = modelsServer(models, listing);
+async function openModelsPage(models?: ModelInfo[], listing?: Listing, bindings?: ToolBinding[]) {
+  const server = modelsServer(models, listing, bindings);
   await mount(
     h(
       MemoryRouter,
@@ -449,6 +478,63 @@ describe("the model config dialog", () => {
     expect(field(en.models.apiKey).getAttribute("placeholder")).toBe(
       en.models.apiKeyEnvHint("DEEPSEEK_API_KEY"),
     );
+  });
+
+  it("offers one Set as default model, for the chat default or for every job a tool model can do", async () => {
+    const parakeet = model({
+      provider: "custom",
+      modelId: "parakeet-asr",
+      displayName: "Parakeet",
+      chatEligible: false,
+      clientType: "openai-transcription",
+      credential: { baseUrl: "https://atlas.example/v1" },
+    });
+    const binding = (key: string, title: string, candidate: ModelInfo): ToolBinding => ({
+      key,
+      title: { en: title, zh: title },
+      package: MULTIMODAL_TOOLS_PACKAGE,
+      candidates: [{ provider: candidate.provider, modelId: candidate.modelId }],
+    });
+    const server = await openModelsPage(
+      [ATLAS, parakeet],
+      [],
+      [binding("t2t", "Text generation", ATLAS), binding("s2t", "Speech recognition", parakeet)],
+    );
+    /** The open dialog's buttons that set or remove a default, by their words. */
+    const defaultButtons = () =>
+      [...dialogs()[0]!.querySelectorAll("button")]
+        .map((b) => b.textContent?.trim() ?? "")
+        .filter((words) => /default/i.test(words));
+
+    // A tool model: one button, asked first, naming the jobs it takes.
+    await click(card("Parakeet")!);
+    await waitFor(() => hasButton(en.models.setDefault));
+    expect(defaultButtons()).toEqual([en.models.setDefault]);
+    await click(button(en.models.setDefault));
+    await waitFor(() => dialogs().length === 2);
+    expect(dialogs()[1]!.getAttribute("aria-label")).toBe(en.models.confirmDefaultTitle);
+    expect(dialogs()[1]!.textContent).toContain("Speech recognition");
+    await click(button(en.common.confirm));
+    await waitFor(() => dialogs().length === 0);
+    expect(server.patches).toEqual([
+      { key: "s2t", model: { provider: "custom", modelId: "parakeet-asr" } },
+    ]);
+
+    // Holding every job it can do, it offers to step down instead.
+    await click(card("Parakeet")!);
+    await waitFor(() => dialogs().length === 1);
+    expect(defaultButtons()).toEqual([en.defaultModels.removeDefault]);
+    await pressEscape();
+    await waitFor(() => dialogs().length === 0);
+
+    // A chat model that could also take text generation: the same words set the chat default.
+    await editAtlas();
+    expect(defaultButtons()).toEqual([en.models.setDefault]);
+    await click(button(en.models.setDefault));
+    await click(button(en.common.confirm));
+    await waitFor(() => server.puts.length === 1);
+    expect(server.puts[0]!.defaultModel).toEqual({ provider: "custom", modelId: "atlas-1" });
+    expect(server.patches).toHaveLength(1);
   });
 
   it("holds an import while its base URL is blank, and says so under a field that asks for one", async () => {

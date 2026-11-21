@@ -936,6 +936,27 @@ export function DraftView({
   const contextWindow = modelInfo?.contextWindow;
   const vision = modelInfo?.vision !== false;
 
+  // No default model, and none chosen for this chat: Send waits for one (ChatInput's canSend),
+  // and an attention notice says so, with the way to the Default models dialog for the owner (a
+  // member is told whom to ask). The dashboard shows it in its version line's place.
+  const noDefaultNotice = models &&
+    chatModels.length > 0 &&
+    !models.defaultModel &&
+    modelRef === null && (
+      <Notice
+        tone="attention"
+        role="status"
+        className="anim-fade"
+        {...(currentProject?.role === "owner"
+          ? { action: { label: S.defaultModels.composerAction, onClick: requestDefaultModels } }
+          : {})}
+      >
+        {currentProject?.role === "owner"
+          ? S.defaultModels.composerNone
+          : S.defaultModels.composerNoneMember}
+      </Notice>
+    );
+
   // The composer and the ownership pills under it, which the dashboard sets between its brand
   // and its examples.
   const composer = (
@@ -949,33 +970,6 @@ export function DraftView({
           {S.project.noChatModels}
         </Notice>
       )}
-      {/* No default model, and none chosen for this chat: Send waits for one (ChatInput's
-          canSend), and the composer's attention notice says so, with the way to the 「默认模型」
-          dialog for the owner (a member is told whom to ask). It floats above the composer in a
-          box of no height, so the composer never moves when it comes or goes. */}
-      <div className="relative h-0">
-        {models && chatModels.length > 0 && !models.defaultModel && modelRef === null && (
-          <div className="absolute inset-x-0 bottom-0 mb-2">
-            <Notice
-              tone="attention"
-              role="status"
-              className="anim-fade"
-              {...(currentProject?.role === "owner"
-                ? {
-                    action: {
-                      label: S.defaultModels.composerAction,
-                      onClick: requestDefaultModels,
-                    },
-                  }
-                : {})}
-            >
-              {currentProject?.role === "owner"
-                ? S.defaultModels.composerNone
-                : S.defaultModels.composerNoneMember}
-            </Notice>
-          </div>
-        )}
-      </div>
       <ChatInput
         status="idle"
         controlRef={composerRef}
@@ -1057,6 +1051,7 @@ export function DraftView({
         <StartDashboard
           projectId={projectId}
           composer={composer}
+          {...(noDefaultNotice ? { notice: noDefaultNotice } : {})}
           skillsLoaded={skillsLoaded}
           fill={fillComposer}
           exampleText={exampleText}

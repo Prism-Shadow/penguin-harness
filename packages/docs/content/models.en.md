@@ -135,7 +135,7 @@ Every built-in group except **Custom**, **vLLM**, **OpenRouter**, **TokenDance**
 
 ### Edit or delete a model
 
-Select the model's card to open **Model settings**. Change the fields, select **Confirm**, and confirm the save. From the same dialog you can **Test connection**, **Set as default model**, **Set as default multimodal model**, or **Delete model**.
+Select the model's card to open **Model settings**. Change the fields, select **Confirm**, and confirm the save. From the same dialog you can **Test connection**, **Set as default model**, or **Delete model**.
 
 The API key, base URL and protocol stay in view. The context window, **Max output tokens**, prices, **Vision support** and **Fast mode** sit in **Details**, collapsed by default each time the dialog opens. An API key or base URL the model leaves to its group reads "Leave blank to use the group's setting", without the group's value. An API key with nothing to fall back on, meaning no key of its own, no group key that reaches it and no environment variable the server sets, reads "Enter an API key", or "Leave blank to use no API key" for a model its client calls without a key (vLLM, a self-hosted MMSP server).
 
@@ -303,14 +303,13 @@ New conversations use the Project's default model unless you pick another one. A
 
 The first model added to a table without a default becomes the default automatically.
 
-**Default models** also holds the multimodal defaults (text generation, image generation, image understanding, video generation, speech recognition and speech synthesis) and, in a quieter group, the tool defaults (web search and reading a web page). Each picker lists only the models that can do that job. In a model's settings, **Set as default multimodal model** makes it the default for every multimodal job it can do, after you confirm, and names the ones it took.
+**Default models** also holds the multimodal defaults (text generation, image generation, image understanding, video generation, speech recognition and speech synthesis) and, in a quieter group, the tool defaults (web search and reading a web page). Each picker lists only the models that can do that job. Project settings › **Multimodal models** shows the same rows. In the settings of a model that cannot chat, such as a speech or image model, **Set as default model** makes it the default for every multimodal job it can do, after you confirm, and names the ones it took; once it holds them all, the button reads **Remove as default model**. A model that is a default for anything carries a **Default** tag, and hovering it shows what for.
 
 ### Set the proxy vision model
 
 A model without vision cannot see images. When it reads an image with `read_file`, a proxy vision model describes the image for it. There is none by default.
 
-- In **Default models**, choose the model for **Image understanding**. Only models with **Vision support** on are listed.
-- Or select **Set as default multimodal model** in the settings of a model with **Vision support** on.
+In **Default models** or Project settings › **Multimodal models**, choose the model for **Image understanding**. Only models with **Vision support** on are listed.
 
 The proxy vision role is cleared when that model is deleted or its vision is turned off. For a model with `vision = false`, such as `deepseek-v4-pro`, the text-only member of the DeepSeek group, images from the conversation are saved to the Session scratchpad and handed over as a file path in the text. `read_file` passes an image to the proxy vision model for a description instead of returning it. See [Tools & Approval](/tools).
 

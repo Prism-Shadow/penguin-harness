@@ -37,10 +37,6 @@ export const zh = {
     /** Image understanding: the Project's vision model, listed among the operations. */
     imageUnderstanding: "图片理解",
     unbound: "未指定",
-    noModels: "没有兼容的模型",
-    noTools: "本项目未启用多模态工具插件，可在插件页启用。",
-    /** The quiet mark on a model card: which operations it is the Project's model for. */
-    inUseFor: (operations: readonly string[]) => `已选用：${operations.join("、")}`,
     /** The Project settings group that holds dictation's polish. */
     dictation: "语音输入",
     polish: "润色语音输入",
@@ -88,16 +84,17 @@ export const zh = {
     empty: "连接一个提供这类模型的供应商",
     emptyAction: "前往模型库",
     done: "完成",
-    /** A model dialog's action: the default for every multimodal operation it can serve. */
-    setMultimodal: "设为默认多模态模型",
+    /**
+     * A tool model's "Set as default model" (models.setDefault): the default for every multimodal
+     * operation it can serve, asked first.
+     */
     setMultimodalHint: (operations: readonly string[]) =>
       `设为本项目以下各项的默认模型：${operations.join("、")}`,
-    confirmMultimodalTitle: "设为默认多模态模型",
     confirmMultimodal: (name: string, operations: readonly string[]) =>
       `确定把「${name}」设为以下各项的默认模型？${operations.join("、")}。`,
     multimodalSet: (operations: readonly string[]) => `已设为默认：${operations.join("、")}`,
-    /** The same action once the model holds every multimodal default it can serve. */
-    removeMultimodal: "移除默认多模态模型",
+    /** The same button once the tool model holds every multimodal default it can serve. */
+    removeDefault: "移除默认模型",
     removeMultimodalHint: (operations: readonly string[]) =>
       `不再作为本项目以下各项的默认模型：${operations.join("、")}`,
     multimodalRemoved: (operations: readonly string[]) => `已移除默认：${operations.join("、")}`,
@@ -3163,9 +3160,10 @@ export const zh = {
     confirmDefaultTitle: "设为默认模型",
     confirmDefault: (name: string): string =>
       `确定把「${name}」设为默认模型？新建的 Session 将默认使用它。`,
+    /** The tag on a model that is the Project's default for anything (chat, a multimodal job). */
     default: "默认",
-    /** The card's tag on a model that is the Project's default for some multimodal job. */
-    multimodalBadge: "默认多模态",
+    /** The tag's hover: what the model is the default for. */
+    defaultFor: (jobs: readonly string[]) => `默认用于：${jobs.join("、")}`,
     setDefault: "设为默认模型",
     remove: "删除模型",
     readOnlyHint: "member 只读；模型与 credential 修改仅 owner 可执行",
