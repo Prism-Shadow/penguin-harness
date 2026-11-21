@@ -10,6 +10,8 @@ Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugin/
 | --- | --- |
 | Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
 | Office Productivity | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `plan`, `continual-learning`, `trace-lookup`, `agent-company`, `penguin-support` |
+| Utilities | `fridge-keeper`, `action-minutes` |
+| Entertainment | `tabletop-desk`, `party-charades`, `daily-draw` |
 | Software Development | `software-development`, `use-claude-code` |
 | AI App Development | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
 
@@ -59,5 +61,7 @@ pnpm --filter @prismshadow/penguin-core test        # loader, the hook scripts a
 ```
 
 `penguin-support` supplies the default Project's customer support agent with a documentation Skill and the `workbenches/support/` app. It is not installed on General Agent. Workbench code is copied through the same plugin install path as Skills, into the agent's `agent_state/workbenches/`; updates preserve `state.json` and the workbench's version history in `agent_state.git/`, beside the Agent State. Each workbench declares a dated `penguin.version` in its own package.json. A workbench-only package can also be installed from the library.
+
+`use-bento-slides` carries the `bento-slides` Skill and the `workbenches/slides/` app, the AI PPT workbench: Bento's slide editor in a sandboxed frame beside the Agent's chat, where the person and the Agent edit one deck file (`decks/<id>.bento.json` in the workbench's data folder, `app/data/slides/`, which the handler reads and writes with `node:fs` and the Agent with its file tools) and the page replays the person's unsaved edits on the Agent's version, element by element. It is preinstalled, so `default_agent` has a Slides tab and an AI PPT tile in the App Center. It ships the Bento runtime unmodified as `ui/vendor/bento-slides-1.2.13.runtime.txt` (MIT, 736 KB) and Bento's agent guide as the Skill's `references/bento-agents.md`; `THIRD-PARTY-NOTICES.md` records both. `test/slides-sync.test.ts` holds the merge to its cases and `test/handler.test.ts` the handler, against a host whose data and cache folders are temporary folders on disk.
 
 Each plugin that ships skills also has its own `test/skills.test.ts`: it runs every `skills/<name>/` through [`@prismshadow/skills`](../packages/skills) (its `SKILL.md` must pass the parser vendored from vercel-labs/skills), so `pnpm -r test` covers them. The loader's own rules on top of that — a one-line description, skill names unique across the library — are core's test.

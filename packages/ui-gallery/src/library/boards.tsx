@@ -31,6 +31,7 @@ import { NoticesBoard } from "./boards/notices";
 import { PickersBoard } from "./boards/pickers";
 import { ReportBoard } from "./boards/report";
 import { RetryBoard } from "./boards/retry";
+import { ShowcaseBoard } from "./boards/showcase";
 import { SiteBoard } from "./boards/site";
 import { StatusBoard } from "./boards/status";
 import { StreamingBoard } from "./boards/streaming";
@@ -64,6 +65,7 @@ export const BOARDS: Readonly<Record<TopicId, ComponentType>> = {
   retry: RetryBoard,
   report: ReportBoard,
   attachments: AttachmentsBoard,
+  showcase: ShowcaseBoard,
   packs: PacksBoard,
   colour: ColourBoard,
   type: TypeBoard,

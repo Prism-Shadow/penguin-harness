@@ -9,10 +9,16 @@
  * happened, together with the groups as they stand afterwards; GET
  * /api/admin/plugin-config/icon?plugin=<specifier> — a loaded plugin's icon, which an entry names
  * (`pluginIcon`) for the page of a plugin the plugin library does not list.
+ *
+ * Both writes take a person's sign-in (requireHuman, 403 `human_required`): the local API token
+ * every Agent's shell holds may read the settings but never change them or run their actions —
+ * otherwise an Agent could loosen its own sandbox or switch on a plugin's riskier powers. This
+ * narrows the token; it is not a boundary (see requireHuman).
  */
 import { Hono } from "hono";
 import type { IconImage } from "@prismshadow/penguin-core";
 import type { PluginConfigActionResponse, PluginConfigResponse } from "../../api/types.js";
+import { requireHuman } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { PluginConfigError } from "../../plugin/config.js";
 import type { PluginConfigAdmin } from "../../plugin/config-page.js";
@@ -47,6 +53,7 @@ export function adminPluginConfigRoutes(
   });
 
   app.put("/", async (c) => {
+    requireHuman(c);
     const body = await readJson(c);
     const name = requireString(body, "name", { minLen: 1, maxLen: 214 });
     const values = (body as { values?: unknown }).values;
@@ -66,6 +73,7 @@ export function adminPluginConfigRoutes(
   });
 
   app.post("/action", async (c) => {
+    requireHuman(c);
     const body = await readJson(c);
     const name = requireString(body, "name", { minLen: 1, maxLen: 214 });
     const action = requireString(body, "action", { minLen: 1, maxLen: 214 });

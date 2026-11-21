@@ -421,6 +421,8 @@ export const en: GalleryStrings = {
         "an icon each theme draws its own way: line (Primer), duotone line (Frost) or pixel art (Console)",
       "ui-avatar":
         "an agent's default avatar each theme draws its own way: one small egg-shaped penguin drawn in a thin brown line, on a rounded square (Primer), a circle (Frost), a cookie (Doodle) or in pixel art (Console)",
+      "ui-showcase":
+        "a cover-led showcase: a cover card, the selected carousel, a product page's hero",
       "ui-segmented": "a segmented control: one choice among a few options side by side",
       "ui-action": "the primary action that heads a navigation list: New chat",
     },
@@ -595,6 +597,11 @@ export const en: GalleryStrings = {
         title: "Attachments",
         description:
           "Images and files attached in a conversation: staged in the composer, in the message once sent, in a steer's chip, at phone width, with long names and when an image fails to load.",
+      },
+      showcase: {
+        title: "Showcase",
+        description:
+          "The plugin market's shared modules: the generated cover in every hue and motif, a picture loading, loaded and failing, cover cards, the selected carousel and a product page's parts.",
       },
       packs: {
         title: "Theme packs",
@@ -1010,7 +1017,7 @@ export const en: GalleryStrings = {
       pillText: "3 updates",
       statusMarks: "Status marks",
       statusMarksHint:
-        "The glyph carries the tone; the word stays in muted ink, never coloured. Hover says what the status means for this thing. A status that asks nothing of the reader takes no tone: its glyph recedes.",
+        "The glyph carries the tone; the word stays in muted ink, never coloured. Hover says what the status means for this thing. A status that asks nothing of the reader takes no tone: its glyph recedes. Where there is no room for the word (a cover card's facts line) the glyph stands alone; the word leads the hover sentence and is still read out to assistive technology.",
       statusMarkSamples: {
         success: "Installed",
         attention: "Update",
@@ -1310,6 +1317,9 @@ export const en: GalleryStrings = {
       ],
     },
     site: {
+      showcase: "Plugin market",
+      showcaseHint:
+        "The plugin market's cover card, selected carousel and product hero on the sites' palette, as the landing page's /plugins shows them.",
       nav: "Navigation bar",
       navHint:
         "Shared by the three sites: More ends the row and holds AMSP and Theme Packs; it opens on hover or a press, and reads as current while one of them is. The phone menu lists the two set in under More.",
@@ -2365,6 +2375,120 @@ export const en: GalleryStrings = {
       time: "14:05",
       copy: "Copy message",
       placeholder: "Type a message…",
+    },
+    showcase: {
+      generated: "Generated covers",
+      generatedHint:
+        "Every hue with every motif: a shipped plugin's own icon on the tile, the product's logo in the corner.",
+      logoOnly: "Without an icon",
+      logoOnlyHint:
+        "A plugin with no icon of its own: the product's logo takes the tile and is not repeated in the corner; one per motif.",
+      states: "States",
+      statesHint:
+        "A picture on its way lays its own tone down first and no generated drawing; one that loads fades in over it; one that fails gives way to the generated cover.",
+      loading: "Loading: the picture's tone",
+      loaded: "Loaded",
+      fallback: "Failed: the generated cover",
+      layoutLabel: "Layout",
+      cardView: "Card view",
+      listView: "List view",
+      cards: "Cover cards",
+      cardsHint:
+        "Short words, overlong words with the machine it came from, a card with tags, facts and two controls, one with none of them, the Web App market's card with its version chip and a bar of two one-line text actions (the second one disabled, its reason on hover), and the placeholder while a list is read. The icons at the top end switch every grid on this board between cards and the list.",
+      marketCaption:
+        "The Web App market's cards: in the list each is one row — its icon tile, the title over the description, then the install action (Install, or how many Agents have it) and Quick start on the same row — two rows abreast wherever two fit.",
+      shortTitle: "Goal Mode",
+      shortDescription: "Loop the session on an objective until it is done.",
+      longTitle:
+        "Agent Company: setup, the employee protocol and the CEO, HR, finance, research and mirror playbooks",
+      origin: "Lab GPU box",
+      longDescription:
+        "Run a Project's agents as a company: create the organization with the user one question at a time, then the employee protocol every desk and ticket session follows, plus the CEO, HR and finance playbooks.",
+      fullTitle: "PenguinHarness Q&A Assistant",
+      fullDescription: "Product questions, sourced answers and a support workbench.",
+      plainTitle: "Data Analysis",
+      plainDescription: "Read a table, clean it, chart it and write up what it shows.",
+      barTitle: "Bento Slides",
+      barDescription: "From one sentence to a deck ready to present.",
+      barInstall: "Install",
+      barInstalledOn: (n: number) => `Installed on ${n} ${n === 1 ? "Agent" : "Agents"}`,
+      barQuickHint: "Install it on this agent first",
+      tagSelected: "Selected",
+      tagCategory: "Office Productivity",
+      tagBuiltin: "built in",
+      installed: "Installed",
+      installedHint: "An agent in this Project has it",
+      quickStart: "Quick start",
+      manage: "Manage installs",
+      carousel: "Selected carousel",
+      carouselHint:
+        "Three slides. It turns every 7 seconds and holds while the pointer is over it; keyboard focus or a picked thumbnail stops it until Play. Under the system's reduced-motion setting it never turns by itself, and the button reads Play.",
+      carouselLabel: "Selected plugins",
+      carouselControlsCaption:
+        "Controls alone (the public site's featured plugin): the slide on show and its place in the count, no thumbnail rail, so no other cover loads until its slide comes up",
+      eyebrow: "Selected",
+      carouselLabels: {
+        previous: "Previous",
+        next: "Next",
+        pause: "Pause rotation",
+        play: "Play rotation",
+        position: (index: number, count: number) => `${index} of ${count}`,
+      },
+      viewDetails: "View details",
+      slides: [
+        {
+          title: "PenguinHarness Q&A Assistant",
+          tagline: "Product questions, sourced answers and a support workbench.",
+          description:
+            "Answers questions about PenguinHarness and cites the documentation or the source for every claim; its support workbench works through a list of questions one conversation at a time.",
+        },
+        {
+          title: "Bento Slides",
+          tagline: "From one sentence to a deck ready to present.",
+          description:
+            "Create or edit .bento.html decks: from scratch, from source material, or by improving an existing file. The document is JSON, so an agent can keep editing it.",
+        },
+        {
+          title: "Goal Mode",
+          tagline: "Loop the session on an objective until it is done.",
+          description:
+            "Re-injects the objective every round and checks the goal file, until the goal is complete, blocked, or out of token budget.",
+        },
+      ],
+      product: "Product page",
+      productHint:
+        "A plugin's detail as a product page: the hero beside its cover, the screenshots, the sections beside a column of facts, what it installs, and the quick start's prompt.",
+      openApp: "Open",
+      screenshots: "Screenshots",
+      shotAnswer: "Answers carry their sources; each opens the original file.",
+      shotDeck: "A deck introducing an app built from one request.",
+      about: "About",
+      aboutBody:
+        "Answers questions about PenguinHarness: installing it, configuring it, models and plugins. Every claim carries the document or the source it rests on, one click from the original file. The support workbench lines up the questions waiting for an answer, and opens, answers and closes them one at a time.",
+      installs: "What it installs",
+      parts: [
+        {
+          name: "penguin-support",
+          kind: "Skill",
+          description:
+            "Answers product questions from the documentation and the source, with citations.",
+        },
+        {
+          name: "Support workbench",
+          kind: "Workbench",
+          description: "The question list, the conversation and the answer in one window.",
+        },
+      ],
+      prompt: "I've just installed PenguinHarness. How do I give an agent an MCP server?",
+      promptNote: "Selects penguin-support",
+      send: "Start a chat",
+      facts: {
+        version: "Version",
+        category: "Category",
+        author: "Author",
+        license: "License",
+        package: "Package",
+      },
     },
   },
 };

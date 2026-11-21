@@ -69,6 +69,7 @@ import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type {
   WorkbenchApprovalMode,
   WorkbenchDataLevel,
+  WorkbenchHost,
   Workbenches,
 } from "../mechanisms/workbenches.js";
 import type {
@@ -1333,8 +1334,19 @@ export class WorkbenchService implements Workbenches {
     };
     return {
       listAgents: () => service.agents.list(projectId).map((row) => ({ agentId: row.agentId })),
-      async createSession(opts?: { agentId?: string; approvalMode?: WorkbenchApprovalMode }) {
+      async createSession(opts?: Parameters<WorkbenchHost["createSession"]>[0]) {
         const target = opts?.agentId ?? agentId;
+        const model = opts?.model;
+        if (
+          model !== undefined &&
+          (!model ||
+            typeof model.provider !== "string" ||
+            typeof model.modelId !== "string" ||
+            !model.provider.trim() ||
+            !model.modelId.trim())
+        ) {
+          throw new Error("createSession: model needs a provider and modelId");
+        }
         // Unattended, like a scheduled run: allow-all unless the workbench asks for deny-all,
         // whatever the default preset says. The handler's types name the two values, but a
         // cast gets past them, so the value is checked here too: any other mode would park a
@@ -1351,6 +1363,7 @@ export class WorkbenchService implements Workbenches {
         return service.sessions.createSession({
           projectId,
           agentId: target,
+          ...(model ? { provider: model.provider, modelId: model.modelId } : {}),
           approvalMode,
           source: "workbench",
           client: "workbench",
