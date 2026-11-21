@@ -23,6 +23,8 @@ description: 让 Agent 用 penguin computer 查看并操作电脑桌面上的应
 2. 插件从「插件源」所选的 npm registry 下载 agent-desktop 1.3.1（约 16 MB），按插件钉死的摘要校验，只把本机的程序保存在数据根的 `cache/computer-use/` 下。设置 › 插件中的**电脑操作**卡片显示进度。
 3. 在 Agent 的**插件**标签页把插件装到该 Agent 上，Agent 即获得 `computer-use` 技能，该 Project 也随之在本服务端启用了本插件。
 
+电脑操作有自己的版本号，与 PenguinHarness 的版本分开：从 0.1.0 起，只在插件本身改动时变化。
+
 从插件市场（或 zip）安装插件会在服务端所在的机器上运行 npm，而桌面应用目前不自带 npm：没有 npm 的机器上，安装会说明这一点。下载 agent-desktop 本身不需要 npm。它先试「插件源」中选择的 registry，在「插件镜像」中选了 **npm registry 镜像**时再试该镜像；只写在 `.npmrc` 文件里的镜像不读取。网速慢也没关系：一个地址只有在 30 秒内没有任何数据时才放弃，整个下载最长 30 分钟。移除插件会停止正在进行的下载。
 
 下载失败时，卡片会说明，错误原文放在详情里：在 **插件源** 中换一个 registry 或加入 npm registry 镜像，然后点 **重试**。无法访问任何 npm registry 的机器，可以使用以其他方式安装的 agent-desktop 程序：在卡片高级设置的 **agent-desktop 程序路径**中填写它的绝对路径。

@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/computer-use",
-  "version": "0.2.18",
+  "version": "0.1.0",
   "type": "module",
   "description": "Computer use for PenguinHarness: Agents see and operate desktop apps on macOS, Windows and Linux through their accessibility trees, with agent-desktop.",
   "keywords": [
@@ -51,8 +51,8 @@
     "smoke": "node scripts/smoke.mjs"
   },
   "devDependencies": {
-    "@prismshadow/penguin-core": "workspace:*",
-    "@prismshadow/skills": "workspace:*",
+    "@prismshadow/penguin-core": "workspace:>=0.2.0",
+    "@prismshadow/skills": "workspace:>=0.2.0",
     "commander": "^13.0.0",
     "tsup": "^8.3.0",
     "vitest": "^4.1.12"
