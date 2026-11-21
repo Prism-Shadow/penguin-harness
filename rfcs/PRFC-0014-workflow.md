@@ -1,4 +1,4 @@
-# PRFC-0014 Workflow: A Module Tree in the Agent's Directory
+# PRFC-0014 Agent Workbench v1
 
 [中文版](PRFC-0014-workflow.zh.md)
 

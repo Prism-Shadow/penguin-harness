@@ -26,6 +26,7 @@ export const en: Strings = {
     plugins: "Plugins",
     benchmarks: "Benchmarks",
     leaderboards: "Leaderboards",
+    rfcs: "RFCs",
     amsp: "AMSP",
     docs: "Docs",
     gallery: "Theme Packs",
@@ -652,6 +653,69 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     references: "References",
     backToRef: (n: number, k: number) =>
       k > 1 ? `Back to reference ${n}, citation ${k}` : `Back to reference ${n}`,
+  },
+
+  /** The RFC pages (pages/rfcs.tsx, pages/rfc-doc.tsx): the repository's design RFCs as a docs-style section. */
+  rfcs: {
+    /** The tab title and description while the index page is open. */
+    title: "RFC index",
+    sidebarTitle: "RFCs",
+    description:
+      "Every design decision PenguinHarness makes is recorded as an RFC: the index, and the conventions for this surface.",
+    indexLabel: "RFC index",
+    notFound: "That RFC does not exist.",
+    backToIndex: "Back to the RFC index",
+    editOnGithub: "Edit this page on GitHub",
+    copyMarkdown: "Copy Markdown",
+    copied: "Copied",
+    toc: "On this page",
+    prev: "Previous",
+    next: "Next",
+    sectionAll: "The RFCs",
+    colRfc: "RFC",
+    colTitle: "Title",
+    colStatus: "Pull Request",
+    statusMerged: "Merged",
+    statusOpen: "Open",
+    statusDraft: "Draft",
+    statusClosed: "Closed",
+    /** The row's link to the open design PR carrying a revision newer than the merged version. */
+    openRevision: "unmerged revision",
+    expandAll: "Expand all",
+    collapseAll: "Collapse all",
+    expandNode: (name: string) => `Expand ${name}`,
+    collapseNode: (name: string) => `Collapse ${name}`,
+    notes: [
+      "**Pull Request**: Each entry shows the `request-for-comments` PR carrying it (`[icon] #PR-number` with GitHub's `Merged`, `Open`, or `Draft` status icon); merged RFCs in `rfcs/` link to their in-site page.",
+      "**Single index**: The tree above is generated from `rfcs/` and `request-for-comments` PR statuses at build time.",
+    ],
+    colFile: "File",
+    colContent: "Holds",
+    files: [
+      {
+        file: "rfcs/",
+        path: "tree/main/rfcs",
+        content: "One decision per file (`PRFC-NNNN-<slug>.md`) and its `.zh.md` twin",
+      },
+      {
+        file: "TEMPLATE.md",
+        path: "blob/main/rfcs/TEMPLATE.md",
+        content: "Starting template for new RFCs (English only)",
+      },
+    ],
+    bilingualNote:
+      "**Bilingual mirror**: Every file except `TEMPLATE.md` has a `<name>.zh.md` twin aligned section for section, rendered at `/rfcs/`.",
+    search: {
+      open: "Search",
+      label: "Search RFCs",
+      placeholder: "Search RFC titles, sections, and content",
+      start: "Enter a keyword to search all RFCs in the current language",
+      noResults: "No matching RFCs",
+      noResultsHint: "Try a shorter or different search term",
+      results: "Search results",
+      close: "Close search",
+      keyboardHint: "Use the arrow keys to select, then press Enter to open",
+    },
   },
 
   amsp: {
