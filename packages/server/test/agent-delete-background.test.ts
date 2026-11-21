@@ -10,6 +10,8 @@
  *   ends `failed` with the operating system's reason, naming the entry by its place in the folder,
  *   and what is left waits under `.deleting/`.
  *   When the server starts again, it removes what is left, under the same deletion id.
+ * - Given an Agent whose workbenches left runtime files (sockets, locks) under the data root's
+ *   `run/`, deleting it removes its runtime folder and leaves another Agent's alone.
  * - Given a folder that cannot be moved, the delete is refused with 409 `agent_folder_busy` and
  *   nothing is deleted: the Agent still lists, opens, and keeps its Sessions.
  * - Given an index row whose folder lost its system_config.yaml (a delete an earlier server did
@@ -18,7 +20,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { agentDir, systemConfigPath } from "@prismshadow/penguin-core";
+import {
+  agentDir,
+  agentRunDir,
+  systemConfigPath,
+  workbenchStateDir,
+} from "@prismshadow/penguin-core";
 import type {
   AgentDeleteResponse,
   AgentDeletionInfo,
@@ -187,6 +194,23 @@ describe("deleting a large Agent", () => {
     // The removal stayed inside the old folder: the new Agent under the same id is whole.
     expect(await exists(systemConfigPath(root(), PROJECT, "big_one"))).toBe(true);
     expect(await listed()).toContain("big_one");
+  });
+
+  it("removes its workbenches' runtime folder with it, and no other Agent's", async () => {
+    await createAgent("runner_one");
+    await createAgent("runner_two");
+    const state = (agentId: string) => workbenchStateDir(root(), PROJECT, agentId, "slides");
+    for (const agentId of ["runner_one", "runner_two"]) {
+      await fs.mkdir(state(agentId), { recursive: true });
+      await fs.writeFile(path.join(state(agentId), "dev.lock"), agentId);
+    }
+
+    expect((await api.delete(`${agentsPath}/runner_one`)).status).toBe(202);
+
+    expect(await exists(agentRunDir(root(), PROJECT, "runner_one"))).toBe(false);
+    expect(await fs.readFile(path.join(state("runner_two"), "dev.lock"), "utf8")).toBe(
+      "runner_two",
+    );
   });
 
   it.skipIf(!permissionsHold)(

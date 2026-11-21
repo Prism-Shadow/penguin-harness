@@ -6,4 +6,4 @@ Each tool runs on the model bound to it in the Project's model settings (image u
 
 What a tool generates belongs to its Session: it is saved in the Project directory, and removed once the Session is gone. Local files reach a tool only through `--image` and `--audio`, and generated files are saved into `--out`. The Skill's [command examples](skills/multimodal-tools/SKILL.md) cover following, saving and cancelling a long run.
 
-Installing the plugin on an Agent also brings its server module, which serves the commands and the Web App's routes.
+The plugin is preinstalled: its server module, which serves the commands and the Web App's routes, runs for every Project, and the models page's **Test connection** sends each tool model a request it takes.

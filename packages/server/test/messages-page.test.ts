@@ -37,6 +37,7 @@ import {
   requestEnd,
   approvalDecision,
   sessionMeta,
+  sessionUpdate,
   subagentEvent,
   taskBegin,
   taskEnd,
@@ -890,6 +891,45 @@ describe("messages windowed reads", () => {
     expect([...first.messages, ...older.messages, ...afterSwitch.messages]).toEqual(
       await service.readMessages(P, A, S),
     );
+  });
+
+  it("a window that starts behind a switch's pending session_update names the target, not the model its shard opened on", async () => {
+    // Shard 1 on m1, closed by the switch's compaction, the target recorded behind it. The next
+    // Task was stopped while its MCP servers connected, so its prompt landed in this shard too:
+    // the next file never opened.
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload({ model_id: "m1" })),
+      ...turn(0, 1, 1000),
+      ...turn(1, 2, 2000),
+      at(
+        "2026-07-20T10:02:00.000Z",
+        compactionBegin({ reason: "manual", mode: "summarize", context: 102, turns: 2 }),
+      ),
+      at("2026-07-20T10:02:01.000Z", requestBegin()),
+      at("2026-07-20T10:02:02.000Z", assistantText("[summary]s[/summary]")),
+      at("2026-07-20T10:02:03.000Z", requestEnd("completed")),
+      at(
+        "2026-07-20T10:02:04.000Z",
+        compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+      ),
+      at("2026-07-20T10:02:05.000Z", sessionUpdate({ provider: "other", model_id: "m2" })),
+      at("2026-07-20T10:03:00.000Z", taskBegin()),
+      at("2026-07-20T10:03:00.100Z", userText("q3")),
+      at("2026-07-20T10:03:01.000Z", abortEvent()),
+      at("2026-07-20T10:03:01.100Z", taskEnd()),
+    ]);
+
+    const last = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    expect(userTexts(last.messages)).toEqual(["q3"]);
+    expect(last.contextModel).toEqual({ provider: "other", modelId: "m2" });
+
+    // A window from before the switch starts on m1 and holds the record that tells it.
+    const across = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 2 });
+    expect(userTexts(across.messages)).toEqual(["q2", "q3"]);
+    expect(across.contextModel).toEqual({ provider: "custom", modelId: "m1" });
+    expect(
+      across.messages.filter((m) => (m.payload as { type?: string }).type === "session_update"),
+    ).toHaveLength(1);
   });
 
   it("a switch that handed over by Trace path opens no window of its own: like a summary, its handoff closes the window before", async () => {

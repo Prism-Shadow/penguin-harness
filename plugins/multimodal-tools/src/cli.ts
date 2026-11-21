@@ -267,7 +267,9 @@ export function listCommand(tools: () => Tools): CliCommandCode {
             }
             const lines = ops.map((o) => {
               const model =
-                o.model === undefined ? s.noModel : `${o.model.provider} / ${o.model.modelId}`;
+                o.model === undefined
+                  ? s.noModel
+                  : `${o.model.provider} / ${o.model.modelId}${o.via === "default" ? ` ${s.followsDefault}` : ""}`;
               return `${o.operation.padEnd(7)} ${(zh ? o.title.zh : o.title.en).padEnd(28)} ${model}`;
             });
             ctx.stdout.write(`${lines.join("\n")}\n`);

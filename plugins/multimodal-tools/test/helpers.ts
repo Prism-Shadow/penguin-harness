@@ -102,13 +102,15 @@ export function bindings(bound: Record<string, ModelRef>): ModelBindings {
   };
 }
 
-/** A Project's model table: its vision model and the rows' client types. */
+/** A Project's model table: its vision and default chat models and the rows' client types. */
 export function modelTable(
   rows: { provider: string; modelId: string; clientType?: string }[],
   visionModel?: ModelRef,
+  defaultModel?: ModelRef,
 ): ProjectModels {
   return {
     getModels: async () => ({
+      ...(defaultModel !== undefined ? { defaultModel } : {}),
       ...(visionModel !== undefined ? { visionModel } : {}),
       models: rows.map(({ clientType, ...ref }) => ({
         ...ref,

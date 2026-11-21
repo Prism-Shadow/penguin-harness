@@ -1,19 +1,21 @@
 /**
  * An Agent package on the way in. A zip holds the Agent's directory under one top-level folder
- * named by its id: `<id>/agent_state/…` and `<id>/traces/<yyyy-mm-dd>/<session>_<NNN>.jsonl`. It
- * is unpacked into the layout a `.tar.gz` snapshot extracts to, so the import that follows is the
+ * named by its id: `<id>/agent_state/…`, `<id>/traces/<yyyy-mm-dd>/<session>_<NNN>.jsonl`, and
+ * the workbenches' data folders `<id>/app/data/<workbenchId>/…` (./agent-app-data.ts). It is
+ * unpacked into the layout a `.tar.gz` snapshot extracts to, so the import that follows is the
  * same for both.
  *
  * The caps are read off the central directory before an entry is inflated (unzipSync allocates
  * what an entry declares; see skill-import-limits.ts). An entry that is a link, leaves the
  * package, carries a control character or differs from another only in letter case refuses the
- * whole package. Entries the import never takes, and anything beside `agent_state/` and the Trace
- * files, are dropped.
+ * whole package. Entries the import never takes, and anything beside `agent_state/`, the data
+ * folders and the Trace files, are dropped.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { unzipSync } from "fflate";
 import { HttpError, badRequest } from "../http/errors.js";
+import { isWorkbenchId } from "../workbenches/store.js";
 import { assertSafeEntryPath } from "./skill-import-limits.js";
 import { assertDistinctPaths, CONTROL_CHARACTER, specialEntries } from "./zip-entries.js";
 
@@ -24,6 +26,15 @@ export const MAX_ENTRIES = 20_000;
 
 const DATE_DIR = /^\d{4}-\d{2}-\d{2}$/;
 const TRACE_FILE = /^([A-Za-z0-9_-]{1,128})_(\d{3})\.jsonl$/;
+
+/** Where the workbenches' data folders sit below the Agent's directory (core's `workbenchDataDir`). */
+export const APP_DATA = ["app", "data"] as const;
+
+/** A package path below the Agent's folder that lies inside a workbench's data folder. */
+export function isAppDataEntry(rel: string): boolean {
+  const [app, data, id, ...rest] = rel.split("/");
+  return app === APP_DATA[0] && data === APP_DATA[1] && isWorkbenchId(id ?? "") && rest.length > 0;
+}
 
 /** The import route, whose request body takes the package cap instead of the API's. */
 export const isAgentImport = (method: string, apiPath: string): boolean =>
@@ -49,9 +60,10 @@ export function zipTopDirectory(bytes: Uint8Array): string | undefined {
 }
 
 /**
- * Writes a zip package's `agent_state/` and Trace files into `dir` as `dir/agent_state/…` and
- * `dir/traces/…`. `keep` (a path rooted at `agent_state/`) says which State entries an import
- * takes. Every refusal is a 400.
+ * Writes a zip package's `agent_state/`, data folders and Trace files into `dir` as
+ * `dir/agent_state/…`, `dir/app/data/…` and `dir/traces/…`. `keep` (a path below the Agent's
+ * folder, `agent_state/…` or `app/data/…`) says which of those entries an import takes. Every
+ * refusal is a 400.
  */
 export async function unpackAgentZip(
   bytes: Uint8Array,
@@ -84,6 +96,7 @@ export async function unpackAgentZip(
         names.push(rel);
         const [part, date, file] = rel.split("/");
         if (part === "agent_state") return keep(rel);
+        if (isAppDataEntry(rel)) return keep(rel);
         return part === "traces" && DATE_DIR.test(date ?? "") && TRACE_FILE.test(file ?? "");
       },
     });
