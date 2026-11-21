@@ -102,6 +102,8 @@ export interface ModelPickerModalProps {
   purpose?: "chat" | "tool";
   /** Offers a footer action that removes the assignment; absent where an empty value is no choice. */
   onClear?: () => void;
+  /** That action's words, where removing the assignment means something more specific. */
+  clearLabel?: string;
   /** Currently selected (provider, modelId) pair; null = not yet chosen. */
   value: ModelRefDto | null;
   defaultModel?: ModelRefDto;
@@ -132,6 +134,7 @@ function ModelPickerBody({
   models,
   purpose = "chat",
   onClear,
+  clearLabel,
   value,
   defaultModel,
   projectId: explicitProjectId,
@@ -461,7 +464,7 @@ function ModelPickerBody({
             back off too, since the rail grows by every key-less group while it is on. */}
         {onClear && (
           <Button size="xs" variant="ghost" onClick={onClear}>
-            {S.modelPicker.clearAssignment}
+            {clearLabel ?? S.modelPicker.clearAssignment}
           </Button>
         )}
         {showToggle && (

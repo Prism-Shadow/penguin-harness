@@ -27,6 +27,8 @@ export interface ClientText {
   /** 401 despite presenting a token. */
   authFailed(url: string): string;
   httpError(status: number, code: string, message: string): string;
+  /** 400 `no_default_model`: a Session created with no model, in a Project that has no default. */
+  noDefaultModel(): string;
   sessionNotFound(ref: string, projectId: string): string;
   sessionAmbiguous(ref: string, candidates: string[]): string;
   /** The SSE stream dropped and reconnecting gave up. */

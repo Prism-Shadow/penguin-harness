@@ -276,7 +276,8 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
     req.defaultModel = parseRef(body.defaultModel, "defaultModel");
   }
   if (body.visionModel !== undefined) {
-    req.visionModel = parseRef(body.visionModel, "visionModel");
+    // null clears it (a model stops being the Project's image understanding).
+    req.visionModel = body.visionModel === null ? null : parseRef(body.visionModel, "visionModel");
   }
   if (body.toolModels !== undefined) {
     const table = body.toolModels;

@@ -42,15 +42,16 @@ export function sameModelRef(
   return !!a && !!b && a.provider === b.provider && a.modelId === b.modelId;
 }
 
-/** The effective chat default when a project has no saved choice or it points at a tool model. */
+/**
+ * The model a new chat starts on: the Project's default, when it names a chat model of the table.
+ * Nothing otherwise — a Project with no default (a new one starts with none) leaves the new chat
+ * without a model until one is chosen, rather than running it on whichever model is listed first.
+ */
 export function defaultChatModel<T extends ModelRefValue & { chatEligible?: boolean }>(
   models: readonly T[],
   preferred: ModelRefValue | null | undefined,
 ): T | undefined {
-  return (
-    models.find((m) => m.chatEligible !== false && sameModelRef(m, preferred)) ??
-    models.find((m) => m.chatEligible !== false)
-  );
+  return models.find((m) => m.chatEligible !== false && sameModelRef(m, preferred));
 }
 
 /** Minimal row shape needed for grouping/filtering (models-page's RowState and the DTO's ModelInfo are both supersets of this). */

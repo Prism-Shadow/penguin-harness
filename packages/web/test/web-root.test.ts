@@ -88,6 +88,7 @@ import { SettingsLayer } from "../src/features/settings/settings-layer";
 import { DockScope } from "../src/features/dock/dock-scope";
 import { PinnedBalanceBadge } from "../src/features/models/group-balance";
 import { ProjectSettingsLayer } from "../src/features/projects/project-settings-layer";
+import { DefaultModelsLayer } from "../src/features/models/default-models-layer";
 import { ProjectSwitcher } from "../src/features/projects/project-switcher";
 import {
   companyChannels,
@@ -331,6 +332,7 @@ describe("the booted shell slots", () => {
       ShortcutRuntime,
       SettingsLayer,
       ProjectSettingsLayer,
+      DefaultModelsLayer,
       BuiltinBrowserLayer,
       DockScope,
     ]);

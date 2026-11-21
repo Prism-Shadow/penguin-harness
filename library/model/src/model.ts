@@ -244,8 +244,8 @@ export interface ModelUpdateEntry {
 export interface ModelsUpdateRequest {
   /** Must be included in models (matched by paired reference). */
   defaultModel?: ModelRefDto;
-  /** Vision model used as a proxy reader for read_file: must be included in models and not annotated vision=false; omitted keeps the existing value. */
-  visionModel?: ModelRefDto;
+  /** Vision model used as a proxy reader for read_file: must be included in models and not annotated vision=false; omitted keeps the existing value, null clears it. */
+  visionModel?: ModelRefDto | null;
   /**
    * The whole `[tools]` table, by key: present, the table becomes exactly this (each model must be
    * included in models); omitted, the stored bindings are kept, following a renamed model and

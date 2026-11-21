@@ -346,6 +346,10 @@ export * from "./components/machines/machine-list/machine-list";
 export * from "./components/machines/machine-toolbar/machine-toolbar";
 export * from "./components/machines/add-machine/add-machine";
 
+// Models: the Project's default-models dialog, and the guide shown before any model has a key.
+export * from "./components/models/default-models-dialog/default-models-dialog";
+export * from "./components/models/model-setup-guide/model-setup-guide";
+
 // Reading and finding: the find-in-page machinery the app's find bar and the Markdown reader share
 // (the text matcher, the DOM index with its highlight paint and reveal, the control row), the
 // reader with its outline model, and the measured width a layout that follows its own room reads.
