@@ -23,6 +23,8 @@ import type {
   DirListResponse,
   HookItem,
   InstalledPluginsResponse,
+  PluginModuleRequest,
+  PluginModuleStatus,
   MachinesResponse,
   MeResponse,
   MemberInfo,
@@ -193,6 +195,13 @@ export interface DemoFixtures {
     }
   >;
   installedPlugins: InstalledPluginsResponse;
+  /**
+   * How the library's server modules stand on the demo's server, and the administrator's ledger
+   * of requests to run them: none by default — the demo library has no plugin that is both — so
+   * a suite or a frame that wants the section populated puts its rows here.
+   */
+  pluginModules: PluginModuleStatus[];
+  pluginModuleRequests: PluginModuleRequest[];
   pluginIndex: PluginIndexResponse;
   readmes: Record<string, string>;
   benchmarks: BenchmarkSummary[];
@@ -2003,6 +2012,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     pluginFiles,
     installed,
     installedPlugins,
+    pluginModules: [],
+    pluginModuleRequests: [],
     pluginIndex,
     readmes,
     benchmarks,
