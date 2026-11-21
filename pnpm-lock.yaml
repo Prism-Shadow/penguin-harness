@@ -216,13 +216,52 @@ importers:
 
   library/messaging:
     dependencies:
+      '@prismshadow/a2ui':
+        specifier: workspace:*
+        version: link:../../packages/a2ui
+      '@prismshadow/chat-markdown':
+        specifier: workspace:*
+        version: link:../../packages/chat-markdown
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-db':
         specifier: workspace:*
         version: link:../db
+      '@prismshadow/penguin-library-http':
+        specifier: workspace:*
+        version: link:../http
+      '@prismshadow/penguin-library-observability':
+        specifier: workspace:*
+        version: link:../observability
+      '@prismshadow/penguin-library-project':
+        specifier: workspace:*
+        version: link:../project
+      '@prismshadow/penguin-library-session':
+        specifier: workspace:*
+        version: link:../session
+      '@prismshadow/penguin-library-setting':
+        specifier: workspace:*
+        version: link:../setting
+      '@prismshadow/penguin-library-workspace':
+        specifier: workspace:*
+        version: link:../workspace
+      hono:
+        specifier: ^4.13.11
+        version: 4.13.13
+      remark-parse:
+        specifier: ^11.0.0
+        version: 11.0.0(supports-color@10.2.2)
+      undici:
+        specifier: ^7.29.1
+        version: 7.30.1
+      unified:
+        specifier: ^11.0.5
+        version: 11.0.5
     devDependencies:
+      '@types/mdast':
+        specifier: ^4.0.4
+        version: 4.0.4
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -1282,7 +1321,7 @@ importers:
         version: file:library/machine(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-messaging':
         specifier: workspace:*
-        version: file:library/messaging(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: file:library/messaging(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-model':
         specifier: workspace:*
         version: link:../../library/model
@@ -8156,13 +8195,27 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/penguin-library-messaging@file:library/messaging(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@prismshadow/penguin-library-messaging@file:library/messaging(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
+      '@prismshadow/a2ui': file:packages/a2ui
+      '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-observability': file:library/observability(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-project': file:library/project(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-setting': file:library/setting(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-workspace': file:library/workspace(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      hono: 4.13.13
+      remark-parse: 11.0.0(supports-color@10.2.2)
+      undici: 7.30.1
+      unified: 11.0.5
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
+      - micromark
+      - micromark-util-types
       - supports-color
       - utf-8-validate
       - ws
