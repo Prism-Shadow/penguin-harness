@@ -11,7 +11,8 @@
  * - A link to a folder inside a repository, pasted on the link tab, is refused at the field with
  *   an "Ask an agent" action and never sent; the action leads to the agent tab holding the link
  *   as its source, so the prompt to send carries it. No other refused value offers the action.
- * - When the server refuses the install, its reason comes back to show under the field.
+ * - When the install fails on the server, its reason comes back to show under the field, with
+ *   the report 「[报告问题]」 opens.
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -126,12 +127,14 @@ describe("installing from the npm and the link tab", () => {
     expect(fetch.requests).toEqual([]);
   });
 
-  it("hands back the server's reason when it refuses the install", async () => {
+  it("hands back the server's reason and a report when the install fails", async () => {
     stubFetch(() => apiError(400, "plugin_install_failed", "npm: 404 Not Found - @acme/nope"));
-    expect(await installFromTab(PROJECT, "npm", "@acme/nope")).toEqual({
+    const result = await installFromTab(PROJECT, "npm", "@acme/nope");
+    expect(result).toMatchObject({
       kind: "refused",
-      message: expect.stringContaining("404 Not Found"),
+      failure: { text: expect.stringContaining("404 Not Found") },
     });
+    expect(result?.kind === "refused" ? result.failure.report : null).not.toBeNull();
   });
 
   it("says at the field why it refuses any other value, without offering an agent, and enables Install only for a value it takes", () => {

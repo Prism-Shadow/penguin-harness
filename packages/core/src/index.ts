@@ -108,6 +108,7 @@ export {
   libraryPluginPackage,
   libraryPluginReadme,
   librarySkill,
+  loadDefaultInstallPlugins,
   loadLibraryPlugins,
   loadPreinstalledPlugins,
   readLibraryPackage,

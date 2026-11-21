@@ -21,7 +21,9 @@
  *   command it runs on the Agent's server, and an update's confirmation shows it too (the
  *   reinstall writes the servers again). Beside an Agent whose copy of the plugin's MCP
  *   servers waits for vault values or a sign-in, marks say so, and the Project owner gets Set up,
- *   which writes those values into the Agent's vault.
+ *   which writes those values into the Agent's vault. The list's first row, 「新建空白 Agent」,
+ *   opens the Create agent dialog over it, prefilled with the plugin (blank-agent.tsx); the new
+ *   Agent then joins the list.
  * - A server module: Install, or Remove, for an admin only; a member reads the card and its
  *   dialog, with no way in to change the server.
  *
@@ -84,6 +86,7 @@ import {
   type PluginStatus,
 } from "./plugin-status";
 import { PluginUpdateParts } from "./plugin-update-parts";
+import { BlankAgentDialog, BlankAgentRow, type BlankAgentSource } from "./blank-agent";
 import { toastApiError } from "../../lib/toast-api-error";
 
 /** "Manage installs" button icon: the arrow landing in its tray. */
@@ -154,6 +157,8 @@ export interface PluginCardProps {
   showCategory: boolean;
   /** Every Agent a library plugin can go on, for the manage-installs dialog, in the Agents page's order. */
   targets: readonly InstallTarget[];
+  /** The manage-installs dialog's 「新建空白 Agent」 row (blank-agent.tsx); absent, the list has none. */
+  blankAgent?: BlankAgentSource | null;
   installed: InstalledMap;
   /** Targets whose installs are not known yet (not answered, or failed): their rows wait. */
   unknown?: ReadonlySet<string>;
@@ -214,6 +219,8 @@ export function PluginCard(props: PluginCardProps) {
   const plugin = row.library;
   const [detailOpen, setDetailOpen] = useState(false);
   const [installOpen, setInstallOpen] = useState(false);
+  // The Create agent dialog over the manage-installs list, opened by its first row.
+  const [blankOpen, setBlankOpen] = useState(false);
   // Agents pending an update confirmation (null = none): an update is an overwriting reinstall,
   // so it is confirmed against the list of parts it rewrites before it runs.
   const [pendingUpdate, setPendingUpdate] = useState<string[] | null>(null);
@@ -527,7 +534,10 @@ export function PluginCard(props: PluginCardProps) {
         <Modal
           open
           title={S.plugins.installModel.installAgentTitle(title)}
-          onClose={() => setInstallOpen(false)}
+          onClose={() => {
+            setInstallOpen(false);
+            setBlankOpen(false);
+          }}
         >
           {/* How the Agent installs relate to the server, said before any click. */}
           {!builtIn && (
@@ -540,6 +550,13 @@ export function PluginCard(props: PluginCardProps) {
             </p>
           )}
           <div className="space-y-1">
+            {/* A blank Agent is created with the plugin, so the row needs the library's copy. */}
+            {props.blankAgent != null && plugin !== undefined && (
+              <BlankAgentRow
+                disabled={props.projectId === null}
+                onOpen={() => setBlankOpen(true)}
+              />
+            )}
             {targets.length === 0 && (
               <p className="py-1.5 text-xs text-gray-400">{S.common.loading}</p>
             )}
@@ -600,6 +617,17 @@ export function PluginCard(props: PluginCardProps) {
               ))}
           </div>
         </Modal>
+      )}
+      {/* A sibling of the list's dialog rather than inside it, so the list's panel never handles
+          the create dialog's keys; opened later, it sits on top and takes the first Escape. */}
+      {plugin !== undefined && installOpen && blankOpen && props.blankAgent != null && (
+        <BlankAgentDialog
+          plugin={plugin}
+          title={title}
+          projectId={props.projectId}
+          source={props.blankAgent}
+          onClose={() => setBlankOpen(false)}
+        />
       )}
       {plugin !== undefined && pendingUpdate !== null && (
         <ConfirmModal

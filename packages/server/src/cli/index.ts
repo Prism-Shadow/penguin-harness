@@ -15,6 +15,7 @@ export * from "./i18n.js";
 export * from "./approval.js";
 export * from "./agents.js";
 export * from "./auth-session.js";
+export * from "./console-input.js";
 export {
   type Connection,
   connectionLabel,

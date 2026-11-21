@@ -160,6 +160,56 @@ describe("the mocked API", () => {
     ).rejects.toMatchObject({ status: 404, code: "unknown_request" });
   });
 
+  it("lists an installed workbench in its Agent's sidebar until it is hidden there, keeping its pages and App Center tile", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const shortcut = store.f.appCenter.shortcuts[0]!;
+    const { agentId, workbenchId: id, title } = shortcut;
+    const installed = store.f.installed[agentId]!;
+    installed.workbenches = [
+      {
+        id,
+        name: id,
+        version: "1.0",
+        revision: "demo",
+        uiRev: "demo",
+        error: null,
+        hints: [],
+        loadedAt: new Date(store.f.now).toISOString(),
+        enabled: true,
+        showInSidebar: true,
+        appCenter: { show: true },
+        tabs: [
+          {
+            id,
+            key: "main",
+            title,
+            renderer: {
+              iframe: {
+                src: `/api/projects/${project}/agents/${agentId}/workbenches/${id}/ui/index.html`,
+              },
+            },
+          },
+        ],
+      },
+    ];
+    const sidebar = () => api.getSidebarApps(project, agentId, null);
+    expect(await sidebar()).toMatchObject([{ agentId, workbenchId: id, title, tab: "main" }]);
+    await api.setWorkbenchSidebar(project, agentId, id, false, null);
+    expect(await sidebar()).toEqual([]);
+    expect((await api.getWorkbenches(project, agentId, null)).workbenches[0]).toMatchObject({
+      id,
+      showInSidebar: false,
+      tabs: [{ key: "main" }],
+    });
+    expect((await api.getAppCenter(project)).shortcuts).toContainEqual(shortcut);
+    await api.setWorkbenchSidebar(project, agentId, id, true, null);
+    expect(await sidebar()).toMatchObject([{ workbenchId: id }]);
+    await expect(
+      api.setWorkbenchSidebar(project, agentId, "missing", true, null),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
   it("pages a Session list per category with totals, own rows only", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const project = store.f.project.projectId;

@@ -9,7 +9,7 @@
  * dragged item before the tile, the trailing quarter after it, and the middle half into it — onto
  * an app makes a folder of the two, onto a folder adds to it. A folder never goes into anything,
  * and neither does an app inside an open folder, so there the tile splits in two halves instead.
- * The grid's empty space takes a drop at the end, and the open folder's backdrop takes an app
+ * The grid's empty space takes a drop at the end, and the area outside the open folder takes an app
  * dragged out of the folder (folder-panel.tsx).
  *
  * The keyboard and touch have the same moves through the tile's menu (Move to…, forward,
@@ -66,7 +66,7 @@ export interface TileDrag {
   };
   /**
    * Ends the drag with this drop: for a drop a region hears without being a React target of its
-   * own (the open folder's backdrop, which is the dialog's).
+   * own (the home grid when dragging out of a folder).
    */
   dropNow: (drop: Drop) => void;
   /** On a region that takes a drop of its own: the grid's empty space. */

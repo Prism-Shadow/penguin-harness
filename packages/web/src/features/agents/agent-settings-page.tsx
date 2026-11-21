@@ -28,7 +28,7 @@
  * the Overview tab's first field changes it (agent-avatar-field.tsx), saved on its own the moment
  * a crop is confirmed rather than with the tab's Save.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import type {
@@ -73,7 +73,6 @@ import {
 
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { scopeKey, scoped, scopedValue, type Scoped } from "../../lib/project-scope";
 import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
@@ -115,6 +114,7 @@ import { AgentExportDialog } from "./agent-export-dialog";
 import { AgentImportDialog } from "./agent-import-dialog";
 import { ThinkingLevelSelect, effectiveThinkingLevel } from "../model-picker";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 type TabKey =
   | "overview"
@@ -238,7 +238,7 @@ export function AgentSettingsPage() {
     [setSearchParams],
   );
   // Only the initial config load failure renders inline (the page can't show without it); saves/imports report via toast.
-  const [errorRead, setErrorRead] = useState<Scoped<string> | null>(null);
+  const [errorRead, setErrorRead] = useState<Scoped<ReactNode> | null>(null);
   const error = scopedValue(errorRead, pageScope);
 
   const load = useCallback(
@@ -255,7 +255,11 @@ export function AgentSettingsPage() {
       api
         .getAgentConfig(projectId, agentId, machineId)
         .then((res) => setDataRead(scoped(scope, res)))
-        .catch((e: unknown) => setErrorRead(scoped(scope, apiErrorText(e))));
+        .catch((e: unknown) =>
+          setErrorRead(
+            scoped(scope, failureNode(e, { what: "an Agent's settings could not be loaded" })),
+          ),
+        );
     },
     [projectId, agentId, machineId, reachable],
   );

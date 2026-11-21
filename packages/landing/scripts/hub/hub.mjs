@@ -107,7 +107,7 @@ function pluginSummary(plugin) {
 }
 
 function benchmarkSummary(benchmark) {
-  const { references, tasks, data, sourceUrl, ...summary } = benchmark;
+  const { references, tasks, data, dataUrl, sourceUrl, ...summary } = benchmark;
   const limits = tasks.map((task) => task.budget.timeout);
   return {
     ...summary,
