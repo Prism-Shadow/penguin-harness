@@ -226,5 +226,6 @@ export function toPluginItem(plugin: LibraryPlugin): PluginItem {
     ...(plugin.composerMode ? { composerMode: true as const } : {}),
     ...(plugin.defaultInstall ? { defaultInstall: true as const } : {}),
     mcpServers: plugin.mcpServers.map(toPluginMcpServerItem),
+    modules: plugin.modules,
   };
 }

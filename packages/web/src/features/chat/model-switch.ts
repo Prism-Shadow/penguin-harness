@@ -5,14 +5,15 @@
  * The switch is not the `/model` handoff. `/model` opens a NEW conversation on another model
  * and leaves this one as it is; this picker keeps the conversation and moves it onto the
  * picked model. That compacts on the current model first (`POST …/switch-model` answers 202 and
- * streams an ordinary compaction row, then the new context's `session_meta`), except for a
- * Session that never ran, which has no context to compact and switches inside the request (200
- * with the updated Session). Only that `session_meta` says the Session moved: the stream model
- * turns it into a model-change marker, and the page moves its Session row to the model it
- * names (see sessionRowStale). When the summary cannot be had — the current model is
+ * streams an ordinary compaction row, then the switch's `session_update`), except for a Session
+ * that never ran, which has no context to compact and switches inside the request (200 with the
+ * updated Session). Only that `session_update` says the Session moved: the stream model turns it
+ * into a model-change marker, and the page moves its Session row to the model it names (see
+ * sessionRowStale); the new context's `session_meta`, which arrives with the next message, names
+ * the same model and adds nothing. When the summary cannot be had — the current model is
  * unavailable, or the compaction fails — the switch still completes, by Trace handoff: a
- * `[model_switch_from]` block naming this Session follows the meta, and the marker says so.
- * Only a stopped compaction streams no meta, and the Session then stays on its model.
+ * `[model_switch_from]` block naming this Session follows the record, and the marker says so.
+ * Only a stopped compaction streams no record, and the Session then stays on its model.
  */
 import type {
   ModelRefDto,

@@ -3462,6 +3462,11 @@ export const en: Strings = {
     installedToast: (plugin: string, agent: string): string => `Installed ${plugin} to ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string =>
       `Uninstalled ${plugin} from ${agent}`,
+    blankAgent: "New blank agent",
+    blankAgentCreate: "Create and install",
+    blankAgentHint: "Opens Create agent with this plugin picked",
+    blankAgentCreatedToast: (agent: string): string =>
+      `Created ${agent} with this plugin installed`,
     updateOutdated: (n: number): string => `Update available: update ${n} agent install(s)`,
     updateConfirmTitle: (name: string): string => `Update ${name}`,
     updateConfirmWarning: (name: string): string =>

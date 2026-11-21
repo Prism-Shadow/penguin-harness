@@ -25,11 +25,17 @@
  * follows the location's library as it arrives; Create then sends the list on screen together with
  * `defaultPlugins: false`, so the server installs exactly what was shown. With no library to show
  * and nothing picked, it sends neither, and the server adds its defaults.
+ *
+ * A caller may open the form prefilled (`initial`): the plugin market's 「新建空白 Agent」 starts
+ * it with the plugin's title as the name and the plugin ticked beside the defaults. The prefill is the form's baseline,
+ * not something the user typed, so closing it untouched asks nothing; Create still waits for an id
+ * that keeps the naming rule.
  */
 import { useEffect, useState, type ReactNode } from "react";
 
 import type {
   AgentCreateRequest,
+  AgentSummary,
   PluginItem,
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
@@ -89,7 +95,7 @@ export interface LocationChoice {
 }
 
 /** The dialog's form: what Create sends, as typed and picked. */
-interface CreateAgentDraft {
+export interface CreateAgentDraft {
   /** The machine the Agent is created on; null for this server. */
   location: string | null;
   name: string;
@@ -146,11 +152,17 @@ export interface CreateAgentDialogProps {
   libraryError: ReactNode;
   /** The connected machines an Agent can be created on; empty (the field hidden) when none is. */
   machines?: readonly LocationChoice[];
+  /** What the form opens with in place of an empty one, and is compared against (see the header). */
+  initial?: Partial<CreateAgentDraft>;
   onClose: () => void;
   /** The footer's way to "Import agent": the page closes this dialog and opens that one. */
   onImport?: () => void;
-  /** The Agent was created on `machineId` (null: this server): the page closes the dialog and goes to it. */
-  onCreated: (agentId: string, machineId: string | null) => Promise<void>;
+  /**
+   * The Agent was created on `machineId` (null: this server), `agent` as the server answered it.
+   * The Agents page closes the dialog and goes to it; the plugin market closes it and keeps its
+   * manage-installs list open.
+   */
+  onCreated: (agentId: string, machineId: string | null, agent: AgentSummary) => Promise<void>;
 }
 
 export function CreateAgentDialog(props: CreateAgentDialogProps) {
@@ -162,12 +174,15 @@ function CreateAgentForm({
   library: libraryHere,
   libraryError: libraryErrorHere,
   machines = [],
+  initial,
   onClose,
   onImport,
   onCreated,
 }: CreateAgentDialogProps) {
   const [defaults, setDefaults] = useState<string[]>(() => defaultPicks(libraryHere));
-  const form = useFormDraft(EMPTY, { normalize: normalizeCreate(defaults) });
+  const form = useFormDraft(initial === undefined ? EMPTY : { ...EMPTY, ...initial }, {
+    normalize: normalizeCreate(defaults),
+  });
   const {
     location,
     name,
@@ -320,7 +335,7 @@ function CreateAgentForm({
       // unmounts, since the page navigates to the new Agent right after and the leave guard
       // would otherwise ask about a form that was just saved.
       discardUnsaved(form.scope);
-      await onCreated(res.agent.agentId, location);
+      await onCreated(res.agent.agentId, location, res.agent);
     } catch (e) {
       setRefused(failureNode(e, { what: "an Agent could not be created" }));
     } finally {

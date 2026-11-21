@@ -489,7 +489,7 @@ export class StreamRenderer {
   private pendingRetryCode: string | undefined;
   /** The pending failure's attempt ordinal (request_end.attempt — the core's authoritative count, printed on the retry line). */
   private pendingRetryAttempt: number | undefined;
-  /** The Session the stream is of, as its last main-session session_meta named it: what tells a model switch's Trace handoff (it names this Session) from any other origin block. */
+  /** The Session the stream is of — as its last main-session session_meta named it, or as the follower named it (see `followSession`): what tells a model switch's Trace handoff (it names this Session) from any other origin block. */
   private sessionId: string | undefined;
 
   constructor(
@@ -524,6 +524,15 @@ export class StreamRenderer {
   handle(msg: AmspRecord): void {
     this.pending.push(msg);
     this.drain();
+  }
+
+  /**
+   * Names the Session the stream is of, ahead of any session_meta: a switch streams its
+   * `session_update` and then its handoff, and the new context's session_meta comes only with
+   * the next message — a chat that resumed a Session and has sent nothing yet has seen none.
+   */
+  followSession(sessionId: string): void {
+    this.sessionId = sessionId;
   }
 
   /**
@@ -789,8 +798,8 @@ export class StreamRenderer {
               writeSteeringLines(this.out, steering, this.t, this.c);
               this.lastLineKey = null;
             }
-            // And a model switch's Trace handoff (it streams right after the new context's
-            // session_meta): one line naming the file the new model reads the history from.
+            // And a model switch's Trace handoff (it streams right after the switch's
+            // session_update): one line naming the file the new model reads the history from.
             const handover = parseInPlaceModelSwitch(p.text, this.sessionId);
             if (handover !== null) {
               this.finishLine();
