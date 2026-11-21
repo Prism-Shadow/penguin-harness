@@ -148,6 +148,10 @@ import type {
   PasswordChangeRequest,
   PluginFilesResponse,
   PluginInstallRequest,
+  PluginModuleAskRequest,
+  PluginModuleAskResponse,
+  PluginModuleDecideRequest,
+  PluginModuleRequestsResponse,
   PluginLibraryResponse,
   PluginUninstallResponse,
   PrefsResponse,
@@ -373,6 +377,25 @@ export const adminRunPluginConfigAction = (
   server: string | null,
 ) =>
   apiFetch<PluginConfigActionResponse>("/api/admin/plugin-config/action", {
+    method: "POST",
+    body,
+    server,
+  });
+
+/**
+ * Every request to run a library plugin's server module on a server, and the administrator's
+ * decisions, with each module's state there (admin). `server` names the machine through this
+ * server's tunnel; null is this server. Requests are per server: nothing is merged across.
+ */
+export const adminGetPluginModuleRequests = (server: string | null) =>
+  apiFetch<PluginModuleRequestsResponse>("/api/admin/plugin-modules", { server });
+
+/**
+ * Enables one package's server module, or declines it — which stops an enabled one on that
+ * server (admin). Answers the list. 404 `unknown_request`, 409 `project_gone`.
+ */
+export const adminDecidePluginModule = (body: PluginModuleDecideRequest, server: string | null) =>
+  apiFetch<PluginModuleRequestsResponse>("/api/admin/plugin-modules/decide", {
     method: "POST",
     body,
     server,
@@ -1961,17 +1984,37 @@ export const getAgentPlugins = (projectId: string, agentId: string, machineId: s
     { server: machineId },
   ).then((r) => installedOn(r, machineId));
 
-/** With `machineId`, installs from THAT machine's library onto its Agent. */
+/**
+ * With `machineId`, installs from THAT machine's library onto its Agent. A plugin that also ships
+ * server modules brings them along on that server (`moduleActions` says how), unless
+ * `skipModules` — what a machine's Agent is sent, since the hub keeps that machine's plugin list.
+ */
 export const installAgentPlugins = (
   projectId: string,
   agentId: string,
   names: string[],
   machineId: string | null,
+  { skipModules = false }: { skipModules?: boolean } = {},
 ) =>
   apiFetch<AgentPluginsInstallResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
-    { method: "POST", body: { names } satisfies PluginInstallRequest, server: machineId },
+    {
+      method: "POST",
+      body: (skipModules ? { names, skipModules } : { names }) satisfies PluginInstallRequest,
+      server: machineId,
+    },
   ).then((r) => installedOn(r, machineId));
+
+/**
+ * A library plugin's server module, asked for by hand (any member): the server enables it, or
+ * asks the administrator to, by the rule an install applies. 404 `unknown_plugin`, 400
+ * `no_server_module`.
+ */
+export const askPluginModule = (projectId: string, plugin: string) =>
+  apiFetch<PluginModuleAskResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/plugins/modules`,
+    { method: "POST", body: { plugin } satisfies PluginModuleAskRequest },
+  );
 
 /**
  * Uninstalls a whole plugin from the Agent on its server, in one request (Project owner): its
@@ -3139,8 +3182,8 @@ async function* sseEvents(response: Response): AsyncGenerator<{ event: string; d
         return;
       }
       buffer += decoder.decode(value, { stream: true });
-      let cut = buffer.indexOf("\n\n");
-      while (cut !== -1) {
+      // The next event's end is looked for again after each one is taken: the buffer has moved.
+      for (let cut = buffer.indexOf("\n\n"); cut !== -1; cut = buffer.indexOf("\n\n")) {
         const lines = buffer.slice(0, cut).split("\n");
         buffer = buffer.slice(cut + 2);
         const event = lines

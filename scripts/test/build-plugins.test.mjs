@@ -14,8 +14,8 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-build-plugins-"));
 after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 function plugin(name, manifest) {
-  fs.mkdirSync(path.join(dir, name));
-  fs.writeFileSync(path.join(dir, name, "package.json"), JSON.stringify(manifest));
+  fs.mkdirSync(path.join(dir, "plugins", name), { recursive: true });
+  fs.writeFileSync(path.join(dir, "plugins", name, "package.json"), JSON.stringify(manifest));
 }
 
 it("ships the code plugins but the market-only ones", async () => {

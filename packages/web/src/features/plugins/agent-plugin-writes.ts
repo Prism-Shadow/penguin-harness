@@ -12,15 +12,28 @@
  *   asked for, so it counts as done; any other failure is thrown.
  * - A machine older than a request answers it 404 with another code (or none): such a machine
  *   needs an update, which is what the toast says instead of the bare error.
+ * - A plugin that also ships server modules brings them along (lib/agent-plugin-install.ts): the
+ *   install answers what became of each, and on a machine this server lists a module the machine
+ *   ships for it. The Agent is then read again at once and once more a few seconds later, when
+ *   the machine has had time to take the listing.
+ * - The module of an installed plugin can be asked for on its own (`askModuleOnAgent`): this
+ *   server applies the install's rule to it; for a machine's Agent, this server lists a module
+ *   the machine ships, the same way an install does.
  */
 import type {
-  AgentPluginsInstallResponse,
   PluginItem,
+  PluginModuleStatus,
   PluginUninstallResponse,
 } from "@prismshadow/penguin-server/api";
-import { toastError } from "@prismshadow/penguin-ui";
+import { toastAttention, toastError, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
+import {
+  installWithModules,
+  type AgentPluginInstall,
+  type ModuleOutcome,
+} from "../../lib/agent-plugin-install";
+import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toastApiError } from "../../lib/toast-api-error";
 import { agentInstalls, installsKey, rereadInstalls, withoutPlugin } from "./agent-installs";
@@ -33,19 +46,82 @@ export interface AgentTarget {
   machineId: string | null;
 }
 
+/** How long after this server listed a machine's module the Agent is read from it once more. */
+const MACHINE_REREAD_MS = 3000;
+
+/** Reads a machine's Agent again now and once more after {@link MACHINE_REREAD_MS}. */
+function rereadAfterListing(target: AgentTarget): void {
+  const { projectId, agentId, machineId } = target;
+  rereadInstalls(projectId, machineId, agentId);
+  setTimeout(() => rereadInstalls(projectId, machineId, agentId), MACHINE_REREAD_MS);
+}
+
 /**
  * Installs — or reinstalls, which is an update — library plugins on the Agent, from the library
- * of the server it lives on; the answer is taken into `agentInstalls`. Throws what the request
- * threw.
+ * of the server it lives on, with what that does to their server modules; the Agent's lists are
+ * taken into `agentInstalls`. Throws what the install request threw.
  */
 export async function installOnAgent(
   target: AgentTarget,
   names: string[],
-): Promise<AgentPluginsInstallResponse> {
+): Promise<AgentPluginInstall> {
   const { projectId, agentId, machineId } = target;
-  const res = await api.installAgentPlugins(projectId, agentId, names, machineId);
-  agentInstalls.accept(installsKey(projectId, machineId, agentId), res);
-  return res;
+  const done = await installWithModules(target, names);
+  agentInstalls.accept(installsKey(projectId, machineId, agentId), done.lists);
+  // After the answer is taken: a read started before it would be outdated by it.
+  if (done.listedOnMachine) rereadAfterListing(target);
+  return done;
+}
+
+/**
+ * Asks for the server module of a plugin installed on the Agent: on this server the install's rule
+ * pressed as a button (enabled, or asked of the administrator); on a machine, this server lists a
+ * module the machine ships for it. What became of it is the outcome; throws what the request
+ * threw on this server.
+ */
+export async function askModuleOnAgent(
+  target: AgentTarget,
+  mod: Pick<PluginModuleStatus, "plugin" | "package">,
+): Promise<ModuleOutcome> {
+  const { projectId, machineId } = target;
+  if (machineId !== null) {
+    try {
+      await api.installPlugin(projectId, mod.package, machineId);
+    } catch (e) {
+      return { plugin: mod.plugin, action: "failed", reason: apiErrorText(e) };
+    }
+    rereadAfterListing(target);
+    return { plugin: mod.plugin, action: "enabled" };
+  }
+  const res = await api.askPluginModule(projectId, mod.plugin);
+  const action = res.moduleActions.find((a) => a.plugin === mod.plugin);
+  // Nothing done is what an ask answers when the module already runs: as good as enabled.
+  if (action === undefined) return { plugin: mod.plugin, action: "enabled" };
+  return action.action === "failed"
+    ? { plugin: mod.plugin, action: "failed", reason: action.reason ?? "" }
+    : { plugin: mod.plugin, action: action.action };
+}
+
+/** Toasts what an ask for `title`'s server module came to. */
+export function toastModuleAsked(title: string, outcome: ModuleOutcome): void {
+  const words = S.agentPlugins.module.asked;
+  switch (outcome.action) {
+    case "enabled":
+      toastSuccess(words.enabled(title));
+      return;
+    case "requested":
+      toastSuccess(words.requested(title));
+      return;
+    case "blocked":
+      toastAttention(words.blocked(title));
+      return;
+    case "failed":
+      toastAttention(words.failed(title, outcome.reason));
+      return;
+    case "install-on-machine":
+      toastAttention(words.onMachine(title));
+      return;
+  }
 }
 
 export type UninstallOutcome =

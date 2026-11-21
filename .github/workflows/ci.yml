@@ -159,6 +159,11 @@ jobs:
       # tag, because the release's OIDC exchange cannot create a name npm has never seen.
       - name: A published package depends on nothing private, and names that need a first publish
         run: node scripts/check-publishable.mjs --registry
+      # The external built-in plugins (plugins/README.md): server, CLI and desktop pin one exact
+      # version of each, and the lock's sha512 of it is the one the plugin index registers. An
+      # index this runner cannot read leaves a warning rather than a failure.
+      - name: External built-in plugins are pinned alike and registered
+        run: node scripts/check-external-plugins.mjs --index
       # The release's npm job stamps the tag's version into every package it publishes (and into the
       # server's embedded plugin index) before it builds and tests. Stamp the same way here, with
       # the repo's own version, so a test that only fails on the stamped tree fails on the pull

@@ -15,11 +15,19 @@
  * - Given a machine older than the route (a plain 404), the uninstall throws and the toast says
  *   the machine needs an update; the same 404 from this server, or a "nothing installed" from
  *   the machine, is no outdated machine.
+ * - Given a plugin with a server module on this server's Agent, what the server did about the
+ *   module is the install's outcome, and nothing else is asked.
+ * - Given one on a machine's Agent, the machine is told to leave its tables alone; a module that
+ *   is off there and that the machine ships is listed for that machine through this server, and
+ *   the Agent is read from the machine again; one the machine does not ship is not listed, and
+ *   the outcome says to install it for that machine. A machine that says nothing about modules
+ *   (older than them) leaves nothing to do.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AgentPluginsInstallResponse,
   PluginItem,
+  PluginModuleStatus,
   PluginUninstallResponse,
 } from "@prismshadow/penguin-server/api";
 import { toastStore } from "@prismshadow/penguin-ui";
@@ -101,6 +109,98 @@ describe("installing on an Agent", () => {
     });
     expect(skillsIn(installsKey(PROJECT, "gpu1", AGENT))).toEqual(["chart"]);
     expect(skillsIn(installsKey(PROJECT, null, AGENT))).toBeNull();
+  });
+});
+
+describe("installing a plugin that ships a server module", () => {
+  const hybrid = (over: Partial<PluginModuleStatus> = {}): PluginModuleStatus => ({
+    plugin: "charts",
+    package: "@acme/charts",
+    builtin: true,
+    state: "off",
+    listed: false,
+    ...over,
+  });
+  const installedPath = `/api/projects/${PROJECT}/plugins/installed`;
+  const listings = (fake: { requests: FetchRequest[] }) =>
+    fake.requests
+      .filter((r) => r.method === "POST" && r.path === installedPath)
+      .map((r) => [r.machine, r.body]);
+
+  it("on this server, takes what the server did about the module as the outcome", async () => {
+    const fake = stubFetch((r) =>
+      r.method === "POST"
+        ? json(
+            {
+              ...lists("chart"),
+              modules: [hybrid({ state: "running", listed: true })],
+              moduleActions: [{ plugin: "charts", action: "requested" }],
+            },
+            201,
+          )
+        : apiError(404, "not_found"),
+    );
+    const done = await installOnAgent({ projectId: PROJECT, agentId: AGENT, machineId: null }, [
+      "charts",
+    ]);
+    expect(done.modules).toEqual([{ plugin: "charts", action: "requested" }]);
+    expect(fake.requests.map((r) => [r.method, r.machine, r.body])).toEqual([
+      ["POST", null, { names: ["charts"] }],
+    ]);
+  });
+
+  it("on a machine, lists a module the machine ships through this server, and reads the Agent again", async () => {
+    // The second read waits a few seconds for the machine to take the listing.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const fake = stubFetch((r) =>
+      r.method === "POST" && r.path.endsWith("/plugins")
+        ? json({ ...lists("chart"), modules: [hybrid()] }, 201)
+        : r.method === "POST" && r.path === installedPath
+          ? json({ machineId: "hub", plugins: [], shipped: [], restartPending: false })
+          : isListsRead(r)
+            ? json(lists("chart"))
+            : apiError(404, "not_found"),
+    );
+    const done = await installOnAgent({ projectId: PROJECT, agentId: AGENT, machineId: "gpu1" }, [
+      "charts",
+    ]);
+    expect(fake.requests[0]).toMatchObject({
+      machine: "gpu1",
+      body: { names: ["charts"], skipModules: true },
+    });
+    expect(listings(fake)).toEqual([[null, { specifier: "@acme/charts", machineId: "gpu1" }]]);
+    expect(done.modules).toEqual([{ plugin: "charts", action: "enabled" }]);
+    const machineReads = () => fake.requests.filter((r) => isListsRead(r) && r.machine === "gpu1");
+    await settled(installsKey(PROJECT, "gpu1", AGENT));
+    expect(machineReads()).toHaveLength(1);
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+    await settled(installsKey(PROJECT, "gpu1", AGENT));
+    expect(machineReads()).toHaveLength(2);
+  });
+
+  it("on a machine, does not list a module the machine does not ship, and says where to install it", async () => {
+    const fake = stubFetch((r) =>
+      r.method === "POST" && r.path.endsWith("/plugins")
+        ? json({ ...lists("chart"), modules: [hybrid({ builtin: false })] }, 201)
+        : apiError(404, "not_found"),
+    );
+    const done = await installOnAgent({ projectId: PROJECT, agentId: AGENT, machineId: "gpu1" }, [
+      "charts",
+    ]);
+    expect(listings(fake)).toEqual([]);
+    expect(done.modules).toEqual([{ plugin: "charts", action: "install-on-machine" }]);
+  });
+
+  it("on a machine older than server modules, has nothing more to do", async () => {
+    const fake = stubFetch((r) =>
+      r.method === "POST" ? json(lists("chart"), 201) : apiError(404, "not_found"),
+    );
+    const done = await installOnAgent({ projectId: PROJECT, agentId: AGENT, machineId: "gpu1" }, [
+      "charts",
+    ]);
+    expect(fake.requests).toHaveLength(1);
+    expect(done.modules).toEqual([]);
   });
 });
 

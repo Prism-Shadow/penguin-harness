@@ -19,7 +19,7 @@ import type {
   BuiltinBrowserLoadWarning,
   BuiltinBrowserMetrics,
   BuiltinBrowserTabMetrics,
-} from "../api/types.js";
+} from "@prismshadow/penguin-server/api";
 
 const GB_KB = 1024 * 1024;
 /** The pages' memory over which `memory` is warned about, and under which the warning clears. */

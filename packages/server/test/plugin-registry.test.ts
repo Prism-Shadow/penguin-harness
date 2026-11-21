@@ -51,6 +51,7 @@ import {
   isSemver,
   mergeIndexes,
   newestPerName,
+  NIGHTLY_INDEX_URL,
   parsePluginIndex,
   selectIndexChannel,
 } from "../src/plugin/registry.js";
@@ -899,11 +900,16 @@ describe("the published index source", () => {
       // The test app stores an emptied list (no test may reach the network to list plugins);
       // the declared default beside it carries the published index, and a save replaces it.
       const before = (await (await client.get("/api/admin/plugin-config")).json()) as {
-        plugins: { name: string; values: Record<string, unknown> }[];
+        plugins: {
+          name: string;
+          values: Record<string, unknown>;
+          configuration: { properties: { sources?: { default: string[] } } };
+        }[];
       };
       const group = before.plugins.find((p) => p.name === "plugin-index");
       expect(group).toBeDefined();
       expect(group!.values.sources).toEqual([]);
+      expect(group!.configuration.properties.sources?.default).toEqual([NIGHTLY_INDEX_URL]);
       // A save is stored and answered; the list reaches the document.
       const saved = await client.put("/api/admin/plugin-config", {
         name: "plugin-index",
