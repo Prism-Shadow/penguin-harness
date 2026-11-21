@@ -39,6 +39,26 @@
     "./repos": {
       "types": "./dist/repos/index.d.ts",
       "import": "./dist/repos/index.js"
+    },
+    "./schedule-file": {
+      "types": "./dist/schedule-file.d.ts",
+      "import": "./dist/schedule-file.js"
+    },
+    "./schedule-store": {
+      "types": "./dist/schedule-store.d.ts",
+      "import": "./dist/schedule-store.js"
+    },
+    "./schedules": {
+      "types": "./dist/schedules.d.ts",
+      "import": "./dist/schedules.js"
+    },
+    "./schedules-status": {
+      "types": "./dist/schedules-status.d.ts",
+      "import": "./dist/schedules-status.js"
+    },
+    "./mtime-gate": {
+      "types": "./dist/mtime-gate.d.ts",
+      "import": "./dist/mtime-gate.js"
     }
   },
   "scripts": {
@@ -49,7 +69,10 @@
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-library-db": "workspace:*",
-    "@prismshadow/amsp": "workspace:*"
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/amsp": "workspace:*",
+    "hono": "^4.13.11",
+    "smol-toml": "^1.9.1"
   },
   "devDependencies": {
     "tsup": "^8.3.0",

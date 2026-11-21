@@ -568,38 +568,11 @@ export interface RuntimeEntry {
   backgroundTasks: SessionBackgroundTasks;
 }
 
-/** From packages/server (runtime/schedule-file.ts): a registered task's definition, as the
- * schedule file states it. The contract carries the shape a schedule read shows; the
- * scheduler's file parser owns the rest of the file's fields. */
-export interface ScheduleDefinition {
-  name: string;
-  /** The Prompt to send (required). */
-  prompt: string;
-  /** Enabled switch; disabled by default. */
-  enabled: boolean;
-  /** Original text of the first trigger time (for API echo, preserving the written form). */
-  startAt: string;
-  /** First trigger time (epoch ms). */
-  startAtMs: number;
-  /** Original text of the end time. */
-  endAt?: string;
-  /** Original text of the trigger period (e.g. `30m`, for API echo); undefined means a one-shot task. */
-  period?: string;
-  /** Trigger period (ms); undefined means a one-shot task. */
-  periodMs?: number;
-  /** End time (epoch ms); no more triggers once past it. */
-  endAtMs?: number;
-  /** The target Session to bind to; defaults to creating a new Session each time. */
-  sessionId?: string;
-  /** Workspace for new-Session mode (same semantics as manually starting a session; a temporary workspace is auto-created if unspecified). */
-  workspace?: string;
-  /** Model for new-Session mode (upstream id, always paired with provider; omit both for the Project's default reference). */
-  modelId?: string;
-  /** Provider for new-Session mode: the model reference's other half, always paired with modelId. */
-  provider?: string;
-}
+/** The schedule file's parsed definition — the schedule-file module (this package) owns the
+ * shape; the contract re-exports it so the Schedules mechanism reads its own vocabulary. */
+export type { ScheduleDefinition } from "./schedule-file.js";
 
-/** From packages/server (runtime/scheduler.ts): the in-memory view of a registered task. */
+/** The in-memory view of a registered task (the scheduler's listAgent returns these). */
 export interface ScheduleEntry {
   def: ScheduleDefinition;
   state: ScheduleStateRow;

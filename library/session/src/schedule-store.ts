@@ -12,7 +12,7 @@ import path from "node:path";
 import { stringify as stringifyToml } from "smol-toml";
 import { atomicWriteFile, resolveModelRef, scheduleDir } from "@prismshadow/penguin-core";
 import type { ProjectConfig } from "@prismshadow/penguin-core";
-import { cacheable, statMtime } from "../internal/mtime-gate.js";
+import { cacheable, statMtime } from "./mtime-gate.js";
 import {
   parseScheduleFile,
   type ScheduleDefinition,

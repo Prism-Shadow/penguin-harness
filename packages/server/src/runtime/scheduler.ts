@@ -36,16 +36,17 @@ import { agentsDir, buildScheduledMessage, userText } from "@prismshadow/penguin
 import type { ScheduleStateRow } from "@prismshadow/penguin-library-session/repos/schedules";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import type { ErrorSink } from "./error-recorder.js";
-import type { ScheduleDefinition } from "./schedule-file.js";
-import { latestSlotAt, slotInWindow } from "./schedule-file.js";
+import type { ScheduleDefinition } from "@prismshadow/penguin-library-session/schedule-file";
+import { latestSlotAt, slotInWindow } from "@prismshadow/penguin-library-session/schedule-file";
 import {
   ScheduleFileCache,
   archiveScheduleFile,
   readScheduleFile,
   validateScheduleModelRef,
-} from "./schedule-store.js";
-import type { ScheduleConfigSource } from "./schedule-store.js";
-import type { ScheduleStatus } from "../api/types.js";
+} from "@prismshadow/penguin-library-session/schedule-store";
+import type { ScheduleConfigSource } from "@prismshadow/penguin-library-session/schedule-store";
+import { scheduleStatus, isSettledStatus } from "@prismshadow/penguin-library-session/schedules-status";
+import type { ScheduleStatus } from "@prismshadow/penguin-library-session/schedules";
 import { Component, Interface, Opaque, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { userChannelKey } from "../http/routes/events.js";
@@ -108,24 +109,6 @@ interface PendingFire {
   agentId: string;
   name: string;
   sessionId: string;
-}
-
-/** Displayed status precedence: invalid > done/missed (one-shot) > expired > enabled flag. */
-export function scheduleStatus(
-  def: ScheduleDefinition,
-  state: ScheduleStateRow,
-  nowMs: number,
-): ScheduleStatus {
-  if (state.invalidReason !== null) return "invalid";
-  if (def.periodMs === undefined && state.firedOnce) return "done";
-  if (def.periodMs === undefined && state.missed) return "missed";
-  if (def.endAtMs !== undefined && nowMs > def.endAtMs) return "expired";
-  return def.enabled ? "active" : "disabled";
-}
-
-/** Settled = can never fire again without a file edit (done / missed / expired): the statuses the scheduler archives. */
-export function isSettledStatus(status: ScheduleStatus): boolean {
-  return status === "done" || status === "missed" || status === "expired";
 }
 
 /** In-memory view of a registered task (definition + run state + queued flag). */

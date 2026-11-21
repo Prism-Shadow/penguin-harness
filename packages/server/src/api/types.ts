@@ -3381,77 +3381,19 @@ export interface UsageErrorsClearResponse {
 // ---------------------------------------------------------------------------
 
 /**
- * Display-facing schedule status: the file's `enabled` only expresses intent; the rest is derived from runtime state.
- * The scheduler archives an agent's settled tasks (done / missed / expired) into `schedule/expired/`, so the agent
- * listings show those three only while a queued fire is still to be sent or when the move failed.
+ * The schedule vocabulary moved to the session domain package
+ * (@prismshadow/penguin-library-session/schedules, services+http+cli restack S7) — the
+ * routes read and write it; re-exported here so the API contract keeps spelling it.
  */
-export type ScheduleStatus = "active" | "disabled" | "expired" | "done" | "missed" | "invalid";
-
-export interface ScheduleItem {
-  /** Filename (without .toml) is the identifier. */
-  name: string;
-  prompt: string;
-  enabled: boolean;
-  /** ISO 8601. */
-  startAt: string;
-  /** Raw fixed interval (e.g. `30m`); unset means a one-off task. */
-  period?: string;
-  endAt?: string;
-  /** Bound target Session; defaults to creating a new Session each time. */
-  sessionId?: string;
-  workspace?: string;
-  /** Model for new-Session mode (upstream id, always paired with provider); absent means the Project's default reference. */
-  modelId?: string;
-  /** Provider group for `modelId`; present exactly when `modelId` is — a model reference is always a pair. */
-  provider?: string;
-  status: ScheduleStatus;
-  invalidReason?: string;
-  /** Next scheduled fire time (ISO 8601); unset when done/missed/invalid/disabled. */
-  nextFireAt?: string;
-  /** Most recent actual fire time (ISO 8601). */
-  lastFiredAt?: string;
-  /** Queued, waiting for the target Session to become idle. */
-  queued: boolean;
-  creatorUserId?: string;
-}
-
-export interface SchedulesResponse {
-  schedules: ScheduleItem[];
-  /** Files that failed to parse (skipped from scheduling and logged as errors). */
-  invalidFiles: Array<{ name: string; error: string }>;
-}
-
-/**
- * One task in the Project-wide listing (GET /api/projects/:projectId/schedules): the agent's
- * item plus the agent whose schedule directory holds it, since the list spans every agent.
- */
-export interface ProjectScheduleItem extends ScheduleItem {
-  agentId: string;
-}
-
-export interface ProjectSchedulesResponse {
-  /** Every agent's tasks: agents in id order, each agent's tasks in the order its own listing returns them. */
-  schedules: ProjectScheduleItem[];
-  /** Files that failed to parse (skipped from scheduling and logged as errors), with the agent that holds each. */
-  invalidFiles: Array<{ agentId: string; name: string; error: string }>;
-}
-
-export interface ScheduleUpsertRequest {
-  prompt: string;
-  enabled: boolean;
-  startAt: string;
-  period?: string;
-  endAt?: string;
-  sessionId?: string;
-  workspace?: string;
-  /** Model for new-Session mode (upstream id); always sent together with provider, omit both for the Project's default reference. */
-  modelId?: string;
-  /**
-   * Provider group for `modelId`. Both fields are sent as a pair (400 otherwise); the
-   * pair is checked against the Project config at save/reconciliation time.
-   */
-  provider?: string;
-}
+export type {
+  ScheduleStatus,
+  ScheduleItem,
+  SchedulesResponse,
+  ProjectScheduleItem,
+  ProjectSchedulesResponse,
+  ScheduleUpsertRequest,
+} from "@prismshadow/penguin-library-session/schedules";
+import type { ScheduleStatus } from "@prismshadow/penguin-library-session/schedules";
 
 // ---------------------------------------------------------------------------
 // Agent export and import: the zip is the Agent's directory
