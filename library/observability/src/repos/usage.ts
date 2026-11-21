@@ -108,7 +108,7 @@ export type UsageSeriesGranularity = "minute" | "hour" | "day" | "week" | "month
 
 /**
  * Bucket-key SQL per granularity. Keys must agree byte-for-byte with
- * internal/dates.ts's enumerateBuckets / enumerateTsBuckets, which zero-fill
+ * ../dates.ts's enumerateBuckets / enumerateTsBuckets, which zero-fill
  * the same series: minute/hour buckets come from `ts` converted to the
  * server's local clock (the same timezone `date` was recorded in), the rest
  * derive from the `date` column — `date(date, '-6 days', 'weekday 1')` is the

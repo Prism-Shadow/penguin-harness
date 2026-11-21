@@ -12,6 +12,13 @@
       "@prismshadow/penguin-library-db/schema": ["../db/src/schema.ts"],
       "@prismshadow/penguin-library-db/migrations": ["../db/src/migrations/index.ts"],
       "@prismshadow/penguin-library-db/migrations/runner": ["../db/src/migrations/runner.ts"],
+      "@prismshadow/penguin-library-http": ["../http/src/index.ts"],
+      "@prismshadow/penguin-library-http/validate": ["../http/src/validate.ts"],
+      "@prismshadow/penguin-library-model": ["../model/src/index.ts"],
+      "@prismshadow/penguin-library-model/model-catalog/catalog": [
+        "../model/src/model-catalog/catalog.ts"
+      ],
+      "@prismshadow/penguin-library-project": ["../project/src/index.ts"],
       "@prismshadow/penguin-library-trace": ["../trace/src/index.ts"],
       "@prismshadow/penguin-library-trace/trace": ["../trace/src/trace.ts"],
       "@prismshadow/penguin-library-trace/repos/trace-index": ["../trace/src/repos/trace-index.ts"],

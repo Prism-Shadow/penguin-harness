@@ -364,6 +364,14 @@ export abstract class UsageRecording {
   ): Promise<void>;
 }
 
+/**
+ * The clock the usage statistics read time through — "today", "last 7 days" and the default
+ * series window all start from it. A structural port: the server's `Clock` capability
+ * satisfies it (the Provider in packages/server binds the service's field by hand; tests
+ * pass a stub). Declared here so the package never imports the server.
+ */
+export abstract class UsageClock extends Interface<{ now(): Date }>() {}
+
 /** UsageQueries: the mechanism UsageService implements. */
 @Interface()
 export abstract class UsageQueries {

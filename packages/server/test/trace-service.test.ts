@@ -59,8 +59,8 @@ import { wire } from "@prismshadow/penguin-core/kernel";
 import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
 import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { SessionSources } from "../src/runtime/session-sources.js";
-import { UsageService } from "../src/services/usage-service.js";
-import type { PricingLookup } from "../src/services/usage-service.js";
+import { UsageService } from "@prismshadow/penguin-library-observability/usage-service";
+import type { PricingLookup } from "@prismshadow/penguin-library-observability/usage-service";
 import { makeTempRoot, makeTraceHarness, writeTraceFile } from "./helpers.js";
 
 const P = "project-t";
