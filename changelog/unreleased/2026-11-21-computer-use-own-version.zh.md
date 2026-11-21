@@ -3,6 +3,7 @@
 - **Date:** 2026-11-21
 - **Type:** process
 - **Scope:** `plugins`, `ci`, `tooling`, `docs`
+- **PR:** [#1682](https://github.com/Prism-Shadow/penguin-harness/pull/1682)
 
 [English](2026-11-21-computer-use-own-version.md)
 
