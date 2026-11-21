@@ -215,8 +215,7 @@ function flattenRfcTree(
     const hasChildren = children.length > 0;
     const isCollapsed = hasChildren && collapsed.has(node.key);
     const visibleChildren = isCollapsed ? [] : children;
-    const selfContinues =
-      visibleChildren.length > 0 || (depth === 0 && !rootIsLast);
+    const selfContinues = visibleChildren.length > 0 || (depth === 0 && !rootIsLast);
     const descendantCount = hasChildren ? countRfcTreeDescendantEntries(node) : 0;
     const hiddenChildCount = children.length;
     const rowIndex = rows.length;
@@ -242,8 +241,7 @@ function flattenRfcTree(
     visibleChildren.forEach((child, idx) => {
       const childIsLast = idx === visibleChildren.length - 1;
       const nextBranch = depth === 0 ? child.key : branchKey;
-      const ownColumnContinuesInChild =
-        depth === 0 ? !childIsLast || !rootIsLast : !childIsLast;
+      const ownColumnContinuesInChild = depth === 0 ? !childIsLast || !rootIsLast : !childIsLast;
       const childRowIdx = visit(
         child,
         depth + 1,
@@ -266,15 +264,7 @@ function flattenRfcTree(
   return rows;
 }
 
-function RfcPrBadge({
-  href,
-  number,
-  status,
-}: {
-  href: string;
-  number: number;
-  status: RfcStatus;
-}) {
+function RfcPrBadge({ href, number, status }: { href: string; number: number; status: RfcStatus }) {
   return (
     <a
       href={href}
@@ -536,11 +526,7 @@ function HorizontalGraphTreeView({
   const NODE_H = 26;
 
   return (
-    <div
-      role="tree"
-      aria-label={S.rfcs.sectionAll}
-      className="overflow-x-auto py-1 select-none"
-    >
+    <div role="tree" aria-label={S.rfcs.sectionAll} className="overflow-x-auto py-1 select-none">
       <div
         className="relative"
         style={{ width: `${layout.width}px`, height: `${layout.height}px` }}
@@ -751,7 +737,11 @@ function OrthogonalSubtreeBranch({
   const descendantCount = hasChildren ? countRfcTreeDescendantEntries(node) : 0;
 
   return (
-    <div role="treeitem" aria-level={depth + 1} aria-expanded={hasChildren ? !isCollapsed : undefined}>
+    <div
+      role="treeitem"
+      aria-level={depth + 1}
+      aria-expanded={hasChildren ? !isCollapsed : undefined}
+    >
       <div className="flex min-h-[28px] items-center">
         {editionPr ? (
           <a
@@ -813,14 +803,7 @@ function OrthogonalSubtreeBranch({
                   className="pointer-events-none absolute top-0 -left-4 h-full w-4 overflow-visible text-slate-300 dark:text-slate-700"
                 >
                   {!isLast && (
-                    <line
-                      x1={4}
-                      y1={0}
-                      x2={4}
-                      y2="100%"
-                      stroke="currentColor"
-                      strokeWidth={1.6}
-                    />
+                    <line x1={4} y1={0} x2={4} y2="100%" stroke="currentColor" strokeWidth={1.6} />
                   )}
                   <path
                     d="M 4 0 C 4 9, 8 14, 16 14"
@@ -1185,7 +1168,8 @@ function MetroGraphTreeView({
           const cy = yOf(row.rowIndex);
           const entry = row.node.entry;
           const editionPr = row.node.editionPr;
-          const isPending = Boolean(editionPr) || (entry !== undefined && entry.status !== "merged");
+          const isPending =
+            Boolean(editionPr) || (entry !== undefined && entry.status !== "merged");
           const palette = metroPaletteFor(row.branchKey, Boolean(editionPr));
 
           if (row.depth === 0) {
@@ -1950,14 +1934,7 @@ function SpineGraphTreeView({
       </svg>
 
       {rows.map((row) => {
-        const {
-          node,
-          depth,
-          hasChildren,
-          isCollapsed,
-          descendantCount,
-          hiddenChildCount,
-        } = row;
+        const { node, depth, hasChildren, isCollapsed, descendantCount, hiddenChildCount } = row;
         const cx = xOf(depth);
         const contentLeft = (depth + 1) * LANE + 4;
         const entry = node.entry;
@@ -2331,7 +2308,12 @@ export function RfcShell({
             </article>
           </div>
           {showToc && (
-            <SiteToc label={S.rfcs.toc} entries={toc} activeId={activeTocId} onNavigate={onPinToc} />
+            <SiteToc
+              label={S.rfcs.toc}
+              entries={toc}
+              activeId={activeTocId}
+              onNavigate={onPinToc}
+            />
           )}
         </div>
       </div>

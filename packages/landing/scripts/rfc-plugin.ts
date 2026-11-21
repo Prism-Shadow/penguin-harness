@@ -6,26 +6,13 @@
  * hours in a single batched GraphQL query (merged PRs are never fetched again), and falls back to
  * the offline snapshot when unauthenticated or offline.
  */
+import type { Plugin } from "vite";
 import { loadRfcPrStatuses, SEED_FILE } from "./rfcs/pr-status.mjs";
 
 const VIRTUAL_ID = "virtual:penguin-rfc-prs";
 const RESOLVED_ID = `\0${VIRTUAL_ID}`;
 
-export function rfcPrStatus(options?: { offline?: boolean }): {
-  name: string;
-  resolveId: (id: string) => string | null;
-  load: (this: { addWatchFile?: (id: string) => void }, id: string) => string | null;
-  handleHotUpdate?: (ctx: {
-    file: string;
-    server: {
-      moduleGraph: {
-        getModuleById: (id: string) => unknown;
-        invalidateModule: (mod: unknown) => void;
-      };
-      ws: { send: (payload: { type: string }) => void };
-    };
-  }) => void;
-} {
+export function rfcPrStatus(options?: { offline?: boolean }): Plugin {
   let cache: ReturnType<typeof loadRfcPrStatuses> | undefined;
   return {
     name: "penguin:rfc-prs",

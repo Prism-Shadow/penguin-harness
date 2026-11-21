@@ -219,9 +219,7 @@ export function hydratePrRecords(nodes, cachedByNumber, graphql = runGithubGraph
         const enMeta = metaByKey.get(`${item.number}:${id}:en`);
         const zhMeta = metaByKey.get(`${item.number}:${id}:zh`);
         const title =
-          override?.title ??
-          enMeta?.title ??
-          `${number} ${id.replace(/^PRFC-\d+-/, "")}`;
+          override?.title ?? enMeta?.title ?? `${number} ${id.replace(/^PRFC-\d+-/, "")}`;
         const titleZh = override?.titleZh ?? zhMeta?.title;
         const version = enMeta?.version ?? zhMeta?.version;
         return {

@@ -282,8 +282,7 @@ export function buildRfcIndex(
     const mainPr = resolved?.main.pr;
     const openEditions = resolved?.openEditions ?? [];
     const docStatus = en?.status ?? zh?.status ?? "draft";
-    const status: RfcStatus =
-      docStatus === "merged" ? "merged" : (mainPr?.status ?? docStatus);
+    const status: RfcStatus = docStatus === "merged" ? "merged" : (mainPr?.status ?? docStatus);
     const linked = (doc?: ParsedDocument): RfcDocument | undefined => {
       if (!doc || status === "draft" || status === "closed") return undefined;
       if (status === "open") {
@@ -450,9 +449,7 @@ const RFC_TREE_SPEC: readonly RfcTreeSpec[] = [
           {
             key: "PRFC-0014-workflow",
             rfcId: "PRFC-0014-workflow",
-            children: [
-              { key: "PRFC-0020-agent-workbench", rfcId: "PRFC-0020-agent-workbench" },
-            ],
+            children: [{ key: "PRFC-0020-agent-workbench", rfcId: "PRFC-0020-agent-workbench" }],
           },
           { key: "PRFC-0017-session-surface", rfcId: "PRFC-0017-session-surface" },
           { key: "PRFC-0018-amsp", rfcId: "PRFC-0018-amsp" },

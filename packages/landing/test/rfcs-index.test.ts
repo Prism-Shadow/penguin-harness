@@ -103,13 +103,9 @@ const landedWithUnmerged = landedEn
     "\n> **Unmerged revision**: the open design PR [#279](https://github.com/Prism-Shadow/penguin-harness-design/pull/279) carries one unmerged revision against this document.\n\n## Motivation",
   );
 
-const drafting = [
-  "# PRFC-0006 A Draft",
-  "",
-  "- Feature Name: `a-draft`",
-  "",
-  "## Summary",
-].join("\n");
+const drafting = ["# PRFC-0006 A Draft", "", "- Feature Name: `a-draft`", "", "## Summary"].join(
+  "\n",
+);
 
 describe("buildRfcIndex", () => {
   it("classifies a landed document as merged and links into the in-site page", () => {

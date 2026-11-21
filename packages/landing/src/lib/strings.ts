@@ -629,8 +629,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     /** The tab title and description while the index page is open. */
     title: "RFC 索引",
     sidebarTitle: "RFCs",
-    description:
-      "PenguinHarness 的每个设计决定都记录为一篇 RFC：这里是索引，以及本面的约定。",
+    description: "PenguinHarness 的每个设计决定都记录为一篇 RFC：这里是索引，以及本面的约定。",
     indexLabel: "RFC 索引",
     notFound: "找不到这篇 RFC。",
     backToIndex: "返回 RFC 索引",
