@@ -87,7 +87,7 @@
     "@prismshadow/penguin-library-agent-api": "workspace:*",
     "@prismshadow/penguin-library-db": "workspace:*",
     "@prismshadow/penguin-library-http": "workspace:*",
-    "@prismshadow/mmsp": "^0.5.10"
+    "@prismshadow/mmsp": "^0.5.12"
   },
   "devDependencies": {
     "tsup": "^8.3.0",
