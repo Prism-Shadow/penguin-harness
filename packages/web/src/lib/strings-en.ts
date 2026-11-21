@@ -1330,6 +1330,8 @@ export const en: Strings = {
     /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
     tileName: (title: string, agent: string, state: string | null) =>
       state === null ? `${title}, ${agent}` : `${title}, ${agent}, ${state}`,
+    systemTileName: (title: string) => `${title}, system app`,
+    workbenchesEmptyTitle: "No apps from agents yet",
     folderTip: (name: string, count: number) => `${name}, ${count} ${count === 1 ? "app" : "apps"}`,
     folderName: (name: string, count: number) =>
       `${name}, folder, ${count} ${count === 1 ? "app" : "apps"}`,
@@ -2283,6 +2285,19 @@ export const en: Strings = {
       `Delete agent "${name}" on ${machine}? Its directory there (including all Traces) will be removed recursively and cannot be recovered.`,
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
+    systemName: "System",
+    systemDescription:
+      "Owns the system apps: Models, Plugins, Machines, Cost Center and Evaluation Center.",
+    systemTag: "System",
+    systemTagHint:
+      "The system agent owns the system apps. It does not chat or take plugins, and cannot be deleted or exported.",
+    systemAppsDesc:
+      "The system apps this agent owns. They come with the platform and open from the App Center.",
+    systemAppsEmpty: "No system apps yet.",
+    systemAppTag: "System app",
+    systemAppCount: (n: number) => `${n} ${n === 1 ? "system app" : "system apps"}`,
+    systemIdHeld: (name: string): string =>
+      `Agent "${name}" holds the id reserved for the system agent. Export it, import it under another id, then delete it; the system agent is added the next time the agents load.`,
     employeesSection: "Company employees",
     employeesSectionInfo:
       "These agents are employees of an organization and work in company mode. You can still chat with them and change their settings here; one can be deleted only after it leaves its organization in company mode.",

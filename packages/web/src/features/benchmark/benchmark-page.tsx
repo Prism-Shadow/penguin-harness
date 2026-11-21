@@ -42,6 +42,7 @@ import {
 import * as api from "../../api/endpoints";
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
+import { isConversationAgent } from "../../lib/builtin-agents";
 import { cardBodyClick } from "../../lib/card-open";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatRelativeShort, formatScore, signedDelta } from "../../lib/format";
@@ -627,7 +628,7 @@ export function BenchmarkPage() {
             value={aiTarget}
             onChange={(e) => setAiTarget(e.target.value)}
           >
-            {agents.map((a) => (
+            {agents.filter(isConversationAgent).map((a) => (
               <option key={a.agentId} value={a.agentId}>
                 {agentDisplayName(a)}
               </option>
