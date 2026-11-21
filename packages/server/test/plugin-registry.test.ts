@@ -317,7 +317,7 @@ type Card = NonNullable<LibraryContributions["card"]>;
 
 /** The platforms a package's sandbox providers declare it the default backend for, in order. */
 function defaultsDeclared(table: NonNullable<ReturnType<typeof readPluginTable>>): string[] {
-  return Object.values(table.modules).flatMap((manifest) =>
+  return Object.values(table.manifests).flatMap((manifest) =>
     (manifest.contributes["SandboxModule.providers"] ?? []).flatMap(
       (provider) => (provider as { defaultFor?: string[] }).defaultFor ?? [],
     ),
