@@ -14,10 +14,16 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-/** The parsed pnpm-lock.yaml under `root` (`yaml` comes from core, the root declares none). */
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+/**
+ * The parsed pnpm-lock.yaml under `root` (`yaml` comes from this repository's core, the root
+ * declares none, so a root holding only a lockfile reads too).
+ */
 export function readPnpmLock(root) {
-  const yaml = createRequire(path.join(root, "packages", "core", "package.json"))("yaml");
+  const yaml = createRequire(path.join(REPO, "packages", "core", "package.json"))("yaml");
   return yaml.parse(fs.readFileSync(path.join(root, "pnpm-lock.yaml"), "utf8"));
 }
 

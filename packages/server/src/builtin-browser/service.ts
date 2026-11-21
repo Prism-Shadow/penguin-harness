@@ -40,9 +40,9 @@ import type {
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
   BuiltinBrowserTabsResponse,
-} from "../api/types.js";
+} from "@prismshadow/penguin-server/api";
 import type { BrowserExtensionStore } from "@prismshadow/penguin-library-machine/browser-extensions";
-import { HttpError } from "../http/errors.js";
+import { HttpError } from "../plugin/index.js";
 import { BrowserBackendRuntime } from "./backend-runtime.js";
 import type { BrowserTiming } from "./backend-runtime.js";
 import { ExtensionHub } from "./extension-hub.js";
