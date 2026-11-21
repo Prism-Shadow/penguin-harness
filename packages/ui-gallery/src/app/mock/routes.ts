@@ -191,7 +191,9 @@ function costOf(day: Pick<UsageDay, "cacheRead" | "cacheWrite" | "output" | "pro
   const rate =
     day.provider === "anthropic"
       ? { cacheRead: 0.2, cacheWrite: 2.5, output: 10 }
-      : { cacheRead: 0.0057, cacheWrite: 0.2857, output: 1.1429 };
+      : day.provider === "openai"
+        ? { cacheRead: 1.25, cacheWrite: 5, output: 30 }
+        : { cacheRead: 0.0057, cacheWrite: 0.2857, output: 1.1429 };
   return (
     (day.cacheRead * rate.cacheRead + day.cacheWrite * rate.cacheWrite + day.output * rate.output) /
     1_000_000
@@ -1825,12 +1827,39 @@ function filterUsage(store: DemoStore, query: URLSearchParams, withModel: boolea
   );
 }
 
-const bucket = (day: UsageDay[]): UsageResponse["summary"]["today"] => ({
-  total: day.reduce((s, d) => s + d.cacheRead + d.cacheWrite + d.output, 0),
-  requests: day.reduce((s, d) => s + d.requests, 0),
-  cost: day.reduce((s, d) => s + costOf(d), 0),
-  hasUncosted: false,
-});
+/** A day's Tokens as the Token figures count them: a tool request's are not (see UsageDay.purpose). */
+const chatTokens = (d: UsageDay): number =>
+  d.purpose === undefined ? d.cacheRead + d.cacheWrite + d.output : 0;
+
+const bucket = (day: UsageDay[]): UsageResponse["summary"]["today"] => {
+  const tools = day.filter((d) => d.purpose !== undefined);
+  return {
+    total: day.reduce((s, d) => s + chatTokens(d), 0),
+    requests: day.reduce((s, d) => s + d.requests, 0),
+    cost: day.reduce((s, d) => s + costOf(d), 0),
+    hasUncosted: false,
+    toolRequests: tools.reduce((s, d) => s + d.requests, 0),
+    toolCost: tools.length > 0 ? tools.reduce((s, d) => s + costOf(d), 0) : null,
+  };
+};
+
+/** The tool requests by purpose, costliest first. */
+function toolRows(days: UsageDay[]): UsageResponse["tools"] {
+  const rows = new Map<string, UsageResponse["tools"][number]>();
+  for (const d of days) {
+    if (d.purpose === undefined) continue;
+    const row = rows.get(d.purpose) ?? {
+      purpose: d.purpose,
+      requests: 0,
+      cost: 0,
+      hasUncosted: false,
+    };
+    row.requests += d.requests;
+    row.cost = (row.cost ?? 0) + costOf(d);
+    rows.set(d.purpose, row);
+  }
+  return [...rows.values()].sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0));
+}
 
 /** The series bucket a day falls in at a granularity: the day, its ISO week's Monday, or its month. */
 function bucketKey(date: string, granularity: UsageGranularity): string {
@@ -1938,10 +1967,12 @@ router
     for (const d of days) {
       const key = bucketKey(d.date, granularity);
       const point = buckets.get(key)!;
-      point.cacheRead += d.cacheRead;
-      point.cacheWrite += d.cacheWrite;
-      point.output += d.output;
-      point.total += d.cacheRead + d.cacheWrite + d.output;
+      if (d.purpose === undefined) {
+        point.cacheRead += d.cacheRead;
+        point.cacheWrite += d.cacheWrite;
+        point.output += d.output;
+        point.total += d.cacheRead + d.cacheWrite + d.output;
+      }
       point.cost = (point.cost ?? 0) + costOf(d);
       point.requests += d.requests;
       point.completed += d.completed;
@@ -1983,6 +2014,7 @@ router
       series: keys.map((key) => buckets.get(key)!),
       byAgentSeries: [...perAgent.values()],
       byModelSeries: [...perModel.values()],
+      tools: toolRows(days),
       errors: {
         total: store.f.usageErrors.reduce((n, e) => n + e.count, 0),
         rows: store.f.usageErrors.length,

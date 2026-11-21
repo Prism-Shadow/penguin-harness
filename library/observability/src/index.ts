@@ -18,6 +18,7 @@ export type {
   UsageErrorsQuery,
   UsageErrorsClearQuery,
   UsageBucket,
+  UsageToolRow,
   UsageSeriesPoint,
   UsageErrors,
   UsageErrorsPage,

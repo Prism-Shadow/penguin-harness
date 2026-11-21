@@ -5398,6 +5398,11 @@ Scenarios:
     total: "Total",
     tokens: "Tokens",
     requests: "Requests",
+    /** The summary row of the requests a plugin made for its tools (counted in Requests and Cost, not in Tokens). */
+    toolRequestsIncluded: "Incl. tool requests",
+    /** The card listing tool requests by what they were for. */
+    toolRequests: "Tool requests",
+    toolColumn: "Tool",
     rangeDates: "Start and end dates",
     colCacheRead: "cache_read",
     colCacheWrite: "cache_write",
