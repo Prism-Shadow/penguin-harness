@@ -279,20 +279,23 @@ describe("a plugin's server and Agent installs", () => {
         export default { modules: [SlowStart] };`),
     });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    // Simulated time moves a second at a time, the real event loop turning between steps so the
-    // install's file work (and the plugin's import) reaches each timer it sets.
-    const tick = async () => {
+    // Simulated time moves a second at a time while the install runs, the real event loop turning
+    // between steps so the install's file work (and the plugin's import) reaches each timer it
+    // sets. Once it has answered, only the module's own five-minute start is left to wait out,
+    // in larger steps: each step there asks the server over HTTP, and a slow runner cannot make
+    // three hundred of those inside the real-time bound.
+    const tick = async (step: number) => {
       await new Promise((resolve) => setImmediate(resolve));
-      await vi.advanceTimersByTimeAsync(1_000);
+      await vi.advanceTimersByTimeAsync(step);
     };
     let settled = false;
     const answer = Promise.resolve(
       admin.post("/api/projects/default_project/plugins/installed", { specifier: "@acme/slow" }),
     ).finally(() => (settled = true));
     // Real time bounds the wait (Date is not faked): the install's file work takes what it takes.
-    const until = async (done: () => boolean | Promise<boolean>) => {
+    const until = async (done: () => boolean | Promise<boolean>, step = 1_000) => {
       const deadline = Date.now() + 20_000;
-      while (!(await done()) && Date.now() < deadline) await tick();
+      while (!(await done()) && Date.now() < deadline) await tick(step);
     };
     await until(() => settled);
     const res = await answer;
@@ -306,7 +309,7 @@ describe("a plugin's server and Agent installs", () => {
           await admin.get("/api/projects/default_project/plugins/installed")
         ).json()) as InstalledPluginsResponse
       ).plugins.find((p) => p.specifier === "@acme/slow")?.active === true;
-    await until(active);
+    await until(active, 15_000);
     expect(await active()).toBe(true);
   }, 60_000);
 
