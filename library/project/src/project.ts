@@ -7,6 +7,7 @@ import type {
   ModelRef,
   PluginTables,
   ProjectConfig,
+  ProjectModelRequest,
   AmspRecord,
   ToolCallPayload,
   ThinkingLevelName,
@@ -17,6 +18,18 @@ import type { MemberRow } from "./repos/members.js";
 import type { AgentRow } from "./repos/agents.js";
 
 import type { UserRow } from "@prismshadow/penguin-library-auth";
+
+/**
+ * Which request the connection test sends a model instead of the chat probe — a tool model's own
+ * test, named by the binding that accepts it — or undefined for the chat probe. Handed the draft:
+ * its pair, the client type it resolves to and its vision mark.
+ */
+export type ModelTestRequestSource = (model: {
+  provider: string;
+  modelId: string;
+  clientType?: string;
+  vision?: boolean;
+}) => Pick<ProjectModelRequest, "messages" | "config" | "idleTimeoutMs"> | undefined;
 
 /**
  * What a command-policy hit does: `deny` refuses the call outright; `ask` puts it to a person
@@ -506,7 +519,12 @@ export abstract class ProjectConfigStore {
     projectId: string,
     req: ModelVisionDetectRequest,
   ): Promise<ModelVisionDetectResponse>;
-  abstract testModel(projectId: string, req: ModelTestRequest): Promise<ModelTestResponse>;
+  /** The connection test; `testRequestFor` names a tool model's own request (ModelTestRequestSource). */
+  abstract testModel(
+    projectId: string,
+    req: ModelTestRequest,
+    testRequestFor?: ModelTestRequestSource,
+  ): Promise<ModelTestResponse>;
   abstract detectProtocol(
     projectId: string,
     req: ModelProtocolDetectRequest,

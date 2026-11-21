@@ -273,6 +273,23 @@ describe("visibleChatModels", () => {
     ]);
   });
 
+  it("a tool model is never offered for chat, even with a key or on showAll, unless it is the selected one", () => {
+    const image = { ...configured(SECOND, "beta-image"), chatEligible: false };
+    const withTool = [...pool, image];
+    for (const showAll of [false, true]) {
+      expect(
+        visibleChatModels(withTool, { showAll, query: "" }).map((m) => m.modelId),
+      ).not.toContain("beta-image");
+    }
+    expect(
+      visibleChatModels(withTool, {
+        showAll: false,
+        query: "",
+        selected: { provider: SECOND, modelId: "beta-image" },
+      }).map((m) => m.modelId),
+    ).toContain("beta-image");
+  });
+
   it("when no model has a configured key, everything is listed (never an empty dropdown)", () => {
     const none = [keyless(SECOND, "a"), keyless(THIRD, "b")];
     expect(visibleChatModels(none, { showAll: false, query: "" }).map((m) => m.modelId)).toEqual([

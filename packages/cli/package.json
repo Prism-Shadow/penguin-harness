@@ -44,6 +44,7 @@
     "@penguinharness/fridge-keeper": "workspace:*",
     "@penguinharness/goal": "workspace:*",
     "@penguinharness/plan": "workspace:*",
+    "@penguinharness/multimodal-tools": "workspace:*",
     "@penguinharness/humanizer": "workspace:*",
     "@penguinharness/model-development": "workspace:*",
     "@penguinharness/openskill-rsi-toolkit": "workspace:*",
