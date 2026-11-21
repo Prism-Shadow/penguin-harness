@@ -55,6 +55,9 @@ const CATEGORY_TONE: Record<string, HubTone> = {
   "office-productivity": "emerald",
   "software-development": "blue",
   "ai-app-development": "amber",
+  "learning-life": "rose",
+  utilities: "slate",
+  entertainment: "violet",
   sandbox: "cyan",
 };
 
