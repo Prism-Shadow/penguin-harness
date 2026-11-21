@@ -371,6 +371,15 @@ importers:
       '@prismshadow/penguin-library-db':
         specifier: workspace:*
         version: link:../db
+      '@prismshadow/penguin-library-http':
+        specifier: workspace:*
+        version: link:../http
+      hono:
+        specifier: ^4.13.11
+        version: 4.13.13
+      smol-toml:
+        specifier: ^1.9.1
+        version: 1.9.1
     devDependencies:
       tsup:
         specifier: ^8.3.0
@@ -8244,6 +8253,9 @@ snapshots:
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)
+      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)
+      hono: 4.13.13
+      smol-toml: 1.9.1
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -8257,6 +8269,9 @@ snapshots:
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      hono: 4.13.13
+      smol-toml: 1.9.1
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
