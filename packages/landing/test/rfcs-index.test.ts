@@ -211,6 +211,9 @@ describe("buildRfcIndex", () => {
       rfcEntries.find((e) => e.id === "PRFC-0005-mechanisms-not-implementations"),
     ).toBeUndefined();
     expect(rfcEntries.find((e) => e.id === "PRFC-0005-plugin-versioning")?.status).toBe("open");
+    const apiSocket = rfcEntries.find((e) => e.id === "PRFC-0011-single-socket");
+    expect(rfcEntryShortTitle(apiSocket!, "en")).toBe("API Socket");
+    expect(rfcEntryShortTitle(apiSocket!, "zh")).toBe("API Socket");
     expect(rfcEntries.find((e) => e.id === "PRFC-0024-cli-modules")?.openRevision?.href).toBe(
       "https://github.com/Prism-Shadow/penguin-harness/pull/1649",
     );

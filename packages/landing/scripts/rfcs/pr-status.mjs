@@ -12,7 +12,7 @@
  *   or committed snapshot (`src/lib/rfc-pr-status.json`).
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -32,6 +32,14 @@ export const CACHE_FILE = join(
   "penguin-rfcs",
   "pr-status.json",
 );
+
+/** Canonical RFC titles for unmerged drafts retitled after their initial PR branch was opened. */
+const RFC_TITLE_OVERRIDES = {
+  "PRFC-0011-single-socket": {
+    title: "PRFC-0011 API Socket",
+    titleZh: "PRFC-0011 API Socket",
+  },
+};
 
 /** Map a GitHub GraphQL PullRequest state + isDraft flag to our normalized status. */
 export function normalizePrStatus(state, isDraft) {
@@ -126,7 +134,7 @@ export function hydratePrRecords(nodes, cachedByNumber, graphql = runGithubGraph
         status,
         baseRefName: node.baseRefName,
         headRefOid: node.headRefOid,
-        rfcs: cached.rfcs,
+        rfcs: cached.rfcs.map((r) => ({ ...r, ...RFC_TITLE_OVERRIDES[r.id] })),
       });
       continue;
     }
@@ -168,8 +176,12 @@ export function hydratePrRecords(nodes, cachedByNumber, graphql = runGithubGraph
       if (item.rfcs) return item;
       const rfcs = (item.ids ?? []).map((id) => {
         const number = id.match(/^PRFC-\d+/)?.[0] ?? id;
-        const title = titles.get(`${item.number}:${id}:en`) ?? `${number} ${id.replace(/^PRFC-\d+-/, "")}`;
-        const titleZh = titles.get(`${item.number}:${id}:zh`);
+        const override = RFC_TITLE_OVERRIDES[id];
+        const title =
+          override?.title ??
+          titles.get(`${item.number}:${id}:en`) ??
+          `${number} ${id.replace(/^PRFC-\d+-/, "")}`;
+        const titleZh = override?.titleZh ?? titles.get(`${item.number}:${id}:zh`);
         return titleZh ? { id, number, title, titleZh } : { id, number, title };
       });
       return {
@@ -305,7 +317,13 @@ export function loadRfcPrStatuses({
   offline = false,
   graphql = runGithubGraphql,
 } = {}) {
-  const cached = readJsonIfExists(cacheFile) ?? readJsonIfExists(seedFile);
+  const seedNewer =
+    existsSync(seedFile) &&
+    existsSync(cacheFile) &&
+    statSync(seedFile).mtimeMs >= statSync(cacheFile).mtimeMs;
+  const cached = seedNewer
+    ? (readJsonIfExists(seedFile) ?? readJsonIfExists(cacheFile))
+    : (readJsonIfExists(cacheFile) ?? readJsonIfExists(seedFile));
   if (offline && cached) return cached;
   try {
     const { cache, fetched } = refreshRfcPrStatusCache({

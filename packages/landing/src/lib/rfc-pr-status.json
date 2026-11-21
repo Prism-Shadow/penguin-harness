@@ -162,8 +162,8 @@
         {
           "id": "PRFC-0011-single-socket",
           "number": "PRFC-0011",
-          "title": "PRFC-0011 Single Socket",
-          "titleZh": "PRFC-0011 单一套接字"
+          "title": "PRFC-0011 API Socket",
+          "titleZh": "PRFC-0011 API Socket"
         }
       ]
     },
