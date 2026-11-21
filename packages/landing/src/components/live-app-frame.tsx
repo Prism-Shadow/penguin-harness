@@ -16,7 +16,7 @@
  * - **The site's language and mode.** A switch of either points the frame at a new document.
  */
 import { useEffect, useRef, useState } from "react";
-import type { SyntheticEvent } from "react";
+import type { ReactNode, RefObject, SyntheticEvent } from "react";
 import { S } from "../lib/strings";
 import { frameSize, gallerySurfaceUrl, liveFrameSrc } from "../lib/live-frame";
 import type { SurfaceId } from "../lib/live-frame";
@@ -66,25 +66,34 @@ function Placeholder({ phone }: { phone: boolean }) {
   );
 }
 
-export function LiveAppFrame({
-  surface,
+/**
+ * A gallery document framed in a browser window and scaled to the column: lazy, a guest of the
+ * page, a picture only without a fine pointer. `openHref` is the same document at full size, for
+ * the window bar's link; `lead` and `controls` are what else the bar holds, before and after it.
+ */
+export function LiveFrame({
+  src,
+  openHref,
+  openLabel,
   title,
   className = "",
-  autoplay,
+  lead,
+  controls,
 }: {
-  surface: SurfaceId;
+  /** The framed document, in the site's language and mode. */
+  src: string;
+  openHref: (phone: boolean) => string;
+  /** The link's words; the gallery's by default. */
+  openLabel?: string;
   /** What the frame shows, for the frame's accessible name. */
   title: string;
   className?: string;
-  autoplay?: "evolution";
+  lead?: ReactNode;
+  controls?: (frame: RefObject<HTMLIFrameElement | null>) => ReactNode;
 }) {
-  const { locale } = useSiteLocale();
-  const { dark } = useSiteTheme();
   const phone = useMedia("(max-width: 639.98px)");
   const fine = useMedia("(hover: hover) and (pointer: fine)");
-  const reduced = useMedia("(prefers-reduced-motion: reduce)");
   const size = frameSize(phone);
-  const src = liveFrameSrc(surface, locale, dark, autoplay);
   const box = useRef<HTMLDivElement | null>(null);
   const frame = useRef<HTMLIFrameElement | null>(null);
   const [near, setNear] = useState(false);
@@ -152,21 +161,22 @@ export function LiveAppFrame({
 
   const ready = readySrc === src;
   const scale = width > 0 ? width / size.width : 0;
-  const open = gallerySurfaceUrl(surface, locale, dark, phone);
+  const open = openHref(phone);
 
   return (
     <BrowserFrame
       className={className}
       aside={
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {lead}
           <a
             href={open}
             className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
           >
-            {S.live.open}
+            {openLabel ?? S.live.open}
             <ArrowUpRightIcon className="h-3 w-3" />
           </a>
-          {autoplay && !reduced && <LivePlaybackControl key={src} frame={frame} src={src} />}
+          {controls?.(frame)}
         </div>
       }
     >
@@ -194,5 +204,35 @@ export function LiveAppFrame({
         )}
       </div>
     </BrowserFrame>
+  );
+}
+
+/** One gallery surface of the real Web App, live; its walkthrough's pause control when it plays one. */
+export function LiveAppFrame({
+  surface,
+  title,
+  className = "",
+  autoplay,
+}: {
+  surface: SurfaceId;
+  /** What the frame shows, for the frame's accessible name. */
+  title: string;
+  className?: string;
+  autoplay?: "evolution";
+}) {
+  const { locale } = useSiteLocale();
+  const { dark } = useSiteTheme();
+  const reduced = useMedia("(prefers-reduced-motion: reduce)");
+  const src = liveFrameSrc(surface, locale, dark, autoplay);
+  return (
+    <LiveFrame
+      src={src}
+      openHref={(phone) => gallerySurfaceUrl(surface, locale, dark, phone)}
+      title={title}
+      className={className}
+      {...(autoplay && !reduced
+        ? { controls: (frame) => <LivePlaybackControl key={src} frame={frame} src={src} /> }
+        : {})}
+    />
   );
 }

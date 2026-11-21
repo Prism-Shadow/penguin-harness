@@ -10,6 +10,8 @@
  * scrolls nothing and hands the wheel to this page (the gallery's guest-frame.ts).
  */
 import { APP_FRAME, embeddedFrameSrc, PHONE_FRAME } from "../../../ui-gallery/src/app/frame";
+import { COMPANY_FRAME_PATH, companyFrameSrc } from "../../../ui-gallery/src/company/frame";
+import type { CompanyStart } from "../../../ui-gallery/src/company/frame";
 import { surfaceById } from "../../../ui-gallery/src/app/surfaces";
 import type { SurfaceId } from "../../../ui-gallery/src/app/surfaces";
 import { surfacePath } from "../../../ui-gallery/src/lib/page-paths";
@@ -56,4 +58,26 @@ export function gallerySurfaceUrl(
   const params = new URLSearchParams({ lang: locale, mode: modeOf(dark) });
   if (phone) params.set("view", "phone");
   return `${GALLERY_BASE}${surfacePath(surface)}?${params.toString()}`;
+}
+
+export type { CompanyStart };
+
+/** The company-mode prototype's document, embedded, opened in the state `start` names. */
+export function companyLiveSrc(start: CompanyStart, locale: Locale, dark: boolean): string {
+  return companyFrameSrc(
+    GALLERY_BASE,
+    { theme: INITIAL_THEME_ID, mode: modeOf(dark), lang: locale },
+    start,
+  );
+}
+
+/** The same document on its own, at full size, in the same state, language and mode. */
+export function companyOpenUrl(start: CompanyStart, locale: Locale, dark: boolean): string {
+  const params = new URLSearchParams({
+    start,
+    theme: INITIAL_THEME_ID,
+    mode: modeOf(dark),
+    lang: locale,
+  });
+  return `${GALLERY_BASE}${COMPANY_FRAME_PATH}?${params.toString()}`;
 }

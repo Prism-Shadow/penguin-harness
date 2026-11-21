@@ -1,0 +1,18 @@
+/*
+ * The company-mode prototype's stylesheet: the Web App's own entry, exactly as the app loads it
+ * (Tailwind pointed at the app's sources, since they sit outside this Vite root, and at the
+ * prototype's own). The prototype is laid out with the app's components and utilities, so this
+ * sheet adds only the document's frame: the window is the app's, full height, and never scrolls.
+ */
+@import "../../../web/src/styles.css";
+@source "../../../web/src";
+@source ".";
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  overflow: hidden;
+}

@@ -3,9 +3,10 @@
  * second page. A dev tool run locally with `pnpm dev:gallery`, it is also published on the public
  * site under `/gallery/` (scripts/build-site.mjs builds it with `BASE_PATH=<base>gallery/`).
  *
- * Three documents come out of one build: `index.html`, the gallery site; `app.html`, the real
- * Web App mounted against an in-browser mock of its API (src/app); and `lib.html`, one component
- * library board made of the app's real components (src/library). The app's own source is
+ * Four documents come out of one build: `index.html`, the gallery site; `app.html`, the real
+ * Web App mounted against an in-browser mock of its API (src/app); `lib.html`, one component
+ * library board made of the app's real components (src/library); and `company.html`, the
+ * prototype of the proposed company mode, made of the same components (src/company). The app's own source is
  * imported from `packages/web/src`; its network layer is swapped for the mock by
  * `mockWebNetwork()` (src/app/mock/vite-plugin.ts), and the two inline boot scripts — the
  * storage seed that gives a frame its own preferences, then the app's own pre-paint script,
@@ -45,6 +46,7 @@ function watchPackageSources(): Plugin {
     at("./src/styles.css"),
     at("./src/app/app.css"),
     at("./src/library/library.css"),
+    at("./src/company/company.css"),
   ];
   return {
     name: "penguin:gallery-watch-sources",
@@ -71,7 +73,7 @@ function watchPackageSources(): Plugin {
  * pre-paint script is the static one: the gallery is a static site with no theme server, so its
  * frames never link an imported pack.
  */
-const FRAME_DOCUMENTS = ["app.html", "lib.html"];
+const FRAME_DOCUMENTS = ["app.html", "lib.html", "company.html"];
 
 function frameDocument(): Plugin {
   const scripts = `${storageSeedScript()};${STATIC_BOOT_SCRIPT}`;
@@ -143,7 +145,12 @@ export default defineConfig({
     // stylesheet as a data: URI, whatever theme is shown.
     assetsInlineLimit: (file) => (file.endsWith(".woff2") ? false : undefined),
     rollupOptions: {
-      input: { gallery: at("./index.html"), app: at("./app.html"), library: at("./lib.html") },
+      input: {
+        gallery: at("./index.html"),
+        app: at("./app.html"),
+        library: at("./lib.html"),
+        company: at("./company.html"),
+      },
     },
   },
   worker: { format: "es" },
