@@ -14,7 +14,14 @@ import { useEffect, useMemo, useState } from "react";
 import { ICONS } from "../../icons/icons";
 import { useUiStrings } from "../../../strings";
 import { Button } from "../../actions/button/button";
-import { dateTimeValue, parseDate, parseDateTime, todayOf, withinBounds } from "./calendar-date";
+import {
+  clampDate,
+  dateTimeValue,
+  parseDate,
+  parseDateTime,
+  todayOf,
+  withinBounds,
+} from "./calendar-date";
 import type { CalendarDate, ClockTime } from "./calendar-date";
 import { CALENDAR_PANEL } from "./date-field";
 import { formatDateTime, formatTime, hourCycleOf } from "./date-locale";
@@ -58,6 +65,7 @@ export function DateTimeField({
   const today = todayOf(new Date());
   const low = boundDay(min);
   const high = boundDay(max);
+  const defaultDate = clampDate(today, low, high);
   // Read once per opening, so the wheels hold still while a minute passes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const opening = useMemo(() => openingTime(minuteStep), [picker.open, minuteStep]);
@@ -99,13 +107,13 @@ export function DateTimeField({
           selected={held?.date ?? null}
           min={low}
           max={high}
-          initial={held?.date ?? today}
+          initial={held?.date ?? defaultDate}
           onPick={(date) => write(date, time)}
           cover={
             wheels ? (
               <TimeWheels
                 time={time}
-                onChange={(at) => write(held?.date ?? today, at)}
+                onChange={(at) => write(held?.date ?? defaultDate, at)}
                 cycle={cycle}
                 minuteStep={minuteStep}
                 locale={locale}

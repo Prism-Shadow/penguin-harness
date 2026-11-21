@@ -160,7 +160,10 @@ export function MonthCalendar({
   useEffect(() => {
     if (selectedKey === shownSelection.current) return;
     shownSelection.current = selectedKey;
-    if (selected !== null) goTo(selected, false);
+    if (selected !== null) {
+      setMenu(null);
+      goTo(selected, false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedKey]);
 
