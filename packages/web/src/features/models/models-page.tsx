@@ -1153,7 +1153,7 @@ export function ModelsPage() {
     for (const target of multimodalOf(row).filter((t) => t.current)) {
       const landed =
         target.key === VISION_ROW
-          ? await persist(rows, defaultModel, undefined, null)
+          ? await persist(rows, defaultModel, null, null)
           : await toolBindings.bind(target.key, null);
       if (landed) removed.push(target.title);
     }
@@ -1170,7 +1170,8 @@ export function ModelsPage() {
   const persist = async (
     nextRows: RowState[],
     nextDefault: ModelRefDto | undefined,
-    nextVision: ModelRefDto | undefined,
+    /** The vision model to store; undefined keeps the stored one (if its row is still there), null clears it. */
+    nextVision: ModelRefDto | null | undefined,
     /**
      * Success toast text (defaults to "saved"; null shows none, for a caller that reports the
      * outcome itself); on failure this function shows an error toast instead.
@@ -1185,7 +1186,9 @@ export function ModelsPage() {
     const effectiveVision =
       nextVision && nextRows.some((r) => sameModelRef(rowRef(r), nextVision) && r.vision)
         ? nextVision
-        : undefined;
+        : nextVision === null
+          ? null
+          : undefined;
     // Each row's blank fields are judged against its group as this request will leave it.
     const groupAfter = (id: string) =>
       providerUpdates?.[id] !== undefined
@@ -1197,7 +1200,7 @@ export function ModelsPage() {
       };
       if (providerUpdates !== undefined) body.providers = providerUpdates;
       if (nextDefault) body.defaultModel = nextDefault;
-      if (effectiveVision) body.visionModel = effectiveVision;
+      if (effectiveVision !== undefined) body.visionModel = effectiveVision;
       const res = await api.putModels(projectId, body);
       adopt(res);
       // Default model changed: drop the stored draft's model selection so the draft chat

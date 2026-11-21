@@ -19,7 +19,7 @@ A new Project, and **Restore defaults**, no longer set DeepSeek V4.1 Flash as th
 
 ## Set as default multimodal model
 
-- A model's settings no longer list each multimodal job with its own **Set default**. Right beside **Test connection**, **Set as default multimodal model** makes the model the default for every multimodal job it can do and does not hold yet, after a confirmation naming them, and a toast names the ones it took. Once it holds them all, the button reads **Remove as default multimodal model**, which unbinds it from each (image understanding clears the vision model) without asking, and a toast names what was removed. It is not shown for a model that can do none of them; it waits while the dialog has unsaved edits.
+- A model's settings no longer list each multimodal job with its own **Set default**. Right beside **Test connection**, **Set as default multimodal model** makes the model the default for every multimodal job it can do and does not hold yet, after a confirmation naming them, and a toast names the ones it took. Once it holds them all, the button reads **Remove as default multimodal model**, which unbinds it from each (image understanding clears the vision model) without asking, and a toast names what was removed. `PUT /models` takes `visionModel: null` for that clear (omitted still keeps it). It is not shown for a model that can do none of them; it waits while the dialog has unsaved edits.
 - A model that holds a multimodal binding carries a **Default multimodal** tag on its card and in its settings, in the tone of **Default**, naming the jobs on hover; the chip glyph is gone. Web search and page reading are tools: they are set in the **Default models** dialog only.
 
 ## First-run guide

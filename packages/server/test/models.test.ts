@@ -1250,6 +1250,19 @@ describe("model-reference rekeying and the connectivity test", () => {
     expect(again.defaultModel).toEqual({ provider: "custom", modelId: "new-id" });
   });
 
+  it("an omitted vision model stays, and a null one is cleared while its row stays", async () => {
+    const vision = { provider: "custom", modelId: "reader" };
+    const models = [{ provider: "custom", modelId: "reader", contextWindow: 4096 }];
+    expect((await api.put(url(), { visionModel: vision, models })).status).toBe(200);
+    const kept = (await (await api.put(url(), { models })).json()) as ModelsResponse;
+    expect(kept.visionModel).toEqual(vision);
+    const cleared = await api.put(url(), { visionModel: null, models });
+    expect(cleared.status).toBe(200);
+    const body = (await cleared.json()) as ModelsResponse;
+    expect(body.visionModel).toBeUndefined();
+    expect(body.models.map(pairKey)).toEqual(["custom\0reader"]);
+  });
+
   it("a group change is a rekey too: the credential migrates with it; envKey resolves by client, not by group (PRN-021)", async () => {
     // Move the preset DeepSeek model to another group (changing provider is a key change; the paired renamedFrom migrates it).
     const put = await api.put(url(), {

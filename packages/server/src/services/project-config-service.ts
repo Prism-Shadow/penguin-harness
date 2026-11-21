@@ -2117,7 +2117,9 @@ export class ProjectConfigService implements ProjectConfigStore {
     const targetOf = (ref: ModelRefDto) =>
       req.models.find((m) => m.provider === ref.provider && m.modelId === ref.modelId);
     let visionModel: ModelRefDto | undefined;
-    if (req.visionModel !== undefined) {
+    if (req.visionModel === null) {
+      // Cleared: no model reads images for another.
+    } else if (req.visionModel !== undefined) {
       if (!seen.has(refKey(req.visionModel.provider, req.visionModel.modelId))) {
         throw badRequest(
           `visionModel must be included in models: ${showRef(req.visionModel.provider, req.visionModel.modelId)}.`,
