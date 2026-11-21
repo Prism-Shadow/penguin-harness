@@ -707,6 +707,29 @@
     overflow: hidden;
   }
 
+  /* A floated exit sits on another page's colours. Cap accent lightness even in dark
+     mode, with a light rim for dark artwork and a two-tone keyboard focus outline. */
+  .launcher-accent {
+    --launcher-fill: color-mix(in srgb, var(--ui-accent) 43%, black);
+    background-color: var(--launcher-fill);
+    border-color: rgb(255 255 255 / 82%);
+    color: white;
+  }
+  @supports (color: oklch(from red l c h)) {
+    .launcher-accent {
+      --launcher-fill: oklch(from var(--ui-accent) clamp(0.28, calc(l * 0.84), 0.46) c h);
+    }
+  }
+  .launcher-accent:hover,
+  .launcher-accent:active {
+    background-color: color-mix(in srgb, var(--launcher-fill) 82%, black);
+  }
+  .launcher-accent:focus-visible {
+    outline: 2px solid white;
+    outline-offset: 0;
+    box-shadow: 0 0 0 4px var(--launcher-fill);
+  }
+
   .ui-eyebrow {
     font-family: var(--ui-h6-font);
     font-size: var(--ui-h6-size);

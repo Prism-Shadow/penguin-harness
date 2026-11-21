@@ -154,6 +154,7 @@ function FloatingBallStage() {
     <div className="lib-stack lib-stack-wide">
       <div className="lib-box relative isolate h-56">
         <FloatingBall
+          surface="accent"
           placement={placement}
           onChange={setPlacement}
           onActivate={() => setPresses((n) => n + 1)}
