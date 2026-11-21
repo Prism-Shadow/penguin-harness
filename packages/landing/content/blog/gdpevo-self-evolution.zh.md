@@ -14,12 +14,12 @@ GDPEVO Essential 源自 [GDPevo Benchmark](https://arxiv.org/abs/2608.03764)，�
 
 | Benchmark 名称 | Benchmark 标识 | 单个子 Benchmark 构成 | 任务概述 |
 | :--- | :--- | :--- | :--- |
-| 服务工单处理 | [service-ticket-resolution](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train) | 5 训练题 + 5 测试题 + 评测环境 | 查询客服后台记录，核实并处理待办工单 |
-| 财务管控 | [financial-control](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-financial-control-train) | 5 训练题 + 5 测试题 + 评测环境 | 根据财务系统数据完成账目核对与结账核算 |
-| 投资组合管理 | [portfolio-management](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-portfolio-management-train) | 5 训练题 + 5 测试题 + 评测环境 | 读取资管平台数据，计算持仓估值与调仓方案 |
-| 医保审核 | [coverage-review](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-coverage-review-train) | 5 训练题 + 5 测试题 + 评测环境 | 对照医保条款与申报材料，给出理赔审核结论 |
-| 法院书记员业务 | [court-clerk-operations](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-court-clerk-operations-train) | 5 训练题 + 5 测试题 + 评测环境 | 核对立案卷宗材料，整理案件排期与归档信息 |
-| 工程项目组合分析 | [engineering-portfolio-analytics](https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/data/penguinharness-benchmark-gdpevo-essential-engineering-portfolio-analytics-train) | 5 训练题 + 5 测试题 + 评测环境 | 汇总多项工程的进度与资源数据，输出组合分析结果 |
+| 服务工单处理 | [service-ticket-resolution](https://github.com/Prism-Shadow/gdpevo-essential/tree/main/penguinharness-benchmark-gdpevo-essential-service-ticket-resolution-train) | 5 训练题 + 5 测试题 + 评测环境 | 查询客服后台记录，核实并处理待办工单 |
+| 财务管控 | [financial-control](https://github.com/Prism-Shadow/gdpevo-essential/tree/main/penguinharness-benchmark-gdpevo-essential-financial-control-train) | 5 训练题 + 5 测试题 + 评测环境 | 根据财务系统数据完成账目核对与结账核算 |
+| 投资组合管理 | [portfolio-management](https://github.com/Prism-Shadow/gdpevo-essential/tree/main/penguinharness-benchmark-gdpevo-essential-portfolio-management-train) | 5 训练题 + 5 测试题 + 评测环境 | 读取资管平台数据，计算持仓估值与调仓方案 |
+| 医保审核 | [coverage-review](https://github.com/Prism-Shadow/gdpevo-essential/tree/main/penguinharness-benchmark-gdpevo-essential-coverage-review-train) | 5 训练题 + 5 测试题 + 评测环境 | 对照医保条款与申报材料，给出理赔审核结论 |
+| 法院书记员业务 | [court-clerk-operations](https://github.com/Prism-Shadow/gdpevo-essential/tree/main/penguinharness-benchmark-gdpevo-essential-court-clerk-operations-train) | 5 训练题 + 5 测试题 + 评测环境 | 核对立案卷宗材料，整理案件排期与归档信息 |
+| 工程项目组合分析 | [engineering-portfolio-analytics](https://github.com/Prism-Shadow/gdpevo-essential/tree/main/penguinharness-benchmark-gdpevo-essential-engineering-portfolio-analytics-train) | 5 训练题 + 5 测试题 + 评测环境 | 汇总多项工程的进度与资源数据，输出组合分析结果 |
 
 每个子 Benchmark 的评测环境中都隐藏着未在题面直接写明的企业业务规则，例如优先级策略、风控阈值与异常处理口径。Agent 需要在训练环境中与业务系统交互，根据评分反馈学会这些企业规则并总结到 SKILL.md 中，才能在测试题上取得高分。
 

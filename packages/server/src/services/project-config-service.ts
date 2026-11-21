@@ -134,7 +134,7 @@ import type {
   PlatformCatalogPricing,
   PlatformModelApplyResult,
   PlatformModelCatalog,
-} from "./platform-auth-types.js";
+} from "@prismshadow/penguin-library-model/platform-auth-flow";
 import { detectModelProtocol } from "./protocol-detect.js";
 import { migratePenguinGoRoutes } from "./project-config-migrations.js";
 import { presetProjectConfig } from "./project-config-seed.js";

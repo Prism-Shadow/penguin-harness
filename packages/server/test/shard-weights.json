@@ -190,7 +190,6 @@
   "test/plugin-loader.test.ts": 0.5,
   "test/plugin-quick-start.test.ts": 0.6,
   "test/plugin-registry.test.ts": 4,
-  "test/plugin-ui.test.ts": 3.1,
   "test/plugin-unsatisfied.test.ts": 0,
   "test/plugin.test.ts": 0,
   "test/plugins-installed.test.ts": 14.3,

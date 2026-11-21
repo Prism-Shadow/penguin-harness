@@ -20,17 +20,18 @@ import { getCookie, setCookie } from "hono/cookie";
 import { parse } from "hono/utils/cookie";
 import { AMSP_PREFIX } from "../amsp/cors.js";
 import { HttpError } from "../http/errors.js";
-import { mediaType } from "../http/media-type.js";
+import { mediaType } from "@prismshadow/penguin-library-http/media-type";
 import {
   NO_PROXY_RULE,
   acceptsOrigin,
   forwardedHeaders,
   publicOriginOf,
   sameOriginSite,
-} from "../http/public-origin.js";
-import type { OriginRule } from "../http/public-origin.js";
+} from "@prismshadow/penguin-library-http/public-origin";
+import type { OriginRule } from "@prismshadow/penguin-library-http/public-origin";
 import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
 import { SESSION_COOKIE } from "../api/types.js";
+import type { AppEnv } from "@prismshadow/penguin-library-http/app-env";
 
 /** The session cookie's name as every non-browser client spells it (declared in the API contract). */
 export { SESSION_COOKIE };
@@ -59,9 +60,9 @@ export function parseCookieHeader(header: string | null | undefined): Record<str
   return parse(header ?? "");
 }
 
-// The origin comparison lives with the public-origin rule (http/public-origin.ts); re-exported
+// The origin comparison lives with the public-origin rule (@prismshadow/penguin-library-http/public-origin); re-exported
 // for the callers that reach it here.
-export { isOwnOrigin } from "../http/public-origin.js";
+export { isOwnOrigin } from "@prismshadow/penguin-library-http/public-origin";
 
 /**
  * Session cookie attributes, shared by every path that sets one. `maxAge` comes from the
@@ -87,14 +88,13 @@ export function cookieOptions(
   };
 }
 
-/** Hono env: variables injected by the auth middleware. */
-export type AppEnv = {
-  Variables: {
-    user: UserRow;
-    /** How the current session was established — see {@link SessionVia}. */
-    sessionVia: SessionVia;
-  };
-};
+/**
+ * Hono env: variables injected by the auth middleware. The shape moved to the http
+ * vocabulary package (services+http+cli restack T0) — routes and middlewares on both
+ * sides speak it, so it lives beside the pieces they share; the middleware that fills
+ * these variables stays here.
+ */
+export type { AppEnv } from "@prismshadow/penguin-library-http/app-env";
 
 /** Gets the current user (available after authMiddleware). */
 export function currentUser(c: { var: { user: UserRow } }): UserRow {
