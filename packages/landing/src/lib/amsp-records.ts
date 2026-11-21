@@ -116,6 +116,15 @@ export const RECORD_DOCS: { [Id in DocId]: RecordDoc<Id> } = {
       required: true,
     },
   ]),
+  session_update: doc(
+    "session_update",
+    asEvent(16, { type: "session_update", provider: "mock", model_id: "scripted-model-large" }),
+    [
+      type("session_update"),
+      { path: "provider", type: "string", required: false },
+      { path: "model_id", type: "string", required: false },
+    ],
+  ),
 
   text: doc(
     "text",

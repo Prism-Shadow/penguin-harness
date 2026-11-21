@@ -3,13 +3,16 @@
  * own package.json (`penguin.appCenter`), and each viewer's own arrangement of it.
  *
  * The list (GET /api/projects/:p/app-center), read from the files without loading anything:
- * - Given workbenches that declare `show: true` on two Agents, each is one shortcut: the Agents in
- *   list order and by title within an Agent, with the Agent's name, the declared title else the
- *   first tab's else the package name, the tab it opens (declared, else the first), the icon's
- *   route, the full page the declared tab opens and where its build stands; listing them
- *   compiles nothing.
- * - Given a workbench that declares nothing, `show: false`, or a package.json that does not
- *   parse, it has no shortcut.
+ * - Given shown workbenches on two Agents, each is one shortcut: the Agents in list order and by
+ *   title within an Agent, with the Agent's name, the declared title else the first tab's else
+ *   the package name, the tab it opens (declared, else the first), the icon's route, the full
+ *   page the declared tab opens and where its build stands; listing them compiles nothing. A
+ *   workbench is shown when it declares `show: true`, declares nothing, or declares an object
+ *   without `show`.
+ * - Given a workbench that declares `show: false`, or a package.json that does not parse, it has
+ *   no shortcut.
+ * - Given a workbench that declares nothing, its own row reads shown, so its switch is on; the
+ *   switch turns it off by writing `show: false`, and the tile goes.
  * - Given a declaration that does not hold up (not an object, `show` not a boolean, an icon
  *   outside ui/, of a format an icon may not be, missing or over 256 KB, a title over 60
  *   characters, a tab the manifest lacks), the workbench has no shortcut.
@@ -87,6 +90,7 @@ const BUILDER = "builder";
 const GALLERY = "gallery";
 const BAD_ICONS = "badicons";
 const ICON_ROW = "iconrow";
+const DEFAULTED = "defaulted";
 
 const tab = (key: string, title: string, titleZh?: string) => ({
   id: `demo.${key}`,
@@ -381,6 +385,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
       [GALLERY, "Gallery"],
       [BAD_ICONS, "Bad icons"],
       [ICON_ROW, "Icon row"],
+      [DEFAULTED, "Defaulted"],
     ] as const) {
       const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId, name });
       expect(made.status, await made.text()).toBe(201);
@@ -411,6 +416,12 @@ describe("the App Center", { timeout: 30_000 }, () => {
       packageJson({ name: "headless-pkg", tabs: [], appCenter: { show: true } }),
     );
     await writeWorkbench(t.root, AGENT, "plain", packageJson({}));
+    await writeWorkbench(
+      t.root,
+      AGENT,
+      "titled",
+      packageJson({ tabs: [tab("main", "Main")], appCenter: { title: "Titled" } }),
+    );
     await writeWorkbench(t.root, AGENT, "hidden", packageJson({ appCenter: { show: false } }));
     await writeWorkbench(t.root, AGENT, "garbled", "{ not json");
     for (const [id, appCenter, files] of MALFORMED)
@@ -514,6 +525,26 @@ describe("the App Center", { timeout: 30_000 }, () => {
         path: `/app/${PROJECT}/${AGENT}/headless`,
         build: "ready",
       },
+      // Declares nothing: shown, titled by its first tab.
+      {
+        agentId: AGENT,
+        agentName: expect.any(String),
+        workbenchId: "plain",
+        title: "Main",
+        path: `/app/${PROJECT}/${AGENT}/plain`,
+        tab: "main",
+        build: "ready",
+      },
+      // Declares a title and no `show`: shown.
+      {
+        agentId: AGENT,
+        agentName: expect.any(String),
+        workbenchId: "titled",
+        title: "Titled",
+        path: `/app/${PROJECT}/${AGENT}/titled`,
+        tab: "main",
+        build: "ready",
+      },
       {
         agentId: LATER,
         agentName: "Aardvark",
@@ -539,12 +570,36 @@ describe("the App Center", { timeout: 30_000 }, () => {
     await expect(fs.stat(path.join(dir, ".build"))).rejects.toThrow();
   });
 
-  it.each(["plain", "hidden", "garbled"])(
-    "gives %s no shortcut: it declares nothing to show",
+  it.each(["hidden", "garbled"])(
+    "gives %s no shortcut: it is declared off, or declares nothing readable",
     async (id) => {
       expect(await ids()).not.toContain(`${AGENT}/${id}`);
     },
   );
+
+  it("reads an undeclared workbench as shown on its own row, and its switch takes the tile off", async () => {
+    const dir = await writeWorkbench(t.root, DEFAULTED, "quiet", packageJson({}), {
+      "index.ts": HANDLER,
+      "ui/index.html": "<h1>quiet</h1>",
+    });
+    const base = `/api/projects/${PROJECT}/agents/${DEFAULTED}/workbenches`;
+    const listed = (await (await owner.get(base)).json()) as { workbenches: WorkbenchInfo[] };
+    expect(listed.workbenches.find((w) => w.id === "quiet")).toMatchObject({
+      error: null,
+      hints: [],
+      appCenter: { show: true },
+    });
+    expect(await ids()).toContain(`${DEFAULTED}/quiet`);
+
+    const res = await owner.patch(`${base}/quiet/app-center`, { show: false });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(((await res.json()) as { workbench: WorkbenchInfo }).workbench.appCenter).toEqual({
+      show: false,
+    });
+    const written = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8"));
+    expect(written.penguin.appCenter).toEqual({ show: false });
+    expect(await ids()).not.toContain(`${DEFAULTED}/quiet`);
+  });
 
   it.each(MALFORMED.map(([id]) => id))(
     "gives a workbench whose declaration does not hold up (%s) no shortcut",

@@ -11,7 +11,10 @@
       "@prismshadow/penguin-library-db/database": ["../db/src/database.ts"],
       "@prismshadow/penguin-library-db/schema": ["../db/src/schema.ts"],
       "@prismshadow/penguin-library-db/migrations": ["../db/src/migrations/index.ts"],
-      "@prismshadow/penguin-library-db/migrations/runner": ["../db/src/migrations/runner.ts"]
+      "@prismshadow/penguin-library-db/migrations/runner": ["../db/src/migrations/runner.ts"],
+      "@prismshadow/penguin-library-http": ["../http/src/index.ts"],
+      "@prismshadow/penguin-library-http/validate": ["../http/src/validate.ts"],
+      "@prismshadow/penguin-library-project": ["../project/src/index.ts"]
     }
   },
   "include": ["src"]

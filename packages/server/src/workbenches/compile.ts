@@ -8,7 +8,10 @@
  * `tsconfig.json` in the folder is not consulted, so a workbench cannot switch strictness
  * off for itself. `@prismshadow/penguin-server/plugin` resolves to the types the harness
  * wrote into the folder (./harness-types.ts), never to a package: what the workbench was
- * written against. Whether that still fits this platform is ../plugin/iface-check.ts.
+ * written against. Whether that still fits this platform is ../plugin/iface-check.ts. Node's
+ * own modules (`node:fs`, `node:path`, `node:net`, …) are typed from the `@types/node` this
+ * server carries (../plugin/typescript.ts `nodeTypesRoot`), and no other `@types` package is:
+ * the handler runs in this process, so it reads and writes its folders with Node's `fs`.
  *
  * A second, virtual root file assigns the default export to `WorkbenchPackage`, so the
  * shape is checked even when the author left `satisfies WorkbenchPackage` out (in which
@@ -41,8 +44,17 @@ const MAX_DIAGNOSTICS = 12;
 
 export class WorkbenchCompileError extends Error {}
 
-/** Type-checks the workbench in `dir` and emits it; resolves to the emitted entry file. */
-export function compileWorkbench(ts: TypeScript, dir: string, revision: string): string {
+/**
+ * Type-checks the workbench in `dir` and emits it; resolves to the emitted entry file.
+ * `nodeTypes` is the `@types` folder holding `@types/node`, or null when this installation
+ * carries none (a `node:` import then fails the load).
+ */
+export function compileWorkbench(
+  ts: TypeScript,
+  dir: string,
+  revision: string,
+  nodeTypes: string | null,
+): string {
   const entry = path.join(dir, ENTRY);
   if (!fs.existsSync(entry)) {
     const js = ["index.mjs", "index.js"].find((f) => fs.existsSync(path.join(dir, f)));
@@ -62,6 +74,8 @@ export function compileWorkbench(ts: TypeScript, dir: string, revision: string):
     esModuleInterop: true,
     forceConsistentCasingInFileNames: true,
     skipLibCheck: true,
+    // Node's declarations and nothing else from any `@types`, wherever the server was started.
+    ...(nodeTypes !== null ? { typeRoots: [nodeTypes], types: ["node"] } : { types: [] }),
     rootDir: dir,
     outDir,
   };
