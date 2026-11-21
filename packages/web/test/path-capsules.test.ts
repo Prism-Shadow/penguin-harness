@@ -375,6 +375,22 @@ describe("an organization's conversation", () => {
     expect(capsuleCount(html)).toBe(0);
     expect(html).toContain("[Report](&lt;app_data_dir&gt;/organizations/");
   });
+
+  it("matches session IDs in inline code and prose and turns them into clickable /chat/<sessionId> links", () => {
+    const sid = "session-2026-11-19-09-52-07-48a86320";
+    const sid2 = "session-2026-11-04-18-51-18-e370e2f3";
+    const md = `Started \`${sid}\` and ${sid2}.`;
+    for (const pid of ["default_project", null]) {
+      const html = renderToStaticMarkup(
+        createElement(PathCapsulesProvider, {
+          projectId: pid,
+          children: createElement(Md, { text: md }),
+        }),
+      );
+      expect(html).toContain(`href="/chat/${sid}"`);
+      expect(html).toContain(`href="/chat/${sid2}"`);
+    }
+  });
 });
 
 describe("plain text with capsules", () => {

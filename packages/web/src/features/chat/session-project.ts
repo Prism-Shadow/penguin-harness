@@ -1,6 +1,17 @@
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { ofProject } from "../../lib/project-scope";
 
+const SHORT_SESSION_HEX_RE = /^[0-9a-f]{8}$/i;
+
+/** Whether `candidateId` matches `routeId` (exact match, or 8-hex short id suffix). */
+export function matchesSessionId(candidateId: string, routeId: string): boolean {
+  if (candidateId === routeId) return true;
+  if (SHORT_SESSION_HEX_RE.test(routeId)) {
+    return candidateId.toLowerCase().endsWith(`-${routeId.toLowerCase()}`);
+  }
+  return false;
+}
+
 /**
  * The Session the route names: the loaded list's row when it holds one, otherwise the row a
  * direct lookup produced.
@@ -23,9 +34,11 @@ export function resolveRoutedSession(
   projectId: string | null,
 ): SessionInfo | null {
   if (sessionId === null) return null;
-  const row = sessions.find((s) => s.sessionId === sessionId);
+  const row = sessions.find((s) => matchesSessionId(s.sessionId, sessionId));
   if (row !== undefined) return ofProject(row, projectId) ? row : null;
-  return fetched !== null && fetched.sessionId === sessionId && ofProject(fetched, projectId)
+  return fetched !== null &&
+    matchesSessionId(fetched.sessionId, sessionId) &&
+    ofProject(fetched, projectId)
     ? fetched
     : null;
 }
@@ -78,7 +91,12 @@ export function heldRouteSession(
   projectId: string | null,
 ): SessionInfo | null {
   if (listed !== null) return listed;
-  if (held === null || held.sessionId !== routeSessionId || !ofProject(held, projectId))
+  if (
+    held === null ||
+    routeSessionId === null ||
+    !matchesSessionId(held.sessionId, routeSessionId) ||
+    !ofProject(held, projectId)
+  )
     return null;
   return probeSaysGone ? null : held;
 }

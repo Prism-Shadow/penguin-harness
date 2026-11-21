@@ -184,7 +184,11 @@ export function renderMainChatBody(scope: MainChatView, toolbar: ReactNode) {
                               // An organization's conversation cites the organization's files
                               // by path; they read as capsules, as they do in its channels.
                               <PathCapsulesProvider
-                                projectId={selected?.orgId !== undefined ? projectId : null}
+                                projectId={
+                                  selected?.orgId !== undefined || company.workMode === "company"
+                                    ? projectId
+                                    : null
+                                }
                               >
                                 <MessageStream
                                   items={allItems}

@@ -36,12 +36,14 @@ import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import {
   codePath,
+  codeSessionId,
   pathKind,
   pathLabel,
   spellAsWritten,
   splitPaths,
   type PathScope,
 } from "./path-capsules";
+import { chatPath } from "./temp-session";
 
 /** One data path as a capsule, reading `label` when the writer named it. */
 export function PathCapsule({ path, label }: { path: string; label?: string }) {
@@ -71,13 +73,21 @@ export function PathCapsule({ path, label }: { path: string; label?: string }) {
   );
 }
 
-/** Plain text with its data paths drawn as capsules. */
+/** Plain text with its data paths drawn as capsules and Session ids as links. */
 export function PathText({ text, scope }: { text: string; scope: PathScope }) {
   return (
     <>
       {splitPaths(text, scope).map((piece, i) =>
         piece.kind === "text" ? (
           piece.text
+        ) : piece.kind === "session" ? (
+          <a
+            key={i}
+            href={chatPath(piece.sessionId)}
+            className="font-mono underline decoration-current/40 underline-offset-2 hover:decoration-current"
+          >
+            {piece.sessionId}
+          </a>
         ) : (
           <PathCapsule key={i} path={piece.path} label={piece.label} />
         ),
@@ -145,6 +155,15 @@ function walk(parent: MdNode, scope: CapsuleScope, source: string): void {
   for (let i = 0; i < children.length; i += 1) {
     const node = children[i]!;
     if (node.type === "inlineCode" && typeof node.value === "string") {
+      const sessionId = codeSessionId(node.value);
+      if (sessionId !== null) {
+        children[i] = {
+          type: "link",
+          url: chatPath(sessionId),
+          children: [node],
+        };
+        continue;
+      }
       const path = codePath(node.value, scope);
       if (path !== null) children[i] = capsuleNode(path);
       continue;
@@ -159,7 +178,7 @@ function walk(parent: MdNode, scope: CapsuleScope, source: string): void {
     }
     if (node.type === "text" && typeof node.value === "string") {
       const pieces = splitPaths(node.value, scope);
-      if (!pieces.some((p) => p.kind === "path")) continue;
+      if (!pieces.some((p) => p.kind !== "text")) continue;
       // A path touching the node's edge may run on into the sibling there — the parser split
       // it (`…/src/__init__.py` has an emphasis in the middle) — so it stays text. Only a bare
       // `/` or `\` can be the tail of such a split; `<app_data_dir>`, `~` and a drive letter
@@ -182,8 +201,16 @@ function walk(parent: MdNode, scope: CapsuleScope, source: string): void {
       ) {
         pieces[pieces.length - 1] = { kind: "text", text: lastPiece.path };
       }
-      const replaced = spellAsWritten(pieces, sourceOf(node, source)).map((p) =>
-        p.kind === "path" ? capsuleNode(p.path, p.label) : { type: "text", value: p.text },
+      const replaced = spellAsWritten(pieces, sourceOf(node, source)).map((p): MdNode =>
+        p.kind === "path"
+          ? capsuleNode(p.path, p.label)
+          : p.kind === "session"
+            ? {
+                type: "link",
+                url: chatPath(p.sessionId),
+                children: [{ type: "text", value: p.sessionId }],
+              }
+            : { type: "text", value: p.text },
       );
       children.splice(i, 1, ...replaced);
       i += replaced.length - 1;
@@ -227,8 +254,8 @@ export function PathMarkdown({ text, scope }: { text: string; scope: PathScope }
 
 /**
  * Draws the data paths in every Markdown body below as capsules: an organization's conversations
- * (a desk, a ticket session), whose replies cite the organization's files. Its links stay links.
- * `projectId` null draws them as written.
+ * (a desk, a ticket session), whose replies cite the organization's files. Its links stay links,
+ * and Session ids become links to `/chat/<sessionId>`. `projectId` null draws data paths as written.
  */
 export function PathCapsulesProvider({
   projectId,
@@ -237,14 +264,11 @@ export function PathCapsulesProvider({
   projectId: string | null;
   children: ReactNode;
 }) {
-  const extensions = useMemo<MdExtensions | null>(
-    () =>
-      projectId === null
-        ? null
-        : {
-            plugins: [[remarkPathCapsules, { projectId, links: false }]],
-            components: PATH_COMPONENTS,
-          },
+  const extensions = useMemo<MdExtensions>(
+    () => ({
+      plugins: [[remarkPathCapsules, { projectId, links: false }]],
+      components: PATH_COMPONENTS,
+    }),
     [projectId],
   );
   return <MdExtensionsProvider extensions={extensions}>{children}</MdExtensionsProvider>;

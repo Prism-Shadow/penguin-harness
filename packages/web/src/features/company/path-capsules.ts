@@ -45,15 +45,22 @@
 
 export interface PathScope {
   /** The Project the ticket belongs to: the directory an absolute path must pass through. */
-  projectId: string;
+  projectId: string | null;
 }
 
 export type PathPiece =
   | { kind: "text"; text: string }
   /** `label`, when the text named the path: what its capsule reads instead of the last segment. */
-  | { kind: "path"; path: string; label?: string };
+  | { kind: "path"; path: string; label?: string }
+  /** A Session id (`session-YYYY-MM-DD-HH-MM-SS-xxxxxxxx`) in prose: linked to `/chat/<sessionId>`. */
+  | { kind: "session"; sessionId: string };
 
 const PLACEHOLDER_ROOT = "<app_data_dir>";
+
+/** A Session id in prose or inline code: `session-YYYY-MM-DD-HH-MM-SS-xxxxxxxx`. */
+const PROSE_SESSION_ID =
+  /(?<![A-Za-z0-9._~+=@%/\\-])session-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}(?![A-Za-z0-9_~+=@%/\\-]|\.[A-Za-z0-9])/g;
+const CODE_SESSION_ID = /^session-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}$/;
 
 /** One segment of a prose path: plain characters, or a whole `<placeholder>`. */
 const PROSE_SEGMENT = String.raw`(?:<[a-z][a-z0-9_]*>|[A-Za-z0-9._~+=@%-])+`;
@@ -80,6 +87,7 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Whether a well-formed candidate starts at a root this module capsules. */
 function rooted(path: string, scope: PathScope): boolean {
+  if (scope.projectId === null) return false;
   const p = path.replace(/\\/g, "/");
   if (p.startsWith(`${PLACEHOLDER_ROOT}/`)) return true;
   if (p.startsWith("/api/")) return false;
@@ -102,14 +110,24 @@ function hasSegment(path: string): boolean {
   return pathLabel(path) !== "";
 }
 
-/** Splits prose into text and path pieces, in order. Adjacent text is merged; empty text is never emitted. */
+/** Splits prose into text, path and session pieces, in order. Adjacent text is merged; empty text is never emitted. */
 export function splitPaths(text: string, scope: PathScope): PathPiece[] {
   const out: PathPiece[] = [];
-  const pushText = (value: string) => {
+  const pushPlainText = (value: string) => {
     if (value === "") return;
     const prev = out[out.length - 1];
     if (prev?.kind === "text") prev.text += value;
     else out.push({ kind: "text", text: value });
+  };
+  const pushText = (value: string) => {
+    if (value === "") return;
+    let lastIdx = 0;
+    for (const m of value.matchAll(PROSE_SESSION_ID)) {
+      pushPlainText(value.slice(lastIdx, m.index));
+      out.push({ kind: "session", sessionId: m[0] });
+      lastIdx = m.index + m[0].length;
+    }
+    pushPlainText(value.slice(lastIdx));
   };
   const pushProse = (prose: string) => {
     let last = 0;
@@ -142,6 +160,12 @@ export function codePath(code: string, scope: PathScope): string | null {
   const value = code.trim();
   if (!CODE_PATH.test(value) || !rooted(value, scope) || !hasSegment(value)) return null;
   return value;
+}
+
+/** The Session id an inline code span holds, when it holds one; null for anything else. */
+export function codeSessionId(code: string): string | null {
+  const value = code.trim();
+  return CODE_SESSION_ID.test(value) ? value : null;
 }
 
 /**

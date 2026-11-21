@@ -282,6 +282,19 @@ function extractStringField(argsJson: string, field: string): PartialField | nul
   return { value: out, complete: false };
 }
 
+const TICKET_SESSION_LINE_RE =
+  /^\s*(session-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8})\s*$/gm;
+
+function extractOutputSessionIds(output: string): string[] {
+  const ids: string[] = [];
+  for (const m of output.matchAll(TICKET_SESSION_LINE_RE)) {
+    const id = m[1]!;
+    if (!ids.includes(id)) ids.push(id);
+    if (ids.length >= 5) break;
+  }
+  return ids;
+}
+
 export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: StreamRenderContext }) {
   const { toolAliases } = useTheme();
   // Matched by the current origin chain + toolCallId: prevents parent/child session tool_call_id collisions from lighting each other up.
@@ -307,6 +320,10 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
   const output = useMemo(
     () => stripAnsi(elidedPreview(item.output, item.elidedOutput, "payload.output", "\n…\n")),
     [item.output, item.elidedOutput],
+  );
+  const outputSessionIds = useMemo(
+    () => (item.subagent ? [] : extractOutputSessionIds(output)),
+    [item.subagent, output],
   );
   // A child's inline image that came folded has no picture to draw until it is fetched.
   const images = item.images?.filter((src) => src !== "") ?? [];
@@ -408,6 +425,35 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
             agentId={agentIdFromRunSubagentArgs(item.argumentsText)}
             ctx={ctx}
           />
+        ) : outputSessionIds.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {outputSessionIds.map((sid) => (
+              <a
+                key={sid}
+                href={`/chat/${sid}`}
+                onClick={(event) => {
+                  if (
+                    event.metaKey ||
+                    event.ctrlKey ||
+                    event.shiftKey ||
+                    event.altKey ||
+                    (event.button !== undefined && event.button !== 0)
+                  ) {
+                    return;
+                  }
+                  event.preventDefault();
+                  if (typeof window !== "undefined") {
+                    window.history.pushState({}, "", `/chat/${sid}`);
+                    window.dispatchEvent(new PopStateEvent("popstate"));
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface-raised px-2.5 py-1 font-mono text-xs text-fg transition-colors hover:bg-surface-hover"
+              >
+                <span>↗</span>
+                <span>{sid}</span>
+              </a>
+            ))}
+          </div>
         ) : undefined
       }
     />
