@@ -21,6 +21,7 @@ import type {
 } from "@prismshadow/penguin-core";
 import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import type { ScheduleStateRow } from "./repos/schedules.js";
+import type { ScheduleDefinition } from "./schedule-file.js";
 import type { ApprovalReason as CoreApprovalReason } from "@prismshadow/penguin-core/interfaces";
 
 /** From packages/server: ApprovalMode (was api/types.ts). The contract names it, so the type lives with the contract. */
