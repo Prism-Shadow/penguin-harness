@@ -113,8 +113,9 @@ describe("changing one's password", () => {
     expect(underCurrent()!.querySelector("[data-report-issue]")).toBeNull();
 
     await click(button("Save"));
-    await waitFor(() => underCurrent()?.querySelector("[data-report-issue]") != null);
-    await click(underCurrent()!.querySelector("[data-report-issue]")!);
+    // A failed save is not about an input: it lands on the dialog's own line, Report after it.
+    await waitFor(() => document.querySelector("[data-report-issue]") != null);
+    await click(document.querySelector("[data-report-issue]")!);
     expect(reportStore.getState().open?.facts).toContainEqual(["Error code", "internal"]);
     closeReport();
   });
