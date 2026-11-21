@@ -98,6 +98,7 @@ const fakePlugin = (name: string, category?: string): LibraryPlugin => ({
   defaultInstall: false,
   skills: [],
   mcpServers: [],
+  modules: false,
   ...(category !== undefined ? { category } : {}),
 });
 
