@@ -19,18 +19,14 @@ import {
   buildRfcTree,
   collapsibleRfcTreeKeys,
   countRfcTreeDescendantEntries,
-  DEFAULT_RFC_TREE_STYLE,
   findRfcSearchMatchRanges,
   isMajorRfcVersion,
-  isRfcTreeStyle,
   isValidRfcSemver,
   readRfcTreeCollapsed,
-  readRfcTreeStyle,
   RFC_TREE_COLLAPSED_STORAGE_KEY,
-  RFC_TREE_STYLE_STORAGE_KEY,
-  RFC_TREE_STYLES,
   rfcBodyMarkdown,
   rfcEntries,
+  rfcEntryOf,
   rfcEntryShortTitle,
   rfcEntryTitle,
   rfcPagerFor,
@@ -39,7 +35,6 @@ import {
   shortRfcNumber,
   shortRfcTitle,
   writeRfcTreeCollapsed,
-  writeRfcTreeStyle,
 } from "../src/lib/rfcs";
 import type { RfcTreeNode } from "../src/lib/rfcs";
 import { rfcIndexMarkdown } from "../src/pages/rfcs";
@@ -214,10 +209,19 @@ describe("buildRfcIndex", () => {
   });
 
   it("validates SemVer 2.0 RFC versions and identifies major RFC versions", () => {
-    for (const v of ["v0.0.1", "v0.0.2", "v0.1.0", "v0.2.0", "v1.0.0", "v1.2.0", "v2.0.0"]) {
+    for (const v of [
+      "v0.0.1",
+      "v0.0.2",
+      "v0.1.0",
+      "v0.2.0",
+      "v1.0.0",
+      "v1.0.0-alpha.1",
+      "v1.2.0",
+      "v2.0.0",
+    ]) {
       expect(isValidRfcSemver(v)).toBe(true);
     }
-    for (const bad of ["v0.0.0", "v0.1", "v1", "1.0.0", "v01.0.0", ""]) {
+    for (const bad of ["v0.0.0", "v0.1", "v1", "1.0.0", "v01.0.0", "v1.0.0-01", ""]) {
       expect(isValidRfcSemver(bad)).toBe(false);
     }
 
@@ -286,7 +290,6 @@ describe("buildRfcIndex", () => {
             id: "PRFC-0003-plugin",
             number: "PRFC-0003",
             title: "PRFC-0003 Plugin",
-            version: "v1.1.0",
           },
         ],
       },
@@ -298,7 +301,6 @@ describe("buildRfcIndex", () => {
         title: "feat: add module passes and verified reconfiguration semantics",
         url: "https://github.com/Prism-Shadow/penguin-harness/pull/1560",
         status: "draft",
-        version: "v1.1.0",
       },
     ]);
   });
@@ -404,15 +406,12 @@ describe("buildRfcIndex", () => {
     ]);
     store.set(RFC_TREE_COLLAPSED_STORAGE_KEY, '["PRFC-0001-module","unknown-key",42]');
     expect([...readRfcTreeCollapsed(validSet, mockStorage)]).toEqual(["PRFC-0001-module"]);
+  });
 
-    expect(DEFAULT_RFC_TREE_STYLE).toBe("smartlog");
-    expect(RFC_TREE_STYLES).toEqual(["smartlog", "metro", "spine", "horizontal", "orthogonal"]);
-    expect(isRfcTreeStyle("smartlog")).toBe(true);
-    expect(isRfcTreeStyle("invalid")).toBe(false);
-    expect(readRfcTreeStyle(mockStorage)).toBe("smartlog");
-    writeRfcTreeStyle("metro", mockStorage);
-    expect(store.get(RFC_TREE_STYLE_STORAGE_KEY)).toBe("metro");
-    expect(readRfcTreeStyle(mockStorage)).toBe("metro");
+  it("resolves RFC entries by exact id or by PRFC number when a slug was renamed", () => {
+    expect(rfcEntryOf("PRFC-0024-cli-modules")?.id).toBe("PRFC-0024-cli-modules");
+    expect(rfcEntryOf("PRFC-0024-cli-resolution")?.id).toBe("PRFC-0024-cli-modules");
+    expect(rfcEntryOf("PRFC-9999-nonexistent")).toBeUndefined();
   });
 
   it("merges the language pair into one entry and skips non-PRFC files", () => {
@@ -460,11 +459,24 @@ describe("buildRfcIndex", () => {
     expect(fromFirst.next?.href).toBe("/rfcs/PRFC-0002-hmr");
   });
 
-  it("indexes sections for search and highlights query match ranges", () => {
+  it("indexes sections for search, skips fenced code blocks, and highlights query match ranges", () => {
     const records = buildRfcSearchRecords("en", {
       title: "RFC index",
-      body: "Every design decision is recorded as an RFC.\n\n## The RFCs\n\nModule and Plugin.",
+      body: [
+        "Every design decision is recorded as an RFC.",
+        "",
+        "```sh",
+        "## FakeFenceHeading",
+        "unsearchable_fence_token_xyz",
+        "```",
+        "",
+        "## The RFCs",
+        "",
+        "Module and Plugin.",
+      ].join("\n"),
     });
+    expect(searchRfcRecords(records, "FakeFenceHeading")).toEqual([]);
+    expect(searchRfcRecords(records, "unsearchable_fence_token_xyz")).toEqual([]);
     const hits = searchRfcRecords(records, "module");
     expect(hits.length).toBeGreaterThan(0);
     expect(hits.some((h) => h.record.href === "/rfcs/PRFC-0001-module")).toBe(true);

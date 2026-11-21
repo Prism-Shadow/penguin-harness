@@ -100,24 +100,11 @@ export interface RfcTreeNode {
   children?: RfcTreeNode[];
 }
 
-/** Visual variants of the borderless RFC Graph Tree view on `/rfcs`. */
-export type RfcTreeStyle = "smartlog" | "metro" | "spine" | "horizontal" | "orthogonal";
-
-export const RFC_TREE_STYLES: readonly RfcTreeStyle[] = [
-  "smartlog",
-  "metro",
-  "spine",
-  "horizontal",
-  "orthogonal",
-];
-
-export const DEFAULT_RFC_TREE_STYLE: RfcTreeStyle = "smartlog";
-export const RFC_TREE_STYLE_STORAGE_KEY = "penguin-rfc-tree-style-v3";
 export const RFC_TREE_COLLAPSED_STORAGE_KEY = "penguin-rfc-tree-collapsed-v1";
 
 /** SemVer 2.0 format required by `check-rfcs` (`vMAJOR.MINOR.PATCH`, e.g. `v0.0.1`, `v0.1.0`, `v1.0.0`). */
 export const RFC_SEMVER_REGEX =
-  /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+  /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
 /** Whether `version` is a valid SemVer 2.0 RFC version (`vMAJOR.MINOR.PATCH` and not `v0.0.0`). */
 export function isValidRfcSemver(version: string): boolean {
@@ -141,6 +128,35 @@ export function isMajorRfcVersion(version: string): boolean {
   const patch = Number(m[3] ?? "0");
   const nonZeroCount = (major > 0 ? 1 : 0) + (minor > 0 ? 1 : 0) + (patch > 0 ? 1 : 0);
   return nonZeroCount === 1;
+}
+
+function compareRfcVersionTuple(a?: string, b?: string): number {
+  const parse = (v?: string): [number, number, number] | null => {
+    const m = /^v?(0|[1-9]\d*)(?:\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?)?$/.exec((v ?? "").trim());
+    return m ? [Number(m[1]), Number(m[2] ?? "0"), Number(m[3] ?? "0")] : null;
+  };
+  const ta = parse(a);
+  const tb = parse(b);
+  if (!ta && !tb) return 0;
+  if (!ta) return -1;
+  if (!tb) return 1;
+  return ta[0] - tb[0] || ta[1] - tb[1] || ta[2] - tb[2];
+}
+
+function pickLastMajorRfcPr(items: readonly { pr: RfcPrRecord; ref: RfcPrDocRef }[]): {
+  pr: RfcPrRecord;
+  ref: RfcPrDocRef;
+} {
+  const explicitMajor = items
+    .filter(({ ref }) => Boolean(ref.version && isMajorRfcVersion(ref.version)))
+    .slice()
+    .sort(
+      (a, b) => compareRfcVersionTuple(a.ref.version, b.ref.version) || a.pr.number - b.pr.number,
+    );
+  if (explicitMajor.length > 0) return explicitMajor.at(-1)!;
+  const unversioned = items.filter(({ ref }) => !ref.version);
+  if (unversioned.length > 0) return unversioned.at(-1)!;
+  return items.at(-1)!;
 }
 
 export interface RfcSearchRecord {
@@ -233,7 +249,9 @@ export function buildRfcIndex(
     if (pr.status === "closed") continue;
     for (const ref of pr.rfcs ?? []) {
       const list = itemsByRfcId.get(ref.id) ?? [];
-      list.push({ pr, ref });
+      if (!list.some((item) => item.pr.number === pr.number)) {
+        list.push({ pr, ref });
+      }
       itemsByRfcId.set(ref.id, list);
     }
   }
@@ -250,18 +268,8 @@ export function buildRfcIndex(
     const mergedItems = items.filter(({ pr }) => pr.status === "merged");
     const openingItems = items.filter(({ pr }) => pr.status === "open" || pr.status === "draft");
 
-    let main: { pr: RfcPrRecord; ref: RfcPrDocRef };
-    if (mergedItems.length > 0) {
-      const majorMerged = mergedItems.filter(
-        ({ ref }) => !ref.version || isMajorRfcVersion(ref.version),
-      );
-      main = majorMerged.at(-1) ?? mergedItems[0]!;
-    } else {
-      const majorOpening = openingItems.filter(
-        ({ ref }) => !ref.version || isMajorRfcVersion(ref.version),
-      );
-      main = majorOpening.at(-1) ?? openingItems[0]!;
-    }
+    const main =
+      mergedItems.length > 0 ? pickLastMajorRfcPr(mergedItems) : pickLastMajorRfcPr(openingItems);
 
     const openEditions: RfcEditionPr[] = openingItems
       .filter(({ pr }) => pr.number !== main.pr.number)
@@ -569,37 +577,6 @@ function defaultStorage(): Storage | null {
   }
 }
 
-/** Whether `value` is one of the supported RFC Graph Tree visual styles. */
-export function isRfcTreeStyle(value: unknown): value is RfcTreeStyle {
-  return typeof value === "string" && (RFC_TREE_STYLES as readonly string[]).includes(value);
-}
-
-/** Read the persisted RFC Graph Tree visual style from storage. */
-export function readRfcTreeStyle(
-  storage: Pick<Storage, "getItem"> | null | undefined = defaultStorage(),
-): RfcTreeStyle {
-  try {
-    const raw = storage?.getItem(RFC_TREE_STYLE_STORAGE_KEY);
-    return isRfcTreeStyle(raw) ? raw : DEFAULT_RFC_TREE_STYLE;
-  } catch {
-    return DEFAULT_RFC_TREE_STYLE;
-  }
-}
-
-/** Persist the selected RFC Graph Tree visual style to storage. */
-export function writeRfcTreeStyle(
-  style: RfcTreeStyle,
-  storage: Pick<Storage, "setItem"> | null | undefined = defaultStorage(),
-): void {
-  try {
-    if (isRfcTreeStyle(style)) {
-      storage?.setItem(RFC_TREE_STYLE_STORAGE_KEY, style);
-    }
-  } catch {
-    // Ignore storage access errors.
-  }
-}
-
 /** Read the persisted set of collapsed RFC tree node keys from storage. */
 export function readRfcTreeCollapsed(
   validKeys: ReadonlySet<string> = new Set(collapsibleRfcTreeKeys()),
@@ -630,10 +607,13 @@ export function writeRfcTreeCollapsed(
   }
 }
 
-/** Find an RFC entry by its route id (with or without the `.zh` suffix). */
+/** Find an RFC entry by its route id (with or without the `.zh` suffix, falling back to 4-digit RFC number). */
 export function rfcEntryOf(id: string): RfcEntry | undefined {
   const baseId = id.replace(/\.zh$/, "");
-  return rfcEntries.find((entry) => entry.id === baseId);
+  const exact = rfcEntries.find((entry) => entry.id === baseId);
+  if (exact) return exact;
+  const num = baseId.match(/^PRFC-\d+/)?.[0];
+  return num ? rfcEntries.find((entry) => entry.number === num) : undefined;
 }
 
 /** Look up one language version's raw document by its in-site id (with or without the .zh suffix). */
@@ -773,20 +753,27 @@ function splitMarkdownSections(body: string): { heading: string; anchor: string;
     { heading: "", anchor: "", lines: [] },
   ];
   let current = sections[0]!;
-  let inFence = false;
+  let fenceMarker: string | null = null;
   for (const line of body.split("\n")) {
-    if (/^\s*(?:```|~~~)/.test(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (!inFence) {
-      const match = /^(#{2,3})\s+(.+?)\s*$/.exec(line);
-      if (match) {
-        const heading = markdownToPlain(match[2]!);
-        current = { heading, anchor: slugifyHeading(heading), lines: [] };
-        sections.push(current);
+    const fenceMatch = /^\s*(```+|~~~+)/.exec(line);
+    if (fenceMatch) {
+      const marker = fenceMatch[1]!.slice(0, 3);
+      if (!fenceMarker) {
+        fenceMarker = marker;
         continue;
       }
+      if (fenceMarker === marker) {
+        fenceMarker = null;
+        continue;
+      }
+    }
+    if (fenceMarker) continue;
+    const match = /^(#{2,3})\s+(.+?)\s*$/.exec(line);
+    if (match) {
+      const heading = markdownToPlain(match[2]!);
+      current = { heading, anchor: slugifyHeading(heading), lines: [] };
+      sections.push(current);
+      continue;
     }
     if (!/^\[[^\]]+\]:\s*#/.test(line)) current.lines.push(line);
   }

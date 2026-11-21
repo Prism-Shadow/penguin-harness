@@ -73,12 +73,17 @@ export function extractRfcVersion(raw) {
   if (!raw) return undefined;
   const candidates = [];
   const revMatch = raw.match(
-    /^\s*>\s*(?:-\s*)?(?:\*\*Rev\*\*:|Rev:|\*\*修订\*\*：|修订：)\s*(v\d+\.\d+(?:\.\d+)?)/m,
+    /^\s*>\s*(?:-\s*)?(?:\*\*Rev\*\*:|Rev:|\*\*修订\*\*：|修订：)\s*(v\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)/m,
   );
   if (revMatch?.[1]) candidates.push(revMatch[1]);
   const changesIdx = raw.indexOf("\n## Changes");
   if (changesIdx >= 0) {
-    for (const m of raw.slice(changesIdx).matchAll(/^###\s+(v\d+\.\d+(?:\.\d+)?)/gm)) {
+    const afterChanges = raw.slice(changesIdx + 1);
+    const nextSectionIdx = afterChanges.search(/\n##\s+/);
+    const changesBlock = nextSectionIdx >= 0 ? afterChanges.slice(0, nextSectionIdx) : afterChanges;
+    for (const m of changesBlock.matchAll(
+      /^###\s+(v\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)/gm,
+    )) {
       if (m[1]) candidates.push(m[1]);
     }
   }
@@ -344,7 +349,8 @@ export function refreshRfcPrStatusCache({
 function readJsonIfExists(file) {
   if (!existsSync(file)) return null;
   try {
-    return JSON.parse(readFileSync(file, "utf8"));
+    const parsed = JSON.parse(readFileSync(file, "utf8"));
+    return parsed && Array.isArray(parsed.prs) ? parsed : null;
   } catch {
     return null;
   }
@@ -370,7 +376,9 @@ export function loadRfcPrStatuses({
   const cached = seedNewer
     ? (readJsonIfExists(seedFile) ?? readJsonIfExists(cacheFile))
     : (readJsonIfExists(cacheFile) ?? readJsonIfExists(seedFile));
-  if (offline && cached) return cached;
+  if (offline) {
+    return cached ?? { updatedAt: new Date(now).toISOString(), prs: [] };
+  }
   try {
     const { cache, fetched } = refreshRfcPrStatusCache({
       cache: cached,
