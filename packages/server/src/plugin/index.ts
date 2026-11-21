@@ -78,6 +78,8 @@ export type {
   ToolModelBindingsSlots,
   ToolModelBindingTitle,
   ToolModelCandidate,
+  ToolModelTestRequest,
+  ToolModelTestSubject,
 } from "../services/tool-model-bindings.js";
 export type {
   ProjectModelRequest,

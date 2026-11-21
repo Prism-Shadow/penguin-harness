@@ -97,6 +97,11 @@ function asIndexEntry(value: unknown): IndexDocumentEntry | null {
       if (typeof c.kind !== "string" || c.kind === "" || typeof c.url !== "string") return null;
     }
   }
+  // Only the serving machine can report an installed version, even when the index is self-hosted.
+  if ("localInstall" in e) {
+    const { localInstall: _localOnly, ...entry } = e;
+    return entry as unknown as IndexDocumentEntry;
+  }
   return value as IndexDocumentEntry;
 }
 

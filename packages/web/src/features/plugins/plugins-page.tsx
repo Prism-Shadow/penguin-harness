@@ -1,15 +1,25 @@
 /**
- * The plugin market: every plugin as one card (plugin-card.tsx) — the library's plugins
+ * The plugin market: every plugin as one cover card (plugin-card.tsx) — the library's plugins
  * (Skills and/or a hook package, loaded by core from the @penguinharness/* packages and
  * installed on Agents) and the server modules a Project can ask for (the Agent Sandbox backends
- * and whatever the registry lists, installed on the server by an admin). Cards sit in
- * collapsible sections, by category unless the reader picks another grouping — status,
- * contents, or none — in the select beside the header's search box, which narrows the cards.
- * The grouping and which sections are folded are remembered per browser (plugin-groups.ts); the
- * search is not. A filter beside the search box narrows the list to the plugins this build
- * cannot fully run, also per browser (incompatible-only.ts), and while it does a notice under the
- * title says so. Clicking a card opens its detail dialog (plugin-detail.tsx); the status rules are
- * plugin-status.ts.
+ * and whatever the registry lists, installed on the server by an admin). The catalogue opens
+ * directly on the search, filters and results. Cards and compact rows share their actions.
+ * - **The tabs**: "All", then one tab per section of the grouping (category unless the reader
+ *   picks status or contents; no grouping, no tabs). The tab is in the URL (`?tab=<section>`),
+ *   so a tab can be linked; one the grouping does not have reads as All. The grouping select and
+ *   the sort select stand at the tab row's end; both are remembered per browser
+ *   (plugin-groups.ts, plugin-market.ts), the search is not.
+ * - **The grid** is the tab's rows, narrowed by the search, in the chosen sort — the curation's
+ *   order, recency, use in this Project, the name, or installs while the curation carries
+ *   live popularity figures. A search that finds nothing here but something in another tab says so
+ *   and offers the "All" tab.
+ * - **The detail** is in the URL too (`?plugin=<name>`): opening one pushes a history entry, so
+ *   Back closes it; closing one a link opened replaces the entry. The plugin a link names shows
+ *   its detail even while the tab or the search hides its card.
+ *
+ * A filter chip beside the search box narrows the list to the plugins this build cannot fully
+ * run, per browser (incompatible-only.ts), and while it does a notice under the title says so.
+ * The status rules are plugin-status.ts.
  *
  * - A library plugin is installed per Agent, by any member, through its card's "manage
  *   installs" dialog, and uninstalled there by the Project owner; the update nudge appears when
@@ -37,14 +47,13 @@
  * card's status and "used by" are placeholders (plugin-card.tsx).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 import type { AgentSummary, PluginItem, QuickStartItem } from "@prismshadow/penguin-server/api";
 import {
   Button,
   ChoiceGroup,
-  CollapsibleSection,
   ConfirmModal,
-  EntityCardGrid,
+  CoverCardSkeleton,
   GlyphIcon,
   ICONS,
   Notice,
@@ -52,8 +61,10 @@ import {
   PageHeader,
   SearchInput,
   Select,
-  Skeleton,
-  SkeletonCard,
+  ShowcaseGrid,
+  ShowcaseLayoutToggle,
+  useShowcaseLayout,
+  Tabs,
   TodoNotice,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
@@ -86,15 +97,31 @@ import { SettingsDialog } from "../settings";
 import { pickDefaultAgent } from "../ai-create";
 import { pluginPickItems } from "../agents";
 import { toneInk } from "../../lib/tone";
+import { appWindowPath } from "../../lib/app-center-path";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
-import type { InstallTarget } from "./plugin-card";
+import type { InstallTarget, PluginCardProps } from "./plugin-card";
+import { rowTitle } from "./plugin-marks";
+import {
+  ALL_TAB,
+  artOf,
+  availableSorts,
+  initialPluginsSort,
+  isSelected,
+  popularityOf,
+  sortRows,
+  storePluginsSort,
+  tabRows,
+  type PluginSort,
+} from "./plugin-market";
 import {
   INDEX_KEY,
   LIBRARY_KEY,
+  MARKET_KEY,
   installedPlugins,
   installedPluginsKey,
   pluginIndex,
   pluginLibrary,
+  pluginMarket,
 } from "./plugin-reads";
 import {
   agentInstalls,
@@ -114,15 +141,11 @@ import {
 } from "../../lib/plugins-incompatible-only";
 import {
   PLUGIN_GROUP_BYS,
-  foldKey,
   groupRows,
-  initialFoldedGroups,
   initialPluginsGroupBy,
   moduleParts,
   pluginCategories,
   pluginRows,
-  rowMatches,
-  storeFoldedGroups,
   storePluginsGroupBy,
   type PluginGroupBy,
   type PluginRow,
@@ -151,6 +174,10 @@ const EVERY_VISIT = { minAgeMs: 0 };
 
 /** The picker's value for this server until its id is read: no machine id is empty. */
 const SELF_PENDING = "";
+
+/** The query naming the tab on show (absent: All), and the plugin whose detail is open. */
+const TAB_PARAM = "tab";
+const PLUGIN_PARAM = "plugin";
 
 /**
  * What updating EVERY outdated plugin on this page would write, grouped the way it is sent.
@@ -272,20 +299,46 @@ export function PluginsPage() {
   /** Only the plugins this build cannot fully run: the filter beside the search, kept per browser. */
   const incompatibleOnly = usePluginsIncompatibleOnly();
   const [groupBy, setGroupBy] = useState<PluginGroupBy>(() => initialPluginsGroupBy());
-  const [folded, setFolded] = useState<ReadonlySet<string>>(() => initialFoldedGroups());
+  const [layout, chooseLayout] = useShowcaseLayout("penguin.pluginsLayout");
+  const [sort, setSort] = useState<PluginSort>(() => initialPluginsSort());
 
   const chooseGroupBy = (by: PluginGroupBy) => {
     setGroupBy(by);
     storePluginsGroupBy(by);
   };
-  const toggleFold = (key: string) =>
-    setFolded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      storeFoldedGroups(next);
-      return next;
-    });
+  const chooseSort = (next: PluginSort) => {
+    setSort(next);
+    storePluginsSort(next);
+  };
+
+  /**
+   * The curation: what is selected, what may lead, and the art; null until it answers, and for
+   * good when it cannot (a server older than the market answers 404) — generated covers.
+   */
+  const market = useRead(pluginMarket, MARKET_KEY, () => api.getPluginMarket(), EVERY_VISIT).value;
+
+  // The tab and the open detail live in the URL. A tab switch replaces the entry; a detail
+  // opened here pushes one, so Back closes it, and closing it steps back; closing one a link
+  // opened replaces the entry instead.
+  const location = useLocation();
+  const [params, setParams] = useSearchParams();
+  const tabParam = params.get(TAB_PARAM);
+  const openName = params.get(PLUGIN_PARAM);
+  const openedHere = (location.state as { pluginDetail?: boolean } | null)?.pluginDetail === true;
+  const withParam = (name: string, value: string | null) => (prev: URLSearchParams) => {
+    const next = new URLSearchParams(prev);
+    if (value === null) next.delete(name);
+    else next.set(name, value);
+    return next;
+  };
+  const selectTab = (key: string) =>
+    setParams(withParam(TAB_PARAM, key === ALL_TAB ? null : key), { replace: true });
+  const openDetail = (name: string) =>
+    setParams(withParam(PLUGIN_PARAM, name), { state: { pluginDetail: true } });
+  const closeDetail = () => {
+    if (openedHere) void navigate(-1);
+    else setParams(withParam(PLUGIN_PARAM, null), { replace: true });
+  };
 
   const { machineIds, machineLabels } = useSessions();
   /** Every machine of the Project with its Agents, reachable or not (lib/machine-agent-lists.ts). */
@@ -391,6 +444,9 @@ export function PluginsPage() {
     specifier: string;
     name: string;
     install: boolean;
+    version?: string;
+    previousVersion?: string;
+    resourceOnly?: boolean;
     projectId: string;
     machineId: string;
   } | null>(null);
@@ -416,7 +472,7 @@ export function PluginsPage() {
       const next = install
         ? await api.installPluginStream(
             target.projectId,
-            specifier,
+            target.version ? `${specifier}@${target.version}` : specifier,
             target.machineId,
             // A download the user has navigated away from does not write this visit's state;
             // the request itself runs on.
@@ -440,6 +496,11 @@ export function PluginsPage() {
         if (!isCurrentVisit()) return;
       }
       installedPlugins.accept(installedPluginsKey(target.projectId, null), next);
+      if (install && target.machineId === selfId) {
+        pluginLibrary.invalidate(LIBRARY_KEY);
+        pluginIndex.invalidate(INDEX_KEY);
+        void reloadAgents().catch(() => undefined);
+      }
       const row = next.plugins.find((p) => p.specifier === specifier);
       if (install && row?.error !== undefined) {
         toastFailure(
@@ -856,73 +917,102 @@ export function PluginsPage() {
     );
   const unsatisfiedCount = rows.filter((row) => row.module?.unsatisfied !== undefined).length;
   const searching = query.trim() !== "" || incompatibleOnly;
-  const visible = rows.filter(
-    (row) => rowMatches(row, query) && (!incompatibleOnly || row.module?.unsatisfied !== undefined),
-  );
-  const sections = groupRows(visible, statusOf, groupBy, categories);
+  /** The list the tabs split: every row, or the incompatible ones while the filter is on. */
+  const listed = rows.filter((row) => !incompatibleOnly || row.module?.unsatisfied !== undefined);
+  // The tabs come from the whole list, not the search's matches, so typing never moves them.
+  const sections = groupBy === "none" ? [] : groupRows(listed, statusOf, groupBy, categories);
+  const tab = tabRows(sections, tabParam, listed, query);
+  const activeTab = tab.active;
+  /** The market's popularity figures (placeholders for now; see plugin-market.ts), or null. */
+  const popularity = popularityOf(market);
+  const sorts = availableSorts(popularity);
+  /** The sort on show: a stored "popular" reads as the curation's order while no figures exist. */
+  const shownSort = sorts.includes(sort) ? sort : "featured";
+  const visible = sortRows(tab.rows, shownSort, {
+    title: (row) => rowTitle(row, locale),
+    selected: market?.selected ?? [],
+    usedBy: (row) => usages.get(row.key)?.usedBy.length ?? 0,
+    popularity,
+  });
   const categoryTitle = (id: string) => categories.find((c) => c.id === id)?.title ?? id;
+  /** The row a link's `?plugin=` names; its detail opens even when its card is not in the grid. */
+  const openRow = openName === null ? undefined : rows.find((row) => row.name === openName);
 
-  const card = (row: PluginRow) => (
-    <PluginCard
-      framed={groupBy === "none"}
-      key={row.key}
-      row={row}
-      status={statusOf(row)}
-      usage={usages.get(row.key) ?? null}
-      categoryTitle={categoryTitle(row.category)}
-      showCategory={groupBy !== "category"}
-      targets={targets}
-      blankAgent={{ library: pickLibrary, onCreated: blankAgentCreated }}
-      installed={installed}
-      unknown={unknown}
-      failed={unreadable}
-      pending={
-        (row.module !== undefined && modulesPending) ||
-        (row.library !== undefined && libraryPending)
+  const cardProps = (row: PluginRow): PluginCardProps => ({
+    marketCard: true,
+    layout: layout === "list" ? "row" : "cover",
+    currentAgentId: currentAgent?.agentId,
+    // The first row of that name, should two packages share one: one detail at a time.
+    detailOpen: row === openRow,
+    onDetailOpenChange: (open) => (open ? openDetail(row.name) : closeDetail()),
+    art: artOf(market, row),
+    selected: isSelected(market, row),
+    onOpenApp: (appId) => void navigate(appWindowPath(appId)),
+    row,
+    status: statusOf(row),
+    usage: usages.get(row.key) ?? null,
+    categoryTitle: categoryTitle(row.category),
+    // Outside its category's own tab, a card names its category.
+    showCategory: groupBy !== "category" || activeTab === ALL_TAB,
+    targets,
+    blankAgent: { library: pickLibrary, onCreated: blankAgentCreated },
+    installed,
+    unknown,
+    failed: unreadable,
+    pending:
+      (row.module !== undefined && modulesPending) || (row.library !== undefined && libraryPending),
+    canQuickStart: currentAgent !== null,
+    isAdmin,
+    isOwner,
+    projectId,
+    busy: row.module !== undefined && pendingSpecifier === row.module.specifier,
+    progress:
+      row.module !== undefined && installProgress?.specifier === row.module.specifier
+        ? installProgress
+        : null,
+    blocked:
+      row.module !== undefined &&
+      (viewMachine === undefined ||
+        (pendingSpecifier !== null && pendingSpecifier !== row.module.specifier)),
+    onQuickStart: quickStartLibrary,
+    onDeletePlugin: null,
+    onToggleInstall: toggleInstall,
+    onUpdateOutdated: updateOutdated,
+    showPackageUpdates: viewingHere,
+    onModuleApply: (install, version) => {
+      if (row.module !== undefined && projectId !== null && viewMachine !== undefined) {
+        setPendingApply({
+          specifier: row.module.specifier,
+          name: row.name,
+          install,
+          version,
+          ...(viewingHere && version && row.module.entry?.localInstall?.updateAvailable
+            ? {
+                previousVersion: row.module.entry.localInstall.version,
+                resourceOnly: row.module.entry.localInstall.libraryOnly,
+              }
+            : {}),
+          projectId,
+          machineId: viewMachine,
+        });
       }
-      canQuickStart={currentAgent !== null}
-      isAdmin={isAdmin}
-      isOwner={isOwner}
-      projectId={projectId}
-      busy={row.module !== undefined && pendingSpecifier === row.module.specifier}
-      progress={
-        row.module !== undefined && installProgress?.specifier === row.module.specifier
-          ? installProgress
-          : null
-      }
-      blocked={
-        row.module !== undefined &&
-        (viewMachine === undefined ||
-          (pendingSpecifier !== null && pendingSpecifier !== row.module.specifier))
-      }
-      onQuickStart={quickStartLibrary}
-      onDeletePlugin={null}
-      onToggleInstall={toggleInstall}
-      onUpdateOutdated={updateOutdated}
-      onModuleApply={(install) => {
-        if (row.module !== undefined && projectId !== null && viewMachine !== undefined) {
-          setPendingApply({
-            specifier: row.module.specifier,
-            name: row.name,
-            install,
-            projectId,
-            machineId: viewMachine,
-          });
-        }
-      }}
-      onRepair={
-        isAdmin && row.module?.unsatisfied !== undefined
-          ? () =>
-              repair({
-                specifier: row.module!.specifier,
-                disabled: row.module!.state === "disabled",
-                reason: row.module!.unsatisfied!,
-              })
-          : null
-      }
-      onMcpChanged={refreshAgentMcp}
-    />
-  );
+    },
+    onRepair:
+      isAdmin && row.module?.unsatisfied !== undefined
+        ? () =>
+            repair({
+              specifier: row.module!.specifier,
+              disabled: row.module!.state === "disabled",
+              reason: row.module!.unsatisfied!,
+            })
+        : null,
+    onMcpChanged: refreshAgentMcp,
+  });
+  const card = (row: PluginRow) => <PluginCard key={row.key} {...cardProps(row)} />;
+  const tabs = [
+    { key: ALL_TAB, label: S.plugins.tabAll },
+    ...sections.map((s) => ({ key: s.id, label: s.title })),
+  ];
 
   // The scrollbar gutter stays reserved: a search that shortens the page below the viewport
   // would otherwise take the scrollbar with it and shift everything sideways as it is typed.
@@ -940,8 +1030,6 @@ export function PluginsPage() {
             onQuery={setQuery}
             incompatibleOnly={incompatibleOnly}
             onIncompatibleOnly={writePluginsIncompatibleOnly}
-            groupBy={groupBy}
-            onGroupBy={chooseGroupBy}
             isAdmin={isAdmin}
             machinePicker={
               otherMachines.length > 0 ? (
@@ -1034,6 +1122,35 @@ export function PluginsPage() {
         />
       )}
 
+      <div className="mb-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <PluginsListControls
+              groupBy={groupBy}
+              onGroupBy={(by) => {
+                chooseGroupBy(by);
+                // The tab on show belongs to the grouping it came from.
+                if (tabParam !== null) selectTab(ALL_TAB);
+              }}
+              sort={shownSort}
+              sorts={sorts}
+              onSort={chooseSort}
+              locale={locale}
+            />
+          </div>
+          <ShowcaseLayoutToggle
+            value={layout}
+            onChange={chooseLayout}
+            labels={{
+              group: S.plugins.layoutLabel,
+              cards: S.plugins.cardsLayout,
+              list: S.plugins.listLayout,
+            }}
+          />
+        </div>
+        {groupBy !== "none" && <Tabs items={tabs} active={activeTab} onChange={selectTab} />}
+      </div>
+
       {error ? (
         <div className="mt-2 flex items-center gap-3">
           <p className={`text-sm ${toneInk.danger}`}>{error}</p>
@@ -1043,46 +1160,39 @@ export function PluginsPage() {
         </div>
       ) : groups === null ? (
         // The cards' own grid, so the placeholders stand in the columns the cards will take.
-        <EntityCardGrid>
-          {Array.from({ length: 4 }, (_, i) => (
-            <SkeletonCard key={i} className="p-4">
-              <Skeleton className="h-4 w-32" />
-              <Skeleton className="mt-2 h-4 w-3/4" />
-              <Skeleton className="mt-3 h-6 w-36" />
-            </SkeletonCard>
+        <ShowcaseGrid
+          layout={layout}
+          className="lg:[--showcase-column-min:12rem] xl:[--showcase-column-min:14rem]"
+          aria-busy
+        >
+          {Array.from({ length: 6 }, (_, i) => (
+            <CoverCardSkeleton key={i} />
           ))}
-        </EntityCardGrid>
+        </ShowcaseGrid>
+      ) : visible.length > 0 ? (
+        <ShowcaseGrid
+          layout={layout}
+          className="lg:[--showcase-column-min:12rem] xl:[--showcase-column-min:14rem]"
+        >
+          {visible.map(card)}
+        </ShowcaseGrid>
+      ) : tab.elsewhere > 0 ? (
+        <p className="flex flex-wrap items-center gap-x-2 px-1 text-sm text-fg-muted">
+          <span>{S.plugins.noMatchHere(tab.elsewhere)}</span>
+          <Button size="sm" variant="link" onClick={() => selectTab(ALL_TAB)}>
+            {S.plugins.showAllResults}
+          </Button>
+        </p>
       ) : (
-        <div className="space-y-3">
-          {groupBy === "none"
-            ? sections.map((section) => (
-                <EntityCardGrid key={section.id}>{section.rows.map(card)}</EntityCardGrid>
-              ))
-            : sections.map((section) => {
-                const key = foldKey(groupBy, section.id);
-                // A match folded away would read as a missing one, so a search opens every
-                // section it leaves; the remembered folds come back after.
-                const open = searching || !folded.has(key);
-                return (
-                  <CollapsibleSection
-                    key={key}
-                    title={section.title}
-                    meta={S.plugins.pluginCount(section.rows.length)}
-                    open={open}
-                    onOpenChange={() => toggleFold(key)}
-                  >
-                    <EntityCardGrid>{section.rows.map(card)}</EntityCardGrid>
-                  </CollapsibleSection>
-                );
-              })}
-          {sections.length === 0 && (
-            <p className="px-1 text-sm text-gray-400 dark:text-gray-500">
-              {searching && (indexPending > 0 || (registry.reading && index === null))
-                ? S.pluginRegistry.searchWhileDownloading
-                : S.plugins.noMatch}
-            </p>
-          )}
-        </div>
+        <p className="px-1 text-sm text-fg-muted">
+          {searching && (indexPending > 0 || (registry.reading && index === null))
+            ? S.pluginRegistry.searchWhileDownloading
+            : S.plugins.noMatch}
+        </p>
+      )}
+      {/* The plugin a link names, when its card is not in the grid: its dialogs alone. */}
+      {openRow !== undefined && !visible.includes(openRow) && (
+        <PluginCard key={`open:${openRow.key}`} {...cardProps(openRow)} surface="none" />
       )}
 
       {/* A server module change: what it does is said before it runs, and what it costs in
@@ -1092,19 +1202,44 @@ export function PluginsPage() {
           <ConfirmModal
             open
             title={
-              pendingApply.install
-                ? S.plugins.applyConfirmInstall(pendingApply.name)
-                : S.plugins.applyConfirmRemove(pendingApply.name)
+              pendingApply.previousVersion && pendingApply.version
+                ? S.plugins.updatePackageTo(pendingApply.version)
+                : pendingApply.install
+                  ? S.plugins.applyConfirmInstall(pendingApply.name)
+                  : S.plugins.applyConfirmRemove(pendingApply.name)
             }
             tone={pendingApply.install ? "primary" : "danger"}
             {...(pendingApply.install ? { glyph: ICONS.download } : {})}
-            confirmLabel={pendingApply.install ? S.plugins.install : S.plugins.uninstall}
+            confirmLabel={
+              pendingApply.previousVersion
+                ? S.skills.updateAction
+                : pendingApply.install
+                  ? S.plugins.install
+                  : S.plugins.uninstall
+            }
             cancelLabel={S.common.cancel}
             busy={pendingSpecifier !== null}
             onClose={() => setPendingApply(null)}
             onConfirm={() => void runDeploymentInstall(pendingApply)}
           >
-            <ModuleApplyBody install={pendingApply.install} name={pendingApply.name} />
+            {pendingApply.resourceOnly && pendingApply.previousVersion && pendingApply.version ? (
+              <p>
+                {S.plugins.packageUpdateBody(
+                  pendingApply.name,
+                  pendingApply.previousVersion,
+                  pendingApply.version,
+                )}
+              </p>
+            ) : (
+              <ModuleApplyBody
+                install={pendingApply.install}
+                name={
+                  pendingApply.version
+                    ? `${pendingApply.name} v${pendingApply.version}`
+                    : pendingApply.name
+                }
+              />
+            )}
           </ConfirmModal>
         )}
       {repairModal}
@@ -1221,6 +1356,73 @@ export function IncompatibleNotice({
 const INCOMPATIBLE = "incompatible";
 
 /**
+ * Each select's width beside the tabs, by language: wide enough for its longest option there
+ * (a select's menu is as wide as the select), and no wider, since every pixel it takes is one
+ * the tabs do not have.
+ */
+const CONTROL_WIDTH: Record<"zh" | "en", { groupBy: string; sort: string }> = {
+  zh: { groupBy: "sm:w-28", sort: "sm:w-36" },
+  en: { groupBy: "sm:w-40", sort: "sm:w-52" },
+};
+
+/**
+ * The tab row's end: the grouping select, whose options each say what they do ("Group by
+ * status") while its accessible name says what it groups, and beside it the sort select. Both on
+ * the small rung, each wide enough for its longest option in the UI language; on a phone they
+ * share their line, each taking half.
+ */
+export function PluginsListControls({
+  groupBy,
+  onGroupBy,
+  sort,
+  sorts,
+  onSort,
+  locale,
+}: {
+  groupBy: PluginGroupBy;
+  onGroupBy: (by: PluginGroupBy) => void;
+  sort: PluginSort;
+  /** The sorts on offer ("popular" only while the market sends popularity figures). */
+  sorts: readonly PluginSort[];
+  onSort: (sort: PluginSort) => void;
+  locale: "zh" | "en";
+}) {
+  const width = CONTROL_WIDTH[locale];
+  return (
+    <>
+      <div className={`min-w-0 flex-1 sm:flex-none ${width.groupBy}`}>
+        <Select
+          size="sm"
+          aria-label={S.plugins.groupByLabel}
+          value={groupBy}
+          onChange={(e) => onGroupBy(e.target.value as PluginGroupBy)}
+        >
+          {PLUGIN_GROUP_BYS.map((by) => (
+            <option key={by} value={by}>
+              {S.plugins.groupBy[by]}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div className={`min-w-0 flex-1 sm:flex-none ${width.sort}`}>
+        <Select
+          size="sm"
+          aria-label={S.plugins.sortLabel}
+          value={sort}
+          onChange={(e) => onSort(e.target.value as PluginSort)}
+        >
+          {sorts.map((key) => (
+            <option key={key} value={key}>
+              {S.plugins.sort[key]}
+            </option>
+          ))}
+        </Select>
+      </div>
+    </>
+  );
+}
+
+/**
  * The administrator's notice beside the incompatible-plugins one, while members' requests to run a
  * plugin's server module wait on this server: how many, and the way to the Settings dialog's
  * module requests page, where they are decided. Nothing while none waits.
@@ -1247,24 +1449,21 @@ export function ModuleRequestsNotice({
 
 /**
  * The page header's actions, in the Agents page header's look: every control on the small rung,
- * so the row is one height, at the header's gap. For everyone (a member narrows and regroups the
- * list too): the search box; beside it the incompatible-only filter, a toggle chip that narrows
- * the list as the search does; then the grouping select, whose options each say what they do
- * ("Group by status") while its accessible name says what it groups; it is wide enough for its
- * longest English option. Then, for an admin, the machine picker (which machine's plugins the rows
- * show, and which machine's own table an install or a removal edits), then
- * the pair the Agents page header has: Import plugin, the primary button, and Settings, the
- * secondary one, which opens the Settings dialog's Plugins page — each glyph before words that
- * always show. On a phone the search box and the filter share the first line, the box taking what
- * the filter leaves, and the select and the admin's buttons wrap below them.
+ * so the row is one height, at the header's gap. For everyone (a member narrows the list too):
+ * the search box, and beside it the incompatible-only filter, a toggle chip that narrows the list
+ * as the search does. Then, for an admin, the machine picker (which machine's plugins the rows
+ * show, and which machine's own table an install or a removal edits), then the pair the Agents
+ * page header has: Import plugin, the primary button, and Settings, the secondary one, which opens
+ * the Settings dialog's Plugins page — each glyph before words that always show. On a phone the
+ * search box and the filter share the first line, the box taking what the filter leaves, and the
+ * admin's buttons wrap below them. The grouping and the sort stand at the tab row's end
+ * (`PluginsListControls`).
  */
 export function PluginsHeaderActions({
   query,
   onQuery,
   incompatibleOnly,
   onIncompatibleOnly,
-  groupBy,
-  onGroupBy,
   isAdmin,
   machinePicker,
   onOpenSettings,
@@ -1275,8 +1474,6 @@ export function PluginsHeaderActions({
   /** Whether the list holds only the plugins this build cannot fully run. */
   incompatibleOnly: boolean;
   onIncompatibleOnly: (on: boolean) => void;
-  groupBy: PluginGroupBy;
-  onGroupBy: (by: PluginGroupBy) => void;
   isAdmin: boolean;
   /** The machine picker, when there is another machine to pick; null otherwise. */
   machinePicker: React.ReactNode;
@@ -1306,20 +1503,6 @@ export function PluginsHeaderActions({
           value={incompatibleOnly ? [INCOMPATIBLE] : []}
           onChange={(on) => onIncompatibleOnly(on.includes(INCOMPATIBLE))}
         />
-      </div>
-      <div className="w-40 shrink-0">
-        <Select
-          size="sm"
-          aria-label={S.plugins.groupByLabel}
-          value={groupBy}
-          onChange={(e) => onGroupBy(e.target.value as PluginGroupBy)}
-        >
-          {PLUGIN_GROUP_BYS.map((by) => (
-            <option key={by} value={by}>
-              {S.plugins.groupBy[by]}
-            </option>
-          ))}
-        </Select>
       </div>
       {isAdmin && (
         <>
