@@ -59,6 +59,7 @@ import type { Channels, Clock, Config, Log } from "../../hmr/capabilities.js";
 import type { ChannelHub } from "../channel.js";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
+import type { ModuleActor, PluginModules } from "../../mechanisms/plugins.js";
 import type {
   AgentIndex,
   Members,
@@ -585,6 +586,8 @@ export class OrganizationService {
     projectId: string,
     req: OrganizationCreateRequest,
     userId: string,
+    /** Who creates it, for the CEO's plugins' server modules; a member who is not the administrator when absent. */
+    actor: ModuleActor = { userId, isAdmin: false },
   ): Promise<OrganizationDetail> {
     const orgId = req.orgId;
     if (!isNewSemanticId(orgId)) {
@@ -689,7 +692,11 @@ export class OrganizationService {
       });
     });
     await this.scheduler.reconcile(projectId, orgId);
-    return this.detail(projectId, orgId, userId);
+    const detail = await this.detail(projectId, orgId, userId);
+    // LAST: the CEO's plugins' server modules may re-assemble the App, and the first run and the
+    // reconcile above are this generation's to start.
+    await this.deps.agents.ensureModules?.(projectId, ceo, DEFAULT_EMPLOYEE_PLUGINS, actor);
+    return detail;
   }
 
   /**
@@ -905,7 +912,13 @@ export class OrganizationService {
     org.byId = new Map(parsed.value.employees.map((e) => [e.agentId, e]));
   }
 
-  async hire(projectId: string, orgId: string, req: OrgHireRequest): Promise<OrgEmployeeItem> {
+  async hire(
+    projectId: string,
+    orgId: string,
+    req: OrgHireRequest,
+    /** Who hires, for a new Agent's plugins' server modules; the system when absent. */
+    actor: ModuleActor | null = null,
+  ): Promise<OrgEmployeeItem> {
     const item = await this.scheduler.withLock(projectId, orgId, async () => {
       const org = await this.requireValidOrg(projectId, orgId);
       const title = req.title.trim();
@@ -1014,6 +1027,16 @@ export class OrganizationService {
       return items.find((i) => i.agentId === agentId)!;
     });
     await this.scheduler.reconcile(projectId, orgId);
+    // LAST: a new Agent's plugins' server modules may re-assemble the App, and its desk and the
+    // reconcile above are this generation's to open.
+    if (req.newAgent !== undefined) {
+      await this.deps.agents.ensureModules?.(
+        projectId,
+        req.newAgent.agentId,
+        employeePlugins(req.newAgent.plugins),
+        actor,
+      );
+    }
     return item;
   }
 
@@ -2919,6 +2942,7 @@ export class OrganizationModule {
   @Use() private readonly errors!: Errors;
   @Use() private readonly settings!: Settings;
   @Use() private readonly messagingRepo!: MessagingBindings;
+  @Use() private readonly pluginModules!: PluginModules;
   @Provide() orgService!: OrgService;
   @Provide() orgScheduler!: OrgScheduler;
   setup({ effect }: ClassCtx) {
@@ -2928,6 +2952,7 @@ export class OrganizationModule {
     const agentsRepo = this.agentsRepo;
     const runner = this.runner;
     const projectConfig = this.projectConfig;
+    const pluginModules = this.pluginModules;
     const deps: OrgDeps = {
       root: this.config.root,
       store: new OrgStore(this.config.root),
@@ -2961,6 +2986,11 @@ export class OrganizationModule {
           // Session is built, so a runtime cached for this employee would keep the old set
           // until it was evicted. A Task in flight keeps what it started with.
           runner.invalidateAgentRuntimes(projectId, agentId);
+          // LAST: the system's pass enables a built-in server module, and never asks (PRFC-0031).
+          await pluginModules.ensure(projectId, [plugin], null, "install", agentId);
+        },
+        ensureModules: async (projectId, agentId, plugins, actor) => {
+          await pluginModules.ensure(projectId, plugins, actor, "install", agentId);
         },
       },
       projectConfig,

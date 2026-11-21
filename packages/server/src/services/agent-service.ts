@@ -58,6 +58,7 @@ import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
 import type { AgentConfig, AgentLifecycle, AgentPackage, Snapshots } from "../mechanisms/agents.js";
+import type { ModuleActor, PluginModules } from "../mechanisms/plugins.js";
 import type { AgentIndex } from "@prismshadow/penguin-library-project";
 
 /**
@@ -189,6 +190,14 @@ export interface AgentCreation {
   directory?: { path: string; names: readonly string[] };
   /** An Agent package (the import route's) to start from instead of the default template. */
   archive?: AgentPackage;
+  /**
+   * Who creates it, for the `plugins`' server modules (PRFC-0031): once the Agent exists, they
+   * are brought along as this actor would bring them, and that is the last thing creation does —
+   * it may re-assemble the App. `null` is the system (built-in modules only, never a request).
+   * Absent, creation leaves the modules to its caller: company mode brings them along at the end
+   * of its own flow, which goes on with this generation's services after the Agent exists.
+   */
+  actor?: ModuleActor | null;
 }
 
 @Component()
@@ -201,6 +210,7 @@ export class AgentService implements AgentLifecycle {
   @Use() private readonly agentConfig!: AgentConfig;
   @Use() private readonly snapshots!: Snapshots;
   @Use() private readonly library!: PluginLibrary;
+  @Use() private readonly pluginModules!: PluginModules;
 
   /** Deletions this process knows, by `${projectId}/${deletionId}`. */
   private readonly deletions = new Map<string, AgentDeletionInfo>();
@@ -545,7 +555,9 @@ export class AgentService implements AgentLifecycle {
    * skill the plugin ships and its hook package with library content. Throws 404
    * `unknown_plugin` when the library does not carry the name. Callers that may hold a cached
    * runtime for the Agent invalidate it afterwards — hook packages are bound when a core
-   * Session is built, unlike skills, which are read from disk on demand.
+   * Session is built, unlike skills, which are read from disk on demand. The plugin's server
+   * modules are the caller's to bring along, after everything else it does with this generation
+   * (PluginModules.ensure re-assembles the App; company mode's reconcile calls it last).
    */
   async updatePlugin(projectId: string, agentId: string, pluginName: string): Promise<void> {
     const plugins = resolveLibraryPlugins(this.library, [pluginName]);
@@ -856,7 +868,7 @@ export class AgentService implements AgentLifecycle {
     const cardDescription = archive !== undefined ? meta.description : description;
     const installed = await this.installedPlugins(projectId, agentId, this.library.list());
     const avatarRev = await agentAvatarRev(this.root, projectId, agentId).catch(() => undefined);
-    return {
+    const item: AgentListItem = {
       agentId,
       name: cardName,
       ...(cardDescription !== undefined ? { description: cardDescription } : {}),
@@ -878,5 +890,19 @@ export class AgentService implements AgentLifecycle {
       // A package may carry the Agent's picture, like any other file of its State.
       ...(avatarRev !== undefined ? { avatarRev } : {}),
     };
+    // LAST: bringing the plugins' server modules along may re-assemble the App. The Agent exists
+    // and its answer is built; a module that does not come up never undoes the Agent.
+    if (creation.actor !== undefined && librarySeed.length > 0) {
+      await this.pluginModules
+        .ensure(
+          projectId,
+          librarySeed.map((plugin) => plugin.name),
+          creation.actor,
+          "install",
+          agentId,
+        )
+        .catch(() => []);
+    }
+    return item;
   }
 }
