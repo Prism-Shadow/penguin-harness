@@ -718,6 +718,19 @@ describe("organization runtime", () => {
       expect((await service.detail(P, ORG, "alice")).invalid).toBeUndefined();
     });
 
+    it("exposes configured budget thresholds in the org chart response", async () => {
+      await createOrg();
+
+      await service.patch(P, ORG, { budgetWarnRatio: 0.4, budgetPauseRatio: 0.5 }, "alice");
+
+      const chart = await service.chart(P, ORG);
+
+      expect(chart).toMatchObject({
+        budgetWarnRatio: 0.4,
+        budgetPauseRatio: 0.5,
+      });
+    });
+
     it("repairs a config that no longer parses, and leaves a readable one's creator alone", async () => {
       await createOrg();
       const configPath = path.join(orgDir(), "org_config.toml");
