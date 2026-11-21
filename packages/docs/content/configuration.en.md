@@ -12,6 +12,7 @@ The CLI and the server load a `.env` file from the working directory on startup.
 | Variable | Description | Default |
 | --- | --- | --- |
 | `PENGUIN_HOME` | Data root directory | `~/.penguin/data` |
+| `PENGUIN_MACHINE_HOME` | Where workbenches keep what every PenguinHarness of this OS user on this computer shares (the machine level) | `~/.penguin/machine` |
 | `PORT` | Web service listen port | `7364` |
 | `HOST` | Web service listen address | `127.0.0.1` |
 | `PENGUIN_WEB_DB` | Server SQLite database path | `<root>/web.db` |

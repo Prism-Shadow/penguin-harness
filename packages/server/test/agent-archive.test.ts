@@ -3,6 +3,12 @@
  *
  * - The default export carries the State without its schedules, vault, workbench build output
  *   or git entries, and without Traces.
+ * - A workbench's data folder beside the State travels only with `workbenchData`, never its cache
+ *   or state folder, the server level its app shares, nor a folder no carried workbench owns, and
+ *   lands under the new id.
+ * - An overwrite that brings no data keeps each workbench's data folder, and a workbench the
+ *   package no longer has goes with its data, cache and state; one that brings data replaces the
+ *   folder. The backup holds every data folder replaced or removed.
  * - `traces=last:N` takes the N latest Sessions and the subagent Sessions they started; a date
  *   range takes the Sessions in those date folders; a vault value in a Trace travels as its key.
  * - An export with its Traces imports under a new id with its parts, version and Sessions, listed
@@ -28,7 +34,9 @@ import {
   agentVaultPath,
   defaultSystemConfig,
   snapshotsDir,
+  serverAppDir,
   tracesDir,
+  workbenchStateDir,
 } from "@prismshadow/penguin-core";
 import type {
   AgentApiKeyCreateResponse,
@@ -148,6 +156,13 @@ describe("Agent zip export and import", () => {
     ]) {
       await write(stateOf("source", rel), "{}\n");
     }
+    const app = path.join(agentDir(t.root, P, "source"), "app");
+    await write(path.join(app, "data/desk/decks/a.json"), "the source's deck");
+    await write(path.join(app, "cache/desk/thumb.png"), "cache");
+    await write(path.join(app, "data/orphan/left.md"), "no workbench owns this");
+    await write(path.join(workbenchStateDir(t.root, P, "source", "desk"), "dev.lock"), "runtime");
+    // What every copy of the app shares on this server.
+    await write(path.join(serverAppDir(t.root), "data", "desk-kit", "desk", "weights.bin"), "w");
     const traces = tracesDir(t.root, P, "source");
     await write(
       path.join(traces, "2026-01-10", `${P1}_001.jsonl`),
@@ -180,6 +195,105 @@ describe("Agent zip export and import", () => {
     expect(
       entries.filter((e) => /\/schedule\/|\.vault\.toml|\/\.build\/|\/\.git\/|\/traces\//.test(e)),
     ).toEqual([]);
+  });
+
+  it("a workbench's data folder travels only with its data, never its cache or state, and lands under the new id", async () => {
+    const pkg = await exportOf("source");
+    const app = names(pkg).filter((e) => e.startsWith("source/app/"));
+    expect(app).toEqual(["source/app/data/desk/decks/a.json"]);
+    // Nothing beside the State and the data folders: the state folder (`<root>/run/…`) and the
+    // server level (`<root>/app/…`) stay.
+    expect(
+      names(pkg).filter((e) => !e.startsWith("source/agent_state/") && !app.includes(e)),
+    ).toEqual([]);
+    expect(
+      await fs.readFile(
+        path.join(workbenchStateDir(t.root, P, "source", "desk"), "dev.lock"),
+        "utf8",
+      ),
+    ).toBe("runtime");
+    expect(
+      names(await exportOf("source", "?workbenchData=0")).filter((e) => e.includes("/app/")),
+    ).toEqual([]);
+    expect(
+      names(await exportOf("source", "?workbenches=0")).filter((e) => e.includes("/app/")),
+    ).toEqual([]);
+
+    expect((await importAs(member, pkg, "?agentId=data_copy")).status).toBe(201);
+    await expect(
+      fs.readFile(
+        path.join(agentDir(t.root, P, "data_copy"), "app/data/desk/decks/a.json"),
+        "utf8",
+      ),
+    ).resolves.toBe("the source's deck");
+  });
+
+  describe("a workbench's data over a taken id", () => {
+    const target = () => path.join(agentDir(t.root, P, "data_target"), "app");
+    const backedUp = async (backup: string): Promise<string[]> => {
+      const entries: string[] = [];
+      await tar.list({
+        file: path.join(snapshotsDir(t.root, P, "data_target"), backup),
+        onReadEntry: (entry) => void entries.push(entry.path),
+      });
+      return entries;
+    };
+    beforeAll(async () => {
+      expect((await owner.post(agents, { agentId: "data_target" })).status).toBe(201);
+      for (const id of ["desk", "gone"]) {
+        await write(stateOf("data_target", `workbenches/${id}/package.json`), "{}\n");
+      }
+      await write(path.join(target(), "data/desk/decks/own.json"), "the target's deck");
+      await write(path.join(target(), "cache/desk/thumb.png"), "cache");
+      await write(path.join(target(), "data/gone/notes.md"), "the removed workbench's notes");
+      await write(path.join(target(), "cache/gone/thumb.png"), "cache");
+      for (const id of ["desk", "gone"]) {
+        await write(path.join(workbenchStateDir(t.root, P, "data_target", id), "dev.lock"), id);
+      }
+    });
+
+    it("an overwrite that brings no data keeps each workbench's, and a workbench the package lacks goes with its data", async () => {
+      const pkg = await exportOf("source", "?workbenchData=0");
+
+      const res = await importAs(owner, pkg, "?agentId=data_target&overwrite=1");
+
+      expect(res.status).toBe(201);
+      await expect(
+        fs.readFile(path.join(target(), "data/desk/decks/own.json"), "utf8"),
+      ).resolves.toBe("the target's deck");
+      for (const dir of [
+        path.join(target(), "data/gone"),
+        path.join(target(), "cache/gone"),
+        workbenchStateDir(t.root, P, "data_target", "gone"),
+      ]) {
+        await expect(fs.stat(dir)).rejects.toMatchObject({ code: "ENOENT" });
+      }
+      // A workbench the package still has keeps its runtime files.
+      await expect(
+        fs.readFile(
+          path.join(workbenchStateDir(t.root, P, "data_target", "desk"), "dev.lock"),
+          "utf8",
+        ),
+      ).resolves.toBe("desk");
+      const { backup } = (await res.json()) as AgentArchiveImportResponse;
+      expect(await backedUp(backup!)).toContain("app/data/gone/notes.md");
+    });
+
+    it("an overwrite that brings a workbench's data replaces its folder, the old one kept in the backup", async () => {
+      const res = await importAs(
+        owner,
+        await exportOf("source"),
+        "?agentId=data_target&overwrite=1",
+      );
+
+      expect(res.status).toBe(201);
+      expect(await fs.readdir(path.join(target(), "data/desk/decks"))).toEqual(["a.json"]);
+      await expect(fs.stat(path.join(target(), "cache/desk"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      const { backup } = (await res.json()) as AgentArchiveImportResponse;
+      expect(await backedUp(backup!)).toContain("app/data/desk/decks/own.json");
+    });
   });
 
   it("last:N takes the latest Sessions with their subagents, a range its date folders, and a vault value travels as its key", async () => {

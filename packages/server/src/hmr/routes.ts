@@ -17,7 +17,7 @@ import { authMiddleware } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Auth } from "@prismshadow/penguin-library-auth";
 import { HttpError } from "../http/errors.js";
-import { publicOriginOf } from "../http/public-origin.js";
+import { publicOriginOf } from "@prismshadow/penguin-library-http/public-origin";
 import { Channels, Config, Hmr, HmrControl } from "./capabilities.js";
 import { acceptsLeavingOut, answerPush, openPushSlip } from "./push-plugins.js";
 import type { Resources } from "@prismshadow/penguin-core/kernel";

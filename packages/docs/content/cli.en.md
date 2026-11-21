@@ -263,11 +263,12 @@ Options of `agent create`:
 | `--name <name>` / `--description <text>` | Display name and description. | — |
 | `--author <author>` | Who is creating the agent: `user`, `agent` or `company`. | `agent` inside a conversation, otherwise `user` |
 | `--plugins <names>` | Comma-separated library plugin names to preinstall, each with its Skills and hook package. Unknown names are rejected before anything is created. | — |
+| `--no-default-plugins` | Leave out the plugins every new agent gets, `goal` ([goal mode](/goal-mode)) and `plan` (Plan mode). | Both installed |
 | `--project-id <id>` / `--json` / `--server <url>` | See [Global conventions](#global-conventions). | — |
 
 ```bash
 penguin agent ls
-penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+penguin agent create --agent-id helper --name "Helper" --plugins software-development
 ```
 
 ### penguin agent export and import

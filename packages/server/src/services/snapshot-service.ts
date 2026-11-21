@@ -12,6 +12,8 @@
  * and no entry with a `.git` path segment is extracted (a planted repository's config runs code
  * when git is run there); the current vault must be readable (a missing one is simply absent).
  * A `system_config.yaml` without `system_prompt` is laid over the template's (./partial-config.ts).
+ * The workbenches' data folders beside the State follow their workbenches (./agent-app-data.ts):
+ * the backup also holds each one the import replaces or removes.
  * Docs: /docs/self-improvement § "Snapshots and versions".
  */
 import { randomBytes } from "node:crypto";
@@ -35,6 +37,7 @@ import type { Clock, Log, Paths } from "../hmr/capabilities.js";
 import type { AgentPackage, Snapshots } from "../mechanisms/agents.js";
 import { isGitName } from "../workbenches/repo.js";
 import { isTempName, STATE_FILE } from "../workbenches/store.js";
+import { AppDataImport } from "./agent-app-data.js";
 import { isZip, unpackAgentZip } from "./agent-zip.js";
 import { overTemplate } from "./partial-config.js";
 
@@ -174,10 +177,15 @@ export class SnapshotService implements Snapshots {
   }
 
   /**
-   * The backup an import takes: the current State packed into a new file every time, never
-   * one already there. Answers its file name.
+   * The backup an import takes: the current State, and the data folders `data` names (paths
+   * below the Agent's directory), packed into a new file every time, never one already there.
+   * Answers its file name.
    */
-  private async backupBeforeImport(projectId: string, agentId: string): Promise<string> {
+  private async backupBeforeImport(
+    projectId: string,
+    agentId: string,
+    data: readonly string[],
+  ): Promise<string> {
     const version = await this.currentVersion(projectId, agentId);
     const time = this.clock
       .now()
@@ -188,12 +196,18 @@ export class SnapshotService implements Snapshots {
       projectId,
       agentId,
       path.join(snapshotsDir(this.root, projectId, agentId), name),
+      data,
     );
     return name;
   }
 
-  /** Packs `agent_state/` into `file`, which appears only once it is complete. */
-  private async pack(projectId: string, agentId: string, file: string): Promise<void> {
+  /** Packs `agent_state/` and `extra` into `file`, which appears only once it is complete. */
+  private async pack(
+    projectId: string,
+    agentId: string,
+    file: string,
+    extra: readonly string[],
+  ): Promise<void> {
     await fs.mkdir(path.dirname(file), { recursive: true });
     const tmp = `${file}.tmp-${randomBytes(4).toString("hex")}`;
     try {
@@ -205,7 +219,7 @@ export class SnapshotService implements Snapshots {
           portable: true,
           filter: (p) => !isLeftOut(p),
         },
-        ["agent_state"],
+        ["agent_state", ...extra],
       );
       await fs.rename(tmp, file);
     } catch (err) {
@@ -283,17 +297,28 @@ export class SnapshotService implements Snapshots {
         version: typeof incomingRaw === "number" ? incomingRaw : undefined,
       });
 
+      const stateDir = agentStateDir(this.root, projectId, agentId);
+      if (opts.preSnapshot) await keepAbsentParts(stateDir, incomingState);
+      const data = await AppDataImport.prepare(
+        this.root,
+        projectId,
+        agentId,
+        extractDir,
+        incomingState,
+        stateDir,
+      );
+
       // A mistaken import can be rolled back from this backup: always a new one, since a
       // same-version snapshot may be older than what is about to be replaced.
-      const backup = opts.preSnapshot ? await this.backupBeforeImport(projectId, agentId) : null;
+      const backup = opts.preSnapshot
+        ? await this.backupBeforeImport(projectId, agentId, await data.backupPaths())
+        : null;
 
       // Replace agent_state: merge the current vault into the directory to be swapped in
       // (extraction filtered any vault inside the package), so the replacement is a pure
       // rename swap. The vault never goes into a snapshot: only a *missing* vault means there
       // is nothing to keep — any other read failure stops the import, because the swap would
       // otherwise discard the only copy.
-      const stateDir = agentStateDir(this.root, projectId, agentId);
-      if (opts.preSnapshot) await keepAbsentParts(stateDir, incomingState);
       let vault: Buffer | null = null;
       try {
         vault = await fs.readFile(agentVaultPath(this.root, projectId, agentId));
@@ -319,6 +344,7 @@ export class SnapshotService implements Snapshots {
         }
         throw err;
       }
+      await data.land(path.join(staging, "replaced-app-data"));
       await pkg.landTraces?.(path.join(extractDir, "traces"));
       return { version: incoming, ...(backup !== null ? { backup } : {}) };
     } finally {
