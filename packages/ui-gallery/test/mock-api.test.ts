@@ -155,6 +155,7 @@ describe("the mocked API", () => {
       via: null,
       builtin: false,
       state: "off" as const,
+      onServer: true,
     });
     store.f.pluginModuleRequests = [
       asked("@acme/charts", store.f.project.projectId),

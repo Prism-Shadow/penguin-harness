@@ -48,6 +48,19 @@ const execFileAsync = promisify(execFile);
 const INSTALL_TIMEOUT_MS = 180_000;
 /** One address's npm window: a dead address costs this, not a hang. */
 const CHANNEL_TIMEOUT_MS = 15_000;
+/** npm's own per-request window and retries (see `install`). */
+const FETCH_TIMEOUT_MS = 60_000;
+/**
+ * The pre-check's per-request window (see `checkPluginSource`); without npm, each registry
+ * address's window for the same question (direct-install.ts checkFromRegistry).
+ */
+export const CHECK_FETCH_TIMEOUT_MS = 10_000;
+/**
+ * The pre-check's kill window, a little above its request window. It is what actually bounds a
+ * registry that drops packets: npm's fetch timeout does not cover the TCP connect, which the
+ * operating system holds for minutes.
+ */
+const CHECK_TIMEOUT_MS = 12_000;
 /**
  * The asset address npm last installed from and whose install verified for each channel URL,
  * tried first next time. Memory, not a speed test: the walk still tries one address at a time
@@ -74,13 +87,22 @@ export class PluginInstallError extends Error {
   /**
    * Why npm failed, when the failure came from npm: "unavailable" — npm answered that the
    * package (or the requested version of it) does not exist on the registry, the one outcome
-   * a published-index channel may stand in for; "other" — everything else (a refusing
-   * registry, a dependency that will not resolve, a failed lifecycle script), where the
-   * channel is not the answer and the failure is reported as is. Undefined on errors that
-   * did not come from npm at all. An install made without npm (direct-install.ts) sets it
-   * the same way: a name or version the registry does not have is "unavailable".
+   * a published-index channel may stand in for; "unreachable" — the registry (or a proxy on
+   * the way) did not answer: refused, unresolved, reset or timed out, including npm killed at
+   * its window, or a proxy answered that it could not reach the registry; "missing" — there is
+   * no npm on this machine at all; "other" — everything else (a refusing registry, a dependency
+   * that will not resolve, a failed lifecycle script), where no fallback is the answer and the
+   * failure is reported as is. Undefined on errors that did not come from npm at all. An install
+   * made without npm (direct-install.ts) sets it the same way: a name or version the registry
+   * does not have is "unavailable".
    */
-  reason?: "unavailable" | "other";
+  reason?: "unavailable" | "unreachable" | "missing" | "other";
+  /** The registry address npm named in its failure, when it named one. */
+  registry?: string;
+  /** npm's own words, when this failure goes on to say what the fallbacks after npm said. */
+  npmSaid?: string;
+  /** What a fallback after npm said (an offline archive, an index channel), worth the reader's eye. */
+  fallback?: string;
   /**
    * The failure came from an install made without npm (direct-install.ts), not from npm: the
    * route then reports it in its own words instead of as npm's.
@@ -147,6 +169,11 @@ let npmRegistry: string | undefined = undefined;
 /** The settings group sets (or clears) the registry the installer's npm runs are pointed at. */
 export function setNpmRegistry(url: string | undefined): void {
   npmRegistry = url;
+}
+
+/** The registry the installer's npm runs are pointed at, or null when npm's own configuration answers. */
+export function currentNpmRegistry(): string | null {
+  return npmRegistry ?? process.env.npm_config_registry ?? null;
 }
 
 /** The registry the settings group names; undefined when it names none (npm's own configuration answers). */
@@ -252,9 +279,11 @@ export function locateNpm(): NpmSearch {
 function npmCommand(): NpmCommand {
   const search = locateNpm();
   if (!search.found) {
-    throw new PluginInstallError(
+    const missing = new PluginInstallError(
       `npm, which this install needs, is not on this machine (${search.notes.join("; ")}). Install Node.js, which includes npm (https://nodejs.org), then restart PenguinHarness so it finds npm.`,
     );
+    missing.reason = "missing";
+    throw missing;
   }
   return npmCommandCache!;
 }
@@ -287,11 +316,24 @@ export async function npm(
     });
     return stdout;
   } catch (err) {
-    const error = err as Error & { code?: string; stderr?: string };
-    const failure = new PluginInstallError(npmReason(error.stderr, error));
-    failure.reason = npmFailureKind(error.stderr);
+    const error = err as Error & { code?: string; stderr?: string; killed?: boolean };
+    const killed = error.killed === true;
+    const failure = new PluginInstallError(
+      killed
+        ? `npm did not finish within ${Math.round(window / 1000)} s`
+        : npmReason(error.stderr, error),
+    );
+    failure.reason = killed ? "unreachable" : npmFailureKind(error.stderr);
+    const registry = npmRegistryNamed(error.stderr);
+    if (registry !== undefined) failure.registry = registry;
     throw failure;
   }
+}
+
+/** The registry origin npm named in its failure (`GET https://host/...`), if it named one. */
+export function npmRegistryNamed(stderr: string | undefined): string | undefined {
+  const url = /\b(?:GET|PUT|POST)\s+(https?:\/\/[^\s/]+)/.exec(stderr ?? "")?.[1];
+  return url;
 }
 
 /**
@@ -302,8 +344,23 @@ export async function npm(
  * a failed lifecycle script — is "other", and stays a failure. This reads the raw stderr, so
  * it runs before npmReason strips the `code E404` line the answer lives on.
  */
-export function npmFailureKind(stderr: string | undefined): "unavailable" | "other" {
-  return /npm error code (E404|ETARGET)\b/m.test(stderr ?? "") ? "unavailable" : "other";
+export function npmFailureKind(
+  stderr: string | undefined,
+): "unavailable" | "unreachable" | "other" {
+  const text = stderr ?? "";
+  if (/npm (?:error|ERR!) code (E404|ETARGET)\b/m.test(text)) return "unavailable";
+  // What a registry that cannot be reached looks like to npm: the connection refused, reset or
+  // timed out, the name unresolved, or the fetch timed out (`--fetch-timeout`) — or an http(s)
+  // proxy on the way answering 502 or 504 because it could not reach the registry either.
+  if (
+    /npm (?:error|ERR!) (?:code|errno) (ETIMEDOUT|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ERR_SOCKET_TIMEOUT|EPROXY|E502|E504)\b/m.test(
+      text,
+    ) ||
+    /network (?:request|timeout) .*(?:failed|timed out)|ERR_SOCKET_TIMEOUT/m.test(text)
+  ) {
+    return "unreachable";
+  }
+  return "other";
 }
 
 // `--install-links=false` on EVERY install: it is what makes npm reify a `file:` directory
@@ -311,6 +368,9 @@ export function npmFailureKind(stderr: string | undefined): "unavailable" | "oth
 // other way). Every install carries the flag — a plain install that dropped it would silently
 // replace an existing link with a frozen copy — and no config file is relied on: the same
 // command behaves the same whatever npm version ships with the runtime.
+// `--fetch-timeout` and `--fetch-retries` bound how long one registry that does not answer can
+// hold an install: npm's own defaults (five minutes, two retries) outlast the install's window,
+// so a dead registry would read as npm killed rather than as the registry not answering.
 const install = (prefix: string, spec: string, run: NpmRun = npm) =>
   run(prefix, [
     ...(npmRegistry !== undefined ? [`--registry=${npmRegistry}`] : []),
@@ -319,9 +379,43 @@ const install = (prefix: string, spec: string, run: NpmRun = npm) =>
     "--no-fund",
     "--omit=dev",
     "--install-links=false",
+    `--fetch-timeout=${FETCH_TIMEOUT_MS}`,
+    "--fetch-retries=1",
     "--",
     spec,
   ]);
+
+/**
+ * Asks the registry whether it has a version of a name (`name`, `name@range`) before that name
+ * is installed: `npm view`, so npm's own configuration, the `--registry` the install passes and
+ * any proxy apply exactly as they will to the install. The answer is bounded by a short window
+ * (CHECK_TIMEOUT_MS) and no retry, so a registry that does not answer, or does not have the
+ * name, fails within seconds rather than within the install's window; one that has it hands
+ * over to the install, whose tarballs may legitimately take longer. A failure is npm's, with
+ * npm's reason (npmFailureKind).
+ */
+export async function checkPluginSource(
+  root: string,
+  spec: string,
+  run: NpmRun = npm,
+): Promise<void> {
+  const prefix = await ensurePrefix(root);
+  await run(
+    prefix,
+    [
+      ...(npmRegistry !== undefined ? [`--registry=${npmRegistry}`] : []),
+      "view",
+      "--json",
+      `--fetch-timeout=${CHECK_FETCH_TIMEOUT_MS}`,
+      "--fetch-retries=0",
+      "--",
+      spec,
+      "version",
+    ],
+    prefix,
+    CHECK_TIMEOUT_MS,
+  );
+}
 
 /**
  * Installs (or upgrades) one package into the root's plugin prefix. Returns the version npm
@@ -431,6 +525,39 @@ export async function installPluginFiles(
   } finally {
     await fs.rm(staging, { recursive: true, force: true });
   }
+}
+
+/**
+ * Installs a package tarball already on this machine — an offline archive the build carried
+ * (plugin/offline-archives.ts), verified by the caller — the way an uploaded zip's tarball is
+ * installed: copied into `<prefix>/archives/` and installed from there, so npm records it as a
+ * `file:archives/<tarball>` dependency it can reconcile on every later install.
+ */
+export async function installPluginTarball(
+  root: string,
+  file: string,
+  name: string,
+  run: NpmRun = npm,
+): Promise<InstalledPackage> {
+  const prefix = await ensurePrefix(root);
+  const archives = path.join(prefix, ARCHIVES_DIR);
+  await fs.mkdir(archives, { recursive: true });
+  const base = path.basename(file);
+  await fs.copyFile(file, path.join(archives, base));
+  await install(prefix, `./${ARCHIVES_DIR}/${base}`, run);
+  await pruneArchives(prefix);
+  return { name, version: await readInstalledVersion(prefix, name) };
+}
+
+/** Packs a package directory into `into` as `npm publish` would (`npm pack --ignore-scripts`); answers the tarball's path. */
+export async function packPackageDirectory(dir: string, into: string): Promise<string> {
+  const packed = await npm(
+    into,
+    ["pack", "--ignore-scripts", "--json", "--pack-destination", into],
+    dir,
+    60_000,
+  );
+  return path.join(into, packedFileName(packed));
 }
 
 /**

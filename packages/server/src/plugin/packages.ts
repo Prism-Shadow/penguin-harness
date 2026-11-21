@@ -13,16 +13,20 @@
 import { Component } from "@prismshadow/penguin-core/kernel";
 import type { PluginPackages } from "../mechanisms/plugins.js";
 import {
+  checkFromRegistry,
   installChannel as installChannelWithoutNpm,
   installFiles as installFilesWithoutNpm,
   installFromRegistry,
+  installTarball as installTarballWithoutNpm,
   removeWithoutNpm,
   type WithoutNpm,
 } from "./direct-install.js";
 import {
+  checkPluginSource,
   installPluginChannel,
   installPluginFiles,
   installPluginSource,
+  installPluginTarball,
   locateNpm,
   npm,
   removePluginPackage,
@@ -59,6 +63,18 @@ export class NpmPluginPackages implements PluginPackages {
     return { fetch: this.io.fetch(), npmNotes: search.notes, ...extra };
   }
 
+  /**
+   * Whether the registry has a name, asked before it is installed: `npm view` within a short
+   * window (install.ts checkPluginSource); without npm, the registry's document, each address
+   * within the same window (direct-install.ts checkFromRegistry).
+   */
+  check(root: string, spec: string): Promise<void> {
+    const direct = this.withoutNpm();
+    return direct === null
+      ? checkPluginSource(root, spec, this.io.npm)
+      : checkFromRegistry(spec, direct);
+  }
+
   /** By name or by link (install.ts installPluginSource; without npm, by name only). */
   install(root: string, source: string): Promise<InstalledPackage> {
     const direct = this.withoutNpm();
@@ -74,6 +90,18 @@ export class NpmPluginPackages implements PluginPackages {
     return direct === null
       ? installPluginFiles(root, byPath, this.io.npm)
       : installFilesWithoutNpm(root, byPath, direct);
+  }
+
+  /**
+   * A verified package tarball on this machine, an offline archive: npm installs it
+   * (install.ts installPluginTarball); without npm, it is placed directly
+   * (direct-install.ts installTarball).
+   */
+  installTarball(root: string, file: string, name: string): Promise<InstalledPackage> {
+    const direct = this.withoutNpm();
+    return direct === null
+      ? installPluginTarball(root, file, name, this.io.npm)
+      : installTarballWithoutNpm(root, file, name, direct);
   }
 
   /** A version from the published index's release channel (install.ts installPluginChannel). */

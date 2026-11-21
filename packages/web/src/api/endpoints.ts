@@ -151,6 +151,8 @@ import type {
   PluginInstallRequest,
   PluginModuleAskRequest,
   PluginModuleAskResponse,
+  PluginHoldersResponse,
+  PluginServerUninstallResponse,
   PluginModuleDecideRequest,
   PluginModuleRequestsResponse,
   PluginLibraryResponse,
@@ -2104,6 +2106,21 @@ export const askPluginModule = (projectId: string, plugin: string) =>
   );
 
 /**
+ * A member's 「安装到 Agent」 of a plugin that is not on the server yet: a request for the
+ * administrator, who installs it on the server. 409 `plugin_on_server` when it is there already.
+ */
+export const askPluginPackage = (projectId: string, pkg: string, agentId: string | null) =>
+  apiFetch<PluginModuleAskResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/plugins/modules`,
+    {
+      method: "POST",
+      body: (agentId !== null
+        ? { package: pkg, agentId }
+        : { package: pkg }) satisfies PluginModuleAskRequest,
+    },
+  );
+
+/**
  * Uninstalls a whole plugin from the Agent on its server, in one request (Project owner): its
  * workbenches, its MCP server entries, its hook package and its Skills. The answer lists what was
  * removed, and `failed` what could not be (the rest is removed regardless). 404
@@ -3220,17 +3237,28 @@ export const installPlugin = (
 export type InstallProgressListener = (received: number, total: number | null) => void;
 
 /**
+ * A step of a server install as its stream reports it: the registry asked about a name before it
+ * installs, a source being tried, or the App re-assembling.
+ */
+export type InstallStage =
+  | { stage: "checking" }
+  | { stage: "installing"; source: "registry" | "link" | "channel" | "offline" }
+  | { stage: "loading" };
+
+/**
  * The same install as {@link installPlugin}, read as it arrives: the server answers a
- * `text/event-stream` whose `download` events carry the channel's bytes on their way in, `npm`
- * fires once the bytes are in and npm takes over, and `result` carries the finished list. An
- * `error` event carries the status the JSON answer would have had, and is raised as an
- * {@link ApiError} — a stream that ends with no `result` is a lost connection.
+ * `text/event-stream` that opens with `npm`, says the registry check, each source it tries and the
+ * App's re-assembly as `stage` events, carries a channel's bytes on their way in as `download` events, and ends with
+ * `result`, the finished list (a `ping` keeps a long install's stream alive). An `error` event
+ * carries the status the JSON answer would have had, and is raised as an {@link ApiError} — a
+ * stream that ends with no `result` is a lost connection.
  */
 export const installPluginStream = async (
   projectId: string,
   specifier: string,
   machineId: string | null,
   onProgress: InstallProgressListener,
+  onStage?: (stage: InstallStage) => void,
 ): Promise<InstalledPluginsResponse> => {
   const response = await apiFetchStream(pluginsPath(projectId), {
     method: "POST",
@@ -3242,6 +3270,8 @@ export const installPluginStream = async (
     if (event === "download") {
       const progress = JSON.parse(data) as { received: number; total: number | null };
       onProgress(progress.received, progress.total);
+    } else if (event === "stage") {
+      onStage?.(JSON.parse(data) as InstallStage);
     } else if (event === "error") {
       const failure = JSON.parse(data) as { status: number; code: string; message: string };
       throw new ApiError(failure.status, failure.code, failure.message);
@@ -3292,6 +3322,27 @@ async function* sseEvents(response: Response): AsyncGenerator<{ event: string; d
     void reader.cancel().catch(() => {});
   }
 }
+
+/**
+ * Who would lose a plugin if it were uninstalled from the server (admin): every Agent of every
+ * Project there that carries it, and whether the uninstall can run (`shipped`, `shared`).
+ * `server` names a machine through this server's tunnel; null is this server.
+ */
+export const getPluginHolders = (pkg: string, server: string | null) =>
+  apiFetch<PluginHoldersResponse>(`/api/admin/plugins/holders?package=${encodeURIComponent(pkg)}`, {
+    server,
+  });
+
+/**
+ * Uninstalls a plugin from the server (admin): from every Agent there first — their copies, local
+ * edits and workbench data included — then from the server itself. 409 `plugin_shipped`,
+ * `plugin_shared` or `module_failed`, 404 `plugin_not_installed`.
+ */
+export const uninstallPluginFromServer = (pkg: string, server: string | null) =>
+  apiFetch<PluginServerUninstallResponse>(`/api/admin/plugins?package=${encodeURIComponent(pkg)}`, {
+    method: "DELETE",
+    server,
+  });
 
 /**
  * Admin only: drops it from every table of this Project, or with `machineId` from that

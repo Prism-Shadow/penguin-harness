@@ -61,11 +61,12 @@ import {
 } from "./lib/locked-prefix.mjs";
 import { run } from "./lib/run-command.mjs";
 import { readVendoredPackages, thirdPartyNotices } from "./lib/third-party-notices.mjs";
+import { offlineCandidates, stageOfflineArchives } from "./lib/offline-archives.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const COMPLETE = ".complete";
 /** Folded into the cache key: bump when what this script WRITES changes, not only what it reads. */
-const PACK_FORMAT = 14;
+const PACK_FORMAT = 15;
 /** The prefix's own manifest: npm needs one above `node_modules`, and it is ours, never a package's. */
 const PREFIX_MANIFEST = { name: "penguin-builtin-plugins", private: true, version: "0.0.0" };
 /**
@@ -223,9 +224,15 @@ export async function buildBuiltinPlugins({ log = () => {}, root = ROOT, env = p
       throw new Error(`${name} is both a plugins/ package and an external pin of packages/server`);
     }
   }
+  // Listed in the market but not shipped: carried as offline archives (scripts/lib/offline-archives.mjs).
+  const offline = await offlineCandidates({
+    pluginsSrc: path.join(root, "plugins"),
+    indexFile: path.join(root, "packages", "server", "src", "plugin", "builtin-index.json"),
+    shipped: builtinNames,
+  });
   const h = createHash("sha256").update(`pack ${PACK_FORMAT}\0`);
   h.update(lockCacheInput(lock, closure)).update("\0");
-  for (const plugin of plugins) {
+  for (const plugin of [...plugins, ...offline]) {
     h.update(plugin.name).update("\0");
     await sourceHash(plugin.dir, h);
   }
@@ -374,6 +381,19 @@ export async function buildBuiltinPlugins({ log = () => {}, root = ROOT, env = p
         dependencies[pin.name] = pin.version;
       }
       if (staged.length > 0) await writeManifest();
+      await stageOfflineArchives({
+        out,
+        candidates: offline,
+        build: (plugin) => run("pnpm", ["--filter", plugin.name, "run", "build"], root, env),
+        pack: async (dir, into) => {
+          const before = new Set(await fsp.readdir(into));
+          await run("pnpm", ["pack", "--pack-destination", into], dir, env);
+          const made = (await fsp.readdir(into)).find((f) => f.endsWith(".tgz") && !before.has(f));
+          if (made === undefined) throw new Error(`pnpm pack left no tarball in ${dir}`);
+          return path.join(into, made);
+        },
+        log,
+      });
       // npm installs a package's files with the mode it pleases, and a vendored program
       // arrives without its exec bit — which no consumer of the prefix can guess back.
       for (const rel of await walk(out)) {

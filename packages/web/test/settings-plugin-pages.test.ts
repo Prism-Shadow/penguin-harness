@@ -116,6 +116,7 @@ const WAITING: PluginModuleRequestsResponse = {
       via: null,
       builtin: false,
       state: "off",
+      onServer: true,
     },
   ],
 };
