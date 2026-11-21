@@ -50,7 +50,9 @@ function ChangePasswordForm({ onClose }: { onClose: () => void }) {
    * What the server refused, on the field it is about, or on the dialog's own line when it is
    * about none; a save it could not complete carries 「[报告问题]」. Cleared by the next keystroke.
    */
-  const [refused, setRefused] = useState<{ old?: ReactNode; new?: ReactNode; form?: ReactNode }>({});
+  const [refused, setRefused] = useState<{ old?: ReactNode; new?: ReactNode; form?: ReactNode }>(
+    {},
+  );
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
