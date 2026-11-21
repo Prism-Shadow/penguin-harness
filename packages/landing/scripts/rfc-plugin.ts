@@ -6,7 +6,7 @@
  * hours in a single batched GraphQL query (merged PRs are never fetched again), and falls back to
  * the offline snapshot when unauthenticated or offline.
  */
-import { loadRfcPrStatuses } from "./rfcs/pr-status.mjs";
+import { loadRfcPrStatuses, SEED_FILE } from "./rfcs/pr-status.mjs";
 
 const VIRTUAL_ID = "virtual:penguin-rfc-prs";
 const RESOLVED_ID = `\0${VIRTUAL_ID}`;
@@ -14,7 +14,17 @@ const RESOLVED_ID = `\0${VIRTUAL_ID}`;
 export function rfcPrStatus(options?: { offline?: boolean }): {
   name: string;
   resolveId: (id: string) => string | null;
-  load: (id: string) => string | null;
+  load: (this: { addWatchFile?: (id: string) => void }, id: string) => string | null;
+  handleHotUpdate?: (ctx: {
+    file: string;
+    server: {
+      moduleGraph: {
+        getModuleById: (id: string) => unknown;
+        invalidateModule: (mod: unknown) => void;
+      };
+      ws: { send: (payload: { type: string }) => void };
+    };
+  }) => void;
 } {
   let cache: ReturnType<typeof loadRfcPrStatuses> | undefined;
   return {
@@ -24,11 +34,20 @@ export function rfcPrStatus(options?: { offline?: boolean }): {
     },
     load(id) {
       if (id !== RESOLVED_ID) return null;
+      this.addWatchFile?.(SEED_FILE);
       cache ??= loadRfcPrStatuses({ offline: options?.offline ?? false });
       return [
         `export const updatedAt = ${JSON.stringify(cache.updatedAt)};`,
         `export const prs = ${JSON.stringify(cache.prs)};`,
       ].join("\n");
+    },
+    handleHotUpdate({ file, server }) {
+      if (file === SEED_FILE) {
+        cache = undefined;
+        const mod = server.moduleGraph.getModuleById(RESOLVED_ID);
+        if (mod) server.moduleGraph.invalidateModule(mod);
+        server.ws.send({ type: "full-reload" });
+      }
     },
   };
 }

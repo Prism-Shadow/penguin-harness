@@ -171,6 +171,7 @@ export function buildRfcIndex(
     { pr: RfcPrRecord; ref: RfcPrDocRef; openRevisionHref?: string }
   >();
   for (const pr of mainPrs) {
+    if (pr.status === "closed") continue;
     for (const ref of pr.rfcs ?? []) {
       const existing = prByRfcId.get(ref.id);
       if (!existing) {
@@ -229,7 +230,7 @@ export function buildRfcIndex(
   }
 
   for (const [id, { pr, ref }] of prByRfcId) {
-    if (entriesById.has(id)) continue;
+    if (entriesById.has(id) || pr.status === "closed") continue;
     entriesById.set(id, {
       id,
       number: ref.number || (id.match(/^PRFC-\d+/)?.[0] ?? id),

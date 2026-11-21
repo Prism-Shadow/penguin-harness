@@ -54,7 +54,7 @@ function findRfcPrsToLabel() {
     const after = cursor ? `, after: ${JSON.stringify(cursor)}` : "";
     const query = `{
       repository(owner: ${JSON.stringify(REPO_OWNER)}, name: ${JSON.stringify(REPO_NAME)}) {
-        pullRequests(states: [OPEN, MERGED, CLOSED], first: 100, orderBy: {field: CREATED_AT, direction: DESC}${after}) {
+        pullRequests(states: [OPEN, MERGED], first: 100, orderBy: {field: CREATED_AT, direction: DESC}${after}) {
           pageInfo { hasNextPage endCursor }
           nodes {
             number

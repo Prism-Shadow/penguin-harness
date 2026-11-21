@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-21T03:25:58.805Z",
+  "updatedAt": "2026-11-21T03:43:42.235Z",
   "prs": [
     {
       "number": 1228,
@@ -84,22 +84,6 @@
           "number": "PRFC-0004",
           "title": "PRFC-0004 Plugin Scope",
           "titleZh": "PRFC-0004 插件的作用域"
-        }
-      ]
-    },
-    {
-      "number": 1241,
-      "title": "docs(rfcs): draft RFC PRFC-0005 - mechanisms not implementations",
-      "url": "https://github.com/Prism-Shadow/penguin-harness/pull/1241",
-      "status": "closed",
-      "baseRefName": "main",
-      "headRefOid": "3365a741f9c49c1914bd647b941bc4aa969e8dd2",
-      "rfcs": [
-        {
-          "id": "PRFC-0005-mechanisms-not-implementations",
-          "number": "PRFC-0005",
-          "title": "PRFC-0005 Depend on mechanisms, not implementations",
-          "titleZh": "PRFC-0005 依赖机制，而不是实现"
         }
       ]
     },

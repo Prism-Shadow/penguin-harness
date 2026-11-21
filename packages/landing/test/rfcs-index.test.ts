@@ -200,16 +200,16 @@ describe("buildRfcIndex", () => {
     expect(rfcEntryShortTitle(index[2]!, "en")).toBe("Module Pass");
   });
 
-  it("populates all 25 RFCs in rfcEntries with their GitHub PR statuses, numbers, and titles", () => {
-    expect(rfcEntries).toHaveLength(25);
+  it("populates all 24 RFCs in rfcEntries with their GitHub PR statuses, numbers, and titles", () => {
+    expect(rfcEntries).toHaveLength(24);
     const mod = rfcEntries.find((e) => e.id === "PRFC-0001-module");
     expect(mod?.status).toBe("merged");
     expect(mod?.prNumber).toBe(1228);
     expect(mod?.prTitle).toContain("docs(rfcs):");
     expect(rfcEntries.find((e) => e.id === "PRFC-0004-plugin-scope")?.status).toBe("open");
     expect(
-      rfcEntries.find((e) => e.id === "PRFC-0005-mechanisms-not-implementations")?.status,
-    ).toBe("closed");
+      rfcEntries.find((e) => e.id === "PRFC-0005-mechanisms-not-implementations"),
+    ).toBeUndefined();
     expect(rfcEntries.find((e) => e.id === "PRFC-0005-plugin-versioning")?.status).toBe("open");
     expect(rfcEntries.find((e) => e.id === "PRFC-0024-cli-modules")?.openRevision?.href).toBe(
       "https://github.com/Prism-Shadow/penguin-harness/pull/1649",
