@@ -419,7 +419,7 @@ npm 标准字段：
 - 插件名就是去掉 scope 的包名，必须匹配 `^[A-Za-z0-9_-]+$`；内置插件的目录名与之相同。
 - 围绕他人产品打造的插件带 `use-` 前缀（如 `use-firecrawl`），名称只表明用途，而不冒充产品本身。
 - 自进化工具包的名字以 `-rsi-toolkit` 结尾（`default-rsi-toolkit`、`ape-rsi-toolkit`），一看就知道它是什么；算法工具包唯一的 Skill 与插件同名。
-- 插件的版本就是它的 npm 版本，即 `package.json` 的 `version`，随产品发布递增。
+- 插件的版本就是它的 npm 版本，即 `package.json` 的 `version`，随产品发布递增。`computer-use` 从插件市场安装、不随产品自带，它有自己的版本：从 0.1.0 起，只在插件本身改动时递增。每次发布把它的包附到 GitHub Release 上，并把同一个文件发布到 npm。
 - 日期版本 `YYYY.MM.DD.N`（日期加当天的序号）属于 Agent 可能在本地改动的事物：每个 Skill 的 `SKILL.md` 自带 `version`，钩子包的版本是它的 hooks 贡献的 `version`。改了 Skill 就递增它的 `version`；改了钩子脚本或 hooks 贡献中的命令就递增该贡献的 `version`；只改卡片则两者都不必递增。CI 对每个 PR 校验这两点（`scripts/check-plugin-versions.mjs`）。
 - 日期版本先按日期比较，再按序号比较：`2026.08.29.10` 排在 `2026.08.29.9` 之后。已安装副本只要有一个部件的版本比插件库中同名部件旧，就算落后；更新提示与更新按钮按插件计一次。
 - 每个插件都是一个独立的 npm 包 `@penguinharness/<name>`，位于仓库的 `plugins/<name>/`。`@prismshadow/penguin-core` 中的加载器从宿主包（服务端、CLI 或桌面应用）的依赖列表读取插件名，并通过 Node 解析各个包；core 本身不依赖任何插件。桌面应用把同样的包声明为依赖，安装器会将它们打包。运行时，插件文件与表就是插件库内容的唯一事实来源，每次调用都直接读取。在仓库的检出中，`pnpm -r build` 构建全部插件的表，`pnpm dev` 会先构建内容插件的表；改了插件的 `src/index.ts`，就要重新构建该插件。

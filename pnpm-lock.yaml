@@ -1779,10 +1779,10 @@ importers:
   plugins/computer-use:
     devDependencies:
       '@prismshadow/penguin-core':
-        specifier: workspace:*
+        specifier: workspace:>=0.2.0
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/skills':
-        specifier: workspace:*
+        specifier: workspace:>=0.2.0
         version: link:../../packages/skills
       commander:
         specifier: ^13.0.0

@@ -23,6 +23,8 @@ For websites, use the [Built-in Browser](/builtin-browser) instead.
 2. The plugin downloads agent-desktop 1.3.1 (about 16 MB) from the npm registry chosen under **Plugin Sources**, checks it against the digests pinned in the plugin, and keeps only this machine's program in the data root, under `cache/computer-use/`. The **Computer Use** card under Settings → Plugins shows its progress.
 3. Install the plugin on an agent from the agent's **Plugins** tab. The agent gets the `computer-use` skill, and the Project gets the plugin enabled on this server.
 
+Computer Use has a version of its own, separate from PenguinHarness's: it started at 0.1.0 and moves only when the plugin itself changes.
+
 Installing a plugin from the market (or from a zip) runs npm on the server machine, and the desktop app does not bring npm of its own yet: on a machine without npm the install says so. The download of agent-desktop itself needs no npm. It tries the registry chosen under **Plugin Sources** first, then the **npm registry mirror** when it is chosen under Plugin mirrors; mirrors configured only in an `.npmrc` file are not read. A slow link is fine: an address is given up only after 30 seconds without data, and the whole download after 30 minutes. Removing the plugin stops a download in progress.
 
 If the download fails, the card says so with the error under its details: choose another registry or add the npm registry mirror under **Plugin Sources**, then select **Retry**. A machine that cannot reach any npm registry can use an agent-desktop program installed by other means: give its absolute path in **agent-desktop program path**, under the card's advanced settings.

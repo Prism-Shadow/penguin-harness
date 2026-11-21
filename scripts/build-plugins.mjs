@@ -88,7 +88,8 @@ const NATIVE_DEPENDENCIES = new Map([
 
 /**
  * The plugins of this repository that are NOT shipped, each with a reason: they are built,
- * tested and published to npm like every other, and the server's embedded index lists them, but
+ * tested and published to npm like every other (at a version of their own where
+ * scripts/lib/own-version-plugins.mjs lists them), and the server's embedded index lists them, but
  * an administrator installs them from the plugin market — they are not in the builtin prefix, so
  * nothing carries them to every machine and no `409 plugin_shipped` stands in the market's way.
  */
