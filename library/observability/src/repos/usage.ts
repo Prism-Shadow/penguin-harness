@@ -26,6 +26,8 @@ export interface UsageRecordInsert {
   total: number;
   /** Request outcome; defaults to completed (success, carries tokens). Failed requests are stored with 0 tokens + status, for success-rate calculations. */
   status?: string;
+  /** What a request outside a chat turn was for (`<package>:<operation>`); absent for a chat turn's. */
+  purpose?: string;
 }
 
 /** Generic filter: date range + agent / model dimensions (cost center top bar switches by agent/model). */
@@ -193,8 +195,8 @@ export class UsageRepo implements UsageStore {
       .prepare(
         `INSERT INTO usage_records
            (ts, date, project_id, agent_id, session_id, origin_session_id, provider, model_id,
-            cache_read, cache_write, output, total, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            cache_read, cache_write, output, total, status, purpose)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         r.ts,
@@ -210,6 +212,7 @@ export class UsageRepo implements UsageStore {
         r.output,
         r.total,
         r.status ?? "completed",
+        r.purpose ?? null,
       );
   }
 
