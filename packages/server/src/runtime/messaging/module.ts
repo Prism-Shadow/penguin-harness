@@ -10,6 +10,7 @@ import type { Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Hono } from "hono";
 import type { Channels, Clock, Log, Paths } from "../../hmr/capabilities.js";
 import type { Machines } from "../../machines/service.js";
+import type { AppEnv } from "../../auth/middleware.js";
 import { MessagingBridge } from "@prismshadow/penguin-library-messaging/bridge";
 import {
   Messaging,
