@@ -5,12 +5,15 @@
  * offered.
  *
  * The Agent is the one the conversation runs on, on the server that holds it — a machine's Agent
- * is asked about, and installed on, over there. The install is the Plugins page's own route,
- * which also renews the Agent's cached runtimes, so the next message already runs the package.
+ * is asked about, and installed on, over there, the way every install goes
+ * (lib/agent-plugin-install.ts): a machine is told to leave its plugin tables to this server. The
+ * install is the Plugins page's own route, which also renews the Agent's cached runtimes, so the
+ * next message already runs the package.
  */
 import type { AgentPluginsInstallResponse } from "@prismshadow/penguin-server/api";
 
-import { getAgentPlugins, installAgentPlugins } from "../../api/endpoints";
+import { getAgentPlugins } from "../../api/endpoints";
+import { installWithModules } from "../../lib/agent-plugin-install";
 
 export interface HookPluginInstall {
   /** Whether the Agent has the plugin's hook package. Rejects when the list cannot be read. */
@@ -33,6 +36,9 @@ export function hookPluginInstall(
   return {
     check: async () => hasHookPackage(await getAgentPlugins(projectId, agentId, machineId), plugin),
     install: async () =>
-      hasHookPackage(await installAgentPlugins(projectId, agentId, [plugin], machineId), plugin),
+      hasHookPackage(
+        (await installWithModules({ projectId, agentId, machineId }, [plugin])).lists,
+        plugin,
+      ),
   };
 }
