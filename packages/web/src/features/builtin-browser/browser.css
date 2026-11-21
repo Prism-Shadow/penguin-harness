@@ -1,0 +1,17 @@
+/* The built-in browser's agent-at-work frame (browser-layer.tsx, chrome-surface.tsx): an inset
+   ring over the page on screen while an agent acts in it, drawn in the busy tone's ink through
+   currentColor. It breathes by opacity from a resting state that IS the full ring, so the app's
+   reduced-motion `animation: none !important` leaves it on screen, still, instead of hiding it. */
+@keyframes browser-agent-ring {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.browser-agent-ring {
+  box-shadow: inset 0 0 0 2px currentColor;
+  animation: browser-agent-ring 1.6s ease-in-out infinite;
+}

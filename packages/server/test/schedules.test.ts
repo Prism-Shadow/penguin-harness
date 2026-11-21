@@ -7,6 +7,9 @@
  *   past — is refused with 400 on POST and PUT, and nothing is written.
  * - Settled tasks are archived into schedule/expired/: absent from the agent and Project listings
  *   and from the agent card's scheduleCount.
+ * - A schedule's creator is the person who saved it with their own sign-in: one saved with the
+ *   local API token (an Agent's shell), a file found on disk, and a person's schedule edited on
+ *   disk since have none; the person's next save names them again.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -19,7 +22,7 @@ import type {
   ScheduleItem,
   SchedulesResponse,
 } from "../src/api/types.js";
-import { apiClient, createTestApp, provisionUser } from "./helpers.js";
+import { apiClient, createTestApp, provisionUser, tokenClient } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const FUTURE = "2099-01-01T09:00:00Z";
@@ -177,7 +180,7 @@ describe("schedules api", () => {
     expect(list.invalidFiles).toEqual([]);
   });
 
-  it("hand-edited files: invalid ones land in invalidFiles; a valid one is listed with the Project owner as its creator", async () => {
+  it("hand-edited files: invalid ones land in invalidFiles; a valid one is listed with no creator", async () => {
     const dir = scheduleDir(t.root, projectId, "default_agent");
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, "broken.toml"), "not = toml =", "utf8");
@@ -189,9 +192,29 @@ describe("schedules api", () => {
     const list = (await (await owner.get(base)).json()) as SchedulesResponse;
     expect(list.invalidFiles.map((f) => f.name)).toEqual(["broken"]);
     expect(list.schedules.map((s) => [s.name, s.status, s.creatorUserId])).toEqual([
-      // For a hand-edited file, the creator falls back to the Project owner.
-      ["hand", "active", "owner_a"],
+      // A file found on disk vouches for nobody: no creator, so its runs are driven by nobody.
+      ["hand", "active", undefined],
     ]);
+  });
+
+  it("a schedule saved with the local API token, or edited on disk since a person saved it, has no creator", async () => {
+    const body = { prompt: "p", enabled: true, startAt: FUTURE, period: "30m" };
+    const agent = tokenClient(t.app, t.deps.authService.localApiToken()!);
+    const own = "/api/projects/default_project/agents/default_agent/schedules";
+    const byToken = await agent.post(own, { ...body, name: "by-agent" });
+    expect(byToken.status).toBe(201);
+    expect(((await byToken.json()) as ScheduleItem).creatorUserId).toBeUndefined();
+
+    const saved = await owner.post(base, { ...body, name: "job" });
+    expect(((await saved.json()) as ScheduleItem).creatorUserId).toBe("owner_a");
+    const file = path.join(scheduleDir(t.root, projectId, "default_agent"), "job.toml");
+    const raw = await fs.readFile(file, "utf8");
+    await fs.writeFile(file, raw.replace('prompt = "p"', 'prompt = "something else"'), "utf8");
+    const edited = (await (await owner.get(base)).json()) as SchedulesResponse;
+    expect(edited.schedules.map((s) => [s.name, s.creatorUserId])).toEqual([["job", undefined]]);
+
+    const again = await owner.put(`${base}/job`, body);
+    expect(((await again.json()) as ScheduleItem).creatorUserId).toBe("owner_a");
   });
 
   it("a one-shot whose start_at is past, or a task whose end_at is past, is refused with 400 and writes nothing", async () => {

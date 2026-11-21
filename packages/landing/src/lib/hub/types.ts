@@ -12,6 +12,27 @@ export interface HubAuthor {
   homepage?: string;
 }
 
+/**
+ * A plugin's authored cover, from the market's curation document: paths under the community
+ * repository's `assets/plugins/` (`pluginAssetUrl` resolves them).
+ */
+export interface PluginCover {
+  src: string;
+  /** The small rendition a card draws. */
+  thumb?: string;
+  /** The picture's dominant colour (`#rrggbb`). */
+  tone?: string;
+}
+
+/** A screenshot on a plugin's page, from the curation document: a path and what it shows. */
+export interface PluginShot {
+  src: string;
+  /** The small rendition the gallery row draws. */
+  thumb?: string;
+  caption?: string;
+  captionZh?: string;
+}
+
 export interface PluginSummary {
   id: string;
   packageName: string;
@@ -19,6 +40,9 @@ export interface PluginSummary {
   titleZh?: string;
   short: string;
   shortZh?: string;
+  /** The full description: the selected carousel shows it beside the cover. */
+  description: string;
+  descriptionZh?: string;
   category: string;
   version: string;
   author?: HubAuthor;
@@ -28,6 +52,36 @@ export interface PluginSummary {
   skillCount: number;
   hookCount: number;
   workbenchCount: number;
+  /** The authored cover; absent, the page draws the generated one. */
+  cover?: PluginCover;
+  /**
+   * A raster icon from the curation document (a path, like the cover's), for a plugin that is not
+   * bundled and so has no `icon` of its own.
+   */
+  marketIcon?: string;
+  /** In the market's selected list. */
+  selected?: true;
+  /**
+   * Its install count and its installs in the last week, from the market document's popularity
+   * block. Placeholder numbers until a
+   * real source replaces them; absent when the document carries none for it.
+   */
+  popularity?: { installs: number; weekly: number };
+  /**
+   * Listed by the published plugin index, not shipped from this repository's plugins/: its page
+   * has no README, Skills, hook points or quick start, since the build downloads no package.
+   */
+  bundled?: false;
+  /**
+   * What a plugin that is not bundled says it carries (its index keywords `skills`, `hooks`,
+   * `workbenches`); a bundled one's counts say it instead.
+   */
+  contents?: ("skills" | "hooks" | "workbenches")[];
+  /**
+   * The newest day (ISO 8601 date) among the dated versions of its Skills, hook package and
+   * Workbenches; absent when none is dated. The only ordering signal besides the curation.
+   */
+  updated?: string;
 }
 
 export interface PluginSkill {
@@ -37,8 +91,6 @@ export interface PluginSkill {
 }
 
 export interface PluginDetail extends PluginSummary {
-  description: string;
-  descriptionZh?: string;
   license?: string;
   references: string[];
   quickStart?: { prompt: string; promptZh?: string; skills: string[] };
@@ -47,7 +99,14 @@ export interface PluginDetail extends PluginSummary {
   hooks: string[];
   workbenches: string[];
   readme?: string;
-  sourceUrl: string;
+  /** Its folder on GitHub; for a plugin that is not bundled, its repository, when the index names one. */
+  sourceUrl?: string;
+  /** An HTTPS release archive pinned by the registry. */
+  archiveUrl?: string;
+  /** The screenshots the curation document gives it, in order. */
+  screenshots?: PluginShot[];
+  /** The leaderboards whose entries ran it (an RSI toolkit's algorithm): what measured it. */
+  leaderboards: HubLink[];
 }
 
 export interface BenchmarkSummary {
@@ -218,8 +277,23 @@ export interface LeaderboardDetail extends Omit<LeaderboardSummary, "benchmarks"
   experimentsUrl: string;
 }
 
+/**
+ * The market's curation, by plugin id: the selected plugins in display order, and those of them
+ * allowed to lead the selected carousel, in turn order.
+ */
+export interface HubMarket {
+  hero: string[];
+  selected: string[];
+  /**
+   * Where the plugins' popularity counts come from, when the market document carries any:
+   * generated placeholders today, a real install count once one is connected.
+   */
+  popularitySource?: "placeholder" | "live";
+}
+
 export interface HubIndex {
   plugins: PluginSummary[];
+  market: HubMarket;
   benchmarks: BenchmarkSummary[];
   leaderboards: LeaderboardSummary[];
 }

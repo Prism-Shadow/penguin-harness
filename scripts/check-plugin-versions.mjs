@@ -177,6 +177,16 @@ const changed = git("diff", "--name-only", `${base}...HEAD`, "--", "plugins/")
   .split("\n")
   .map((line) => line.trim())
   .filter((line) => line.startsWith("plugins/"));
+// These packages install copies of the shared desk files. A shared runtime change is an
+// installed-source change even when none of the package-local files changed.
+if (git("diff", "--name-only", `${base}...HEAD`, "--", "scripts/workbench-desk/").trim()) {
+  for (const file of git("ls-tree", "-r", "--name-only", "HEAD", "--", "plugins/").split("\n")) {
+    const match = /^plugins\/([^/]+)\/package\.json$/.exec(file);
+    if (match && atHead(file)?.includes("scripts/workbench-desk/build.mjs")) {
+      changed.push(`plugins/${match[1]}/workbenches/${match[1]}/package.json`);
+    }
+  }
+}
 // A plugin is a directory: a file right under plugins/ (the library's README) is nobody's.
 const plugins = [
   ...new Set(

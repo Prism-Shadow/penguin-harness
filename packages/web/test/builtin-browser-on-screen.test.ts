@@ -10,6 +10,8 @@
  * - After a resync the tab on screen is said again.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+// The browser reaches the app's own helpers through the plugin face; this hands them over.
+import "../src/web-app/plugin-host";
 import {
   ON_SCREEN_SETTLE_MS,
   forgetOnScreenReport,

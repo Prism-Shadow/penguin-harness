@@ -16,15 +16,9 @@ import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { PeakWindows } from "./peak-windows";
 import type { ProtocolClientType } from "./protocol-client-types";
 import type { ModelGroupSort } from "../features/models/model-sort";
-import type { StartPageSiteId } from "./browser-start-sites";
 import { EVOLUTION_DEMO } from "./evolution-demo";
-import type {
-  AgentAuthor,
-  BuiltinBrowserCookieSkip,
-  BuiltinBrowserImportNote,
-  SemanticIdSuggestReason,
-} from "@prismshadow/penguin-server/api";
-import type { ImportExtensionRoute } from "./browser-import-route";
+import type { AgentAuthor, SemanticIdSuggestReason } from "@prismshadow/penguin-server/api";
+import { setWebLocale } from "@prismshadow/penguin-web-plugin/host";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -607,306 +601,6 @@ export const zh = {
     panelUnavailable: "此面板暂不可用",
   },
 
-  /** The agent browser — the built-in one (desktop app) or the user's own Chrome: its dock panel, toolbar and dialogs. */
-  builtinBrowser: {
-    panelTitle: "浏览器",
-    /** The browser's own tab strip (its accessible name). */
-    tabs: "标签页",
-    newTab: "新建标签页",
-    closeTab: "关闭标签页",
-    /** A tab with no title yet — a blank new tab. */
-    untitled: "新标签页",
-    back: "后退",
-    forward: "前进",
-    reload: "重新加载",
-    stop: "停止加载",
-    /** The address bar's accessible name, and its placeholder. */
-    address: "地址栏",
-    addressPlaceholder: "搜索或输入网址",
-    /** The history suggestions under the address bar (their accessible name). */
-    suggestions: "历史记录",
-    /** The toolbar's overflow menu. */
-    more: "更多",
-    importAction: "从浏览器导入…",
-    clearDataAction: "清除浏览数据…",
-    /** Opens the homepage dialog. */
-    setHomepageAction: "设置主页…",
-    openExternal: "在系统浏览器中打开",
-    devTools: "开发者工具",
-    /** The toolbar's button to the homepage, beside reload; shown only while one is set. */
-    home: "主页",
-    /** The toolbar's mark while an agent drives the browser; `action` is one of `actions`. */
-    agentBusy: (action: string): string => `智能体正在使用浏览器：${action}`,
-    /** A busy tab's tooltip in the strip, after its title. */
-    agentBusyTab: "智能体正在使用此标签页",
-    actions: {
-      navigate: "打开网页",
-      scan: "读取页面",
-      exec: "运行脚本",
-      click: "点击页面",
-      type: "输入文字",
-      screenshot: "截取屏幕",
-      cdp: "发送调试命令",
-    },
-    /** The panel where the browser cannot run; the title, then why. */
-    unavailableTitle: "内置浏览器不可用",
-    unavailableDesktop: "内置浏览器只能在 PenguinHarness 桌面应用中使用。",
-    unavailableShell: "当前桌面应用版本过旧，请更新后使用内置浏览器。",
-    unavailableWindow: "没有可以显示浏览器的应用窗口。",
-    /** After the reason, where the server offers Chrome but none is paired: where to pair one. */
-    unavailablePairChrome: "要让 Agent 改用你的 Chrome，先在设置 › 浏览器中配对。",
-    /** The unavailable built-in panel's way out, where the server offers the user's Chrome. */
-    useChrome: "改用系统 Chrome",
-    /** A new tab without a homepage: the start page's common sites, and its landmark's name. */
-    startPage: {
-      label: "常用网站",
-      sites: {
-        google: "谷歌",
-        bing: "必应",
-        baidu: "百度",
-        github: "GitHub",
-        stackoverflow: "Stack Overflow",
-        wikipedia: "维基百科",
-      } satisfies Record<StartPageSiteId, string>,
-    },
-    openFailed: (reason: string): string => `无法打开标签页：${reason}`,
-    closeFailed: (reason: string): string => `无法关闭标签页：${reason}`,
-    /** The two backends, as Settings › Browser offers them (desktop app). */
-    backendBuiltin: "内置",
-    backendChrome: "系统 Chrome",
-    /** The Chrome surface's menu row: the user's Chrome as the server last said. */
-    chromeConnected: (name: string | null): string =>
-      name !== null ? `Chrome：已连接 · ${name}` : "Chrome：已连接",
-    chromeNotConnected: "Chrome：未连接",
-    chromeNotPaired: "尚未配对 Chrome",
-    chromeDisabled: "Chrome 连接已关闭",
-    /** The status row's action: the pairing dialog, or Settings › Browser once one is paired. */
-    connectChrome: "连接你的 Chrome…",
-    manageChrome: "管理…",
-    /** The toast after a switch, and the one when an agent at work refuses it. */
-    switchedToChrome: "Agent 现在使用你的 Chrome",
-    switchedToBuiltin: "Agent 现在使用内置浏览器",
-    switchRefused: "Agent 正在使用浏览器，等它完成后再切换",
-    switchFailed: (reason: string): string => `无法切换浏览器：${reason}`,
-    /** The Chrome surface: in place of the page, a card for a tab that lives in the user's Chrome. */
-    chromeTabCard: "此标签页在你的 Chrome 中打开",
-    showInChrome: "在 Chrome 中显示",
-    chromeNoTabsTitle: "你的 Chrome 里还没有 Agent 的标签页",
-    chromeNoTabsBody: "Agent 打开的页面会出现在 Chrome 的 Penguin 标签组里。",
-    /** Paired but not connected: the title, which Chrome, and the fold with what to check. */
-    chromeDisconnectedTitle: "Chrome 未连接",
-    chromeDisconnectedBody: (name: string | null): string =>
-      name !== null
-        ? `${name} 现在没有连到这台服务器。`
-        : "你配对的 Chrome 现在没有连到这台服务器。",
-    reconnectHelp: "重新连接帮助",
-    reconnectOpen: "打开 Chrome，确认 PenguinHarness Browser 扩展在 chrome://extensions 中已启用。",
-    reconnectResume: "点工具栏上的扩展图标；如果显示已暂停，选择「继续」。",
-    reconnectPair: "服务器地址变了，或扩展里移除了这台服务器时，需要重新配对。",
-    /** The admin's switch is off. */
-    chromeDisabledTitle: "Chrome 连接已关闭",
-    chromeDisabledBody: "这台服务器的管理员关闭了 Chrome 扩展连接。",
-    /** No Chrome paired: the line above the pairing steps the panel shows in its place. */
-    chromeUnpairedIntro:
-      "安装 PenguinHarness Browser 扩展并完成配对后，Agent 就能在你自己的 Chrome 里打开和操作网页，使用你在 Chrome 中的登录状态。",
-    /** The pairing dialog, and the same three steps inline in the panel while no Chrome is paired. */
-    pairTitle: "连接你的 Chrome",
-    pairStepInstall:
-      "安装扩展并把它固定到工具栏。推荐从 Chrome 应用商店安装，Chrome 会自动更新它。",
-    pairStore: "打开 Chrome 应用商店",
-    /** Under the store link: the zip, for a network that cannot reach the store. */
-    pairStepInstallZip:
-      "打不开商店时，也可以下载 zip 并解压，在 chrome://extensions 开启「开发者模式」，选择「加载已解压的扩展程序」并选中解压出的文件夹。",
-    pairDownload: "下载扩展（zip）",
-    pairStepOpen: "点工具栏上的 PenguinHarness Browser 图标，选择「设置」，打开扩展的配对页。",
-    pairStepPaste: "把下面的服务器地址和配对码粘贴进去，选择「连接」。",
-    pairServer: "服务器地址",
-    pairCode: "配对码",
-    /** Under the code: one use, until when (a local HH:mm). */
-    pairCodeExpiry: (time: string): string => `只能使用一次，${time} 前有效`,
-    pairCodeExpired: "配对码已过期",
-    pairNewCode: "换一个",
-    pairCodeFailed: (reason: string): string => `无法生成配对码：${reason}`,
-    pairWaiting: "正在等待 Chrome…",
-    pairConnected: "已连接",
-    /** The import dialog: copies sign-ins and history from a browser installed on this computer. */
-    importTitle: "从浏览器导入",
-    importIntro:
-      "将系统浏览器的登录状态导入当前 Project，历史记录导入内置浏览器。其他 Project 的登录状态和原浏览器的数据不会改变。",
-    importLoading: "正在查找浏览器…",
-    importNone: "这台电脑上没有找到可以导入的浏览器。",
-    importSourcesFailed: (reason: string): string => `无法读取浏览器列表：${reason}`,
-    importSource: "导入来源",
-    importWhat: "导入内容",
-    importCookies: "Cookie 与登录状态",
-    importHistory: "历史记录",
-    importDomains: "仅限这些网站",
-    importDomainsHint: "用逗号分隔，例如 amazon.com, github.com；留空则导入全部网站",
-    importDomainsPlaceholder: "amazon.com, github.com",
-    importKeychainNote: "Mac 可能会请求钥匙串访问权限。",
-    importRun: "导入",
-    importRunning: "正在导入…",
-    importDone: "完成",
-    importCookiesResult: (c: {
-      found: number;
-      imported: number;
-      skipped: number;
-      failed: number;
-    }): string =>
-      `Cookie：已导入 ${c.imported} / ${c.found}` +
-      (c.skipped > 0 ? `，跳过 ${c.skipped}` : "") +
-      (c.failed > 0 ? `，失败 ${c.failed}` : ""),
-    importHistoryResult: (h: { found: number; imported: number }): string =>
-      `历史记录：已导入 ${h.imported} / ${h.found} 条`,
-    /** Under the counts: why that many cookies were skipped; `browser` is the source's name. */
-    importSkip: ({ reason, count: n }: BuiltinBrowserCookieSkip, browser: string): string => {
-      switch (reason) {
-        case "app_bound":
-          return `${n} 个受 ${browser} 的应用绑定加密保护，只有 ${browser} 自己能读取。`;
-        case "dpapi":
-          return `${n} 个的密钥 Windows 未能解开。`;
-        case "keychain":
-          return `${n} 个的密钥钥匙串未放行；在 macOS 询问时选择「允许」，再导入一次。`;
-        case "keyring":
-          return `${n} 个的密钥未能从桌面密钥环取得。`;
-        case "undecryptable":
-          return `${n} 个无法解密。`;
-        case "partitioned":
-          return `${n} 个是只属于某个站点或容器的分区 Cookie。`;
-        case "expired":
-          return `${n} 个已过期。`;
-      }
-    },
-    /** Anything else the import reports. */
-    importNote: (note: BuiltinBrowserImportNote, browser: string): string => {
-      const store = (which: "cookies" | "history") =>
-        which === "cookies" ? " Cookie 库" : "历史记录";
-      switch (note.code) {
-        case "no_cookie_store":
-          return "这个个人资料没有 Cookie 库。";
-        case "no_history":
-          return "这个来源没有可导入的历史记录。";
-        case "store_busy":
-          return `${browser} 正占用它的${store(note.store)}，关闭 ${browser} 后再导入。`;
-        case "store_unreadable":
-          return `无法读取 ${browser} 的${store(note.store)}。`;
-        case "cookies_not_set":
-          return (
-            `${note.count} 个 Cookie 未能写入内置浏览器` +
-            (note.errors.length > 0 ? `：${note.errors.join("；")}` : "。")
-          );
-      }
-    },
-    /** The group the user's connected Chrome extension is listed under, and its row's hint. */
-    importExtensionGroup: "经 Chrome 扩展",
-    importExtensionHint:
-      "读取扩展所在的 Chrome 个人资料的 Cookie，导入前要在 Chrome 中选择「允许」。",
-    /** The import button while the extension waits for the user's answer in Chrome. */
-    importWaitingChrome: "等待 Chrome 确认…",
-    /**
-     * Windows, a Chrome profile's cookies chosen: why most of them will be skipped, and the way
-     * round it the extension's state leaves.
-     */
-    importAppBoundHint: (route: ImportExtensionRoute): string =>
-      route === "not_paired"
-        ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取：在「设置 › 浏览器」中连接你的 Chrome 后可经扩展导入，或直接在浏览器面板中登录。"
-        : route === "disconnected"
-          ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取：让你的 Chrome 连上 PenguinHarness Browser 扩展后可经扩展导入，或直接在浏览器面板中登录。"
-          : route === "connected"
-            ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取，可改选下方的「经 Chrome 扩展」导入。"
-            : "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取，可直接在浏览器面板中登录。",
-    /** After app-bound skips: how to get those cookies, given the extension's state. */
-    importAppBoundAdvice: (route: ImportExtensionRoute): string =>
-      route === "connected"
-        ? "选择「经 Chrome 扩展」再导入一次即可取回它们，也可以直接在浏览器面板中登录。"
-        : route === "not_paired"
-          ? "在「设置 › 浏览器」中连接你的 Chrome 后，可经扩展导入它们；也可以直接在浏览器面板中登录。"
-          : route === "disconnected"
-            ? "让你的 Chrome 连上 PenguinHarness Browser 扩展后，可经扩展导入它们；也可以直接在浏览器面板中登录。"
-            : "可以直接在浏览器面板中登录这些网站。",
-    /** The outcome's way back to the form with the extension chosen. */
-    importUseExtension: "经 Chrome 扩展导入",
-    importFailed: (reason: string): string => `导入失败：${reason}`,
-    /** The clear-browsing-data confirmation. */
-    clearTitle: "清除浏览数据",
-    clearBody:
-      "Cookie、缓存和网站存储仅清除当前 Project 的数据；历史记录会从整个内置浏览器中清除。此操作无法撤销。",
-    clearCookies: "Cookie 与登录状态",
-    clearCache: "缓存的图片和文件",
-    clearStorage: "网站存储的数据",
-    clearHistory: "历史记录",
-    clearConfirm: "清除",
-    clearDone: "已清除浏览数据",
-    clearFailed: (reason: string): string => `清除失败：${reason}`,
-    /** The homepage dialog: the page new tabs and the Home button open. */
-    homepageTitle: "设置主页",
-    homepageIntro: "新建标签页和主页按钮会打开这个页面。",
-    homepageAddress: "网址",
-    homepagePlaceholder: "example.com",
-    /** The address field's hint: what an empty field means, else the page the entry opens. */
-    homepageHintEmpty: "留空表示不设主页，新建标签页为空白页。",
-    homepageHintOpens: (url: string): string => `将打开 ${url}`,
-    /** Fills the field with the page on screen. */
-    homepageUseCurrent: "使用当前页面",
-    /** Empties the field; saving it then removes the homepage. */
-    homepageClear: "清除",
-    homepageFailed: (reason: string): string => `无法保存主页：${reason}`,
-    /** A tab whose page crashed: the panel's notice in its place, with Reload as the action. */
-    crashedTitle: "此页面已崩溃",
-    /** The notice's body when the page ran out of memory (the system took its memory back). */
-    crashedOutOfMemory: "它耗尽了内存。请先关闭不再需要的标签页，再重新加载。",
-    crashedBody: "重新加载即可再试一次。",
-    /** A crashed tab's tooltip line in the strip, after its title, and its mark's accessible name. */
-    crashedTab: "页面已崩溃",
-    /**
-     * The browser's load, when the server warns about it: the toolbar's mark (its tooltip and
-     * accessible name) and the one toast per warning. Sentences joined in the order given here.
-     */
-    load: {
-      memory: (size: string, tabs: number): string =>
-        `浏览器正在使用 ${size} 内存（${tabs} 个标签页）。`,
-      lowSystemMemory: (percent: number): string => `这台电脑的可用内存不足（剩余 ${percent}%）。`,
-      manyTabs: (tabs: number): string => `已打开 ${tabs} 个标签页。`,
-      advice: "请关闭不再需要的标签页。",
-      /** The sentences above, as one warning. */
-      join: (sentences: string[]): string => sentences.join(""),
-      /** A heavy tab's tooltip line in the strip, after its title, and its mark's accessible name. */
-      heavyTab: (size: string): string => `占用 ${size} 内存`,
-    },
-  },
-
-  /** Settings › Personal › Browser (the user's agent browser) and Settings › Server › Chrome extension. */
-  browserSettings: {
-    /** The backend choice; only on the desktop app, which has both. */
-    backend: "Agent 使用的浏览器",
-    backendInfo:
-      "内置浏览器在桌面应用里，有自己的登录状态；系统 Chrome 是你自己的 Chrome，Agent 只操作它打开的标签页和你交给它的标签页。Agent 自己不能切换。",
-    paired: "已配对的 Chrome",
-    pairedNone: "还没有配对的 Chrome。",
-    /** A paired Chrome's line under its name: the extension's version, and when it was last connected. */
-    pairedLine: (version: string, seen: string | null): string =>
-      seen === null ? `扩展 ${version} · 尚未连接过` : `扩展 ${version} · 最近连接 ${seen}`,
-    /** The state dot's accessible name. */
-    connected: "已连接",
-    notConnected: "未连接",
-    revoke: "撤销",
-    revokeTitle: "撤销这个 Chrome？",
-    revokeBody: (name: string): string =>
-      `撤销后，Agent 不能再操作「${name}」，它会立即断开；要再使用它，需要重新配对。`,
-    revoked: (name: string): string => `已撤销「${name}」`,
-    revokeFailed: (reason: string): string => `无法撤销：${reason}`,
-    connectFirst: "连接你的 Chrome",
-    connectAnother: "连接另一个 Chrome",
-    loadFailed: (reason: string): string => `无法读取已配对的 Chrome：${reason}`,
-    disabledNote: "这台服务器的管理员关闭了 Chrome 扩展连接。",
-    /** Settings › Server › Chrome extension: the admin's switch, and the question before it goes off. */
-    allow: "允许 Chrome 扩展连接",
-    offTitle: "关闭 Chrome 扩展连接？",
-    offBody:
-      "所有用户的扩展会立即断开，整个服务器上的 Agent 都不能再使用 Chrome。配对会保留，重新开启后扩展会自行重连。",
-    off: "关闭",
-  },
-
   /** Settings › Personal › Archived chats (features/settings/archived-sessions-section.tsx). */
   archivedSessions: {
     search: "搜索已归档对话",
@@ -955,11 +649,6 @@ export const zh = {
     languageInfo: "界面语言，可跟随浏览器设置。",
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "设置",
-    /** Settings › Personal › Browser, and the server page with the admin's Chrome switch. */
-    browserTitle: "浏览器",
-    chromeExtensionTitle: "Chrome 扩展",
-    chromeExtensionInfo:
-      "开启时，这台服务器上的每个用户都可以配对自己的 Chrome，让 Agent 在其中操作；关闭时，所有扩展断开，已有的配对保留。",
     /** Settings › Server › Agent API: the admin's switch over every Agent's public API, and the question before it goes off. */
     agentApiTitle: "Agent API",
     agentApiToggle: "允许 Agent API",
@@ -3534,6 +3223,7 @@ export const zh = {
     /** Listed, but the process could not load it: the reason, not a success. */
     deploymentFailedToast: (name: string, reason: string) => `${name} 加载失败：${reason}`,
     /** A server module's install / removal confirm: what it does, then what it costs, in small type below. */
+    updatePackageTo: (version: string) => `更新到 v${version}`,
     applyConfirmInstall: (name: string) => `安装 ${name}`,
     applyConfirmRemove: (name: string) => `移除 ${name}`,
     applyConfirmInstallBody: (name: string) => `将把 ${name} 安装到整个服务端，所有 Project 共用。`,
@@ -3607,6 +3297,50 @@ export const zh = {
       lastSeenOn: (n: number) => `（含 ${n} 个在不可达机器上的 Agent，按上次看到）`,
     },
     noMatch: "没有匹配的插件。",
+    /** The search matched nothing in the tab on show, but matches plugins in other tabs. */
+    noMatchHere: (n: number) => `当前标签下没有匹配的插件，全部插件中有 ${n} 个匹配。`,
+    showAllResults: "在全部中查看",
+    /** A plugin the market's curation selects: the carousel's eyebrow and a card's tag. */
+    selected: "精选",
+    /** The cards / list switch: its name, and each icon button's name and hover words. */
+    layoutLabel: "插件布局",
+    cardsLayout: "卡片视图",
+    listLayout: "列表视图",
+    /** The first tab of the market: every plugin, whatever the grouping. */
+    tabAll: "全部",
+    /** The sort select: its accessible name and its options. */
+    sortLabel: "排序",
+    sort: {
+      featured: "精选优先",
+      recent: "最近更新",
+      used: "本项目在用最多",
+      name: "名称",
+      popular: "热门",
+    },
+    /** The ranking beside the grid: its heading, its two boards, and each figure in full words. */
+    openApp: "打开",
+    openAppHint: "在应用中心打开",
+    /** The detail's sections: its screenshots, what it installs, and its quick start. */
+    detailScreenshots: "截图",
+    detailIncludes: "包含内容",
+    detailQuickStart: "快速开始",
+    quickStartSkills: (names: string) => `预选技能：${names}`,
+    /** The kind of one part a plugin installs, beside its name. */
+    partKind: {
+      skill: "技能",
+      hook: "钩子",
+      mcp: "MCP 服务器",
+      workbench: "工作台",
+    },
+    /** The detail's column of facts: each row's label. */
+    fact: {
+      version: "版本",
+      category: "类别",
+      author: "作者",
+      license: "许可证",
+      package: "包名",
+      links: "链接",
+    },
     /** The description of a shipped package the registry has no entry for. */
     shippedNoEntry: "随本次构建自带；市场里还没有它的条目。",
     /** In place of the description of a package that carries none. */
@@ -3621,7 +3355,6 @@ export const zh = {
     detailDescription: "说明",
     detailFiles: "文件",
     detailSkills: "技能",
-    detailWorkbenches: "工作台",
     uninstallWorkbenchRecords: "其工作台及保存的记录也会被删除。",
     detailHooks: "钩子",
     /** The detail dialog's section of the MCP servers a plugin installs into an Agent's tools. */
@@ -3724,11 +3457,17 @@ export const zh = {
     replaceAction: "替换",
     /** Usage count in the card metadata (shows "unused" instead of a bare 0). */
     usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
-    /** Quick start's tooltip: what pressing it does, and what it does not. */
-    quickStartHint: "快速开始：打开一份带该插件演示的草稿——点发送之前什么都不会运行",
+    marketAgentInstalls: (n: number): string => `${n} 个 Agent 已装`,
+    marketServerInstalled: "服务端已装",
+    quickAction: "快速调用",
+    noQuickAction: "这个插件没有快速调用示例。",
+    packageUpdateBody: (name: string, from: string, to: string) =>
+      `将插件库中的 ${name} 从 v${from} 更新到 v${to}。完成后，可将新版本应用到使用它的 Agent。`,
+    /** The market explains quick start using the selected Agent’s installation. */
+    quickStartHint: "在当前 Agent 的新对话中打开示例草稿。",
     quickStartInstallTitle: (plugin: string, agent: string) =>
       `先把 ${plugin} 安装到 ${agent} 再快速开始？`,
-    quickStartAfterInstall: "随后打开一份带演示的草稿；点发送之前什么都不会运行。",
+    quickStartAfterInstall: "请先安装此插件，再快速调用。",
     /** Top toast shown on successful install / uninstall. */
     installedToast: (plugin: string, agent: string): string => `已将 ${plugin} 安装到 ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string => `已从 ${agent} 卸载 ${plugin}`,
@@ -5368,13 +5107,10 @@ Benchmark：
     } as Record<string, string>,
     /**
      * The conversation's menu for a web link: a secondary click on it, or Shift+F10 / the Menu
-     * key while it has focus. The built-in browser's row shows only in the desktop app with the
-     * browser available; the external row names the system browser there, a new tab elsewhere.
+     * key while it has focus. Rows other modules contribute (`ChatModule.linkActions`) come
+     * first; the external row names the system browser in the desktop app, a new tab elsewhere.
      */
     linkMenu: {
-      openInBuiltinBrowser: "在内置浏览器中打开",
-      /** The same row while the agents drive the user's Chrome: the link opens in a tab there. */
-      openInChromeTab: "在 Agent 的 Chrome 标签页中打开",
       openExternal: "在系统浏览器中打开",
       openInNewTab: "在新标签页中打开",
       copyLink: "复制链接地址",
@@ -7454,11 +7190,6 @@ Benchmark：
       ticket_session_failed: "无法发起工单会话。",
       handbook_file_not_found: "该文档已不存在。",
       handbook_index_required: "手册索引（README.md）不能删除。",
-      browser_unavailable:
-        "浏览器现在不可用：内置浏览器需要打开 PenguinHarness 桌面应用，你的 Chrome 需要连上 PenguinHarness Browser 扩展。",
-      source_not_found: "找不到这个浏览器配置文件。",
-      import_declined: "你没有在 Chrome 中允许这次导入。",
-      extension_outdated: "Chrome 中的 PenguinHarness Browser 扩展版本过旧，请更新后重试。",
       shell_unreachable: "无法联系桌面应用。",
       timeout: "操作超时，请重试。",
     },
@@ -7471,10 +7202,12 @@ export type Strings = typeof zh;
 /**
  * Runtime active dictionary (live binding): the locale Provider calls setActiveStrings
  * to switch before render, and remounts the whole tree keyed by locale so every `S.x`
- * read reflects the current language.
+ * read reflects the current language. The same call tells the plugin face the language, so a
+ * plugin web half's own tables (its `defineStrings`) switch with this one.
  */
 export let S: Strings = zh;
 
 export function setActiveStrings(next: Strings): void {
   S = next;
+  setWebLocale(next === zh ? "zh" : "en");
 }

@@ -4648,6 +4648,8 @@ export interface WorkbenchEnabledRequest {
  * can also be installed from that channel (plugin/install.ts).
  */
 export interface PluginIndexEntry {
+  /** A downloaded package on the machine serving this listing, compared with the index release. */
+  localInstall?: { version: string; libraryOnly: boolean; updateAvailable: boolean };
   /** Package specifier — the string a Project's plugin list names. */
   name: string;
   /** Localized display names; the UI falls back to the package name. */
@@ -6740,6 +6742,13 @@ export interface ContributionsResponse {
   pageRemovals: WebPageRemovalContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
+  /**
+   * The server modules plugins provide that this generation runs, by name: a web module that
+   * declared one of them (`WebAppModule.serverModules`) is drawn only while it is listed. A
+   * plugin left out of this generation because the build cannot satisfy it lists nothing; the
+   * platform's own modules always run and are not listed. Absent from a server older than it.
+   */
+  modules?: string[];
 }
 
 /** One command a plugin contributes to the CLI, as GET /api/cli/commands lists it. */
