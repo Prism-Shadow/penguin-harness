@@ -42,6 +42,8 @@ const APP_ROUTE_RE = /^\/(?:chat\/[^\s/?#]+|org(?:\/[^\s?#]*)?)(?:[?#].*)?$/;
 const LOCALHOST_ROUTE_RE =
   /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?(\/(?:chat\/[^\s/?#]+|org(?:\/[^\s?#]*)?)(?:[?#].*)?)$/i;
 
+import { isPlainClick } from "./shortcuts/plain-click";
+
 const EXTERNAL: ReplyLink = { kind: "external" };
 const NONE: ReplyLink = { kind: "none" };
 
@@ -132,15 +134,7 @@ export function replyLinkBehavior(href: string | undefined, links: WorkspaceLink
     case "route":
       return {
         onClick: (event) => {
-          if (
-            event.metaKey ||
-            event.ctrlKey ||
-            event.shiftKey ||
-            event.altKey ||
-            (event.button !== undefined && event.button !== 0)
-          ) {
-            return;
-          }
+          if (!isPlainClick(event)) return;
           event.preventDefault();
           if (links.openRoute) {
             links.openRoute(link.to);
