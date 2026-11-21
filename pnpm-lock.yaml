@@ -491,6 +491,9 @@ importers:
       '@penguinharness/ace-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes':
+        specifier: workspace:*
+        version: link:../../plugins/action-minutes
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
@@ -512,12 +515,18 @@ importers:
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
+      '@penguinharness/daily-draw':
+        specifier: workspace:*
+        version: link:../../plugins/daily-draw
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper':
+        specifier: workspace:*
+        version: link:../../plugins/fridge-keeper
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -536,6 +545,9 @@ importers:
       '@penguinharness/opro-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades':
+        specifier: workspace:*
+        version: link:../../plugins/party-charades
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
@@ -557,6 +569,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/tabletop-desk':
+        specifier: workspace:*
+        version: link:../../plugins/tabletop-desk
       '@penguinharness/trace-lookup':
         specifier: workspace:*
         version: link:../../plugins/trace-lookup
@@ -682,6 +697,9 @@ importers:
       '@penguinharness/ace-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes':
+        specifier: workspace:*
+        version: link:../../plugins/action-minutes
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
@@ -703,12 +721,18 @@ importers:
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
+      '@penguinharness/daily-draw':
+        specifier: workspace:*
+        version: link:../../plugins/daily-draw
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper':
+        specifier: workspace:*
+        version: link:../../plugins/fridge-keeper
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -727,6 +751,9 @@ importers:
       '@penguinharness/opro-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades':
+        specifier: workspace:*
+        version: link:../../plugins/party-charades
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
@@ -748,6 +775,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/tabletop-desk':
+        specifier: workspace:*
+        version: link:../../plugins/tabletop-desk
       '@penguinharness/trace-lookup':
         specifier: workspace:*
         version: link:../../plugins/trace-lookup
@@ -884,6 +914,9 @@ importers:
       '@penguinharness/ace-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes':
+        specifier: workspace:*
+        version: link:../../plugins/action-minutes
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
@@ -905,12 +938,18 @@ importers:
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
+      '@penguinharness/daily-draw':
+        specifier: workspace:*
+        version: link:../../plugins/daily-draw
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper':
+        specifier: workspace:*
+        version: link:../../plugins/fridge-keeper
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -929,6 +968,9 @@ importers:
       '@penguinharness/opro-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades':
+        specifier: workspace:*
+        version: link:../../plugins/party-charades
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
@@ -965,6 +1007,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/tabletop-desk':
+        specifier: workspace:*
+        version: link:../../plugins/tabletop-desk
       '@penguinharness/trace-lookup':
         specifier: workspace:*
         version: link:../../plugins/trace-lookup
@@ -1031,6 +1076,9 @@ importers:
       '@penguinharness/ace-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes':
+        specifier: workspace:*
+        version: link:../../plugins/action-minutes
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
@@ -1052,12 +1100,18 @@ importers:
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
+      '@penguinharness/daily-draw':
+        specifier: workspace:*
+        version: link:../../plugins/daily-draw
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper':
+        specifier: workspace:*
+        version: link:../../plugins/fridge-keeper
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -1076,6 +1130,9 @@ importers:
       '@penguinharness/opro-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades':
+        specifier: workspace:*
+        version: link:../../plugins/party-charades
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
@@ -1097,6 +1154,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/tabletop-desk':
+        specifier: workspace:*
+        version: link:../../plugins/tabletop-desk
       '@penguinharness/trace-lookup':
         specifier: workspace:*
         version: link:../../plugins/trace-lookup
@@ -1593,6 +1653,12 @@ importers:
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
 
+  plugins/action-minutes:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+
   plugins/agent-company:
     devDependencies:
       '@prismshadow/penguin-core':
@@ -1653,6 +1719,12 @@ importers:
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
 
+  plugins/daily-draw:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+
   plugins/data-analysis:
     devDependencies:
       '@prismshadow/penguin-core':
@@ -1666,6 +1738,12 @@ importers:
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   plugins/default-rsi-toolkit:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+
+  plugins/fridge-keeper:
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
@@ -1714,6 +1792,12 @@ importers:
         version: file:packages/core(ws@8.21.0)
 
   plugins/opro-rsi-toolkit:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+
+  plugins/party-charades:
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
@@ -1857,6 +1941,12 @@ importers:
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  plugins/tabletop-desk:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
   plugins/trace-lookup:
     devDependencies:
