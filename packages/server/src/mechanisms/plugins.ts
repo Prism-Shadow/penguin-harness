@@ -68,6 +68,14 @@ export abstract class PluginModules {
     agentId?: string,
   ): Promise<PluginModuleAction[]>;
   /**
+   * Lists the preinstalled built-in modules (PRFC-0030, plugin/preinstall.ts) in this server's
+   * own table of a Project just created, by the same rule with the system as the actor: one
+   * write for all of them, and a re-assembly only when that changes the closure. A module the
+   * administrator stopped is passed over. Called last by the creation, for the reason `ensure`
+   * is. Never throws: what went wrong is a log line, and the Project stands.
+   */
+  abstract preinstall(projectId: string): Promise<void>;
+  /**
    * A member's ask for a package that is not on this server yet (05 「插件库」 「安装模型」): a
    * request for the administrator, whose enable installs it on the server first. A standing
    * request is left as it is.
@@ -83,7 +91,9 @@ export abstract class PluginModules {
   /**
    * The administrator's enable or decline of one package; 404 `unknown_request` without a row,
    * 409 `project_gone` for an enable whose Project is gone. Declining an enabled module stops it:
-   * it leaves this server's own table of every Project.
+   * it leaves this server's own table of every Project. Enabling a preinstalled module
+   * (PRFC-0030) lists it in this server's own table of every Project again, whatever Project
+   * its row names.
    */
   abstract decide(
     pkg: string,

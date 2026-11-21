@@ -53,7 +53,6 @@ import type { LoadedPlugin } from "./host.js";
 import { PluginHost, pluginHostFrom } from "./host.js";
 import platformTable from "../ifaces.json" with { type: "json" };
 import { checkIfaces, ifaceQuestions } from "./iface-check.js";
-import { withPreinstalledModules } from "./preinstall-unlisted.js";
 import { loadTypeScript, TypeScriptUnavailable, type TypeScript } from "./typescript.js";
 
 /**
@@ -503,11 +502,10 @@ export async function loadPlugins(
   const failed = new Map<string, string>();
   const pushedAssets = assetsDir === undefined ? await committedAssetsDir(root) : assetsDir;
   const bases = pluginBases(root, pushedAssets);
-  // The closure over this root's Projects. A plugin the BUILD ships is available without a
-  // download — that is what `builtin` means — but availability is not consent: it loads when a
-  // Project asks for it, like every other plugin. The one exception, until PRFC-0030's listing
-  // is in this build, is a preinstalled built-in module (preinstall-unlisted.ts).
-  const specifiers = await withPreinstalledModules(await readPluginClosure(root, machineId), bases);
+  // The closure over this root's Projects, and nothing else. A plugin the BUILD ships is
+  // available without a download — that is what `builtin` means — but availability is not
+  // consent: it loads when a Project asks for it, like every other plugin.
+  const specifiers = await readPluginClosure(root, machineId);
   const loaded: LoadedPlugin[] = [];
   for (const specifier of specifiers) {
     // Reused only when the SAME FILE is behind the name. A push writes the builtin plugins to
