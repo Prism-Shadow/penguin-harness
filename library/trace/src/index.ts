@@ -10,3 +10,14 @@
  * - `./repos` - the trace-index storing component.
  */
 export * from "./trace.js";
+export * from "./ports.js";
+export { TraceIndexService, traceFilePath } from "./trace-index.js";
+export {
+  TraceService,
+  MESSAGES_PAGE_MAX_BYTES,
+  rewriteSummaryPaths,
+  toolExecutionInterval,
+} from "./trace-service.js";
+export type { TraceSessionIndex } from "./trace-service.js";
+export { sessionIdCreatedAt } from "./session-id.js";
+export { fallbackTitle } from "./titles.js";

@@ -34,7 +34,7 @@ import type {
 import { HttpError, badRequest } from "../http/errors.js";
 import { FRAME_TEXT_BUDGET } from "../socket/line-frames.js";
 import { messagesPageQuery } from "./session-history.js";
-import { MESSAGES_PAGE_MAX_BYTES } from "./trace-service.js";
+import { MESSAGES_PAGE_MAX_BYTES } from "@prismshadow/penguin-library-trace/trace-service";
 import type { MessagesPageRequest } from "@prismshadow/penguin-library-trace";
 import type { SseRevocation } from "../http/sse.js";
 import { formatSseEvent } from "../socket/sse-text.js";

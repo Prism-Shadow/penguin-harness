@@ -102,8 +102,8 @@ import { ProjectConfigService } from "./services/project-config-service.js";
 import { ModelOAuthProvider } from "./services/model-oauth-service.js";
 import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
 import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
-import { TraceIndexService } from "./services/trace-index.js";
-import { TraceService } from "./services/trace-service.js";
+import { TraceIndexServiceProvider } from "./services/trace-index.js";
+import { TraceServiceProvider } from "./services/trace-service.js";
 import { WorkspaceFilesService } from "@prismshadow/penguin-library-workspace/workspace-files-service";
 import { RevealService } from "./services/reveal-path.js";
 import { ProjectAccess } from "./services/project-access.js";
@@ -504,7 +504,7 @@ export class SandboxSettingsModule {}
 export class ObservabilityModule {}
 
 @Module({
-  children: [TraceIndexRepo, TraceIndexService, TraceService],
+  children: [TraceIndexRepo, TraceIndexServiceProvider, TraceServiceProvider],
   exports: [TraceIndexStore, TraceIndex, Traces],
 })
 export class TracesModule {}

@@ -322,7 +322,14 @@
       "@prismshadow/penguin-library-trace/history-wire": ["../../library/trace/src/history-wire.ts"],
       "@prismshadow/penguin-library-trace/history-layout": ["../../library/trace/src/history-layout.ts"],
       "@prismshadow/penguin-library-trace/message-window": ["../../library/trace/src/message-window.ts"],
-      "@prismshadow/penguin-library-trace/context-breakdown": ["../../library/trace/src/context-breakdown.ts"]
+      "@prismshadow/penguin-library-trace/context-breakdown": ["../../library/trace/src/context-breakdown.ts"],
+      "@prismshadow/penguin-library-trace/ports": ["../../library/trace/src/ports.ts"],
+      "@prismshadow/penguin-library-trace/trace-index": ["../../library/trace/src/trace-index.ts"],
+      "@prismshadow/penguin-library-trace/trace-service": ["../../library/trace/src/trace-service.ts"],
+      "@prismshadow/penguin-library-trace/trace-head": ["../../library/trace/src/trace-head.ts"],
+      "@prismshadow/penguin-library-trace/session-id": ["../../library/trace/src/session-id.ts"],
+      "@prismshadow/penguin-library-trace/titles": ["../../library/trace/src/titles.ts"],
+      "@prismshadow/penguin-library-trace/listing": ["../../library/trace/src/listing.ts"]
     }
   },
   "include": ["src", "test"]
