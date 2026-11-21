@@ -19,6 +19,7 @@ import {
   declaredLayers,
   layerHits,
   matchesPolicyPath,
+  pluginWebRoots,
   scanSourceRoots,
   unscannedRoots,
 } from "../src/testing";
@@ -38,6 +39,7 @@ const SCAN = scanSourceRoots(
     ui: SRC_DIR,
     web: join(REPO_ROOT, "packages/web/src"),
     gallery: join(REPO_ROOT, "packages/ui-gallery/src"),
+    ...pluginWebRoots(REPO_ROOT),
   },
   { repoRoot: REPO_ROOT },
 );

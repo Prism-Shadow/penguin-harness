@@ -23,8 +23,11 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createElement as h, Fragment, type ReactElement } from "react";
 
+// The browser reaches the app's own helpers through the plugin face; this hands them over.
+import "../src/web-app/plugin-host";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
+import { en as browserEn } from "../src/features/builtin-browser/strings";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
 import type {
   MachineInfo,
@@ -316,7 +319,7 @@ describe("record dialogs", () => {
   });
 
   describe("the homepage", () => {
-    const bb = en.builtinBrowser;
+    const bb = browserEn.builtinBrowser;
 
     it("waits for an entry that opens another page than the saved one, and asks before Esc drops it", async () => {
       stubFetch(() => apiError(404, "not_found"));

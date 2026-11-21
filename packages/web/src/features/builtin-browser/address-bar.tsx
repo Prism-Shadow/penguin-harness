@@ -22,8 +22,8 @@ import {
 import { createPortal } from "react-dom";
 import type { BuiltinBrowserHistoryEntry } from "@prismshadow/penguin-server/api";
 import { noAutofill, sizeTextClass } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
+import * as api from "./api";
+import { S } from "./strings";
 import { displayAddress, normalizeAddress } from "./address";
 import { NO_HIGHLIGHT, moveHighlight } from "./suggestion-nav";
 

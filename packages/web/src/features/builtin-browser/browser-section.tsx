@@ -1,5 +1,6 @@
 /**
- * Settings › Personal › Browser: the user's agent browser.
+ * Settings › Personal › Browser: the user's agent browser, a page this feature contributes to the
+ * Settings dialog (`SettingsModule.sections`).
  *
  * - Which browser the agents drive, Built-in or System Chrome — only in the desktop app, where
  *   the server offers both (GET /backend's `choices`). It applies on the click, like the Browser
@@ -30,17 +31,12 @@ import {
   SettingsSection,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { formatDateTime } from "../../lib/format";
-import { S } from "../../lib/strings";
-import {
-  switchBrowserBackend,
-  browserState,
-  subscribeBrowser,
-  PairingDialog,
-} from "../builtin-browser";
-import { toastApiError } from "../../lib/toast-api-error";
+import * as api from "./api";
+import { apiErrorText, formatDateTime, toastApiError } from "@prismshadow/penguin-web-plugin";
+import { S } from "./strings";
+import { switchBrowserBackend } from "./browser-actions";
+import { browserState, subscribeBrowser } from "./browser-store";
+import { PairingDialog } from "./pairing-dialog";
 
 /** Forgets a paired Chrome on the server; true once it is gone. Reached only through the confirm. */
 const revokeChrome = async (record: BrowserExtensionRecord): Promise<boolean> => {

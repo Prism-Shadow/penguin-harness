@@ -23,9 +23,11 @@
  * moment of registration, not from the first subscriber: the built-ins register at module load,
  * before any component is mounted to listen, and their later `offered` flips must still reach it.
  */
-import { useMemo, useSyncExternalStore, type ComponentType } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import { ICONS } from "@prismshadow/penguin-ui";
+import type { DockPanelDefinition as PanelDefinition } from "@prismshadow/penguin-web-plugin";
+import { contributionShown, subscribeModuleGates } from "../../lib/module-gate";
 import type { CommandId } from "../../lib/shortcuts/types";
 import type { DockPosition } from "./dock-state";
 
@@ -37,31 +39,22 @@ export interface DockPanelBodyProps {
   active: boolean;
 }
 
-export interface DockPanelDefinition {
-  id: PanelId;
-  /** Display name, read at call time (the locale binding `S` is live). */
-  label: () => string;
-  /** Icon path (ICONS / NAV_ICONS) — drawn with GlyphIcon by every surface. */
-  glyph: string;
-  /** Sort key for the add menu, the picker's tail and the launcher fan. Built-ins: 10, 20, … */
-  order: number;
-  /** Whether surfaces offer it here (the built-in browser: desktop shell only). Default: always. */
-  offered?: () => boolean;
-  /**
-   * Change feed for `offered`. Followed from registration for good, so it must only listen — a
-   * feed that starts work for its first subscriber (a poll) would run it everywhere, forever.
-   */
-  subscribeOffered?: (listener: () => void) => () => void;
+/**
+ * A panel kind as the registry holds it: the plugin face's definition (its id, name, glyph,
+ * place, picker lead, offering and body — declared once there, for the app's panels and a
+ * plugin's alike) plus what only the app's own panels set.
+ */
+export interface DockPanelDefinition extends PanelDefinition {
   /** The dock its tab lands in when it has none yet and nothing asked for one. Default: right. */
   defaultPosition?: DockPosition;
   /** A command that opens or toggles it; the empty dock's picker shows its keys on the row. */
   shortcut?: CommandId;
-  /** The tab's body. */
-  Body: ComponentType<DockPanelBodyProps>;
 }
 
 interface Entry {
   definition: DockPanelDefinition;
+  /** The contributing module, whose server-module gate decides whether the kind is there at all. */
+  from: string | null;
   /** Stops following the definition's `offered` feed; null when it has none. */
   stopOffered: (() => void) | null;
 }
@@ -75,15 +68,33 @@ function notify(): void {
   for (const listener of [...listeners]) listener();
 }
 
+// A kind whose contributor's server module stops (or starts) running leaves (or joins) every
+// surface at once, as if it were unregistered (lib/module-gate.ts).
+subscribeModuleGates(notify);
+
+/** The entry of a kind that is registered and whose contributor is drawn now. */
+function live(id: PanelId): Entry | undefined {
+  const entry = entries.get(id);
+  return entry !== undefined && (entry.from === null || contributionShown(entry.from))
+    ? entry
+    : undefined;
+}
+
 /**
  * Registers (or replaces, same id) a panel kind; returns the unregister function. Replacing a
  * definition swaps the `Body` component under any open tab of that id, which remounts that body
- * (React sees a new component type) — a plugin reloading its panel starts it afresh.
+ * (React sees a new component type) — a plugin reloading its panel starts it afresh. `from` is the
+ * contributing module (the dock module passes it): while that module's server module is not
+ * running, the kind reads as unregistered — its stored tabs keep their place with the placeholder.
  */
-export function registerDockPanel(definition: DockPanelDefinition): () => void {
+export function registerDockPanel(
+  definition: DockPanelDefinition,
+  from: string | null = null,
+): () => void {
   entries.get(definition.id)?.stopOffered?.();
   const entry: Entry = {
     definition,
+    from,
     stopOffered: definition.subscribeOffered?.(notify) ?? null,
   };
   entries.set(definition.id, entry);
@@ -99,13 +110,13 @@ export function registerDockPanel(definition: DockPanelDefinition): () => void {
 }
 
 export function dockPanelDefinition(id: PanelId): DockPanelDefinition | undefined {
-  return entries.get(id)?.definition;
+  return live(id)?.definition;
 }
 
 /** Registered and offered panels, by `order` then id. */
 export function dockPanels(): DockPanelDefinition[] {
-  return [...entries.values()]
-    .map((entry) => entry.definition)
+  return [...entries.keys()]
+    .flatMap((id) => live(id)?.definition ?? [])
     .filter((definition) => definition.offered?.() ?? true)
     .sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
@@ -136,10 +147,10 @@ export function useDockPanels(): DockPanelDefinition[] {
  * itself — a plugin's tab stored before the plugin loads still needs a strip label.
  */
 export function panelLabel(id: PanelId): string {
-  return entries.get(id)?.definition.label() ?? id;
+  return live(id)?.definition.label() ?? id;
 }
 
 /** The mark for an id that may not be registered (yet): its glyph, or the puzzle piece. */
 export function panelGlyphPath(id: PanelId): string {
-  return entries.get(id)?.definition.glyph ?? ICONS.puzzle;
+  return live(id)?.definition.glyph ?? ICONS.puzzle;
 }
