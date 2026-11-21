@@ -8,11 +8,11 @@
  * writer rotates on compaction and opens the new file with `session_meta` followed by
  * `tool_list_ready`, and Session resumption keeps appending to the shard it left off in. So a
  * Session's newest shard holds exactly the messages the model still sees. The one exception is
- * a shard whose last record is a completed `compaction_end`: that context is closed and the
- * next one has not been written yet (rotation is deferred until the first write after the
- * compaction), so the composition describes what was compacted away rather than what the model
- * now carries. `contextClosed` reports it; the rule is the same one Trace replay applies to
- * decide it must replay nothing.
+ * a shard whose context is closed — by a completed `compaction_end`, or by a model switch whose
+ * `session_update` is still pending — while the next one has not been written yet (rotation is
+ * deferred until the next context's first write), so the composition describes what was left
+ * behind rather than what the model now carries. `contextClosed` reports it; the rule is the
+ * same one Trace replay applies to decide it must replay nothing.
  *
  * Sizes come from the character heuristic core already applies to request inputs
  * (`approximateMessagesTokens`: ASCII at ~4 characters per token, wide characters at 1, a flat
@@ -26,8 +26,9 @@ import {
   DEFAULT_MAX_CONTEXT_LENGTH,
   approximateMessagesTokens,
   approximateTokens,
+  closingCompaction,
   effectiveMaxContextLength,
-  lastNonTaskRecord,
+  pendingModel,
 } from "@prismshadow/penguin-core";
 import type {
   AmspRecord,
@@ -130,16 +131,14 @@ function isInside(rel: string): boolean {
 }
 
 /**
- * True when this shard's context was closed by a completed compaction — the same test Trace
- * replay uses: the file's last record other than a Task record is a `compaction_end` reporting
- * `completed`. The next context's first message opens the next shard; Task records (`task_end`,
- * `task_begin`) never open a file, so those written after the compaction land here, behind it.
+ * True when this shard's context is closed — the same test Trace replay uses (spec replay rule
+ * 1): its last `compaction_end` is `completed`, or its last model-naming `session_update` is
+ * still pending, with no `request_begin` after it. The next context's first message opens the
+ * next shard; what the Session writes itself (Task records, a stop hook's record, the
+ * `session_update`) never opens a file, so it lands here, behind the closing point.
  */
-function endsWithCompletedCompaction(messages: AmspRecord[]): boolean {
-  const last = lastNonTaskRecord(messages);
-  if (last === undefined || last.type !== "event_msg") return false;
-  const p = last.payload as { type?: string; status?: string };
-  return p.type === "compaction_end" && p.status === "completed";
+function contextIsClosed(messages: AmspRecord[]): boolean {
+  return closingCompaction(messages) !== undefined || pendingModel(messages) !== undefined;
 }
 
 /** Composition of the context held by one Trace shard's messages (in write order). */
@@ -247,7 +246,7 @@ export function buildContextBreakdown(messages: AmspRecord[]): SessionContextPar
     .sort((a, b) => b[1].tokens - a[1].tokens || a[0].localeCompare(b[0]))
     .slice(0, RANKING_SIZE)
     .map(([file, row]) => ({ path: file, tokens: row.tokens, ops: row.ops }));
-  out.contextClosed = endsWithCompletedCompaction(messages);
+  out.contextClosed = contextIsClosed(messages);
   return out;
 }
 

@@ -4,6 +4,8 @@
  * - The composer offers a switch for each library plugin whose card is a composer mode and
  *   whose hook package the Agent has, in library order; a plugin with hooks but no composer
  *   mode, or one the Agent lacks, offers none.
+ * - The composer-mode plugins the Agent lacks are offered for install instead, in library order;
+ *   a plugin with hooks but no composer mode is never offered.
  * - A switch the Agent no longer offers is neither shown as on nor sent; with none on, a Task
  *   names no `promptHooks` at all.
  */
@@ -16,6 +18,7 @@ import type {
 import {
   offered,
   promptHooksField,
+  promptModeOffers,
   promptModeSources,
   toggled,
   type PromptMode,
@@ -64,6 +67,17 @@ describe("the switches the composer offers", () => {
 
   it("are none on an Agent without any such hook package", () => {
     expect(promptModeSources(library, installs("goal"))).toEqual([]);
+  });
+});
+
+describe("the composer modes offered for install", () => {
+  it("are the composer-mode plugins the Agent lacks, in library order", () => {
+    const names = promptModeOffers(library, installs("goal", "tone")).map((p) => p.name);
+    expect(names).toEqual(["plan", "review"]);
+  });
+
+  it("are none once the Agent has every composer mode", () => {
+    expect(promptModeOffers(library, installs("plan", "review", "tone"))).toEqual([]);
   });
 });
 

@@ -263,11 +263,12 @@ penguin agent create --agent-id <id> [options]
 | `--name <name>` / `--description <text>` | 显示名称和描述。 | — |
 | `--author <author>` | 由谁创建这个 Agent：`user`、`agent` 或 `company`。 | 在对话中运行时为 `agent`，否则为 `user` |
 | `--plugins <names>` | 要预装的插件库插件名，逗号分隔，每个插件连同各自的 Skill 和钩子包一起安装。名称未知时直接拒绝，此时还没有创建任何东西。 | — |
+| `--no-default-plugins` | 不安装每个新 Agent 默认安装的插件：`goal`（[目标模式](/goal-mode)）与 `plan`（计划模式）。 | 二者都安装 |
 | `--project-id <id>` / `--json` / `--server <url>` | 见[全局约定](#全局约定)。 | — |
 
 ```bash
 penguin agent ls
-penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+penguin agent create --agent-id helper --name "Helper" --plugins software-development
 ```
 
 ### penguin agent export 与 import

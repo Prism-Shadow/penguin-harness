@@ -38,6 +38,7 @@ import {
 } from "./plugin-workbenches.js";
 import { loadAgentVault } from "./agent-vault.js";
 import { assertValidId, isValidId } from "./ids.js";
+import { isWindowsReservedName, WINDOWS_RESERVED_RULE } from "./reserved-names.js";
 import {
   AGENT_ID_PLACEHOLDER,
   AGENTS_MD_PLACEHOLDER,
@@ -544,6 +545,11 @@ export async function replaceSkillDirectory(
   dir: string,
   files: Iterable<[string, string | Uint8Array]>,
 ): Promise<void> {
+  // A new directory takes no name Windows refuses; one already on disk is replaced as it is.
+  const name = path.basename(dir);
+  if (isWindowsReservedName(name) && (await fs.lstat(dir).catch(() => null)) === null) {
+    throw new Error(`Invalid name ${JSON.stringify(name)}: ${WINDOWS_RESERVED_RULE}.`);
+  }
   const staging = `${path.join(path.dirname(dir), `.${path.basename(dir)}`)}.incoming`;
   await fs.rm(staging, { recursive: true, force: true });
   await fs.mkdir(staging, { recursive: true });
