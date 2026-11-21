@@ -34,6 +34,12 @@ export const CURRENCY_KEY = "penguin.currency";
 export const TERMINAL_THEME_KEY = "penguin.terminal.theme";
 /** The tool short-names switch's cached key. */
 export const TOOL_ALIASES_KEY = "penguin.toolAliases";
+/** The conversation activity display mode's cached key. */
+export const ACTIVITY_DISPLAY_MODE_KEY = "penguin.activityDisplayMode";
+/** A cached or synced display mode; anything this build does not know (a newer build's) reads as null. */
+export function activityDisplayModeValue(value: unknown) {
+  return value === "standard" || value === "expanded" || value === "compact" ? value : null;
+}
 
 /** "Use the theme's own face" — stored like any other choice, applied as no attribute at all. */
 export const FONT_FOLLOWS_THEME = "theme";
