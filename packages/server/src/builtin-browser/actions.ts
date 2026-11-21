@@ -14,8 +14,8 @@ import type {
   BuiltinBrowserDialog,
   BuiltinBrowserExecResult,
   BuiltinBrowserScreenshot,
-} from "../api/types.js";
-import { HttpError } from "../http/errors.js";
+} from "@prismshadow/penguin-server/api";
+import { HttpError } from "../plugin/index.js";
 import { PageScriptError } from "./driver.js";
 import type { BrowserDriver, EvaluateOutcome } from "./driver.js";
 import type { TabRegistry } from "./tabs.js";

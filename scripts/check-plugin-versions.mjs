@@ -21,6 +21,10 @@
  * The Benchmarks a new Project is seeded with carry date versions too, kept in core's data; their
  * rule is SEEDED_BENCHMARKS below.
  *
+ * Only this repository's `plugins/` is compared. An external built-in plugin
+ * (scripts/lib/external-plugins.mjs) has no files here — the build ships the version its own
+ * repository published, whose release gates its dated versions — so there is nothing to check.
+ *
  * Usage: node scripts/check-plugin-versions.mjs <base-commit>
  * An empty or missing base (a push event, a local run with nothing to compare) passes.
  */
