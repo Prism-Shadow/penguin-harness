@@ -111,6 +111,8 @@ interface Entry<T> {
 export function createReadStore<T>(
   options: {
     storage?: ReadStorage<T>;
+    /** A permission refusal or a deleted resource revokes the cached value even on a failed read. */
+    discardOnError?: (error: unknown) => boolean;
     /** Same data → the previous object is kept (identity stable, no re-render, no reorder). Default: JSON equality. */
     equal?: (a: T, b: T) => boolean;
     /** What a failed read is, for the report it offers; "a read failed" when omitted. */
@@ -209,12 +211,25 @@ export function createReadStore<T>(
           },
           (err: unknown) => {
             if (!owns(key, e, ask)) return;
-            set(key, e, {
-              ...e.state,
-              reading: false,
-              error: apiErrorText(err),
-              failure: failureNode(err, { what }),
-            });
+            if (options.discardOnError?.(err)) {
+              try {
+                storage?.clear(key);
+              } catch {
+                /* Storage may be unavailable. */
+              }
+              set(key, e, {
+                ...NOTHING,
+                error: apiErrorText(err),
+                failure: failureNode(err, { what }),
+              });
+            } else {
+              set(key, e, {
+                ...e.state,
+                reading: false,
+                error: apiErrorText(err),
+                failure: failureNode(err, { what }),
+              });
+            }
           },
         )
         .finally(() => {

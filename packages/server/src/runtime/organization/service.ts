@@ -109,7 +109,7 @@ import {
 import { isValidTimeZone, zonedDate, zonedDayRange } from "../../organization/zoned.js";
 import { SEMANTIC_ID_RULES } from "../../services/semantic-id.js";
 import { suggestSemanticId } from "../../services/semantic-id-suggest.js";
-import { SEMANTIC_ID_PATTERN } from "../../services/ids.js";
+import { isNewSemanticId } from "../../services/ids.js";
 import { enabledMessagingChannel } from "../messaging/enabled-channel.js";
 import { latestSlotAt, nextSlotAfter, slotInWindow } from "../schedule-file.js";
 import type { ScheduleDefinition } from "../schedule-file.js";
@@ -587,7 +587,7 @@ export class OrganizationService {
     userId: string,
   ): Promise<OrganizationDetail> {
     const orgId = req.orgId;
-    if (!SEMANTIC_ID_PATTERN.test(orgId)) {
+    if (!isNewSemanticId(orgId)) {
       throw new HttpError(
         400,
         "invalid_org_id",
@@ -920,7 +920,7 @@ export class OrganizationService {
       if (req.model !== undefined) await this.validateModel(projectId, req.model);
       const agentId = req.newAgent?.agentId ?? req.agentId!;
       if (req.newAgent !== undefined) {
-        if (!SEMANTIC_ID_PATTERN.test(agentId))
+        if (!isNewSemanticId(agentId))
           throw badRequest("newAgent.agentId is not a valid Agent id.");
       } else if (!(await this.deps.agents.exists(projectId, agentId))) {
         throw new HttpError(404, "agent_not_found", `Agent does not exist: ${agentId}`);

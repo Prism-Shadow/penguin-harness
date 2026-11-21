@@ -121,13 +121,16 @@ describe("uninstalling a plugin from an Agent", { timeout: 30_000 }, () => {
   });
 
   /**
-   * A fresh Agent with `plugins` installed, after `before` ran on it; answers its route prefix
-   * and id.
+   * A fresh Agent with `plugins` installed and nothing else (not even the plugins every new Agent
+   * gets), after `before` ran on it; answers its route prefix and id.
    */
   const agentWith = async (plugins: string[], before?: (base: string) => Promise<void>) => {
     agents += 1;
     const agentId = `agent_${agents}`;
-    const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId });
+    const made = await owner.post(`/api/projects/${PROJECT}/agents`, {
+      agentId,
+      defaultPlugins: false,
+    });
     expect(made.status, await made.text()).toBe(201);
     const base = `/api/projects/${PROJECT}/agents/${agentId}`;
     await before?.(base);

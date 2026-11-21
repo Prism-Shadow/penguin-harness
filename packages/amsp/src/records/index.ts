@@ -9,4 +9,5 @@
 export * from "./types.js";
 export * from "./builders.js";
 export * from "./task-records.js";
+export * from "./context-state.js";
 export * from "./source.js";
