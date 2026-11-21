@@ -14,13 +14,13 @@ import type { AppEnv } from "../../auth/middleware.js";
 import { MessagingBridge } from "@prismshadow/penguin-library-messaging/bridge";
 import {
   Messaging,
-  MessagingChannelConnector,
   MessagingSlots,
   MessagingTaskRunner,
   MessagingTuning,
   QQScan,
-  sessionMessagingRoutes,
 } from "@prismshadow/penguin-library-messaging/bridge";
+import type { MessagingChannelConnector } from "@prismshadow/penguin-library-messaging/connector";
+import { sessionMessagingRoutes } from "@prismshadow/penguin-library-messaging/routes";
 import { QQScanService } from "@prismshadow/penguin-library-messaging/qq-scan";
 import { WeChatScanService } from "@prismshadow/penguin-library-messaging/wechat-scan";
 import type { QQScanTransportHandle } from "@prismshadow/penguin-library-messaging/qq-scan";

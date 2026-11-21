@@ -111,7 +111,7 @@ import { isValidTimeZone, zonedDate, zonedDayRange } from "../../organization/zo
 import { SEMANTIC_ID_RULES } from "../../services/semantic-id.js";
 import { suggestSemanticId } from "../../services/semantic-id-suggest.js";
 import { isNewSemanticId } from "../../services/ids.js";
-import { enabledMessagingChannel } from "../messaging/enabled-channel.js";
+import { enabledMessagingChannel } from "@prismshadow/penguin-library-messaging/enabled-channel";
 import { latestSlotAt, nextSlotAfter, slotInWindow } from "@prismshadow/penguin-library-session/schedule-file";
 import type { ScheduleDefinition } from "@prismshadow/penguin-library-session/schedule-file";
 import { budgetLine, budgetRatio, computeSpend, pausedEmployees } from "./budget.js";

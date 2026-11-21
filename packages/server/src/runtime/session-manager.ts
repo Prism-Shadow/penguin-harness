@@ -135,7 +135,7 @@ import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-t
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
-import { enabledMessagingChannel } from "./messaging/enabled-channel.js";
+import { enabledMessagingChannel } from "@prismshadow/penguin-library-messaging/enabled-channel";
 import { MODELSCOPE_PROVIDER_ID } from "../model-catalog/catalog.js";
 
 /**
