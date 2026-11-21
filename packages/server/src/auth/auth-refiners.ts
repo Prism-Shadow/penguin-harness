@@ -24,7 +24,13 @@
  *      automatically bypass redundant refiners during role-tree expansion, and role-named scopes
  *      expand statically to exact route IDs so mismatches do not occur in normal operation.
  */
-import { Bind, Component, moduleMetaOf, type ModuleClass } from "@prismshadow/penguin-core/kernel";
+import {
+  Bind,
+  Component,
+  moduleMetaOf,
+  type ModuleClass,
+  type Opaque,
+} from "@prismshadow/penguin-core/kernel";
 import {
   ALL_HTTP_ROUTE_IDS,
   expandRoleGrant,
@@ -41,7 +47,7 @@ export interface AuthRefinerContext {
   /**
    * Optional interactive approval callback invoked by `@withAsk` (or custom interactive refiners).
    */
-  readonly askApproval?: (action: AuthRefinerAction) => Promise<boolean>;
+  readonly askApproval?: (action: AuthRefinerAction, request?: Request) => Promise<boolean>;
 }
 
 /** The HTTP route action being authorized by an `AuthRefiner`. */
@@ -71,7 +77,11 @@ export type AuthRefinerScopeInput = readonly string[] | AuthRefinerScope;
 
 /** Contract implemented by every Auth Refiner component. */
 export interface AuthRefiner {
-  authenticate(ctx: AuthRefinerContext, action: AuthRefinerAction): Promise<boolean>;
+  authenticate(
+    ctx: AuthRefinerContext,
+    action: AuthRefinerAction,
+    request: Opaque<"Request", Request>,
+  ): Promise<boolean>;
 }
 
 /** Pre-compiled O(1) lookup structure for a refiner's declared scope. */
@@ -163,6 +173,7 @@ export function matchesRefinerScope(scope: CompiledRefinerScope, routeId: string
     "HttpModule.authRefiners": [
       {
         id: "self",
+        order: 1001,
         scope: [
           "agent.",
           "memory.",
@@ -188,7 +199,11 @@ export function matchesRefinerScope(scope: CompiledRefinerScope, routeId: string
 export class AuthSelfRefiner {
   @Bind("self") readonly refiner: AuthRefiner = this;
 
-  async authenticate(ctx: AuthRefinerContext, action: AuthRefinerAction): Promise<boolean> {
+  async authenticate(
+    ctx: AuthRefinerContext,
+    action: AuthRefinerAction,
+    _request?: Opaque<"Request", Request>,
+  ): Promise<boolean> {
     const targetProjectId = action.params.projectId;
     if (targetProjectId !== undefined && targetProjectId !== ctx.projectId) {
       return false;
@@ -206,13 +221,14 @@ export class AuthSelfRefiner {
 
 /**
  * Built-in `@withAsk` refiner (`agent.maintain@withAsk`, `plugin.maintain@withAsk`, etc.).
- * Requires interactive approval via `ctx.askApproval(action)` within `ctx.projectId`.
+ * Requires interactive approval via `ctx.askApproval(action, request)` within `ctx.projectId`.
  */
 @Component({
   contributes: {
     "HttpModule.authRefiners": [
       {
         id: "withAsk",
+        order: 1000,
         scope: ["*"],
       },
     ],
@@ -221,7 +237,11 @@ export class AuthSelfRefiner {
 export class AuthWithAskRefiner {
   @Bind("withAsk") readonly refiner: AuthRefiner = this;
 
-  async authenticate(ctx: AuthRefinerContext, action: AuthRefinerAction): Promise<boolean> {
+  async authenticate(
+    ctx: AuthRefinerContext,
+    action: AuthRefinerAction,
+    request?: Opaque<"Request", Request>,
+  ): Promise<boolean> {
     const targetProjectId = action.params.projectId;
     if (targetProjectId !== undefined && targetProjectId !== ctx.projectId) {
       return false;
@@ -229,7 +249,7 @@ export class AuthWithAskRefiner {
     if (typeof ctx.askApproval !== "function") {
       return false;
     }
-    return Boolean(await ctx.askApproval(action));
+    return Boolean(await ctx.askApproval(action, request));
   }
 }
 
@@ -254,6 +274,7 @@ export interface AuthRefinerDescriptor {
   readonly authenticate?: (
     ctx: AuthRefinerContext,
     action: AuthRefinerAction,
+    request: Opaque<"Request", Request>,
   ) => Promise<boolean> | boolean;
 }
 
@@ -327,11 +348,11 @@ function resolveRefinerInput(input: AuthRefinerInput): RegisteredAuthRefiner[] {
     desc.refiner !== undefined
       ? desc.refiner
       : {
-          authenticate: async (ctx, action) => {
+          authenticate: async (ctx, action, request) => {
             if (typeof desc.authenticate !== "function") {
               throw new Error(`Refiner "${desc.id}" has no authenticate method.`);
             }
-            return Boolean(await desc.authenticate(ctx, action));
+            return Boolean(await desc.authenticate(ctx, action, request));
           },
         };
   return [
@@ -345,7 +366,16 @@ function resolveRefinerInput(input: AuthRefinerInput): RegisteredAuthRefiner[] {
 
 /**
  * Registry of Auth Refiners ordered by user-supplied priority list
- * (e.g. `[AuthMyRefiner, AuthWithAskRefiner, AuthSelfRefiner]`).
+ * (e.g. `[AuthMyRefiner, AuthWithAskRefiner, AuthSelfRefiner]`) and
+ * `HttpModule.authRefiners` slot contributions.
+ *
+ * Ordering rules:
+ * 1. Explicit `refinerList` (when supplied) takes top priority in exact list order.
+ * 2. `HttpModule.authRefiners` slot contributions are stably sorted by `data.order ?? 0`
+ *    while preserving module `children` list order (`[AuthMyRefiner, AuthWithAskRefiner, AuthSelfRefiner]`)
+ *    for equal `order`. Built-in `AuthWithAskRefiner` (`order: 1000`) and `AuthSelfRefiner`
+ *    (`order: 1001`) sit after custom/plugin components that omit `order` (default `0`).
+ * 3. Built-in `DEFAULT_AUTH_REFINERS` are appended last as a fallback when not already registered.
  *
  * Earlier entries in the list override later entries with the same `id` when their
  * `scope` matches the target action.
@@ -355,7 +385,7 @@ export class AuthRefinerRegistry {
   private readonly orderIndex = new Map<string, number>();
 
   constructor(
-    refinerList: readonly AuthRefinerInput[] = DEFAULT_AUTH_REFINERS,
+    refinerList: readonly AuthRefinerInput[] = [],
     contributed: ReadonlyArray<{
       readonly id: string;
       readonly data: Record<string, unknown>;
@@ -381,8 +411,15 @@ export class AuthRefinerRegistry {
       }
     }
 
-    // 2. Slot contributions from `HttpModule.authRefiners`.
-    for (const c of contributed) {
+    // 2. Slot contributions from `HttpModule.authRefiners`, stably sorted by `order ?? 0`
+    //    so module `children` list order is preserved while custom/plugin refiners (order 0)
+    //    precede built-in defaults (`order: 1000` / `1001`).
+    const orderedContributed = [...contributed].sort((a, b) => {
+      const oa = typeof a.data.order === "number" ? a.data.order : 0;
+      const ob = typeof b.data.order === "number" ? b.data.order : 0;
+      return oa - ob;
+    });
+    for (const c of orderedContributed) {
       const code = c.code as AuthRefiner | undefined;
       if (code === undefined || typeof code.authenticate !== "function") continue;
       const rawScope = c.data.scope as AuthRefinerScopeInput | undefined;
@@ -452,10 +489,16 @@ export class AuthRefinerRegistry {
     refinerIds: readonly string[],
     ctx: AuthRefinerContext,
     action: AuthRefinerAction,
+    request?: Opaque<"Request", Request>,
   ): Promise<AuthRefinerEvaluationResult> {
     if (refinerIds.length === 0) {
       return { ok: true };
     }
+    const req: Opaque<"Request", Request> =
+      request ??
+      new Request(`http://localhost${action.path.startsWith("/") ? action.path : `/${action.path}`}`, {
+        method: action.method,
+      });
     const orderedIds = this.sortRefinerIds(refinerIds);
     for (const refinerId of orderedIds) {
       const resolved = this.resolveForRoute(refinerId, action.routeId);
@@ -477,7 +520,7 @@ export class AuthRefinerRegistry {
       }
       let allowed: unknown;
       try {
-        allowed = await resolved.entry.refiner.authenticate(ctx, action);
+        allowed = await resolved.entry.refiner.authenticate(ctx, action, req);
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         return {

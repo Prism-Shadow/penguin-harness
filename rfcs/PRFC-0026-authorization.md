@@ -122,20 +122,24 @@ An Auth Refiner (`AuthRefiner`) is a lightweight authorization component contrib
 @Component({
   contributes: {
     "HttpModule.authRefiners": [
-      { id: "self", scope: ["agent.", "memory.", "schedule.", "workbench."] },
+      { id: "self", scope: ["agent.", "memory.", "schedule.", "workbench."], order: 1001 },
     ],
   },
 })
-export class AuthSelfRefiner implements AuthRefiner {
+export class AuthSelfRefiner {
   @Bind("self") readonly refiner: AuthRefiner = this;
-  async authenticate(ctx: AuthRefinerContext, action: AuthRefinerAction): Promise<boolean> {
+  async authenticate(
+    ctx: AuthRefinerContext,
+    action: AuthRefinerAction,
+    request: Request,
+  ): Promise<boolean> {
     return action.params.agentId === undefined || action.params.agentId === ctx.agentId;
   }
 }
 ```
 
 - **Explicit `scope` declaration and O(1) dispatch**: Each refiner declares the route IDs, role node names, or domain prefixes (such as `["agent."]`) it covers. `AuthRefinerRegistry` compiles these scopes into hash sets and prefix tables at startup and evaluates only the `refinerId`s bound to the matched `routeId`.
-- **Priority-list override**: Callers supply an ordered list such as `[AuthMyRefiner, AuthWithAskRefiner, AuthSelfRefiner]`. Earlier entries in the list override later entries with the same `id` whenever their declared `scope` matches the route, falling back to later entries for routes outside a narrower custom scope.
+- **Priority-list override**: Contributions to `HttpModule.authRefiners` are collected in module `children` list order (for example `[AuthMyRefiner, AuthWithAskRefiner, AuthSelfRefiner]`) and stably sorted by `order ?? 0` (built-in `AuthWithAskRefiner` and `AuthSelfRefiner` use `1000+` so custom and plugin refiners override them by default). Earlier entries in the list override later entries with the same `id` whenever their declared `scope` matches the route, falling back to later entries for routes outside a narrower custom scope.
 - **Failure and mismatch safety**: Referencing an undefined `@<refinerId>` is rejected immediately with `403 auth_refiner_undefined`. If a refiner in the session fails to match the target action's scope or throws an error, the server returns `403 auth_refiner_mismatch` and instructs the user to start the Agent with `admin` permission to repair its authorization configuration. Inherited `<domain>.read` tiers remain unconditional when expanding `<domain>.maintain@<refinerId>`, and any unconditional grant on the same route supersedes a refined grant.
 
 ### Agent session storage and generation re-derivation

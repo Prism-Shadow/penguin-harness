@@ -349,7 +349,11 @@ describe("auth refiners (<roleOrRoute>@<refinerId>)", () => {
     const { auth: agentAuth, repo } = service();
     const { token } = agentAuth.issueSession("p1", "a1", new Date());
 
-    // Custom refiner overriding @self for agent.config.update only (for instance, allowing a1 to also manage "a2-buddy")
+    let observedRequestMethod: string | undefined;
+    let observedRequestHeader: string | null = null;
+
+    // Custom refiner overriding @self for agent.config.update only (for instance, allowing a1 to also manage "a2-buddy"
+    // or any target carrying header `x-buddy-grant: allow` inspected via the 3rd `request` parameter)
     @Component({
       contributes: {
         "HttpModule.authRefiners": [
@@ -362,11 +366,19 @@ describe("auth refiners (<roleOrRoute>@<refinerId>)", () => {
     })
     class AuthMyRefiner {
       @Bind("self") readonly refiner: AuthRefiner = this;
-      async authenticate(ctx: AuthRefinerContext, action: AuthRefinerAction): Promise<boolean> {
+      async authenticate(
+        ctx: AuthRefinerContext,
+        action: AuthRefinerAction,
+        request: Request,
+      ): Promise<boolean> {
+        observedRequestMethod = request.method;
+        observedRequestHeader = request.headers.get("x-buddy-grant");
         const targetAgent = action.params.agentId;
         return (
           action.params.projectId === ctx.projectId &&
-          (targetAgent === ctx.agentId || targetAgent === "a2-buddy")
+          (targetAgent === ctx.agentId ||
+            targetAgent === "a2-buddy" ||
+            request.headers.get("x-buddy-grant") === "allow")
         );
       }
     }
@@ -384,7 +396,11 @@ describe("auth refiners (<roleOrRoute>@<refinerId>)", () => {
     })
     class AuthScheduleOnlyRefiner {
       @Bind("scheduleOnly") readonly refiner: AuthRefiner = this;
-      async authenticate(): Promise<boolean> {
+      async authenticate(
+        _ctx: AuthRefinerContext,
+        _action: AuthRefinerAction,
+        _request: Request,
+      ): Promise<boolean> {
         return true;
       }
     }
@@ -421,7 +437,6 @@ describe("auth refiners (<roleOrRoute>@<refinerId>)", () => {
         sessionIsLive: () => false,
       },
       agentAuth: wrappedAgentAuth,
-      refiners: [AuthMyRefiner, AuthScheduleOnlyRefiner, AuthWithAskRefiner, AuthSelfRefiner],
       errors: { record: () => {} },
       settings: {
         getAttachmentLimitsMb: () => ({
@@ -441,6 +456,35 @@ describe("auth refiners (<roleOrRoute>@<refinerId>)", () => {
     });
     http.setup({
       contributions: {
+        authRefiners: [
+          {
+            id: "self",
+            from: "AuthMyRefiner",
+            data: { scope: ["agent.config.update"] },
+            code: new AuthMyRefiner(),
+          },
+          {
+            id: "scheduleOnly",
+            from: "AuthScheduleOnlyRefiner",
+            data: { scope: ["schedule."] },
+            code: new AuthScheduleOnlyRefiner(),
+          },
+          {
+            id: "withAsk",
+            from: "AuthWithAskRefiner",
+            data: { scope: ["*"], order: 1000 },
+            code: new AuthWithAskRefiner(),
+          },
+          {
+            id: "self",
+            from: "AuthSelfRefiner",
+            data: {
+              scope: ["agent.", "schedule."],
+              order: 1001,
+            },
+            code: new AuthSelfRefiner(),
+          },
+        ],
         routes: [
           {
             id: "sessions.agent-config",
@@ -466,7 +510,7 @@ describe("auth refiners (<roleOrRoute>@<refinerId>)", () => {
       },
     } as unknown as ClassCtx);
 
-    const req = (method: string, path: string) =>
+    const req = (method: string, path: string, extraHeaders?: Record<string, string>) =>
       http.http.fetch(
         new Request(`http://localhost${path}`, {
           method,
@@ -474,17 +518,28 @@ describe("auth refiners (<roleOrRoute>@<refinerId>)", () => {
             authorization: `Bearer ${token}`,
             origin: "http://localhost",
             ...(method !== "GET" ? { "content-type": "application/json" } : {}),
+            ...extraHeaders,
           },
           ...(method !== "GET" ? { body: "{}" } : {}),
         }),
       );
 
-    // 1. Priority override: [AuthMyRefiner, AuthWithAskRefiner, AuthSelfRefiner]
-    // AuthMyRefiner overrides @self for agent.config.update (allowing a2-buddy), while schedule.upsert falls back to AuthSelfRefiner.
+    // 1. Priority override via `HttpModule.authRefiners` slot list: [AuthMyRefiner, AuthWithAskRefiner, AuthSelfRefiner]
+    // AuthMyRefiner overrides @self for agent.config.update (allowing a2-buddy or x-buddy-grant header via `request`),
+    // while schedule.upsert falls back to AuthSelfRefiner.
     repo.bumpGeneration("p1", "a1", "none", ["agent.maintain@self", "schedule.maintain@self"], 1);
     expect((await req("PUT", "/api/projects/p1/agents/a1/config")).status).toBe(200);
+    expect(observedRequestMethod).toBe("PUT");
     expect((await req("PUT", "/api/projects/p1/agents/a2-buddy/config")).status).toBe(200);
     expect((await req("PUT", "/api/projects/p1/agents/a3-stranger/config")).status).toBe(403);
+    expect(
+      (
+        await req("PUT", "/api/projects/p1/agents/a3-stranger/config", {
+          "x-buddy-grant": "allow",
+        })
+      ).status,
+    ).toBe(200);
+    expect(observedRequestHeader).toBe("allow");
     // Fallback to AuthSelfRefiner on schedule.upsert: a2-buddy is denied because AuthMyRefiner's scope only covers agent.config.update
     expect((await req("PUT", "/api/projects/p1/agents/a1/schedule/daily")).status).toBe(200);
     expect((await req("PUT", "/api/projects/p1/agents/a2-buddy/schedule/daily")).status).toBe(403);

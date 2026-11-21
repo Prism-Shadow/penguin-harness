@@ -122,20 +122,24 @@ Server 启动时在数据根下写入权限为 `0600` 的 `api-token` 与 `serve
 @Component({
   contributes: {
     "HttpModule.authRefiners": [
-      { id: "self", scope: ["agent.", "memory.", "schedule.", "workbench."] },
+      { id: "self", scope: ["agent.", "memory.", "schedule.", "workbench."], order: 1001 },
     ],
   },
 })
-export class AuthSelfRefiner implements AuthRefiner {
+export class AuthSelfRefiner {
   @Bind("self") readonly refiner: AuthRefiner = this;
-  async authenticate(ctx: AuthRefinerContext, action: AuthRefinerAction): Promise<boolean> {
+  async authenticate(
+    ctx: AuthRefinerContext,
+    action: AuthRefinerAction,
+    request: Request,
+  ): Promise<boolean> {
     return action.params.agentId === undefined || action.params.agentId === ctx.agentId;
   }
 }
 ```
 
 - **作用域声明（`scope`）与 O(1) 路由分发**：每个精化器声明自己匹配的 `scope`（路由 ID、角色节点名或域前缀，如 `["agent."]`），注册表在启动时将其编译为哈希集合与前缀索引。请求到达时仅按当前 `routeId` 绑定的 `refinerId` 直接查找，避免遍历无关中间件。
-- **按列表顺序覆盖（Override）**：宿主支持传入有序列表（如 `[AuthMyRefiner, AuthWithAskRefiner, AuthSelfRefiner]`）。同 `id` 的精化器按列表顺序优先匹配；若排在前面的自定义精化器仅声明了窄 `scope`（如 `["agent.config.update"]`），其余路由自动回退到列表中后续同 `id` 的内置实现。
+- **按列表顺序覆盖（Override）**：`HttpModule.authRefiners` 槽按模块 `children` 列表声明顺序（如 `[AuthMyRefiner, AuthWithAskRefiner, AuthSelfRefiner]`）收集条目，并按可选的 `order ?? 0` 做稳定排序（内置 `AuthWithAskRefiner` 与 `AuthSelfRefiner` 设为 `1000+`，使未指定 `order` 的自定义组件与外部插件默认优先）。同 `id` 的精化器按列表顺序优先匹配；若排在前面的自定义精化器仅声明了窄 `scope`（如 `["agent.config.update"]`），其余路由自动回退到列表中后续同 `id` 的内置实现。
 - **失败与失配保护**：若授权引用了未定义的 `@<refinerId>`，请求直接拒绝并返回 `403 auth_refiner_undefined`。若会话内精化器的 `scope` 未能匹配目标动作或执行异常，服务端返回 `403 auth_refiner_mismatch`，提示用户以 `admin` 权限启动 Agent 修复授权配置。当 `<domain>.maintain@<refinerId>` 展开时，其继承的 `<domain>.read` 只读层保持无条件放行，且同一路由上的无条件授权优先于带精化器的授权，保证常规会话下的高可靠匹配。
 
 ### Agent 会话存储与按代（Generation）实时派生

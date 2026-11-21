@@ -69,9 +69,12 @@ export interface HttpSlots {
    * An auth refiner (`<roleOrRoute>@<refinerId>`) contributed by a component or plugin.
    * `scope` declares the route IDs, role node names, or domain prefixes (e.g. `["agent."]`)
    * this refiner matches, avoiding middleware scans across unrelated actions.
+   * `order` (optional, default `0`) controls override priority alongside module `children`
+   * list order; built-in refiners (`AuthWithAskRefiner`, `AuthSelfRefiner`) use `1000+`
+   * so custom and plugin refiners override them by default.
    */
   authRefiners: Slot<
-    { scope: readonly string[] },
+    { scope: readonly string[]; order?: number },
     Opaque<"AuthRefiner", AuthRefiner>
   >;
 }
@@ -178,7 +181,12 @@ async function checkRouteAuth(
       path: c.req.path,
       params: rawParams,
     };
-    const evalResult = await refinerRegistry.evaluate(refinerIds, refinerCtx, action);
+    const evalResult = await refinerRegistry.evaluate(
+      refinerIds,
+      refinerCtx,
+      action,
+      c.req.raw,
+    );
     if (!evalResult.ok) {
       throw new HttpError(403, evalResult.code, evalResult.message);
     }
