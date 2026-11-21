@@ -14,6 +14,11 @@ export function locatedAppKey(
   return `${machineId ? machineId + ":" : ""}${agentId}/${workbenchId}`;
 }
 
+/** The App Center with one app (`<agentId>/<workbenchId>`) open in its window. */
+export function appWindowPath(appId: string): string {
+  return `${APP_CENTER_PATH}?${new URLSearchParams({ app: appId })}`;
+}
+
 /** Whether a full page's `returnTo` is the App Center: its grid, or one of its windows. */
 export function isAppCenterPath(path: unknown): path is string {
   return typeof path === "string" && /^\/apps(?:\?[^#]*)?$/.test(path);

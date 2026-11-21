@@ -11,10 +11,9 @@ import {
   loadWarningText,
   newWarnings,
 } from "../src/features/builtin-browser/load";
-import { zh } from "../src/lib/strings";
-import { en } from "../src/lib/strings-en";
+import { en as browserEn, zh as browserZh } from "../src/features/builtin-browser/strings";
 
-const EN = en.builtinBrowser.load;
+const EN = browserEn.builtinBrowser.load;
 
 const GB = 1024 * 1024;
 
@@ -75,9 +74,9 @@ describe("loadWarningText", () => {
   });
 
   it("joins Chinese sentences without spaces", () => {
-    expect(loadWarningText(metrics({ warnings: ["memory"] }), 7, zh.builtinBrowser.load)).toBe(
-      "浏览器正在使用 2.1 GB 内存（7 个标签页）。请关闭不再需要的标签页。",
-    );
+    expect(
+      loadWarningText(metrics({ warnings: ["memory"] }), 7, browserZh.builtinBrowser.load),
+    ).toBe("浏览器正在使用 2.1 GB 内存（7 个标签页）。请关闭不再需要的标签页。");
   });
 });
 

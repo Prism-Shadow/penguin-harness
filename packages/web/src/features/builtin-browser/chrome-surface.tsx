@@ -30,9 +30,8 @@ import {
   ICON_SIZE,
   Menu,
 } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { requestSettings } from "../../lib/settings-request";
+import { S } from "./strings";
+import { requestSettings, toneInk } from "@prismshadow/penguin-web-plugin";
 import { AddressBar } from "./address-bar";
 import {
   activateBrowserTab,

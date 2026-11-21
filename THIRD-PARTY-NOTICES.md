@@ -345,3 +345,7 @@ SOFTWARE.
 ```
 
 Source: <https://github.com/lsdefine/genericagent>
+
+## PptxGenJS and JSZip — the Bento Slides PowerPoint exporter
+
+The Slides workbench includes the browser distribution of PptxGenJS 4.0.1 from its npm package. It includes JSZip. Their license notices ship beside the bundle in `plugins/use-bento-slides/workbenches/slides/ui/vendor/`.

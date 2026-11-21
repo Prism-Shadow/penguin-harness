@@ -1,5 +1,6 @@
 /**
- * Settings › Server › Chrome extension (admin only): "Allow Chrome extension connections", the
+ * Settings › Server › Chrome extension (admin only), a page this feature contributes to the Settings
+ * dialog (`SettingsModule.sections`): "Allow Chrome extension connections", the
  * server-wide switch over the agents driving users' own Chromes (`browserExtensionsEnabled` in
  * /api/admin/settings, on by default).
  *
@@ -11,15 +12,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { ServerSettingsResponse } from "@prismshadow/penguin-server/api";
 import { ConfirmModal, SettingsGroup, SettingsSection, ToggleRow } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
-import { toastApiError } from "../../lib/toast-api-error";
-import { failureNode } from "../../lib/failure";
+import * as api from "./api";
+import { S } from "./strings";
+import { failureNode, toastApiError, toneInk } from "@prismshadow/penguin-web-plugin";
 
 /** Turns the switch off on the server. Reached only through the confirm. */
-const switchOffExtensions = (): Promise<ServerSettingsResponse> =>
-  api.adminPutSettings({ browserExtensionsEnabled: false });
+const switchOffExtensions = (): Promise<ServerSettingsResponse> => api.putExtensionsSwitch(false);
 
 /**
  * The question before the switch goes off: the danger tone and what follows. Answered yes, it
@@ -70,7 +68,7 @@ export function ChromeExtensionSection() {
   useEffect(() => {
     let cancelled = false;
     void api
-      .adminGetSettings()
+      .getExtensionsSwitch()
       .then((res) => {
         if (cancelled) return;
         setStored(res.settings.browserExtensionsEnabled);
@@ -103,7 +101,7 @@ export function ChromeExtensionSection() {
     setEnabled(true);
     setError(undefined);
     setBusy(true);
-    api.adminPutSettings({ browserExtensionsEnabled: true }).then(
+    api.putExtensionsSwitch(true).then(
       (res) => settle({ enabled: res.settings.browserExtensionsEnabled }, stored),
       (err: unknown) => settle({ error: err }, stored),
     );
