@@ -46,6 +46,16 @@ export function hasLibraryContributions(table: PluginTable | null): boolean {
 }
 
 /**
+ * Whether the package at `dir`, whose table is `table`, ships server modules: the table lists
+ * modules or stands in for some, and the code entry it would boot from exists (see the header).
+ */
+export function shipsServerModules(dir: string, table: PluginTable): boolean {
+  const entry = packageEntry(dir);
+  const listed = table.plugin.modules.length + table.plugin.replaces.length > 0;
+  return listed && entry !== null && fs.existsSync(entry);
+}
+
+/**
  * What the package at `dir` carries, by its table. A package without a table, or one whose table
  * will not read, carries nothing: the surface that refuses it says why (readPluginTable).
  */
@@ -58,14 +68,12 @@ export function libraryParts(dir: string): LibraryParts {
   }
   if (table === null) return NONE;
   const c = libraryContributions(table, []);
-  const entry = packageEntry(dir);
-  const listed = table.plugin.modules.length + table.plugin.replaces.length > 0;
   return {
     skills: c.skills.length > 0,
     hooks: c.hooks !== undefined,
     mcp: c.mcpServers.length > 0,
     workbenches: c.workbenches.length > 0,
-    modules: listed && entry !== null && fs.existsSync(entry),
+    modules: shipsServerModules(dir, table),
   };
 }
 

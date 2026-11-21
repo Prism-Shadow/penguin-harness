@@ -16,7 +16,7 @@ import {
 } from "../src/plugin/config.js";
 import { PluginConfigPage } from "../src/plugin/config-page.js";
 import { PluginHost } from "../src/plugin/host.js";
-import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
+import { apiClient, createTestApp, loginAdmin, provisionUser, tokenClient } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const SCHEMA = parsePluginConfiguration(
@@ -325,6 +325,29 @@ describe("/api/admin/plugin-config", () => {
       values: [],
     });
     expect(shapeless.status).toBe(400);
+  });
+
+  // Every Agent's shell holds the local API token, which stands for the administrator: it may
+  // read the settings, but changing them — loosening its own sandbox, say — takes a person.
+  it("lets the local API token read the settings but never save them or run an action", async () => {
+    const agent = tokenClient(t.app, t.deps.authService.localApiToken()!);
+    expect((await agent.get("/api/admin/plugin-config")).status).toBe(200);
+    const save = await agent.put("/api/admin/plugin-config", {
+      name: "acme-bot",
+      values: { project: "agent-chosen" },
+    });
+    expect(save.status).toBe(403);
+    expect(await save.json()).toMatchObject({ error: { code: "human_required" } });
+    const action = await agent.post("/api/admin/plugin-config/action", {
+      name: "sandbox",
+      action: "anything",
+    });
+    expect(action.status).toBe(403);
+    expect(await action.json()).toMatchObject({ error: { code: "human_required" } });
+    const after = (await (
+      await admin.get("/api/admin/plugin-config")
+    ).json()) as PluginConfigResponse;
+    expect(after.plugins.find((e) => e.name === "acme-bot")!.values).not.toHaveProperty("project");
   });
 });
 

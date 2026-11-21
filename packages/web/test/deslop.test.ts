@@ -32,10 +32,11 @@ import {
   type DeslopPolicy,
 } from "../../ui/src/testing/deslop";
 
-import { expectEveryRootScanned, scanSources } from "./helpers/roots";
+import { appKeyOf, expectEveryRootScanned, isAppFile, scanSources } from "./helpers/roots";
 
 const SCAN = scanSources();
-const WEB = SCAN.files.filter((file) => file.root === "web");
+/** The app's files: its own, and every plugin web half it compiles in (allowlisted nowhere). */
+const WEB = SCAN.files.filter(isAppFile);
 
 /**
  * The homes §3 names, as the web app spells them today. It has no Spinner of its own (the
@@ -67,6 +68,7 @@ const ALLOWLIST: DeslopAllowlist = {
   "components/account/app-info-dialog.tsx": { 24: [1, "W10"] },
   "features/agents/agent-settings-page.tsx": { 24: [3, "W10"] },
   "features/benchmark/benchmark-detail.tsx": { 24: [1, "W10"] },
+  "features/builtin-browser/strings.ts": { 24: [6, "W10"] },
   "features/chat/archived-session-stub.tsx": { 24: [1, "W10"] },
   "features/company/channel-view.tsx": { 24: [1, "W10"] },
   "features/company/employee-dialogs.tsx": { 24: [1, "W10"] },
@@ -76,11 +78,10 @@ const ALLOWLIST: DeslopAllowlist = {
   "features/machines/machine-detail-dialog.tsx": { 24: [1, "W10"] },
   "features/models/group-balance.tsx": { 24: [2, "W10"] },
   "features/models/preset-sync.tsx": { 24: [1, "W10"] },
-  "features/plugins/plugin-detail.tsx": { 24: [1, "W10"] },
   "features/settings/proxy-section.tsx": { 24: [1, "W10"] },
   "features/traces/trace-panel.tsx": { 24: [2, "W10"] },
-  "lib/strings-en.ts": { 24: [34, "W10"] },
-  "lib/strings.ts": { 24: [34, "W10"] },
+  "lib/strings-en.ts": { 24: [31, "W10"] },
+  "lib/strings.ts": { 24: [31, "W10"] },
 };
 
 /**
@@ -95,8 +96,10 @@ const ALLOWLIST: DeslopAllowlist = {
  */
 const TOKENS_ONLY: readonly string[] = [
   "components/find/find-bar.tsx",
+  "features/builtin-browser/browser-section.tsx",
   "features/builtin-browser/browser-tab-strip.tsx",
   "features/builtin-browser/browser-toolbar.tsx",
+  "features/builtin-browser/chrome-extension-section.tsx",
   "features/builtin-browser/chrome-status-row.tsx",
   "features/builtin-browser/chrome-surface.tsx",
   "features/builtin-browser/new-tab-page.tsx",
@@ -114,8 +117,6 @@ const TOKENS_ONLY: readonly string[] = [
   "features/chat/task-stats-line.tsx",
   "features/company/handbook-page.tsx",
   "features/model-picker/model-picker-modal.tsx",
-  "features/settings/browser-section.tsx",
-  "features/settings/chrome-extension-section.tsx",
   "features/settings/shortcut-recorder.tsx",
   "features/settings/shortcuts-section.tsx",
   "features/settings/trace-import-row.tsx",
@@ -126,13 +127,13 @@ const TOKENS_ONLY: readonly string[] = [
 ];
 
 const WAVES = /^W(?:1a?|1b|10|[2-9])(?:\+W(?:1a?|1b|10|[2-9]))*$/;
-const relOf = (id: string) => id.slice("packages/web/src/".length);
+const relOf = appKeyOf;
 
 describe("de-slop rules over packages/web/src", () => {
   it("scans every source root, and every listed file is still in the web app", () => {
     expectEveryRootScanned(SCAN);
     const gone = [...Object.keys(ALLOWLIST), ...TOKENS_ONLY].filter(
-      (rel) => !WEB.some((file) => file.rel === rel),
+      (rel) => !WEB.some((file) => relOf(file.id) === rel),
     );
     expect(
       gone,
@@ -154,7 +155,7 @@ describe("de-slop rules over packages/web/src", () => {
     const title = `rule ${rule}: ${DESLOP_RULES[rule]}`;
     if (rule === 20) {
       it(`${title} — over the tokens-only files`, () => {
-        const files = WEB.filter((file) => TOKENS_ONLY.includes(file.rel));
+        const files = WEB.filter((file) => TOKENS_ONLY.includes(relOf(file.id)));
         expect(
           deslopHits(files, rule, { ...POLICY, tokensOnly: true }).map(
             (hit) => `${relOf(hit.file)}:${hit.line}  ${hit.found}`,

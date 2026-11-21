@@ -98,6 +98,7 @@ const fakePlugin = (name: string, category?: string): LibraryPlugin => ({
   defaultInstall: false,
   skills: [],
   mcpServers: [],
+  modules: false,
   ...(category !== undefined ? { category } : {}),
 });
 
@@ -134,6 +135,20 @@ describe("groupPlugins", () => {
       ["other", ["y", "z"]],
     ]);
     expect(groups[2]).toMatchObject({ title: "Other", titleZh: "其他" });
+  });
+
+  it("lists Learning & Life as a category of its own, after the app-building ones and before the sandbox backends", () => {
+    const groups = groupPlugins([
+      fakePlugin("sandbox-demo", "sandbox"),
+      fakePlugin("flashcards", "learning-life"),
+      fakePlugin("tooling", "ai-app-development"),
+    ]);
+    expect(groups.map((g) => [g.id, g.plugins.map((p) => p.name)])).toEqual([
+      ["ai-app-development", ["tooling"]],
+      ["learning-life", ["flashcards"]],
+      ["sandbox", ["sandbox-demo"]],
+    ]);
+    expect(groups[1]).toMatchObject({ title: "Learning & Life", titleZh: "学习与生活" });
   });
 });
 

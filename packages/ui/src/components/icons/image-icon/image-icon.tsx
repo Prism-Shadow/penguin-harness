@@ -29,8 +29,8 @@ export function ImageIcon({
   className = "",
 }: {
   icon?: ImageIconSource | null;
-  /** Edge of the square, in px. */
-  size: number;
+  /** Edge of the square, in px; `fill` takes the whole of a square parent (a cover's tile, which scales with its cover). */
+  size: number | "fill";
   /** Drawn without an icon, or when its image does not load: the kind's glyph. */
   fallback: ReactNode;
   className?: string;
@@ -39,15 +39,15 @@ export function ImageIcon({
   const [failed, setFailed] = useState<string | null>(null);
   if (icon == null || failed === icon.url) return <>{fallback}</>;
   const fail = () => setFailed(icon.url);
-  const box: CSSProperties = { width: size, height: size, display: "block", flexShrink: 0 };
+  const edge = size === "fill" ? "100%" : size;
+  const box: CSSProperties = { width: edge, height: edge, display: "block", flexShrink: 0 };
   if (!icon.tint) {
     return (
       <img
         src={icon.url}
         alt=""
         aria-hidden
-        width={size}
-        height={size}
+        {...(size === "fill" ? {} : { width: size, height: size })}
         draggable={false}
         decoding="async"
         onError={fail}

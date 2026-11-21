@@ -219,6 +219,10 @@ export const DUOTONE: Readonly<Partial<Record<GlyphKey, string>>> = {
   /** All four tiles, as drawn (and so for `dashboard`). */
   tiles: ICONS.tiles,
   dashboard: ICONS.dashboard,
+  layoutGrid: ICONS.layoutGrid,
+  /** The two squares, not the lines. */
+  layoutList:
+    "M4 3h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM4 14h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z",
   /** The three boxes, not the bus. */
   network: "M9 3h6v5H9zM2 16h6v5H2zM16 16h6v5h-6z",
   /** The three nodes. */
@@ -442,6 +446,8 @@ export const ICON_TINTS: Readonly<Record<IconName, IconTint>> = {
   squareStack: "slate",
   boxArrowOut: "slate",
   tiles: "slate",
+  layoutGrid: "slate",
+  layoutList: "slate",
   cornersOut: "slate",
   cornersIn: "slate",
   gitBranch: "slate",

@@ -370,10 +370,37 @@ describe("model-catalog", () => {
       "Qwen/Qwen3.8-27B",
       "Qwen/Qwen3.8-Flash-Next",
     ]);
+    // Tool models MMSP's registry prices nowhere: Google publishes per-image and per-audio rates
+    // MMSP does not fold into its buckets yet.
+    const UNPRICED_TOOLS = new Set([
+      "gemini-3.1-flash-lite-image",
+      "gemini-3.1-flash-image",
+      "gemini-3.8-flash-tts",
+      "gemini-3.8-flash-lite-tts",
+    ]);
     for (const m of MODEL_CATALOG) {
       // A tool model (image generation) is priced and sized by the model-tool work, not by
       // these chat-row rules.
       if (m.capability) continue;
+      if (m.tool) {
+        // A tool model holds no conversation, so it has no context window; its buckets are the
+        // ones MMSP folds the billing units into, and the ones a tool does not bill are zero.
+        const ref = `${m.provider}/${m.modelId}`;
+        expect(m.contextWindow, ref).toBeUndefined();
+        if (m.pricing === undefined) {
+          expect(UNPRICED_TOOLS.has(m.modelId), ref).toBe(true);
+          continue;
+        }
+        const { cache_read, cache_write, output } = m.pricing;
+        expect(cache_read, ref).toBeLessThanOrEqual(cache_write);
+        for (const rate of [cache_read, cache_write, output]) {
+          if (rate === 0) continue;
+          expect(rate, ref).toBeGreaterThanOrEqual(MIN_RATE_USD_PER_MTOK);
+          expect(rate, ref).toBeLessThanOrEqual(MAX_RATE_USD_PER_MTOK);
+        }
+        expect(Math.max(cache_write, output), ref).toBeGreaterThan(0);
+        continue;
+      }
       if (m.pricing === undefined) {
         expect(UNPRICED.has(m.modelId), m.modelId).toBe(true);
       } else if (
@@ -744,7 +771,14 @@ describe("MMSP's clients as the catalog reads them", () => {
       const official = vendorClientType(id)!;
       expect(CLIENT_CREDENTIALS[official], id).toBeDefined();
       for (const m of MODEL_CATALOG.filter((row) => row.provider === id)) {
-        expect(routedClientType(m.modelId, null), `${id}/${m.modelId}`).toBe(official);
+        const routed = routedClientType(m.modelId, null);
+        // The official client serves a vendor's tool models through its media or web client
+        // (openai-image, deepseek-speech …), which reads the same key.
+        if (m.tool && routed !== official) {
+          expect(CLIENT_CREDENTIALS[routed!]?.apiKeyEnv, `${id}/${m.modelId}`).toBe(
+            CLIENT_CREDENTIALS[official]!.apiKeyEnv,
+          );
+        } else expect(routed, `${id}/${m.modelId}`).toBe(official);
       }
     }
     for (const id of ["penguin-go", "tokendance", "openrouter", "vllm", "custom", "my-group"]) {
@@ -779,6 +813,16 @@ describe("MMSP's clients as the catalog reads them", () => {
         // same split as custom.
         expect(env!.envKey, m.modelId).toBe("ANTHROPIC_API_KEY");
         expect(env!.envBaseUrlKey, m.modelId).toBe("ANTHROPIC_BASE_URL");
+        continue;
+      }
+      if (
+        m.provider === "tokendance" &&
+        (m.clientType === "deepseek-webtool" || m.clientType === "deepseek-transcription")
+      ) {
+        // TokenDance's DeepSeek tool endpoint is DeepSeek's clients on its gateway: their pair is
+        // DeepSeek's, which MMSP reads for no base URL only, so the gateway row's key is its own.
+        expect(env!.envKey, m.modelId).toBe("DEEPSEEK_API_KEY");
+        expect(env!.envBaseUrlKey, m.modelId).toBe("DEEPSEEK_BASE_URL");
         continue;
       }
       if (m.provider === "opencode-go" && m.clientType === "google-genai") {
@@ -1221,7 +1265,16 @@ describe("off-peak schedules", () => {
  *   a base URL MMSP refuses; the endpoint's variable only with no base URL anywhere.
  */
 describe("environment variable names (what MMSP's routed client reads)", () => {
-  const VENDORS = ["deepseek", "google", "openai", "anthropic", "zhipu", "moonshot", "minimax"];
+  const VENDORS = [
+    "jina",
+    "deepseek",
+    "google",
+    "openai",
+    "anthropic",
+    "zhipu",
+    "moonshot",
+    "minimax",
+  ];
 
   it("under a new Project's tables, every vendor preset reads its vendor's variable and no gateway preset reads any", () => {
     const table = presetProviderTable();

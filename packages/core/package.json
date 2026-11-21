@@ -25,9 +25,17 @@
       "types": "./dist/plugin/index.d.ts",
       "import": "./dist/plugin/index.js"
     },
+    "./plugin-index": {
+      "types": "./dist/plugin/index-document.d.ts",
+      "import": "./dist/plugin/index-document.js"
+    },
     "./cli": {
       "types": "./dist/cli/index.d.ts",
       "import": "./dist/cli/index.js"
+    },
+    "./plugin-categories": {
+      "types": "./dist/plugin/category-manifest.d.ts",
+      "import": "./dist/plugin/category-manifest.js"
     },
     "./context-limits": {
       "types": "./dist/llm/context-limits.d.ts",

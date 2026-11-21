@@ -32,6 +32,8 @@ import type { SessionManager } from "../../runtime/session-manager.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { Machines } from "../../machines/service.js";
 import { ModelBalances } from "../../services/model-balance.js";
+import { toolBindingKeyFault } from "../../services/tool-binding-key.js";
+import type { ToolModelBindings } from "../../services/tool-model-bindings.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface ModelsRouteDeps {
@@ -44,6 +46,8 @@ export interface ModelsRouteDeps {
   projectConfigService: ProjectConfigStore;
   access: Access;
   sessionsRepo: SessionIndex;
+  /** The plugins' bindings: the request the connection test sends a tool model (absent: the chat probe for every model). */
+  toolModelBindings?: Pick<ToolModelBindings, "testRequest">;
 }
 
 /**
@@ -274,6 +278,19 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
   if (body.visionModel !== undefined) {
     req.visionModel = parseRef(body.visionModel, "visionModel");
   }
+  if (body.toolModels !== undefined) {
+    const table = body.toolModels;
+    if (table === null || typeof table !== "object" || Array.isArray(table)) {
+      throw badRequest("toolModels must be an object keyed by binding.");
+    }
+    req.toolModels = Object.fromEntries(
+      Object.entries(table as Record<string, unknown>).map(([key, ref]) => {
+        const fault = toolBindingKeyFault(key);
+        if (fault !== null) throw badRequest(`toolModels: ${fault}.`);
+        return [key, parseRef(ref, `toolModels.${key}`)];
+      }),
+    );
+  }
   if (body.providers !== undefined) {
     const providers = body.providers;
     if (providers === null || typeof providers !== "object" || Array.isArray(providers)) {
@@ -428,7 +445,14 @@ export function modelsRoutes(deps: ModelsRouteDeps): Hono<AppEnv> {
       if (typeof body.fastMode !== "boolean") throw badRequest("fastMode must be a boolean.");
       req.fastMode = body.fastMode;
     }
-    return c.json(await deps.projectConfigService.testModel(projectId, req));
+    const bindings = deps.toolModelBindings;
+    return c.json(
+      await deps.projectConfigService.testModel(
+        projectId,
+        req,
+        bindings !== undefined ? (model) => bindings.testRequest(model) : undefined,
+      ),
+    );
   });
 
   // Protocol auto-detection (owner): probes which generic protocol client the base URL
