@@ -7,6 +7,7 @@
  *   POST   /:operation/run                    run an operation (200 when done, 202 with `detach`)
  *   GET    /runs/:runId?sessionId=            a run in flight, or stored in the Session
  *   DELETE /runs/:runId                       stop a run in flight
+ *   GET    /sessions/:sessionId/runs          the Session's runs, newest first (Image Studio)
  *   GET    /sessions/:sessionId/files         the files the Session's runs generated
  *   GET    /sessions/:sessionId/files/:name   one of them, streamed
  *   GET    /voice-polish/settings             transcript editing in this Project
@@ -169,6 +170,22 @@ export function toolRoutes(deps: RouteDeps): Hono<RouteEnv> {
     const record = isRunId(runId) ? await deps.tools().runs.cancel(projectId, runId) : null;
     if (record === null) throw new ToolError(404, "run_not_running", "No such run is in flight.");
     return c.json(record);
+  });
+
+  app.get("/sessions/:sessionId/runs", async (c) => {
+    const projectId = projectOf(c, deps);
+    const sessionId = sessionOf(deps, projectId, c.req.param("sessionId"))!;
+    const tools = deps.tools();
+    // A stored run still marked running is read through the runs in flight, which say whether
+    // it still is.
+    const runs = await Promise.all(
+      (await tools.store.runs(projectId, sessionId)).map(async (run) =>
+        run.status === "running"
+          ? ((await tools.runs.get(projectId, run.id, sessionId)) ?? run)
+          : run,
+      ),
+    );
+    return c.json({ runs });
   });
 
   app.get("/sessions/:sessionId/files", async (c) => {
