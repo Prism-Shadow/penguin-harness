@@ -380,7 +380,12 @@ describe("the App Center", { timeout: 30_000 }, () => {
     stranger = apiClient(t.app, (await provisionUser(t.app, "stranger")).cookie);
     const project = await owner.post("/api/projects", { projectId: PROJECT, name: "home" });
     expect(project.status, await project.text()).toBe(201);
-    preinstalled = new Set(await ids());
+    // What the new Project's default Agent ships, read from its folder. Not through the App
+    // Center: listing it starts a watcher on each Agent's workbenches, so the fixtures written
+    // below on this Agent would load (and fail, having no index.ts) 300 ms after their last
+    // write. On a slow runner that happens before the first case, which expects them never built.
+    const shipped = path.join(agentStateDir(t.root, PROJECT, AGENT), "workbenches");
+    preinstalled = new Set((await fs.readdir(shipped)).map((id) => `${AGENT}/${id}`));
     const joined = await owner.post(`/api/projects/${PROJECT}/members`, { userId: "member" });
     expect(joined.status, await joined.text()).toBe(201);
     for (const [agentId, name] of [
