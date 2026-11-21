@@ -1,6 +1,7 @@
 /**
  * Bot-account routes: which server has a messaging bot enabled, so that one account is enabled on
- * one server at a time (runtime/messaging/account-holders.ts).
+ * one server at a time (account-holders.ts), as pure factories over the ports they reach
+ * (services+http+cli restack S8).
  *
  * GET /api/messaging/accounts
  *   Every bot account this server has enabled, across all its Projects:
@@ -21,9 +22,8 @@ import { Hono } from "hono";
 import type {
   MessagingAccountHoldersResponse,
   MessagingAccountsResponse,
-} from "../../api/types.js";
-import type { AppEnv } from "../../auth/middleware.js";
-import type { Machines } from "../../machines/service.js";
+} from "@prismshadow/penguin-library-messaging/vocabulary";
+import type { AppEnv } from "@prismshadow/penguin-library-http";
 import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
 import type { Access } from "@prismshadow/penguin-library-project";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
@@ -31,16 +31,18 @@ import {
   enabledAccounts,
   findAccountHolders,
   holdsAccount,
-} from "../../runtime/messaging/account-holders.js";
-import { isMessagingChannel } from "../../runtime/messaging/enabled-channel.js";
-import { HttpError } from "../errors.js";
-import { badRequest, requireValidId } from "../validate.js";
+} from "./account-holders.js";
+import { isMessagingChannel } from "./enabled-channel.js";
+import type { MessagingMachineApi } from "./ports.js";
+import { HttpError } from "@prismshadow/penguin-library-http";
+import { badRequest, requireValidId } from "@prismshadow/penguin-library-http/validate";
 
-/** What these route groups reach — bound by their module (runtime/messaging/accounts-module.ts). */
+/** What these route groups reach — bound by their module (accounts-module.ts). */
 export interface MessagingAccountsRouteDeps {
   messagingRepo: Pick<MessagingBindings, "listAll">;
   sessionsRepo: Pick<SessionIndex, "findById">;
-  machines: Pick<Machines, "projectApis">;
+  /** The Project's machines with a connected API client, as Machines.projectApis returns it. */
+  machines: { projectApis(projectId: string): Promise<Array<{ machineId: string; alias: string; api: MessagingMachineApi | null }>> };
   access: Pick<Access, "requireProjectAccess">;
 }
 

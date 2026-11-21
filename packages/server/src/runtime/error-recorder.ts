@@ -65,8 +65,8 @@ import type {
 /** Attribution context (all optional: the login endpoint has no Project, and process-level fallback has no request at all). Lives with the Errors contract (library/observability); re-exported for the recorder's callers. */
 export type { ErrorContext } from "@prismshadow/penguin-library-observability";
 
-/** Message truncation length (keep only a readable summary; the full stack is still logged). */
-export const MESSAGE_MAX = 500;
+/** Message truncation length and the one-sided sink type: live with the Errors contract (library/observability, services+http+cli restack S8); re-exported for the recorder's callers. */
+import { MESSAGE_MAX, type ErrorSink } from "@prismshadow/penguin-library-observability";
 
 /** Short-window dedup window: the same (source, code, Project) is persisted at most once per window (see the file header's tradeoff). */
 export const DEDUP_WINDOW_MS = 2000;
@@ -133,5 +133,6 @@ export class ErrorRecorder implements Errors {
   }
 }
 
-/** Minimal dependency a capture site needs on the recorder (tests inject a fake; structurally matches SessionManager's UsageRecorderLike). */
-export type ErrorSink = Pick<ErrorRecorder, "record">;
+// Both moved to library/observability (above); the recorder's own shape still satisfies
+// the sink structurally, and the recorder's callers keep their import path.
+export { MESSAGE_MAX, type ErrorSink };

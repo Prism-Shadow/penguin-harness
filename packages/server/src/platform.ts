@@ -38,14 +38,14 @@ import {
   MessagingTaskRunner,
   MessagingModule,
   QQScan,
-} from "./runtime/messaging/bridge.js";
-import { MessagingAccountsModule } from "./runtime/messaging/accounts-module.js";
-import { FeishuSdkProvider } from "./runtime/messaging/feishu-connector.js";
-import { TelegramTransportProvider } from "./runtime/messaging/telegram-connector.js";
-import { QQTransportProvider } from "./runtime/messaging/qq-connector.js";
-import { QQScanTransportProvider } from "./runtime/messaging/qq-scan.js";
-import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js";
-import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
+} from "./runtime/messaging/module.js";
+import { MessagingAccountsModule } from "./runtime/messaging/module.js";
+import { FeishuSdkProvider } from "@prismshadow/penguin-library-messaging/feishu-connector";
+import { TelegramTransportProvider } from "@prismshadow/penguin-library-messaging/telegram-connector";
+import { QQTransportProvider } from "@prismshadow/penguin-library-messaging/qq-connector";
+import { QQScanTransportProvider } from "@prismshadow/penguin-library-messaging/qq-scan";
+import { WeChatTransportProvider } from "@prismshadow/penguin-library-messaging/wechat-connector";
+import { WeChatScanTransportProvider } from "@prismshadow/penguin-library-messaging/wechat-scan";
 import { PluginConfig, PluginConfigProvider } from "./plugin/config.js";
 import { PluginConfigAdmin, PluginConfigPage } from "./plugin/config-page.js";
 import { IndexSources, PluginIndexSettings, StoredIndexSources } from "./plugin/index-config.js";

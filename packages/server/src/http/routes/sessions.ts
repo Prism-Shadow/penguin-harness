@@ -92,7 +92,7 @@ import {
 import type { ServerConfig } from "../../config.js";
 import { normalizePenguinGoOrigin } from "../../config.js";
 import type { ChannelHub } from "../../runtime/channel.js";
-import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
+import type { MessagingBridge } from "@prismshadow/penguin-library-messaging/bridge";
 import type { SessionManager, RecallStore } from "../../runtime/session-manager.js";
 import type { PreviewTokenSigner } from "../../services/preview-token.js";
 import type {
@@ -139,8 +139,8 @@ import {
   parseAttachmentPart,
   readRecalledFiles,
   removeAttachments,
-} from "../../services/task-attachments.js";
-import type { TaskAttachment } from "../../services/task-attachments.js";
+} from "@prismshadow/penguin-library-messaging/task-attachments";
+import type { TaskAttachment } from "@prismshadow/penguin-library-messaging/task-attachments";
 import {
   INLINE_IMAGE_MAX_BYTES,
   INLINE_IMAGE_MAX_MB,
@@ -151,7 +151,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Channels, Config, Desktop } from "../../hmr/capabilities.js";
 import { Sessions as ManagerIface, SessionServiceIface } from "../../runtime/session-manager.js";
-import { Messaging } from "../../runtime/messaging/bridge.js";
+import { Messaging } from "@prismshadow/penguin-library-messaging/bridge";
 
 import { agentDeletionsRoutes, agentsRoutes } from "./agents.js";
 import { agentConfigRoutes } from "./agent-config.js";

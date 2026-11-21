@@ -47,10 +47,10 @@ import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import {
   MESSAGING_TEST_MESSAGE,
   MESSAGING_UNSUPPORTED_NOTICE,
-} from "../src/runtime/messaging/bridge.js";
-import { MessagingReplyHeldError } from "../src/runtime/messaging/connector.js";
-import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
-import { MessagingMediaTooLargeError } from "../src/runtime/messaging/media.js";
+} from "@prismshadow/penguin-library-messaging/bridge";
+import { MessagingReplyHeldError } from "@prismshadow/penguin-library-messaging/connector";
+import { messagingErrorKind } from "@prismshadow/penguin-library-messaging/error-kind";
+import { MessagingMediaTooLargeError } from "@prismshadow/penguin-library-messaging/media";
 import type {
   WeChatBotClient,
   WeChatCredentials,
@@ -60,13 +60,13 @@ import type {
   WeChatSendArgs,
   WeChatTransport,
   WeChatUpdates,
-} from "../src/runtime/messaging/wechat-api.js";
+} from "@prismshadow/penguin-library-messaging/wechat-api";
 import {
   WECHAT_API_BASE,
   WECHAT_SEND_REFUSED_CODE,
   WeChatApiError,
-} from "../src/runtime/messaging/wechat-api.js";
-import type { WeChatConversationStore } from "../src/runtime/messaging/wechat-connector.js";
+} from "@prismshadow/penguin-library-messaging/wechat-api";
+import type { WeChatConversationStore } from "@prismshadow/penguin-library-messaging/wechat-connector";
 import {
   WECHAT_HELD_HEADER,
   WECHAT_REPLY_BUDGET,
@@ -75,7 +75,7 @@ import {
   createMemoryWeChatConversationStore,
   wechatConfigOf,
   wechatRetryDelayMs,
-} from "../src/runtime/messaging/wechat-connector.js";
+} from "@prismshadow/penguin-library-messaging/wechat-connector";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
 import { MessagingConversationsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-conversations";
