@@ -603,23 +603,23 @@ describe("bootModules", () => {
   });
 });
 
-describe("Interface, in both spellings", () => {
-  // The interface declares its own members.
+describe("Interface", () => {
   @Interface()
   abstract class Clock {
     abstract now(): number;
   }
-  // The interface IS an existing type.
-  type StoreShape = { get(key: string): string | undefined };
-  abstract class Store extends Interface<StoreShape>() {}
+  @Interface()
+  abstract class Store {
+    abstract get(key: string): string | undefined;
+  }
 
-  it("is a runtime handle either way, so a manifest can name it by reference", () => {
+  it("is a runtime handle, so a manifest can name it by reference", () => {
     expect(typeof Clock).toBe("function");
     expect(Clock.name).toBe("Clock");
     expect(typeof Store).toBe("function");
   });
 
-  it("types a consumer the same either way", () => {
+  it("types a consumer structurally", () => {
     class RealClock {
       now() {
         return 7;

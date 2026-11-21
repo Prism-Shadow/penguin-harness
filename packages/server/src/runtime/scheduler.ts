@@ -45,7 +45,10 @@ import {
   validateScheduleModelRef,
 } from "@prismshadow/penguin-library-session/schedule-store";
 import type { ScheduleConfigSource } from "@prismshadow/penguin-library-session/schedule-store";
-import { scheduleStatus, isSettledStatus } from "@prismshadow/penguin-library-session/schedules-status";
+import {
+  scheduleStatus,
+  isSettledStatus,
+} from "@prismshadow/penguin-library-session/schedules-status";
 import type { ScheduleStatus } from "@prismshadow/penguin-library-session/schedules";
 import { Component, Interface, Opaque, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
@@ -92,8 +95,34 @@ export interface ScheduleSessionCreatorShape {
 }
 
 /** What the scheduler needs of the session runtime — declared here, at the consumer (Go style). */
-export abstract class ScheduleSessionCreator extends Interface<ScheduleSessionCreatorShape>() {}
-export abstract class ScheduleTaskRunner extends Interface<ScheduleTaskRunnerShape>() {}
+@Interface()
+export abstract class ScheduleSessionCreator {
+  abstract createSession(args: {
+    projectId: string;
+    agentId: string;
+    workspace?: string;
+    modelId?: string;
+    provider?: string;
+    /**
+     * Unattended creators pass `allow-all`: nobody is there to answer an ask the default
+     * preset's approval mode would bring. A workbench Session that only talks passes
+     * `deny-all`, which asks nobody either.
+     */
+    approvalMode?: "allow-all" | "deny-all";
+    source?: "schedule" | "workbench";
+    client?: "workbench";
+  }): Promise<{ sessionId: string }>;
+}
+
+@Interface()
+export abstract class ScheduleTaskRunner {
+  abstract statusOf(sessionId: string): string;
+  abstract startTask(
+    sessionId: string,
+    input: ReturnType<typeof userText>[],
+    opts?: { queueIfBusy?: boolean },
+  ): Promise<{ sessionId: string; queued: boolean }>;
+}
 
 /**
  * Trigger input = a `[scheduled_task]` origin block (task name and fire time) + the prompt

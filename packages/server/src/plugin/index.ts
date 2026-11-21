@@ -7,7 +7,7 @@
  * which of the two it needs — a sandbox backend, written against the sandbox vocabulary
  * and nothing else, names core alone. What the harness adds is the set of INTERFACES an
  * plugin module may require — a component class (`AgentService`, whose public surface
- * is its contract) or an abstract interface class (`extends Interface<…>()`) declared
+ * is its contract) or an `@Interface()` interface class declared
  * beside its owner — reachable as `<module>#<Export>` in a manifest's `requires`.
  *
  * A code plugin reaches the host through this module alone (API shapes, types only, come from

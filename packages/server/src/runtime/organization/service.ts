@@ -2867,62 +2867,348 @@ function calendarStatus(
  * the route group names one node instead of reaching into a bag. The Agent routes read the
  * two employment views (the list's marks, the delete guard).
  */
-export abstract class OrgService extends Interface<
-  Pick<
-    OrganizationService,
-    | "employments"
-    | "employmentCensus"
-    | "employersOf"
-    | "list"
-    | "create"
-    | "detail"
-    | "delete"
-    | "patch"
-    | "leave"
-    | "suggestId"
-    | "chart"
-    | "hire"
-    | "employeeAvatar"
-    | "setEmployeeAvatar"
-    | "patchEmployee"
-    | "desk"
-    | "sessions"
-    | "calendar"
-    | "upsertCalendar"
-    | "deleteCalendar"
-    | "tickets"
-    | "ticket"
-    | "createTicket"
-    | "updateTicket"
-    | "moveTicket"
-    | "blockTicket"
-    | "unblockTicket"
-    | "progressTicket"
-    | "startTicket"
-    | "attachTicket"
-    | "channels"
-    | "channel"
-    | "createChannel"
-    | "patchChannel"
-    | "addChannelMember"
-    | "removeChannelMember"
-    | "channelMessages"
-    | "sendChannelMessage"
-    | "markRead"
-    | "finance"
-    | "handbook"
-    | "writeHandbook"
-    | "handbookFiles"
-    | "handbookFile"
-    | "writeHandbookFile"
-    | "deleteHandbookFile"
-  >
->() {}
+@Interface()
+export abstract class OrgService {
+  // ---------------------------------------------------------------------------
+  // Organizations
+  // ---------------------------------------------------------------------------
+  /**
+   * Which organizations of the Project employ which Agents, by Agent id: every chart entry of
+   * every organization directory the store lists — paused ones included, since a paused
+   * organization keeps every desk reachable — plus each organization's CEO id, which stands
+   * even while the chart does not parse (the CEO is the one employee an organization cannot be
+   * without, and its id is fixed by the organization's). The Agent list marks employees with
+   * it, and an employee's Agent cannot be deleted. A directory removed by hand is not listed,
+   * so it employs nobody. A record rather than a Map, since it crosses the service interface;
+   * read it with `Object.hasOwn`, as an Agent id may be any word, `constructor` included.
+   */
+  abstract employments(projectId: string): Promise<Record<string, Employment[]>>;
+
+  /**
+   * {@link employments}, and the organizations whose `org_chart.yaml` is missing or does not
+   * parse: beyond their CEO, whom they employ is unknown. Deleting an organization with its
+   * Agents reads both, and keeps an employee it cannot prove is employed nowhere else.
+   */
+  abstract employmentCensus(projectId: string): Promise<EmploymentCensus>;
+
+  /** The organizations employing one Agent (see `employments`); empty when none does. */
+  abstract employersOf(projectId: string, agentId: string): Promise<Employment[]>;
+
+  abstract list(projectId: string): Promise<OrganizationSummary[]>;
+
+  /**
+   * Creates an organization as one whole: directory and files, the CEO Agent (with the
+   * company and orchestration plugins and an employee brief), then the initialization work
+   * run on the CEO's desk. Any failure removes what was written; a taken CEO id is a 409
+   * before anything is touched.
+   */
+  abstract create(
+    projectId: string,
+    req: OrganizationCreateRequest,
+    userId: string,
+  ): Promise<OrganizationDetail>;
+
+  abstract detail(projectId: string, orgId: string, userId: string): Promise<OrganizationDetail>;
+
+  /**
+   * Deletes the organization — and ONLY the organization: its directory goes to the Project's
+   * trash (store.trash), whole and restorable, and the rows this server derived from it go
+   * with it, since a new organization under the same id must not inherit
+   * another's read cursors, calendar state or pending notices.
+   *
+   * What it had is left exactly as it is: deleting its employees' Agents too is the route's
+   * choice, made after this (services/organization-deletion.ts). Here its employees stay
+   * Agents of the Project, with everything they learned. Its desk and ticket Sessions stay
+   * too, still marked as an organization's (`client = org`), so they do not spill into
+   * development mode's list; with the organization gone no page lists them either, which is
+   * the price of not deleting conversations along with a company.
+   *
+   * Under the organization's lock, so a pass in flight finishes first and the next one finds
+   * no directory — the same state a hand-removed directory always was.
+   */
+  abstract delete(projectId: string, orgId: string): Promise<void>;
+
+  abstract patch(
+    projectId: string,
+    orgId: string,
+    req: OrganizationPatchRequest,
+    userId: string,
+  ): Promise<OrganizationSettings>;
+
+  /** Removes the employee from the tree (subordinates move up to its manager); the Agent and its sessions stay. */
+  abstract leave(projectId: string, orgId: string, agentId: string): Promise<void>;
+
+  /**
+   * A semantic id for a display name (the organization and channel dialogs name the thing
+   * first and derive the id): the shared proposal (semantic-id-suggest.ts) with the kind's
+   * prefix, the ids the dialog passed in to avoid, and every model dead end recorded as the
+   * organization's.
+   */
+  abstract suggestId(
+    projectId: string,
+    req: SemanticIdSuggestRequest,
+  ): Promise<SemanticIdSuggestResponse>;
+
+  // ---------------------------------------------------------------------------
+  // Employees, desks, handbook
+  // ---------------------------------------------------------------------------
+  abstract chart(projectId: string, orgId: string): Promise<OrgChartResponse>;
+
+  abstract hire(projectId: string, orgId: string, req: OrgHireRequest): Promise<OrgEmployeeItem>;
+
+  /** The employee's avatar image (organization/avatars.ts); 404 when it has none. */
+  abstract employeeAvatar(
+    projectId: string,
+    orgId: string,
+    agentId: string,
+  ): Promise<{
+    bytes: Buffer;
+    mime: string;
+    rev: string;
+  }>;
+
+  /** Sets the employee's avatar from a data URL; `null` removes it. */
+  abstract setEmployeeAvatar(
+    projectId: string,
+    orgId: string,
+    agentId: string,
+    avatar: string | null,
+  ): Promise<OrgEmployeeItem>;
+
+  abstract patchEmployee(
+    projectId: string,
+    orgId: string,
+    agentId: string,
+    req: OrgEmployeePatchRequest,
+  ): Promise<OrgEmployeeItem>;
+
+  abstract desk(
+    projectId: string,
+    orgId: string,
+    agentId: string,
+    opts: {
+      renew?: boolean;
+    },
+  ): Promise<OrgDeskResponse>;
+
+  abstract sessions(projectId: string, orgId: string): Promise<OrgSessionsResponse>;
+
+  abstract calendar(projectId: string, orgId: string): Promise<OrgCalendarResponse>;
+
+  abstract upsertCalendar(
+    projectId: string,
+    orgId: string,
+    agentId: string,
+    name: string,
+    fields: Omit<OrgCalendarUpsertRequest, "agentId" | "name">,
+    opts: {
+      create: boolean;
+    },
+  ): Promise<OrgCalendarWriteResponse>;
+
+  abstract deleteCalendar(
+    projectId: string,
+    orgId: string,
+    agentId: string,
+    name: string,
+  ): Promise<void>;
+
+  abstract tickets(projectId: string, orgId: string): Promise<OrgTicketsResponse>;
+
+  abstract ticket(projectId: string, orgId: string, ticketId: string): Promise<OrgTicketDetail>;
+
+  abstract createTicket(
+    projectId: string,
+    orgId: string,
+    req: OrgTicketCreateRequest,
+    actor: Actor,
+  ): Promise<OrgTicketDetail>;
+
+  abstract updateTicket(
+    projectId: string,
+    orgId: string,
+    ticketId: string,
+    req: OrgTicketUpdateRequest,
+    actor: Actor,
+  ): Promise<OrgTicketDetail>;
+
+  abstract moveTicket(
+    projectId: string,
+    orgId: string,
+    ticketId: string,
+    status: OrgTicketStatus,
+    reason: string | undefined,
+    actor: Actor,
+  ): Promise<OrgTicketDetail>;
+
+  abstract blockTicket(
+    projectId: string,
+    orgId: string,
+    ticketId: string,
+    reason: string,
+    by: string | undefined,
+    actor: Actor,
+  ): Promise<OrgTicketDetail>;
+
+  abstract unblockTicket(
+    projectId: string,
+    orgId: string,
+    ticketId: string,
+    actor: Actor,
+  ): Promise<OrgTicketDetail>;
+
+  abstract progressTicket(
+    projectId: string,
+    orgId: string,
+    ticketId: string,
+    text: string,
+    actor: Actor,
+  ): Promise<OrgTicketDetail>;
+
+  /**
+   * Opens a ticket session. Who may open one is the ticket's own rule: a person may open a
+   * session for any ticket, naming the employee with `agentId`; an employee may open one
+   * only for a ticket it owns. A desk that wants a colleague's ticket worked assigns it and
+   * lets that desk pick it up in its next sweep — an assignment is how work moves between
+   * employees, and a session opened around it leaves the owner with work it never saw. The
+   * owner may still pass `agentId` to enlist a colleague on its OWN ticket, which is how a
+   * request for help in a channel is answered.
+   */
+  abstract startTicket(
+    projectId: string,
+    orgId: string,
+    ticketId: string,
+    req: {
+      agentId?: string;
+      message?: string;
+      workspace?: string;
+    },
+    actor: Actor,
+  ): Promise<{
+    sessionId: string;
+  }>;
+
+  abstract attachTicket(
+    projectId: string,
+    orgId: string,
+    ticketId: string,
+    sessionId: string,
+    actor: Actor,
+  ): Promise<OrgTicketDetail>;
+
+  /** People are the board and see every channel; an employee sees the channels it belongs to. */
+  abstract channels(projectId: string, orgId: string, actor: Actor): Promise<OrgChannelsResponse>;
+
+  abstract channel(
+    projectId: string,
+    orgId: string,
+    channelId: string,
+    actor: Actor,
+  ): Promise<OrgChannelDetail>;
+
+  /** A new channel holds exactly its creator; everyone else arrives by invitation (people may also join). */
+  abstract createChannel(
+    projectId: string,
+    orgId: string,
+    req: OrgChannelCreateRequest,
+    actor: Actor,
+  ): Promise<OrgChannelItem>;
+
+  abstract patchChannel(
+    projectId: string,
+    orgId: string,
+    channelId: string,
+    req: OrgChannelPatchRequest,
+    actor: Actor,
+  ): Promise<OrgChannelItem>;
+
+  /** Any member invites; a person may also join by itself, an employee may not. */
+  abstract addChannelMember(
+    projectId: string,
+    orgId: string,
+    channelId: string,
+    rawPrincipal: string,
+    actor: Actor,
+  ): Promise<OrgChannelDetail>;
+
+  /** A member removes itself; a person may remove anyone. Removing a non-member changes nothing. */
+  abstract removeChannelMember(
+    projectId: string,
+    orgId: string,
+    channelId: string,
+    rawPrincipal: string,
+    actor: Actor,
+  ): Promise<void>;
+
+  // ---------------------------------------------------------------------------
+  // Channel messages
+  // ---------------------------------------------------------------------------
+  abstract channelMessages(
+    projectId: string,
+    orgId: string,
+    actor: Actor,
+    channelId: string,
+    opts: {
+      date?: string;
+    },
+  ): Promise<OrgChannelMessagesResponse>;
+
+  abstract sendChannelMessage(
+    projectId: string,
+    orgId: string,
+    userId: string,
+    channelId: string,
+    req: OrgChannelMessageSendRequest,
+  ): Promise<OrgChannelMessage>;
+
+  abstract markRead(
+    projectId: string,
+    orgId: string,
+    userId: string,
+    channelId: string,
+    upTo: string,
+  ): Promise<void>;
+
+  // ---------------------------------------------------------------------------
+  // Finance and sessions
+  // ---------------------------------------------------------------------------
+  abstract finance(projectId: string, orgId: string, period?: string): Promise<OrgFinanceResponse>;
+
+  abstract handbook(projectId: string, orgId: string): Promise<string>;
+
+  abstract writeHandbook(projectId: string, orgId: string, content: string): Promise<void>;
+
+  /** The handbook directory is the company's knowledge base; the index is listed first. */
+  abstract handbookFiles(projectId: string, orgId: string): Promise<OrgHandbookFilesResponse>;
+
+  abstract handbookFile(
+    projectId: string,
+    orgId: string,
+    rel: string,
+  ): Promise<OrgHandbookFileResponse>;
+
+  abstract writeHandbookFile(
+    projectId: string,
+    orgId: string,
+    rel: string,
+    content: string,
+  ): Promise<OrgHandbookFileResponse>;
+
+  /** The index stays: it is what every trigger tells the employee to read. */
+  abstract deleteHandbookFile(projectId: string, orgId: string, rel: string): Promise<void>;
+}
 
 /** The organization scheduler as the boot sequence drives it (the pass itself is internal). */
-export abstract class OrgScheduler extends Interface<
-  Pick<OrganizationScheduler, "start" | "stop">
->() {}
+@Interface()
+export abstract class OrgScheduler {
+  /**
+   * The periodic pass, and one pass now — the returned promise is that first pass. The tick is
+   * armed first, so a stop that comes while the pass runs leaves nothing armed.
+   */
+  abstract start(): Promise<void>;
+
+  abstract stop(): void;
+}
 
 /**
  * Company mode's runtime, assembled over the same narrow seams the schedule scheduler

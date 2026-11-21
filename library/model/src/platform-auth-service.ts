@@ -582,6 +582,23 @@ export class PlatformAuthService {
 }
 
 /** The per-App key authorization capability consumed by Project model routes. */
-export abstract class PlatformAuth extends Interface<
-  Pick<PlatformAuthService, "start" | "status" | "retryApply" | "sync" | "cancel">
->() {}
+@Interface()
+export abstract class PlatformAuth {
+  abstract start(input: { projectId: string; userId: string }): Promise<{
+    flowId: string;
+    authorizeUrl: string;
+    expiresAt: string;
+  }>;
+  abstract status(input: {
+    flowId: string;
+    projectId: string;
+    userId: string;
+  }): Promise<PlatformAuthStatusResult>;
+  abstract retryApply(input: {
+    flowId: string;
+    projectId: string;
+    userId: string;
+  }): Promise<PlatformAuthStatusResult>;
+  abstract sync(projectId: string): Promise<PlatformModelApplyResult>;
+  abstract cancel(input: { flowId: string; projectId: string; userId: string }): void;
+}

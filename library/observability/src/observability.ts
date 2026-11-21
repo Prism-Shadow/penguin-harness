@@ -419,7 +419,10 @@ export abstract class UsageRecording {
  * satisfies it (the Provider in packages/server binds the service's field by hand; tests
  * pass a stub). Declared here so the package never imports the server.
  */
-export abstract class UsageClock extends Interface<{ now(): Date }>() {}
+@Interface()
+export abstract class UsageClock {
+  abstract now(): Date;
+}
 
 /** UsageQueries: the mechanism UsageService implements. */
 @Interface()

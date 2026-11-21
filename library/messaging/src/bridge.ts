@@ -75,11 +75,9 @@
 import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { toFallbackMarkdown } from "@prismshadow/a2ui";
-import type {
-  MessagingDeliveryError,
-  MessagingRuntimeStatus,
-} from "./vocabulary.js";
+import type { MessagingDeliveryError, MessagingRuntimeStatus } from "./vocabulary.js";
 import type { MessagingBindingRow } from "./repos/messaging-bindings.js";
+import type { QQScanPoll } from "./qq-scan.js";
 import {
   INLINE_IMAGE_MAX_BYTES,
   toAttachmentLimits,
@@ -2163,32 +2161,52 @@ export class MessagingBridge {
 }
 
 /** What the bridge needs of the session runtime — declared at the consumer. */
-export abstract class MessagingTaskRunner extends Interface<MessagingTaskRunnerShape>() {}
+@Interface()
+export abstract class MessagingTaskRunner {
+  abstract statusOf(sessionId: string): string;
+  abstract startTask(
+    sessionId: string,
+    input: AmspRecord[],
+    opts: { queueIfBusy: boolean; recall?: RecallStore },
+  ): Promise<{ sessionId: string; queued: boolean }>;
+  abstract keepLoaded(sessionId: string, on: boolean): void;
+  abstract preload(sessionId: string): Promise<void>;
+}
 
 /** The chat-channel bridge: bindings, delivery, status. */
-export abstract class Messaging extends Interface<
-  Pick<
-    MessagingBridge,
-    | "start"
-    | "stop"
-    | "sync"
-    | "unbind"
-    | "unbindSession"
-    | "statusOf"
-    | "testCredentials"
-    | "sendTestMessage"
-  >
->() {}
+@Interface()
+export abstract class Messaging {
+  abstract start(): Promise<void>;
+  abstract stop(): void;
+  abstract sync(sessionId: string): Promise<void>;
+  abstract unbind(sessionId: string, channel: string): void;
+  abstract unbindSession(sessionId: string): void;
+  abstract statusOf(sessionId: string, channel: string): MessagingRuntimeStatus;
+  abstract testCredentials(
+    channel: string,
+    config: Record<string, unknown>,
+  ): Promise<{
+    ok: boolean;
+    latencyMs?: number;
+    accountLabel?: string;
+    readsGroupMessages?: boolean;
+    error?: string;
+  }>;
+  abstract sendTestMessage(row: MessagingBindingRow): Promise<void>;
+}
 
-export abstract class QQScan extends Interface<
-  Pick<QQScanService, "start" | "poll" | "cancel" | "cancelSession">
->() {}
+@Interface()
+export abstract class QQScan {
+  abstract start(sessionId: string): Promise<{ taskId: string; qrUrl: string; pollMs: number }>;
+  abstract poll(sessionId: string, taskId: string): Promise<QQScanPoll | null>;
+  abstract cancel(sessionId: string, taskId: string): void;
+  abstract cancelSession(sessionId: string): void;
+}
 
 export interface MessagingSlots {
   /** A channel connector: which channel it speaks (static), and the connector (code). */
   connectors: Slot<{ channel: "feishu" | "telegram" | "qq" | "wechat" }, MessagingChannelConnector>;
 }
-
 
 /**
  * The pacing and budgets the messaging bridge and its connectors run with. Every field is

@@ -34,19 +34,6 @@ export interface OrgTaskRunner {
   ): Promise<{ sessionId: string; queued?: boolean }>;
 }
 
-/**
- * What company mode needs of the session runtime: the task seam above, plus the runtime
- * eviction a plugin update performs (the same one the plugins route does). Declared here,
- * at the consumer, and satisfied by the wider session manager.
- */
-export interface OrgRunsShape extends OrgTaskRunner {
-  invalidateAgentRuntimes(projectId: string, agentId: string): void;
-  /** Subscribes to a Session's model moving (an in-session switch); returns the unsubscribe. */
-  onModelChanged(
-    listener: (sessionId: string, model: { provider: string; modelId: string }) => void,
-  ): () => void;
-}
-
 /** Session creation (desk and ticket sessions are ordinary sessions of the employee's Agent). */
 export interface OrgSessionCreator {
   createSession(args: {
@@ -188,5 +175,43 @@ export interface OrgDeps {
 }
 
 /** What company mode needs of the session runtime — declared at the consumer (Go style). */
-export abstract class OrgRuns extends Interface<OrgRunsShape>() {}
-export abstract class OrgSessions extends Interface<OrgSessionCreator>() {}
+@Interface()
+export abstract class OrgRuns {
+  abstract statusOf(sessionId: string): SessionStatus;
+  abstract startTask(
+    sessionId: string,
+    input: AmspRecord[],
+    opts?: { queueIfBusy?: boolean },
+  ): Promise<{ sessionId: string; queued?: boolean }>;
+  /** The runtime eviction a plugin update performs (the same one the plugins route does). */
+  abstract invalidateAgentRuntimes(projectId: string, agentId: string): void;
+  /** Subscribes to a Session's model moving (an in-session switch); returns the unsubscribe. */
+  abstract onModelChanged(
+    listener: (sessionId: string, model: { provider: string; modelId: string }) => void,
+  ): () => void;
+}
+
+@Interface()
+export abstract class OrgSessions {
+  abstract createSession(args: {
+    projectId: string;
+    agentId: string;
+    workspace?: string;
+    modelId?: string;
+    provider?: string;
+    approvalMode?: ApprovalMode;
+    /**
+     * Always "org" here — the runtime opens no other kind of session, and the marker is
+     * what keeps a desk or ticket session out of development mode's list once the
+     * organization is gone. Required rather than optional so a new call site cannot
+     * forget it.
+     */
+    client: "org";
+    /**
+     * Always "company": what kind of conversation a desk or ticket session is, recorded in its
+     * session_meta. It keeps the Session out of every category of the session list, so it is
+     * listed only in company mode's own views. Required for the same reason as `client`.
+     */
+    source: "company";
+  }): Promise<{ sessionId: string; workspace: string }>;
+}

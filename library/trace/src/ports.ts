@@ -4,10 +4,21 @@
  * shapes so it never imports the server.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { PricingLookup } from "./cost.js";
+import type { TieredRates } from "@prismshadow/penguin-library-model";
 
 /** Where the harness root is. The server's `Paths` capability satisfies this structurally. */
-export abstract class TracePaths extends Interface<{ readonly root: string }>() {}
+@Interface()
+export abstract class TracePaths {
+  abstract root: string;
+}
 
 /** Where a Project's pricing table lives. The server's `ProjectConfigStore` satisfies this structurally. */
-export abstract class TracePricing extends Interface<{ getPricing: PricingLookup }>() {}
+@Interface()
+export abstract class TracePricing {
+  /** The Project's current price for a paired reference; resolves undefined when it carries none. */
+  abstract getPricing(
+    projectId: string,
+    provider: string,
+    modelId: string,
+  ): Promise<TieredRates | undefined>;
+}

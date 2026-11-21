@@ -1,9 +1,9 @@
 /**
  * The messaging domain's structural ports: what the connectors and the bridge reach beyond
  * this package's own mechanisms, declared at the consumer (Go style). The server binds them
- * to its own mechanisms in its assembly (see packages/server). A port is spelled with
- * `extends Interface<…>()` rather than `@Interface()` — it is a requirement this package
- * states, not a contract the kernel tables, so the contract table stays untouched.
+ * to its own mechanisms in its assembly (see packages/server). Each port is an interface
+ * class (`@Interface()`), structural like the rest: the server's own capabilities satisfy
+ * them without this package importing the server.
  *
  * This package never imports the server.
  */
@@ -20,7 +20,10 @@ export abstract class MessagingTuning {
 }
 
 /** What the connectors read of the clock: wall time for pacing and fire-at math (the server's `Clock` satisfies it). */
-export abstract class MessagingClock extends Interface<{ now(): Date }>() {}
+@Interface()
+export abstract class MessagingClock {
+  abstract now(): Date;
+}
 
 /**
  * The session event channels, as the bridge reaches them: one channel per Session key, to
@@ -28,9 +31,7 @@ export abstract class MessagingClock extends Interface<{ now(): Date }>() {}
  * domain's event shape). Subscribing returns the unsubscribe half.
  */
 export interface MessagingChannels {
-  get(
-    key: string,
-  ): {
+  get(key: string): {
     subscribe(
       listener: (evt: import("@prismshadow/penguin-library-session").ChannelEvent) => void,
     ): () => void;

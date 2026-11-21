@@ -621,6 +621,26 @@ export class ModelScopeAuthService {
 }
 
 /** The per-App ModelScope key authorization capability consumed by Project model routes. */
-export abstract class ModelScopeAuth extends Interface<
-  Pick<ModelScopeAuthService, "start" | "status" | "retryApply" | "cancel" | "ensureFresh">
->() {}
+@Interface()
+export abstract class ModelScopeAuth {
+  abstract ensureFresh(input: {
+    projectId: string;
+    provider: string;
+  }): Promise<ModelScopeRefreshResult>;
+  abstract start(input: { projectId: string; userId: string }): Promise<{
+    flowId: string;
+    authorizeUrl: string;
+    expiresAt: string;
+  }>;
+  abstract status(input: {
+    flowId: string;
+    projectId: string;
+    userId: string;
+  }): Promise<ModelScopeAuthStatusResult>;
+  abstract retryApply(input: {
+    flowId: string;
+    projectId: string;
+    userId: string;
+  }): Promise<ModelScopeAuthStatusResult>;
+  abstract cancel(input: { flowId: string; projectId: string; userId: string }): void;
+}

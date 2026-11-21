@@ -379,22 +379,60 @@ function copySettings(settings: SandboxSettings): SandboxSettings {
 }
 
 /** Confinement: settings, the active confiner, and which backends are mounted. */
-export abstract class Sandbox extends Interface<
-  Pick<
-    SandboxService,
-    | "configure"
-    | "currentSettings"
-    | "parkedSettings"
-    | "backends"
-    | "failures"
-    | "declined"
-    | "origins"
-    | "retryFailed"
-    | "confiner"
-    | "confinerFor"
-    | "whenReady"
-  >
->() {}
+@Interface()
+export abstract class Sandbox {
+  /** Replaces the active settings (the config surface's write path). */
+  abstract configure(settings: SandboxSettings): void;
+  /** The active settings as a plain copy (the config surface's read side). */
+  abstract currentSettings(): SandboxSettings;
+  /**
+   * The active settings as parked state, or undefined for the pristine default. The
+   * omission is load-bearing compatibility: a default deployment keeps parking
+   * `{ motd }`, which any platform bundle's context schema accepts. Once confinement
+   * is configured the field enters the document, and from then on pushing a
+   * sandbox-ignorant bundle is BLOCKED by schema validation — the right failure:
+   * refusing the swap beats a swap that silently un-confines the deployment.
+   */
+  abstract parkedSettings(): SandboxSettings | undefined;
+  /**
+   * The mounted backends and what each implements, in routing preference: the one a policy
+   * goes to first (diagnostics / the config surface).
+   */
+  abstract backends(): Array<{
+    name: string;
+    dimensions: readonly SandboxDimension[];
+    mechanism?: string;
+    limits?: readonly SandboxLimit[];
+  }>;
+  /** The backends that failed to load, each with why (diagnostics / the config surface). */
+  abstract failures(): Array<{ name: string; reason: string }>;
+  /** The backends that declined because this host is not theirs (the config surface). */
+  abstract declined(): string[];
+  /**
+   * Every registered backend in routing order, with the package of the plugin that registered
+   * it when one did: what the settings page links each backend's line to (its plugin's page).
+   */
+  abstract origins(): Array<{ name: string; package?: string }>;
+  /**
+   * Loads again every backend whose load failed and that registered a loader (a bare promise
+   * cannot be re-run). Called after the sandbox's settings are saved: a backend whose check
+   * failed on its own setting mounts once that setting is fixed. Resolves when those settle.
+   */
+  abstract retryFailed(): Promise<void>;
+  /**
+   * The closure handed to the runtime: rewrites each spawn's argv under the active
+   * settings. Pure and self-contained, so the previous platform's confiner keeps
+   * serving during a hot-swap freeze window.
+   */
+  abstract confiner(): SpawnConfiner;
+  /**
+   * The same closure under a policy the caller keeps — a Session's own snapshot. The
+   * backends are still this service's, so a backend change reaches every Session.
+   */
+  abstract confinerFor(policyOf: () => SandboxSettings): SpawnConfiner;
+  /** Resolves when every registered backend has loaded (or failed to). */
+  abstract whenReady(): Promise<void>;
+}
 
 export interface SandboxSlots {
   /**

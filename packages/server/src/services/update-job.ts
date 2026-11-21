@@ -143,7 +143,16 @@ export const spawnUpdateRunner: UpdateRunner = (cliEntry, onOutput) =>
   });
 
 /** The self-update run as a node, so a test stands in a scripted runner for the real spawn. */
-export abstract class UpdateJob extends Interface<Pick<UpdateJobService, "status" | "start">>() {}
+@Interface()
+export abstract class UpdateJob {
+  /** The job as it stands (idle / running with progress / done with its result). */
+  abstract status(): UpdateJobStatus;
+  /**
+   * Starts a run unless one is in flight (then it is simply joined). `cliEntry` null — no
+   * CLI to run — ends at once as `unsupported`.
+   */
+  abstract start(cliEntry: string | null, targetVersion: string | null): UpdateJobStatus;
+}
 
 @Component()
 export class UpdateJobService implements UpdateJob {
