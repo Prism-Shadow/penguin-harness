@@ -130,7 +130,7 @@ Human ──run(newMessages)──► engine
 | 达到 max_turns | `error_code` 为 `max_turns` 的 `abort` 事件（`error_message` 为 `reached max turns (N)`）→ 运行结束；未提交的输入按补发保留 |
 | Task 边界 | `task_begin` 是一个 Task 的第一条消息，先于其输入；`task_end` 是最后一条，位于 stop 钩子的 `hook` 事件之后。goal 的每一轮是一个自带一对记录的 Task，注入的输入跟在它的 `task_begin` 之后。抛出异常的 Task 没有 `task_end` |
 | Prompt 本身 | 写入 Trace，但不回流（调用方已经有了）。服务器在本次运行的第一个 `task_begin` 之后把它回显到 SSE 通道上，与 Trace 中的顺序相同 |
-| `session_meta` | 主 Session 的输出流只在会话内切换模型时产出它，作为切换的最后一条：新上下文的 meta，记录 Session 此后所用的模型。其余时候它在 Trace 与历史接口中。子 Agent 子流的第一条消息是子 Session 的 `session_meta` |
+| `session_meta` | 主 Session 的每条 `session_meta` 都在写入时推入输出流，恰好一次：新 Session 的第一条消息，以及压缩或会话内切换模型开启的上下文——在其文件随下一条消息开出时（排在该 Task 的 `task_begin` 之后、输入之前）。切换本身以一条 `session_update` 结束，记录 Session 此后所用的模型。子 Agent 子流的第一条消息是子 Session 的 `session_meta` |
 
 ## 跨 Session：origin 链
 

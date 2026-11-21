@@ -342,6 +342,8 @@
    * - `data-layout-motion`: an element whose size changes between states, the sidebar's width or a
    *   disclosure's `grid-template-rows: 0fr ↔ 1fr` — or whose place does, a dock surface lifting
    *   off the page column to cover it (`top`, `left`); the theme sets the duration and the curve.
+   *   Two values name a shared element instead, a surface unfolding from its trigger:
+   *   `shared-bounds` moves its clip, `shared-artwork` its pieces' transform and opacity.
    * - `data-fold="open" | "closing" | "settled"` beside it: a fold's body (`Fold`). The phase is
    *   the track — `1fr` open or settled, `0fr` closing — and a body opened after mount starts at
    *   `0fr` through `@starting-style`, so it enters the way it leaves. Never `auto`.
@@ -504,6 +506,16 @@
       top, left;
     transition-duration: var(--ui-dur-layout);
     transition-timing-function: var(--ui-ease-layout);
+  }
+  /* A shared element (UnfoldSurface) keeps its final box in layout while its visible bounds
+     travel from its source's, and its artwork from the source's previews; artwork with no
+     preview fades in place. The component writes both endpoints; the same theme timing and both
+     reduced-motion overrides apply. */
+  [data-layout-motion="shared-bounds"] {
+    transition-property: clip-path;
+  }
+  [data-layout-motion="shared-artwork"] {
+    transition-property: transform, opacity;
   }
   [data-layout-motion][data-fold] {
     grid-template-rows: 1fr;

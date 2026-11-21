@@ -82,7 +82,17 @@ function BenchmarkView({ benchmark }: { benchmark: BenchmarkDetail }) {
             <HubTag glyph="clock">{t.upTo(durationText(benchmark.maxTimeout))}</HubTag>
           )}
           <HubTag glyph="hash">{benchmark.version}</HubTag>
-          {benchmark.data && <HubTag glyph="database">{t.withData}</HubTag>}
+          {(benchmark.dataUrl || benchmark.data) && (
+            <HubTag glyph="database">
+              {benchmark.dataUrl ? (
+                <ExternalLink href={benchmark.dataUrl} className="hover:underline">
+                  {t.withData}
+                </ExternalLink>
+              ) : (
+                t.withData
+              )}
+            </HubTag>
+          )}
         </>
       }
       sourceUrl={benchmark.sourceUrl}

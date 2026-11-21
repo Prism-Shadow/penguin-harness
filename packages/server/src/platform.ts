@@ -97,7 +97,7 @@ import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { UsageService } from "./services/usage-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
-import { ModelOAuthService } from "./services/model-oauth-service.js";
+import { ModelOAuthProvider } from "./services/model-oauth-service.js";
 import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
 import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
@@ -160,7 +160,6 @@ import { PluginModuleRequestsRepo } from "@prismshadow/penguin-library-setting/r
 import { PluginModules } from "./mechanisms/plugins.js";
 import { PluginModulesService } from "./services/plugin-modules.js";
 import { PluginModuleRoutes } from "./http/routes/plugin-modules.js";
-import { PluginUiRoutes } from "./http/routes/plugin-ui.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
@@ -353,7 +352,7 @@ export class IdentityModule {}
     ShippedBuiltinBenchmarkSeeds,
     ProjectService,
     ProjectConfigService,
-    ModelOAuthService,
+    ModelOAuthProvider,
     PlatformAuthProvider,
     ModelScopeAuthProvider,
     ProjectsRoutes,
@@ -555,7 +554,6 @@ export class CompanyModule {}
     NpmPluginPackages,
     InstalledPluginRoutes,
     PluginCliCommandsProvider,
-    PluginUiRoutes,
     SuggestIdRoutes,
     LanguagesModule,
     LanguageRoutes,

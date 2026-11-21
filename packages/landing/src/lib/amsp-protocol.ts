@@ -180,6 +180,12 @@ export interface TaskEndPayload {
   type: "task_end";
 }
 
+export interface SessionUpdatePayload {
+  type: "session_update";
+  provider?: string;
+  model_id?: string;
+}
+
 export interface RequestBeginPayload {
   type: "request_begin";
   thinking_level?: ThinkingLevel;
@@ -264,6 +270,7 @@ export interface McpConnectEndPayload extends ErrorInfo {
 export type EventPayload =
   | TaskBeginPayload
   | TaskEndPayload
+  | SessionUpdatePayload
   | RequestBeginPayload
   | RequestEndPayload
   | TokenUsagePayload
