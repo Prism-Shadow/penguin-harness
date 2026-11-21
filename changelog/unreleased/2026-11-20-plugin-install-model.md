@@ -46,14 +46,16 @@ do next.
   `400 plugin_not_published` ("… is not published on <registry> yet"), and a registry that does
   not answer, or a proxy that cannot reach it, gives `400 plugin_source_unreachable`, both within
   seconds and without starting the install; an offline archive is installed instead when the build
-  carries one. Once the registry has answered, the install runs with
-  `--fetch-timeout=60000 --fetch-retries=1`. The index lookup
-  an install makes tries each address once, for 10 s. The note under the card links to Plugin
-  Sources and to Import from file.
+  carries one. On a machine without npm the server asks the same question itself: it reads the
+  package's registry document, each address within 10 s, and the refusals name the registry's
+  host. Once the registry has answered, the install runs with
+  `--fetch-timeout=60000 --fetch-retries=1`. The index lookup an install makes tries each address
+  once, for 10 s. The note under the card links to Plugin Sources and to Import from file.
 - **Offline archives carried by the build.** A repository plugin that the market lists but the
   build does not ship is packed into `offline/` beside the builtin prefix, with its sha512
   recorded. When the registry lacks the package, cannot be reached, or npm is missing, the market
-  installs that archive after checking it. In a workspace checkout the repository's own plugin is
+  installs that archive after checking it; on a machine without npm it is placed without npm. In
+  a workspace checkout the repository's own plugin is
   packed instead. Nothing is preinstalled or loaded from an archive. Market entries carry
   `offline` so the card knows what such a plugin brings before it is installed.
 - **UI package.** `ImpactList` names what a destructive action reaches inside its confirm, and

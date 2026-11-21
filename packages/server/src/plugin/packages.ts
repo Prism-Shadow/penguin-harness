@@ -13,9 +13,11 @@
 import { Component } from "@prismshadow/penguin-core/kernel";
 import type { PluginPackages } from "../mechanisms/plugins.js";
 import {
+  checkFromRegistry,
   installChannel as installChannelWithoutNpm,
   installFiles as installFilesWithoutNpm,
   installFromRegistry,
+  installTarball as installTarballWithoutNpm,
   removeWithoutNpm,
   type WithoutNpm,
 } from "./direct-install.js";
@@ -63,13 +65,14 @@ export class NpmPluginPackages implements PluginPackages {
 
   /**
    * Whether the registry has a name, asked before it is installed: `npm view` within a short
-   * window (install.ts checkPluginSource). Without npm there is nothing to ask it with, and the
-   * install answers.
+   * window (install.ts checkPluginSource); without npm, the registry's document, each address
+   * within the same window (direct-install.ts checkFromRegistry).
    */
   check(root: string, spec: string): Promise<void> {
-    return this.withoutNpm() === null
+    const direct = this.withoutNpm();
+    return direct === null
       ? checkPluginSource(root, spec, this.io.npm)
-      : Promise.resolve();
+      : checkFromRegistry(spec, direct);
   }
 
   /** By name or by link (install.ts installPluginSource; without npm, by name only). */
@@ -90,11 +93,15 @@ export class NpmPluginPackages implements PluginPackages {
   }
 
   /**
-   * A verified package tarball on this machine, an offline archive (install.ts
-   * installPluginTarball). It installs through npm only: without npm it is refused as npm missing.
+   * A verified package tarball on this machine, an offline archive: npm installs it
+   * (install.ts installPluginTarball); without npm, it is placed directly
+   * (direct-install.ts installTarball).
    */
   installTarball(root: string, file: string, name: string): Promise<InstalledPackage> {
-    return installPluginTarball(root, file, name, this.io.npm);
+    const direct = this.withoutNpm();
+    return direct === null
+      ? installPluginTarball(root, file, name, this.io.npm)
+      : installTarballWithoutNpm(root, file, name, direct);
   }
 
   /** A version from the published index's release channel (install.ts installPluginChannel). */

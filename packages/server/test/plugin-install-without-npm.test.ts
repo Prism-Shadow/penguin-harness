@@ -11,7 +11,9 @@
  * - When the admin then removes it, its directory and its record go, without npm.
  * - When the registry does not have the name, the published index's release channel answers:
  *   the asset is verified, placed and kept in `archives/`, which the prefix records; when neither
- *   has it, the refusal says so in the installer's own words, not as npm's.
+ *   has it, the refusal says the package is not published on the registry's host, not as npm's.
+ * - When the registry does not answer and the build carries an offline archive of the name, the
+ *   archive is placed and recorded as `file:archives/…`; npm never runs.
  * - A plugin with dependencies is refused before its tarball is fetched; the refusal names the
  *   dependency and how to get npm, does not read as npm's own, and nothing lands.
  * - A package the registry serves that is no plugin is taken out again, and the refusal does
@@ -373,9 +375,52 @@ describe("the installed-plugins routes on a machine without npm", () => {
     expect(res.status).toBe(400);
     const { code, message } = ((await res.json()) as { error: { code: string; message: string } })
       .error;
-    // The not-published refusal leads with the cause; it never says npm said it.
+    // The not-published refusal leads with the cause and names the registry's host; it never
+    // says npm said it.
     expect(code).toBe("plugin_not_published");
-    expect(message).toBe("@acme/nowhere is not published on the npm registry yet.");
+    expect(message).toBe("@acme/nowhere is not published on registry.npmjs.org yet.");
+  });
+
+  it("installs the build's offline archive without npm when the registry does not answer", async () => {
+    // The archive staged in the installation's builtin prefix the way scripts/build-plugins.mjs
+    // stages it (the program entry points into that installation). The fetch fake has no route
+    // for the name: every address fails as an unresolved host does.
+    const entry = process.argv[1];
+    const builtin = path.join(t.root, "install", "plugins");
+    const offline = path.join(builtin, "offline");
+    const files = skillsPlugin("@acme/desk", "1.0.0");
+    const asset = packageTarball(files);
+    await fs.mkdir(path.join(offline, "desk"), { recursive: true });
+    await fs.writeFile(path.join(builtin, "package.json"), '{"name":"prefix","private":true}');
+    await fs.writeFile(path.join(offline, "acme-desk-1.0.0.tgz"), asset);
+    await fs.writeFile(path.join(offline, "desk", "package.json"), files["package.json"]!);
+    await fs.writeFile(path.join(offline, "desk", "ifaces.json"), files["ifaces.json"]!);
+    await fs.writeFile(
+      path.join(offline, "index.json"),
+      JSON.stringify([
+        {
+          name: "@acme/desk",
+          version: "1.0.0",
+          file: "acme-desk-1.0.0.tgz",
+          integrity: integrityOf(asset),
+          meta: "desk",
+        },
+      ]),
+    );
+    process.argv[1] = path.join(t.root, "install", "bin", "server.js");
+    try {
+      const res = await install("@acme/desk");
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as InstalledPluginsResponse).installed).toMatchObject({
+        name: "@acme/desk",
+        version: "1.0.0",
+        from: "offline",
+      });
+      expect((await prefixDeps(t.root))["@acme/desk"]).toBe("file:archives/acme-desk-1.0.0.tgz");
+      expect(npm.runs).toEqual([]);
+    } finally {
+      if (entry !== undefined) process.argv[1] = entry;
+    }
   });
 
   it("refuses a plugin with dependencies before fetching its tarball, saying why and how to get npm", async () => {
@@ -991,7 +1036,8 @@ describe("installing without npm", () => {
       installFromRegistry(root, "@acme/notes", io(serving(new Map()))),
       /could not read @acme\/notes from the registry: .*registry\.example.*unreachable.*mirror\.example.*unreachable/,
     );
-    expect(err.reason).toBe("other");
+    // As npm's network failures are: the offline archive may still answer.
+    expect(err.reason).toBe("unreachable");
   });
 
   it.each<[string, string, RegExp, "unavailable" | "other"]>([
