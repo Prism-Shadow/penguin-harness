@@ -156,13 +156,17 @@ export function promptLine(
  * Falls back to a plain read when the input is not a TTY, so a password can be piped in — the
  * echo is the only thing being suppressed, not the ability to script. `stdin` as for
  * `promptLine`.
+ *
+ * Echo goes off BEFORE the prompt is shown. libuv applies raw mode with `tcsetattr(TCSADRAIN)`,
+ * which on macOS takes effect only once the terminal has read what is still queued for it — the
+ * prompt, had it been written first — and reading the prompt is what tells the person (or a
+ * test) to type. Keys typed in that window were echoed by the terminal, password included.
  */
 export function promptPassword(
   prompt: string,
   stdin: NodeJS.ReadStream = process.stdin,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    process.stderr.write(prompt);
     const raw = stdin.isTTY === true;
     let value = "";
     const done = (out: string) => {
@@ -195,6 +199,7 @@ export function promptPassword(
       }
     };
     if (raw) stdin.setRawMode(true);
+    process.stderr.write(prompt);
     stdin.resume();
     stdin.on("data", onData);
   });

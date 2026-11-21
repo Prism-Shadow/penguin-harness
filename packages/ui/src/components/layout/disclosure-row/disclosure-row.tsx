@@ -15,7 +15,7 @@
  * moves nothing, and text streaming into an open body grows it without a tween, since only the
  * track's value transitions.
  */
-import { useRef, useState } from "react";
+import { useContext, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useUiStrings } from "../../../strings";
 import { Chevron } from "../../icons/chevron/chevron";
@@ -23,6 +23,7 @@ import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import type { RunState } from "../../icons/status-icon/status-icon";
 import { WallpaperBackdrop } from "../../shell/app-shell/wallpaper";
 import { Fold } from "../fold/fold";
+import { DisclosureControlContext, DisclosureRequested } from "./disclosure-control";
 
 /**
  * The row itself (collapsed and expanded share it; the hover fill is the "open or close me"
@@ -242,7 +243,10 @@ export function DisclosureRow({
   children,
 }: DisclosureRowProps) {
   const strings = useUiStrings();
-  const [open, setOpen] = useState(defaultOpen);
+  // A list that pages through its rows holds their disclosure (disclosure-control.ts).
+  const control = useContext(DisclosureControlContext);
+  const [localOpen, setOpen] = useState(defaultOpen);
+  const open = control?.open ?? localOpen;
   const rootRef = useRef<HTMLDivElement>(null);
   /** The reader closed the row: land the view on it once the fold has finished. */
   const landOnClose = useRef(false);
@@ -281,7 +285,8 @@ export function DisclosureRow({
     // in-view collapse). It waits for the fold's end rather than a frame, since while the body
     // is still folding the row is still stuck and the view would land on the wrong place.
     landOnClose.current = open;
-    setOpen((v) => !v);
+    if (control) control.toggle();
+    else setOpen(!open);
   };
   return (
     <div ref={rootRef}>
@@ -341,7 +346,12 @@ export function DisclosureRow({
           rootRef.current?.scrollIntoView({ block: "nearest" });
         }}
       >
-        {children}
+        {/* The control is this row's alone: a row nested in the body holds its own state. */}
+        <DisclosureControlContext.Provider value={null}>
+          <DisclosureRequested.Provider value={control?.requested ?? true}>
+            {children}
+          </DisclosureRequested.Provider>
+        </DisclosureControlContext.Provider>
       </Fold>
     </div>
   );

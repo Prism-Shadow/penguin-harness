@@ -229,6 +229,18 @@ CREATE TABLE IF NOT EXISTS server_settings (   -- admin-level server-global sett
   key   TEXT PRIMARY KEY,                     -- setting name, e.g. 'proxy_for_app'
   value TEXT NOT NULL                         -- JSON-encoded value; an absent row means the setting's built-in default
 );
+CREATE TABLE IF NOT EXISTS plugin_module_requests ( -- who asked this server to run a plugin's server module, and what an administrator decided; one row per package. The record of asks and decisions, not of what runs: the plugin tables are that
+  package      TEXT PRIMARY KEY,              -- npm package name, as a plugin table lists it
+  plugin       TEXT NOT NULL,                 -- the library plugin's name, for display
+  project_id   TEXT REFERENCES projects(project_id) ON DELETE SET NULL, -- whose table lists it, or will; NULL once that Project is gone
+  agent_id     TEXT,                          -- the Agent whose install asked first; display only
+  requested_by TEXT NOT NULL,                 -- user id; '' when no person was behind it (company mode's reconcile)
+  requested_at TEXT NOT NULL,
+  decision     TEXT,                          -- NULL pending | 'enabled' | 'declined'
+  decided_by   TEXT,                          -- equals requested_by when nobody else had to decide
+  decided_at   TEXT,
+  via          TEXT                           -- how it was enabled: 'builtin' | 'admin' | 'approval'; NULL while pending or declined
+);
 CREATE TABLE IF NOT EXISTS machine (           -- this server's OWN identity, minted here and never assigned from outside (what 'penguin server status' reports)
   singleton  INTEGER PRIMARY KEY CHECK (singleton = 1),  -- exactly one row, enforced by the schema rather than by convention
   machine_id TEXT NOT NULL                    -- 16 base64url characters; what every stored reference to this machine points at

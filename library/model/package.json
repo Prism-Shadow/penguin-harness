@@ -28,6 +28,46 @@
       "types": "./dist/model.d.ts",
       "import": "./dist/model.js"
     },
+    "./origins": {
+      "types": "./dist/origins.d.ts",
+      "import": "./dist/origins.js"
+    },
+    "./platform-auth-flow": {
+      "types": "./dist/platform-auth-flow.d.ts",
+      "import": "./dist/platform-auth-flow.js"
+    },
+    "./model-oauth-service": {
+      "types": "./dist/model-oauth-service.d.ts",
+      "import": "./dist/model-oauth-service.js"
+    },
+    "./modelscope-auth-service": {
+      "types": "./dist/modelscope-auth-service.d.ts",
+      "import": "./dist/modelscope-auth-service.js"
+    },
+    "./platform-auth-service": {
+      "types": "./dist/platform-auth-service.d.ts",
+      "import": "./dist/platform-auth-service.js"
+    },
+    "./model-catalog": {
+      "types": "./dist/model-catalog/index.d.ts",
+      "import": "./dist/model-catalog/index.js"
+    },
+    "./model-catalog/catalog": {
+      "types": "./dist/model-catalog/catalog.d.ts",
+      "import": "./dist/model-catalog/catalog.js"
+    },
+    "./model-catalog/client-protocols": {
+      "types": "./dist/model-catalog/client-protocols.d.ts",
+      "import": "./dist/model-catalog/client-protocols.js"
+    },
+    "./model-catalog/env-keys": {
+      "types": "./dist/model-catalog/env-keys.d.ts",
+      "import": "./dist/model-catalog/env-keys.js"
+    },
+    "./model-catalog/seed": {
+      "types": "./dist/model-catalog/seed.d.ts",
+      "import": "./dist/model-catalog/seed.js"
+    },
     "./repos/model-promotions": {
       "types": "./dist/repos/model-promotions.d.ts",
       "import": "./dist/repos/model-promotions.js"
@@ -45,7 +85,9 @@
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-library-agent-api": "workspace:*",
-    "@prismshadow/penguin-library-db": "workspace:*"
+    "@prismshadow/penguin-library-db": "workspace:*",
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/mmsp": "^0.5.10"
   },
   "devDependencies": {
     "tsup": "^8.3.0",

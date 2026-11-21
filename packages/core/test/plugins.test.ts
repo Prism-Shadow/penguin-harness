@@ -16,7 +16,8 @@
  *
  * What the operator installed on the server, on a fixture prefix (useInstalledPluginPrefix):
  * - A package of Skills the prefix depends on joins the library as installed, under its name
- *   without the scope, and is never preinstalled.
+ *   without the scope, and is never preinstalled nor installed on every new Agent, whatever its
+ *   card says.
  * - A package of server modules alone (a card and a code entry), a name the build ships, a
  *   package whose table contributes nothing, and what npm installed beside the prefix's own
  *   packages stay out.
@@ -42,6 +43,8 @@
  * Reading, on a fixture library a temp host package carries (usePushedPluginLibrary):
  * - A plugin whose card sets `preinstall: false` stays in the library and out of the preinstalled
  *   set.
+ * - A plugin whose card sets `defaultInstall: true` is in the set every new Agent gets; one without
+ *   it is not, and a card value that is not a boolean fails a shipped package's load.
  * - A plugin is found by its name, a skill by its own name together with the plugin that ships
  *   it; an unknown or illegal name finds nothing.
  * - A hook package lists the manifest it installs, its points as declared, and every hooks/ file.
@@ -63,6 +66,7 @@ import {
   libraryPlugin,
   libraryPluginPackage,
   librarySkill,
+  loadDefaultInstallPlugins,
   loadLibraryPlugins,
   loadPluginGroups,
   loadPreinstalledPlugins,
@@ -91,8 +95,10 @@ const fakePlugin = (name: string, category?: string): LibraryPlugin => ({
   description: `Do ${name}.`,
   version: "0.2.13",
   preinstall: true,
+  defaultInstall: false,
   skills: [],
   mcpServers: [],
+  modules: false,
   ...(category !== undefined ? { category } : {}),
 });
 
@@ -424,6 +430,34 @@ describe("the library's reading, on a fixture library", () => {
     expect(loadPreinstalledPlugins().map((p) => p.name)).toEqual(["auto"]);
   });
 
+  it("puts a plugin whose card sets defaultInstall: true, and only it, in the set every new Agent gets", async () => {
+    await library({
+      plain: {
+        content: { skills: ["plain"] },
+        files: { "skills/plain/SKILL.md": skillFile("plain", "2026.10.01.1") },
+      },
+      mode: {
+        content: { card: { defaultInstall: true, preinstall: false }, skills: ["mode"] },
+        files: { "skills/mode/SKILL.md": skillFile("mode", "2026.10.01.1") },
+      },
+    });
+
+    expect(loadDefaultInstallPlugins().map((p) => p.name)).toEqual(["mode"]);
+    // The two sets are independent: default_agent's is `preinstall`'s.
+    expect(loadPreinstalledPlugins().map((p) => p.name)).toEqual(["plain"]);
+  });
+
+  it("fails a shipped package whose card's defaultInstall is not true or false", async () => {
+    await library({
+      odd: {
+        content: { card: { defaultInstall: "yes" }, skills: ["odd"] },
+        files: { "skills/odd/SKILL.md": skillFile("odd", "2026.10.01.1") },
+      },
+    });
+
+    expect(() => loadLibraryPlugins()).toThrow(/defaultInstall must be true or false/);
+  });
+
   it("finds a plugin, and a skill by its own name with the plugin that ships it; an unknown or illegal name finds nothing", async () => {
     await library({
       merged: {
@@ -534,13 +568,21 @@ describe("packages the operator installed on the server", () => {
     warn.mock.calls.map((call) => String(call[0])).join("\n");
 
   it("lists a package of Skills the operator installed, as installed and never preinstalled", async () => {
-    await setUp(["@acme/notes"], { "@acme/notes": notes("@acme/notes") });
+    await setUp(["@acme/notes"], {
+      "@acme/notes": notes("@acme/notes", { card: { defaultInstall: true } }),
+    });
     expect(loadLibraryPlugins().map((p) => [p.name, p.packageName, p.source])).toEqual([
       ["notes", "@acme/notes", "installed"],
       ["sample", "@penguinharness/sample", undefined],
     ]);
-    expect(libraryPlugin("notes")).toMatchObject({ version: "2.0.0", preinstall: false });
+    expect(libraryPlugin("notes")).toMatchObject({
+      version: "2.0.0",
+      preinstall: false,
+      defaultInstall: false,
+    });
     expect(loadPreinstalledPlugins().map((p) => p.name)).toEqual(["sample"]);
+    // The operator chose it for the server, not for every new Agent, whatever its card says.
+    expect(loadDefaultInstallPlugins()).toEqual([]);
     expect(libraryPluginPackage("notes")).toMatchObject({
       packageName: "@acme/notes",
       version: "2.0.0",
