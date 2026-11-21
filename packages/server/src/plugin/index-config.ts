@@ -50,7 +50,7 @@ export function indexUrlsOf(doc: Record<string, unknown>): string[] {
               "本部署列出与安装插件时读取的目录：每个地址一份 index.json，按书写顺序尝试，同一插件由更靠前的地址提供。随本版本发布的索引默认在列表中：按部署需要删除或追加地址，或清空列表只读随本服务器内置的插件（不发出任何网络请求）。",
             placeholder: "https://example.com/index.json",
             default: [
-              "https://github.com/Prism-Shadow/penguin-extensions/releases/download/nightly/index.json",
+              "https://github.com/Prism-Shadow/penguin-harness-plugins/releases/download/nightly/index.json",
             ],
             pattern: "^https?://\\S+$",
             patternErrorMessage: "must be an http(s) URL",

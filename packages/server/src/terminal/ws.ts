@@ -151,3 +151,11 @@ function refuse(socket: Duplex, status: number, text: string): void {
   socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\n\r\n`);
   socket.destroy();
 }
+
+/**
+ * The upgrade paths this file serves: the contributed-endpoint seam (hmr/upgrade-seam.ts) never
+ * offers them to a generation, so no module can take a terminal's stream or the API socket.
+ */
+export function isRuntimeUpgradePath(pathname: string): boolean {
+  return pathname === API_SOCKET_PATH || STREAM_PATH.test(pathname);
+}

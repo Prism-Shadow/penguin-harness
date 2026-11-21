@@ -269,6 +269,20 @@ export type ServerEvent =
    */
   | { type: "themes_changed" }
   /**
+   * A Project's tool-model bindings changed (`PATCH …/models/tool-bindings`): tabs that show
+   * them, or offer a tool that needs one, read `GET …/models/tool-bindings` again. On the user
+   * channel of everyone who can see the Project.
+   */
+  | { type: "tool_bindings_changed"; projectId: string }
+  /**
+   * A library plugin's server module changed on this server, through an Agent install or the
+   * administrator's decision (PRFC-0031): it was enabled, asked for, declined or stopped. No
+   * payload: a page re-reads what it shows (an Agent's plugins, the Plugins page, the
+   * administrator's request list). To the administrator, and to the users of the Project the
+   * row belongs to; never a toast.
+   */
+  | { type: "plugin_modules_changed" }
+  /**
    * The App re-assembled itself (a plugin was installed, removed, enabled or disabled), so what
    * `GET /api/contributions` answers may have changed — the plugin server modules it lists in
    * `modules` among it, which decide whether a plugin's web half is drawn. Every signed-in tab
@@ -556,6 +570,23 @@ export abstract class ProjectConfigStore {
     applyKeyToExisting: boolean,
   ): Promise<PlatformModelApplyResult>;
   abstract completeOnce(projectId: string, prompt: string): Promise<UtilityCompletion>;
+  /** The `[tools]` bindings that name a configured model, by key (an empty object when none does). */
+  abstract getToolModels(projectId: string): Promise<Record<string, ModelRefDto>>;
+  /**
+   * Binds `key` to a configured model, or with null unbinds it; answers the bindings as they now
+   * stand. A model the Project does not configure is a 400. Which keys exist, and which models
+   * a key accepts, is the binding's declarer's rule (ToolModelBindings), not this store's.
+   */
+  abstract setToolModel(
+    projectId: string,
+    key: string,
+    model: ModelRefDto | null,
+  ): Promise<Record<string, ModelRefDto>>;
+  /**
+   * The key the host resolves for one request to this model (a managed credential it refreshes,
+   * as a Session's requests get it), or undefined when the file's own connection applies.
+   */
+  abstract modelRequestApiKey(projectId: string, model: ModelRefDto): Promise<string | undefined>;
 }
 
 /**

@@ -66,5 +66,20 @@
     "categories": ["sandbox"],
     "sandboxDefaultFor": ["linux"],
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <path d=\"M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z\" />\n  <path d=\"M10.6 13.2l2.8-2.8\" />\n  <path d=\"M11.4 9.7l.8-.8a1.9 1.9 0 0 1 2.7 2.7l-.8.8\" />\n  <path d=\"M12.6 13.9l-.8.8a1.9 1.9 0 0 1-2.7-2.7l.8-.8\" />\n</svg>\n"
+  },
+  {
+    "name": "@penguinharness/agent-state-git",
+    "title": "Native Git for Agent State",
+    "titleZh": "Agent State 原生 Git",
+    "version": "0.1.0",
+    "description": "Native Git for PenguinHarness Agent State history: GitHub Desktop's dugite builds write workbench versions and read them back, faster than the built-in engine as workbenches grow.",
+    "descriptionZh": "PenguinHarness 的 Agent State 历史原生 Git：以 GitHub Desktop 的 dugite 构建写入与读回 Workbench 版本，应用越大越比内置引擎快。",
+    "shortDescription": "Record workbench versions with native Git.",
+    "shortDescriptionZh": "以原生 Git 记录 Workbench 版本。",
+    "authors": ["Prism Shadow"],
+    "license": "Apache-2.0",
+    "repository": "https://github.com/Prism-Shadow/penguin-harness",
+    "keywords": ["git", "dugite", "agent-state", "workbench-history"],
+    "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <circle cx=\"6\" cy=\"5.5\" r=\"2\" />\n  <circle cx=\"6\" cy=\"18.5\" r=\"2\" />\n  <circle cx=\"18\" cy=\"9\" r=\"2\" />\n  <path d=\"M6 7.5v9\" />\n  <path d=\"M18 11c0 3.5-4 4.5-10.3 6.3\" />\n</svg>\n"
   }
 ]

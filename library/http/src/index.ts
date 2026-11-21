@@ -10,6 +10,7 @@ export {
   badRequest,
   errorBody,
   handleError,
+  isHttpError,
   isMissingCredential,
   modelCredentialMissing,
 } from "./errors.js";

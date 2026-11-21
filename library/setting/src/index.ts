@@ -11,6 +11,9 @@
  * Subpaths:
  * - `.` — the two mechanism contracts (Settings, UiPrefsStore).
  * - `./attachment-limits` — the one place every attachment size number is defined.
+ * - `./plugin-module-requests` — the PluginModuleRequests mechanism and its row (PRFC-0031).
  * - `./repos` (and per-file) — the storing components, wired by the server's platform.
  */
 export { Settings, UiPrefsStore } from "./setting.js";
+export { PluginModuleRequests } from "./plugin-module-requests.js";
+export type { PluginModuleRequestRow, PluginModuleVia } from "./plugin-module-requests.js";

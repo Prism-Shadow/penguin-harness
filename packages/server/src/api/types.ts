@@ -4231,6 +4231,12 @@ export interface PluginItem {
   defaultInstall?: true;
   /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (its mcpServers contributions); `[]` without any. */
   mcpServers: PluginMcpServerItem[];
+  /**
+   * The package also ships server modules (a hybrid plugin): installing it on an Agent also asks
+   * for its modules to run on the Agent's server (PRFC-0031). Absent from a server older than
+   * that, read as false.
+   */
+  modules?: boolean;
 }
 
 /** An MCP transport, as an entry resolves it (`transport`, else inferred from `command` / `url`). */
@@ -4300,6 +4306,12 @@ export interface PluginFilesResponse {
  */
 export interface PluginInstallRequest {
   names: string[];
+  /**
+   * Install the Agent part only and leave every plugin table alone (PRFC-0031): what the Web App
+   * sends to a machine, whose plugin list the hub owns. `modules` still says how each module
+   * stands there. A server older than this ignores the field.
+   */
+  skipModules?: boolean;
 }
 
 export interface AgentPluginsInstallResponse {
@@ -4308,6 +4320,114 @@ export interface AgentPluginsInstallResponse {
   hooks: HookItem[];
   /** The Agent's MCP servers after the install (a plugin's servers join its `tools.mcpServers`). A server name the Agent already has from someone else is 409 `mcp_server_name_taken`, nothing installed. */
   mcpServers: AgentMcpServerItem[];
+  /** Every library plugin that ships server modules, as it stands on this server for this Project (PRFC-0031); absent from a server older than that. */
+  modules?: PluginModuleStatus[];
+  /** POST only: what this install did about each installed plugin's server module; a plugin it left alone is not listed. Absent from a server older than PRFC-0031. */
+  moduleActions?: PluginModuleAction[];
+}
+
+/** How a library plugin's server module stands on this server (PRFC-0031). */
+export type PluginModuleState =
+  /** Loaded in this server's module tree. */
+  | "running"
+  /** Loaded, and this build cannot run it, or runs it without part of itself (`reason`). */
+  | "unsatisfied"
+  /** Some Project lists it for this server and the load failed (`reason`). */
+  | "failed"
+  /** Listed for this server, neither loaded nor failed: waiting for a restart. */
+  | "restart"
+  /** No Project lists it for this server. */
+  | "off";
+
+/** The standing ask to run a module on this server, as a Project member sees it. */
+export interface PluginModuleRequestView {
+  /** `pending`: waiting for the administrator; `declined`: the administrator stopped it, and installs do not bring it back. */
+  status: "pending" | "declined";
+  /** Whether the caller made it. */
+  mine: boolean;
+  requestedAt: string;
+}
+
+/** One library plugin that carries server modules, on this server and for this Project. */
+export interface PluginModuleStatus {
+  /** The library plugin's name: what `names` installs. */
+  plugin: string;
+  /** The npm package name: the specifier a plugin table lists. */
+  package: string;
+  /** Resolves from a prefix this build ships and only adds modules: the automatic path applies. */
+  builtin: boolean;
+  state: PluginModuleState;
+  /** Whether this Project lists it for this server (its shared table, or this server's own). */
+  listed: boolean;
+  /** Why, for `failed` and `unsatisfied`. */
+  reason?: string;
+  request?: PluginModuleRequestView;
+}
+
+/** What one install, or one explicit ask, did about a plugin's server module. */
+export interface PluginModuleAction {
+  plugin: string;
+  /**
+   * `enabled`: listed for this Project on this server, and running (or waiting for a restart);
+   * `requested`: an administrator is asked; `blocked`: the administrator stopped this module;
+   * `failed`: listed, and the module did not start (`reason`) — when the App would not boot with
+   * it, the listing was undone.
+   */
+  action: "enabled" | "requested" | "blocked" | "failed";
+  reason?: string;
+}
+
+/** POST /api/projects/:p/plugins/modules `{ plugin }` (any member): enable a plugin's server module, or ask the administrator to. */
+export interface PluginModuleAskRequest {
+  plugin: string;
+}
+
+/** The answer to an explicit ask: every module's state for this Project, and what the ask did. */
+export interface PluginModuleAskResponse {
+  modules: PluginModuleStatus[];
+  moduleActions: PluginModuleAction[];
+}
+
+/** One row of the ledger of module requests and decisions, for the administrator. */
+export interface PluginModuleRequest {
+  package: string;
+  plugin: string;
+  /** The Project whose table lists it, or will; null when that Project is gone. */
+  projectId: string | null;
+  /** That Project's display name (its id when it has none); null when it is gone. */
+  projectName: string | null;
+  agentId: string | null;
+  /** The user who asked; "" when no person was behind it (company mode's reconcile). */
+  requestedBy: string;
+  /** That user's display name; null when it has none or the user is gone. */
+  requestedByName: string | null;
+  requestedAt: string;
+  /** null = pending. */
+  decision: "enabled" | "declined" | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  /** How it was enabled: `builtin` (automatic), `admin` (the administrator's own act), `approval` (a member's request approved). */
+  via: "builtin" | "admin" | "approval" | null;
+  builtin: boolean;
+  state: PluginModuleState;
+}
+
+/** GET /api/admin/plugin-modules, and the answer to a decision (administrator only). */
+export interface PluginModuleRequestsResponse {
+  requests: PluginModuleRequest[];
+  /** How many rows wait for a decision. */
+  pending: number;
+  /**
+   * After stopping a module: the Projects whose shared table still lists it, so it keeps running
+   * here until it is removed from them on the Plugins page. Absent when nothing else lists it.
+   */
+  stillListedBy?: Array<{ projectId: string; projectName: string }>;
+}
+
+/** POST /api/admin/plugin-modules/decide (administrator only). `decline` on an enabled row stops the module on this server. */
+export interface PluginModuleDecideRequest {
+  package: string;
+  decision: "enable" | "decline";
 }
 
 /**
@@ -4606,6 +4726,77 @@ export interface PluginIndexResponse {
    * once they have arrived, or names the source under `failures` once it has failed.
    */
   pending: string[];
+}
+
+/**
+ * One picture of the plugin market, named by the route this server serves it at
+ * (`GET /api/plugins/market/asset?path=…&rev=…`): the server fetches it from beside the market
+ * document, checks its bytes are a WebP, PNG or JPEG picture and keeps a copy, so a page never
+ * loads a picture from another host. A picture that cannot be had answers 404.
+ */
+export interface MarketImage {
+  /** The full rendition. */
+  url: string;
+  /** The small rendition a card draws; absent, a card draws `url`. */
+  thumbUrl?: string;
+  /** The picture's dominant colour (`#rrggbb`): the field it fades in over. */
+  tone?: string;
+}
+
+/** A screenshot on a plugin's detail: a picture and what it shows. */
+export interface MarketShot extends MarketImage {
+  caption?: string;
+  captionZh?: string;
+}
+
+/** What the market document says a plugin looks like. Every part is optional. */
+export interface PluginArt {
+  cover?: MarketImage;
+  /**
+   * A raster icon, for a plugin whose package is not on this server (an index row has none of its
+   * own); once the package is here, the package's own icon is drawn instead.
+   */
+  icon?: { url: string };
+  screenshots?: MarketShot[];
+}
+
+/**
+ * How many times each plugin is installed, for the market's 热门 / 飙升 (popular / rising) panel:
+ * `installs` in all, `weekly` in the last seven days, by npm package name.
+ *
+ * PLACEHOLDER: no install count exists across deployments yet, so today's numbers are generated
+ * with a fixed seed in the community repository's pipeline and published with
+ * `source: "placeholder"`. Replace them with a real install-count API later: it publishes this
+ * same shape with `source: "live"`, the switch a reader keys on.
+ */
+export interface MarketPopularity {
+  source: "placeholder" | "live";
+  /** The day the numbers were produced (`YYYY-MM-DD`). */
+  generatedAt: string;
+  items: Record<string, { installs: number; weekly: number }>;
+}
+
+/**
+ * GET /api/plugins/market: the market's curation — which plugins are selected, which of them
+ * may lead the selected carousel, and the art of the plugins that have any — keyed by npm package
+ * name (a library plugin's `package`, an index entry's `name`). A name this server does not list
+ * is simply not drawn. `source` says which document answered: the one shipped with this build, or
+ * the published one (plugin/market.ts). Selection is an editorial choice, not a ranking; the only
+ * numbers are the optional `popularity` block, placeholders until a real install-count API exists.
+ */
+export interface PluginMarketResponse {
+  /** Package names allowed to lead the selected carousel, in turn order; each is also in `selected`. */
+  hero: string[];
+  /** Package names of the selected plugins, in display order. */
+  selected: string[];
+  art: Record<string, PluginArt>;
+  source: "embedded" | "published";
+  /**
+   * The document's install counts, as it carries them; absent when it carries none, or a block
+   * that does not read (the rest of the document still answers). Placeholder numbers today
+   * (`source: "placeholder"`), to be replaced by a real install-count API: see MarketPopularity.
+   */
+  popularity?: MarketPopularity;
 }
 
 /**
@@ -6572,6 +6763,16 @@ export interface PluginCliCommandInfo {
   key: string;
   /** Its one-line summary, per language. */
   summary: { en: string; zh: string };
+  /**
+   * Who may run it: the administrator only, or any member of the caller's Project. This server
+   * always says; a client reads an absent one (a server from before member commands) as `admin`.
+   */
+  access?: "admin" | "member";
+  /**
+   * The local files it exchanges: `read`, the options whose value is a file the terminal sends;
+   * `write`, the option naming the directory the terminal saves returned files into.
+   */
+  files?: { read?: string[]; write?: string };
 }
 
 /** GET /api/cli/commands: every command the server's plugins contribute, in load order. */
@@ -6589,13 +6790,39 @@ export interface PluginCliCommandRunRequest {
   language: "en" | "zh";
   /** The program name usage lines print (`penguin`, or `penguin exec <plugin>`). */
   prog: string;
+  /** The caller's Project (an Agent's `PENGUIN_PROJECT_ID`); a member command needs one. */
+  projectId?: string;
+  /** The caller's Session (an Agent's `PENGUIN_SESSION_ID`): a Session of `projectId`. */
+  sessionId?: string;
+  /** The local files the terminal read for the command's `files.read` options. */
+  files?: PluginCliCommandInputFile[];
 }
 
-/** What one run printed, and its exit code. */
+/** One file the terminal sends with a run. */
+export interface PluginCliCommandInputFile {
+  /** The option's value as typed: what the command looks the file up by. */
+  value: string;
+  /** The file's own name, no directory. */
+  name: string;
+  /** Its bytes, base64. */
+  data: string;
+}
+
+/** One file a run hands back to the terminal, which saves it under the command's `files.write`. */
+export interface PluginCliCommandOutputFile {
+  /** A plain file name, no directory. */
+  name: string;
+  mimeType?: string;
+  /** Its bytes, base64. */
+  data: string;
+}
+
+/** What one run printed, its exit code, and the files it handed back. */
 export interface PluginCliCommandRunResponse {
   exitCode: number;
   stdout: string;
   stderr: string;
+  files?: PluginCliCommandOutputFile[];
 }
 
 /**
@@ -7088,6 +7315,8 @@ export interface InstalledPluginsResponse {
   machineId: string;
   /** A listed plugin neither runs, nor failed to load, nor is one this build cannot run: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
   restartPending: boolean;
+  /** Every library plugin that ships server modules, as it stands on this server for this Project (PRFC-0031); absent from a server older than that. */
+  modules?: PluginModuleStatus[];
 }
 
 /**
