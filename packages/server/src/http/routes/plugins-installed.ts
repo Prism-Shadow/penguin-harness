@@ -44,12 +44,16 @@
  * APPLYING. A write asks the App to re-assemble itself (the platform's own `Reassembly`,
  * hmr/platform.ts): the new create() reads the closure and imports what it names — no
  * process restart, ptys and connections delivered across it exactly as a push delivers
- * them. What a push does not deliver, this does not either: agent runs in flight are
- * stopped and pending approvals denied, in EVERY Project, because there is one tree. The
- * page says so before an admin applies a change. The edit itself travels with the
- * re-assembly (ReassemblyChange): written in its queue, so two admins' edits of one file
- * never interleave, and undone when the new tree fails to boot — the previous App is
- * restored on the previous list, and the answer is "did not take".
+ * them, and the Agent state with them (PRFC-0015): the bundle is the same, so its shape is
+ * too, and running Tasks, pending approvals and queued follow-ups go on in every Project. What
+ * the new App rebuilds is the scheduler and the messaging bridge. The edit itself travels with
+ * the re-assembly (ReassemblyChange, services/plugin-tables.ts): written in its queue, so two
+ * admins' edits of one file never interleave, and undone when the new tree fails to boot — the
+ * previous App is restored on the previous list, and the answer is "did not take".
+ *
+ * MODULES OF LIBRARY PLUGINS. A library plugin that also ships server modules is listed here by
+ * an Agent install too, in this server's own table (services/plugin-modules.ts, PRFC-0031); the
+ * view answers how each such module stands for the Project (`modules`).
  */
 import { Hono } from "hono";
 import path from "node:path";
@@ -59,6 +63,7 @@ import type {
   InstalledPlugin,
   InstalledPluginsResponse,
   PluginInstallOutcome,
+  PluginModuleStatus,
   UnsatisfiedPlugin,
 } from "../../api/types.js";
 import { HttpError } from "../errors.js";
@@ -69,7 +74,6 @@ import {
   effectivePluginTable,
   libraryParts,
   PLUGIN_MACHINE_ID,
-  type PluginRequirement,
   type PluginTables,
 } from "@prismshadow/penguin-core";
 import type { Config, Db, Hmr, Reassembly, ReassemblyChange } from "../../hmr/capabilities.js";
@@ -82,7 +86,8 @@ import {
   readPluginClosure,
   readPluginDeclaration,
 } from "../../plugin/loader.js";
-import type { PluginPackages } from "../../mechanisms/plugins.js";
+import type { ModuleActor, PluginModules, PluginPackages } from "../../mechanisms/plugins.js";
+import { pluginTableEdits } from "../../services/plugin-tables.js";
 import {
   installedPackageDir,
   installPluginChannel,
@@ -226,6 +231,11 @@ export interface InstalledPluginsDeps {
    * is the route's call — the link itself only sees npm's rules.
    */
   link?: (dir: string, overwrite: boolean) => Promise<InstalledPackage>;
+  /**
+   * How each library plugin that ships server modules stands on this server for the Project, as
+   * the viewer sees it (PRFC-0031); absent in tests that build these routes alone.
+   */
+  modules?: (projectId: string, viewer: ModuleActor) => Promise<PluginModuleStatus[]>;
 }
 
 export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> {
@@ -240,18 +250,13 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     return projectId;
   };
 
-  const tablesOf = (projectId: string): Promise<PluginTables> =>
-    deps.projectConfig.getPluginTables(projectId).catch((err: unknown) => {
-      // A Project whose config will not parse cannot be answered for — its models are just
-      // as unreadable — and saying "no plugins" would read as a healthy empty deployment.
-      throw new HttpError(
-        400,
-        "invalid_plugins_file",
-        `${projectId}: ${PLUGINS_FILE} could not be read: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    });
+  // Reading and editing the Project's tables, shared with the plugin-modules service.
+  const { tablesOf, edit, list } = pluginTableEdits(deps);
 
-  const view = async (projectId: string): Promise<InstalledPluginsResponse> => {
+  const view = async (
+    projectId: string,
+    viewer: ModuleActor,
+  ): Promise<InstalledPluginsResponse> => {
     const tables = await tablesOf(projectId);
     const here = effectivePluginTable(tables, deps.machineId);
     // Every name any table lists, shared ones first, then the names linked into the prefix:
@@ -335,10 +340,17 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       restartPending: plugins.some(
         (p) => p.here && !p.active && p.error === undefined && p.unsatisfied === undefined,
       ),
+      ...(deps.modules !== undefined ? { modules: await deps.modules(projectId, viewer) } : {}),
     };
   };
 
-  app.get("/", async (c) => c.json(await view(scope(c))));
+  /** Who is looking, as the module statuses need it (whether a standing request is theirs). */
+  const viewerOf = (c: { var: AppEnv["Variables"] }): ModuleActor => ({
+    userId: c.var.user.userId,
+    isAdmin: c.var.user.isAdmin,
+  });
+
+  app.get("/", async (c) => c.json(await view(scope(c), viewerOf(c))));
 
   const requireAdmin = (c: { var: AppEnv["Variables"] }) => {
     if (!c.var.user.isAdmin) {
@@ -445,53 +457,6 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     }
   };
 
-  /**
-   * Writes an edit of this Project's tables. When what THIS server runs changes, the edit is a
-   * re-assembly change: read and written inside the re-assembly's queue, so two edits never
-   * interleave, and undone — the tables as they were — when the new tree fails to boot. An
-   * edit that only concerns other machines is written as it is: re-assembling would stop
-   * every agent run in flight here for a tree that stays the same.
-   */
-  const edit = async (projectId: string, next: (tables: PluginTables) => PluginTables) => {
-    const current = await tablesOf(projectId);
-    const same = (a: PluginTables, b: PluginTables) =>
-      JSON.stringify(effectivePluginTable(a, deps.machineId)) ===
-      JSON.stringify(effectivePluginTable(b, deps.machineId));
-    if (same(current, next(current))) {
-      await deps.projectConfig.setPluginTables(projectId, next(current));
-      return;
-    }
-    let previous: PluginTables | null = null;
-    await deps.apply({
-      write: async () => {
-        previous = await deps.projectConfig.getPluginTables(projectId);
-        await deps.projectConfig.setPluginTables(projectId, next(previous));
-      },
-      undo: async () => {
-        if (previous !== null) await deps.projectConfig.setPluginTables(projectId, previous);
-      },
-    });
-  };
-
-  /** Lists `name` in this Project's shared table, or — with `machineId` — in that machine's own. */
-  const list = (
-    projectId: string,
-    name: string,
-    requirement: PluginRequirement,
-    machineId: string | null,
-  ) =>
-    edit(projectId, (tables) =>
-      machineId === null
-        ? { ...tables, all: { ...tables.all, [name]: requirement } }
-        : {
-            ...tables,
-            machines: {
-              ...tables.machines,
-              [machineId]: { ...tables.machines[machineId], [name]: requirement },
-            },
-          },
-    );
-
   /** The names of the server modules this build ships: a package under one of them would shadow it. */
   const shippedNames = () => discoverBuiltinPlugins(pluginBases(deps.root, deps.assetsDir()));
 
@@ -541,10 +506,11 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
   /** The answer to an install: the Project's list, and what landed on this server. */
   const answer = async (
     projectId: string,
+    viewer: ModuleActor,
     installed: InstalledPackage | null,
     extra: Partial<PluginInstallOutcome> = {},
   ): Promise<InstalledPluginsResponse> => ({
-    ...(await view(projectId)),
+    ...(await view(projectId, viewer)),
     ...(installed !== null
       ? { installed: { ...installed, ...kindsOf(installed.name), ...extra } }
       : {}),
@@ -557,6 +523,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
    */
   const performInstall = async (
     projectId: string,
+    viewer: ModuleActor,
     source: PluginSource,
     machineId: string | null,
     onProgress?: InstallProgress,
@@ -577,7 +544,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         await list(projectId, installed.name, {}, deps.machineId);
         deps.syncFleet(projectId);
       }
-      return answer(projectId, installed);
+      return answer(projectId, viewer, installed);
     }
     // A plugin the build ships is already on the machine: asking for it is consent, not a
     // download. Everything else goes through npm — the package first, the list second, since
@@ -603,7 +570,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       );
       deps.syncFleet(projectId);
     }
-    return answer(projectId, installed);
+    return answer(projectId, viewer, installed);
   };
 
   app.post("/", async (c) => {
@@ -613,7 +580,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     const source = sourceOf(body.specifier);
     const machineId = machineOf(body.machineId);
     if (!(c.req.header("accept") ?? "").includes("text/event-stream")) {
-      return c.json(await performInstall(projectId, source, machineId));
+      return c.json(await performInstall(projectId, viewerOf(c), source, machineId));
     }
     // The same install, read as it arrives: `npm` while npm works (npm's own download is
     // npm's to report), `result` the finished list. A failure that the JSON answer would
@@ -622,7 +589,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     return eventStream(c, async (sink) => {
       try {
         await sink.send("npm", null, "{}");
-        const next = await performInstall(projectId, source, machineId);
+        const next = await performInstall(projectId, viewerOf(c), source, machineId);
         await sink.send("result", null, JSON.stringify(next));
       } catch (err) {
         const [status, code, message] =
@@ -678,7 +645,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         `${linked.name} is not a PenguinHarness plugin: its ifaces.json contributes no Skills, hook package, MCP servers or workbenches, and lists no server modules with a code entry (a package without an ifaces.json was never built: its build runs penguin-gen-ifaces).`,
       );
     }
-    return c.json(await answer(projectId, { name: linked.name, version: null }), 201);
+    return c.json(await answer(projectId, viewerOf(c), { name: linked.name, version: null }), 201);
   });
 
   app.post("/archive", async (c) => {
@@ -698,7 +665,12 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     const current = await readInstalledVersion(pluginsPrefix(deps.root), archive.name);
     if (current === archive.version) {
       return c.json(
-        await answer(projectId, { name: archive.name, version: current }, { unchanged: true }),
+        await answer(
+          projectId,
+          viewerOf(c),
+          { name: archive.name, version: current },
+          { unchanged: true },
+        ),
       );
     }
     // Another version is on this server: replacing it is the admin's to confirm. The message
@@ -718,7 +690,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       await list(projectId, installed.name, {}, deps.machineId);
       deps.syncFleet(projectId);
     }
-    return c.json(await answer(projectId, installed), 201);
+    return c.json(await answer(projectId, viewerOf(c), installed), 201);
   });
 
   app.delete("/", async (c) => {
@@ -736,7 +708,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         await deps.packages.remove(deps.root, specifier);
       }
       deps.syncFleet(projectId);
-      return c.json(await view(projectId));
+      return c.json(await view(projectId, viewerOf(c)));
     }
     const without = (table: PluginTables["all"] | undefined) => {
       const kept = { ...table };
@@ -770,7 +742,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       }
     }
     deps.syncFleet(projectId);
-    return c.json(await view(projectId));
+    return c.json(await view(projectId, viewerOf(c)));
   });
 
   app.put("/", async (c) => {
@@ -802,7 +774,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       all: Object.fromEntries(names.map((s) => [s, tables.all[s] ?? {}])),
     }));
     deps.syncFleet(projectId);
-    return c.json(await view(projectId));
+    return c.json(await view(projectId, viewerOf(c)));
   });
 
   return app;
@@ -831,6 +803,7 @@ export class InstalledPluginRoutes {
   @Use() private readonly machines!: Machines;
   @Use() private readonly db!: Db;
   @Use() private readonly packages!: PluginPackages;
+  @Use() private readonly pluginModules!: PluginModules;
   @Bind("InstalledPluginRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     const hmr = this.hmr;
@@ -862,6 +835,7 @@ export class InstalledPluginRoutes {
       // `penguin plugin link`: the npm prefix is this server's own disk, so a local directory
       // links straight into it.
       link: (dir, overwrite) => linkPluginDirectory(this.config.root, dir, overwrite),
+      modules: (projectId, viewer) => this.pluginModules.status(projectId, viewer),
     });
   }
 }
