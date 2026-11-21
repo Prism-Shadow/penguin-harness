@@ -37,6 +37,8 @@ The data root is the `PENGUIN_HOME` environment variable, `~/.penguin/data` by d
         │   │                         # each with its own MEMORY.md index
         │   └── workbenches/          # one folder per workbench: source, ui/, state.json
         ├── agent_state.git/          # bare git repository the server writes: workbench versions
+        ├── app/                      # workbench folders beside the Agent State: data/<workbench>/
+        │                             # (exported with the workbench's data) and cache/<workbench>/
         ├── traces/
         │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl
         ├── scratchpad/               # temp files, one subdirectory per Session id (e.g. pasted images)
@@ -48,6 +50,8 @@ The data root is the `PENGUIN_HOME` environment variable, `~/.penguin/data` by d
         ├── workspaces/               # temporary Workspaces (tmp-<8hex>)
         └── snapshots/                # Agent State version snapshots
 ```
+
+Workbench runtime files — Unix sockets, pipes, locks — sit apart at `<root>/run/<project>/<agent>/<workbench>/`, each level a 10-character hash of its id, so that a socket path stays under the 103 bytes a Unix socket path holds. They are never exported and go with their workbench, agent or Project. A workbench installed from a plugin may also keep files shared by every copy of that app: on this server at `<root>/app/{data,cache}/<plugin>/<workbench>/` (its state under `<root>/run/server/`), and for this OS user on this computer at `~/.penguin/machine/` (or `PENGUIN_MACHINE_HOME`). Neither is exported or removed with a workbench.
 
 For the fields of each config file, see the [Configuration Reference](/configuration).
 
@@ -69,7 +73,7 @@ A Trace is an append-only JSON Lines file. Each line is one AMSP record; see [AM
 - The main Session's `session_meta` is also streamed, once, when it is written, and never sent again. That happens at three moments:
   - a new Session's first message writes it at the head of the first file, before that Task's `task_begin`;
   - the context a compaction opens writes it when the new file opens, just before the first record written after the compaction. When the compaction ended the previous Task, that is after the next Task's `task_begin` and before its input, since Task records never open a file;
-  - a model switch writes it when the switch completes, between runs, so it is on the Session's stream and not in the next run's.
+  - the context a model switch opens writes it the same way, when its file opens with the next message: after the next Task's `task_begin` and before its input. The switch itself streams a `session_update` naming the target as its last record (see [In-session model switch](#in-session-model-switch)).
 
   A reader that needs it later reads the Session, or the whole history, which carries every file's `session_meta`. See [AMSP](/amsp).
 - Appends are serialized inside the writer. Records from concurrent producers (the model stream, parallel tool executions) land strictly one after another, each as a single uninterrupted line. A multi-megabyte record, such as a base64 image Data URL, can never be torn apart by a concurrent append. File rotation never splits a record.
@@ -112,7 +116,7 @@ The Trace is the single source of truth for recovery. There is no separate sessi
 
 1. Locate the highest-index Trace file of the Session.
 2. Read the runtime configuration from its `session_meta`:
-   - the Workspace, which is immutable for the lifetime of the Session, and the model that context runs on (a model switch opens a new file, so the latest file always names the current model);
+   - the Workspace, which is immutable for the lifetime of the Session, and the model that context runs on (or, when the file ends with a model switch's `session_update` that no request followed, the model that record names: the switch completed and its file has not opened yet);
    - the system prompt that the context opened with.
 3. Replay the committed history into a fresh LLM context.
 4. Reconstruct the carry-over (undelivered tool outputs, interruption markers) and the turn and Token counters.
@@ -152,15 +156,15 @@ An open context behaves differently: it keeps the prompt its file recorded. Its 
 The model picker in an active conversation's toolbar switches the model inside the same Session. A switch is a context rotation:
 
 1. The context is compacted on the current model, always in summarize mode, even when the agent's `compaction.mode` is `discard`: the summary is what reaches the new model. The request is an ordinary compaction request — the current model, system prompt, toolset and parameters, plus one user turn — so it extends the prefix the provider has cached, and nothing about the target model reaches it.
-2. The next context opens on the target model in a new Trace file, whose `session_meta` records that context's model. The file opens as soon as the switch completes, headed by the `session_meta` and then the summary, and that `session_meta` is also streamed.
+2. The next context opens on the target model. The switch appends a `session_update` naming the target to the current Trace file and streams it as its last record; it opens no file. The next context's file opens with the next message, as after any compaction: the next Task's `task_begin` goes to the old file, then the new file opens headed by the target's `session_meta`, the connect pair (if any) and `tool_list_ready`, then the summary, before the input. That `session_meta` streams when it is written, behind the `task_begin`. Neither consecutive switches nor a switch with no message after it leave a file behind.
 
-The compaction is an ordinary `manual` one: nothing on the `compaction_begin` / `compaction_end` pair names a model. A context with no completed turn has nothing to summarize, so the switch sends no request and records no pair. One that was just compacted hands its held summary to the new file. One whose first request failed or was stopped is left as it is: the summary it opened with, if any, is written again at the head of the new file, and of its other pending input only the text rides on, in memory. A switch carries no image to the new context.
+The compaction is an ordinary `manual` one: nothing on the `compaction_begin` / `compaction_end` pair names a model. A context with no completed turn has nothing to summarize, so the switch sends no request and records no pair. One that was just compacted hands its held summary to the next context. One whose first request failed or was stopped gets nothing appended but the `session_update`: the summary it opened with, if any, is written again at the head of the next file when that opens, and of its other pending input only the text rides on, in memory. A switch carries no image to the new context.
 
-When the summary cannot be had, the switch hands the history over by its Trace path instead, the way `/model` does. That happens when the compaction ends any way other than completed or stopped (the provider is down, a timeout or network error, a rate limit the retries did not outlast, a rejected credential, a context too long to summarize), and when the current model is unavailable: removed from the Project configuration, or without a credential. An unavailable model is sent nothing. The next context then opens on the target with a user message that is one `[model_switch_from]` block, in the summary's place: it names this Session, the absolute path of the Trace file of the context it left (the path on the machine the Session runs on), the Workspace and the previous model pair, and tells the model to read that file, and the conversation's earlier files, when it needs the history. It is written and carried the way a summary is, and the file it names is left as it was. Of the pending input only the text rides on.
+When the summary cannot be had, the switch hands the history over by its Trace path instead, the way `/model` does. That happens when the compaction ends any way other than completed or stopped (the provider is down, a timeout or network error, a rate limit the retries did not outlast, a rejected credential, a context too long to summarize), and when the current model is unavailable: removed from the Project configuration, or without a credential. An unavailable model is sent nothing. The next context then opens on the target with a user message that is one `[model_switch_from]` block, in the summary's place: it names this Session, the absolute path of the Trace file of the context it left (the path on the machine the Session runs on), the Workspace and the previous model pair, and tells the model to read that file, and the conversation's earlier files, when it needs the history. It is written and carried the way a summary is: it streams right after the `session_update` and is written at the head of the next file when that opens. The file it names is left as it was. Of the pending input only the text rides on.
 
 The Session keeps its model only when you stop the compaction. The target must be in the Project configuration and constructible (credentials in place), or the switch is refused before any request. A Session that never ran has no context to compact: it switches directly and writes nothing. A Session whose model became unavailable while the server was down can still be switched: the server resumes it for the switch alone.
 
-Resume reads the model from the latest file, so a Session restarted right after a switch runs on the new model with the summary (or the handoff) pending. The summary is still known as the one that file opened with: another switch before the first turn completes writes it on to the next file, restart or not. A switch that dies before its new file exists is lost, the summary is not: the Session resumes on the model it was on, with the summary pending.
+A Session restarted after a switch and before the next message resumes from the file it left: a `session_update` with no `request_begin` after it closes that file's context, and the next context opens on the model the record names (the last one, after several switches). It opens with the summary; with the `[model_switch_from]` block, generated again, when the current model was unavailable; with the hand-off note rebuilt from the file when the switch's own compaction got no summary (see [When no summary can be had](/agent-loop#when-no-summary-can-be-had)), the one difference from the live switch, which opened with the block; or, for a context that never answered, with the text it opened with and the text that got no answer. A switch that dies before its `session_update` is written is lost, the summary is not: the Session resumes on the model it was on, with the summary pending. Once the next file has opened, including one an older release opened at the switch, its summary is still known as the one that context opened with: another switch before its first turn completes writes it on to the next file, restart or not.
 
 For how to use the picker, see [Switch the model](/chat#switch-the-model).
 

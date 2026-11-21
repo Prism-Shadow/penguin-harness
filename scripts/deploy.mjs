@@ -61,7 +61,7 @@ import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
 import { buildBuiltinPlugins } from "./build-plugins.mjs";
 import { shippedCliPackages } from "./gen-cli-modules.mjs";
 import { archiveName, packArchive, prefixPackages } from "./asset-archives.mjs";
-import { typescriptPayload } from "./typescript-payload.mjs";
+import { nodeTypesPayload, typescriptPayload } from "./typescript-payload.mjs";
 import { libraryPayload } from "./library-payload.mjs";
 import { BENCHMARKS_DIR, buildBenchmarks } from "./build-benchmarks.mjs";
 import { createHash } from "node:crypto";
@@ -370,13 +370,19 @@ async function readNativeAssets() {
   // predate it being a dependency (or be a desktop bundle with no node_modules), and a
   // platform that cannot find it compares no plugin interface and loads no workflow.
   // Content-addressed like everything here, so it crosses once.
-  files[`archives/${archiveName("", "typescript")}`] = await packArchive(
-    typescriptPayload(path.join(ROOT, "packages", "server")).map(({ rel, abs }) => ({
+  // The Node declarations a workbench's server code is checked with travel in the same archive.
+  files[`archives/${archiveName("", "typescript")}`] = await packArchive([
+    ...typescriptPayload(path.join(ROOT, "packages", "server")).map(({ rel, abs }) => ({
       rel: `node_modules/typescript/${rel}`,
       abs,
       exec: false,
     })),
-  );
+    ...nodeTypesPayload(path.join(ROOT, "packages", "server")).map(({ rel, abs }) => ({
+      rel: `node_modules/${rel}`,
+      abs,
+      exec: false,
+    })),
+  ]);
   // The scripts that run on the FAR side — the release installers a remote install feeds
   // over, the one thing that has to arrive before the CLI does. A pushed bundle resolves them
   // from its own assets directory, so a push that omits one leaves a server that cannot

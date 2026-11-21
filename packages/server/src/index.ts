@@ -36,7 +36,7 @@ import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js
 import { PluginHost } from "./plugin/host.js";
 import { loadPlugins } from "./plugin/loader.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
-import { originRule } from "./http/public-origin.js";
+import { originRule } from "@prismshadow/penguin-library-http/public-origin";
 import { attachUpgradeSeam, platformUpgradeDeps } from "./hmr/upgrade-seam.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";

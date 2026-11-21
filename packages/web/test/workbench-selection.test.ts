@@ -7,12 +7,15 @@
  * - A workbench switched off offers no tab, and neither does any while the Agent-wide switch is
  *   off; switched back on, its tab returns. A server older than the switches says neither, and
  *   its workbench keeps its tab.
+ * - A workbench hidden from the sidebar offers no tab while the full list still has it; shown in
+ *   the sidebar again, its tab returns. A server older than the sidebar setting answers its list
+ *   with the full one, and every workbench keeps its tab.
  */
 import { createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
 import { useWorkbenchTabs } from "../src/features/workbenches/workbench-tabs";
 import { WORKBENCH_UPDATED_EVENT } from "../src/lib/workbench-tabs";
-import { json, stubFetch } from "./helpers/fetch";
+import { json, stubFetch, type FetchRequest } from "./helpers/fetch";
 import { button, click, mount, run, settle, unmountAll } from "./helpers/dom";
 
 const result = {
@@ -30,6 +33,25 @@ const result = {
     },
   ],
 };
+/** The sidebar's list (`?view=sidebar`), as a server with the setting answers it. */
+const sidebar = (shown: string[]) =>
+  json({
+    apps: shown.map((workbenchId) => ({
+      agentId: "support",
+      agentName: "Support",
+      workbenchId,
+      title: "Board",
+      path: `/app/p/support/${workbenchId}`,
+      tab: "main",
+      build: "ready",
+    })),
+  });
+const isSidebar = (request: FetchRequest) => request.query.get("view") === "sidebar";
+/** The server's news that the Agent's workbenches changed: the strip reads both lists again. */
+const refresh = () =>
+  window.dispatchEvent(
+    new CustomEvent(WORKBENCH_UPDATED_EVENT, { detail: { projectId: "p", agentId: "support" } }),
+  );
 function Page({
   agent,
   route = "one",
@@ -54,11 +76,13 @@ afterEach(unmountAll);
 it("hides the old Agent's tabs immediately and ignores its late response", async () => {
   let finish!: (response: Response) => void;
   stubFetch((request) =>
-    request.path.includes("/agents/old/")
-      ? new Promise((resolve) => {
-          finish = resolve;
-        })
-      : json({ workbenches: [] }),
+    isSidebar(request)
+      ? sidebar(["demo"])
+      : request.path.includes("/agents/old/")
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : json({ workbenches: [] }),
   );
   const page = await mount(h(Page, { agent: "old" }));
   await page.rerender(h(Page, { agent: "general" }));
@@ -68,11 +92,12 @@ it("hides the old Agent's tabs immediately and ignores its late response", async
 });
 it("restores a returning workbench after loading but starts a new chat on Chat", async () => {
   let finish!: (response: Response) => void;
-  stubFetch(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
+  stubFetch((request) =>
+    isSidebar(request)
+      ? sidebar(["demo"])
+      : new Promise((resolve) => {
+          finish = resolve;
+        }),
   );
   const page = await mount(h(Page, { agent: "support", initial: "demo/main" }));
   await run(() => finish(json(result)));
@@ -87,10 +112,6 @@ it("restores a returning workbench after loading but starts a new chat on Chat",
 it("does not reopen a removed tab when it later reappears", async () => {
   const fetch = stubFetch(() => json(result));
   await mount(h(Page, { agent: "support", initial: "demo/main" }));
-  const refresh = () =>
-    window.dispatchEvent(
-      new CustomEvent(WORKBENCH_UPDATED_EVENT, { detail: { projectId: "p", agentId: "support" } }),
-    );
   fetch.answer(() => json({ workbenches: [] }));
   await run(refresh);
   expect(selected()).toBe("chat");
@@ -106,11 +127,8 @@ it("offers no tab for a switched-off workbench, nor for any while the Agent-wide
   );
   await mount(h(Page, { agent: "support" }));
   await settle();
-  const refresh = () =>
-    window.dispatchEvent(
-      new CustomEvent(WORKBENCH_UPDATED_EVENT, { detail: { projectId: "p", agentId: "support" } }),
-    );
-  expect(fetch.requests).toHaveLength(1);
+  // One read of each list: the full one and the sidebar's.
+  expect(fetch.requests.filter((request) => !isSidebar(request))).toHaveLength(1);
   expect(document.querySelector("button")).toBeNull();
   fetch.answer(() => json({ workbenches: [{ ...demo, enabled: true }], enabled: false }));
   await run(refresh);
@@ -119,6 +137,15 @@ it("offers no tab for a switched-off workbench, nor for any while the Agent-wide
   await run(refresh);
   expect(button("Board")).toBeTruthy();
   fetch.answer(() => json(result));
+  await run(refresh);
+  expect(button("Board")).toBeTruthy();
+});
+it("offers no tab for a workbench hidden from the sidebar, and its tab once it is shown there again", async () => {
+  const fetch = stubFetch((request) => (isSidebar(request) ? sidebar([]) : json(result)));
+  await mount(h(Page, { agent: "support" }));
+  await settle();
+  expect(document.querySelector("button")).toBeNull();
+  fetch.answer((request) => (isSidebar(request) ? sidebar(["demo"]) : json(result)));
   await run(refresh);
   expect(button("Board")).toBeTruthy();
 });

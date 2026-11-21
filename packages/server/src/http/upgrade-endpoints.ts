@@ -26,8 +26,8 @@ import { format } from "node:url";
 import type { Auth, SessionVia } from "@prismshadow/penguin-library-auth";
 import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
 import { parseCookieHeader, sessionCookies } from "../auth/middleware.js";
-import { acceptsOrigin, sameOriginSite } from "./public-origin.js";
-import type { OriginRule } from "./public-origin.js";
+import { acceptsOrigin, sameOriginSite } from "@prismshadow/penguin-library-http/public-origin";
+import type { OriginRule } from "@prismshadow/penguin-library-http/public-origin";
 import { mostSpecific, prefixPatternProblem } from "./route-prefix.js";
 
 /** Who a `user` endpoint's socket belongs to: the signed-in user, as a route's `c.var` names them. */
