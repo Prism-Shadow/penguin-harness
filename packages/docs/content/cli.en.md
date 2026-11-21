@@ -263,11 +263,12 @@ Options of `agent create`:
 | `--name <name>` / `--description <text>` | Display name and description. | — |
 | `--author <author>` | Who is creating the agent: `user`, `agent` or `company`. | `agent` inside a conversation, otherwise `user` |
 | `--plugins <names>` | Comma-separated library plugin names to preinstall, each with its Skills and hook package. Unknown names are rejected before anything is created. | — |
+| `--no-default-plugins` | Leave out the plugins every new agent gets, `goal` ([goal mode](/goal-mode)) and `plan` (Plan mode). | Both installed |
 | `--project-id <id>` / `--json` / `--server <url>` | See [Global conventions](#global-conventions). | — |
 
 ```bash
 penguin agent ls
-penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+penguin agent create --agent-id helper --name "Helper" --plugins software-development
 ```
 
 ### penguin agent export and import
@@ -667,11 +668,11 @@ note: No visible change on the page.
 `import` and `history` belong to the built-in browser. Asked of the user's Chrome, they fail with `not_supported`.
 
 - `--list` lists the browser profiles on this machine: the source id, the browser, the profile's name, and whether it holds cookies and history.
-- `--from` takes a source id from that list, or a browser (`chrome`, `edge`, `brave`, `arc`, `vivaldi`, `opera`, `chromium` or `firefox`) for its `Default` profile, or its only one.
+- `--from` takes a source id from that list, or a browser (`chrome`, `edge`, `brave`, `arc`, `vivaldi`, `opera`, `chromium` or `firefox`) for its `Default` profile, or its only one. `chrome-extension`, listed while the user's Chrome is connected, imports cookies through it after the user allows it in Chrome.
 - `--cookies` and `--history` choose what to import; neither means both.
 - `--domain` keeps only the cookies of a site and its subdomains. Repeat it, or separate sites with commas.
 
-The result names the source, then prints `cookies: <n> imported, <n> skipped, <n> failed (<n> found)`, `history: <n> imported (<n> found)` and a `warning:` line for each warning. Platform details, such as the macOS Keychain prompt and Chrome's app-bound cookies on Windows, are in [Import from your browser](/builtin-browser#import-from-your-browser).
+The result names the source, then prints `cookies: <n> imported, <n> skipped, <n> failed (<n> found)`, a `skipped:` line giving each reason a cookie was skipped with its count, `history: <n> imported (<n> found)`, and a `warning:` line for anything else to know. Platform details, such as the macOS Keychain prompt and Chrome's app-bound cookies on Windows, are in [Import from your browser](/builtin-browser#import-from-your-browser).
 
 ### history
 
@@ -687,6 +688,7 @@ An error is one line on stderr, `error: <code>: <message>`, and the command exit
 - `keyboard_focus_failed`: the built-in browser could not give the tab keyboard focus in the app window, so nothing was typed. `type` reports it as a failed result with this message; a raw `cdp` keyboard command answers with the code. Retry once.
 - `cdp_refused`: a raw command outside what the backend allows (see [screenshot and cdp](#screenshot-and-cdp)).
 - `not_supported`: import or history asked of the user's Chrome; the message says to have the user sign in in the Penguin tab in Chrome instead.
+- `import_declined`: the user did not allow, in Chrome, an import through the extension. `extension_outdated`: their extension is too old for it.
 - `script_error`, `timeout`, `invalid_url`, `source_not_found` and `import_failed`.
 
 The CLI adds `invalid_argument` for a command typed wrong, `io_error` for a file it cannot read or write, and `request_failed` when the server cannot be reached.

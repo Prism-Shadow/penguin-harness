@@ -28,7 +28,6 @@ import {
   SettingsEmpty,
   SettingsGroup,
   SettingsSection,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -41,13 +40,14 @@ import {
   subscribeBrowser,
   PairingDialog,
 } from "../builtin-browser";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** Forgets a paired Chrome on the server; true once it is gone. Reached only through the confirm. */
 const revokeChrome = async (record: BrowserExtensionRecord): Promise<boolean> => {
   try {
     await api.revokeBrowserExtension(record.id);
   } catch (err) {
-    toastError(S.browserSettings.revokeFailed(apiErrorText(err)));
+    toastApiError(err, { text: S.browserSettings.revokeFailed(apiErrorText(err)) });
     return false;
   }
   toastSuccess(S.browserSettings.revoked(record.name));
@@ -150,7 +150,9 @@ export function BrowserSection() {
     api
       .getBrowserExtensions()
       .then(setList)
-      .catch((err: unknown) => toastError(S.browserSettings.loadFailed(apiErrorText(err))));
+      .catch((err: unknown) =>
+        toastApiError(err, { text: S.browserSettings.loadFailed(apiErrorText(err)) }),
+      );
   }, []);
   useEffect(() => loadList(), [loadList, news]);
   useEffect(() => {

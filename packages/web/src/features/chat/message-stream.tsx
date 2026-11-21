@@ -26,7 +26,7 @@ import {
   ReportIssueAction,
   TextAction,
   exceptionReport,
-  isSeriousError,
+  isReportable,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/amsp/stream-model";
@@ -691,7 +691,7 @@ export function MessageStream({
                   actions={
                     <>
                       <TextAction onClick={older.onLoad}>{S.common.retry}</TextAction>
-                      {isSeriousError(older.errorCause) && (
+                      {isReportable(older.errorCause) && (
                         <ReportIssueAction
                           report={() =>
                             exceptionReport(older.errorCause, {

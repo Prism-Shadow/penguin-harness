@@ -25,7 +25,7 @@
  * the channel is where an npm-missing name can still come from.
  */
 import { execFile } from "node:child_process";
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";

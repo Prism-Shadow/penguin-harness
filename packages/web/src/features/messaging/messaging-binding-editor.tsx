@@ -107,7 +107,8 @@ import {
   type MessagingFormErrors,
   type MessagingFormState,
 } from "./messaging-binding-form";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError, toastFailure } from "../../lib/toast-api-error";
+import { toldFailure } from "../../lib/failure";
 
 /** How often the visible editor refreshes the runtime status (connects settle within a poll or two). */
 const STATUS_POLL_MS = 3000;
@@ -603,6 +604,16 @@ export function useMessagingBinding(
     }
   };
 
+  /** A channel test the platform failed: its words, and a report holding the platform's own. */
+  const testFailed = (channel: string, text: string, error: string | undefined) =>
+    toastFailure(
+      toldFailure(text, {
+        what: "a messaging channel test failed",
+        facts: [["Channel", channel]],
+        detail: error ?? null,
+      }),
+    );
+
   const testConnection = async () => {
     if (!form) return;
     setTesting(true);
@@ -611,26 +622,28 @@ export function useMessagingBinding(
       if (draft.channel === "telegram") {
         const res = await api.testTelegramBinding(sessionId, draft.body);
         for (const notice of telegramTestNotices(res)) {
-          if (notice.tone === "error") toastError(notice.text);
+          if (notice.tone === "error") testFailed("telegram", notice.text, res.error);
           else if (notice.tone === "info") toastInfo(notice.text);
           else toastSuccess(notice.text);
         }
       } else if (draft.channel === "qq") {
         const res = await api.testQQBinding(sessionId, draft.body);
         if (res.ok) toastSuccess(S.messaging.testOk(res.latencyMs ?? 0));
-        else toastError(S.messaging.testFail(res.error ?? S.common.unknownError));
+        else testFailed("qq", S.messaging.testFail(res.error ?? S.common.unknownError), res.error);
       } else if (draft.channel === "wechat") {
         // No body: this channel's probe reads the stored binding, there being no draft.
         const res = await api.testWeChatBinding(sessionId);
         if (res.ok) toastSuccess(S.messaging.testOk(res.latencyMs ?? 0));
-        else toastError(S.messaging.testFail(res.error ?? S.common.unknownError));
+        else
+          testFailed("wechat", S.messaging.testFail(res.error ?? S.common.unknownError), res.error);
       } else {
         const res = await api.testFeishuBinding(sessionId, draft.body);
         if (res.ok) toastSuccess(S.messaging.testOk(res.latencyMs ?? 0));
-        else toastError(S.messaging.testFail(res.error ?? S.common.unknownError));
+        else
+          testFailed("feishu", S.messaging.testFail(res.error ?? S.common.unknownError), res.error);
       }
     } catch (e) {
-      toastError(S.messaging.testFail(apiErrorText(e)));
+      toastApiError(e, { text: S.messaging.testFail(apiErrorText(e)) });
     } finally {
       setTesting(false);
     }

@@ -33,6 +33,7 @@ import type {
   AppCenterLayout,
   AppCenterLayoutResponse,
   AppCenterResponse,
+  AppCenterShortcut,
   ApprovalMode,
   ArchivedSessionGroup,
   ArchivedSessionGroupsResponse,
@@ -144,6 +145,7 @@ import type {
   VersionHistoryResponse,
   VersionResponse,
   WorkbenchesResponse,
+  WorkbenchSidebarResponse,
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
@@ -2848,17 +2850,51 @@ router
 // Workbenches and the Project's plugin list
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * The rows of an Agent's sidebar list (`?view=sidebar`): its installed workbenches that run and
+ * have a tab, none hidden from the sidebar, in the App Center tile's shape.
+ */
+const sidebarApps = (ctx: Ctx): AppCenterShortcut[] => {
+  const agent = agentOf(ctx);
+  const installed = installedOf(ctx);
+  if (installed.workbenchesOff === true) return [];
+  return (installed.workbenches ?? []).flatMap((w): AppCenterShortcut[] => {
+    const first = w.tabs[0];
+    if (first === undefined || w.enabled === false || w.showInSidebar === false) return [];
+    return [
+      {
+        agentId: agent.agentId,
+        agentName: agent.name ?? agent.agentId,
+        workbenchId: w.id,
+        title: w.appCenter?.title ?? first.title,
+        ...(first.titleZh !== undefined ? { titleZh: first.titleZh } : {}),
+        ...(w.icon !== undefined ? { icon: w.icon } : {}),
+        path: `/app/${ctx.params.projectId!}/${agent.agentId}/${w.id}`,
+        tab: first.key,
+        build: w.error === null ? "ready" : "failed",
+      },
+    ];
+  });
+};
+
 router
-  .get("/api/projects/:projectId/agents/:agentId/workbenches", (ctx): WorkbenchesResponse => ({
-    workbenches: [],
-    enabled: installedOf(ctx).workbenchesOff !== true,
-  }))
+  .get(
+    "/api/projects/:projectId/agents/:agentId/workbenches",
+    (ctx): WorkbenchesResponse | WorkbenchSidebarResponse => {
+      if (ctx.query.get("view") === "sidebar") return { apps: sidebarApps(ctx) };
+      const installed = installedOf(ctx);
+      return {
+        workbenches: installed.workbenches ?? [],
+        enabled: installed.workbenchesOff !== true,
+      };
+    },
+  )
   .put(
     "/api/projects/:projectId/agents/:agentId/workbenches/enabled",
     (ctx): WorkbenchesResponse => {
       const installed = installedOf(ctx);
       installed.workbenchesOff = record(ctx.body).enabled === false;
-      return { workbenches: [], enabled: !installed.workbenchesOff };
+      return { workbenches: installed.workbenches ?? [], enabled: !installed.workbenchesOff };
     },
   )
   .put("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/enabled", () =>
@@ -2885,6 +2921,23 @@ router
   .delete("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId", () =>
     notFound("Workbench"),
   )
+  .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/sidebar", (ctx) => {
+    const installed = installedOf(ctx);
+    const show = record(ctx.body).show;
+    if (typeof show !== "boolean") fail(400, "bad_request", "show must be true or false");
+    const all = installed.workbenches ?? [];
+    const current = all.find((w) => w.id === ctx.params.workbenchId);
+    if (!current) notFound("Workbench");
+    const workbench = { ...current, showInSidebar: show };
+    installed.workbenches = all.map((w) => (w.id === workbench.id ? workbench : w));
+    ctx.store.userChannel.event({
+      type: "workbench_updated",
+      projectId: ctx.params.projectId!,
+      agentId: ctx.params.agentId!,
+      workbench,
+    });
+    return { workbench };
+  })
   .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/app-center", () =>
     notFound("Workbench"),
   )

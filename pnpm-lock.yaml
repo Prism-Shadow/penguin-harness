@@ -54,6 +54,319 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  library/agent-api:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db':
+        specifier: workspace:*
+        version: link:../db
+      '@prismshadow/penguin-library-session':
+        specifier: workspace:*
+        version: link:../session
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  library/auth:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db':
+        specifier: workspace:*
+        version: link:../db
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  library/db:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  library/http:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-auth':
+        specifier: workspace:*
+        version: link:../auth
+      hono:
+        specifier: ^4.13.11
+        version: 4.13.13
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  library/machine:
+    dependencies:
+      '@prismshadow/amsp':
+        specifier: workspace:*
+        version: link:../../packages/amsp
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db':
+        specifier: workspace:*
+        version: link:../db
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  library/messaging:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db':
+        specifier: workspace:*
+        version: link:../db
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  library/model:
+    dependencies:
+      '@prismshadow/mmsp':
+        specifier: ^0.5.10
+        version: 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@prismshadow/penguin-library-agent-api':
+        specifier: workspace:*
+        version: file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-db':
+        specifier: workspace:*
+        version: file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-http':
+        specifier: workspace:*
+        version: file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  library/observability:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-agent-api':
+        specifier: workspace:*
+        version: link:../agent-api
+      '@prismshadow/penguin-library-db':
+        specifier: workspace:*
+        version: link:../db
+      '@prismshadow/penguin-library-trace':
+        specifier: workspace:*
+        version: link:../trace
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  library/organization:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db':
+        specifier: workspace:*
+        version: link:../db
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  library/project:
+    dependencies:
+      '@prismshadow/amsp':
+        specifier: workspace:*
+        version: link:../../packages/amsp
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-agent-api':
+        specifier: workspace:*
+        version: link:../agent-api
+      '@prismshadow/penguin-library-auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@prismshadow/penguin-library-db':
+        specifier: workspace:*
+        version: link:../db
+      '@prismshadow/penguin-library-machine':
+        specifier: workspace:*
+        version: link:../machine
+      '@prismshadow/penguin-library-model':
+        specifier: workspace:*
+        version: file:library/model(supports-color@10.2.2)
+      '@prismshadow/penguin-library-organization':
+        specifier: workspace:*
+        version: link:../organization
+      '@prismshadow/penguin-library-session':
+        specifier: workspace:*
+        version: link:../session
+      '@prismshadow/penguin-library-trace':
+        specifier: workspace:*
+        version: link:../trace
+      '@prismshadow/penguin-library-workbench':
+        specifier: workspace:*
+        version: link:../workbench
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  library/session:
+    dependencies:
+      '@prismshadow/amsp':
+        specifier: workspace:*
+        version: link:../../packages/amsp
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db':
+        specifier: workspace:*
+        version: link:../db
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  library/setting:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db':
+        specifier: workspace:*
+        version: link:../db
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  library/trace:
+    dependencies:
+      '@prismshadow/amsp':
+        specifier: workspace:*
+        version: link:../../packages/amsp
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db':
+        specifier: workspace:*
+        version: link:../db
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  library/workbench:
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/a2ui:
     devDependencies:
       '@types/node':
@@ -192,6 +505,9 @@ importers:
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
@@ -241,8 +557,8 @@ importers:
         specifier: workspace:*
         version: link:../a2ui
       '@prismshadow/mmsp':
-        specifier: ^0.5.6
-        version: 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        specifier: ^0.5.10
+        version: 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
@@ -268,6 +584,12 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      electron:
+        specifier: ^43.7.6
+        version: 43.8.3(supports-color@10.2.2)
+      node-pty:
+        specifier: ^1.1.0
+        version: 1.1.0
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -290,8 +612,8 @@ importers:
         specifier: workspace:*
         version: link:../amsp
       '@prismshadow/mmsp':
-        specifier: ^0.5.6
-        version: 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        specifier: ^0.5.10
+        version: 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       arktype:
         specifier: ^2.2.3
         version: 2.2.3
@@ -371,6 +693,9 @@ importers:
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
@@ -567,6 +892,9 @@ importers:
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
@@ -582,6 +910,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/penguin-testing-electron':
+        specifier: workspace:*
+        version: link:../../plugins/penguin-testing-electron
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/rrsi-rsi-toolkit
@@ -705,6 +1036,9 @@ importers:
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
@@ -760,11 +1094,14 @@ importers:
         specifier: workspace:*
         version: link:../chat-markdown
       '@prismshadow/mmsp':
-        specifier: ^0.5.6
-        version: 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        specifier: ^0.5.10
+        version: 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
       '@xterm/headless':
         specifier: ^5.5.0
         version: 5.5.0
@@ -823,6 +1160,48 @@ importers:
       '@prismshadow/penguin-hmr':
         specifier: workspace:*
         version: file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-agent-api':
+        specifier: workspace:*
+        version: file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-auth':
+        specifier: workspace:*
+        version: file:library/auth(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-db':
+        specifier: workspace:*
+        version: file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-http':
+        specifier: workspace:*
+        version: file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-machine':
+        specifier: workspace:*
+        version: file:library/machine(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-messaging':
+        specifier: workspace:*
+        version: file:library/messaging(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-model':
+        specifier: workspace:*
+        version: link:../../library/model
+      '@prismshadow/penguin-library-observability':
+        specifier: workspace:*
+        version: file:library/observability(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-organization':
+        specifier: workspace:*
+        version: file:library/organization(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-project':
+        specifier: workspace:*
+        version: file:library/project(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-session':
+        specifier: workspace:*
+        version: file:library/session(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-setting':
+        specifier: workspace:*
+        version: file:library/setting(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-trace':
+        specifier: workspace:*
+        version: file:library/trace(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-workbench':
+        specifier: workspace:*
+        version: link:../../library/workbench
       '@prismshadow/penguin-theme-pack':
         specifier: workspace:*
         version: file:packages/theme-pack(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -832,9 +1211,6 @@ importers:
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.13.3
       '@types/which':
         specifier: ^3.0.4
         version: 3.0.4
@@ -1267,6 +1643,12 @@ importers:
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
 
+  plugins/plan:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+
   plugins/humanizer:
     devDependencies:
       '@prismshadow/penguin-core':
@@ -1308,6 +1690,24 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
+
+  plugins/penguin-testing-electron:
+    devDependencies:
+      '@playwright/test':
+        specifier: ^1.61.1
+        version: 1.61.1
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   plugins/rrsi-rsi-toolkit:
     devDependencies:
@@ -2442,6 +2842,8 @@ packages:
 
   '@penguinharness/goal@file:plugins/goal':
     resolution: {directory: plugins/goal, type: directory}
+  '@penguinharness/plan@file:plugins/plan':
+    resolution: {directory: plugins/plan, type: directory}
 
   '@penguinharness/humanizer@file:plugins/humanizer':
     resolution: {directory: plugins/humanizer, type: directory}
@@ -2505,8 +2907,8 @@ packages:
     resolution: {directory: packages/chat-markdown, type: directory}
     engines: {node: '>=24'}
 
-  '@prismshadow/mmsp@0.5.6':
-    resolution: {integrity: sha512-Yns50WqU+zHw80JC3TX1Qevcz8a5pNXnHI9rAALNZuZJwlKBlF+fQ23g7NdNpz1Sc7f+nBGfOjt2Sd7ZxPm/Zg==}
+  '@prismshadow/mmsp@0.5.10':
+    resolution: {integrity: sha512-PSKvfwZQEjlNnlQe223qiaK5qwp3PcTMEtGe9hAGiBN2VuVUGAYAkze80Juefz3ODRo3HwI1g2bwRZgzME8vbQ==}
 
   '@prismshadow/penguin-cli@file:packages/cli':
     resolution: {directory: packages/cli, type: directory}
@@ -2520,6 +2922,62 @@ packages:
 
   '@prismshadow/penguin-hmr@file:packages/hmr':
     resolution: {directory: packages/hmr, type: directory}
+
+  '@prismshadow/penguin-library-agent-api@file:library/agent-api':
+    resolution: {directory: library/agent-api, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-library-auth@file:library/auth':
+    resolution: {directory: library/auth, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-library-db@file:library/db':
+    resolution: {directory: library/db, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-library-http@file:library/http':
+    resolution: {directory: library/http, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-library-machine@file:library/machine':
+    resolution: {directory: library/machine, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-library-messaging@file:library/messaging':
+    resolution: {directory: library/messaging, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-library-model@file:library/model':
+    resolution: {directory: library/model, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-library-observability@file:library/observability':
+    resolution: {directory: library/observability, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-library-organization@file:library/organization':
+    resolution: {directory: library/organization, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-library-project@file:library/project':
+    resolution: {directory: library/project, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-library-session@file:library/session':
+    resolution: {directory: library/session, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-library-setting@file:library/setting':
+    resolution: {directory: library/setting, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-library-trace@file:library/trace':
+    resolution: {directory: library/trace, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-library-workbench@file:library/workbench':
+    resolution: {directory: library/workbench, type: directory}
+    engines: {node: '>=24'}
 
   '@prismshadow/penguin-server@file:packages/server':
     resolution: {directory: packages/server, type: directory}
@@ -7153,6 +7611,7 @@ snapshots:
   '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit': {}
 
   '@penguinharness/goal@file:plugins/goal': {}
+  '@penguinharness/plan@file:plugins/plan': {}
 
   '@penguinharness/humanizer@file:plugins/humanizer': {}
 
@@ -7224,7 +7683,7 @@ snapshots:
       - micromark-util-types
       - supports-color
 
-  '@prismshadow/mmsp@0.5.6(supports-color@10.2.2)(ws@8.21.0)':
+  '@prismshadow/mmsp@0.5.10(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.6.7)
       '@anthropic-ai/sdk': 0.91.1(zod@4.6.7)
@@ -7239,7 +7698,7 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/mmsp@0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@prismshadow/mmsp@0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.6.7)
       '@anthropic-ai/sdk': 0.91.1(zod@4.6.7)
@@ -7254,7 +7713,7 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/mmsp@0.5.6(ws@8.21.0)':
+  '@prismshadow/mmsp@0.5.10(ws@8.21.0)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.6.7)
       '@anthropic-ai/sdk': 0.91.1(zod@4.6.7)
@@ -7284,6 +7743,7 @@ snapshots:
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
@@ -7300,7 +7760,7 @@ snapshots:
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/a2ui': file:packages/a2ui
-      '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.10(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server
       commander: 13.1.0
@@ -7334,6 +7794,7 @@ snapshots:
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
@@ -7350,7 +7811,7 @@ snapshots:
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/a2ui': file:packages/a2ui
-      '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       commander: 13.1.0
@@ -7373,7 +7834,7 @@ snapshots:
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
       '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)
       arktype: 2.2.3
       smol-toml: 1.9.1
       yaml: 2.9.0
@@ -7389,7 +7850,7 @@ snapshots:
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
       '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       arktype: 2.2.3
       smol-toml: 1.9.1
       yaml: 2.9.0
@@ -7405,7 +7866,7 @@ snapshots:
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
       '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.10(ws@8.21.0)
       arktype: 2.2.3
       smol-toml: 1.9.1
       yaml: 2.9.0
@@ -7428,6 +7889,259 @@ snapshots:
       - ws
       - zod
 
+  '@prismshadow/penguin-library-agent-api@file:library/agent-api(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)
+      '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-agent-api@file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-auth@file:library/auth(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-auth@file:library/auth(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-db@file:library/db(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-db@file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-http@file:library/http(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)
+      hono: 4.13.13
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-http@file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      hono: 4.13.13
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-machine@file:library/machine(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/amsp': file:packages/amsp
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-messaging@file:library/messaging(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-model@file:library/model(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)
+      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-model@file:library/model(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-observability@file:library/observability(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-trace': file:library/trace(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-organization@file:library/organization(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-project@file:library/project(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/amsp': file:packages/amsp
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-machine': file:library/machine(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-model': file:library/model(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-organization': file:library/organization(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-trace': file:library/trace(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-workbench': file:library/workbench
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-session@file:library/session(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/amsp': file:packages/amsp
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-session@file:library/session(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/amsp': file:packages/amsp
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-setting@file:library/setting(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-trace@file:library/trace(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/amsp': file:packages/amsp
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-workbench@file:library/workbench': {}
+
   '@prismshadow/penguin-server@file:packages/server':
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
@@ -7444,6 +8158,7 @@ snapshots:
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
@@ -7462,7 +8177,7 @@ snapshots:
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/chat-markdown': file:packages/chat-markdown
-      '@prismshadow/mmsp': 0.5.6(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.10(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
       '@xterm/headless': 5.5.0
       commander: 13.1.0
@@ -7508,6 +8223,7 @@ snapshots:
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
@@ -7526,7 +8242,7 @@ snapshots:
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
-      '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless': 5.5.0
       commander: 13.1.0
@@ -7572,6 +8288,7 @@ snapshots:
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
@@ -7590,7 +8307,7 @@ snapshots:
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
-      '@prismshadow/mmsp': 0.5.6(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@xterm/headless': 5.5.0
       commander: 13.1.0

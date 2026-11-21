@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * New folder in the Workspace finder (features/chat/workspace-finder.tsx), against a server
+ * New folder in the Workspace finder (features/workspace/workspace-finder.tsx), against a server
  * behind the package's fetch fake that keeps a small disk for this server and one for a machine.
  *
- * - Given a folder on screen, when New folder is pressed, a name typed and Enter pressed, the
- *   folder is made inside it on the browsed machine — this server, or a machine through that
+ * - Given a folder on screen, when New folder is picked from the menu on the list's empty space,
+ *   a name typed and Enter pressed, the folder is made inside it on the browsed machine — this server, or a machine through that
  *   machine's own server — and it is listed and selected without being opened; Choose then
  *   hands back its path on that machine.
  * - Given a name the folder on screen already lists, the reason reads under the field as it is
@@ -20,9 +20,12 @@
  *   is selected.
  * - Given the row open with a name typed, Escape closes the row and not the finder, nothing is
  *   sent, and the row opens empty the next time.
- * - Given a navigation on its way, New folder cannot be pressed and the open row is gone, so no
- *   create can run for the folder being left.
- * - Given a folder the server may not read, New folder cannot be pressed.
+ * - Given a navigation on its way, the menu's New folder is disabled and the open row is gone, so
+ *   no create can run for the folder being left.
+ * - Given a folder the server may not read, the menu on its empty space still lists New folder,
+ *   disabled, with the reason under it.
+ * - From the keyboard, the list's menu key opens that menu with New folder first and focused,
+ *   and Ctrl+Shift+N (⇧⌘N on a Mac) opens the name row outright.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement as h } from "react";
@@ -39,6 +42,7 @@ import {
   click,
   dialogs,
   field,
+  menuItem,
   mount,
   run,
   type,
@@ -263,10 +267,41 @@ const nameField = () => field(S.files.newFolderName) as HTMLInputElement;
 const hasNameField = () =>
   document.querySelector(`input[aria-label="${S.files.newFolderName}"]`) !== null;
 
-const press = (target: Element, key: string) =>
+const press = (target: Element, key: string, mods: KeyboardEventInit = {}) =>
   run(() =>
-    target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })),
+    target.dispatchEvent(
+      new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...mods }),
+    ),
   );
+
+/** The list, whose empty space stands for the folder on screen. */
+const list = (): HTMLElement => {
+  const found = document.querySelector<HTMLElement>("[data-finder-here]");
+  if (found === null) throw new Error("no list on screen");
+  return found;
+};
+
+/** A secondary click on the list's empty space. */
+const rightClickList = () =>
+  run(() =>
+    list().dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+        clientX: 40,
+        clientY: 60,
+      }),
+    ),
+  );
+
+const newFolderItem = () => menuItem(S.files.newFolder) as HTMLButtonElement;
+
+/** New folder the way the pointer reaches it: the empty space's menu, then its row. */
+async function startNewFolder() {
+  await rightClickList();
+  await click(newFolderItem());
+}
 
 afterEach(async () => {
   await unmountAll();
@@ -283,7 +318,7 @@ describe("new folder in the Workspace finder", () => {
       const server = world();
       const { onChoose } = await openFinder({ machineId });
 
-      await click(button(S.files.newFolder));
+      await startNewFolder();
       await type(nameField(), " drafts ");
       await press(nameField(), "Enter");
       await waitFor(() => selectedRow() === "drafts");
@@ -307,7 +342,7 @@ describe("new folder in the Workspace finder", () => {
     const server = world();
     await openFinder();
 
-    await click(button(S.files.newFolder));
+    await startNewFolder();
     await type(nameField(), "notes.txt");
     expect(note()).toBe(S.chat.finder.newFolderExists("notes.txt"));
 
@@ -321,7 +356,7 @@ describe("new folder in the Workspace finder", () => {
     const { onChoose } = await openFinder();
     server.madeElsewhere("drafts");
 
-    await click(button(S.files.newFolder));
+    await startNewFolder();
     await type(nameField(), "drafts");
     await press(nameField(), "Enter");
     await waitFor(() => selectedRow() === "drafts");
@@ -337,7 +372,7 @@ describe("new folder in the Workspace finder", () => {
     await openFinder();
     server.refuseNext(403, "dir_write_denied");
 
-    await click(button(S.files.newFolder));
+    await startNewFolder();
     await type(nameField(), "drafts");
     await press(nameField(), "Enter");
     await waitFor(() => note() !== null);
@@ -353,7 +388,7 @@ describe("new folder in the Workspace finder", () => {
     const { onChoose } = await openFinder();
     server.storeAs((name) => name.normalize("NFD"));
 
-    await click(button(S.files.newFolder));
+    await startNewFolder();
     await type(nameField(), "Café");
     await press(nameField(), "Enter");
     await waitFor(() => selectedRow() !== null);
@@ -368,7 +403,7 @@ describe("new folder in the Workspace finder", () => {
     await openFinder();
     server.storeAs(() => "something-else");
 
-    await click(button(S.files.newFolder));
+    await startNewFolder();
     await type(nameField(), "drafts");
     await press(nameField(), "Enter");
     await waitFor(() => note() !== null);
@@ -382,7 +417,7 @@ describe("new folder in the Workspace finder", () => {
     await openFinder();
     const release = server.holdNext("create");
 
-    await click(button(S.files.newFolder));
+    await startNewFolder();
     await type(nameField(), "drafts");
     await press(nameField(), "Enter");
     expect(cancelButton().disabled).toBe(true);
@@ -398,7 +433,7 @@ describe("new folder in the Workspace finder", () => {
     const server = world();
     await openFinder();
 
-    await click(button(S.files.newFolder));
+    await startNewFolder();
     await type(nameField(), "drafts");
     await press(nameField(), "Escape");
 
@@ -406,31 +441,53 @@ describe("new folder in the Workspace finder", () => {
     expect(dialogs()).toHaveLength(1);
     expect(server.creates()).toEqual([]);
 
-    await click(button(S.files.newFolder));
+    await startNewFolder();
     expect(nameField().value).toBe("");
   });
 
-  it("a navigation on its way closes the row and holds New folder, so nothing is made where the finder was", async () => {
+  it("a navigation on its way closes the row and disables New folder, so nothing is made where the finder was", async () => {
     const server = world();
     await openFinder();
-    await click(button(S.files.newFolder));
+    await startNewFolder();
     await type(nameField(), "drafts");
     const release = server.holdNext("list");
 
     await click(button(S.chat.finder.up));
 
     expect(hasNameField()).toBe(false);
-    expect(button(S.files.newFolder).disabled).toBe(true);
+    await rightClickList();
+    expect(newFolderItem().disabled).toBe(true);
     await run(release);
     await waitFor(() => rows().includes("me"));
     expect(server.creates()).toEqual([]);
   });
 
-  it("a folder the server may not read offers no New folder", async () => {
+  it("a folder the server may not read keeps New folder in its menu, disabled, saying why", async () => {
     world();
     await openFinder({ workspace: "/root/inner" });
     await waitFor(() => document.body.textContent?.includes(S.chat.finder.deniedTitle) === true);
 
-    expect(button(S.files.newFolder).disabled).toBe(true);
+    await rightClickList();
+    expect(newFolderItem().disabled).toBe(true);
+    expect(newFolderItem().textContent).toContain(S.chat.finder.deniedTitle);
+  });
+
+  it("from the keyboard, the list's menu key offers New folder first, and Ctrl+Shift+N opens the row outright", async () => {
+    const server = world();
+    await openFinder();
+
+    await press(list(), "ContextMenu");
+    expect(document.activeElement).toBe(newFolderItem());
+    await click(newFolderItem());
+    expect(document.activeElement).toBe(nameField());
+    await press(nameField(), "Escape");
+    expect(hasNameField()).toBe(false);
+
+    await press(list(), "N", { ctrlKey: true, shiftKey: true });
+    expect(document.activeElement).toBe(nameField());
+    await type(nameField(), "drafts");
+    await press(nameField(), "Enter");
+    await waitFor(() => selectedRow() === "drafts");
+    expect(server.creates()).toHaveLength(1);
   });
 });

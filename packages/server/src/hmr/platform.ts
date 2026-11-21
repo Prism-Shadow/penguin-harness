@@ -95,11 +95,11 @@ import { UnsatisfiedPluginsError, bootWithoutUnsatisfied } from "../plugin/unsat
 import type { PluginSelection } from "../plugin/unsatisfied.js";
 import { takePushSlip } from "./push-plugins.js";
 import type { PushSlip } from "./push-plugins.js";
-import type { Errors } from "../mechanisms/observability.js";
+import type { Errors } from "@prismshadow/penguin-library-observability";
 import type { UnsatisfiedPlugin } from "../api/types.js";
-import { migrate } from "../db/migrations/index.js";
-import { MachinesRepo } from "../db/repos/machines.js";
-import type { Auth } from "../mechanisms/identity.js";
+import { migrate } from "@prismshadow/penguin-library-db/migrations";
+import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
+import type { Auth } from "@prismshadow/penguin-library-auth";
 
 /**
  * This server's hot host: the mechanism (@prismshadow/penguin-hmr) with the api ITS platforms
@@ -123,7 +123,7 @@ export interface PlatformApi extends Park {
    * runtime's ws transport authenticates an upgrade, then hands the socket over with the
    * reference it authenticated — a pty's session, or the API socket's user — for the
    * platform's protocol to drive. `url` is the upgrade's own: its public origin (the browser's
-   * scheme, host and port; http/public-origin.ts) with the path and query it asked for.
+   * scheme, host and port; @prismshadow/penguin-library-http/public-origin) with the path and query it asked for.
    */
   terminals(): TerminalManager;
   attachStream(ws: WebSocket, ref: AttachedStream, url: URL, log: (l: string) => void): void;
@@ -253,7 +253,7 @@ interface HandedAgentState {
 /** Registry id of the handed-over Agent state — in the `agent:` group, so a build that does not declare the group stops the runs behind it. */
 const AGENT_STATE_RESOURCE_ID = "agent:state";
 /** The AgentState interface's key in the generated table. */
-const AGENT_STATE_IFACE = "@prismshadow/penguin-server#AgentState";
+const AGENT_STATE_IFACE = "@prismshadow/penguin-library-session#AgentState";
 /**
  * What a Session whose Task a swap had to stop is started again with. The stopped turn
  * itself comes back through core's carry-over (`[turn_aborted]`); this only says why.

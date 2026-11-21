@@ -10,15 +10,17 @@
  * first; Cancel there returns to the form. A rejection from the server lands under the key, and
  * the dialog stays open with what was typed.
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Button,
   ConfirmModal,
+  FailureText,
   Input,
   Modal,
   PasswordInput,
   useFormDraft,
   useGuardedClose,
+  type Failure,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 
@@ -42,8 +44,8 @@ export interface VaultAddDialogProps {
   open: boolean;
   /** The keys already configured: adding one of them overwrites its value, after a question. */
   existingKeys: readonly string[];
-  /** Writes the entry; resolves with null when stored, else with why it was refused. */
-  onAdd: (key: string, value: string) => Promise<string | null>;
+  /** Writes the entry; resolves with null when stored, else with why not (its report, for a failure). */
+  onAdd: (key: string, value: string) => Promise<Failure | null>;
   onClose: () => void;
 }
 
@@ -54,7 +56,7 @@ export function VaultAddDialog(props: VaultAddDialogProps) {
 function VaultAddForm({ existingKeys, onAdd, onClose }: VaultAddDialogProps) {
   const form = useFormDraft(EMPTY, { normalize: normalizeEntry });
   /** What the server refused, under the key. Cleared by the next keystroke. */
-  const [refused, setRefused] = useState<string | null>(null);
+  const [refused, setRefused] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   /** The configured key the user is being asked to overwrite. */
@@ -75,7 +77,7 @@ function VaultAddForm({ existingKeys, onAdd, onClose }: VaultAddDialogProps) {
     try {
       const refusal = await onAdd(key, form.draft.value);
       if (refusal === null) onClose();
-      else setRefused(refusal);
+      else setRefused(<FailureText failure={refusal} />);
     } finally {
       setBusy(false);
     }

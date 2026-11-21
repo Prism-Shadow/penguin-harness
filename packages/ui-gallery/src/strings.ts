@@ -9,7 +9,13 @@
  * the component library's topics (src/library/topics.ts), in both dictionaries. Every table keyed
  * by an id `satisfies` a `Record` over that id, so the compiler checks each covers every id.
  */
-import type { HookName, StreamReveal, TextVariant, ToneName } from "@prismshadow/penguin-ui";
+import type {
+  AgentAccessory,
+  HookName,
+  StreamReveal,
+  TextVariant,
+  ToneName,
+} from "@prismshadow/penguin-ui";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
 import type { A2uiSpec } from "@prismshadow/a2ui";
 import type { SurfaceGroupId, SurfaceId } from "./app/surfaces";
@@ -444,7 +450,9 @@ export const zh = {
       "ui-glyph":
         "按主题换画法的图标：朴素为线性画法，白领为线性画法衬淡色块（双色调），极客为像素画",
       "ui-avatar":
-        "按主题换画法的智能体缺省头像：同一只笑脸圆球企鹅，朴素为圆角方块，白领与卡通为圆形，极客为像素画",
+        "按主题换画法的智能体缺省头像：同一只细棕线勾勒的蛋形小企鹅，朴素为圆角方块，白领为圆形，卡通为饼干形，极客为像素画",
+      "ui-segmented": "分段控件：并排的几个选项里选一个",
+      "ui-action": "导航列表打头的主操作：新建对话",
     } satisfies Record<HookName, string>,
     hookSamples: {
       menu: ["置顶", "重命名", "删除"] as readonly string[],
@@ -525,7 +533,8 @@ export const zh = {
       },
       dialogs: {
         title: "对话框",
-        description: "模态对话框、确认框、分页对话框、抽屉、底部面板、图片放大与命令面板。",
+        description:
+          "模态对话框、确认框、分页对话框、抽屉、底部面板、图片放大、命令面板，以及从触发它的图标原地展开的面板。",
       },
       tooltips: {
         title: "悬停提示",
@@ -553,7 +562,8 @@ export const zh = {
       },
       avatars: {
         title: "头像",
-        description: "用户头像的各个尺寸；智能体头像在每套主题下的画法与整套颜色；头像组。",
+        description:
+          "用户头像的各个尺寸；智能体头像在每套主题下的画法与整套颜色；头像组；应用图标的形状。",
       },
       site: {
         title: "公开站点",
@@ -591,7 +601,7 @@ export const zh = {
       report: {
         title: "报告问题",
         description:
-          "严重错误的「[报告问题]」入口：页面崩溃时的提示、带入口的错误提示条、带入口的加载失败提示，以及报告对话框。",
+          "每一处失败都带的「[报告问题]」入口：页面崩溃时的提示、带入口的错误提示条、行内报错、带入口的加载失败提示，以及报告对话框。",
       },
       attachments: {
         title: "附件",
@@ -903,6 +913,12 @@ export const zh = {
       palettePlaceholder: "输入以筛选命令…",
       paletteEmpty: "没有匹配的命令",
       paletteHint: "↑↓ 选择 · Enter 执行 · Esc 关闭",
+      unfold: "原地展开的面板",
+      unfoldAside:
+        "从触发它的图标原地展开，没有遮罩；返回箭头、Esc 或点击面板以外的地方会收回到原图标。在滚动区域里，面板始终留在可见范围之内",
+      unfoldBack: "返回",
+      unfoldFolders: ["工作", "学习", "娱乐"] as readonly string[],
+      unfoldItem: (n: number) => `应用 ${n}`,
     },
     tooltips: {
       attribute: "data-tooltip 属性",
@@ -1040,6 +1056,26 @@ export const zh = {
       transferRetryNow: "立即重试",
     },
     streaming: {
+      standard: "标准",
+      expanded: "展开",
+      compact: "紧凑",
+      finish: "结束运行",
+      restart: "重新运行",
+      finished: "运行完毕",
+      activity: "运行步骤",
+      running: "运行中",
+      thinking: "思考",
+      plan: "先读会议记录，再整理待办事项。",
+      read: "读取会议记录",
+      navigation: {
+        previous: "上一步",
+        next: "下一步",
+        latest: "最新步骤",
+        waiting: "查看待处理步骤",
+        elapsed: "总耗时",
+        stepWords: ["第 ", " 步"] as readonly [before: string, after: string],
+        jump: "跳转到步骤",
+      },
       reply: "助手回答",
       output: "工具输出",
       receiving: "正在接收…",
@@ -1136,11 +1172,13 @@ export const zh = {
       legendHitRate: "缓存命中率",
       legendParts: ["系统提示词", "工具定义", "对话消息", "工具结果"] as readonly string[],
       trend: "成本趋势",
-      trendHint: "十四天的成本折线，悬停查看某一天。",
+      trendHint: "十四天的成本折线，悬停查看某一天；也可按 Tab 聚焦，再用方向键逐日查看。",
       tokens: "Token 用量",
-      tokensHint: "按种类堆叠的每日 Token 柱，叠加缓存命中率曲线；悬停图例高亮一种。",
+      tokensHint:
+        "按种类堆叠的每日 Token 柱，叠加缓存命中率曲线；没有缓存流量的那天曲线断开。悬停图例高亮一种。",
       requests: "请求与成功率",
-      requestsHint: "按智能体堆叠的每日请求数，与各自的成功率线。",
+      requestsHint:
+        "按智能体堆叠的每日请求数，与各自的成功率线。第二个智能体空闲的日子线会断开，夹在其间的那一天画成一个点。",
       agents: ["docs-expert", "release-notes"] as readonly string[],
       activity: "活动折线",
       activityHint: "智能体卡片上的十四天会话数曲线，只看相对起伏。",
@@ -1207,15 +1245,32 @@ export const zh = {
     avatars: {
       user: "用户头像",
       agent: "智能体头像",
-      agentAside: "当前主题的画法：十二个智能体，颜色各一",
+      agentAside: "当前主题的画法：十二个智能体，颜色各一，配饰依次轮换",
+      wear: "智能体的配饰",
+      wearAside: "八选一，与颜色一样由智能体的 id 决定；配饰取色相环对面那一格的颜色",
+      accessories: {
+        none: "无",
+        scarf: "围巾",
+        beanie: "毛线帽",
+        cap: "鸭舌帽",
+        headphones: "耳机",
+        sprout: "小芽",
+        bow: "蝴蝶结",
+        glasses: "眼镜",
+      } satisfies Record<AgentAccessory, string>,
       variants: "各主题的画法",
-      variantsAside: "同一只笑脸圆球企鹅，每套主题一种画法；颜色只随智能体",
+      variantsAside: "同一只蛋形小企鹅，每套主题一种画法；颜色与配饰只随智能体",
       sizeCaption: (px: number) => `${px}px`,
       picture: "智能体自己的图片",
       pictureAside: "上传的图片保持智能体的圆角方块；读不出来时画缺省头像",
       pictureBroken: "图片读不出来",
       stack: "头像组",
       stackShown: (shown: number, total: number) => `共 ${total} 个，显示 ${shown} 个`,
+      appIcon: "应用图标的形状",
+      appIconAside:
+        "所有应用与分组共用一个圆角方形；圆角随图标缩放，小图标与大图标是同一个形状。切换主题可看到各主题的圆角",
+      appIconLetter: "首字母方块",
+      appIconFolder: "分组",
       userNames: ["admin", "演示管理员"] as readonly string[],
       agents: [
         { id: "docs-expert", name: "Docs Expert" },
@@ -1344,6 +1399,13 @@ export const zh = {
       wrap: "自动换行",
       crumbs: "路径条",
       crumbsHint: "放不下时，开头的几段收进一个「…」，文件名最后让位",
+      narrow: "窄树窗格",
+      narrowHint:
+        "放不下搜索框时收为放大镜按钮，点击即横跨标题行展开；框内为空时按 Esc 或失焦即收回",
+      narrowFolded: "收起",
+      narrowQuery: "框内有搜索词：一直保留",
+      refresh: "刷新",
+      upload: "上传",
       menu: "文件菜单",
       menuFile: "文件",
       menuFolder: "文件夹",
@@ -1833,11 +1895,20 @@ export const zh = {
       copyId: "复制 ID",
       entityAction: "打开会话",
       entityTags: ["审查", "只读"],
+      shell: "应用窗口",
+      shellHint:
+        "侧栏右缘可以拖动改变宽度，拖动中即时跟手；聚焦后左右方向键微调，双击复原为主题自身的宽度。收起为图标栏再展开，回到拖好的宽度。",
+      shellResize: "调整侧栏宽度",
+      shellProject: "默认项目",
+      shellFold: "收起侧栏",
+      shellUnfold: "展开侧栏",
+      shellBody: "页面在这里，侧栏变宽时它让出位置。",
       nav: "导航列表",
       navHint:
         "当前行用实色填充，并标为当前页；图标只是装饰，旁边的标签已经说明了它。对话框的侧栏在手机上横向滚动。",
       navLabel: "智能体设置",
-      navRail: "侧栏：图标、标签与行尾计数；最后一行暂时无处可去",
+      navRail: "侧栏：先是主操作，然后是图标、标签与行尾计数；最后一行暂时无处可去",
+      navPrimary: "新建对话",
       navDense: "紧凑：用在面板里",
       navRows: {
         overview: "概览",
@@ -2135,13 +2206,21 @@ export const zh = {
         "某部分页面在显示时崩溃，原处不留空白，而是一行与「[已中断]」同一样式的提示，带「重新加载」与「报告问题」；报告里有错误、调用栈与组件栈，个人路径已去掉。",
       toast: "错误提示条",
       toastHint:
-        "只有严重错误（服务端未命名的 500、意料之外的异常）的提示条带「报告问题」，停留更久；可预期的错误（校验、权限、离线等）与原来一样。",
-      fireSerious: "严重错误",
-      fireExpected: "可预期的错误",
+        "失败的提示条带「报告问题」，停留更久；拒绝（校验不通过、名称已存在、没有权限等）与原来一样，不带入口。",
+      fireSerious: "失败",
+      fireExpected: "拒绝",
       seriousText: "服务端内部错误",
       expectedText: "没有权限访问该 Project",
       loadFailed: "加载失败",
-      loadFailedHint: "加载失败的提示在失败是严重错误时，在「重试」旁边多一个「报告问题」。",
+      loadFailedHint: "加载失败的提示在「重试」旁带「报告问题」；因拒绝而读不到时不带。",
+      inline: "行内报错",
+      inlineHint: "表单与面板里的行内报错在文字之后带「报告问题」；输入有误的提示不带。",
+      inlineLine: "机器 gpu-box 没有应答",
+      inlineNotice: "没能读取更早的 Trace：服务端内部错误",
+      inlineName: "名称",
+      inlineSaveFailed: "没能保存：服务端内部错误",
+      inlineRefused: "名称已存在",
+      inlineTold: "在「连接」一步失败",
       loadTitle: "历史消息加载失败",
       retry: "重试",
       dialog: "报告对话框",

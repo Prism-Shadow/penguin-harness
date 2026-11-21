@@ -163,13 +163,13 @@ const dropHandlers = (drop: SidebarDropTarget | undefined) =>
 /**
  * The ring over the area a drop would land in. It is laid over the area's `relative` box rather
  * than drawn by the box itself, because the rows paint over their container and a selected row's
- * fill would hide an outline of the box's own.
+ * fill would hide an outline of the box's own. The drop target owns its shape; the ring follows it.
  */
 function DropRing() {
   return (
     <span
       aria-hidden
-      className="pointer-events-none absolute inset-0 z-raised rounded-md ring-1 ring-inset ring-accent"
+      className="pointer-events-none absolute inset-0 z-raised rounded-[inherit] ring-1 ring-inset ring-accent"
     />
   );
 }
@@ -223,7 +223,7 @@ export function SidebarNavGroup({
   const toggled = useArrived(collapsed);
   if (!foldable && !holding) return null;
   return (
-    <nav {...dropHandlers(drop)} className="relative flex flex-col gap-px">
+    <nav {...dropHandlers(drop)} className="relative flex flex-col gap-px rounded-md">
       <Fold open={open} onClosed={() => setHolding(false)}>
         <div
           className={`space-y-px transition-opacity duration-200 ${open ? "opacity-100" : "opacity-0"}${
@@ -269,7 +269,7 @@ export function SidebarNavArea({
   return (
     <div
       {...dropHandlers(drop)}
-      className={`relative flex flex-col gap-px${reserve ? " min-h-8" : ""}`}
+      className={`relative flex flex-col gap-px rounded-md${reserve ? " min-h-8" : ""}`}
     >
       {children}
       {drop?.over === true && <DropRing />}
