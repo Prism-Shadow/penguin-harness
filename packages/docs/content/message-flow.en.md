@@ -130,7 +130,7 @@ The cases below change the observable order on the stream:
 | max_turns reached | an `abort` event with `error_code: "max_turns"` (and `error_message` `reached max turns (N)`) → the run ends; unsubmitted input is kept as carry-over |
 | Task boundaries | `task_begin` is a Task's first message, before its input; `task_end` is its last, after the stop hooks' `hook` events. A goal round is a Task with its own pair, and its injected input follows its `task_begin`. A Task that throws ends without `task_end` |
 | The Prompt itself | written to Trace, not echoed back onto the stream (the caller already has it). The Server echoes it onto the SSE channel right after the run's first `task_begin`, the order the Trace has them in |
-| `session_meta` | emitted on the main Session's stream only by an in-session model switch, as its last message: the new context's meta, naming the model the Session now runs on. Otherwise it lives in the Trace and the history API. A Subagent child stream's first message is the child's `session_meta` |
+| `session_meta` | each main-Session `session_meta` is emitted on the stream once, when it is written: a new Session's first message, and the context a compaction or an in-session model switch opens, when its file opens with the next message (after that Task's `task_begin`, before its input). A switch itself ends with a `session_update` naming the model the Session now runs on. A Subagent child stream's first message is the child's `session_meta` |
 
 ## Across Sessions: the origin chain
 

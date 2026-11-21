@@ -39,7 +39,7 @@ The rules a reader can rely on:
 6. **The stream is the Trace, plus fragments.** Every record the main Session writes to its Trace streams exactly once, when it is written, in Trace order. The exceptions:
    - two kinds of record are written to the Trace and never streamed: the `request_begin` / `request_end` pair of a compaction's own request, and `subagent` pointers;
    - a subagent's records carry `origin`, stream on the parent's stream only, and are kept in the child's own Trace;
-   - when a new context opens, its `mcp_connect_begin` / `mcp_connect_end` pair and `tool_list_ready` stream as the context opens, and are written once its file opens.
+   - when a new context opens, its `mcp_connect_begin` / `mcp_connect_end` pair and `tool_list_ready` stream as the context opens, and are written once its file opens; so does the `[model_switch_from]` hand-off a model switch opens the next context with.
 7. **What falls between `compaction_begin` and `compaction_end` belongs to the compaction.** A text there is the summary, not an answer.
 
 ### session_meta on the stream
@@ -48,13 +48,13 @@ A main-Session `session_meta` streams once, when it is written. That happens at 
 
 - **A new Session's first message.** It heads the Session's first Trace file, before that Task's `task_begin`, so it is the first record of the run stream that creates a Session, and its `session_id` is how that stream names the new Session.
 - **The context a compaction opens.** The new file opens just before the first record written after the compaction, and its `session_meta` streams then. When the compaction ended the previous Task, the next Task's `task_begin` has already gone by, since Task records never open a file: the `session_meta` comes after that `task_begin` and before the Task's input.
-- **A model switch.** The switch opens the new file as it completes, between runs, so its `session_meta` is on the Session stream, not in the next run's stream.
+- **The context a model switch opens.** The same way: its file opens with the next message, so its `session_meta` comes after the next Task's `task_begin` and before its input. The switch itself runs between runs and ends, on the Session stream, with a `session_update` naming the target (see [AMSP Records](/amsp-records#eventmsg)).
 
 No `session_meta` is sent again. A reader that needs the model later reads `GET …/sessions/:sessionId`; for the rest, it reads the whole history, which carries every file's `session_meta`. A subagent's `session_meta` streams with its `origin` when the child starts.
 
 ### Tasks
 
-`task_begin` and `task_end` bracket a Task: one prompt's run, with the `hook` records of its stop hooks. A run can hold several Tasks: a stop hook that answers `continue` starts another in the same run, which is how goal mode runs its rounds. A manual compaction and a model switch are not Tasks; `compaction_begin` / `compaction_end` and the new file's `session_meta` frame them.
+`task_begin` and `task_end` bracket a Task: one prompt's run, with the `hook` records of its stop hooks. A run can hold several Tasks: a stop hook that answers `continue` starts another in the same run, which is how goal mode runs its rounds. A manual compaction and a model switch are not Tasks; `compaction_begin` / `compaction_end` and a switch's `session_update` frame them.
 
 `task_begin` comes before everything the Task writes, its input included. An aborted Task still ends with `task_end`. A `task_begin` with no `task_end` before the next `task_begin` or the end of the run is a Task that never reached its end: the server failed while driving it.
 

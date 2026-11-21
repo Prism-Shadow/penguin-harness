@@ -350,6 +350,19 @@ describe("penguin agent / project", () => {
     ]);
   });
 
+  it("agent create --no-default-plugins asks the server to leave out the plugins every new agent gets", async () => {
+    expect(await cli(["agent", "create", "--agent-id", "lean", "--no-default-plugins"])).toBe(0);
+    expect(await cli(["agent", "create", "--agent-id", "usual"])).toBe(0);
+    const sent = server.requests
+      .filter((r) => r.method === "POST" && r.path.endsWith("/agents"))
+      .map((r) => [r.body?.agentId, r.body?.defaultPlugins]);
+    // Without the flag the CLI says nothing, and the server adds goal and plan.
+    expect(sent).toEqual([
+      ["lean", false],
+      ["usual", undefined],
+    ]);
+  });
+
   it("agent create refuses an unknown --author before sending anything", async () => {
     expect(await cli(["agent", "create", "--agent-id", "x", "--author", "robot"])).toBe(1);
     expect(stderr.join("")).toContain(t.agent.createAuthorInvalid("robot"));

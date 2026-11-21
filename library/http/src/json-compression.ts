@@ -20,7 +20,7 @@
 import { promisify } from "node:util";
 import zlib from "node:zlib";
 import type { MiddlewareHandler } from "hono";
-import type { AppEnv } from "../auth/middleware.js";
+import type { AppEnv } from "./app-env.js";
 import { isJsonAnswer, replaceAnswer } from "./json-answer.js";
 
 /** Below this, an answer goes as it is. */
