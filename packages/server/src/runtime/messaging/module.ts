@@ -40,7 +40,7 @@ import type { Errors } from "@prismshadow/penguin-library-observability";
 import type { Access } from "@prismshadow/penguin-library-project";
 import { toAttachmentLimits } from "@prismshadow/penguin-library-setting/attachment-limits";
 
-export type { MessagingSlots };
+export type { Messaging, MessagingSlots };
 
 @Module({
   contributes: {
