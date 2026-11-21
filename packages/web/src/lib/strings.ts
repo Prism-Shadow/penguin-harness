@@ -783,6 +783,13 @@ export const zh = {
       title: "模块请求",
       info: "成员把带服务端模块的插件装到 Agent 上，而本服务端既未运行、构建也不自带该模块时，会在这里留下请求。启用会把它列入该 Project 在本服务端的插件表并重新装载服务器插件，正在运行的 Agent 不受影响。内置插件的模块随 Agent 安装自动启用，也记在这里。",
       empty: "没有等待处理的请求",
+      /** The rail row's accessible name while requests wait: its name and the count beside it. */
+      waitingCount: (n: number) => `模块请求，${n} 个待处理`,
+      /** In place of the list when the server on screen cannot answer (null: this server). */
+      unreadable: (machine: string | null, reason: string) =>
+        machine === null
+          ? `无法读取模块请求：${reason}`
+          : `无法读取 ${machine} 上的模块请求：${reason}`,
       waiting: "待处理",
       waitingHint: "等待你启用或拒绝",
       declined: "已拒绝",
@@ -3228,7 +3235,7 @@ export const zh = {
     incompatibleOnlyShowAll: "显示全部",
     /** The admin's notice while members' requests to run a plugin's server module wait. */
     moduleRequestsNotice: (n: number) => `${n} 个服务端模块等待启用`,
-    /** That notice's action: opens Settings › Plugins, where they are decided. */
+    /** That notice's action: opens the Settings dialog's module requests page, where they are decided. */
     moduleRequestsView: "查看",
     /**
      * What an install did about the plugin's server module, after the install's own sentence

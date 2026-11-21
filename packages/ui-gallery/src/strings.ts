@@ -900,6 +900,8 @@ export const zh = {
       pages: { general: "通用", appearance: "外观", account: "个人资料" },
       pageBody: "当前页的设置项放在这里。",
       pageRow: (n: number) => `第 ${n} 项设置`,
+      /** A rail row's accessible name while its count shows. */
+      pageWaiting: (page: string, n: number) => `${page}，${n} 项待处理`,
       appearanceInfo: "主题、强调色与密度只作用于这个浏览器。",
       drawer: "抽屉",
       openDrawer: "打开抽屉",

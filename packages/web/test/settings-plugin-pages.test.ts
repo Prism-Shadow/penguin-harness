@@ -4,10 +4,12 @@
  * lib/plugin-pages.ts and plugin-page.tsx), against this server's plugin library, its plugin
  * settings and two pages a plugin's web half contributes, behind the fetch fake.
  *
- * - An admin's rail ends with a Plugins group: the host's own plugin sources and Agent sandbox
- *   pages first, then a page for the plugin whose server module declares a settings group and one
- *   for the plugin whose web half contributes pages, named by the library. The server group keeps
- *   no plugin page.
+ * - An admin's rail ends with a Plugins group: the host's own plugin sources, module requests and
+ *   Agent sandbox pages first, then a page for the plugin whose server module declares a settings
+ *   group and one for the plugin whose web half contributes pages, named by the library. The
+ *   server group keeps no plugin page.
+ * - While requests wait on this server, the module requests row counts them under a name that
+ *   says so, and its page lists them; plugin sources lists none.
  * - A member's rail holds only the plugin page with a part for every viewer, and the dialog never
  *   asks for the plugin settings.
  * - A request naming a contributed page by the key it had of its own opens its plugin's page,
@@ -22,7 +24,12 @@
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createElement as h } from "react";
-import type { MeResponse, PluginConfigEntry, PluginItem } from "@prismshadow/penguin-server/api";
+import type {
+  MeResponse,
+  PluginConfigEntry,
+  PluginItem,
+  PluginModuleRequestsResponse,
+} from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { SettingsDialog } from "../src/features/settings/settings-dialog";
@@ -90,8 +97,37 @@ const ENTRIES: PluginConfigEntry[] = [
   },
 ];
 
-/** This server: who is signed in, its library, its plugin settings (the library may be held). */
-function server(me: MeResponse, opts: { holdLibrary?: boolean } = {}) {
+/** One member's request to run a plugin's server module, waiting. */
+const WAITING: PluginModuleRequestsResponse = {
+  pending: 1,
+  requests: [
+    {
+      package: "@acme/charts",
+      plugin: "charts",
+      projectId: "proj",
+      projectName: "Research",
+      agentId: "helper",
+      requestedBy: "alice",
+      requestedByName: "Alice",
+      requestedAt: "2026-11-19T08:00:00.000Z",
+      decision: null,
+      decidedBy: null,
+      decidedAt: null,
+      via: null,
+      builtin: false,
+      state: "off",
+    },
+  ],
+};
+
+/**
+ * This server: who is signed in, its library, its plugin settings (the library may be held), and
+ * its module requests (none known unless given).
+ */
+function server(
+  me: MeResponse,
+  opts: { holdLibrary?: boolean; requests?: PluginModuleRequestsResponse } = {},
+) {
   let releaseLibrary: () => void = () => {};
   const held = new Promise<void>((resolve) => (releaseLibrary = resolve));
   const fetch: FakeFetch = stubFetch(async (request) => {
@@ -114,6 +150,9 @@ function server(me: MeResponse, opts: { holdLibrary?: boolean } = {}) {
         e.name === body.name ? { ...e, values: { ...e.values, ...body.values } } : e,
       );
       return json({ plugins: stored });
+    }
+    if (request.path === "/api/admin/plugin-modules" && opts.requests !== undefined) {
+      return json(opts.requests);
     }
     if (request.path === "/api/admin/plugin-config") {
       return me.user.isAdmin ? json({ plugins: ENTRIES }) : apiError(403, "forbidden");
@@ -198,12 +237,27 @@ describe("the Settings dialog's plugin pages", () => {
     expect(rows.slice(rows.indexOf("# Plugins"))).toEqual([
       "# Plugins",
       "Plugin sources",
+      "Module requests",
       "Agent Sandbox",
       "Acme Browser",
       "Acme Helper",
     ]);
     expect(rows).not.toContain("Browser");
     expect(rows).not.toContain("Extension");
+  });
+
+  it("counts the requests waiting on this server on their row, and lists them on their own page", async () => {
+    server(ADMIN_ME, { requests: WAITING });
+    await open();
+    await waitFor(() => hasButton("Module requests, 1 waiting"));
+    expect(button("Module requests, 1 waiting").textContent).toBe("Module requests1");
+    await click(button("Plugin sources"));
+    await waitFor(() => heading().includes("Plugin sources"));
+    expect(document.body.textContent).not.toContain("Research");
+    await click(button("Module requests, 1 waiting"));
+    await waitFor(() => document.body.textContent?.includes("Research") === true);
+    expect(heading()).toContain("Module requests");
+    expect(hasButton("Enable charts")).toBe(true);
   });
 
   it("gives a member only the page with a part for every viewer, and never reads plugin settings", async () => {

@@ -2,16 +2,19 @@
 
 - **Date:** 2026-11-20
 - **Type:** feature
-- **Scope:** `web`, `ui`, `server`, `plugins`, `ui-gallery`
+- **Scope:** `web`, `ui`, `server`, `core`, `plugins`, `ui-gallery`
 - **PR:** [#1670](https://github.com/Prism-Shadow/penguin-harness/pull/1670)
 
 [中文版](2026-11-20-plugin-settings-pages.zh.md)
 
 The Settings dialog's rail ends with a **Plugins** group that holds every plugin-related
 setting; the Server group no longer has a plugins page. The group opens with two pages of the
-host's own, for admins: **Plugin sources** (the npm registry, the plugin index and the mirrors)
-and **Agent Sandbox** (the sandbox switch and presets, with a line per sandbox backend linking to
-that backend's page). Then each plugin with options gets a page of its own, named and drawn with
+host's own, for admins: **Plugin sources** (the npm registry, the plugin index and the mirrors),
+**Module requests** (members' requests to run a plugin's server module, which
+[#1638](https://github.com/Prism-Shadow/penguin-harness/pull/1638) had put on the plugins page; the
+row counts the requests waiting on this server, and the Plugins page's notice opens it) and
+**Agent Sandbox** (the sandbox switch and presets, with a line per sandbox backend linking to that
+backend's page). Then each plugin with options gets a page of its own, named and drawn with
 the plugin's icon and version, holding its personal options (every signed-in user) and its server
 options (admins only) as two ruled parts. A page exists only because the plugin contributes it:
 the browser's Browser and Chrome extension pages are now the two parts of the Browser Automation
@@ -58,4 +61,5 @@ then the options, with security settings under their own heading.
   read.
 - Shared UI: `InstalledVersion`, `Checklist` / `ChecklistRow` and `StatusStrip`, shown on the
   gallery's new **Status page** board. `HelpFold` exports its trigger as `HelpFoldToggle`
-  (which takes a full accessible `name`). `PagedDialog` items may carry a `heading`.
+  (which takes a full accessible `name`). `PagedDialog` items may carry a `heading`, and a
+  `badge` (a count at the end of the rail row) with the row's `ariaLabel`.

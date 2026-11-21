@@ -44,6 +44,7 @@ const APP_PAGES: Record<HostSettingsSectionKey, true> = {
   company: true,
   agentApi: true,
   plugins: true,
+  moduleRequests: true,
   sandbox: true,
   users: true,
 };
@@ -118,6 +119,7 @@ describe("contributed pages", () => {
       "users",
       // The Plugins group, last: the host's own plugin pages.
       "plugins",
+      "moduleRequests",
       "sandbox",
     ]);
   });

@@ -261,6 +261,8 @@ export function PluginsPage() {
   const isAdmin = user?.isAdmin === true;
   const isOwner = currentProject?.role === "owner";
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** The Settings page the dialog opens on: plugin sources from the header, the requests from their notice. */
+  const [settingsSection, setSettingsSection] = useState<"plugins" | "moduleRequests">("plugins");
   /** The administrator's requests to run plugins' server modules on this server, for the notice. */
   const moduleRequests = usePluginModuleRequests(null, isAdmin);
   /** The import dialog (admin) is open. */
@@ -953,7 +955,10 @@ export function PluginsPage() {
                 />
               ) : null
             }
-            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenSettings={() => {
+              setSettingsSection("plugins");
+              setSettingsOpen(true);
+            }}
             onImport={() => setImportOpen(true)}
           />
         }
@@ -1008,13 +1013,16 @@ export function PluginsPage() {
         <IncompatibleNotice filtered={incompatibleOnly} unsatisfied={unsatisfiedCount} />
         <ModuleRequestsNotice
           waiting={isAdmin ? (moduleRequests.value?.pending ?? 0) : 0}
-          onView={() => setSettingsOpen(true)}
+          onView={() => {
+            setSettingsSection("moduleRequests");
+            setSettingsOpen(true);
+          }}
         />
       </PageHeader>
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        section="plugins"
+        section={settingsSection}
       />
       {isAdmin && projectId !== null && (
         <ImportPluginModal
@@ -1214,8 +1222,8 @@ const INCOMPATIBLE = "incompatible";
 
 /**
  * The administrator's notice beside the incompatible-plugins one, while members' requests to run a
- * plugin's server module wait on this server: how many, and the way to Settings › Plugins, where
- * they are decided. Nothing while none waits.
+ * plugin's server module wait on this server: how many, and the way to the Settings dialog's
+ * module requests page, where they are decided. Nothing while none waits.
  */
 export function ModuleRequestsNotice({
   waiting,

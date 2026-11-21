@@ -906,6 +906,8 @@ export const en: GalleryStrings = {
       pages: { general: "General", appearance: "Appearance", account: "Profile" },
       pageBody: "The current page's settings go here.",
       pageRow: (n: number) => `Setting ${n}`,
+      /** A rail row's accessible name while its count shows. */
+      pageWaiting: (page: string, n: number) => `${page}, ${n} waiting`,
       appearanceInfo: "Theme, accent and density apply to this browser only.",
       drawer: "Drawer",
       openDrawer: "Open a drawer",

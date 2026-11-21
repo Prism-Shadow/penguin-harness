@@ -14,7 +14,8 @@
  * answers. A request naming a plugin page — its `plugin:<package>` key, the key a
  * contributed page had before it joined its plugin's page, or the plugin management page focused
  * on a settings group a plugin page now draws — opens that page, scrolled to the part it named;
- * until the pages are known it shows an empty pane rather than another page.
+ * until the pages are known it shows an empty pane rather than another page. The host's module
+ * requests page carries the count of requests waiting on this server on its rail row.
  *
  * A page with a typed form registers it under the dialog's scope while it holds unsaved
  * edits, and both ways of leaving that page ask first: switching pages on the rail (which
@@ -25,6 +26,7 @@
  */
 import { useEffect, useState } from "react";
 import {
+  Count,
   ICON_SIZE,
   ICONS,
   PagedDialog,
@@ -63,6 +65,7 @@ import { UploadsSection } from "./uploads-section";
 import { CompanySection } from "./company-section";
 import { AgentApiSection } from "./agent-api-section";
 import { PluginsSection } from "./plugins-section";
+import { ModuleRequestsPage, useModuleRequestsWaiting } from "./module-requests-page";
 import { AdminUsersSection } from "../admin";
 import { shownSections } from "./contributed-sections";
 import { usePluginPagesIndex } from "./plugin-pages-index";
@@ -93,6 +96,8 @@ const SECTION_ICONS: Record<HostSettingsSectionKey, string> = {
   agentApi: ICONS.angleBrackets,
   /** Puzzle piece: where plugins come from, the plugin library's own mark. */
   plugins: ICONS.puzzle,
+  /** A raised hand: members asking for a plugin's server module, the waiting rows' own mark. */
+  moduleRequests: ICONS.hand,
   /** The half-filled shield the composer's permission button wears: the sandbox Agents run in. */
   sandbox: ICONS.shieldHalf,
   /** Two people: user management. */
@@ -123,6 +128,8 @@ export function SettingsDialog({
   // The Project's connected machines, whose plugins may have pages too; none outside the providers.
   const machineIds = useSessionsIfAny()?.machineIds;
   const index = usePluginPagesIndex(open, isAdmin, machineIds);
+  /** Requests waiting on this server: the module requests row's count. */
+  const waitingModules = useModuleRequestsWaiting(isAdmin && open);
   const pages =
     index === null ? [] : pluginPages({ isAdmin, locale, sections: contributed, ...index });
   const sections = visibleSettingsSections(
@@ -173,6 +180,7 @@ export function SettingsDialog({
     company: S.settings.companyModeTitle,
     agentApi: S.settings.agentApiTitle,
     plugins: S.settings.pluginsTitle,
+    moduleRequests: S.settings.moduleRequests.title,
     sandbox: S.settings.sandboxTitle,
     users: S.admin.users,
   };
@@ -191,6 +199,7 @@ export function SettingsDialog({
     company: S.settings.companyModeServerInfo,
     agentApi: S.settings.agentApiHint,
     plugins: S.settings.pluginsInfo,
+    moduleRequests: S.settings.moduleRequests.info,
     sandbox: S.settings.sandboxInfo,
   };
 
@@ -219,11 +228,19 @@ export function SettingsDialog({
           const page = contributedByKey.get(s.key);
           const own = s.key as HostSettingsSectionKey;
           const info = page !== undefined ? page.code.info?.() : sectionInfo[own];
+          // A count while requests wait, with the row named to include it.
+          const counted = s.key === "moduleRequests" && waitingModules > 0;
           return {
             key: s.key,
             label: page !== undefined ? page.code.label() : sectionLabel[own],
             icon: page !== undefined ? glyphOf(page.data.icon) : SECTION_ICONS[own],
             ...(info !== undefined ? { info } : {}),
+            ...(counted
+              ? {
+                  badge: <Count n={waitingModules} max={99} />,
+                  ariaLabel: S.settings.moduleRequests.waitingCount(waitingModules),
+                }
+              : {}),
           };
         }),
     }),
@@ -265,6 +282,7 @@ export function SettingsDialog({
         {current === "plugins" && (
           <PluginsSection host="sources" {...(focus !== undefined ? { focus } : {})} />
         )}
+        {current === "moduleRequests" && <ModuleRequestsPage />}
         {current === "sandbox" && <PluginsSection host="sandbox" />}
         {current === "users" && <AdminUsersSection />}
         {ContributedBody !== undefined && <ContributedBody />}

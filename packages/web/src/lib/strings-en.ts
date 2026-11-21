@@ -688,6 +688,13 @@ export const en: Strings = {
       title: "Module requests",
       info: "A member who installs a plugin with a server module on an agent leaves a request here when this server neither runs the module nor ships it in its build. Enabling lists it in that Project's plugin table for this server and reloads the server's plugins; running agents are not affected. A built-in plugin's module is enabled with the agent install, and is recorded here too.",
       empty: "No requests waiting",
+      /** The rail row's accessible name while requests wait: its name and the count beside it. */
+      waitingCount: (n: number) => `Module requests, ${n} waiting`,
+      /** In place of the list when the server on screen cannot answer (null: this server). */
+      unreadable: (machine: string | null, reason: string) =>
+        machine === null
+          ? `The module requests could not be read: ${reason}`
+          : `The module requests on ${machine} could not be read: ${reason}`,
       waiting: "Waiting",
       waitingHint: "Waiting for you to enable or decline it",
       declined: "Declined",
@@ -3055,7 +3062,7 @@ export const en: Strings = {
       n === 1
         ? "1 server module is waiting to be enabled"
         : `${n} server modules are waiting to be enabled`,
-    /** That notice's action: opens Settings › Plugins, where they are decided. */
+    /** That notice's action: opens the Settings dialog's module requests page, where they are decided. */
     moduleRequestsView: "View",
     /**
      * What an install did about the plugin's server module, after the install's own sentence
