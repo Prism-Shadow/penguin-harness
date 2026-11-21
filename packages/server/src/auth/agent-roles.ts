@@ -339,48 +339,87 @@ export const HTTP_GROUP_ENDPOINT_IDS = {
   "machines POST /:machineId/disconnect": "machine.disconnect",
   "machines.server-proxy ALL /*": "machine.proxy",
 
-  // Messaging
+  // Messaging (`agents.messaging.<channel>.*` & account listings)
   "messaging.accounts GET /accounts": "messaging.listAccounts",
   "messaging.account-holders GET /account-holders": "messaging.listAccountHolders",
   "messaging.session-routes GET /:sessionId/messaging": "messaging.session.list",
-  "messaging.session-routes GET /:sessionId/messaging/feishu": "messaging.feishu.get",
-  "messaging.session-routes PUT /:sessionId/messaging/feishu": "messaging.feishu.update",
-  "messaging.session-routes POST /:sessionId/messaging/feishu/state": "messaging.feishu.setState",
-  "messaging.session-routes DELETE /:sessionId/messaging/feishu": "messaging.feishu.delete",
-  "messaging.session-routes POST /:sessionId/messaging/feishu/test": "messaging.feishu.test",
+  "messaging.session-routes GET /:sessionId/messaging/feishu": "agents.messaging.feishu.get",
+  "messaging.session-routes PUT /:sessionId/messaging/feishu": "agents.messaging.feishu.update",
+  "messaging.session-routes POST /:sessionId/messaging/feishu/state":
+    "agents.messaging.feishu.setState",
+  "messaging.session-routes DELETE /:sessionId/messaging/feishu": "agents.messaging.feishu.delete",
+  "messaging.session-routes POST /:sessionId/messaging/feishu/test": "agents.messaging.feishu.test",
   "messaging.session-routes POST /:sessionId/messaging/feishu/test-message":
-    "messaging.feishu.testMessage",
-  "messaging.session-routes GET /:sessionId/messaging/telegram": "messaging.telegram.get",
-  "messaging.session-routes PUT /:sessionId/messaging/telegram": "messaging.telegram.update",
+    "agents.messaging.feishu.testMessage",
+  "messaging.session-routes GET /:sessionId/messaging/telegram": "agents.messaging.telegram.get",
+  "messaging.session-routes PUT /:sessionId/messaging/telegram": "agents.messaging.telegram.update",
   "messaging.session-routes POST /:sessionId/messaging/telegram/state":
-    "messaging.telegram.setState",
-  "messaging.session-routes DELETE /:sessionId/messaging/telegram": "messaging.telegram.delete",
-  "messaging.session-routes POST /:sessionId/messaging/telegram/test": "messaging.telegram.test",
+    "agents.messaging.telegram.setState",
+  "messaging.session-routes DELETE /:sessionId/messaging/telegram":
+    "agents.messaging.telegram.delete",
+  "messaging.session-routes POST /:sessionId/messaging/telegram/test":
+    "agents.messaging.telegram.test",
   "messaging.session-routes POST /:sessionId/messaging/telegram/test-message":
-    "messaging.telegram.testMessage",
-  "messaging.session-routes GET /:sessionId/messaging/qq": "messaging.qq.get",
-  "messaging.session-routes PUT /:sessionId/messaging/qq": "messaging.qq.update",
-  "messaging.session-routes POST /:sessionId/messaging/qq/state": "messaging.qq.setState",
-  "messaging.session-routes DELETE /:sessionId/messaging/qq": "messaging.qq.delete",
-  "messaging.session-routes POST /:sessionId/messaging/qq/scan": "messaging.qq.scanStart",
-  "messaging.session-routes POST /:sessionId/messaging/qq/scan/poll": "messaging.qq.scanPoll",
-  "messaging.session-routes POST /:sessionId/messaging/qq/scan/cancel": "messaging.qq.scanCancel",
-  "messaging.session-routes POST /:sessionId/messaging/qq/test": "messaging.qq.test",
-  "messaging.session-routes POST /:sessionId/messaging/qq/test-message": "messaging.qq.testMessage",
-  "messaging.session-routes GET /:sessionId/messaging/wechat": "messaging.wechat.get",
-  "messaging.session-routes PUT /:sessionId/messaging/wechat": "messaging.wechat.update",
-  "messaging.session-routes POST /:sessionId/messaging/wechat/state": "messaging.wechat.setState",
-  "messaging.session-routes DELETE /:sessionId/messaging/wechat": "messaging.wechat.delete",
-  "messaging.session-routes POST /:sessionId/messaging/wechat/scan": "messaging.wechat.scanStart",
+    "agents.messaging.telegram.testMessage",
+  "messaging.session-routes GET /:sessionId/messaging/qq": "agents.messaging.qq.get",
+  "messaging.session-routes PUT /:sessionId/messaging/qq": "agents.messaging.qq.update",
+  "messaging.session-routes POST /:sessionId/messaging/qq/state": "agents.messaging.qq.setState",
+  "messaging.session-routes DELETE /:sessionId/messaging/qq": "agents.messaging.qq.delete",
+  "messaging.session-routes POST /:sessionId/messaging/qq/scan": "agents.messaging.qq.scanStart",
+  "messaging.session-routes POST /:sessionId/messaging/qq/scan/poll":
+    "agents.messaging.qq.scanPoll",
+  "messaging.session-routes POST /:sessionId/messaging/qq/scan/cancel":
+    "agents.messaging.qq.scanCancel",
+  "messaging.session-routes POST /:sessionId/messaging/qq/test": "agents.messaging.qq.test",
+  "messaging.session-routes POST /:sessionId/messaging/qq/test-message":
+    "agents.messaging.qq.testMessage",
+  "messaging.session-routes GET /:sessionId/messaging/wechat": "agents.messaging.wechat.get",
+  "messaging.session-routes PUT /:sessionId/messaging/wechat": "agents.messaging.wechat.update",
+  "messaging.session-routes POST /:sessionId/messaging/wechat/state":
+    "agents.messaging.wechat.setState",
+  "messaging.session-routes DELETE /:sessionId/messaging/wechat": "agents.messaging.wechat.delete",
+  "messaging.session-routes POST /:sessionId/messaging/wechat/scan":
+    "agents.messaging.wechat.scanStart",
   "messaging.session-routes POST /:sessionId/messaging/wechat/scan/poll":
-    "messaging.wechat.scanPoll",
+    "agents.messaging.wechat.scanPoll",
   "messaging.session-routes POST /:sessionId/messaging/wechat/scan/verify":
-    "messaging.wechat.scanVerify",
+    "agents.messaging.wechat.scanVerify",
   "messaging.session-routes POST /:sessionId/messaging/wechat/scan/cancel":
-    "messaging.wechat.scanCancel",
-  "messaging.session-routes POST /:sessionId/messaging/wechat/test": "messaging.wechat.test",
+    "agents.messaging.wechat.scanCancel",
+  "messaging.session-routes POST /:sessionId/messaging/wechat/test": "agents.messaging.wechat.test",
   "messaging.session-routes POST /:sessionId/messaging/wechat/test-message":
-    "messaging.wechat.testMessage",
+    "agents.messaging.wechat.testMessage",
+  "agents.messaging.feishu GET /": "agents.messaging.feishu.get",
+  "agents.messaging.feishu PUT /": "agents.messaging.feishu.update",
+  "agents.messaging.feishu POST /state": "agents.messaging.feishu.setState",
+  "agents.messaging.feishu DELETE /": "agents.messaging.feishu.delete",
+  "agents.messaging.feishu POST /test": "agents.messaging.feishu.test",
+  "agents.messaging.feishu POST /test-message": "agents.messaging.feishu.testMessage",
+  "agents.messaging.telegram GET /": "agents.messaging.telegram.get",
+  "agents.messaging.telegram PUT /": "agents.messaging.telegram.update",
+  "agents.messaging.telegram POST /state": "agents.messaging.telegram.setState",
+  "agents.messaging.telegram DELETE /": "agents.messaging.telegram.delete",
+  "agents.messaging.telegram POST /test": "agents.messaging.telegram.test",
+  "agents.messaging.telegram POST /test-message": "agents.messaging.telegram.testMessage",
+  "agents.messaging.qq GET /": "agents.messaging.qq.get",
+  "agents.messaging.qq PUT /": "agents.messaging.qq.update",
+  "agents.messaging.qq POST /state": "agents.messaging.qq.setState",
+  "agents.messaging.qq DELETE /": "agents.messaging.qq.delete",
+  "agents.messaging.qq POST /scan": "agents.messaging.qq.scanStart",
+  "agents.messaging.qq POST /scan/poll": "agents.messaging.qq.scanPoll",
+  "agents.messaging.qq POST /scan/cancel": "agents.messaging.qq.scanCancel",
+  "agents.messaging.qq POST /test": "agents.messaging.qq.test",
+  "agents.messaging.qq POST /test-message": "agents.messaging.qq.testMessage",
+  "agents.messaging.wechat GET /": "agents.messaging.wechat.get",
+  "agents.messaging.wechat PUT /": "agents.messaging.wechat.update",
+  "agents.messaging.wechat POST /state": "agents.messaging.wechat.setState",
+  "agents.messaging.wechat DELETE /": "agents.messaging.wechat.delete",
+  "agents.messaging.wechat POST /scan": "agents.messaging.wechat.scanStart",
+  "agents.messaging.wechat POST /scan/poll": "agents.messaging.wechat.scanPoll",
+  "agents.messaging.wechat POST /scan/verify": "agents.messaging.wechat.scanVerify",
+  "agents.messaging.wechat POST /scan/cancel": "agents.messaging.wechat.scanCancel",
+  "agents.messaging.wechat POST /test": "agents.messaging.wechat.test",
+  "agents.messaging.wechat POST /test-message": "agents.messaging.wechat.testMessage",
 
   // Projects, Members, Dirs & Command Policy
   "projects GET /": "project.list",
@@ -459,13 +498,60 @@ export type HttpRouteId = DirectHttpRouteId | GroupHttpRouteId;
 
 /** Every fine-grained `auth: "user"` HTTP route ID registered on the server. */
 export const ALL_HTTP_ROUTE_IDS: readonly HttpRouteId[] = [
-  ...DIRECT_HTTP_ROUTE_IDS,
-  ...Object.values(HTTP_GROUP_ENDPOINT_IDS),
+  ...new Set<HttpRouteId>([...DIRECT_HTTP_ROUTE_IDS, ...Object.values(HTTP_GROUP_ENDPOINT_IDS)]),
 ];
 
-/** Normalizes an endpoint ID (strips an optional legacy `"penguin."` prefix). */
+const LEGACY_MESSAGING_CHANNEL_PREFIXES = [
+  ["agents.feishu", "agents.messaging.feishu"],
+  ["agents.telegram", "agents.messaging.telegram"],
+  ["agents.qq", "agents.messaging.qq"],
+  ["agents.wechat", "agents.messaging.wechat"],
+  ["messaging.feishu.", "agents.messaging.feishu."],
+  ["messaging.telegram.", "agents.messaging.telegram."],
+  ["messaging.qq.", "agents.messaging.qq."],
+  ["messaging.wechat.", "agents.messaging.wechat."],
+] as const;
+
+/**
+ * Normalizes an endpoint or role ID:
+ * - strips an optional legacy `"penguin."` prefix
+ * - normalizes `agents.<channel>` / `messaging.<channel>.*` to `agents.messaging.<channel>.*`
+ */
 export function normalizeRouteId(routeId: string): string {
-  return routeId.startsWith("penguin.") ? routeId.slice("penguin.".length) : routeId;
+  const stripped = routeId.startsWith("penguin.") ? routeId.slice("penguin.".length) : routeId;
+  for (const [legacyPrefix, canonicalPrefix] of LEGACY_MESSAGING_CHANNEL_PREFIXES) {
+    if (stripped === legacyPrefix) {
+      return canonicalPrefix;
+    }
+    if (legacyPrefix.endsWith(".") && stripped.startsWith(legacyPrefix)) {
+      return `${canonicalPrefix}${stripped.slice(legacyPrefix.length)}`;
+    }
+    if (!legacyPrefix.endsWith(".") && stripped.startsWith(`${legacyPrefix}.`)) {
+      return `${canonicalPrefix}.${stripped.slice(legacyPrefix.length + 1)}`;
+    }
+  }
+  return stripped;
+}
+
+/**
+ * Parses a grant specification that may carry an `@<refinerId>` suffix
+ * (e.g. `"agent.maintain@self"` or `"agent.maintain@withAsk"`).
+ */
+export function parseRefinedGrant(spec: string): {
+  target: string;
+  refinerId: string | null;
+} {
+  const trimmed = spec.trim();
+  const atIndex = trimmed.indexOf("@");
+  if (atIndex === -1) {
+    return { target: normalizeRouteId(trimmed), refinerId: null };
+  }
+  const rawTarget = trimmed.slice(0, atIndex).trim();
+  const rawRefiner = trimmed.slice(atIndex + 1).trim();
+  return {
+    target: normalizeRouteId(rawTarget),
+    refinerId: rawRefiner !== "" ? rawRefiner : null,
+  };
 }
 
 /**
@@ -473,9 +559,11 @@ export function normalizeRouteId(routeId: string): string {
  * falling back to `normalizeRouteId(groupId)` for single-endpoint registrations.
  */
 export function resolveHttpRouteId(groupId: string, method: string, subPath: string): string {
+  const normalizedGroup = normalizeRouteId(groupId);
   const normalizedPath = subPath === "" ? "/" : subPath;
-  const key = `${groupId} ${method.toUpperCase()} ${normalizedPath}` as keyof typeof HTTP_GROUP_ENDPOINT_IDS;
-  return HTTP_GROUP_ENDPOINT_IDS[key] ?? normalizeRouteId(groupId);
+  const key = `${normalizedGroup} ${method.toUpperCase()} ${normalizedPath}` as keyof typeof HTTP_GROUP_ENDPOINT_IDS;
+  const rawKey = `${groupId} ${method.toUpperCase()} ${normalizedPath}` as keyof typeof HTTP_GROUP_ENDPOINT_IDS;
+  return HTTP_GROUP_ENDPOINT_IDS[key] ?? HTTP_GROUP_ENDPOINT_IDS[rawKey] ?? normalizedGroup;
 }
 
 /**
@@ -554,6 +642,9 @@ export const AGENT_AUTH_ROLES = [
   "machine.read",
   "machine.maintain",
   "machine.all",
+  "agents.messaging.read",
+  "agents.messaging.maintain",
+  "agents.messaging.all",
   "messaging.read",
   "messaging.maintain",
   "messaging.all",
@@ -573,6 +664,12 @@ export const AGENT_AUTH_ROLES = [
 
 export type AgentAuthRole = (typeof AGENT_AUTH_ROLES)[number];
 
+/** Role reference in `ROLE_TREE`, optionally refined via `<role>@<refinerId>`. */
+export type RoleChildRef = AgentAuthRole | `${AgentAuthRole}@${string}`;
+
+/** Leaf route reference in `ROLE_TREE`, optionally refined via `<routeId>@<refinerId>`. */
+export type RoleRouteRef = HttpRouteId | `${HttpRouteId}@${string}`;
+
 /** The role a newly created Agent's session runs under, absent an explicit grant. */
 export const DEFAULT_AGENT_AUTH_ROLE: AgentAuthRole = "general";
 
@@ -586,10 +683,10 @@ export interface RoleFlags {
 }
 
 export interface RoleNode {
-  /** Child roles in the Role Tree inherited by this role. */
-  readonly children?: readonly AgentAuthRole[];
-  /** Leaf HTTP route IDs bound directly at this role node. */
-  readonly routes?: readonly HttpRouteId[];
+  /** Child roles in the Role Tree inherited by this role (supports `<role>@<refinerId>`). */
+  readonly children?: readonly RoleChildRef[];
+  /** Leaf HTTP route IDs bound directly at this role node (supports `<routeId>@<refinerId>`). */
+  readonly routes?: readonly RoleRouteRef[];
   /** Capability flags granted by this role node. */
   readonly flags?: RoleFlags;
 }
@@ -1162,55 +1259,66 @@ export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
   },
 
   // ---------------------------------------------------------------------------
-  // 16. messaging (read -> maintain -> all)
+  // 16. messaging & agents.messaging (read -> maintain -> all)
   // ---------------------------------------------------------------------------
+  "agents.messaging.read": {
+    routes: [
+      "agents.messaging.feishu.get",
+      "agents.messaging.telegram.get",
+      "agents.messaging.qq.get",
+      "agents.messaging.wechat.get",
+    ],
+  },
+  "agents.messaging.maintain": {
+    children: ["agents.messaging.read"],
+    routes: [
+      "agents.messaging.feishu.update",
+      "agents.messaging.feishu.setState",
+      "agents.messaging.feishu.test",
+      "agents.messaging.feishu.testMessage",
+      "agents.messaging.telegram.update",
+      "agents.messaging.telegram.setState",
+      "agents.messaging.telegram.test",
+      "agents.messaging.telegram.testMessage",
+      "agents.messaging.qq.update",
+      "agents.messaging.qq.setState",
+      "agents.messaging.qq.scanStart",
+      "agents.messaging.qq.scanPoll",
+      "agents.messaging.qq.scanCancel",
+      "agents.messaging.qq.test",
+      "agents.messaging.qq.testMessage",
+      "agents.messaging.wechat.update",
+      "agents.messaging.wechat.setState",
+      "agents.messaging.wechat.scanStart",
+      "agents.messaging.wechat.scanPoll",
+      "agents.messaging.wechat.scanVerify",
+      "agents.messaging.wechat.scanCancel",
+      "agents.messaging.wechat.test",
+      "agents.messaging.wechat.testMessage",
+    ],
+  },
+  "agents.messaging.all": {
+    children: ["agents.messaging.maintain"],
+    routes: [
+      "agents.messaging.feishu.delete",
+      "agents.messaging.telegram.delete",
+      "agents.messaging.qq.delete",
+      "agents.messaging.wechat.delete",
+    ],
+  },
   "messaging.read": {
+    children: ["agents.messaging.read"],
     routes: [
       "messaging.listAccounts",
       "messaging.listAccountHolders",
       "messaging.session.list",
-      "messaging.feishu.get",
-      "messaging.telegram.get",
-      "messaging.qq.get",
-      "messaging.wechat.get",
     ],
   },
   "messaging.maintain": {
-    children: ["messaging.read"],
-    routes: [
-      "messaging.feishu.update",
-      "messaging.feishu.setState",
-      "messaging.feishu.test",
-      "messaging.feishu.testMessage",
-      "messaging.telegram.update",
-      "messaging.telegram.setState",
-      "messaging.telegram.test",
-      "messaging.telegram.testMessage",
-      "messaging.qq.update",
-      "messaging.qq.setState",
-      "messaging.qq.scanStart",
-      "messaging.qq.scanPoll",
-      "messaging.qq.scanCancel",
-      "messaging.qq.test",
-      "messaging.qq.testMessage",
-      "messaging.wechat.update",
-      "messaging.wechat.setState",
-      "messaging.wechat.scanStart",
-      "messaging.wechat.scanPoll",
-      "messaging.wechat.scanVerify",
-      "messaging.wechat.scanCancel",
-      "messaging.wechat.test",
-      "messaging.wechat.testMessage",
-    ],
+    children: ["messaging.read", "agents.messaging.maintain"],
   },
   "messaging.all": {
-    children: ["messaging.maintain"],
-    routes: [
-      "messaging.feishu.delete",
-      "messaging.telegram.delete",
-      "messaging.qq.delete",
-      "messaging.wechat.delete",
-    ],
+    children: ["messaging.maintain", "agents.messaging.all"],
   },
 
   // ---------------------------------------------------------------------------
@@ -1362,14 +1470,14 @@ export const ROLE_TREE: Readonly<Record<AgentAuthRole, RoleNode>> = {
       "readonly",
       "session.maintain",
       "workspace.maintain",
-      "memory.maintain",
-      "schedule.maintain",
-      "workbench.maintain",
+      "agent.maintain@self",
+      "memory.maintain@self",
+      "schedule.maintain@self",
+      "workbench.maintain@self",
       "org.maintain",
       "browser.maintain",
       "command.maintain",
     ],
-    routes: ["agent.config.update", "agent.avatar.update"],
   },
 
   "system-maintainer": {
@@ -1431,52 +1539,108 @@ export function isAgentAuthRole(value: string): value is AgentAuthRole {
 }
 
 /**
- * Expands a primary `role` and optional `extraGrants` (which may name either additional
- * `AgentAuthRole` tree nodes or individual HTTP route IDs) into the effective route set
- * and capability flags.
+ * Expands a primary `role` (which may itself carry `<role>@<refinerId>`) and optional
+ * `extraGrants` (which may name additional `AgentAuthRole` tree nodes or individual HTTP
+ * route IDs, with optional `@<refinerId>`) into the effective route set, capability flags,
+ * and per-route refiner map (`routeRefiners`).
+ *
+ * Rules for `@refiner` propagation:
+ * 1. If a leaf route is granted unconditionally along any tree path (no `@refiner`), it is
+ *    permitted unconditionally and omitted from `routeRefiners`.
+ * 2. When `<role>@<refinerId>` is applied to a `.maintain` or `.all` role node, the inherited
+ *    `.read` base tier remains unconditional (unless the caller explicitly wrote `<domain>.read@<refinerId>`),
+ *    so read-only queries are not unnecessarily gated by write refiners like `@withAsk`.
  */
 export function expandRoleGrant(
-  role: AgentAuthRole,
+  role: string,
   extraGrants: readonly string[] = [],
 ): {
   allEndpoints: boolean;
   agentApi: boolean;
   crossAgent: boolean;
   apiIds: string[];
+  routeRefiners: Record<string, string[]>;
 } {
-  const visitedRoles = new Set<AgentAuthRole>();
-  const routes = new Set<string>();
+  const visited = new Set<string>();
+  const allRoutes = new Set<string>();
+  const unconditionalRoutes = new Set<string>();
+  const refinedRouteMap = new Map<string, Set<string>>();
   let allEndpoints = false;
   let agentApi = false;
   let crossAgent = false;
 
-  const visitRole = (r: AgentAuthRole): void => {
-    if (visitedRoles.has(r)) return;
-    visitedRoles.add(r);
+  const recordRoute = (routeId: string, refinerId: string | null): void => {
+    const normalized = normalizeRouteId(routeId);
+    allRoutes.add(normalized);
+    if (refinerId === null) {
+      unconditionalRoutes.add(normalized);
+    } else {
+      let set = refinedRouteMap.get(normalized);
+      if (set === undefined) {
+        set = new Set<string>();
+        refinedRouteMap.set(normalized, set);
+      }
+      set.add(refinerId);
+    }
+  };
+
+  const visitRole = (r: AgentAuthRole, inheritedRefiner: string | null, isRootRefined: boolean): void => {
+    const isReadTier = r === "readonly" || r.endsWith(".read");
+    const effectiveRefiner =
+      inheritedRefiner !== null && isReadTier && !isRootRefined ? null : inheritedRefiner;
+    const visitKey = `${r}@${effectiveRefiner ?? ""}`;
+    if (visited.has(visitKey)) return;
+    visited.add(visitKey);
+
     const node = ROLE_TREE[r];
     if (node === undefined) return;
-    if (node.flags?.allEndpoints) allEndpoints = true;
-    if (node.flags?.agentApi) agentApi = true;
-    if (node.flags?.crossAgent) crossAgent = true;
+    if (effectiveRefiner === null) {
+      if (node.flags?.allEndpoints) allEndpoints = true;
+      if (node.flags?.agentApi) agentApi = true;
+      if (node.flags?.crossAgent) crossAgent = true;
+    }
     if (node.routes !== undefined) {
-      for (const routeId of node.routes) {
-        routes.add(routeId);
+      for (const routeSpec of node.routes) {
+        const parsed = parseRefinedGrant(routeSpec);
+        const routeRefiner = parsed.refinerId ?? effectiveRefiner;
+        recordRoute(parsed.target, routeRefiner);
       }
     }
     if (node.children !== undefined) {
-      for (const child of node.children) {
-        visitRole(child);
+      for (const childSpec of node.children) {
+        const parsed = parseRefinedGrant(childSpec);
+        if (isAgentAuthRole(parsed.target)) {
+          const childRefiner = parsed.refinerId ?? effectiveRefiner;
+          const childRootRefined = parsed.refinerId !== null;
+          visitRole(parsed.target, childRefiner, childRootRefined);
+        } else if (parsed.target !== "") {
+          recordRoute(parsed.target, parsed.refinerId ?? effectiveRefiner);
+        }
       }
     }
   };
 
-  visitRole(role);
+  const applyGrantSpec = (spec: string): void => {
+    const parsed = parseRefinedGrant(spec);
+    if (parsed.target === "") return;
+    if (isAgentAuthRole(parsed.target)) {
+      visitRole(parsed.target, parsed.refinerId, parsed.refinerId !== null);
+    } else {
+      recordRoute(parsed.target, parsed.refinerId);
+    }
+  };
+
+  applyGrantSpec(role);
   for (const item of extraGrants) {
-    const normalized = normalizeRouteId(item);
-    if (isAgentAuthRole(normalized)) {
-      visitRole(normalized);
-    } else if (item !== "") {
-      routes.add(normalized);
+    applyGrantSpec(item);
+  }
+
+  const routeRefiners: Record<string, string[]> = {};
+  if (!allEndpoints) {
+    for (const [routeId, refiners] of refinedRouteMap.entries()) {
+      if (!unconditionalRoutes.has(routeId) && refiners.size > 0) {
+        routeRefiners[routeId] = [...refiners];
+      }
     }
   }
 
@@ -1484,7 +1648,8 @@ export function expandRoleGrant(
     allEndpoints,
     agentApi,
     crossAgent,
-    apiIds: [...routes],
+    apiIds: [...allRoutes],
+    routeRefiners,
   };
 }
 
@@ -1494,16 +1659,16 @@ export function expandRoleGrant(
 export const ALL_ENDPOINT_ROLES: readonly AgentAuthRole[] = ["admin", "full-permissions"];
 
 /** Whether the role reaches every route without its granted set naming it. */
-export function roleSpansAllEndpoints(role: AgentAuthRole): boolean {
+export function roleSpansAllEndpoints(role: string): boolean {
   return expandRoleGrant(role).allEndpoints;
 }
 
 /** Whether the role carries the Agent's own API settings and keys (human-gated endpoints). */
-export function roleHasAgentApi(role: AgentAuthRole): boolean {
+export function roleHasAgentApi(role: string): boolean {
   return expandRoleGrant(role).agentApi;
 }
 
 /** Whether the role may mutate Agent-scoped resources of other Agents in the same Project. */
-export function roleCanManageOtherAgents(role: AgentAuthRole): boolean {
+export function roleCanManageOtherAgents(role: string): boolean {
   return expandRoleGrant(role).crossAgent;
 }

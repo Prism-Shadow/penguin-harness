@@ -70,10 +70,11 @@ Server 启动时在数据根下写入权限为 `0600` 的 `api-token` 与 `serve
 
 角色预设组织为一棵声明式的有向无环角色树（`ROLE_TREE`）：
 
-- **域级三层角色节点**：每个业务域（如 `session`、`workspace`、`agent`、`memory`、`schedule`、`skill`、`plugin`、`workbench`、`model`、`vault`、`trace`、`benchmark`、`org`、`browser`、`machine`、`messaging`、`project`、`command`、`system`、`admin`）提供 `<domain>.read`、`<domain>.maintain`、`<domain>.all` 三层递进节点。`<domain>.maintain` 绑定 `<domain>.read` 子节点并追加日常维护写路由；`<domain>.all` 绑定 `<domain>.maintain` 子节点并追加删除与高危管理路由。
-- **复合角色节点**：顶层预设角色（`none`、`readonly`、`general`、`system-maintainer`、`admin`、`full-permissions`）作为同一棵树上的高层节点，通过 `roles` 数组绑定各域的角色节点。
+- **域级三层角色节点**：每个业务域（如 `session`、`workspace`、`agent`、`memory`、`schedule`、`skill`、`plugin`、`workbench`、`model`、`vault`、`trace`、`benchmark`、`org`、`browser`、`machine`、`agents.messaging`、`messaging`、`project`、`command`、`system`、`admin`）提供 `<domain>.read`、`<domain>.maintain`、`<domain>.all` 三层递进节点。`<domain>.maintain` 继承 `<domain>.read` 子节点并追加日常维护写路由；`<domain>.all` 继承 `<domain>.maintain` 子节点并追加删除与高危管理路由。
+- **复合角色节点**：顶层预设角色（`none`、`readonly`、`general`、`system-maintainer`、`admin`、`full-permissions`）作为同一棵树上的高层节点，通过 `children` 数组组合各域的角色节点。
+- **权限精化器（`<roleOrRoute>@<refinerId>`）**：角色节点引用或额外授权项可以附加 `@<refinerId>` 后缀（例如 `agent.maintain@self`、`agent.maintain@withAsk`），将对应写路由绑定到具名的 `AuthRefiner` 组件上执行上下文校验。
 
-每个 Agent 会话绑定一个角色节点 ID（`AgentAuthRole`）与一份当前授权（`AgentAuthGrant`），在请求时由 `expandRoleGrant(role, extraGrants)` 递归展开角色树，计算出有效路由 `id` 集合（`apiIds`）以及正交能力标志（`allEndpoints`、`agentApi`、`crossAgent`）。
+每个 Agent 会话绑定一个角色标识与一份当前授权（`AgentAuthGrant`），在请求时由 `expandRoleGrant(role, extraGrants)` 递归展开角色树，计算出有效路由 `id` 集合（`apiIds`）、每条路由绑定的精化器列表（`routeRefiners`）以及正交能力标志（`allEndpoints`、`agentApi`、`crossAgent`）。
 
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -92,11 +93,11 @@ Server 启动时在数据根下写入权限为 `0600` 的 `api-token` 与 `serve
 
 ### 声明式角色树（`ROLE_TREE`）与权限范围
 
-角色树中的每个节点（`RoleTreeNode`）由三部分构成：继承的子角色节点列表 `roles`、直接授予的叶子路由 `routes`、以及正交能力标志 `flags`。
+角色树中的每个节点（`RoleTreeNode`）由三部分构成：包含的子角色节点列表 `children`、直接授予的叶子路由 `routes`、以及正交能力标志 `flags`。
 
 各业务域遵循统一的三层递进结构：
 
-| 域角色层级 | 树绑定关系（`roles`） | 直接授予的叶子路由（`routes`） |
+| 域角色层级 | 树包含关系（`children`） | 直接授予的叶子路由（`routes`） |
 | --- | --- | --- |
 | `<domain>.read` | `[]` | 该域下的只读查询、列表与流式订阅路由（如 `session.list`、`session.get`、`session.stream`） |
 | `<domain>.maintain` | `["<domain>.read"]` | 该域下的创建、更新、执行与日常协作写路由（如 `session.create`、`session.runTask`、`session.steer`） |
@@ -104,14 +105,38 @@ Server 启动时在数据根下写入权限为 `0600` 的 `api-token` 与 `serve
 
 在此基础上，六个顶层复合角色通过组合域角色节点与正交能力标志构成标准权限梯度：
 
-| 复合角色（`AgentAuthRole`） | 绑定的子角色节点（`roles`） | `allEndpoints` | `agentApi`（通过 `requireHuman`） | `crossAgent`（跨 Agent 写） |
+| 复合角色（`AgentAuthRole`） | 包含的子角色节点（`children`） | `allEndpoints` | `agentApi`（通过 `requireHuman`） | `crossAgent`（跨 Agent 写） |
 | --- | --- | --- | --- | --- |
 | `none` | `[]` | `false` | `false` | `false` |
 | `readonly` | 全部业务域的 `*.read` 节点 | `false` | `false` | `false` |
-| `general`（默认） | `readonly` + `session.maintain`、`workspace.maintain`、`memory.maintain`、`schedule.maintain`、`workbench.maintain`、`org.maintain`、`browser.maintain`、`agent.config.get`、`agent.config.update` | `false` | `false` | `false` |
-| `system-maintainer` | `general` + `agent.maintain`、`skill.maintain`、`plugin.maintain`、`model.maintain`、`vault.maintain`、`trace.maintain`、`benchmark.maintain`、`machine.maintain`、`messaging.maintain` | `false` | `true` | `true` |
+| `general`（默认） | `readonly` + `session.maintain`、`workspace.maintain`、`agent.maintain@self`、`memory.maintain@self`、`schedule.maintain@self`、`workbench.maintain@self`、`org.maintain`、`browser.maintain` | `false` | `false` | `false` |
+| `system-maintainer` | `general` + `agent.maintain`、`memory.maintain`、`schedule.maintain`、`workbench.maintain`、`skill.maintain`、`plugin.maintain`、`model.maintain`、`vault.maintain`、`trace.maintain`、`benchmark.maintain`、`machine.maintain`、`agents.messaging.maintain`、`messaging.maintain` | `false` | `true` | `true` |
 | `admin` | `system-maintainer` + 全部业务域的 `*.all` 节点 | `true` | `false` | `true` |
 | `full-permissions` | `["admin"]` | `true` | `true` | `true` |
+
+### 权限精化器（`<roleOrRoute>@<refinerId>`）与优先级覆盖
+
+权限精化器（`AuthRefiner`）是通过 `HttpModule.authRefiners` 槽贡献的轻量鉴权组件，使用 `<roleOrRoute>@<refinerId>` 语法对角色节点或单条路由施加上下文约束（例如 `agent.maintain@self`、`agent.maintain@withAsk`）：
+
+```ts
+@Component({
+  contributes: {
+    "HttpModule.authRefiners": [
+      { id: "self", scope: ["agent.", "memory.", "schedule.", "workbench."] },
+    ],
+  },
+})
+export class AuthSelfRefiner implements AuthRefiner {
+  @Bind("self") readonly refiner: AuthRefiner = this;
+  async authenticate(ctx: AuthRefinerContext, action: AuthRefinerAction): Promise<boolean> {
+    return action.params.agentId === undefined || action.params.agentId === ctx.agentId;
+  }
+}
+```
+
+- **作用域声明（`scope`）与 O(1) 路由分发**：每个精化器声明自己匹配的 `scope`（路由 ID、角色节点名或域前缀，如 `["agent."]`），注册表在启动时将其编译为哈希集合与前缀索引。请求到达时仅按当前 `routeId` 绑定的 `refinerId` 直接查找，避免遍历无关中间件。
+- **按列表顺序覆盖（Override）**：宿主支持传入有序列表（如 `[AuthMyRefiner, AuthWithAskRefiner, AuthSelfRefiner]`）。同 `id` 的精化器按列表顺序优先匹配；若排在前面的自定义精化器仅声明了窄 `scope`（如 `["agent.config.update"]`），其余路由自动回退到列表中后续同 `id` 的内置实现。
+- **失败与失配保护**：若授权引用了未定义的 `@<refinerId>`，请求直接拒绝并返回 `403 auth_refiner_undefined`。若会话内精化器的 `scope` 未能匹配目标动作或执行异常，服务端返回 `403 auth_refiner_mismatch`，提示用户以 `admin` 权限启动 Agent 修复授权配置。当 `<domain>.maintain@<refinerId>` 展开时，其继承的 `<domain>.read` 只读层保持无条件放行，且同一路由上的无条件授权优先于带精化器的授权，保证常规会话下的高可靠匹配。
 
 ### Agent 会话存储与按代（Generation）实时派生
 

@@ -70,6 +70,7 @@ import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
 import { AuthSessionsRepo } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
 import { AgentAuthSessionsRepo } from "./db/repos/agent-auth-sessions.js";
 import { AgentAuthService, AgentAuthPermissionProvider } from "./auth/agent-auth-service.js";
+import { AuthSelfRefiner, AuthWithAskRefiner } from "./auth/auth-refiners.js";
 import {
   AgentAuth,
   AgentAuthPermissions,
@@ -568,6 +569,8 @@ export class CompanyModule {}
     SuggestIdRoutes,
     LanguagesModule,
     LanguageRoutes,
+    AuthWithAskRefiner,
+    AuthSelfRefiner,
   ],
   exports: [Http, WebShell, UpdateCheck],
 })

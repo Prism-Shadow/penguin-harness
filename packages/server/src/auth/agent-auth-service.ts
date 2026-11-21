@@ -35,6 +35,14 @@ export interface AgentAuthContext {
   grant: AgentAuthGrant;
   /** Whether the grant also reaches the Agent's own API settings and keys. */
   agentApi: boolean;
+  /** Optional interactive approval hook used by `@withAsk` refiners. */
+  askApproval?: (action: {
+    readonly routeId: string;
+    readonly groupId?: string;
+    readonly method: string;
+    readonly path: string;
+    readonly params: Readonly<Record<string, string>>;
+  }) => Promise<boolean>;
 }
 
 @Component()
@@ -130,6 +138,7 @@ export class AgentAuthPermissionProvider implements AgentAuthPermissions {
       allEndpoints: expanded.allEndpoints,
       crossAgent: expanded.crossAgent,
       apiIds: expanded.apiIds,
+      routeRefiners: expanded.routeRefiners,
     };
   }
 }

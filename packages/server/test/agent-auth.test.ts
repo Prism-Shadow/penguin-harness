@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
-import { wire } from "@prismshadow/penguin-core/kernel";
+import { Bind, Component, wire } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { AgentAuthService, AgentAuthPermissionProvider } from "../src/auth/agent-auth-service.js";
 import {
@@ -14,8 +14,19 @@ import {
   ALL_HTTP_ROUTE_IDS,
   ROLE_TREE,
   expandRoleGrant,
+  normalizeRouteId,
+  parseRefinedGrant,
   resolveHttpRouteId,
 } from "../src/auth/agent-roles.js";
+import {
+  ADMIN_REPAIR_INSTRUCTION,
+  AuthRefinerRegistry,
+  AuthSelfRefiner,
+  AuthWithAskRefiner,
+  type AuthRefiner,
+  type AuthRefinerAction,
+  type AuthRefinerContext,
+} from "../src/auth/auth-refiners.js";
 import { AgentAuthSessionsRepo } from "../src/db/repos/agent-auth-sessions.js";
 import { AgentAuthSessions, AgentAuthPermissions } from "../src/mechanisms/agent-auth.js";
 import { HttpModule, endpointOf } from "../src/http/app.js";
@@ -108,12 +119,60 @@ describe("the agent role tree and route catalog", () => {
     expect(expandRoleGrant("system-maintainer").agentApi).toBe(true);
   });
 
-  it("resolves group sub-routes to fine-grained route ids", () => {
+  it("resolves group sub-routes to fine-grained route ids and normalizes agents.messaging.<channel>", () => {
     expect(resolveHttpRouteId("sessions.agents", "GET", "/")).toBe("agent.list");
     expect(resolveHttpRouteId("sessions.agents", "DELETE", "/:agentId")).toBe("agent.delete");
     expect(resolveHttpRouteId("org", "POST", "/:orgId/tickets/:ticketId/start")).toBe(
       "org.ticket.start",
     );
+    expect(resolveHttpRouteId("agents.feishu", "GET", "/")).toBe("agents.messaging.feishu.get");
+    expect(resolveHttpRouteId("agents.messaging.feishu", "PUT", "/")).toBe(
+      "agents.messaging.feishu.update",
+    );
+    expect(
+      resolveHttpRouteId("messaging.session-routes", "GET", "/:sessionId/messaging/feishu"),
+    ).toBe("agents.messaging.feishu.get");
+    expect(
+      resolveHttpRouteId("messaging.session-routes", "POST", "/:sessionId/messaging/wechat/scan"),
+    ).toBe("agents.messaging.wechat.scanStart");
+    expect(resolveHttpRouteId("messaging.accounts", "GET", "/accounts")).toBe(
+      "messaging.listAccounts",
+    );
+    expect(resolveHttpRouteId("messaging.account-holders", "GET", "/account-holders")).toBe(
+      "messaging.listAccountHolders",
+    );
+    expect(normalizeRouteId("agents.feishu.get")).toBe("agents.messaging.feishu.get");
+    expect(normalizeRouteId("messaging.feishu.update")).toBe("agents.messaging.feishu.update");
+    expect(expandRoleGrant("agents.messaging.read").apiIds).toContain(
+      "agents.messaging.feishu.get",
+    );
+    expect(expandRoleGrant("agents.messaging.maintain").apiIds).toContain(
+      "agents.messaging.feishu.update",
+    );
+  });
+
+  it("parses <roleOrRoute>@<refinerId> and expands refined grants while keeping inherited .read tiers unconditional", () => {
+    expect(parseRefinedGrant("agent.maintain@self")).toEqual({
+      target: "agent.maintain",
+      refinerId: "self",
+    });
+    expect(parseRefinedGrant("agent.maintain@withAsk")).toEqual({
+      target: "agent.maintain",
+      refinerId: "withAsk",
+    });
+
+    const selfExpanded = expandRoleGrant("agent.maintain@self");
+    expect(selfExpanded.apiIds).toContain("agent.config.get");
+    expect(selfExpanded.apiIds).toContain("agent.config.update");
+    // .read tier inherited by agent.maintain remains unconditional (no refiner needed for GET)
+    expect(selfExpanded.routeRefiners["agent.config.get"]).toBeUndefined();
+    // .maintain write routes carry the @self refiner
+    expect(selfExpanded.routeRefiners["agent.config.update"]).toEqual(["self"]);
+
+    // An unconditional grant for the same route supersedes a refined grant
+    const overridden = expandRoleGrant("agent.maintain@withAsk", ["agent.config.update"]);
+    expect(overridden.routeRefiners["agent.config.update"]).toBeUndefined();
+    expect(overridden.routeRefiners["agent.avatar.update"]).toEqual(["withAsk"]);
   });
 });
 
@@ -282,5 +341,182 @@ describe("the agent auth service", () => {
     const rMaintainerCreate = await req("POST", "/api/projects/p1/agents/a1/sessions", token);
     expect(rMaintainerCreate.status).toBe(200);
     expect(await rMaintainerCreate.json()).toEqual({ ok: "create" });
+  });
+});
+
+describe("auth refiners (<roleOrRoute>@<refinerId>)", () => {
+  it("supports @self, @withAsk, priority-list override ([AuthMyRefiner, AuthWithAskRefiner, AuthSelfRefiner]), undefined rejection, and mismatch admin-repair prompt", async () => {
+    const { auth: agentAuth, repo } = service();
+    const { token } = agentAuth.issueSession("p1", "a1", new Date());
+
+    // Custom refiner overriding @self for agent.config.update only (for instance, allowing a1 to also manage "a2-buddy")
+    @Component({
+      contributes: {
+        "HttpModule.authRefiners": [
+          {
+            id: "self",
+            scope: ["agent.config.update"],
+          },
+        ],
+      },
+    })
+    class AuthMyRefiner {
+      @Bind("self") readonly refiner: AuthRefiner = this;
+      async authenticate(ctx: AuthRefinerContext, action: AuthRefinerAction): Promise<boolean> {
+        const targetAgent = action.params.agentId;
+        return (
+          action.params.projectId === ctx.projectId &&
+          (targetAgent === ctx.agentId || targetAgent === "a2-buddy")
+        );
+      }
+    }
+
+    // Narrowly-scoped custom refiner to test session mismatch when applied outside its declared scope
+    @Component({
+      contributes: {
+        "HttpModule.authRefiners": [
+          {
+            id: "scheduleOnly",
+            scope: ["schedule."],
+          },
+        ],
+      },
+    })
+    class AuthScheduleOnlyRefiner {
+      @Bind("scheduleOnly") readonly refiner: AuthRefiner = this;
+      async authenticate(): Promise<boolean> {
+        return true;
+      }
+    }
+
+    let askApprovalDecision = false;
+    const origAuthenticate = agentAuth.authenticate.bind(agentAuth);
+    const wrappedAgentAuth = {
+      authenticate: (bearer: string, now: Date) => {
+        const res = origAuthenticate(bearer, now);
+        if (res === null) return null;
+        return {
+          ...res,
+          askApproval: async () => askApprovalDecision,
+        };
+      },
+    };
+
+    const agentConfigGroup = new Hono<AppEnv>();
+    agentConfigGroup.get("/", (c) => c.json({ ok: "getConfig", agentId: c.req.param("agentId") }));
+    agentConfigGroup.put("/", (c) => c.json({ ok: "putConfig", agentId: c.req.param("agentId") }));
+
+    const scheduleGroup = new Hono<AppEnv>();
+    scheduleGroup.put("/:name", (c) =>
+      c.json({ ok: "putSchedule", agentId: c.req.param("agentId") }),
+    );
+
+    const http = wire(HttpModule, {
+      config: { trustProxy: false },
+      log: { line: () => {} },
+      auth: {
+        sessionTtlMs: 1000,
+        authenticateApiToken: () => null,
+        authenticateWithMeta: () => null,
+        sessionIsLive: () => false,
+      },
+      agentAuth: wrappedAgentAuth,
+      refiners: [AuthMyRefiner, AuthScheduleOnlyRefiner, AuthWithAskRefiner, AuthSelfRefiner],
+      errors: { record: () => {} },
+      settings: {
+        getAttachmentLimitsMb: () => ({
+          attachmentMaxMb: DEFAULT_ATTACHMENT_MAX_MB,
+          attachmentTotalMb: DEFAULT_ATTACHMENT_TOTAL_MB,
+        }),
+      },
+      access: {},
+      projects: {
+        findById: (projectId: string) =>
+          projectId === "p1" ? { projectId: "p1", ownerUserId: "u1", createdAt: "" } : null,
+      },
+      users: {
+        findById: (userId: string) =>
+          userId === "u1" ? { userId: "u1", isAdmin: true } : null,
+      },
+    });
+    http.setup({
+      contributions: {
+        routes: [
+          {
+            id: "sessions.agent-config",
+            from: "test",
+            data: {
+              prefix: "/api/projects/:projectId/agents/:agentId/config",
+              auth: "user",
+              order: 245,
+            },
+            code: agentConfigGroup,
+          },
+          {
+            id: "schedules",
+            from: "test",
+            data: {
+              prefix: "/api/projects/:projectId/agents/:agentId/schedule",
+              auth: "user",
+              order: 246,
+            },
+            code: scheduleGroup,
+          },
+        ],
+      },
+    } as unknown as ClassCtx);
+
+    const req = (method: string, path: string) =>
+      http.http.fetch(
+        new Request(`http://localhost${path}`, {
+          method,
+          headers: {
+            authorization: `Bearer ${token}`,
+            origin: "http://localhost",
+            ...(method !== "GET" ? { "content-type": "application/json" } : {}),
+          },
+          ...(method !== "GET" ? { body: "{}" } : {}),
+        }),
+      );
+
+    // 1. Priority override: [AuthMyRefiner, AuthWithAskRefiner, AuthSelfRefiner]
+    // AuthMyRefiner overrides @self for agent.config.update (allowing a2-buddy), while schedule.upsert falls back to AuthSelfRefiner.
+    repo.bumpGeneration("p1", "a1", "none", ["agent.maintain@self", "schedule.maintain@self"], 1);
+    expect((await req("PUT", "/api/projects/p1/agents/a1/config")).status).toBe(200);
+    expect((await req("PUT", "/api/projects/p1/agents/a2-buddy/config")).status).toBe(200);
+    expect((await req("PUT", "/api/projects/p1/agents/a3-stranger/config")).status).toBe(403);
+    // Fallback to AuthSelfRefiner on schedule.upsert: a2-buddy is denied because AuthMyRefiner's scope only covers agent.config.update
+    expect((await req("PUT", "/api/projects/p1/agents/a1/schedule/daily")).status).toBe(200);
+    expect((await req("PUT", "/api/projects/p1/agents/a2-buddy/schedule/daily")).status).toBe(403);
+
+    // 2. @withAsk: GET (inherited .read tier) succeeds without asking; PUT requires askApproval === true
+    repo.bumpGeneration("p1", "a1", "agent.maintain@withAsk", [], 2);
+    askApprovalDecision = false;
+    expect((await req("GET", "/api/projects/p1/agents/a2/config")).status).toBe(200);
+    expect((await req("PUT", "/api/projects/p1/agents/a1/config")).status).toBe(403);
+    askApprovalDecision = true;
+    expect((await req("PUT", "/api/projects/p1/agents/a1/config")).status).toBe(200);
+
+    // 3. Undefined refiner -> immediate reject (403 auth_refiner_undefined)
+    repo.bumpGeneration("p1", "a1", "agent.maintain@nonExistentRefiner", [], 3);
+    const rUndefined = await req("PUT", "/api/projects/p1/agents/a1/config");
+    expect(rUndefined.status).toBe(403);
+    const bodyUndefined = (await rUndefined.json()) as { error: { code: string; message: string } };
+    expect(bodyUndefined.error.code).toBe("auth_refiner_undefined");
+    expect(bodyUndefined.error.message).toContain(ADMIN_REPAIR_INSTRUCTION);
+
+    // 4. Session refiner mismatch -> 403 auth_refiner_mismatch with admin repair prompt
+    repo.bumpGeneration("p1", "a1", "agent.maintain@scheduleOnly", [], 4);
+    const rMismatch = await req("PUT", "/api/projects/p1/agents/a1/config");
+    expect(rMismatch.status).toBe(403);
+    const bodyMismatch = (await rMismatch.json()) as { error: { code: string; message: string } };
+    expect(bodyMismatch.error.code).toBe("auth_refiner_mismatch");
+    expect(bodyMismatch.error.message).toContain(ADMIN_REPAIR_INSTRUCTION);
+
+    // Direct unit check on AuthRefinerRegistry
+    const reg = new AuthRefinerRegistry([AuthMyRefiner, AuthWithAskRefiner, AuthSelfRefiner]);
+    expect(reg.has("self")).toBe(true);
+    expect(reg.has("withAsk")).toBe(true);
+    expect(reg.has("missing")).toBe(false);
   });
 });

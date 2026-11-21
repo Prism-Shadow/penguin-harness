@@ -52,6 +52,8 @@ export interface AgentAuthGrant {
   crossAgent?: boolean;
   /** The effective HTTP route ids after expanding the role tree and explicit extra grants. */
   apiIds: readonly string[];
+  /** Per-route refiner IDs (`<roleOrRoute>@<refinerId>`) required for routes not granted unconditionally. */
+  routeRefiners?: Readonly<Record<string, readonly string[]>>;
 }
 
 /** The Agent's CURRENT generation row: what re-derivation reads. */
@@ -94,7 +96,7 @@ export abstract class AgentAuthSessions {
   abstract bumpGeneration(
     projectId: string,
     agentId: string,
-    role: AgentAuthRole,
+    role: string,
     apiIds: readonly string[],
     generation: number,
   ): void;

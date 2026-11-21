@@ -7,7 +7,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
-import { AGENT_AUTH_ROLES, type AgentAuthRole } from "../../auth/agent-roles.js";
+import {
+  isAgentAuthRole,
+  parseRefinedGrant,
+  type AgentAuthRole,
+} from "../../auth/agent-roles.js";
 import type { AgentAuthSessions } from "../../mechanisms/agent-auth.js";
 
 /** sha256 hex of a raw session token — the only form the database ever holds. */
@@ -139,7 +143,7 @@ export class AgentAuthSessionsRepo implements AgentAuthSessions {
   bumpGeneration(
     projectId: string,
     agentId: string,
-    role: AgentAuthRole,
+    role: string,
     apiIds: readonly string[],
     generation: number,
   ): void {
@@ -179,10 +183,14 @@ export class AgentAuthSessionsRepo implements AgentAuthSessions {
       .run(at);
   }
 
-  /** A role the table names that this build knows; unknown ones fall back to `general`. */
+  /** A role the table names that this build knows (including `<role>@<refinerId>`); unknown ones fall back to `general`. */
   private coerceRole(role: string): AgentAuthRole {
-    return (AGENT_AUTH_ROLES as readonly string[]).includes(role)
-      ? (role as AgentAuthRole)
-      : "general";
+    const parsed = parseRefinedGrant(role);
+    if (isAgentAuthRole(parsed.target)) {
+      return (
+        parsed.refinerId !== null ? `${parsed.target}@${parsed.refinerId}` : parsed.target
+      ) as AgentAuthRole;
+    }
+    return "general";
   }
 }

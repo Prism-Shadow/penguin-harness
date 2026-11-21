@@ -70,10 +70,11 @@ A route component binds single-endpoint contributions to handlers on its `Hono` 
 
 Role presets are organized as a declarative directed acyclic role tree (`ROLE_TREE`):
 
-- **Three-tier domain role nodes**: Every domain (`session`, `workspace`, `agent`, `memory`, `schedule`, `skill`, `plugin`, `workbench`, `model`, `vault`, `trace`, `benchmark`, `org`, `browser`, `machine`, `messaging`, `project`, `command`, `system`, `admin`) defines `<domain>.read`, `<domain>.maintain`, and `<domain>.all` nodes. `<domain>.maintain` binds `<domain>.read` and adds day-to-day write and execution routes; `<domain>.all` binds `<domain>.maintain` and adds deletion and administrative routes.
-- **Composite role nodes**: Standing personas (`none`, `readonly`, `general`, `system-maintainer`, `admin`, `full-permissions`) sit higher in the same tree, binding domain role nodes through their `roles` array.
+- **Three-tier domain role nodes**: Every domain (`session`, `workspace`, `agent`, `memory`, `schedule`, `skill`, `plugin`, `workbench`, `model`, `vault`, `trace`, `benchmark`, `org`, `browser`, `machine`, `agents.messaging`, `messaging`, `project`, `command`, `system`, `admin`) defines `<domain>.read`, `<domain>.maintain`, and `<domain>.all` nodes. `<domain>.maintain` inherits `<domain>.read` and adds day-to-day write and execution routes; `<domain>.all` inherits `<domain>.maintain` and adds deletion and administrative routes.
+- **Composite role nodes**: Standing personas (`none`, `readonly`, `general`, `system-maintainer`, `admin`, `full-permissions`) sit higher in the same tree, composing domain role nodes through their `children` array.
+- **Auth Refiners (`<roleOrRoute>@<refinerId>`)**: Any role reference or extra grant entry may carry an `@<refinerId>` suffix (for example `agent.maintain@self` or `agent.maintain@withAsk`), binding the granted write routes to a named `AuthRefiner` component.
 
-Each Agent session binds a role node ID (`AgentAuthRole`) and a current grant (`AgentAuthGrant`). On each request, `expandRoleGrant(role, extraGrants)` walks the role tree to compute the effective set of route `id`s (`apiIds`) alongside orthogonal capability flags (`allEndpoints`, `agentApi`, `crossAgent`).
+Each Agent session binds a role identifier and a current grant (`AgentAuthGrant`). On each request, `expandRoleGrant(role, extraGrants)` walks the role tree to compute the effective set of route `id`s (`apiIds`), the per-route refiner bindings (`routeRefiners`), and the orthogonal capability flags (`allEndpoints`, `agentApi`, `crossAgent`).
 
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -92,26 +93,50 @@ When a component defines several endpoints on one `Hono` group, `endpointOf(grou
 
 ### Declarative Role Tree (`ROLE_TREE`) and permission scopes
 
-Each node in the role tree (`RoleTreeNode`) consists of child role references (`roles`), directly granted leaf route IDs (`routes`), and orthogonal capability flags (`flags`).
+Each node in the role tree (`RoleTreeNode`) consists of child role references (`children`), directly granted leaf route IDs (`routes`), and orthogonal capability flags (`flags`).
 
 Every functional domain follows a three-tier progression:
 
-| Domain Role Tier | Tree Bind (`roles`) | Directly Granted Leaf Routes (`routes`) |
+| Domain Role Tier | Tree Children (`children`) | Directly Granted Leaf Routes (`routes`) |
 | --- | --- | --- |
 | `<domain>.read` | `[]` | Read-only queries, listings, and event streams in the domain (for example `session.list`, `session.get`, `session.stream`) |
 | `<domain>.maintain` | `["<domain>.read"]` | Creation, update, execution, and collaboration routes in the domain (for example `session.create`, `session.runTask`, `session.steer`) |
 | `<domain>.all` | `["<domain>.maintain"]` | Deletion, purge, and high-impact administrative routes in the domain (for example `session.delete`, `session.deleteArchived`) |
 
-Six composite roles bind these domain nodes and capability flags into standing personas:
+Six composite roles compose these domain nodes and capability flags into standing personas:
 
-| Composite Role (`AgentAuthRole`) | Bound Child Roles (`roles`) | `allEndpoints` | `agentApi` (passes `requireHuman`) | `crossAgent` (cross-Agent writes) |
+| Composite Role (`AgentAuthRole`) | Child Roles (`children`) | `allEndpoints` | `agentApi` (passes `requireHuman`) | `crossAgent` (cross-Agent writes) |
 | --- | --- | --- | --- | --- |
 | `none` | `[]` | `false` | `false` | `false` |
 | `readonly` | All domain `*.read` nodes | `false` | `false` | `false` |
-| `general` (default) | `readonly` + `session.maintain`, `workspace.maintain`, `memory.maintain`, `schedule.maintain`, `workbench.maintain`, `org.maintain`, `browser.maintain`, `agent.config.get`, `agent.config.update` | `false` | `false` | `false` |
-| `system-maintainer` | `general` + `agent.maintain`, `skill.maintain`, `plugin.maintain`, `model.maintain`, `vault.maintain`, `trace.maintain`, `benchmark.maintain`, `machine.maintain`, `messaging.maintain` | `false` | `true` | `true` |
+| `general` (default) | `readonly` + `session.maintain`, `workspace.maintain`, `agent.maintain@self`, `memory.maintain@self`, `schedule.maintain@self`, `workbench.maintain@self`, `org.maintain`, `browser.maintain` | `false` | `false` | `false` |
+| `system-maintainer` | `general` + `agent.maintain`, `memory.maintain`, `schedule.maintain`, `workbench.maintain`, `skill.maintain`, `plugin.maintain`, `model.maintain`, `vault.maintain`, `trace.maintain`, `benchmark.maintain`, `machine.maintain`, `agents.messaging.maintain`, `messaging.maintain` | `false` | `true` | `true` |
 | `admin` | `system-maintainer` + all domain `*.all` nodes | `true` | `false` | `true` |
 | `full-permissions` | `["admin"]` | `true` | `true` | `true` |
+
+### Auth Refiners (`<roleOrRoute>@<refinerId>`) and priority-ordered overrides
+
+An Auth Refiner (`AuthRefiner`) is a lightweight authorization component contributed to the `HttpModule.authRefiners` slot and referenced via `<roleOrRoute>@<refinerId>` (for example `agent.maintain@self` or `agent.maintain@withAsk`):
+
+```ts
+@Component({
+  contributes: {
+    "HttpModule.authRefiners": [
+      { id: "self", scope: ["agent.", "memory.", "schedule.", "workbench."] },
+    ],
+  },
+})
+export class AuthSelfRefiner implements AuthRefiner {
+  @Bind("self") readonly refiner: AuthRefiner = this;
+  async authenticate(ctx: AuthRefinerContext, action: AuthRefinerAction): Promise<boolean> {
+    return action.params.agentId === undefined || action.params.agentId === ctx.agentId;
+  }
+}
+```
+
+- **Explicit `scope` declaration and O(1) dispatch**: Each refiner declares the route IDs, role node names, or domain prefixes (such as `["agent."]`) it covers. `AuthRefinerRegistry` compiles these scopes into hash sets and prefix tables at startup and evaluates only the `refinerId`s bound to the matched `routeId`.
+- **Priority-list override**: Callers supply an ordered list such as `[AuthMyRefiner, AuthWithAskRefiner, AuthSelfRefiner]`. Earlier entries in the list override later entries with the same `id` whenever their declared `scope` matches the route, falling back to later entries for routes outside a narrower custom scope.
+- **Failure and mismatch safety**: Referencing an undefined `@<refinerId>` is rejected immediately with `403 auth_refiner_undefined`. If a refiner in the session fails to match the target action's scope or throws an error, the server returns `403 auth_refiner_mismatch` and instructs the user to start the Agent with `admin` permission to repair its authorization configuration. Inherited `<domain>.read` tiers remain unconditional when expanding `<domain>.maintain@<refinerId>`, and any unconditional grant on the same route supersedes a refined grant.
 
 ### Agent session storage and generation re-derivation
 
