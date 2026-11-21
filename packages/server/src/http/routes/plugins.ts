@@ -36,8 +36,9 @@
  * hooks. The library is what this build carries; the registry is what the deployment can
  * fetch. Both are deployment-global (no Project check); only installing touches an Agent.
  *
- * The registry merges two sources: the index embedded in this package (the sandbox backends
- * the workspace ships) and the one published by the index repository. The published document
+ * The registry merges two sources: the index embedded in this package (the workspace's
+ * server-module plugins: the sandbox backends and the market-only ones) and the one published by
+ * the index repository. The published document
  * is cached, a failure to reach it is reported alongside the entries rather than emptying the
  * page, and a listing waits for it only briefly before answering without it — see
  * plugin/registry.ts for the three rules.
