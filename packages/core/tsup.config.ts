@@ -11,6 +11,8 @@ export default defineConfig({
     // The plugin contract: types only, so a plugin package compiles against the SDK
     // without depending on whatever embeds it.
     "src/plugin/index.ts",
+    // Display metadata shared by the server library and the browser marketplace.
+    "src/plugin/category-manifest.ts",
     // The published plugin index's readers: pure functions with no Node dependency, so the
     // website's build reads the index by the server's rules without loading the SDK.
     "src/plugin/index-document.ts",

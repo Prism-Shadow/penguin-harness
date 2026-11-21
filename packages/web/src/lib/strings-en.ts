@@ -3055,6 +3055,7 @@ export const en: Strings = {
     /** Listed, but the process could not load it: the reason, not a success. */
     deploymentFailedToast: (name: string, reason: string) => `${name} failed to load: ${reason}`,
     /** A server module's install / removal confirm: what it does, then what it costs, in small type below. */
+    updatePackageTo: (version: string) => `Update to v${version}`,
     applyConfirmInstall: (name: string) => `Install ${name}`,
     applyConfirmRemove: (name: string) => `Remove ${name}`,
     applyConfirmInstallBody: (name: string) =>
@@ -3136,6 +3137,53 @@ export const en: Strings = {
           : ` (incl. ${n} agents on machines out of reach, as last seen)`,
     },
     noMatch: "No plugin matches that.",
+    /** The search matched nothing in the tab on show, but matches plugins in other tabs. */
+    noMatchHere: (n: number) =>
+      n === 1
+        ? "No plugin in this tab matches; 1 does across all plugins."
+        : `No plugin in this tab matches; ${n} do across all plugins.`,
+    showAllResults: "Show all results",
+    /** A plugin the market's curation selects: the carousel's eyebrow and a card's tag. */
+    selected: "Selected",
+    /** The cards / list switch: its name, and each icon button's name and hover words. */
+    layoutLabel: "Plugin layout",
+    cardsLayout: "Card view",
+    listLayout: "List view",
+    /** The first tab of the market: every plugin, whatever the grouping. */
+    tabAll: "All",
+    /** The sort select: its accessible name and its options. */
+    sortLabel: "Sort",
+    sort: {
+      featured: "Selected first",
+      recent: "Recently updated",
+      used: "Most used in this Project",
+      name: "Name",
+      popular: "Popular",
+    },
+    /** The ranking beside the grid: its heading, its two boards, and each figure in full words. */
+    openApp: "Open",
+    openAppHint: "Open in the App Center",
+    /** The detail's sections: its screenshots, what it installs, and its quick start. */
+    detailScreenshots: "Screenshots",
+    detailIncludes: "What it installs",
+    detailQuickStart: "Quick start",
+    quickStartSkills: (names: string) => `Selects the Skills: ${names}`,
+    /** The kind of one part a plugin installs, beside its name. */
+    partKind: {
+      skill: "Skill",
+      hook: "Hook",
+      mcp: "MCP server",
+      workbench: "Workbench",
+    },
+    /** The detail's column of facts: each row's label. */
+    fact: {
+      version: "Version",
+      category: "Category",
+      author: "Author",
+      license: "License",
+      package: "Package",
+      links: "Links",
+    },
     /** The description of a shipped package the registry has no entry for. */
     shippedNoEntry: "Ships with this build; the registry has no entry for it yet.",
     /** In place of the description of a package that carries none. */
@@ -3148,7 +3196,6 @@ export const en: Strings = {
     detailDescription: "About",
     detailFiles: "Files",
     detailSkills: "Skills",
-    detailWorkbenches: "Workbenches",
     uninstallWorkbenchRecords: "Its workbenches and saved records will also be deleted.",
     detailHooks: "Hooks",
     detailMcpServers: "MCP servers",
@@ -3256,12 +3303,17 @@ export const en: Strings = {
     replaceAction: "Replace",
     usedByAgents: (n: number): string =>
       n === 0 ? "not used yet" : n === 1 ? "used by 1 agent" : `used by ${n} agents`,
-    /** Quick start's tooltip: what pressing it does, and what it does not. */
-    quickStartHint:
-      "Quick start: opens a draft with a demo of this plugin — nothing runs until you send it",
+    marketAgentInstalls: (n: number): string => `Installed on ${n} ${n === 1 ? "Agent" : "Agents"}`,
+    marketServerInstalled: "Installed on server",
+    quickAction: "Quick start",
+    noQuickAction: "This plugin has no quick-start example.",
+    packageUpdateBody: (name: string, from: string, to: string) =>
+      `Update ${name} in the plugin library from v${from} to v${to}. You can then update the Agents that use it.`,
+    /** The market explains quick start using the selected Agent’s installation. */
+    quickStartHint: "Open an example draft in a new chat with the current Agent.",
     quickStartInstallTitle: (plugin: string, agent: string) =>
       `Install ${plugin} on ${agent} to quick-start?`,
-    quickStartAfterInstall: "Then a draft with its demo opens; nothing runs until you send it.",
+    quickStartAfterInstall: "Install this plugin before using Quick start.",
     installedToast: (plugin: string, agent: string): string => `Installed ${plugin} to ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string =>
       `Uninstalled ${plugin} from ${agent}`,

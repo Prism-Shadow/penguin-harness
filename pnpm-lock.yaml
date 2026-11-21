@@ -530,15 +530,15 @@ importers:
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
-      '@penguinharness/plan':
-        specifier: workspace:*
-        version: link:../../plugins/plan
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
+      '@penguinharness/multimodal-tools':
+        specifier: workspace:*
+        version: link:../../plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/openskill-rsi-toolkit
@@ -551,6 +551,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
       '@penguinharness/reading-desk':
         specifier: workspace:*
         version: link:../../plugins/reading-desk
@@ -736,15 +739,15 @@ importers:
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
-      '@penguinharness/plan':
-        specifier: workspace:*
-        version: link:../../plugins/plan
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
+      '@penguinharness/multimodal-tools':
+        specifier: workspace:*
+        version: link:../../plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/openskill-rsi-toolkit
@@ -757,6 +760,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
       '@penguinharness/reading-desk':
         specifier: workspace:*
         version: link:../../plugins/reading-desk
@@ -956,15 +962,15 @@ importers:
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
-      '@penguinharness/plan':
-        specifier: workspace:*
-        version: link:../../plugins/plan
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
+      '@penguinharness/multimodal-tools':
+        specifier: workspace:*
+        version: link:../../plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/openskill-rsi-toolkit
@@ -980,6 +986,9 @@ importers:
       '@penguinharness/penguin-testing-electron':
         specifier: workspace:*
         version: link:../../plugins/penguin-testing-electron
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
       '@penguinharness/reading-desk':
         specifier: workspace:*
         version: link:../../plugins/reading-desk
@@ -1033,7 +1042,7 @@ importers:
         version: 1.61.1
       '@prismshadow/penguin-core':
         specifier: workspace:*
-        version: link:../core
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@tailwindcss/vite':
         specifier: ^4.1.0
         version: 4.3.2(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -1121,15 +1130,15 @@ importers:
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
-      '@penguinharness/plan':
-        specifier: workspace:*
-        version: link:../../plugins/plan
       '@penguinharness/humanizer':
         specifier: workspace:*
         version: link:../../plugins/humanizer
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
+      '@penguinharness/multimodal-tools':
+        specifier: workspace:*
+        version: link:../../plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/openskill-rsi-toolkit
@@ -1142,6 +1151,9 @@ importers:
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
       '@penguinharness/reading-desk':
         specifier: workspace:*
         version: link:../../plugins/reading-desk
@@ -1803,12 +1815,6 @@ importers:
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
 
-  plugins/plan:
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(ws@8.21.0)
-
   plugins/humanizer:
     devDependencies:
       '@prismshadow/penguin-core':
@@ -1829,6 +1835,30 @@ importers:
       '@prismshadow/skills':
         specifier: workspace:*
         version: link:../../packages/skills
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  plugins/multimodal-tools:
+    devDependencies:
+      '@prismshadow/mmsp':
+        specifier: ^0.5.10
+        version: 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@prismshadow/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
+      commander:
+        specifier: ^13.0.0
+        version: 13.1.0
+      hono:
+        specifier: ^4.13.11
+        version: 4.13.13
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -1874,6 +1904,12 @@ importers:
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  plugins/plan:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
   plugins/reading-desk:
     devDependencies:
@@ -2994,6 +3030,9 @@ packages:
   '@penguinharness/ace-rsi-toolkit@file:plugins/ace-rsi-toolkit':
     resolution: {directory: plugins/ace-rsi-toolkit, type: directory}
 
+  '@penguinharness/action-minutes@file:plugins/action-minutes':
+    resolution: {directory: plugins/action-minutes, type: directory}
+
   '@penguinharness/agent-company@file:plugins/agent-company':
     resolution: {directory: plugins/agent-company, type: directory}
 
@@ -3015,16 +3054,20 @@ packages:
   '@penguinharness/continual-learning@file:plugins/continual-learning':
     resolution: {directory: plugins/continual-learning, type: directory}
 
+  '@penguinharness/daily-draw@file:plugins/daily-draw':
+    resolution: {directory: plugins/daily-draw, type: directory}
+
   '@penguinharness/data-analysis@file:plugins/data-analysis':
     resolution: {directory: plugins/data-analysis, type: directory}
 
   '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit':
     resolution: {directory: plugins/default-rsi-toolkit, type: directory}
 
+  '@penguinharness/fridge-keeper@file:plugins/fridge-keeper':
+    resolution: {directory: plugins/fridge-keeper, type: directory}
+
   '@penguinharness/goal@file:plugins/goal':
     resolution: {directory: plugins/goal, type: directory}
-  '@penguinharness/plan@file:plugins/plan':
-    resolution: {directory: plugins/plan, type: directory}
 
   '@penguinharness/humanizer@file:plugins/humanizer':
     resolution: {directory: plugins/humanizer, type: directory}
@@ -3032,14 +3075,24 @@ packages:
   '@penguinharness/model-development@file:plugins/model-development':
     resolution: {directory: plugins/model-development, type: directory}
 
+  '@penguinharness/multimodal-tools@file:plugins/multimodal-tools':
+    resolution: {directory: plugins/multimodal-tools, type: directory}
+    engines: {node: '>=24'}
+
   '@penguinharness/openskill-rsi-toolkit@file:plugins/openskill-rsi-toolkit':
     resolution: {directory: plugins/openskill-rsi-toolkit, type: directory}
 
   '@penguinharness/opro-rsi-toolkit@file:plugins/opro-rsi-toolkit':
     resolution: {directory: plugins/opro-rsi-toolkit, type: directory}
 
+  '@penguinharness/party-charades@file:plugins/party-charades':
+    resolution: {directory: plugins/party-charades, type: directory}
+
   '@penguinharness/penguin-support@file:plugins/penguin-support':
     resolution: {directory: plugins/penguin-support, type: directory}
+
+  '@penguinharness/plan@file:plugins/plan':
+    resolution: {directory: plugins/plan, type: directory}
 
   '@penguinharness/reading-desk@file:plugins/reading-desk':
     resolution: {directory: plugins/reading-desk, type: directory}
@@ -3058,6 +3111,9 @@ packages:
 
   '@penguinharness/software-development@file:plugins/software-development':
     resolution: {directory: plugins/software-development, type: directory}
+
+  '@penguinharness/tabletop-desk@file:plugins/tabletop-desk':
+    resolution: {directory: plugins/tabletop-desk, type: directory}
 
   '@penguinharness/trace-lookup@file:plugins/trace-lookup':
     resolution: {directory: plugins/trace-lookup, type: directory}
@@ -7851,6 +7907,8 @@ snapshots:
 
   '@penguinharness/ace-rsi-toolkit@file:plugins/ace-rsi-toolkit': {}
 
+  '@penguinharness/action-minutes@file:plugins/action-minutes': {}
+
   '@penguinharness/agent-company@file:plugins/agent-company': {}
 
   '@penguinharness/agent-development@file:plugins/agent-development': {}
@@ -7865,22 +7923,32 @@ snapshots:
 
   '@penguinharness/continual-learning@file:plugins/continual-learning': {}
 
+  '@penguinharness/daily-draw@file:plugins/daily-draw': {}
+
   '@penguinharness/data-analysis@file:plugins/data-analysis': {}
 
   '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit': {}
 
+  '@penguinharness/fridge-keeper@file:plugins/fridge-keeper': {}
+
   '@penguinharness/goal@file:plugins/goal': {}
-  '@penguinharness/plan@file:plugins/plan': {}
 
   '@penguinharness/humanizer@file:plugins/humanizer': {}
 
   '@penguinharness/model-development@file:plugins/model-development': {}
 
+  '@penguinharness/multimodal-tools@file:plugins/multimodal-tools': {}
+
   '@penguinharness/openskill-rsi-toolkit@file:plugins/openskill-rsi-toolkit': {}
 
   '@penguinharness/opro-rsi-toolkit@file:plugins/opro-rsi-toolkit': {}
 
+  '@penguinharness/party-charades@file:plugins/party-charades': {}
+
   '@penguinharness/penguin-support@file:plugins/penguin-support': {}
+
+  '@penguinharness/plan@file:plugins/plan': {}
+
   '@penguinharness/reading-desk@file:plugins/reading-desk': {}
 
   '@penguinharness/rrsi-rsi-toolkit@file:plugins/rrsi-rsi-toolkit': {}
@@ -7892,6 +7960,8 @@ snapshots:
   '@penguinharness/skillopt-rsi-toolkit@file:plugins/skillopt-rsi-toolkit': {}
 
   '@penguinharness/software-development@file:plugins/software-development': {}
+
+  '@penguinharness/tabletop-desk@file:plugins/tabletop-desk': {}
 
   '@penguinharness/trace-lookup@file:plugins/trace-lookup': {}
 
@@ -7993,6 +8063,7 @@ snapshots:
       '@modelcontextprotocol/client': 2.3.1
       '@penguinharness/a2ui': file:plugins/a2ui
       '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes': file:plugins/action-minutes
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
@@ -8000,21 +8071,26 @@ snapshots:
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades': file:plugins/party-charades
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/reading-desk': file:plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/tabletop-desk': file:plugins/tabletop-desk
       '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
@@ -8045,6 +8121,7 @@ snapshots:
       '@modelcontextprotocol/client': 2.3.1
       '@penguinharness/a2ui': file:plugins/a2ui
       '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes': file:plugins/action-minutes
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
@@ -8052,21 +8129,26 @@ snapshots:
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades': file:plugins/party-charades
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/reading-desk': file:plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/tabletop-desk': file:plugins/tabletop-desk
       '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
@@ -8421,6 +8503,7 @@ snapshots:
       '@larksuiteoapi/node-sdk': 1.73.0
       '@penguinharness/a2ui': file:plugins/a2ui
       '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes': file:plugins/action-minutes
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
@@ -8428,21 +8511,26 @@ snapshots:
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades': file:plugins/party-charades
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/reading-desk': file:plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/tabletop-desk': file:plugins/tabletop-desk
       '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
@@ -8453,6 +8541,7 @@ snapshots:
       '@prismshadow/chat-markdown': file:packages/chat-markdown
       '@prismshadow/mmsp': 0.5.10(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
+      '@types/node': 24.13.3
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       css-tree: 3.2.1
@@ -8488,6 +8577,7 @@ snapshots:
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/a2ui': file:plugins/a2ui
       '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes': file:plugins/action-minutes
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
@@ -8495,21 +8585,26 @@ snapshots:
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades': file:plugins/party-charades
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/reading-desk': file:plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/tabletop-desk': file:plugins/tabletop-desk
       '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
@@ -8520,6 +8615,7 @@ snapshots:
       '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@types/node': 24.13.3
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       css-tree: 3.2.1
@@ -8555,6 +8651,7 @@ snapshots:
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/a2ui': file:plugins/a2ui
       '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes': file:plugins/action-minutes
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
@@ -8562,21 +8659,26 @@ snapshots:
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades': file:plugins/party-charades
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/plan': file:plugins/plan
       '@penguinharness/reading-desk': file:plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/tabletop-desk': file:plugins/tabletop-desk
       '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
@@ -8587,6 +8689,7 @@ snapshots:
       '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@types/node': 24.13.3
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       css-tree: 3.2.1

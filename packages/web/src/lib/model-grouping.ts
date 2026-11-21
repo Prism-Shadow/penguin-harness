@@ -159,6 +159,8 @@ export interface ModelCredentialRowLike extends ModelRowLike {
   envKeyMasked?: string;
   /** Where the key the row is used with comes from (GET /models' `effective`); its group's key included. */
   effective?: { apiKeySource: "model" | "provider" | "env" | "none" };
+  /** False for a tool model (GET /models): an image, speech or web model, never a chat candidate. */
+  chatEligible?: boolean;
 }
 
 /**
@@ -382,16 +384,21 @@ export interface VisibleChatModelsOptions {
 }
 
 /**
- * Candidate list for the chat model picker: library order → keep only models with a key
- * (hasConfiguredKey: its own, its group's or env-backed; plus the selected and the default model, unless
- * showAll) → the query then filters whatever is visible. When NO model has a key, the filter
- * degrades to showAll (everything listed), so the picker is never uselessly empty.
+ * Candidate list for the chat model picker: library order → drop the tool models (an image,
+ * speech or web model the catalog marks, which cannot hold a conversation) unless one is the
+ * selected model → keep only models with a key (hasConfiguredKey: its own, its group's or
+ * env-backed; plus the selected and the default model, unless showAll) → the query then filters
+ * whatever is visible. When NO model has a key, the filter degrades to showAll (everything
+ * listed), so the picker is never uselessly empty.
  */
 export function visibleChatModels<T extends ModelCredentialRowLike>(
   models: T[],
   { showAll, query, selected, defaultModel, groupOrder }: VisibleChatModelsOptions,
 ): T[] {
-  const ordered = orderModelsLikeLibrary(models, groupOrder);
+  const ordered = orderModelsLikeLibrary(
+    models.filter((m) => m.chatEligible !== false || sameModelRef(m, selected)),
+    groupOrder,
+  );
   const keep =
     showAll || !ordered.some(hasConfiguredKey)
       ? ordered

@@ -179,6 +179,7 @@ import type { LiveStreams } from "../../auth/live-streams.js";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { OrgService } from "../../runtime/organization/service.js";
+import type { ToolModelBindings } from "../../services/tool-model-bindings.js";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
 const SESSION_TITLE_MAX = 120;
@@ -1933,6 +1934,8 @@ export class SessionApiRoutes {
   @Use() private readonly orgService!: OrgService;
   @Use() private readonly workbenches!: Workbenches;
   @Use() private readonly drafts!: UserDraftsStore;
+  /** Optional for trees without the model tools group: every model then gets the chat probe. */
+  @Use() private readonly toolModelBindings?: ToolModelBindings;
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
@@ -2006,6 +2009,9 @@ export class SessionApiRoutes {
     this.modelsRoutes = modelsRoutes({
       ...modelDeps,
       penguinGoOrigin: this.config.penguinGoOrigin ?? normalizePenguinGoOrigin(undefined),
+      ...(this.toolModelBindings !== undefined
+        ? { toolModelBindings: this.toolModelBindings }
+        : {}),
     });
     this.modelOauthRoutes = modelOAuthRoutes(modelOAuthDeps);
     this.platformAuthRoutes = platformAuthRoutes({ ...modelDeps, platformAuth: this.platformAuth });

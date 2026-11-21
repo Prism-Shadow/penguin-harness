@@ -3223,6 +3223,7 @@ export const zh = {
     /** Listed, but the process could not load it: the reason, not a success. */
     deploymentFailedToast: (name: string, reason: string) => `${name} 加载失败：${reason}`,
     /** A server module's install / removal confirm: what it does, then what it costs, in small type below. */
+    updatePackageTo: (version: string) => `更新到 v${version}`,
     applyConfirmInstall: (name: string) => `安装 ${name}`,
     applyConfirmRemove: (name: string) => `移除 ${name}`,
     applyConfirmInstallBody: (name: string) => `将把 ${name} 安装到整个服务端，所有 Project 共用。`,
@@ -3296,6 +3297,50 @@ export const zh = {
       lastSeenOn: (n: number) => `（含 ${n} 个在不可达机器上的 Agent，按上次看到）`,
     },
     noMatch: "没有匹配的插件。",
+    /** The search matched nothing in the tab on show, but matches plugins in other tabs. */
+    noMatchHere: (n: number) => `当前标签下没有匹配的插件，全部插件中有 ${n} 个匹配。`,
+    showAllResults: "在全部中查看",
+    /** A plugin the market's curation selects: the carousel's eyebrow and a card's tag. */
+    selected: "精选",
+    /** The cards / list switch: its name, and each icon button's name and hover words. */
+    layoutLabel: "插件布局",
+    cardsLayout: "卡片视图",
+    listLayout: "列表视图",
+    /** The first tab of the market: every plugin, whatever the grouping. */
+    tabAll: "全部",
+    /** The sort select: its accessible name and its options. */
+    sortLabel: "排序",
+    sort: {
+      featured: "精选优先",
+      recent: "最近更新",
+      used: "本项目在用最多",
+      name: "名称",
+      popular: "热门",
+    },
+    /** The ranking beside the grid: its heading, its two boards, and each figure in full words. */
+    openApp: "打开",
+    openAppHint: "在应用中心打开",
+    /** The detail's sections: its screenshots, what it installs, and its quick start. */
+    detailScreenshots: "截图",
+    detailIncludes: "包含内容",
+    detailQuickStart: "快速开始",
+    quickStartSkills: (names: string) => `预选技能：${names}`,
+    /** The kind of one part a plugin installs, beside its name. */
+    partKind: {
+      skill: "技能",
+      hook: "钩子",
+      mcp: "MCP 服务器",
+      workbench: "工作台",
+    },
+    /** The detail's column of facts: each row's label. */
+    fact: {
+      version: "版本",
+      category: "类别",
+      author: "作者",
+      license: "许可证",
+      package: "包名",
+      links: "链接",
+    },
     /** The description of a shipped package the registry has no entry for. */
     shippedNoEntry: "随本次构建自带；市场里还没有它的条目。",
     /** In place of the description of a package that carries none. */
@@ -3310,7 +3355,6 @@ export const zh = {
     detailDescription: "说明",
     detailFiles: "文件",
     detailSkills: "技能",
-    detailWorkbenches: "工作台",
     uninstallWorkbenchRecords: "其工作台及保存的记录也会被删除。",
     detailHooks: "钩子",
     /** The detail dialog's section of the MCP servers a plugin installs into an Agent's tools. */
@@ -3413,11 +3457,17 @@ export const zh = {
     replaceAction: "替换",
     /** Usage count in the card metadata (shows "unused" instead of a bare 0). */
     usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
-    /** Quick start's tooltip: what pressing it does, and what it does not. */
-    quickStartHint: "快速开始：打开一份带该插件演示的草稿——点发送之前什么都不会运行",
+    marketAgentInstalls: (n: number): string => `${n} 个 Agent 已装`,
+    marketServerInstalled: "服务端已装",
+    quickAction: "快速调用",
+    noQuickAction: "这个插件没有快速调用示例。",
+    packageUpdateBody: (name: string, from: string, to: string) =>
+      `将插件库中的 ${name} 从 v${from} 更新到 v${to}。完成后，可将新版本应用到使用它的 Agent。`,
+    /** The market explains quick start using the selected Agent’s installation. */
+    quickStartHint: "在当前 Agent 的新对话中打开示例草稿。",
     quickStartInstallTitle: (plugin: string, agent: string) =>
       `先把 ${plugin} 安装到 ${agent} 再快速开始？`,
-    quickStartAfterInstall: "随后打开一份带演示的草稿；点发送之前什么都不会运行。",
+    quickStartAfterInstall: "请先安装此插件，再快速调用。",
     /** Top toast shown on successful install / uninstall. */
     installedToast: (plugin: string, agent: string): string => `已将 ${plugin} 安装到 ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string => `已从 ${agent} 卸载 ${plugin}`,
