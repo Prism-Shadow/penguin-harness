@@ -25,6 +25,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   installPluginChannel,
   npmFailureKind,
+  npmRegistryNamed,
   PluginInstallError,
   pluginsPrefix,
 } from "../src/plugin/install.js";
@@ -94,6 +95,25 @@ describe("npmFailureKind", () => {
     expect(
       npmFailureKind("npm error code ETARGET\nnpm error Not Found - no match for ^3.0.0"),
     ).toBe("unavailable");
+  });
+
+  it("calls a registry that did not answer unreachable, and names it", () => {
+    for (const stderr of [
+      "npm error code ETIMEDOUT\nnpm error network request to https://registry.npmjs.org/x failed, reason: connect ETIMEDOUT",
+      "npm error code ENOTFOUND\nnpm error network request to https://registry.npmmirror.com/x failed, reason: getaddrinfo ENOTFOUND",
+      "npm error code ERR_SOCKET_TIMEOUT\nnpm error network Socket timeout",
+      "npm error code ECONNRESET\nnpm error network aborted",
+      // An http(s) proxy that could not reach the registry either.
+      "npm error code E502\nnpm error 502 Bad Gateway - GET http://10.255.255.1:4873/x",
+    ]) {
+      expect(npmFailureKind(stderr), stderr).toBe("unreachable");
+    }
+    expect(
+      npmRegistryNamed(
+        "npm error 404 Not Found - GET https://registry.npmmirror.com/@acme%2fx - Not found",
+      ),
+    ).toBe("https://registry.npmmirror.com");
+    expect(npmRegistryNamed("npm error code EACCES")).toBeUndefined();
   });
 
   it("calls every other npm failure other", () => {

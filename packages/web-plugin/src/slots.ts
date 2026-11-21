@@ -95,13 +95,22 @@ export type DockLayoutListener = () => void;
 export interface SettingsSectionData {
   /** The page's key: what `requestSettings({ section })` names. */
   key: string;
-  /** The rail heading it sits under: the viewer's own preferences, or the whole server's. */
-  group: "personal" | "server";
+  /**
+   * The rail heading it sits under: the viewer's own preferences, the whole server's, or a
+   * plugin's — `plugin` joins the page of the plugin `plugin` names instead of taking a rail entry
+   * of its own, in its personal part (`visibility: "everyone"`) or its server part (`"admin"`).
+   */
+  group: "personal" | "server" | "plugin";
+  /** With `group: "plugin"`: the npm package of the plugin whose page it joins. */
+  plugin?: string;
   /** Who sees it: every signed-in viewer, or admins alone. */
   visibility: "everyone" | "admin";
-  /** Its rail glyph: a key of the UI package's icon registry (`ICONS`). */
+  /**
+   * Its rail glyph: a key of the UI package's icon registry (`ICONS`). In a plugin's page, the
+   * page's glyph when the plugin library has no icon for the plugin.
+   */
   icon: string;
-  /** Its place in the rail among every page, the Web App's own included, ascending. */
+  /** Its place in the rail among every page, the Web App's own included, ascending; in a plugin's page, its place there. */
   order: number;
 }
 

@@ -73,6 +73,7 @@ export type { AtomicWriteOptions } from "../internal/atomic-write.js";
 export { isValidId } from "../state/ids.js";
 
 export type * from "./sandbox.js";
+export type * from "./agent-state.js";
 export type * from "./languages.js";
 export type * from "./library.js";
 

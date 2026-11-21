@@ -65,7 +65,7 @@ import { CoreSessionLoaders, DefaultTitleGenerators } from "../src/runtime/sessi
 import type { TitleNotifier } from "../src/runtime/title-generator.js";
 import { UpdateCheckService } from "../src/services/update-check-service.js";
 import { RevealService } from "../src/services/reveal-path.js";
-import { NpmPluginPackages } from "../src/plugin/install.js";
+import { NpmPluginPackages } from "../src/plugin/packages.js";
 import type { PluginPackages } from "../src/mechanisms/plugins.js";
 import { DefaultMessagingTuning } from "../src/runtime/messaging/bridge.js";
 import { FeishuSdkProvider } from "../src/runtime/messaging/feishu-connector.js";
@@ -184,6 +184,8 @@ export function testConfig(root: string): ServerConfig {
     desktopToken: null,
     portFile: null,
     trustProxy: false,
+    // The embedded market document alone: no test may reach the network for the market.
+    pluginMarketUrl: null,
     // No CLI to offer: nothing is written into the temp root, and no directory is put on
     // the PATH of whatever a test's Agent runs.
     cliEntry: null,

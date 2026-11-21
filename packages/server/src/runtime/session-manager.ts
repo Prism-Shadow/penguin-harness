@@ -1090,6 +1090,12 @@ export class SessionManager {
       steerIfBusy?: boolean;
       recall?: RecallStore;
       promptHooks?: readonly string[];
+      /**
+       * The signed-in person sending it: the driver of the run it starts — now, or when it leaves
+       * the queue (RuntimeEntry.runDriver). Absent for everything nobody signed in sent: the local
+       * API token, schedules without a creator, the Agent API, company mode, the bridge.
+       */
+      driver?: string;
     },
   ): Promise<{ sessionId: string; queued: boolean; steered?: boolean }> {
     return this.withLock(sessionId, async () => {
@@ -1102,7 +1108,7 @@ export class SessionManager {
       if (
         opts?.steerIfBusy &&
         entry.status === "running" &&
-        this.steerRunning(entry, input, opts.recall ?? recallStoreOf(input))
+        this.steerRunning(entry, input, opts.recall ?? recallStoreOf(input), opts.driver)
       ) {
         return { sessionId: entry.sessionId, queued: false, steered: true };
       }
@@ -1118,6 +1124,7 @@ export class SessionManager {
           id: randomUUID(),
           input: hooks.length > 0 ? await withPromptHooks(entry.session, input, hooks) : input,
           recall: opts.recall ?? recallStoreOf(input),
+          ...(opts.driver !== undefined ? { driver: opts.driver } : {}),
         });
         return { sessionId: entry.sessionId, queued: true };
       }
@@ -1130,6 +1137,8 @@ export class SessionManager {
           // queued line shows what is waiting (see recallFollowUp). Callers that know more
           // than the input carries pass their own; the rest get it read off the input.
           recall: opts.recall ?? recallStoreOf(input),
+          // Who queued it drives the run it becomes, not the run in progress now.
+          ...(opts.driver !== undefined ? { driver: opts.driver } : {}),
         });
         entry.lastActivityMs = Date.now();
         // Re-publish the current state so subscribers pick up the new queued count (the
@@ -1141,6 +1150,7 @@ export class SessionManager {
       this.launchTask(
         entry,
         hooks.length > 0 ? await withPromptHooks(entry.session, input, hooks) : input,
+        opts?.driver ?? null,
       );
       return { sessionId: entry.sessionId, queued: false };
     });
@@ -1158,7 +1168,7 @@ export class SessionManager {
    * input for company mode's hop accounting: the turn it resends was counted, or not, when
    * it was first sent.
    */
-  async retryTask(sessionId: string): Promise<{ sessionId: string }> {
+  async retryTask(sessionId: string, driver?: string): Promise<{ sessionId: string }> {
     return this.withLock(sessionId, async () => {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
@@ -1172,7 +1182,7 @@ export class SessionManager {
           "There is nothing to retry: the unfinished turn's input has already been sent.",
         );
       }
-      this.launchTask(entry, []);
+      this.launchTask(entry, [], driver ?? null);
       return { sessionId: entry.sessionId };
     });
   }
@@ -1236,6 +1246,8 @@ export class SessionManager {
       // objective). Later rounds are the stop hook's continues, which core stamps the same way.
       const input = [...args.messages, userText(started.context, "harness")];
       const ac = new AbortController();
+      // A goal drives itself round after round: it runs for nobody (RuntimeEntry.runDriver).
+      entry.runDriver = null;
       entry.status = "running";
       entry.abort = ac;
       entry.lastActivityMs = Date.now();
@@ -1365,11 +1377,15 @@ export class SessionManager {
    * and drives the run, which echoes the input. Caller holds the session lock and has verified
    * idle. A retry's input is empty: nothing is echoed or held, and drive gets no title
    * material — the turn it resends already offered its text when it was first sent.
+   *
+   * `driver` is the signed-in person who started this run, null for a run nobody started; it
+   * holds until the run ends (drive's finally) or someone else steers it (steerRunning).
    */
-  private launchTask(entry: RuntimeEntry, input: AmspRecord[]): void {
+  private launchTask(entry: RuntimeEntry, input: AmspRecord[], driver: string | null = null): void {
     // Every Task starts here — a retry, a queued follow-up, a background notice's delivery.
     assertNotStranded(entry);
     const ac = new AbortController();
+    entry.runDriver = driver;
     entry.status = "running";
     entry.abort = ac;
     entry.lastActivityMs = Date.now();
@@ -1419,7 +1435,7 @@ export class SessionManager {
         const entry = this.entries.get(sessionId);
         if (!entry || entry.status !== "idle" || entry.followUps.length === 0) return;
         const next = entry.followUps.shift()!;
-        this.launchTask(entry, next.input);
+        this.launchTask(entry, next.input, next.driver ?? null);
       });
     } catch (err) {
       this.log(`[followup] auto-start failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -1643,9 +1659,9 @@ export class SessionManager {
    * keeps the composer's "steering queued" hint, content included, alive across reloads —
    * and the content itself is what a recall (recallSteering) hands back to the composer.
    */
-  steer(sessionId: string, input: AmspRecord[], recall: RecallStore): void {
+  steer(sessionId: string, input: AmspRecord[], recall: RecallStore, driver?: string): void {
     const entry = this.entries.get(sessionId);
-    if (!entry || !this.steerRunning(entry, input, recall)) {
+    if (!entry || !this.steerRunning(entry, input, recall, driver)) {
       throw new HttpError(
         409,
         "not_running",
@@ -1658,9 +1674,18 @@ export class SessionManager {
    * Hands `input` to the entry's running Task as steering and mirrors it (see `steer`); false,
    * with nothing changed, when there is no Task to take it — the Session is not running one, or
    * core refuses (no engine yet, or the run is settling).
+   *
+   * Steering never makes anyone the run's driver; a message from anyone but its driver (`driver`
+   * is the signed-in sender, absent for the local token) leaves the run with no driver at all.
    */
-  private steerRunning(entry: RuntimeEntry, input: AmspRecord[], recall: RecallStore): boolean {
+  private steerRunning(
+    entry: RuntimeEntry,
+    input: AmspRecord[],
+    recall: RecallStore,
+    driver?: string,
+  ): boolean {
     if (entry.status !== "running" || !entry.session.steer(input)) return false;
+    if ((driver ?? null) !== (entry.runDriver ?? null)) entry.runDriver = null;
     entry.pendingSteering.push({
       info: {
         id: randomUUID(),
@@ -2594,6 +2619,7 @@ export class SessionManager {
       entry.status = "idle";
       entry.abort = null;
       entry.running = null;
+      entry.runDriver = null;
       // The run is over, so core has discarded any undelivered steering (see ContextEngine's
       // steeringQueue). What is still in the mirror was therefore never delivered — entries
       // are shifted out as their `[user_steering]` message appears on the stream, and this

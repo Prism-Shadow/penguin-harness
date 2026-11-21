@@ -207,6 +207,8 @@ const en: Messages = {
       `${url} rejected the API token (401). If the server restarted, its token rotated — check PENGUIN_API_TOKEN, or let the CLI read the current api-token file.`,
     httpError: (status, code, message) =>
       `Server error ${status} (${code})${message ? `: ${message}` : ""}`,
+    noDefaultModel: () =>
+      "This Project has no default model: pass --provider and --model-id, or set one with `penguin config model default --provider <group> --model-id <id>`.",
     sessionNotFound: (ref, projectId) =>
       `No session matching "${ref}" in project ${projectId} (try \`penguin session ls\`).`,
     sessionAmbiguous: (ref, candidates) =>
@@ -301,6 +303,8 @@ const zh: Messages = {
       `${url} 拒绝了 API token（401）。服务器重启会轮换 token——检查 PENGUIN_API_TOKEN，或让 CLI 读取最新的 api-token 文件。`,
     httpError: (status, code, message) =>
       `服务器错误 ${status}（${code}）${message ? `：${message}` : ""}`,
+    noDefaultModel: () =>
+      "这个 Project 没有默认模型：请用 --provider 与 --model-id 指定模型，或用 `penguin config model default --provider <分组> --model-id <模型 id>` 设置默认模型。",
     sessionNotFound: (ref, projectId) =>
       `Project ${projectId} 中没有匹配「${ref}」的会话（可用 \`penguin session ls\` 查看）。`,
     sessionAmbiguous: (ref, candidates) =>

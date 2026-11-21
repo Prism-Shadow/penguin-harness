@@ -114,6 +114,7 @@ import type {
   UsageModelTotal,
   UsageResponse,
   UsageSeriesPoint,
+  UsageToolRow,
   UsageEntitySeriesCounts,
   UsageErrorCount,
   ErrorContext,
@@ -1535,6 +1536,7 @@ export type {
   UsageModelTotal,
   UsageResponse,
   UsageSeriesPoint,
+  UsageToolRow,
   OrgChannelMessage,
   OrgChannelNotice,
   OrgChannelNoticeKind,
@@ -4379,7 +4381,15 @@ export interface PluginModuleAction {
 
 /** POST /api/projects/:p/plugins/modules `{ plugin }` (any member): enable a plugin's server module, or ask the administrator to. */
 export interface PluginModuleAskRequest {
-  plugin: string;
+  /** A library plugin's name: enable its server module, or ask for it. */
+  plugin?: string;
+  /**
+   * Instead of `plugin`: a package that is not on this server yet, asked for by a member's
+   * 「安装到 Agent」 (05 「插件库」 「安装模型」) — recorded as a request for the administrator,
+   * whose enable installs it on the server first. With the Agent the member was installing on.
+   */
+  package?: string;
+  agentId?: string;
 }
 
 /** The answer to an explicit ask: every module's state for this Project, and what the ask did. */
@@ -4416,6 +4426,11 @@ export interface PluginModuleRequest {
    */
   preinstalled?: boolean;
   state: PluginModuleState;
+  /**
+   * The package is on this server (installed, linked or shipped). False for a member's request of
+   * a package not here yet: enabling it means installing it on the server first.
+   */
+  onServer: boolean;
 }
 
 /** GET /api/admin/plugin-modules, and the answer to a decision (administrator only). */
@@ -4652,6 +4667,8 @@ export interface WorkbenchEnabledRequest {
  * can also be installed from that channel (plugin/install.ts).
  */
 export interface PluginIndexEntry {
+  /** A downloaded package on the machine serving this listing, compared with the index release. */
+  localInstall?: { version: string; libraryOnly: boolean; updateAvailable: boolean };
   /** Package specifier — the string a Project's plugin list names. */
   name: string;
   /** Localized display names; the UI falls back to the package name. */
@@ -4683,8 +4700,22 @@ export interface PluginIndexEntry {
   keywords?: string[];
   /** Capability floor(s) the plugin provides on (e.g. "sandbox"). */
   categories?: string[];
+  /**
+   * For a sandbox backend: the platforms (`process.platform` names: `linux`, `darwin`, `win32`)
+   * it is a default backend for, as its package declares them on its `SandboxModule.providers`
+   * contribution. A server whose sandbox is turned on with no backend for its platform offers to
+   * install the embedded index's defaults for that platform, in index order; an entry without the
+   * field is the default for none.
+   */
+  sandboxDefaultFor?: string[];
   /** Unix timestamp (seconds) of the entry's last update. */
   updatedAt?: number;
+  /**
+   * The build carries an offline archive of this plugin (05 「插件库」 「安装从不卡住」): it installs
+   * with no registry, at this version, and this is what it carries — known before it is on this
+   * server. Absent for everything else, and on older servers.
+   */
+  offline?: { version: string; library: boolean; modules: boolean };
   /**
    * The hash this entry's release asset is pinned by, npm's `integrity` shape:
    * `sha512-<base64>` of the tarball its channel serves. Present when the publisher
@@ -4724,6 +4755,77 @@ export interface PluginIndexResponse {
    * once they have arrived, or names the source under `failures` once it has failed.
    */
   pending: string[];
+}
+
+/**
+ * One picture of the plugin market, named by the route this server serves it at
+ * (`GET /api/plugins/market/asset?path=…&rev=…`): the server fetches it from beside the market
+ * document, checks its bytes are a WebP, PNG or JPEG picture and keeps a copy, so a page never
+ * loads a picture from another host. A picture that cannot be had answers 404.
+ */
+export interface MarketImage {
+  /** The full rendition. */
+  url: string;
+  /** The small rendition a card draws; absent, a card draws `url`. */
+  thumbUrl?: string;
+  /** The picture's dominant colour (`#rrggbb`): the field it fades in over. */
+  tone?: string;
+}
+
+/** A screenshot on a plugin's detail: a picture and what it shows. */
+export interface MarketShot extends MarketImage {
+  caption?: string;
+  captionZh?: string;
+}
+
+/** What the market document says a plugin looks like. Every part is optional. */
+export interface PluginArt {
+  cover?: MarketImage;
+  /**
+   * A raster icon, for a plugin whose package is not on this server (an index row has none of its
+   * own); once the package is here, the package's own icon is drawn instead.
+   */
+  icon?: { url: string };
+  screenshots?: MarketShot[];
+}
+
+/**
+ * How many times each plugin is installed, for the market's 热门 / 飙升 (popular / rising) panel:
+ * `installs` in all, `weekly` in the last seven days, by npm package name.
+ *
+ * PLACEHOLDER: no install count exists across deployments yet, so today's numbers are generated
+ * with a fixed seed in the community repository's pipeline and published with
+ * `source: "placeholder"`. Replace them with a real install-count API later: it publishes this
+ * same shape with `source: "live"`, the switch a reader keys on.
+ */
+export interface MarketPopularity {
+  source: "placeholder" | "live";
+  /** The day the numbers were produced (`YYYY-MM-DD`). */
+  generatedAt: string;
+  items: Record<string, { installs: number; weekly: number }>;
+}
+
+/**
+ * GET /api/plugins/market: the market's curation — which plugins are selected, which of them
+ * may lead the selected carousel, and the art of the plugins that have any — keyed by npm package
+ * name (a library plugin's `package`, an index entry's `name`). A name this server does not list
+ * is simply not drawn. `source` says which document answered: the one shipped with this build, or
+ * the published one (plugin/market.ts). Selection is an editorial choice, not a ranking; the only
+ * numbers are the optional `popularity` block, placeholders until a real install-count API exists.
+ */
+export interface PluginMarketResponse {
+  /** Package names allowed to lead the selected carousel, in turn order; each is also in `selected`. */
+  hero: string[];
+  /** Package names of the selected plugins, in display order. */
+  selected: string[];
+  art: Record<string, PluginArt>;
+  source: "embedded" | "published";
+  /**
+   * The document's install counts, as it carries them; absent when it carries none, or a block
+   * that does not read (the rest of the document still answers). Placeholder numbers today
+   * (`source: "placeholder"`), to be replaced by a real install-count API: see MarketPopularity.
+   */
+  popularity?: MarketPopularity;
 }
 
 /**
@@ -6690,6 +6792,16 @@ export interface PluginCliCommandInfo {
   key: string;
   /** Its one-line summary, per language. */
   summary: { en: string; zh: string };
+  /**
+   * Who may run it: the administrator only, or any member of the caller's Project. This server
+   * always says; a client reads an absent one (a server from before member commands) as `admin`.
+   */
+  access?: "admin" | "member";
+  /**
+   * The local files it exchanges: `read`, the options whose value is a file the terminal sends;
+   * `write`, the option naming the directory the terminal saves returned files into.
+   */
+  files?: { read?: string[]; write?: string };
 }
 
 /** GET /api/cli/commands: every command the server's plugins contribute, in load order. */
@@ -6707,13 +6819,39 @@ export interface PluginCliCommandRunRequest {
   language: "en" | "zh";
   /** The program name usage lines print (`penguin`, or `penguin exec <plugin>`). */
   prog: string;
+  /** The caller's Project (an Agent's `PENGUIN_PROJECT_ID`); a member command needs one. */
+  projectId?: string;
+  /** The caller's Session (an Agent's `PENGUIN_SESSION_ID`): a Session of `projectId`. */
+  sessionId?: string;
+  /** The local files the terminal read for the command's `files.read` options. */
+  files?: PluginCliCommandInputFile[];
 }
 
-/** What one run printed, and its exit code. */
+/** One file the terminal sends with a run. */
+export interface PluginCliCommandInputFile {
+  /** The option's value as typed: what the command looks the file up by. */
+  value: string;
+  /** The file's own name, no directory. */
+  name: string;
+  /** Its bytes, base64. */
+  data: string;
+}
+
+/** One file a run hands back to the terminal, which saves it under the command's `files.write`. */
+export interface PluginCliCommandOutputFile {
+  /** A plain file name, no directory. */
+  name: string;
+  mimeType?: string;
+  /** Its bytes, base64. */
+  data: string;
+}
+
+/** What one run printed, its exit code, and the files it handed back. */
 export interface PluginCliCommandRunResponse {
   exitCode: number;
   stdout: string;
   stderr: string;
+  files?: PluginCliCommandOutputFile[];
 }
 
 /**
@@ -6744,6 +6882,11 @@ export interface PluginConfigField {
    * fields. Presentation only: it is stored, validated and read like any other field.
    */
   advanced?: boolean;
+  /**
+   * A security setting — who may use the plugin, what it may reach: drawn under the plugin
+   * page's "Security" heading with a shield. Presentation only, like `advanced`.
+   */
+  security?: boolean;
   /** A save that would leave this field empty is refused. */
   required?: boolean;
   /** `enum` only: the values it may take, in display order. */
@@ -6936,6 +7079,115 @@ export interface PluginConfigEntry {
    * Asked per read, like the notices; the client never guesses the OS.
    */
   backend?: PluginConfigBackend;
+  /**
+   * The plugin whose server module declared the group, by the specifier the plugin list names it
+   * with — an npm package name, or for a package installed from a directory, that directory's
+   * absolute path; absent for the host's own groups (the sandbox, plugin sources) and from a
+   * server older than this field. The Settings dialog draws the group on that plugin's page,
+   * keyed `plugin:<specifier>`; a specifier the plugin library does not list (a path) gets a page
+   * named by the group's own title.
+   */
+  plugin?: string;
+  /**
+   * That plugin's display name, from its card, in both languages — what names its page when the
+   * plugin library does not list it (a server-module plugin with no Skill: a sandbox backend).
+   */
+  pluginTitle?: string;
+  pluginTitleZh?: string;
+  /**
+   * That plugin's version and icon as its package on this server says them, for the same page:
+   * the npm version, and the icon (served at `GET /api/admin/plugin-config/icon?plugin=…`); each
+   * absent when the package carries none or is not known here.
+   */
+  pluginVersion?: string;
+  pluginIcon?: IconRef;
+  /**
+   * What the group's status reports in the status page's shape, checked on the way out (a state
+   * this build does not know reads as `unknown`, a field of the wrong type is dropped); absent
+   * when it reports none, or when its report could not be read.
+   */
+  report?: PluginStatusReport;
+}
+
+/**
+ * A settings group's status in the plugin page's shape (its status contributor's `report()`):
+ * a summary word, the program the plugin installs beside itself, and the preconditions it
+ * checks. `action` and `recheck` name actions of the group's `actions`: an action named here is
+ * drawn on its element only; the others are the page's primary actions.
+ */
+export interface PluginStatusReport {
+  summary?: PluginStatusSummary;
+  version?: PluginStatusVersion;
+  /** Every precondition, in display order. */
+  checks?: PluginStatusCheck[];
+  /** The action that checks everything again: drawn once, at the checks' heading, and run without asking first (it only reads). */
+  recheck?: string;
+}
+
+/** Where the plugin stands, in a word or two, drawn as a pill in its state's tone. */
+export interface PluginStatusSummary {
+  /**
+   * `ready` usable now; `attention` something needs a person; `progress` work under way; `off`
+   * switched off or not usable here; `unknown` could not be told — also what a state this build
+   * does not know reads as (a newer plugin's), so a page never meets a state it cannot draw.
+   */
+  state: "ready" | "attention" | "progress" | "off" | "unknown";
+  text: string;
+  textZh?: string;
+  /** What the word cannot say, on the pill's hover. */
+  hint?: string;
+  hintZh?: string;
+}
+
+/** A program the plugin installs and runs beside itself (agent-desktop), as its version element shows it. */
+export interface PluginStatusVersion {
+  /** The program's name as its maker spells it. */
+  name: string;
+  /**
+   * `preparing` = being downloaded or installed now (`progress`, step in `text`); `missing` = not
+   * installed yet; `unknown` = could not be told, and what a state this build does not know reads as.
+   */
+  state: "installed" | "preparing" | "failed" | "missing" | "unsupported" | "unknown";
+  version?: string;
+  /** The OS and CPU the installed build is for ("linux-x64"). */
+  platform?: string;
+  /** While preparing: how far, from 0 to 1; absent when the step has no amount. */
+  progress?: number;
+  /** One line: the step while preparing, why when failed or unsupported, where it runs from. */
+  text?: string;
+  textZh?: string;
+  /** Folded under the element (an install directory, the whole error); lines separated by `\n`. */
+  details?: string;
+  detailsZh?: string;
+  /** The action the element offers as its button (install, retry). */
+  action?: string;
+}
+
+/** One precondition the plugin checks on this machine. */
+export interface PluginStatusCheck {
+  id: string;
+  /** What is checked, in a few words ("Display", "Accessibility"). */
+  label: string;
+  labelZh?: string;
+  /**
+   * `ok` holds; `action` needs a person; `unknown` could not be told yet (and what a state this
+   * build does not know reads as); `na` does not apply on this machine.
+   */
+  state: "ok" | "action" | "unknown" | "na";
+  /** One line in the plugin's own words: what was found, or what to do. */
+  text?: string;
+  textZh?: string;
+  /** Folded under the row: a tool's own words, paths; lines separated by `\n`. */
+  details?: string;
+  detailsZh?: string;
+  /** The action drawn on this row (open System Settings). */
+  action?: string;
+  /**
+   * A Settings page this row opens, drawn as a link on the row: `plugin:<specifier>` for a
+   * plugin's page (the sandbox lists each backend and links it to its plugin's page). A page
+   * the viewer does not have draws no link.
+   */
+  page?: string;
 }
 
 /** Whether a backend that applies to this machine is installed, and this OS's default ones. */
@@ -6943,9 +7195,9 @@ export interface PluginConfigBackend {
   /** A backend for this OS is installed: loaded, or installed and failing its check. */
   installed: boolean;
   /**
-   * The npm packages this OS defaults to, installed together; absent on an OS with no default
-   * backend. Linux names two: bubblewrap, and sandbox-dsh, which confines files through
-   * Landlock where bubblewrap is refused.
+   * The npm packages this OS defaults to, installed together: the rows of the index embedded in
+   * the server that declare this platform (`PluginIndexEntry.sandboxDefaultFor`), in index order;
+   * absent when none does.
    */
   recommended?: string[];
 }
@@ -7068,6 +7320,49 @@ export interface PluginInstallOutcome {
   modules: boolean;
   /** The zip held the version already installed: nothing was installed. */
   unchanged?: boolean;
+  /**
+   * Where the package came from, for an install by name or link: the npm registry, the link npm
+   * fetched, the published index's github channel, or the offline archive the build carries
+   * (05 「插件库」 「安装从不卡住」). Absent for a zip import and on older servers.
+   */
+  from?: "registry" | "link" | "channel" | "offline";
+}
+
+/** One Agent that carries a plugin, as the server-uninstall confirm names it. */
+export interface PluginHolder {
+  projectId: string;
+  projectName: string;
+  agentId: string;
+  agentName: string;
+}
+
+/**
+ * GET /api/admin/plugins/holders?package=… (admin): who would lose a plugin if it were uninstalled
+ * from this server (05 「插件库」 「安装模型」). `agents` is every Agent of every Project here that
+ * carries any part of it; `shared` the Projects whose shared table lists it (the uninstall is then
+ * refused); `shipped` a package the build ships (it cannot be uninstalled from the server).
+ */
+export interface PluginHoldersResponse {
+  package: string;
+  /** The library plugin the package is; null for a server module alone (no Agent carries it). */
+  plugin: string | null;
+  /** It is in this server's prefix (installed or linked). */
+  onServer: boolean;
+  shipped: boolean;
+  shared: Array<{ projectId: string; projectName: string }>;
+  agents: PluginHolder[];
+}
+
+/**
+ * DELETE /api/admin/plugins?package=… (admin): uninstalls the plugin from every Agent here, then
+ * from this server. 409 `plugin_shipped`, 404 `plugin_not_installed`, 409 `plugin_shared` (a
+ * Project's shared table lists it), 409 `module_failed`, 500 `plugin_remove_failed`.
+ */
+export interface PluginServerUninstallResponse {
+  package: string;
+  plugin: string | null;
+  /** Each Agent it was uninstalled from, with the parts that could not be removed. */
+  agents: Array<PluginHolder & { failed?: PluginUninstallResponse["failed"] }>;
 }
 
 /** POST /api/projects/:projectId/plugins/installed/archive (admin): a plugin package zip, base64. */
@@ -7081,6 +7376,11 @@ export interface InstalledPluginsResponse {
   plugins: InstalledPlugin[];
   /** After an install: what landed on this server. */
   installed?: PluginInstallOutcome;
+  /**
+   * After an install: the App was still re-assembling on what it listed when the answer stopped
+   * waiting (60 s) — a module is starting; its row says how it stands once it has.
+   */
+  loading?: true;
   /**
    * Specifiers this build SHIPS (the hot push's assets, or the installation's own
    * `plugins/`): installable without a download, and not installed until listed.

@@ -23,6 +23,81 @@ import { setWebLocale } from "@prismshadow/penguin-web-plugin/host";
 export const zh = {
   appName: "PenguinHarness",
 
+  voice: {
+    /** The Project settings page of the multimodal models. */
+    models: "多模态模型",
+    modelHelp:
+      "penguin tools 命令使用这里选定的模型；「图片理解」就是项目的视觉模型，也替不支持图片的模型读图。聊天里，语音输入使用「语音识别」，朗读使用「语音合成」，润色使用「文本生成」。",
+    /** Image understanding: the Project's vision model, listed among the operations. */
+    imageUnderstanding: "图片理解",
+    unbound: "未指定",
+    /** The Project settings group that holds dictation's polish. */
+    dictation: "语音输入",
+    polish: "润色语音输入",
+    polishWith: (model: string, provider: string) => `由 ${model}（${provider}）润色`,
+    polishNeedsText: "请先选择文本生成模型",
+    prompt: "润色提示词",
+    restorePrompt: "恢复默认",
+    record: "语音输入",
+    recording: "正在录音",
+    permission: "等待麦克风授权",
+    inputLevel: "麦克风音量",
+    quiet: "安静",
+    soundDetected: "收到声音",
+    finish: "完成录音",
+    cancel: "取消语音输入",
+    transcribing: "正在转写",
+    polishing: "正在润色",
+    denied: "请在浏览器或系统设置中允许使用麦克风。",
+    unsupported: "当前页面无法录音。请通过 HTTPS 在支持麦克风的浏览器中打开。",
+    recordFailed: "未能从麦克风录音。",
+    tooLarge: "录音文件太大，请缩短录音时长。",
+    empty: "未识别到语音。",
+    original: "润色未完成，已插入原始转写。",
+    listen: "朗读回复",
+    stop: "停止朗读",
+    play: "播放语音",
+    audioError: "无法播放这条回复的语音。",
+    preparing: "正在生成语音",
+  },
+
+  defaultModels: {
+    /** The dialog's title, and the Models header's button that opens it. */
+    title: "默认模型设置",
+    /** Behind the "?" beside the dialog's title. */
+    intro: "新对话、多模态工具与语音交互默认使用这些模型。每项选好即保存。",
+    introMember: "新对话、多模态工具与语音交互默认使用这些模型。只有 Project 所有者可以更改。",
+    /** The sentence when the first-run guide opened the dialog. */
+    introOnboarding:
+      "先选一个默认对话模型，新对话就会用它；多模态与工具可以稍后再设。每项选好即保存。",
+    chat: "对话",
+    multimodal: "多模态",
+    tools: "工具",
+    chatModel: "默认对话模型",
+    chatHint: "新建对话时使用",
+    /** A row nothing can serve, and where it sends the reader. */
+    empty: "连接一个提供这类模型的供应商",
+    emptyAction: "前往模型库",
+    done: "完成",
+    /** Text generation with nothing bound: it runs on the default chat model. */
+    followsDefault: (model: string) => `跟随默认对话模型（${model}）`,
+    followDefault: "跟随默认对话模型",
+    /** The first-run guide, before any chat model has a key. */
+    guideTitle: "先连接一个模型供应商",
+    guideBody:
+      "这个 Project 还没有可用的模型：没有任何对话模型配置了 API key。连接一个供应商，或在模型库填写 key，之后再选择默认模型。",
+    tokendance: "一个钱包使用多家模型，无需逐个填写 key",
+    penguinGo: "PenguinHarness 自带的模型服务",
+    connect: "连接",
+    keyText: "已有某家供应商的 API key？",
+    keyAction: "填写 API key",
+    later: "稍后",
+    /** The composer's notice while a new chat has no model to run on, for the owner and a member. */
+    composerNone: "还没有默认模型",
+    composerNoneMember: "还没有默认模型，请找所有者设置",
+    composerAction: "设置默认模型",
+  },
+
   nav: {
     chat: "对话",
     newChat: "新建对话",
@@ -660,6 +735,8 @@ export const zh = {
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",
+    /** The rail's last group: a page per plugin that has options. */
+    groupPlugins: "插件",
     /** Personal pages of the settings dialog. */
     profile: "个人资料",
     generalTitle: "通用",
@@ -717,8 +794,12 @@ export const zh = {
       tls: "TLS 握手失败",
       network: "无法连接",
     },
-    /** Admin-only sub-page (server-global): the options loaded plugins declare. */
-    pluginsTitle: "插件",
+    /** The Plugins group's first page (admin, server-global): where plugins install from. */
+    pluginsTitle: "插件源",
+    /** The Plugins group's second page (admin, server-global): the sandbox Agents run in. */
+    sandboxTitle: "Agent 运行沙箱",
+    sandboxInfo:
+      "新建的 Session 进入哪种沙箱：开关与预设对之后新建的 Session 生效，已有 Session 保留创建时的策略。检查里每个沙箱后端插件各占一行，它自己的选项与检查在它的插件页。",
     /** An enum option this machine cannot honour, listed greyed out. */
     pluginOptionUnavailable: (title: string, reason: string) => `${title}（不支持：${reason}）`,
     /** A switch one of whose positions this machine cannot honour, under the switch. */
@@ -727,9 +808,91 @@ export const zh = {
     pluginPositionOn: "开启",
     pluginPositionOff: "关闭",
     pluginsInfo:
-      "开关下方是各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。顶部的开关只影响本浏览器在插件页列出哪些插件。",
-    /** The page's own switch, above the server's cards: a display preference of this browser. */
-    pluginsIncompatibleOnly: "只显示不兼容的插件",
+      "插件从哪里安装：npm registry、插件索引与镜像。与插件本身一样是服务器全局的；保存后立即送达，无需重启。",
+    /** A plugin's page in the Plugins group: its parts, the status page's blocks and words. */
+    pluginPage: {
+      /** The heading over the preconditions; its other end holds the one "check again". */
+      checks: "检查",
+      /** The heading over the switches and fields. */
+      options: "选项",
+      /** The heading over the fields a plugin marks as security settings. */
+      security: "安全设置",
+      /** A precondition's state: the mark's tooltip and accessible name. */
+      checkState: {
+        ok: "通过",
+        action: "需要处理",
+        unknown: "未知",
+        na: "不适用",
+      },
+      /** The version element's state word. */
+      versionState: {
+        installed: "已安装",
+        preparing: "准备中",
+        failed: "安装失败",
+        missing: "未安装",
+        unsupported: "此机器不支持",
+        unknown: "状态未知",
+      },
+      /** The fold under a check or the version element. */
+      details: "详情",
+      /** A check's link to the page it names (a sandbox backend's plugin page). */
+      openPage: "查看",
+      /** That fold's accessible name on a check's row: the row it belongs to. */
+      detailsAbout: (subject: string) => `详情：${subject}`,
+      /** The picked machine holds none of this plugin's settings. */
+      noneOnMachine: (machine: string) => `${machine} 上没有这个插件的选项。`,
+      /** A plugin's page that only a machine has, switched to this server. */
+      notOnThisServer: "本机没有安装这个插件。在上方选择装有它的机器，即可查看它的选项。",
+      /**
+       * The picked machine names no plugin on any of its groups: none of this plugin's, or a build
+       * older than the naming, which lists every plugin's options on the management page.
+       */
+      onAdminPage: (machine: string, page: string) =>
+        `${machine} 上没有标明属于这个插件的选项。版本较旧的机器不标明选项属于哪个插件，它的插件选项都列在「${page}」里。`,
+    },
+    /**
+     * The Plugins group's page of requests to run a library plugin's server module, and the
+     * decisions on them (admin): its rail name and heading, and its explanation on the "?".
+     */
+    moduleRequests: {
+      title: "模块请求",
+      info: "成员把带服务端模块的插件装到 Agent 上，而本服务端既未运行、构建也不自带该模块时，会在这里留下请求。启用会把它列入该 Project 在本服务端的插件表并重新装载服务器插件，正在运行的 Agent 不受影响。内置插件的模块随 Agent 安装自动启用，也记在这里。",
+      empty: "没有等待处理的请求",
+      /** The rail row's accessible name while requests wait: its name and the count beside it. */
+      waitingCount: (n: number) => `模块请求，${n} 个待处理`,
+      /** In place of the list when the server on screen cannot answer (null: this server). */
+      unreadable: (machine: string | null, reason: string) =>
+        machine === null
+          ? `无法读取模块请求：${reason}`
+          : `无法读取 ${machine} 上的模块请求：${reason}`,
+      waiting: "待处理",
+      waitingHint: "等待你启用或拒绝",
+      declined: "已拒绝",
+      declinedHint: "已拒绝或已停用：它不会随 Agent 安装再次启用，成员也不能再请求",
+      /** How an enabled module came to be enabled, and what that means on hover. */
+      via: { builtin: "内置自动", admin: "管理员", approval: "已批准" },
+      viaHint: {
+        builtin: "已启用：内置插件的模块随 Agent 安装自动启用",
+        admin: "已启用：由管理员启用",
+        approval: "已启用：管理员批准了成员的请求",
+      },
+      /** In place of a Project that was deleted, and of a requester that is no person. */
+      projectGone: "Project 已删除",
+      system: "系统",
+      sep: "、",
+      enable: "启用",
+      decline: "拒绝",
+      stop: "停用",
+      stopTitle: (name: string) => `停用 ${name} 的服务端模块？`,
+      stopBody: (name: string) =>
+        `将在本服务端停用 ${name} 的服务端模块，并阻止它随 Agent 安装再次启用。各 Agent 上的 Skill 等内容不受影响。`,
+      enabledToast: (name: string) => `已启用 ${name} 的服务端模块`,
+      declinedToast: (name: string) => `已拒绝 ${name} 的服务端模块请求`,
+      stoppedToast: (name: string) => `已在本服务端停用 ${name} 的服务端模块`,
+      /** A stop that leaves the module running: these Projects' shared tables still list it. */
+      stillListed: (name: string, projects: string) =>
+        `${name} 的服务端模块仍在运行：${projects} 的共享插件表仍列出它，可在插件页移除。`,
+    },
     /** A list field's editor: the row buttons and the add row. */
     pluginListMoveUp: "上移",
     pluginListMoveDown: "下移",
@@ -991,6 +1154,7 @@ export const zh = {
     leaveAction: "离开安全模式（重新加载服务端贡献）",
   },
   modelPicker: {
+    clearAssignment: "取消指定",
     /** Accessible name of the dialog's provider-group rail. */
     groups: "模型分组",
     /** Footer toggle while models without a key are listed: turns the listing back off. */
@@ -1760,6 +1924,7 @@ export const zh = {
       "这是当前账号最后一个 Project，删除后将无 Project 可用；请先创建新的 Project",
     noCredentialTitle: "尚未配置模型 credential",
     noCredentialBody: "当前 Project 的默认模型尚未配置 API key，发起对话前请先前往模型页配置。",
+    noChatModels: "请为这个项目添加一个支持对话的模型，然后发送消息。",
     goToModels: "前往模型页",
     later: "稍后再说",
   },
@@ -2435,6 +2600,12 @@ export const zh = {
     speedTestStart: "开始测速",
     speedPending: "测速中…",
     speedFailed: "测速失败",
+    /** A model that is not chatted with: how long its one request took. */
+    latencyTitle: "完成这次请求用的时间",
+    /** A model the group test leaves out, the reason on hover. */
+    speedSkipped: "不测速",
+    speedSkipVideo: "生成视频要等几分钟，费用也高，测速时跳过。",
+    speedSkipUnused: "这个模型不能对话，本项目也没有用到它的功能，无法测速。",
     ttftTitle: "首 token 延迟(TTFT)",
     tpsTitle: "输出速率(TPS)",
     modelCount: (n: number): string => `${n} 个模型`,
@@ -2548,8 +2719,7 @@ export const zh = {
     /** Card's right-edge figure: what this model has spent over its whole life. The unit stays English and is abbreviated the way the rest of the page abbreviates it — `tok/s`, `/M tok`. */
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "该模型累计消耗的 Token（不限时间范围）",
-    setVisionModel: "设为视觉代理模型",
-    visionModelHint: "供不支持图片的模型在 read_file 读图时代读",
+    visionModelHint: "设为视觉模型：不支持图片的模型读图时由它代读，penguin tools i2t 也用它",
     priceUnitShort: "/M tok",
     testConnection: "测试连通性",
     testing: "测试中…",
@@ -2760,7 +2930,7 @@ export const zh = {
       `请求发往 ${defaultBaseUrl}；环境里设置了 ${envBaseUrlKey} 时改发往该地址`,
     confirmVisionModelTitle: "设为视觉代理模型",
     confirmVisionModel: (name: string): string =>
-      `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读。`,
+      `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读，penguin tools i2t 也使用它。`,
     /** The add-model dialog's footer verb (the settings dialog's is the common Save). */
     addAction: "添加",
     /** A save that changes a promoted row's price or identity: the server then drops the promotion. */
@@ -2770,7 +2940,21 @@ export const zh = {
     confirmDefaultTitle: "设为默认模型",
     confirmDefault: (name: string): string =>
       `确定把「${name}」设为默认模型？新建的 Session 将默认使用它。`,
+    /** The tag on the Project's default chat model. */
     default: "默认",
+    /** The tag on a model chosen for some multimodal job or tool, which its hover names. */
+    inUse: "使用中",
+    usedFor: (jobs: readonly string[]) => `用于：${jobs.join("、")}`,
+    /** A model that cannot chat: chosen for every job it can do, asked first. */
+    useModel: "使用模型",
+    useHint: (jobs: readonly string[]) => `在本项目用于：${jobs.join("、")}`,
+    confirmUse: (name: string, jobs: readonly string[]) =>
+      `确定让「${name}」用于以下各项？${jobs.join("、")}。`,
+    used: (jobs: readonly string[]) => `已用于：${jobs.join("、")}`,
+    /** The same button once it is chosen for every job it can do. */
+    stopUsing: "取消使用模型",
+    stopUsingHint: (jobs: readonly string[]) => `不再用于：${jobs.join("、")}`,
+    stoppedUsing: (jobs: readonly string[]) => `已不再用于：${jobs.join("、")}`,
     setDefault: "设为默认模型",
     remove: "删除模型",
     readOnlyHint: "member 只读；模型与 credential 修改仅 owner 可执行",
@@ -3020,6 +3204,7 @@ export const zh = {
     workspace: "Workspace",
     model: "Model",
     modelDefault: "Project 默认",
+    modelRequired: "这个 Project 没有默认模型，请为定时任务选择模型。",
     deleteTitle: "删除定时任务",
     deleteConfirm: (name: string): string => `确认删除定时任务「${name}」？`,
     /** Toasts after a write. A schedule fires on its own clock, so none of them mentions when a conversation picks the change up: there is nothing to pick up. */
@@ -3130,7 +3315,7 @@ export const zh = {
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on Agents as a whole. */
   plugins: {
     builtin: "内置",
-    builtinHint: "随本次构建自带：安装它不需要下载，但仍需你点安装才会加载。",
+    builtinHint: "随本次构建自带，不能从服务端卸载：启用它不需要下载，但仍需你点启用才会加载。",
     installedRestart: "待重启",
     stateFailed: "加载失败",
     /** A module plugin the running build cannot run at all: it needs a module or interface this build lacks. */
@@ -3141,10 +3326,98 @@ export const zh = {
     unsatisfiedNotice: (n: number) => `当前构建无法完整运行 ${n} 个已装插件，原因见各自的条目。`,
     /** The notice's action: filters the list down to those rows. */
     unsatisfiedShow: "查看",
-    /** Page notice while Settings › Plugins narrows the list to the incompatible plugins. */
+    /** Page notice while the filter beside the search narrows the list to the incompatible plugins. */
     incompatibleOnlyNotice: "当前只显示不兼容的插件。",
     /** That notice's action: turns the filter off. */
     incompatibleOnlyShowAll: "显示全部",
+    /** The admin's notice while members' requests to run a plugin's server module wait. */
+    moduleRequestsNotice: (n: number) => `${n} 个服务端模块等待启用`,
+    /** That notice's action: opens the Settings dialog's module requests page, where they are decided. */
+    moduleRequestsView: "查看",
+    /**
+     * What an install did about the plugin's server module, after the install's own sentence
+     * (`said`): enabled, asked of the admin, stopped by the admin, failed to start, or — on a
+     * machine whose build does not ship it — to be installed for that machine.
+     */
+    /**
+     * The two installs of a plugin and their controls (05 「插件库」 「安装模型」): the server's
+     * and an Agent's, with what each does said before the click.
+     */
+    installModel: {
+      enableTitle: (name: string) => `启用 ${name} 的服务端模块`,
+      enableBody: (name: string) =>
+        `将为本 Project 启用 ${name} 的服务端模块。它随构建自带，不需要下载。`,
+      disableTitle: (name: string) => `停用 ${name} 的服务端模块`,
+      disableBody: (name: string) =>
+        `将为本 Project 停用 ${name} 的服务端模块；仍有其他 Project 启用它时，它继续运行。`,
+      installServer: "安装到服务端",
+      uninstallServer: "从服务端卸载",
+      enableModule: "启用服务端模块",
+      disableModule: "停用服务端模块",
+      /** A member's server control: held, saying why. */
+      adminOnly: "只有管理员能改动服务端",
+      installAgent: "安装到 Agent",
+      /** The install flow: the server first, then the Agents. */
+      flowTitle: (name: string) => `安装 ${name}`,
+      stepServer: "安装到服务端",
+      stepAgents: "安装到 Agent",
+      stepOf: (step: number, steps: number) => `第 ${step} 步，共 ${steps} 步`,
+      stepDone: "已完成",
+      serverDone: (name: string) => `${name} 已在服务端，所有 Project 共用。`,
+      askBody: "它还不在服务端：请管理员把它安装到服务端，装好后你再把它装到 Agent。",
+      askAdmin: "请管理员安装",
+      asked: "已请管理员安装。它装到服务端后，再回到这里把它装到 Agent。",
+      finish: "完成",
+      /** The flow's Agent step: how the Agents' copies relate to the server. */
+      onServer: "从服务端卸载会同时从所有 Agent 卸载。",
+      /** Progress on the clicked control. */
+      checking: "检查插件源…",
+      installing: "安装中…",
+      fromOffline: "从离线包安装…",
+      loading: "加载模块…",
+      /** The same steps on a card's one-line install control. */
+      stepShort: { checking: "检查插件源…", fromOffline: "从离线包安装…", loading: "加载模块…" },
+      /** The server-uninstall confirm. */
+      uninstallTitle: (name: string) => `从服务端卸载 ${name}`,
+      uninstallBody: (name: string, agents: number) =>
+        agents === 0
+          ? `将从服务端卸载 ${name}。没有 Agent 装有它。`
+          : `将从服务端卸载 ${name}，并同时从 ${agents} 个 Agent 卸载。`,
+      uninstallCopies: "这些 Agent 上的副本会被删除，包括本地改动，以及 Workbench 的数据与历史。",
+      holdersLoading: "正在查找装有它的 Agent…",
+      moreAgents: (n: number) => `还有 ${n} 个 Agent`,
+      sharedRefused: (projects: string) =>
+        `${projects} 的插件表为所有机器列入了它：先在 Project 配置中移除，再从服务端卸载。`,
+      uninstalledToast: (name: string, agents: number) =>
+        agents === 0
+          ? `已从服务端卸载 ${name}`
+          : `已从服务端卸载 ${name}，并从 ${agents} 个 Agent 卸载`,
+      uninstalledPartly: (name: string, parts: string) =>
+        `已从服务端卸载 ${name}；以下部件未能删除：${parts}`,
+      /** A machine too old for the cascade: its Agents keep their copies. */
+      machineKeepsCopies: (machine: string) =>
+        `${machine} 的服务端版本较旧，那里的 Agent 保留了各自的副本。`,
+      /** The failure note under the card, with what to do next. */
+      failedNote: (reason: string) => `安装失败：${reason}`,
+      sourcesSettings: "插件源设置",
+      importFromFile: "从文件导入",
+      dismiss: "关闭",
+      /** What an install from the Agent dialog did, when the plugin was not on the server. */
+      requestedToast: (name: string) => `已请管理员把 ${name} 安装到服务端，装好后即可装到 Agent`,
+      offlineToast: (name: string) => `已从随构建携带的离线包安装 ${name}`,
+      loadingToast: (name: string) => `已安装 ${name}，它的服务端模块仍在启动`,
+      /** The administrator's request row for a package not on the server yet. */
+      requestNotOnServer: "尚未安装到服务端：先在插件页把它安装到服务端，再启用。",
+      openPlugins: "打开插件页",
+    },
+    moduleInstall: {
+      enabled: (said: string) => `${said}。它的服务端模块已启用。`,
+      requested: (said: string) => `${said}。它的服务端模块需要管理员启用，已发出请求。`,
+      blocked: (said: string) => `${said}。管理员已停用它的服务端模块。`,
+      failed: (said: string, reason: string) => `${said}。但它的服务端模块未能启动：${reason}`,
+      onMachine: (said: string, machine: string) =>
+        `${said}。它的服务端模块未在 ${machine} 上运行，可在插件页为该机器安装。`,
+    },
     repair: "用 AI 修复",
     repairTitle: (name: string) => `用 AI 修复 ${name}？`,
     repairBody: (name: string) =>
@@ -3173,13 +3446,14 @@ export const zh = {
     /** Listed, but the process could not load it: the reason, not a success. */
     deploymentFailedToast: (name: string, reason: string) => `${name} 加载失败：${reason}`,
     /** A server module's install / removal confirm: what it does, then what it costs, in small type below. */
+    updatePackageTo: (version: string) => `更新到 v${version}`,
     applyConfirmInstall: (name: string) => `安装 ${name}`,
     applyConfirmRemove: (name: string) => `移除 ${name}`,
     applyConfirmInstallBody: (name: string) => `将把 ${name} 安装到整个服务端，所有 Project 共用。`,
     applyConfirmRemoveBody: (name: string) =>
       `将从服务端移除 ${name}；仍有其他 Project 使用它时会保留。`,
     applyConfirmWarning: (install: boolean) =>
-      `${install ? "安装" : "移除"}会重新装载服务器插件，所有 Project 中正在进行的 Agent 运行都会被中止。`,
+      `${install ? "安装" : "移除"}会重新装载服务器插件；正在运行的 Agent 不受影响。`,
     pageTitle: "插件",
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "机器",
@@ -3198,6 +3472,12 @@ export const zh = {
     openSettings: "设置",
     pageDesc:
       "所有插件按分类列出。只含技能和／或钩子包的插件随本次构建自带，装到 Agent 上使用；服务端模块插件（如 Agent 运行沙箱后端）由管理员安装到整个服务端。",
+    /**
+     * The filter beside the search: a toggle that narrows the list to the plugins this build cannot
+     * fully run, remembered in this browser; the group's accessible name, and the toggle's words.
+     */
+    filterLabel: "筛选插件",
+    incompatibleOnlyFilter: "只看不兼容",
     /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
     groupByLabel: "分组方式",
     groupBy: {
@@ -3221,10 +3501,12 @@ export const zh = {
     status: {
       update: "可更新",
       installed: "已安装",
+      awaiting: "待启用",
       restart: "待重启",
       failed: "加载失败",
       "not-here": "不在本机",
       incompatible: "不兼容",
+      stopped: "已停用",
       available: "可安装",
     },
     /** What a status means for this plugin, on hover over its glyph. */
@@ -3238,16 +3520,62 @@ export const zh = {
       failed: (reason: string) => `加载失败：${reason}`,
       elsewhere: (machines: string) => `只在 ${machines} 上运行，本机不运行`,
       unsynced: "已安装，尚未同步到该机器",
+      awaiting: "等待管理员启用它的服务端模块",
+      stopped: "管理员已停用它的服务端模块",
       /** Appended to a library status counted with Agents on a machine out of reach. */
       lastSeenOn: (n: number) => `（含 ${n} 个在不可达机器上的 Agent，按上次看到）`,
     },
     noMatch: "没有匹配的插件。",
+    /** The search matched nothing in the tab on show, but matches plugins in other tabs. */
+    noMatchHere: (n: number) => `当前标签下没有匹配的插件，全部插件中有 ${n} 个匹配。`,
+    showAllResults: "在全部中查看",
+    /** A plugin the market's curation selects: the carousel's eyebrow and a card's tag. */
+    selected: "精选",
+    /** The cards / list switch: its name, and each icon button's name and hover words. */
+    layoutLabel: "插件布局",
+    cardsLayout: "卡片视图",
+    listLayout: "列表视图",
+    /** The first tab of the market: every plugin, whatever the grouping. */
+    tabAll: "全部",
+    /** The sort select: its accessible name and its options. */
+    sortLabel: "排序",
+    sort: {
+      featured: "精选优先",
+      recent: "最近更新",
+      used: "本项目在用最多",
+      name: "名称",
+      popular: "热门",
+    },
+    /** The ranking beside the grid: its heading, its two boards, and each figure in full words. */
+    openApp: "打开",
+    openAppHint: "在应用中心打开",
+    /** The detail's sections: its screenshots, what it installs, and its quick start. */
+    detailScreenshots: "截图",
+    detailIncludes: "包含内容",
+    detailQuickStart: "快速开始",
+    quickStartSkills: (names: string) => `预选技能：${names}`,
+    /** The kind of one part a plugin installs, beside its name. */
+    partKind: {
+      skill: "技能",
+      hook: "钩子",
+      mcp: "MCP 服务器",
+      workbench: "工作台",
+    },
+    /** The detail's column of facts: each row's label. */
+    fact: {
+      version: "版本",
+      category: "类别",
+      author: "作者",
+      license: "许可证",
+      package: "包名",
+      links: "链接",
+    },
     /** The description of a shipped package the registry has no entry for. */
     shippedNoEntry: "随本次构建自带；市场里还没有它的条目。",
     /** In place of the description of a package that carries none. */
     noDescription: "暂无描述",
     /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
-    libraryBuiltinHint: "随本次构建自带；安装到 Agent 即可在那里使用。",
+    libraryBuiltinHint: "随本次构建自带，不能从服务端卸载；安装到 Agent 即可在那里使用。",
     /** Plugin count in the group header (small text to the right of the category name). */
     pluginCount: (n: number): string => `${n} 个插件`,
     /** Search box of the create dialog's plugin picker. */
@@ -3256,7 +3584,6 @@ export const zh = {
     detailDescription: "说明",
     detailFiles: "文件",
     detailSkills: "技能",
-    detailWorkbenches: "工作台",
     uninstallWorkbenchRecords: "其工作台及保存的记录也会被删除。",
     detailHooks: "钩子",
     /** The detail dialog's section of the MCP servers a plugin installs into an Agent's tools. */
@@ -3306,7 +3633,7 @@ export const zh = {
     /** A folder or a file inside a repository on the link tab, and the action that hands it to the agent tab. */
     importLinkSubpath: "仓库内的文件夹或文件请用「Agent 安装」。",
     importLinkAskAgent: "改为让 Agent 安装",
-    importCost: "含服务端模块的插件会重新装载服务器插件，中止所有 Project 中正在运行的 Agent。",
+    importCost: "含服务端模块的插件会重新装载服务器插件；正在运行的 Agent 不受影响。",
     /** On the npm, link and zip tabs: what installing runs, said plainly. */
     importScriptsRun: "安装脚本将在服务器上运行，请确认来源可信。",
     importAgentWhy:
@@ -3359,11 +3686,17 @@ export const zh = {
     replaceAction: "替换",
     /** Usage count in the card metadata (shows "unused" instead of a bare 0). */
     usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
-    /** Quick start's tooltip: what pressing it does, and what it does not. */
-    quickStartHint: "快速开始：打开一份带该插件演示的草稿——点发送之前什么都不会运行",
+    marketAgentInstalls: (n: number): string => `${n} 个 Agent 已装`,
+    marketServerInstalled: "服务端已装",
+    quickAction: "快速调用",
+    noQuickAction: "这个插件没有快速调用示例。",
+    packageUpdateBody: (name: string, from: string, to: string) =>
+      `将插件库中的 ${name} 从 v${from} 更新到 v${to}。完成后，可将新版本应用到使用它的 Agent。`,
+    /** The market explains quick start using the selected Agent’s installation. */
+    quickStartHint: "在当前 Agent 的新对话中打开示例草稿。",
     quickStartInstallTitle: (plugin: string, agent: string) =>
       `先把 ${plugin} 安装到 ${agent} 再快速开始？`,
-    quickStartAfterInstall: "随后打开一份带演示的草稿；点发送之前什么都不会运行。",
+    quickStartAfterInstall: "请先安装此插件，再快速调用。",
     /** Top toast shown on successful install / uninstall. */
     installedToast: (plugin: string, agent: string): string => `已将 ${plugin} 安装到 ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string => `已从 ${agent} 卸载 ${plugin}`,
@@ -3384,7 +3717,7 @@ export const zh = {
     uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
     uninstallConfirmBody: (plugin: string, agent: string, withMcp: boolean): string =>
       `确定从 ${agent} 卸载 ${plugin} 吗？其已安装的技能与钩子文件（含本地改动）${withMcp ? "以及它的 MCP 服务器" : ""}将被删除。`,
-    /** An MCP server's marks (the detail dialog, Manage installs): icons whose hover sentence says what stands between the server and its tools. */
+    /** An MCP server's marks (the detail dialog, the install flow's Agent step): icons whose hover sentence says what stands between the server and its tools. */
     mcpNeedsSetup: (keys: string[]): string => `待设置：${keys.join("、")}`,
     /** Appended to the needs-setup sentence: where the values go, and who may write them. */
     mcpSetUpWhere: "在「密钥保险柜」中填写",
@@ -3475,6 +3808,47 @@ export const zh = {
     uninstallPartly: (plugin: string, failed: string) =>
       `${plugin} 已卸载，但这些部件没能删除：${failed}`,
     updatedToast: (plugin: string, agent: string) => `已在 ${agent} 上更新 ${plugin}`,
+    /**
+     * A plugin's server module on the Agent's server: the row's mark (it names the module) and the
+     * detail line's state word (the line is named after it), what each means on hover, the two
+     * actions, and the toasts of an ask.
+     */
+    module: {
+      title: "服务端模块",
+      mark: {
+        off: "服务端模块未启用",
+        awaiting: "服务端模块待启用",
+        stopped: "服务端模块已停用",
+        failed: "服务端模块加载失败",
+        restart: "服务端模块待重启",
+      },
+      state: {
+        running: "运行中",
+        off: "未启用",
+        awaiting: "等待管理员启用",
+        stopped: "已停用",
+        failed: "加载失败",
+        restart: "待重启",
+      },
+      hint: {
+        running: "已在这台服务端运行：它的命令与页面可用。",
+        off: "服务端模块未启用：它的命令与页面暂不可用。",
+        offOnMachine: "服务端模块未在这台机器上启用：在插件页为这台机器安装它。",
+        awaiting: "等待管理员启用服务端模块。",
+        stopped: "管理员已停用该插件的服务端模块。",
+        failed: (reason: string) => `服务端模块加载失败：${reason}`,
+        restart: "服务端模块已列入，服务端重启后运行。",
+      },
+      enable: "启用服务端模块",
+      request: "请求管理员启用",
+      asked: {
+        enabled: (name: string) => `已启用 ${name} 的服务端模块`,
+        requested: (name: string) => `已请求管理员启用 ${name} 的服务端模块`,
+        blocked: (name: string) => `管理员已停用 ${name} 的服务端模块`,
+        failed: (name: string, reason: string) => `${name} 的服务端模块未能启动：${reason}`,
+        onMachine: (name: string) => `${name} 的服务端模块需要在插件页为这台机器安装`,
+      },
+    },
     /** A plugin's detail: what of it is on this Agent, by kind, and where each kind is managed. */
     onAgentTitle: "在这个 Agent 上",
     partKinds: {
@@ -3581,8 +3955,6 @@ export const zh = {
     selectAll: "全选",
     selectNone: "全不选",
     selectedCount: (n: number): string => `已选 ${n} 个`,
-    manageInstall: "管理安装",
-    manageInstallTitle: (name: string): string => `管理安装：${name}`,
     install: "安装",
     installed: "已安装",
     uninstall: "卸载",
@@ -5481,7 +5853,12 @@ Benchmark：
     last7d: "近 7 天",
     total: "累计",
     tokens: "Token",
-    requests: "Requests",
+    requests: "请求数",
+    /** The summary row of the requests a plugin made for its tools (counted in the request count and the cost, not in Token). */
+    toolRequestsIncluded: "其中工具请求",
+    /** The card listing tool requests by what they were for. */
+    toolRequests: "工具请求",
+    toolColumn: "工具",
     /** The range picker's name: it has no visible title in the header's row of filters. */
     rangeDates: "起止日期",
     colCacheRead: "缓存命中",
@@ -6895,7 +7272,7 @@ Benchmark：
     },
     modelCredentialMissing: (modelId: string) =>
       `模型 ${modelId} 还没有可用的 API key，请先在「模型」页为它配置`,
-    noDefaultModel: "该 Project 还没有默认模型，请先在「模型」页添加模型并设为默认",
+    noDefaultModel: "该 Project 还没有默认模型，请先在模型库的「默认模型设置」中设置",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
       invalid_credentials: "用户名或密码错误。",

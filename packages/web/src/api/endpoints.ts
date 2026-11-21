@@ -96,6 +96,7 @@ import type {
   SshHostRequest,
   SshHostResponse,
   SshHostsResponse,
+  ModelRefDto,
   ModelsResponse,
   ModelsUpdateRequest,
   PresetSyncRequest,
@@ -148,6 +149,12 @@ import type {
   PasswordChangeRequest,
   PluginFilesResponse,
   PluginInstallRequest,
+  PluginModuleAskRequest,
+  PluginModuleAskResponse,
+  PluginHoldersResponse,
+  PluginServerUninstallResponse,
+  PluginModuleDecideRequest,
+  PluginModuleRequestsResponse,
   PluginLibraryResponse,
   PluginUninstallResponse,
   PrefsResponse,
@@ -193,6 +200,7 @@ import type {
   SessionProcessesResponse,
   SessionResponse,
   PluginIndexResponse,
+  PluginMarketResponse,
   PluginConfigResponse,
   PluginConfigActionResponse,
   PluginConfigUpdateRequest,
@@ -276,6 +284,15 @@ import { ApiError, apiFetch, apiFetchStream, apiFetchWithMeta, apiUpload } from 
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
 import { activityCursorParam, type ActivityKey } from "../lib/session-grouping";
+import type {
+  SpokenReply,
+  ToolBindingUpdate,
+  ToolBindingsResponse,
+  ToolRun,
+  ToolRunRequest,
+  VoicePolishSettings,
+  VoicePolishUpdate,
+} from "./tool-types";
 
 // Auth & user -----------------------------------------------------------------
 
@@ -361,6 +378,25 @@ export const adminRunPluginConfigAction = (
   server: string | null,
 ) =>
   apiFetch<PluginConfigActionResponse>("/api/admin/plugin-config/action", {
+    method: "POST",
+    body,
+    server,
+  });
+
+/**
+ * Every request to run a library plugin's server module on a server, and the administrator's
+ * decisions, with each module's state there (admin). `server` names the machine through this
+ * server's tunnel; null is this server. Requests are per server: nothing is merged across.
+ */
+export const adminGetPluginModuleRequests = (server: string | null) =>
+  apiFetch<PluginModuleRequestsResponse>("/api/admin/plugin-modules", { server });
+
+/**
+ * Enables one package's server module, or declines it — which stops an enabled one on that
+ * server (admin). Answers the list. 404 `unknown_request`, 409 `project_gone`.
+ */
+export const adminDecidePluginModule = (body: PluginModuleDecideRequest, server: string | null) =>
+  apiFetch<PluginModuleRequestsResponse>("/api/admin/plugin-modules/decide", {
     method: "POST",
     body,
     server,
@@ -489,6 +525,94 @@ export const putDefaultModel = (projectId: string, body: DefaultModelUpdateReque
   apiFetch<DefaultModelResponse>(`/api/projects/${encodeURIComponent(projectId)}/models/default`, {
     method: "PUT",
     body,
+  });
+
+// Model tools: the platform's bindings and the multimodal tools plugin's routes ----------------
+
+const toolBindingsPath = (projectId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/models/tool-bindings`;
+const multimodalPath = (projectId: string, rest: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/multimodal-tools${rest}`;
+
+/** A JSON answer read through the abortable fetch path. */
+async function abortableJson<T>(
+  path: string,
+  options: { method?: "GET" | "POST"; body?: unknown; server: string | null; signal?: AbortSignal },
+): Promise<T> {
+  return (await (await apiFetchStream(path, options)).json()) as T;
+}
+
+/**
+ * Every tool-model binding the Project's enabled plugins declare, each with its model and the
+ * configured models it accepts (any member). `server` names the machine whose copy is read.
+ */
+export const getToolBindings = (projectId: string, server: string | null, signal?: AbortSignal) =>
+  abortableJson<ToolBindingsResponse>(toolBindingsPath(projectId), {
+    server,
+    ...(signal !== undefined ? { signal } : {}),
+  });
+
+/** Binds one key, or with `model: null` unbinds it (owner); answers the whole list. */
+export const patchToolBinding = (projectId: string, body: ToolBindingUpdate) =>
+  apiFetch<ToolBindingsResponse>(toolBindingsPath(projectId), { method: "PATCH", body });
+
+/** Transcribes a recording with the Project's speech-recognition model (any member). */
+export const transcribeRecording = (
+  projectId: string,
+  server: string | null,
+  body: ToolRunRequest,
+  signal?: AbortSignal,
+) =>
+  abortableJson<ToolRun>(multimodalPath(projectId, "/s2t/run"), {
+    method: "POST",
+    body,
+    server,
+    ...(signal !== undefined ? { signal } : {}),
+  });
+
+/** Transcript editing in the Project: the switch, the instructions and the model it runs on. */
+export const getVoicePolish = (projectId: string, server: string | null, signal?: AbortSignal) =>
+  abortableJson<VoicePolishSettings>(multimodalPath(projectId, "/voice-polish/settings"), {
+    server,
+    ...(signal !== undefined ? { signal } : {}),
+  });
+
+/** Changes what the update names (owner); answers the settings as stored. */
+export const patchVoicePolish = (projectId: string, body: VoicePolishUpdate) =>
+  apiFetch<VoicePolishSettings>(multimodalPath(projectId, "/voice-polish/settings"), {
+    method: "PATCH",
+    body,
+  });
+
+/** Edits one dictated transcript with the Project's text-generation model. */
+export const polishTranscript = (
+  projectId: string,
+  server: string | null,
+  body: { text: string; sessionId?: string },
+  signal?: AbortSignal,
+) =>
+  abortableJson<{ text: string; model: ModelRefDto }>(multimodalPath(projectId, "/voice-polish"), {
+    method: "POST",
+    body,
+    server,
+    ...(signal !== undefined ? { signal } : {}),
+  });
+
+/**
+ * A reply's audio in its Session: the stored one when this reply was read with this voice model
+ * before, else spoken now. Answers where to play it.
+ */
+export const readReplyAloud = (
+  projectId: string,
+  server: string | null,
+  body: { text: string; sessionId: string },
+  signal?: AbortSignal,
+) =>
+  abortableJson<SpokenReply>(multimodalPath(projectId, "/read-aloud"), {
+    method: "POST",
+    body,
+    server,
+    ...(signal !== undefined ? { signal } : {}),
   });
 
 /**
@@ -1949,17 +2073,52 @@ export const getAgentPlugins = (projectId: string, agentId: string, machineId: s
     { server: machineId },
   ).then((r) => installedOn(r, machineId));
 
-/** With `machineId`, installs from THAT machine's library onto its Agent. */
+/**
+ * With `machineId`, installs from THAT machine's library onto its Agent. A plugin that also ships
+ * server modules brings them along on that server (`moduleActions` says how), unless
+ * `skipModules` — what a machine's Agent is sent, since the hub keeps that machine's plugin list.
+ */
 export const installAgentPlugins = (
   projectId: string,
   agentId: string,
   names: string[],
   machineId: string | null,
+  { skipModules = false }: { skipModules?: boolean } = {},
 ) =>
   apiFetch<AgentPluginsInstallResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
-    { method: "POST", body: { names } satisfies PluginInstallRequest, server: machineId },
+    {
+      method: "POST",
+      body: (skipModules ? { names, skipModules } : { names }) satisfies PluginInstallRequest,
+      server: machineId,
+    },
   ).then((r) => installedOn(r, machineId));
+
+/**
+ * A library plugin's server module, asked for by hand (any member): the server enables it, or
+ * asks the administrator to, by the rule an install applies. 404 `unknown_plugin`, 400
+ * `no_server_module`.
+ */
+export const askPluginModule = (projectId: string, plugin: string) =>
+  apiFetch<PluginModuleAskResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/plugins/modules`,
+    { method: "POST", body: { plugin } satisfies PluginModuleAskRequest },
+  );
+
+/**
+ * A member's 「安装到 Agent」 of a plugin that is not on the server yet: a request for the
+ * administrator, who installs it on the server. 409 `plugin_on_server` when it is there already.
+ */
+export const askPluginPackage = (projectId: string, pkg: string, agentId: string | null) =>
+  apiFetch<PluginModuleAskResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/plugins/modules`,
+    {
+      method: "POST",
+      body: (agentId !== null
+        ? { package: pkg, agentId }
+        : { package: pkg }) satisfies PluginModuleAskRequest,
+    },
+  );
 
 /**
  * Uninstalls a whole plugin from the Agent on its server, in one request (Project owner): its
@@ -1982,6 +2141,9 @@ export const uninstallAgentPlugin = (
 
 /** Plugin index (available to any logged-in user): the merged index of every configured registry. */
 export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/registry");
+
+/** The market's curation (any logged-in user): the selected plugins, which may lead, and the art. */
+export const getPluginMarket = () => apiFetch<PluginMarketResponse>("/api/plugins/market");
 
 /** Languages plugins contributed; the grammars themselves are fetched by the highlighter. */
 export const getLanguages = () => apiFetch<LanguageIndexResponse>("/api/languages");
@@ -2890,6 +3052,22 @@ export const getWorkbenches = (projectId: string, agentId: string, machineId: st
     server: machineId,
   }).then((r) => ({ ...r, workbenches: iconsOn(r.workbenches, machineId) }));
 /**
+ * One workbench in the list's shape, loading that one alone: a page opened on its own (the App
+ * Center's window, the full page) waits for its own compile, not for every workbench of the
+ * Agent. A server older than `id` ignores it and answers the full list, so callers still pick
+ * the workbench out by id.
+ */
+export const getWorkbench = (
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  machineId: string | null,
+) =>
+  apiFetch<WorkbenchesResponse>(
+    `${workbenchesBase(projectId, agentId)}?${new URLSearchParams({ id: workbenchId })}`,
+    { server: machineId },
+  ).then((r) => ({ ...r, workbenches: iconsOn(r.workbenches, machineId) }));
+/**
  * The rows of the Agent's sidebar list: a shortcut for each workbench that runs, has a tab and is
  * not hidden from the sidebar, read from the files without compiling anything. Null from a server
  * older than the setting, which ignores `view` and answers the full list: everything it lists
@@ -3075,17 +3253,28 @@ export const installPlugin = (
 export type InstallProgressListener = (received: number, total: number | null) => void;
 
 /**
+ * A step of a server install as its stream reports it: the registry asked about a name before it
+ * installs, a source being tried, or the App re-assembling.
+ */
+export type InstallStage =
+  | { stage: "checking" }
+  | { stage: "installing"; source: "registry" | "link" | "channel" | "offline" }
+  | { stage: "loading" };
+
+/**
  * The same install as {@link installPlugin}, read as it arrives: the server answers a
- * `text/event-stream` whose `download` events carry the channel's bytes on their way in, `npm`
- * fires once the bytes are in and npm takes over, and `result` carries the finished list. An
- * `error` event carries the status the JSON answer would have had, and is raised as an
- * {@link ApiError} — a stream that ends with no `result` is a lost connection.
+ * `text/event-stream` that opens with `npm`, says the registry check, each source it tries and the
+ * App's re-assembly as `stage` events, carries a channel's bytes on their way in as `download` events, and ends with
+ * `result`, the finished list (a `ping` keeps a long install's stream alive). An `error` event
+ * carries the status the JSON answer would have had, and is raised as an {@link ApiError} — a
+ * stream that ends with no `result` is a lost connection.
  */
 export const installPluginStream = async (
   projectId: string,
   specifier: string,
   machineId: string | null,
   onProgress: InstallProgressListener,
+  onStage?: (stage: InstallStage) => void,
 ): Promise<InstalledPluginsResponse> => {
   const response = await apiFetchStream(pluginsPath(projectId), {
     method: "POST",
@@ -3097,6 +3286,8 @@ export const installPluginStream = async (
     if (event === "download") {
       const progress = JSON.parse(data) as { received: number; total: number | null };
       onProgress(progress.received, progress.total);
+    } else if (event === "stage") {
+      onStage?.(JSON.parse(data) as InstallStage);
     } else if (event === "error") {
       const failure = JSON.parse(data) as { status: number; code: string; message: string };
       throw new ApiError(failure.status, failure.code, failure.message);
@@ -3127,8 +3318,8 @@ async function* sseEvents(response: Response): AsyncGenerator<{ event: string; d
         return;
       }
       buffer += decoder.decode(value, { stream: true });
-      let cut = buffer.indexOf("\n\n");
-      while (cut !== -1) {
+      // The next event's end is looked for again after each one is taken: the buffer has moved.
+      for (let cut = buffer.indexOf("\n\n"); cut !== -1; cut = buffer.indexOf("\n\n")) {
         const lines = buffer.slice(0, cut).split("\n");
         buffer = buffer.slice(cut + 2);
         const event = lines
@@ -3147,6 +3338,27 @@ async function* sseEvents(response: Response): AsyncGenerator<{ event: string; d
     void reader.cancel().catch(() => {});
   }
 }
+
+/**
+ * Who would lose a plugin if it were uninstalled from the server (admin): every Agent of every
+ * Project there that carries it, and whether the uninstall can run (`shipped`, `shared`).
+ * `server` names a machine through this server's tunnel; null is this server.
+ */
+export const getPluginHolders = (pkg: string, server: string | null) =>
+  apiFetch<PluginHoldersResponse>(`/api/admin/plugins/holders?package=${encodeURIComponent(pkg)}`, {
+    server,
+  });
+
+/**
+ * Uninstalls a plugin from the server (admin): from every Agent there first — their copies, local
+ * edits and workbench data included — then from the server itself. 409 `plugin_shipped`,
+ * `plugin_shared` or `module_failed`, 404 `plugin_not_installed`.
+ */
+export const uninstallPluginFromServer = (pkg: string, server: string | null) =>
+  apiFetch<PluginServerUninstallResponse>(`/api/admin/plugins?package=${encodeURIComponent(pkg)}`, {
+    method: "DELETE",
+    server,
+  });
 
 /**
  * Admin only: drops it from every table of this Project, or with `machineId` from that

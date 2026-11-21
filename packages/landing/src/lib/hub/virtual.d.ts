@@ -4,9 +4,15 @@
  */
 declare module "virtual:penguin-hub" {
   export const plugins: unknown;
+  export const market: unknown;
   export const benchmarks: unknown;
   export const leaderboards: unknown;
   export const pluginDetails: unknown;
   export const benchmarkDetails: unknown;
   export const leaderboardDetails: unknown;
+}
+
+declare module "virtual:penguin-rfc-prs" {
+  export const updatedAt: string;
+  export const prs: unknown;
 }

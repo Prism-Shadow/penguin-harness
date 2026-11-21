@@ -16,13 +16,13 @@ import {
 import { S } from "../../lib/strings";
 import { projectDisplayName, useProject } from "../../state/project";
 import { CreateProjectDialog } from "./project-dialogs/create-project-dialog";
-import { ProjectSettingsDialog } from "./project-dialogs/project-settings-dialog";
+import { useOpenProjectSettings } from "../../lib/project-settings-location";
 
 export function ProjectSwitcher() {
   const { projects, currentProject, setCurrentProjectId, reloadProjects } = useProject();
   const [projectOpen, setProjectOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
-  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
+  const openSettings = useOpenProjectSettings();
   return (
     <>
       <Dropdown
@@ -66,7 +66,7 @@ export function ProjectSwitcher() {
             label={S.project.settings}
             onSelect={() => {
               setProjectOpen(false);
-              setProjectSettingsOpen(true);
+              openSettings("general");
             }}
           />
         )}
@@ -79,12 +79,6 @@ export function ProjectSwitcher() {
           void reloadProjects().then(() => setCurrentProjectId(projectId));
         }}
       />
-      {currentProject && (
-        <ProjectSettingsDialog
-          open={projectSettingsOpen}
-          onClose={() => setProjectSettingsOpen(false)}
-        />
-      )}
     </>
   );
 }

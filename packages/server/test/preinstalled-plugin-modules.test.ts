@@ -77,8 +77,11 @@ describe("a preinstalled built-in module, listed in Project config", () => {
     t = await createTestApp({
       // Taking a shipped package out of every table asks for it to leave the disk; no npm here.
       pluginPackages: {
+        check: () => Promise.reject(new Error("not used")),
         install: () => Promise.reject(new Error("not used")),
         installFiles: () => Promise.reject(new Error("not used")),
+        installTarball: () => Promise.reject(new Error("not used")),
+        installChannel: () => Promise.reject(new Error("not used")),
         remove: async () => {},
       },
     });

@@ -131,6 +131,15 @@ Persist the Session id with \`host.setState\`, then poll from GET requests until
 mark a running snapshot failed because its text is empty. Store small reports in host state;
 keep uploaded files in \`dataDir\` (below), never among the source. Never edit state.json by hand.
 
+## Choosing a model
+
+\`host.createSession({ model: { provider, modelId } })\` opens the Session on that model of the
+Project's catalog instead of its default. To let the user choose it, a page calls the page SDK's
+\`chooseChatModel(current?)\`: the app shows its own model picker and the call resolves
+\`{ provider, modelId, label }\`, or null when the user closes it. \`getChatModel(current?)\` names
+a model, the Project default when none is given. Both reject with \`WorkbenchHostUnavailable\` when
+the page is not shown in the app.
+
 ## Your folders
 
 \`host.dataPaths(level?)\` returns \`{ dataDir, cacheDir, stateDir }\`: three folders outside this

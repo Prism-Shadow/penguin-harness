@@ -20,6 +20,7 @@ import {
   EntityCardGrid,
   FactList,
   FactRow,
+  ImpactList,
   GlyphAction,
   GlyphIcon,
   ICONS,
@@ -296,6 +297,25 @@ export function DataBoard() {
               <span className="min-w-0 truncate">{t.metaLineUsedBy}</span>
             </MetaLine>
           </div>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.impactList} aside={t.impactListHint}>
+        <div className="lib-stack">
+          <div style={{ maxWidth: 360 }}>
+            <ImpactList
+              items={t.impactItems.map(([name, where]) => ({ key: name, name, where }))}
+              more={t.impactMore}
+              pending={t.impactPending}
+            />
+          </div>
+          <div style={{ maxWidth: 360 }}>
+            <ImpactList
+              items={t.impactItems.slice(0, 2).map(([name, where]) => ({ key: name, name, where }))}
+              more={t.impactMore}
+              pending={t.impactPending}
+            />
+          </div>
+          <ImpactList items={null} more={t.impactMore} pending={t.impactPending} />
         </div>
       </BoardGroup>
       <BoardGroup title={t.factRows} aside={t.factRowsHint}>

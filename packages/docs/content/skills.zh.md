@@ -32,21 +32,22 @@ description: 浏览插件，为 Agent 安装 Skill 和钩子包，为 Project �
 | **不在本机** | — | 只在其他机器上运行 |
 | **可安装** | Project 里还没有 Agent 装它 | Project 还没有添加它 |
 
-详情在弹窗中打开：先是版本、状态和标签，然后是**说明**——完整描述，以及插件包自带 README 时的 README。每个服务端插件都有 README；包还不在本服务器上时，弹窗会说明安装后可查看 README。含 Skill 或钩子的插件还有**文件**一节，是一个文件浏览器：左侧目录树中，每个 Skill 对应一个文件夹，`SKILL.md` 排在最前，参考文件跟在后面；另有一个**钩子**文件夹存放钩子脚本。右侧预览区显示选中的文件。声明了 MCP Server 的插件在**说明**之后另有 **MCP 服务器**一节：每个 Server 一行，列出名称、传输方式和目标（URL 或命令），行尾的图标指向即可查看说明——钥匙表示 Server 需要 Vault 中的键，登录图标表示它用 OAuth 登录（本版本尚不支持），终端图标表示 stdio Server，并给出它在服务器上运行的命令。弹窗底部的按钮与卡片上的相同，最前面另有**导出**，把插件的包下载为 zip；管理员还会在服务端安装的插件上看到**删除**。见[导入与导出插件](#导入与导出插件)。
+详情在弹窗中打开：先是版本、状态和标签，然后是**说明**——完整描述，以及插件包自带 README 时的 README。每个服务端插件都有 README；包还不在本服务器上时，弹窗会说明安装后可查看 README。含 Skill 或钩子的插件还有**文件**一节，是一个文件浏览器：左侧目录树中，每个 Skill 对应一个文件夹，`SKILL.md` 排在最前，参考文件跟在后面；另有一个**钩子**文件夹存放钩子脚本。右侧预览区显示选中的文件。声明了 MCP Server 的插件在**说明**之后另有 **MCP 服务器**一节：每个 Server 一行，列出名称、传输方式和目标（URL 或命令），行尾的图标指向即可查看说明——钥匙表示 Server 需要 Vault 中的键，登录图标表示它用 OAuth 登录（本版本尚不支持），终端图标表示 stdio Server，并给出它在服务器上运行的命令。弹窗里的按钮即卡片上的操作，带文字：**安装到 Agent** 与**快速开始**；管理员另有改动服务端的操作：**从服务端卸载**（先从这台服务端的所有 Agent 卸载该插件），以及随构建自带的服务端模块的**停用服务端模块**。弹窗底部是**导出**，把插件的包下载为 zip。见[导入与导出插件](#导入与导出插件)。
 
-卡片右侧的按钮：
+卡片底部的两个按钮：
 
 | 按钮 | 出现时机 | 作用 |
 | --- | --- | --- |
-| **管理安装** | 插件含 Skill、钩子或 MCP Server | 把插件安装到 Agent 上，或者卸载。 |
-| **快速开始** | 插件至少包含一个 Skill | 打开一个带插件演示的新对话草稿。当前 Agent 还没装这个插件时，会先询问是否安装。 |
-| 更新 | 有 Agent 上的安装落后于插件库 | 更新这些安装，见[更新已安装的插件](#更新已安装的插件)。 |
-| **安装** / **移除** | 服务端插件，仅管理员可见 | 把插件安装到服务端，或者移除，见[服务端插件](#服务端插件)。 |
+| **安装** | Project 里还没有 Agent 装有这个插件 | 打开安装流程：插件还不在服务端时先安装到服务端，再装到 Agent。只带服务端模块的插件只有服务端这一步，仅管理员可用。 |
+| **N 个 Agent 已装** | Project 里有 Agent 装有这个插件 | 打开安装流程的 Agent 这一步。 |
+| **更新** | 当前 Agent 上的安装落后于插件库 | 更新这份安装，见[更新已安装的插件](#更新已安装的插件)。 |
+| **快速调用** | 插件至少包含一个 Skill | 当前 Agent 装有这个插件后，打开一个带插件演示的新对话草稿。 |
 
 ## 在 Agent 上安装插件
 
-1. 在**插件市场**页面，点击插件卡片上的**管理安装**。对话框会在同一列表里、按**智能体**页面的顺序列出当前 Project 里的所有 Agent：本服务端与每台已连接机器自己的 Agent 并列，机器上的 Agent 名称之后写出机器，例如 `[SSH: gpu-box]`。安装到机器上的 Agent 时，用的是那台机器的插件库，行上的状态也读自那台机器。
-2. 在 Agent 旁边点击**安装**。
+1. 在**插件市场**页面，点击插件卡片上的**安装**，或在它的详情里点击**安装到 Agent**，打开安装流程。顶部的进度条写明所在的一步：1/2，然后 2/2。
+2. 插件还不在服务端时，第一步是**安装到服务端**。管理员点击后，这一步写明安装进行到哪里，装好后流程自动进入下一步；其他成员点击**请管理员安装**，流程到此结束。
+3. **安装到 Agent** 这一步在同一列表里、按**智能体**页面的顺序列出当前 Project 里的所有 Agent：本服务端与每台已连接机器自己的 Agent 并列，机器上的 Agent 名称之后写出机器，例如 `[SSH: gpu-box]`。安装到机器上的 Agent 时，用的是那台机器的插件库，行上的状态也读自那台机器。在 Agent 旁边点击**安装**。
 
 安装的是整个插件：包括全部 Skill、钩子包和 MCP Server。新对话立即生效。已经打开的对话里，钩子包和 MCP Server 从下一轮起生效，Skill 在下一次压缩后生效。
 
@@ -72,14 +73,14 @@ Agent 上已有同名、但不是这个插件装的 MCP Server 时，安装会�
 
 - 侧边栏**插件市场**上出现红点；
 - **插件市场**页面顶部出现「检测到变更：N 个可升级」提示，带**现在升级**和**忽略**按钮；
-- 插件卡片上出现更新按钮，**管理安装**里 Agent 旁边出现**更新**按钮。
+- 当前 Agent 的安装落后时，插件卡片上出现**更新**；安装流程的 Agent 列表里，Agent 旁边出现**更新**按钮。
 
 更新方法：
 
 1. 选择更新范围：
    - 更新所有落后的插件：点击提示里的**现在升级**。
-   - 更新某个插件在所有 Agent 上的安装：点击它卡片上的更新按钮。
-   - 更新某个插件在某个 Agent 上的安装：在**管理安装**里点击 Agent 旁的**更新**。
+   - 更新某个插件在当前 Agent 上的安装：点击它卡片上的**更新**。
+   - 更新某个插件在其他 Agent 上的安装：在安装流程的 Agent 列表里点击 Agent 旁的**更新**。
 2. 确认更新会涉及的范围，然后点击**更新**。对话框为每个 Agent 列出已装版本与插件库不同的 Skill 和钩子包，并标出前后两个版本。插件的 MCP Server 列为「替换」：它们没有版本，只改了 MCP Server 不会出现更新提示。
 
 > [!WARNING]
@@ -164,11 +165,11 @@ zip 文件最大 14 MB，最多 200 个文件；解压后单个文件不超过 5
 
 插件市场一次只看一台机器，默认本服务。选择器列出本服务、Project 可用的机器及插件表点名的机器；选中的机器离开候选时回到本服务。已安装包含所看机器的 `[plugins.<machineId>]` 表与共享的 `[plugins]` 表；安装与移除只写该机器自己的表。共享行带「所有机器共用」标签，在页面上不可移除，包括两张表都钉住的插件：移除机器自己的条目后它仍会运行。Agent 与 API 仍可修改共享表。可安装列出两张表都未要求该机器运行的包。
 
-插件页不提供会移除共用表与其他机器条目的整包 Delete plugin。Manage installs 仍管理 Agent 副本，模块 Remove 只写所看机器自己的表。前一次 Project 访问的响应（包括离开后再回到同一 Project）不会替换当前模块快照。
+插件页不提供会移除共用表与其他机器条目的整包 Delete plugin。「安装到 Agent」仍管理 Agent 副本，模块 Remove 只写所看机器自己的表。前一次 Project 访问的响应（包括离开后再回到同一 Project）不会替换当前模块快照。
 
 服务端插件扩展的是服务器本身，而不是 Agent：它是一个由服务端模块组成的 npm 包，例如 Agent 运行沙箱后端。它的包有代码入口，`ifaces.json` 列出这些模块；同一个包也可以在模块之外携带插件库内容（见[插件文件格式](#插件文件格式)）。它安装到整个服务端、由所有 Project 共用：每个 Project 声明自己需要的服务端插件，服务器运行任一 Project 要求的全部插件，因此插件提供的能力对所有 Project 都可用。
 
-在**插件市场**页面上，服务端插件和其他插件一样有一张卡片。四个 Agent 运行沙箱后端在 **Agent 运行沙箱**分类下：用于 Linux 的 `sandbox-bwrap`、用于 macOS 的 `sandbox-seatbelt`、用于 Windows 的 `sandbox-wsl`，以及三者通用、只限制文件写入的 `sandbox-dsh`。服务端插件的详情显示它的包名（旁边有复制按钮）和包自带的 README。
+在**插件市场**页面上，服务端插件和其他插件一样有一张卡片。四个 Agent 运行沙箱后端在 **Agent 运行沙箱**分类下：用于 Linux 的 `sandbox-bwrap`、用于 macOS 的 `sandbox-seatbelt`、用于 Windows 的 `sandbox-wsl`，以及三者通用、只限制文件写入的 `sandbox-dsh`。没有分类的 `agent-state-git` 让原生 Git（GitHub Desktop 的构建，由 dugite 固定版本）记录工作台版本；它在一台主机上首次运行时下载这份 Git（24–65 MiB，校验后使用），无法下载或运行时由服务端内置的引擎照常记录。服务端插件的详情显示它的包名（旁边有复制按钮）和包自带的 README。
 
 安装服务端插件：
 
@@ -198,9 +199,11 @@ zip 文件最大 14 MB，最多 200 个文件；解压后单个文件不超过 5
 
 无论从哪种方式安装，这个包的安装脚本都会以服务端用户的身份在服务器上运行，与从 npm 安装时相同。包里的 stdio MCP Server 是一条命令：装有它的 Agent 每次开启会话，服务器都会运行它，会话设置了[沙盒](/settings#沙盒)时在沙盒内运行；远程 MCP Server 则是服务器要连接的地址。插件详情会把两者都列出来。与 PenguinHarness 自带的服务端插件同名的包会被拒绝，安装后发现不是插件的包也会被拒绝；从链接安装时，被拒绝之前它的安装脚本已经运行过。
 
-之后的效果取决于插件本身。只含 Skill、钩子或 MCP Server 的插件进入插件库，标为**服务端安装**，再用**管理安装**把它装到 Agent 上。带服务端模块的插件还会为该 Project 启用并载入，与[安装服务端插件](#服务端插件)一样，正在进行的 Agent 运行会被中止。从链接或 zip 安装的插件只为本服务端启用：其他机器会按包名从 npm 仓库获取，可能拿到另一个同名的包。要在其他机器上运行，请在那台机器上导入。
+没有 npm 的服务端（桌面端在未安装 Node.js 时即如此）会自己安装没有依赖、没有安装脚本的包：按包名从「插件源」设置的 npm registry 及其镜像安装，从 zip 或包目录导入，卸载也同样不经 npm。解包之前先按 registry 固定的 sha512 校验下载内容，只写入普通文件；从 zip 或目录安装时只取 `npm pack` 会发布的文件，被 `.gitignore` 或 `.npmignore` 排除的文件（如 `.env`）不会装进去。在这样的服务端上，需要 npm 的包和任何链接都会被拒绝，并说明原因、提示安装自带 npm 的 Node.js；装好后重启 PenguinHarness，让它找到 npm。
 
-要删除管理员安装的 Skill、钩子或 MCP Server 插件，打开它的详情，点击**删除**。插件包会从服务端和插件库中移除，各 Agent 上已安装的 Skill 与钩子副本以及 MCP Server 保持不变，但命令随包分发的 stdio Server 从此无法启动。服务端插件用**移除**来移除。
+之后的效果取决于插件本身。只含 Skill、钩子或 MCP Server 的插件进入插件库，标为**服务端安装**，再用**安装到 Agent** 把它装到 Agent 上。带服务端模块的插件还会为该 Project 启用并载入，与[安装服务端插件](#服务端插件)一样，正在进行的 Agent 运行会被中止。从链接或 zip 安装的插件只为本服务端启用：其他机器会按包名从 npm 仓库获取，可能拿到另一个同名的包。要在其他机器上运行，请在那台机器上导入。
+
+要把管理员安装的插件从服务端拿掉，打开它的详情，点击**从服务端卸载**。它会先从这台服务端的所有 Agent 卸载（确认里列出这些 Agent），再从各 Project 为本服务端列出的表中移出，最后插件包离开服务端和插件库。有 Project 为所有机器列出它时，在该 Project 的配置里去掉之前会被拒绝。随构建自带的插件不能从服务端卸载；随构建自带的服务端模块用**停用服务端模块**为本 Project 停用。
 
 ## 编写 Skill
 
@@ -252,7 +255,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `use-firecrawl` | 通过 Firecrawl API 搜索网页、抓取页面，输出干净的 markdown |
 | | `browser-automation` | 用 `penguin browser` 驱动 Agent 浏览器，即桌面应用的[内置浏览器](/builtin-browser)或[你自己的 Chrome](/builtin-browser#使用你自己的-chrome)：以简化 HTML 或纯文本读取页面，用 JavaScript 以及可信的点击和输入操作页面，提取亚马逊订单这样的数据，登录用的是你自己的账号。预装；浏览器本身也由它提供——每个 Project 都列入的服务端模块、应用里的面板与设置，以及 `penguin browser` 命令 |
 | | `storage` | [设置 › 存储空间](/settings#存储空间)与 [`penguin storage`](/cli#penguin-storage)：数据根按分类、Project 与 Agent 的空间占用，以及先审阅再删除的草稿区、孤立临时工作区与缓存清理。预装：每个 Project 都列入的服务端模块、页面、命令，以及让 Agent 告诉你空间被什么占用的 Skill（它自己从不删除任何东西） |
-| | `use-bento-slides` | 创建和编辑 Bento 演示文稿：单文件 `.bento.html` 幻灯片，文件内容为 JSON，支持素材到图表的映射、morph 过渡和状态幻灯片 |
+| | `use-bento-slides` | Bento 幻灯片，含 `bento-slides` Skill 与幻灯片[工作台](#workbench-插件)（AI PPT）：你在 Bento 编辑器里修改文稿的同时，Agent 修改同一份文稿，双方的修改都会保留。该 Skill 也编写单文件 `.bento.html` 文稿，支持素材到图表的映射、morph 过渡和状态幻灯片（预装） |
 | | `humanizer` | 去除任何语言文字中的 AI 写作痕迹，改写成书籍、报纸和百科全书的语体（不预装：需要时从插件库安装） |
 | | `goal` | [目标模式](/goal-mode)背后的 stop 钩子：让 Session 持续朝着目标推进，直到完成、受阻或 Token 预算耗尽（预装，每个新建的 Agent 也都装上） |
 | | `plan` | 计划模式：输入框 **+** 菜单里的开关。开着时，每条消息后面都附上一段提示，请 Agent 先和你讨论目标、可选做法与取舍，方向谈定后再动手；不限制任何工具（预装，每个新建的 Agent 也都装上） |
@@ -260,6 +263,11 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `trace-lookup` | 在会话的 Trace 文件里查回更早的内容：先搜出某个细节所在的行，再只读这几行；用于压缩摘要或模型切换指向 Agent 所接续的上一段上下文的 Trace 时（新初始化的 `default_agent` 预装；已有的 Agent 从插件库安装） |
 | | `agent-company` | [公司模式](/company-mode)的完整工具包，包含七个 Skill：`company-setup`（与用户一起创建组织：一次问一个问题、给出摘要供确认，然后执行 `penguin org create`；从不招聘，也不提交工单）、`company-employee`（每个工位 Session 和工单 Session 都要遵循的协议：触发块、工单看板、阻塞、重负载或不可逆的工作先向董事会请示、频道礼仪、预算）、`company-ceo`（把使命拆解为工单、招聘、划分 Workspace、审查、向董事会汇报）、`company-hr`（日历排班、招聘与离职、评估）、`company-finance`（预算、每日审计、告警与暂停）、`company-research`（科研组织的作者与审稿人：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环、只保留能提升指标的改动，每个结论都交给一个设法推翻它的审稿人）和 `company-mirror`（数字分身公司：每位真实同事对应一个分身，绑定到这位同事的机器人，只传话、不开工单）。不预装：组织在创建 CEO、招聘员工时会安装它；需要能创建组织的 Agent 则从插件库安装 |
 | | `penguin-support` | PenguinHarness 产品客服，包含 `penguin-support` Skill（依据官方文档和源码解答产品问题、排查故障）和客服[工作台](#workbench-插件)：问题列表、新建问题弹窗，以及支持追问的对话详情。不预装：默认 Project 的内置客服 Agent「PenguinHarness Support」自带该插件，其他 Agent 可从插件库安装 |
+| 实用工具 | `fridge-keeper` | 按位置、数量和保质期记录食材。 |
+| | `action-minutes` | 记录会议决定、跟进行动项并导出纪要。 |
+| 娱乐 | `tabletop-desk` | 管理出场顺序、掷骰并记录场景笔记。 |
+| | `party-charades` | 两队共用一块屏幕限时猜词。 |
+| | `daily-draw` | 每天抽一支签，在手记里写下感想。 |
 | 软件开发 | `software-development` | 端到端的软件开发，包含两个 Skill：`software-engineering`（在最小范围内调查、实现和验证）和 `web-design`（生成 Web UI 用的 Penguin 视觉语言） |
 | | `use-claude-code` | 通过 SSH 在远程主机上运行 Claude Code：持久 expect 会话、带 stdin 修复的无头 `-p` 模式、tmux 驱动的交互式 TUI，以及多轮连续性（不预装：需要时从插件库安装） |
 | AI 应用开发 | `agent-development` | PenguinHarness 上的 Agent 开发，包含六个 Skill：`agent-initialization`（根据需求搭建 Agent：它的 `AGENTS.md`、Skill 与钩子）、`penguin-sdk`（基于 SDK 构建 Agent/AI/RAG 应用，或经 Agent API 把程序接入 Agent；动手前先问用哪种方式）、`penguin-plugin`（搭建 Agent 在对话旁自己维护的 Workbench；构建、测试、分享与提交插件包——见[插件](/plugins#分享插件)）、`unified-llm-api`（通过 `@prismshadow/mmsp` 调用模型 API）、`penguin-config`（管理模型密钥、默认值和 Vault 机密）和 `penguin-orchestration`（在 shell 里驱动 Agent、Session、成本和定时任务） |
@@ -267,6 +275,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `model-development` | 在自己的硬件上做模型开发，包含三个 Skill：`llamafactory`（微调）、`ollama`（运行本地模型）和 `vllm`（在 OpenAI 兼容端点后面提供服务） |
 | | `skill-porting` | 把外部来源（插件市场、skills.sh 注册表、GitHub 仓库或本地文件夹）的 Skill 经审查和规范化后移植到 Agent；也可以用其中的 `plugin-porting` Skill 把整个 Codex 或 Claude Code 插件转成 PenguinHarness 插件包，安装到服务端；或用其中的 `agent-porting` Skill 把 Claude Code、Codex、DeepSeek Harness、Qoder、Qwen Code 或 WorkBuddy 的 Agent 迁移成新的 Agent（见[导入 Agent](/agents#导入-agent)） |
 | Agent 运行沙箱 | `sandbox-bwrap`、`sandbox-seatbelt`、`sandbox-wsl`、`sandbox-dsh` | 服务端插件，不属于插件库内容：封禁 Agent 执行的每条命令的后端，由管理员安装到服务端。见[服务端插件](#服务端插件)和[设置](/settings#沙盒) |
+| 其他 | `agent-state-git` | 服务端插件：以原生 Git 写入与读回工作台版本，代替服务端内置的引擎。见[服务端插件](#服务端插件) |
 
 ## 工作原理
 
@@ -411,7 +420,7 @@ npm 标准字段：
 - 插件名就是去掉 scope 的包名，必须匹配 `^[A-Za-z0-9_-]+$`；内置插件的目录名与之相同。
 - 围绕他人产品打造的插件带 `use-` 前缀（如 `use-firecrawl`），名称只表明用途，而不冒充产品本身。
 - 自进化工具包的名字以 `-rsi-toolkit` 结尾（`default-rsi-toolkit`、`ape-rsi-toolkit`），一看就知道它是什么；算法工具包唯一的 Skill 与插件同名。
-- 插件的版本就是它的 npm 版本，即 `package.json` 的 `version`，随产品发布递增。
+- 插件的版本就是它的 npm 版本，即 `package.json` 的 `version`，随产品发布递增。`computer-use` 从插件市场安装、不随产品自带，它有自己的版本：从 0.1.0 起，只在插件本身改动时递增。每次发布把它的包附到 GitHub Release 上，并把同一个文件发布到 npm。
 - 日期版本 `YYYY.MM.DD.N`（日期加当天的序号）属于 Agent 可能在本地改动的事物：每个 Skill 的 `SKILL.md` 自带 `version`，钩子包的版本是它的 hooks 贡献的 `version`。改了 Skill 就递增它的 `version`；改了钩子脚本或 hooks 贡献中的命令就递增该贡献的 `version`；只改卡片则两者都不必递增。CI 对每个 PR 校验这两点（`scripts/check-plugin-versions.mjs`）。
 - 日期版本先按日期比较，再按序号比较：`2026.08.29.10` 排在 `2026.08.29.9` 之后。已安装副本只要有一个部件的版本比插件库中同名部件旧，就算落后；更新提示与更新按钮按插件计一次。
 - 每个插件都是一个独立的 npm 包 `@penguinharness/<name>`，位于仓库的 `plugins/<name>/`。`@prismshadow/penguin-core` 中的加载器从宿主包（服务端、CLI 或桌面应用）的依赖列表读取插件名，并通过 Node 解析各个包；core 本身不依赖任何插件。桌面应用把同样的包声明为依赖，安装器会将它们打包。运行时，插件文件与表就是插件库内容的唯一事实来源，每次调用都直接读取。在仓库的检出中，`pnpm -r build` 构建全部插件的表，`pnpm dev` 会先构建内容插件的表；改了插件的 `src/index.ts`，就要重新构建该插件。
@@ -478,7 +487,7 @@ Skill 分两步加载：先加载索引，正文按需读取。
 - 安装钩子包时，会写入 `hooks.json`、插件的 `icon.svg`，以及插件 `hooks/` 目录下的所有文件。
 - 每次安装都会整体替换目录，所以重新安装会清掉新版本不再包含的文件。已安装的副本就是靠重新安装来更新的。
 - 卸载会删除整个 `skills/<name>/` 或 `hooks/<name>/` 目录。
-- 插件的 MCP Server 是配置条目，不是目录：安装时追加到 Agent 的 `system_config.yaml` 中 `tools.mcpServers` 的末尾，文件中的注释保持不变；每个条目带 `plugin: <插件名>`，`${PLUGIN_ROOT}` 已替换。重新安装先删除带这个插件名的全部条目，因此新版本不再携带的 Server 也随之移除；卸载则删除这些条目。存在不属于这个插件的同名条目时，整次安装在写入任何内容之前就被拒绝。这些 Server 从 Agent 的下一个模型上下文起连接。还原 Agent 的默认配置时，它们随 `tools` 一起被覆盖；**管理安装**可以把它们装回来。
+- 插件的 MCP Server 是配置条目，不是目录：安装时追加到 Agent 的 `system_config.yaml` 中 `tools.mcpServers` 的末尾，文件中的注释保持不变；每个条目带 `plugin: <插件名>`，`${PLUGIN_ROOT}` 已替换。重新安装先删除带这个插件名的全部条目，因此新版本不再携带的 Server 也随之移除；卸载则删除这些条目。存在不属于这个插件的同名条目时，整次安装在写入任何内容之前就被拒绝。这些 Server 从 Agent 的下一个模型上下文起连接。还原 Agent 的默认配置时，它们随 `tools` 一起被覆盖；**安装到 Agent** 可以把它们装回来。
 - 插件的每个 Skill、钩子包和每个 MCP Server 都在某个 Agent 上时，插件才算装在这个 Agent 上。还在等待 Vault 键或登录的 Server 不影响这一点。
 - 运行中的 Session 沿用当前模型上下文开启时读到的钩子包；下一个上下文（压缩之后或恢复时）会重新读取。经 Web App 或 API 安装、导入或卸载钩子包，或者**启用钩子**开关变动之后，服务端会在 Agent 缓存的运行时下次空闲时重建它们，因此已经打开的对话从下一轮起生效。
 - 除 Web App 外，插件也可以通过 SDK 安装。
@@ -489,7 +498,7 @@ Skill 分两步加载：先加载索引，正文按需读取。
 
 安装插件时，工作台复制到 Agent State 中的 `agent_state/workbenches/<id>/`，Agent 自己编写的工作台也位于这里。更新替换插件携带的源文件，保留记录状态与历史版本；如果名称已被其他插件或手工创建的工作台使用，则拒绝安装。卸载会删除工作台及其状态，此前的版本不再列出。
 
-工作台每次成功加载且源码有变化时，都会记录一个版本，即 `agent_state.git/` 中的一次提交。这是与 Agent 的 `agent_state/` 并列的裸 git 仓库，由服务端自行写入，不需要安装 git。只有工作台的源码入库；它的 `state.json`、服务端生成的 `.build/` 与 `.harness/`、`node_modules/`、Vault 以及 Agent State 的其余内容都不入库。恢复某个版本会把源码精确换成该版本并重新加载，`state.json` 保持不变。仓库位于 Agent State 之外，Agent State 的快照、导出与导入既不携带它，也不改动它。装有 git 时可以读取历史，例如 `git --git-dir=<agent>/agent_state.git log --oneline -- workbenches/<id>`；不要向仓库提交，也不要删除它。关闭、恢复、移除、导出或导入工作台，见[工作台](/agents#工作台)。
+工作台每次成功加载且源码有变化时，都会记录一个版本，即 `agent_state.git/` 中的一次提交。这是与 Agent 的 `agent_state/` 并列的裸 git 仓库，由服务端自行写入，不需要安装 git。只有工作台的源码入库；它的 `state.json`、服务端生成的 `.build/` 与 `.harness/`、`node_modules/`、Vault 以及 Agent State 的其余内容都不入库。恢复某个版本会把源码精确换成该版本并重新加载，`state.json` 保持不变。仓库位于 Agent State 之外，Agent State 的快照、导出与导入既不携带它，也不改动它。装有 git 时可以读取历史，例如 `git --git-dir=<agent>/agent_state.git log --oneline -- workbenches/<id>`；不要向仓库提交，也不要删除它。由成员的请求（恢复、重载、导入、开关、移除）记录的版本，作者是该成员，名字取其显示名；其余字段，以及 Agent 自己编辑后记录的版本，用服务端的 Git 身份，读法与 git 相同（`GIT_AUTHOR_*` 与 `GIT_COMMITTER_*`，然后是仓库与全局配置中的 `user.*`，然后是 `EMAIL`），都没有时为 `PenguinHarness <penguin@localhost>`。这些提交由服务端自行写入；装上[服务端插件](#服务端插件) `agent-state-git` 后改由原生 Git 写入与读回，工作台越大越快。关闭、恢复、移除、导出或导入工作台，见[工作台](/agents#工作台)。
 
 工作台有三个自己的文件夹，`host.dataPaths()` 建好后以 `{ dataDir, cacheDir, stateDir }` 返回。`dataDir` 即 `<agent>/app/data/<id>/`，与 Agent 的 `agent_state/` 并列，存放工作台与其 Agent 共同读写的文件：处理器用 Node 自带的 `node:fs` 读写（工作台的服务端代码可以直接使用带类型的 Node 模块），页面需要什么由它自己的路由提供；Agent 用自己的文件工具编辑处理器给出的路径。`cacheDir` 即 `<agent>/app/cache/<id>/`，存放可重新生成的文件。`stateDir` 存放 Unix socket、管道、锁等只在运行时有意义的文件，位于数据根目录 `run/` 下的短路径，因为 Unix socket 的路径至多 103 字节；`host.socketPath(name)` 给出要监听的路径，超长时报错并说明上限，在 Windows 上则给出命名管道（`\\.\pipe\…`）。在这些文件夹中写入不触发加载，也不记录版本。在 `workspace-write` 沙盒下，Agent 的命令可以写入这三个文件夹，因此处理器不跟随 Agent 可能留下的链接。导出 Agent 时勾选**含其数据**才带上 `dataDir`，另两个从不导出；移除工作台时三者一并删除。以上是缺省的 Agent 级。从插件安装的应用还可以用 `host.dataPaths("server")`，由本服务器上同一插件工作台的所有副本跨 Project 共用（如 TTS 模型的权重、本地语言模型），或 `host.dataPaths("machine")`，由这台电脑上本 OS 用户的所有 PenguinHarness 共用（如一个精简的本地服务）。这两级只由处理器写入，Agent 的沙盒命令可以读、不能写；它们从不导出，不随工作台删除，也不存放任何一个 Project 不应让另一个看到的内容。
 
@@ -525,3 +534,5 @@ createRoot(document.getElementById("root")!).render(<App />);
 工作台页面是透明的：页面自己不设背景时，透出应用在它下面的底色——主题的页面色或你设置的自定义背景，与对话页一致。想要不透明的页面，就写 `body { background: var(--wb-canvas); }`（TSX 页面在自己的样式表里用 `var(--ui-canvas)`）。
 
 内置 `penguin-support` 插件为默认 Project 的客服 Agent 安装 `penguin-support` Skill 和客服工作台：居中的问题列表、新建问题弹窗，以及支持追问的对话详情。问题运行时，对话框里会随生成显示回答和 Agent 正在做的事，并提供**停止**按钮。新版本以插件更新的形式提供，已安装的副本只在你更新时才被替换。也可以把该插件安装到其他 Agent。
+
+内置的 `use-bento-slides` 插件提供对话旁的**幻灯片**标签页和应用中心的 **AI PPT**。在首页打开或重命名已有文稿。你与 Agent 可同时修改工作台数据目录（Agent 目录下的 `app/data/slides/`）中的同一份 JSON 文稿，编辑器在接收 Agent 的修改时保留你的待保存内容。可从**历史版本**恢复文稿、导出可编辑的 PowerPoint 文件，或下载能重新导入的独立 Bento HTML 文件。
