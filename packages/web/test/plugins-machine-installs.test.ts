@@ -115,7 +115,10 @@ describe("installing a library plugin on a machine's Agent", () => {
       (r) =>
         r.method === "POST" && r.path === `/api/projects/${PROJECT_ID}/agents/${AGENT_ID}/plugins`,
     );
-    expect(installsSent.map((r) => [r.machine, r.body])).toEqual([["gpu1", { names: ["charts"] }]]);
+    // The machine leaves its plugin tables to this server, which keeps its plugin list.
+    expect(installsSent.map((r) => [r.machine, r.body])).toEqual([
+      ["gpu1", { names: ["charts"], skipModules: true }],
+    ]);
     expect(server.skillsOn(null, AGENT_ID)).toEqual([]);
     await waitFor(() => offers(en.skills.uninstall, MACHINE_HELPER));
     expect(offers(en.skills.install, AGENT_ID)).toBe(true);
