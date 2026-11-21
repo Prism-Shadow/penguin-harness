@@ -1123,6 +1123,9 @@ importers:
       isomorphic-git:
         specifier: ^1.44.0
         version: 1.44.10
+      minimatch:
+        specifier: ^10.2.6
+        version: 10.2.6
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
@@ -8186,6 +8189,7 @@ snapshots:
       fflate: 0.8.3
       hono: 4.13.13
       isomorphic-git: 1.44.10
+      minimatch: 10.2.6
       node-pty: 1.1.0
       remark-parse: 11.0.0(supports-color@10.2.2)
       safe-regex: 2.1.1
@@ -8251,6 +8255,7 @@ snapshots:
       fflate: 0.8.3
       hono: 4.13.13
       isomorphic-git: 1.44.10
+      minimatch: 10.2.6
       node-pty: 1.1.0
       remark-parse: 11.0.0(supports-color@10.2.2)
       safe-regex: 2.1.1
@@ -8316,6 +8321,7 @@ snapshots:
       fflate: 0.8.3
       hono: 4.13.13
       isomorphic-git: 1.44.10
+      minimatch: 10.2.6
       node-pty: 1.1.0
       remark-parse: 11.0.0(supports-color@10.2.2)
       safe-regex: 2.1.1
