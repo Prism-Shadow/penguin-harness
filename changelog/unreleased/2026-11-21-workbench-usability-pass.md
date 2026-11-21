@@ -3,6 +3,7 @@
 - **Date:** 2026-11-21
 - **Type:** fix
 - **Scope:** `plugins`
+- **PR:** [#1684](https://github.com/Prism-Shadow/penguin-harness/pull/1684)
 
 [中文版](2026-11-21-workbench-usability-pass.zh.md)
 
