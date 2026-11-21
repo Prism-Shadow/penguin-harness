@@ -3,6 +3,7 @@
 - **Date:** 2026-11-21
 - **Type:** feature
 - **Scope:** `model-catalog`
+- **PR:** [#1680](https://github.com/Prism-Shadow/penguin-harness/pull/1680)
 
 [English](2026-11-21-penguin-go-model-presets.md)
 
