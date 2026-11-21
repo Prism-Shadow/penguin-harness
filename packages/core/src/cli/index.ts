@@ -23,6 +23,9 @@
 import type { Opaque } from "../kernel/markers.js";
 import type { JsonObject } from "../kernel/json.js";
 
+/** A shipped plugin's commands, booted by the CLI from the plugin's `./cli` export (module.ts). */
+export type * from "./module.js";
+
 /** A command's one-line summary, one per language — what help prints. */
 export interface CliCommandSummary {
   en: string;
