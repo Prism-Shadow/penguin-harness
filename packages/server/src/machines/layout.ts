@@ -26,8 +26,9 @@
  * layout rather than naming `~/.penguin` itself.
  */
 import { DEFAULT_DEV_SERVER_PORT, DEFAULT_SERVER_PORT } from "@prismshadow/penguin-core";
+import { profileFromEnv, type Profile } from "./profile.js";
 
-export type Profile = "release" | "dev";
+export { profileFromEnv, type Profile };
 
 export interface RemoteLayout {
   profile: Profile;
@@ -39,11 +40,6 @@ export interface RemoteLayout {
   defaultPort: number;
   /** Whether an install from this profile registers the machine's `penguin` command. */
   ownsCommand: boolean;
-}
-
-/** `PENGUIN_PROFILE=dev` selects the dev profile; anything else is release. */
-export function profileFromEnv(env: NodeJS.ProcessEnv): Profile {
-  return env.PENGUIN_PROFILE?.trim() === "dev" ? "dev" : "release";
 }
 
 export function remoteLayoutFor(profile: Profile): RemoteLayout {

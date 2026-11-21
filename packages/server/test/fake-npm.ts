@@ -98,6 +98,9 @@ export function fakeNpm() {
       if (files === undefined) throw new PluginInstallError(`could not read ${base}`);
       return place(root, files, `file:archives/${base}`);
     },
+    installChannel: async (): Promise<InstalledPackage> => {
+      throw new PluginInstallError("no release channel here");
+    },
     remove: async (root: string, name: string) => {
       removed.push(name);
       const prefixFile = path.join(root, "plugins", "package.json");

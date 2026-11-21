@@ -23,7 +23,7 @@ import type {
   BuiltinBrowserImportNote,
   BuiltinBrowserImportSource,
   DesktopBrowserCookie,
-} from "../../api/types.js";
+} from "@prismshadow/penguin-server/api";
 import { chromiumBrowser } from "./browsers.js";
 import { readChromiumCookies } from "./chromium-cookies.js";
 import { normalizeDomains } from "./cookie-rules.js";

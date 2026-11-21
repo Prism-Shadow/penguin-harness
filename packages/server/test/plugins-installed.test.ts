@@ -16,7 +16,7 @@ import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { InstalledPluginsResponse, UsageErrorsPage } from "../src/api/types.js";
 import { PluginHost } from "../src/plugin/host.js";
-import { PluginInstallError } from "../src/plugin/install.js";
+import { installPluginChannel, PluginInstallError } from "../src/plugin/install.js";
 import { openPushSlip } from "../src/hmr/push-plugins.js";
 import { contentTable, decorators, lower, writeClassPackage } from "./plugin-fixtures.js";
 import type { ClassPackage } from "./plugin-fixtures.js";
@@ -550,6 +550,8 @@ describe("installed plugins", () => {
           install: notFound,
           installFiles: async () => npmSays("not used", "other"),
           installTarball: async () => npmSays("not used", "other"),
+          // The channel's URL is npm's to install, as on a machine that has npm.
+          installChannel: (root, channel, opts) => installPluginChannel(root, channel, opts),
           remove: async () => {},
         },
         config: {},
@@ -601,6 +603,7 @@ describe("installed plugins", () => {
         install: async () => npmSays("npm error code EACCES\nnpm error permission denied", "other"),
         installFiles: async () => npmSays("not used", "other"),
         installTarball: async () => npmSays("not used", "other"),
+        installChannel: async () => npmSays("not used", "other"),
         remove: async () => {},
       },
     });

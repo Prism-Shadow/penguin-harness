@@ -226,9 +226,10 @@ export class PluginServerUninstall {
       await this.deps.removePackage(pkg);
     } catch (err) {
       if (err instanceof PluginInstallError) {
-        // npm's own failures carry the bucket its stderr fell in; any other error (no npm here,
-        // the prefix unreadable) did not come from npm and is not worded as if it had.
-        const fromNpm = err.reason !== undefined && err.reason !== "missing";
+        // npm's own failures carry the bucket its stderr fell in; a removal made without npm, or
+        // any other error (no npm here, the prefix unreadable), is not worded as npm's.
+        const fromNpm =
+          err.withoutNpm !== true && err.reason !== undefined && err.reason !== "missing";
         throw new HttpError(
           500,
           "plugin_remove_failed",
