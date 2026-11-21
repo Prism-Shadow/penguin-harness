@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The import dialog (features/builtin-browser/import-dialog.tsx) over a faked API, in both
+ * The import dialog (plugins/browser-automation/src/web/import-dialog.tsx) over a faked API, in both
  * languages.
  *
  * - Given an import that skipped cookies, the outcome gives every reason its own line with its
@@ -19,9 +19,9 @@ import type {
 } from "@prismshadow/penguin-server/api";
 // The browser reaches the app's own helpers through the plugin face; this hands them over.
 import "../src/web-app/plugin-host";
-import { ImportDialog } from "../src/features/builtin-browser/import-dialog";
+import { ImportDialog } from "../../../plugins/browser-automation/src/web/import-dialog";
 import { setActiveStrings, zh } from "../src/lib/strings";
-import { S as B } from "../src/features/builtin-browser/strings";
+import { S as B } from "../../../plugins/browser-automation/src/web/strings";
 import { en } from "../src/lib/strings-en";
 import { click, mount, unmountAll, waitFor } from "./helpers/dom";
 
@@ -29,7 +29,7 @@ const api = vi.hoisted(() => ({
   getBuiltinBrowserImportSources: vi.fn(),
   importIntoBuiltinBrowser: vi.fn(),
 }));
-vi.mock("../src/features/builtin-browser/api", () => api);
+vi.mock("../../../plugins/browser-automation/src/web/api", () => api);
 
 const HAN = /\p{Script=Han}/u;
 

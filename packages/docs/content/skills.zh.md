@@ -253,7 +253,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | 办公效率 | `a2ui` | 让回复更易读的富文本组件——选项、表单、分步操作、提示框、Mermaid 图、由数据绘制的统计图（折线、面积、柱状、饼图、散点、直方图或仪表），以及天气、时钟、倒计时、指标和系统资源小组件，以围栏代码块写在普通 Markdown 里，Web App 用自己的组件渲染（用户的选择以普通文字填入输入框），其他界面显示为可读文本——附带中英文 STE 风格写作规则、把天气查询和系统快照直接生成组件块的脚本，以及一个发送前校验、打分的检查脚本（预装） |
 | | `data-analysis` | 完成数据分析任务：有限度地检查证据，明确决定是否修改答案，原生处理产出文件，并核验最终输出 |
 | | `use-firecrawl` | 通过 Firecrawl API 搜索网页、抓取页面，输出干净的 markdown |
-| | `browser-automation` | 用 `penguin browser` 驱动 Agent 浏览器，即桌面应用的[内置浏览器](/builtin-browser)或[你自己的 Chrome](/builtin-browser#使用你自己的-chrome)：以简化 HTML 或纯文本读取页面，用 JavaScript 以及可信的点击和输入操作页面，提取亚马逊订单这样的数据，登录用的是你自己的账号 |
+| | `browser-automation` | 用 `penguin browser` 驱动 Agent 浏览器，即桌面应用的[内置浏览器](/builtin-browser)或[你自己的 Chrome](/builtin-browser#使用你自己的-chrome)：以简化 HTML 或纯文本读取页面，用 JavaScript 以及可信的点击和输入操作页面，提取亚马逊订单这样的数据，登录用的是你自己的账号。预装；浏览器本身也由它提供——每个 Project 都列入的服务端模块、应用里的面板与设置，以及 `penguin browser` 命令 |
 | | `use-bento-slides` | Bento 幻灯片，含 `bento-slides` Skill 与幻灯片[工作台](#workbench-插件)（AI PPT）：你在 Bento 编辑器里修改文稿的同时，Agent 修改同一份文稿，双方的修改都会保留。该 Skill 也编写单文件 `.bento.html` 文稿，支持素材到图表的映射、morph 过渡和状态幻灯片（预装） |
 | | `humanizer` | 去除任何语言文字中的 AI 写作痕迹，改写成书籍、报纸和百科全书的语体（不预装：需要时从插件库安装） |
 | | `goal` | [目标模式](/goal-mode)背后的 stop 钩子：让 Session 持续朝着目标推进，直到完成、受阻或 Token 预算耗尽（预装，每个新建的 Agent 也都装上） |

@@ -1,7 +1,8 @@
 /**
- * Every endpoint the Web App calls (`packages/web/src/api/endpoints.ts`, and the wrappers its
- * features keep beside them, such as the agent browser's `features/builtin-browser/api.ts`), answered from the
- * demo store. Reads answer the fixtures; writes mutate them where the app shows the result
+ * Every endpoint the Web App calls (`packages/web/src/api/endpoints.ts`, the wrappers its
+ * features keep beside them, and those a plugin web half exports, such as the agent browser's
+ * `plugins/browser-automation/src/web/api.ts`), answered from the demo store. Reads answer the
+ * fixtures; writes mutate them where the app shows the result
  * (a renamed Session, a saved model table, a new schedule) and answer `demo_read_only` where
  * the operation would need a machine, a registry or a provider behind it. Each handler's
  * return is annotated with the contract type it stands for, so a DTO change fails here

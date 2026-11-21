@@ -3,7 +3,7 @@
 - **Date:** 2026-11-19
 - **Type:** process
 - **Scope:** `server`, `db`
-- **PR:** [#1644](https://github.com/Prism-Shadow/penguin-harness/pull/1644), [#1642](https://github.com/Prism-Shadow/penguin-harness/pull/1642)
+- **PR:** [#1644](https://github.com/Prism-Shadow/penguin-harness/pull/1644), [#1642](https://github.com/Prism-Shadow/penguin-harness/pull/1642), [#1656](https://github.com/Prism-Shadow/penguin-harness/pull/1656)
 
 [English](2026-11-19-backward-compatibility.md)
 
@@ -33,7 +33,7 @@
 
 ## 预装之前建出的 Project
 
-[预装的内置插件模块写入 Project 配置](2026-11-19-preinstalled-plugin-modules.zh.md)。新建的 Project 在创建时列入它们，更早建出的 Project 则没有这项列入。不加处理的话，一个功能移进预装插件之后，移入之前的每个 Project 都会少了它。服务端第一次启动带有某个预装模块的构建时，把该模块一次性列入每个已有 Project 中本服务端自己的 `[plugins.<machineId>]` 表，文件的其余部分不变。每个 Project 按包记在 web.db 的 `plugin_module_preinstalls` 中，记下的 Project 不再列入。管理员之后从某个 Project 移除了该模块，那个 Project 就一直没有它。
+[预装的内置插件模块写入 Project 配置](2026-11-19-preinstalled-plugin-modules.zh.md)。新建的 Project 在创建时列入它们，更早建出的 Project 则没有这项列入。不加处理的话，一个功能移进预装插件之后，移入之前的每个 Project 都会少了它。服务端第一次启动带有某个预装模块的构建时，把该模块一次性列入每个已有 Project 中本服务端自己的 `[plugins.<machineId>]` 表，文件的其余部分不变。每个 Project 按包记在 web.db 的 `plugin_module_preinstalls` 中，记下的 Project 不再列入。管理员之后从某个 Project 移除了该模块，那个 Project 就一直没有它。本批次中这样的模块只有一个，即 [browser-automation](2026-11-19-browser-use-plugin.zh.md) 的 Agent 浏览器：不列入的话，每个已有 Project 升级后都会失去浏览器。
 
 ### 生效范围
 

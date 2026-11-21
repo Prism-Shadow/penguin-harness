@@ -23,13 +23,13 @@ import {
 } from "../src/features/chat/stream-selection-menu";
 
 import type { LinkRow } from "@prismshadow/penguin-web-plugin";
-import { browserLinkRow } from "../src/features/builtin-browser/link-row";
+import { browserLinkRow } from "../../../plugins/browser-automation/src/web/link-row";
 import type { ComposerControl } from "../src/features/chat/chat-input";
 import { ReferenceChip } from "../src/features/chat/reference-chip";
 import { excerptLabel } from "../src/lib/selection-menu";
 import type { ComposerReference } from "../src/lib/workspace-tree";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
-import { S as B } from "../src/features/builtin-browser/strings";
+import { S as B } from "../../../plugins/browser-automation/src/web/strings";
 import { en } from "../src/lib/strings-en";
 
 /** Toasts raised during a test (the real store would leave its dismiss timers running). */
@@ -48,9 +48,11 @@ vi.mock("@prismshadow/penguin-ui", async (importOriginal) => {
 /** Links handed to the built-in browser (its real call talks to the server and the dock). */
 const openedInBrowser = vi.hoisted(() => [] as string[]);
 
-vi.mock("../src/features/builtin-browser/browser-actions", async (importOriginal) => {
+vi.mock("../../../plugins/browser-automation/src/web/browser-actions", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("../src/features/builtin-browser/browser-actions")>();
+    await importOriginal<
+      typeof import("../../../plugins/browser-automation/src/web/browser-actions")
+    >();
   return {
     ...actual,
     openLinkInBrowser: (url: string) => {

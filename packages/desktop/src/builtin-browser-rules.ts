@@ -7,7 +7,7 @@
  * permission prompts a page gets, which relayed commands type and how their guest takes the
  * window's keyboard focus first, the guests' right-click menu, and how a tab's load is added up
  * from its processes. What the browser does with its pages — the page scripts, the tab registry,
- * import, what load is too much — is the server platform's (packages/server/src/builtin-browser),
+ * import, what load is too much — belongs to the browser-automation plugin's server half (plugins/browser-automation/src/server),
  * delivered by push.
  */
 import type {

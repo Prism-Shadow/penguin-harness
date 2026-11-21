@@ -34,7 +34,7 @@ const GUARDED: ReadonlyArray<readonly [string, string]> = [
   ["features/company/org-dialogs.tsx", "dropDraft"],
   ["features/company/org-dialogs.tsx", "doDelete"],
   ["features/models/preset-sync.tsx", "runPresetSync"],
-  ["features/builtin-browser/browser-section.tsx", "revokeChrome"],
+  ["plugins/browser-automation/src/web/browser-section.tsx", "revokeChrome"],
   ["features/chat/archived-session-stub.tsx", "remove"],
   ["features/settings/archived-sessions-section.tsx", "deletePending"],
 ];

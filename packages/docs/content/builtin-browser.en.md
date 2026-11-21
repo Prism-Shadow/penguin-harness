@@ -22,6 +22,7 @@ Where to go:
 - **Your own Chrome** works on any server whose administrator allows it, which is the default. It needs Chrome 116 or later and the PenguinHarness Browser extension.
 - The desktop app uses the built-in browser until you [switch](#switch-between-built-in-and-chrome); every other server offers only Chrome. Your agents never choose the backend, and a backend that is unavailable never falls back to the other.
 - An agent drives the browser of the person driving its conversation: the one who sent the message that started the run, or, for a scheduled task, the person who created it. On a server with several accounts, everyone pairs their own Chrome, and an agent never uses anyone else's.
+- The browser comes with the preinstalled `browser-automation` plugin: its server module, its panel and settings in the app, the `penguin browser` command and the Skill. Every Project lists the server module, so the browser is on by default. An administrator can stop the module under **Settings › Plugins**, or take it out of a Project's plugin list; while no Project on the server runs it, the **Browser** panel, the two Browser settings pages and the link menu's **Open in built-in browser** are gone, and `penguin browser status` says the browser is off.
 
 ## Open the Browser panel
 

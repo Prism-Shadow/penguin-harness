@@ -1,6 +1,6 @@
 /**
  * A new page's tab id, found as early as its `<webview>` knows it
- * (features/builtin-browser/guest-id.ts). In the desktop app Electron reports `did-attach` and
+ * (plugins/browser-automation/src/web/guest-id.ts). In the desktop app Electron reports `did-attach` and
  * `did-start-loading` before the element has been told its id, and the claim used to wait for
  * the next event that found one: the page's `dom-ready`, seconds later on a slow homepage, all of
  * which the new tab spent off screen, reading as a blank "New tab".
@@ -10,7 +10,7 @@ import {
   GUEST_ID_RETRIES,
   GUEST_ID_RETRY_MS,
   watchGuestId,
-} from "../src/features/builtin-browser/guest-id";
+} from "../../../plugins/browser-automation/src/web/guest-id";
 
 /** A `<webview>` as far as the watcher sees it: events, and an id that arrives when `attach` says. */
 class FakeView extends EventTarget {

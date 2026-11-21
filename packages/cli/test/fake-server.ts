@@ -356,6 +356,12 @@ export class FakeServer {
    * path below that prefix, its query and its body. The default is what a server outside the
    * desktop app answers.
    */
+  /**
+   * What `GET /api/contributions` answers: the plugin server modules running now, none by default.
+   * A server older than plugin modules answers no `modules` at all.
+   */
+  contributions: Json = { modules: [] };
+
   builtinBrowser: (req: { method: string; path: string; query: URLSearchParams; body?: Json }) => {
     status?: number;
     body?: unknown;
@@ -1940,6 +1946,8 @@ export class FakeServer {
       }
     }
     const viaToken = authorization !== undefined;
+
+    if (apiPath === "/api/contributions" && method === "GET") return this.json(this.contributions);
 
     if (apiPath.startsWith("/api/builtin-browser/")) {
       const answer = this.builtinBrowser({

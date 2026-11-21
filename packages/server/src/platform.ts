@@ -215,7 +215,6 @@ import { OrgCache } from "@prismshadow/penguin-library-organization";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
-import { BuiltinBrowserModule } from "./builtin-browser/module.js";
 import { AgentApiModule } from "./amsp/module.js";
 
 /**
@@ -649,7 +648,6 @@ export class PluginModulesModule {}
     WorkbenchesModule,
     ModelToolsModule,
     ThemesModule,
-    BuiltinBrowserModule,
     AgentApiModule,
     Startup,
   ],
