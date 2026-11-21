@@ -218,6 +218,12 @@ export const zh = {
         "设置对话框停在「外观」页：主题、明暗、强调色、五档字号与字体组合——主题切换就在这里。",
       how: "侧栏底部的账户菜单 › 设置 › 外观。",
     },
+    "settings-storage": {
+      title: "存储空间",
+      description:
+        "设置对话框停在「存储空间」页：数据根的空间占用与按分类的用量条，按 Project 与按文件夹的明细，以及清理临时文件与旧对话的审阅弹窗。",
+      how: "侧栏底部的账户菜单 › 设置 › 存储空间。",
+    },
     "desktop-window": {
       title: "桌面窗口",
       description:
@@ -559,7 +565,7 @@ export const zh = {
       charts: {
         title: "图表",
         description:
-          "统计图的基础：所有图表共用的绘图原语、当前主题的图表令牌，以及建立在它们之上的每一种图表——环形图、环形仪表、图例、趋势与用量柱、请求与成功率、迷你折线、轨迹时间线。",
+          "统计图的基础：所有图表共用的绘图原语、当前主题的图表令牌，以及建立在它们之上的每一种图表——环形图、环形仪表、图例、趋势与用量柱、请求与成功率、迷你折线、轨迹时间线与用量条。",
       },
       avatars: {
         title: "头像",
@@ -587,7 +593,8 @@ export const zh = {
       },
       data: {
         title: "数据",
-        description: "表格、条目卡片与事实行、列表行及其加载与空状态、键值对与日志。",
+        description:
+          "表格、条目卡片与事实行、列表行及其加载与空状态、键值对与日志，以及先审阅、再删除的列表。",
       },
       machines: {
         title: "机器",
@@ -1131,6 +1138,23 @@ export const zh = {
       reduced: "已开启减少动态效果，回答到达即显示",
     },
     charts: {
+      usageBar: {
+        title: "用量条",
+        hint: "一个总量按部分堆叠：宽度按数值，过小的部分保留一条细缝，为 0 的不画；分类是身份，取色槽，「其他」取中性色。细的一档用在列表行里，按最大的一行定比例。",
+        label: "空间占用",
+        used: (size: string) => `已用 ${size}`,
+        empty: "尚未测量",
+        kinds: {
+          traces: "轨迹",
+          agentState: "Agent State",
+          workspaces: "临时工作区",
+          scratchpads: "草稿区",
+          caches: "缓存",
+          logs: "日志",
+          plugins: "插件",
+          other: "其他",
+        },
+      },
       parts: {
         primitives: "绘图原语",
         primitivesHint:
@@ -1963,6 +1987,36 @@ export const zh = {
       },
     },
     data: {
+      reviewList: {
+        title: "先审阅、再删除的列表",
+        hint: "按类别分组，组头写条数、大小与全选，组头下以淡色一行写明删除的后果；每个条目一行，不能勾选的行禁用勾选框，悬停说明原因。",
+        agent: "写作助手",
+        orphan: "已删除对话的草稿区",
+        idle: "闲置对话的草稿区",
+        idleNote:
+          "删除后这些对话里附带的图片与文件不再显示，继续对话时模型也找不到它的计划与附件。",
+        caches: "Agent 缓存",
+        cachesNote: "Agent 下次需要时会重新安装。",
+        chats: "对话",
+        inUse: "正在使用",
+        running: "正在运行",
+        archived: "已归档",
+        titles: [
+          "季度报告草稿",
+          "竞品调研",
+          "发布说明 0.2.13",
+          "修复登录页的表单校验",
+          "整理用户访谈",
+        ],
+        ago: (days: number) => (days === 0 ? "今天" : `${days} 天前`),
+        chosen: (n: number, size: string) => `已选 ${n} 项，${size}`,
+        labels: {
+          selectAll: "全选",
+          deselectAll: "取消全选",
+          count: (n: number) => `${n} 项`,
+          select: (title: string) => `选择「${title}」`,
+        },
+      },
       table: "表格",
       tableHint:
         "表头只有一种：小号字阶、中等字重、次要墨色与一条分隔线；独立的表格自带边框，表头在次级表面上。",

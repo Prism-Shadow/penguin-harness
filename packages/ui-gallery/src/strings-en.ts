@@ -187,6 +187,12 @@ export const en: GalleryStrings = {
         "The settings dialog on its Appearance page: theme, mode, accent, the five text sizes and the font pairing — where theme switching lives.",
       how: "The account menu at the bottom of the sidebar › Settings › Appearance.",
     },
+    "settings-storage": {
+      title: "Storage",
+      description:
+        "The settings dialog on its Storage page: what the data root holds with its usage bar by category, the breakdowns by Project and by folder, and the review dialogs that clean up temporary files and old chats.",
+      how: "The account menu at the bottom of the sidebar › Settings › Storage.",
+    },
     "desktop-window": {
       title: "Desktop window",
       description:
@@ -541,7 +547,7 @@ export const en: GalleryStrings = {
       charts: {
         title: "Charts",
         description:
-          "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them — the donut, the ring gauge, the legend, cost trend and token bars, requests and success rate, the sparkline, the Trace timeline.",
+          "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them — the donut, the ring gauge, the legend, cost trend and token bars, requests and success rate, the sparkline, the Trace timeline and the usage bar.",
       },
       avatars: {
         title: "Avatars",
@@ -571,7 +577,7 @@ export const en: GalleryStrings = {
       data: {
         title: "Data",
         description:
-          "Tables, entity cards and fact rows, list rows with their loading and empty states, label/value pairs and the log view.",
+          "Tables, entity cards and fact rows, list rows with their loading and empty states, label/value pairs, the log view and the review-before-delete list.",
       },
       machines: {
         title: "Machines",
@@ -1142,6 +1148,23 @@ export const en: GalleryStrings = {
       reduced: "reduced motion is on, so the reply shows as it arrives",
     },
     charts: {
+      usageBar: {
+        title: "Usage bar",
+        hint: "One total stacked by its parts: widths follow the values, a sliver stays visible and a zero is not drawn; the parts are identities, so palette slots, and the neutral for Other. The thin size sits in list rows, scaled to the largest row.",
+        label: "Storage used",
+        used: (size: string) => `${size} used`,
+        empty: "Not measured yet",
+        kinds: {
+          traces: "Traces",
+          agentState: "Agent State",
+          workspaces: "Temporary workspaces",
+          scratchpads: "Scratchpads",
+          caches: "Caches",
+          logs: "Logs",
+          plugins: "Plugins",
+          other: "Other",
+        },
+      },
       parts: {
         primitives: "Primitives",
         primitivesHint:
@@ -2008,6 +2031,37 @@ export const en: GalleryStrings = {
       },
     },
     data: {
+      reviewList: {
+        title: "Review before delete",
+        hint: "Grouped by kind: the header gives the count, the size and Select all, with one muted line under it on what removing the group costs; one line per item, and an item that cannot be chosen has its box disabled, its reason on hover.",
+        agent: "Writer",
+        orphan: "Scratchpads of deleted chats",
+        idle: "Scratchpads of idle chats",
+        idleNote:
+          "Images and files attached in these chats stop showing, and a continued chat can no longer find its plans and attachments.",
+        caches: "Agent caches",
+        cachesNote: "The Agent installs them again the next time it needs them.",
+        chats: "Chats",
+        inUse: "In use",
+        running: "Running",
+        archived: "Archived",
+        titles: [
+          "Quarterly report draft",
+          "Competitor research",
+          "Release notes 0.2.13",
+          "Fix the login form validation",
+          "Sort the user interviews",
+        ],
+        ago: (days: number) =>
+          days === 0 ? "today" : days === 1 ? "1 day ago" : `${days} days ago`,
+        chosen: (n: number, size: string) => `${n} selected, ${size}`,
+        labels: {
+          selectAll: "Select all",
+          deselectAll: "Deselect all",
+          count: (n: number) => (n === 1 ? "1 item" : `${n} items`),
+          select: (title: string) => `Select ${title}`,
+        },
+      },
       table: "Table",
       tableHint:
         "One header style: the small rung, medium weight, muted ink and a rule; a table on its own is framed, its header on the muted surface.",

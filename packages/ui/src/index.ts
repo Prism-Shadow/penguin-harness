@@ -215,6 +215,8 @@ export * from "./components/data/list-row/list-row";
 export * from "./components/data/key-value/key-value";
 export * from "./components/data/log-view/log-view";
 export * from "./components/data/table/table";
+// The review before a removal: groups of one-line rows to choose from, with Select all.
+export * from "./components/data/review-list/review-list";
 
 // W4-C — navigation: the nav list and its rows, the rail of a paged dialog or a settings page.
 export * from "./components/navigation/nav-list/nav-list";
@@ -245,6 +247,8 @@ export * from "./components/charts/cartesian/line-chart";
 export * from "./components/charts/pie-chart/pie-chart";
 export * from "./components/charts/scatter-chart/scatter-chart";
 export * from "./components/charts/gauge/gauge";
+// The usage bar: one total split into its parts as a stack, with its legend of sizes.
+export * from "./components/charts/usage-bar/usage-bar";
 
 // W8-B — the command palette: the search box over the caller's actions, and its filter.
 export * from "./components/overlays/command-palette/command-palette";

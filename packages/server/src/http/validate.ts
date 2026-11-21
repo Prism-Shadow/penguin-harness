@@ -17,8 +17,6 @@ import type {
   SessionListOrder,
   SessionListPaging,
 } from "../services/session-service.js";
-import { ADOPTED_AT_HEADER, listingViewOf } from "../runtime/session-sources.js";
-import type { ListingView } from "../runtime/session-sources.js";
 
 export {
   badRequest,
@@ -41,13 +39,7 @@ export {
 } from "@prismshadow/penguin-library-http/validate";
 export type { StringRule, NumberRule } from "@prismshadow/penguin-library-http/validate";
 
-/**
- * Who reads a Session list or row (session-sources.ts sourceSeenBy): a server that adopted this
- * one says when, and sees the Sessions held here before then as CLI tasks.
- */
-export function listingViewOfRequest(c: Context): ListingView {
-  return listingViewOf(c.req.header(ADOPTED_AT_HEADER));
-}
+export { listingViewOfRequest } from "../runtime/listing-view.js";
 
 /**
  * Parse an activity cursor, `<lastActiveAt>,<sessionId>`, or null when the text is not one.

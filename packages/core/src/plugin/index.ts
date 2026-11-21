@@ -66,6 +66,11 @@ export { sessionShell } from "../environment/tools/command/shell.js";
  */
 export { atomicWriteFile } from "../internal/atomic-write.js";
 export type { AtomicWriteOptions } from "../internal/atomic-write.js";
+/**
+ * The id rule (letters, digits, `_` and `-`), for a plugin that checks an id it was handed before
+ * it builds a path from it. Like the writer above it reaches nothing beyond its own file.
+ */
+export { isValidId } from "../state/ids.js";
 
 export type * from "./sandbox.js";
 export type * from "./agent-state.js";

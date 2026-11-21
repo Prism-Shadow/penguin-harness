@@ -29,12 +29,28 @@ export type { Channels, Clock, Config, Db, Desktop, Log, Paths } from "../hmr/ca
 export type { Users } from "@prismshadow/penguin-library-auth";
 export type { SessionDrivers, SessionIndex } from "@prismshadow/penguin-library-session";
 export type { Settings, UiPrefsStore } from "@prismshadow/penguin-library-setting";
+export type { Access, ProjectConfigStore, Projects } from "@prismshadow/penguin-library-project";
+export type {
+  SessionCategory,
+  TraceIndex,
+  TraceIndexStore,
+} from "@prismshadow/penguin-library-trace";
+export type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
+export type { DataLayout } from "../mechanisms/data-layout.js";
+export type { DeletingFolders, DeletingPlace } from "../mechanisms/deleting-folders.js";
+export type { SessionActivity } from "../runtime/session-activity.js";
+export type { ListingView } from "../runtime/listing-view.js";
+export type { AgentConfig } from "../mechanisms/agents.js";
+export type { FileReveal } from "../mechanisms/workspace.js";
 export type { AppEnv } from "../auth/middleware.js";
 export type { ShellPort } from "../services/desktop-update-port.js";
 export type { UpgradeCaller, WebSocketUpgrade } from "../http/upgrade-endpoints.js";
 export type { MeRoutes, MeRoutesSlots, OwnedPref } from "../http/routes/me.js";
 export { HttpError, badRequest, errorBody, isHttpError } from "../http/errors.js";
 export { publicOriginOf } from "@prismshadow/penguin-library-http/public-origin";
+export { parseNonNegativeInt, readJson } from "@prismshadow/penguin-library-http/validate";
+export { listingViewOfRequest } from "../runtime/listing-view.js";
+export { FsLimiter } from "../services/tree-purge.js";
 export { requireHuman } from "../auth/require-human.js";
 export { userChannelKey } from "../http/user-channel.js";
 export { ensureInstallId } from "../install-id.js";

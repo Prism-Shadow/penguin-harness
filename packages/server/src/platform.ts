@@ -118,6 +118,11 @@ import { AgentConfigService } from "./services/agent-config-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { AgentRoutes } from "./services/agent-routes.js";
 import { AgentService } from "./services/agent-service.js";
+import { DeletingFoldersService } from "./services/deleting-folders.js";
+import { RootDataLayout } from "./services/data-layout.js";
+import { DataLayout } from "./mechanisms/data-layout.js";
+import { DeletingFolders } from "./mechanisms/deleting-folders.js";
+import { SessionActivity } from "./runtime/session-activity.js";
 import { MemoryService } from "./services/memory-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
@@ -307,6 +312,7 @@ export class Startup {
     ConsoleLog,
     SystemClock,
     ConfigPaths,
+    RootDataLayout,
   ],
   exports: [
     Config,
@@ -322,6 +328,7 @@ export class Startup {
     Log,
     Clock,
     Paths,
+    DataLayout,
   ],
 })
 export class RuntimeModule {}
@@ -403,6 +410,7 @@ export class ProjectsModule {}
     Sessions,
     SessionServiceIface,
     SessionEnv,
+    SessionActivity,
     ScheduleTaskRunner,
     ScheduleSessionCreator,
     MessagingTaskRunner,
@@ -491,11 +499,12 @@ export class TracesModule {}
     AgentConfigService,
     SnapshotService,
     AgentService,
+    DeletingFoldersService,
     MemoryService,
     BenchmarkService,
     AgentRoutes,
   ],
-  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks],
+  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks, DeletingFolders],
 })
 export class AgentsModule {}
 

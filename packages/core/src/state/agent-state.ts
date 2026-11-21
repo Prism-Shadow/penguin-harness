@@ -37,6 +37,7 @@ import {
   installPluginWorkbenches,
 } from "./plugin-workbenches.js";
 import { loadAgentVault } from "./agent-vault.js";
+import { assertValidId, isValidId } from "./ids.js";
 import { isWindowsReservedName, WINDOWS_RESERVED_RULE } from "./reserved-names.js";
 import {
   AGENT_ID_PLACEHOLDER,
@@ -96,21 +97,9 @@ import {
   toolsDir,
 } from "./paths.js";
 
-/** project_id / agent_id / skill_name only allow letters, digits, underscore `_`, and hyphen `-` (prevents path traversal). */
-const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
-export type IdKind = "project_id" | "agent_id" | "skill_name";
-
-export function isValidId(id: string): boolean {
-  return ID_PATTERN.test(id);
-}
-
-export function assertValidId(kind: IdKind, id: string): void {
-  if (!ID_PATTERN.test(id)) {
-    throw new Error(
-      `Invalid ${kind} ${JSON.stringify(id)}: only letters, digits, "_" and "-" are allowed.`,
-    );
-  }
-}
+// The id rule lives in its own module, which a code plugin bundles through core's plugin subpath.
+export { assertValidId, isValidId };
+export type { IdKind } from "./ids.js";
 
 /** A loaded Agent State handle. */
 export interface AgentState {

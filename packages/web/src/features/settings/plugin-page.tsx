@@ -25,6 +25,7 @@ import type { PluginPage, PluginSectionRef } from "../../lib/plugin-pages";
 import { useSessionsIfAny } from "../../state/sessions";
 import { SkillIcon } from "../skills";
 import { PluginsSection } from "./plugins-section";
+import { useSettingsNavigation } from "./settings-navigation";
 
 type Page = PluginPage<SettingsSectionCode>;
 
@@ -94,14 +95,17 @@ function ContributedPart({
   titled: boolean;
 }) {
   const { Body } = section.code;
+  // Its links to other pages go the dialog's way, through the leave guard.
+  const navigation = useSettingsNavigation();
+  const openPage = (key: string) => navigation?.open(key);
   return (
     <div data-settings-anchor={section.data.key}>
       {titled ? (
         <RuledSection title={section.code.label()} info={section.code.info?.()} level={3}>
-          <Body />
+          <Body openPage={openPage} />
         </RuledSection>
       ) : (
-        <Body />
+        <Body openPage={openPage} />
       )}
     </div>
   );

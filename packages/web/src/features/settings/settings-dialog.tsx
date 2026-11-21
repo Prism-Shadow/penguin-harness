@@ -247,6 +247,8 @@ export function SettingsDialog({
   );
 
   const ContributedBody = current === null ? undefined : contributedByKey.get(current)?.code.Body;
+  // Every way to another page goes through the same guard: the rail, and a contributed page's
+  // own link to another (`openPage`).
   const goTo = (key: SettingsSectionKey) => {
     if (key !== current)
       void guardLeave(() => {
@@ -285,7 +287,9 @@ export function SettingsDialog({
         {current === "moduleRequests" && <ModuleRequestsPage />}
         {current === "sandbox" && <PluginsSection host="sandbox" />}
         {current === "users" && <AdminUsersSection />}
-        {ContributedBody !== undefined && <ContributedBody />}
+        {ContributedBody !== undefined && (
+          <ContributedBody openPage={(key) => goTo(key as SettingsSectionKey)} />
+        )}
         {currentPage !== undefined && (
           <PluginPageBody
             key={currentPage.key}
