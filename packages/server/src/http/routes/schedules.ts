@@ -6,9 +6,9 @@
  */
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Hono } from "hono";
-import type { AppEnv } from "../auth/middleware.js";
-import type { Config } from "../hmr/capabilities.js";
-import type { AgentConfig } from "../mechanisms/agents.js";
+import type { AppEnv } from "../../auth/middleware.js";
+import type { Config } from "../../hmr/capabilities.js";
+import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import type { Schedules, Scheduling } from "@prismshadow/penguin-library-session";
 <<<<<<< HEAD
