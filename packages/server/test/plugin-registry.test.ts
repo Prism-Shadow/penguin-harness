@@ -79,6 +79,20 @@ const VALID_ENTRY: IndexDocumentEntry = {
 };
 
 describe("parsePluginIndex", () => {
+  it("only lets the serving machine report a downloaded version", () => {
+    expect(
+      parsePluginIndex(
+        [
+          {
+            ...VALID_ENTRY,
+            localInstall: { version: "9.9.9", libraryOnly: true, updateAvailable: false },
+          },
+        ],
+        "published",
+      ),
+    ).toEqual([VALID_ENTRY]);
+  });
+
   it("accepts a flat array of per-version entries and preserves order", () => {
     const doc = [
       VALID_ENTRY,
@@ -1148,6 +1162,9 @@ describe("the route's own merge", () => {
     const installedHere: IndexDocumentEntry = {
       ...VALID_ENTRY,
       name: "@example/penguin-plugin-here",
+      version: "1.1.0",
+      channels: [{ kind: "github", url: "https://example.com/release.tgz" }],
+      integrity: "sha512-test",
       title: "Old title",
       titleZh: "旧名称",
     };
@@ -1169,6 +1186,7 @@ describe("the route's own merge", () => {
       await writeFile(
         path.join(dir, "ifaces.json"),
         contentTable(installedHere.name, {
+          workbenches: ["slides"],
           card: {
             title: "Local demo",
             titleZh: "本地示例",
@@ -1193,6 +1211,7 @@ describe("the route's own merge", () => {
       expect(body.plugins).toEqual([
         {
           ...installedHere,
+          localInstall: { version: "1.0.0", libraryOnly: true, updateAvailable: true },
           title: "Local demo",
           titleZh: "本地示例",
           descriptionZh: "一个示例插件。",
@@ -1205,7 +1224,7 @@ describe("the route's own merge", () => {
             tint: false,
           },
         },
-        bare,
+        { ...bare, localInstall: { version: "1.0.0", libraryOnly: false, updateAvailable: false } },
         elsewhere,
       ]);
       const served = await routes.request(
@@ -1242,7 +1261,13 @@ describe("the route's own merge", () => {
         bases: () => [{ file: path.join(prefix, "package.json"), builtin: false }],
       });
       const body = (await (await routes.request("/")).json()) as PluginIndexResponse;
-      expect(body.plugins).toEqual([{ ...entry, shortDescription: "Risky." }]);
+      expect(body.plugins).toEqual([
+        {
+          ...entry,
+          shortDescription: "Risky.",
+          localInstall: { version: "1.0.0", libraryOnly: false, updateAvailable: false },
+        },
+      ]);
       const served = await routes.request(`/icon?name=${encodeURIComponent(entry.name)}`);
       expect(served.status).toBe(404);
     } finally {

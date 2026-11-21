@@ -96,6 +96,7 @@ import type {
   PluginFilesResponse,
   PluginIndexResponse,
   PluginLibraryResponse,
+  PluginMarketResponse,
   PluginReadmeResponse,
   PrefsResponse,
   BackgroundImagePutResponse,
@@ -2275,6 +2276,7 @@ const moduleLedger = (store: DemoStore): PluginModuleRequestsResponse => ({
 router
   .get("/api/plugins", ({ store }): PluginLibraryResponse => store.f.library)
   .get("/api/plugins/registry", ({ store }): PluginIndexResponse => store.f.pluginIndex)
+  .get("/api/plugins/market", ({ store }): PluginMarketResponse => store.f.market)
   // The demo installs no languages plugin: every fence is one the bundle carries or plain.
   .get("/api/languages", (): LanguageIndexResponse => ({ languages: [] }))
   .get("/api/plugins/registry/readme", ({ store, query }): PluginReadmeResponse => {
@@ -2317,7 +2319,7 @@ router
     skills: installedOf(ctx).skills,
     hooks: installedOf(ctx).hooks,
     mcpServers: mcpServerItems(ctx),
-    workbenches: [],
+    workbenches: installedOf(ctx).pluginWorkbenches ?? [],
     modules: ctx.store.f.pluginModules,
   }))
   // A plugin's server module asked for by hand: the demo's server runs what is asked of it.

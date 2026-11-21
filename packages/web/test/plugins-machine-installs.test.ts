@@ -63,7 +63,7 @@ async function openInstalls(machines: FakeMachine[]) {
     },
   );
   const server = agentServer(undefined, { machines, library: [CHARTS] });
-  await mountAgentApp(h(PluginsPage), { route: "/plugins", at: "/plugins" });
+  await mountAgentApp(h(PluginsPage), { route: "/plugins", at: "/plugins?plugin=charts" });
   await waitFor(() =>
     [...document.querySelectorAll("button")].some(
       (b) => b.getAttribute("aria-label") === `${en.skills.manageInstall} charts`,
