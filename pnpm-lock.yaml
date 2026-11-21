@@ -1099,6 +1099,9 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
       '@xterm/headless':
         specifier: ^5.5.0
         version: 5.5.0
@@ -1208,9 +1211,6 @@ importers:
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.13.3
       '@types/which':
         specifier: ^3.0.4
         version: 3.0.4

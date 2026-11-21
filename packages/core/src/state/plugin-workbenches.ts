@@ -4,6 +4,7 @@ import path from "node:path";
 import type { LibraryPlugin } from "../plugin/library-reader.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import { workbenchesDir } from "./paths.js";
+import { isWindowsReservedName, WINDOWS_RESERVED_RULE } from "./reserved-names.js";
 
 export interface InstalledWorkbench {
   name: string;
@@ -37,6 +38,14 @@ async function receipt(dir: string): Promise<Receipt | null> {
       return null;
     throw error;
   }
+}
+/**
+ * The plugin that installed the workbench folder `dir`, from its install receipt; null for a
+ * workbench made in place. The receipt is written by the install, inside the Agent State, which
+ * a sandboxed command cannot write.
+ */
+export async function installedPlugin(dir: string): Promise<string | null> {
+  return (await receipt(dir))?.plugin ?? null;
 }
 export async function listInstalledWorkbenches(
   root: string,
@@ -105,6 +114,12 @@ export async function assertPluginWorkbenchesInstallable(
         if (error.code === "ENOENT") return null;
         throw error;
       });
+      // A new folder takes no name Windows refuses; one already on disk is updated as it is.
+      if (existing === null && isWindowsReservedName(workbench.name)) {
+        throw new Error(
+          `Invalid workbench name ${JSON.stringify(workbench.name)}: ${WINDOWS_RESERVED_RULE}.`,
+        );
+      }
       if (existing) {
         if (!existing.isDirectory()) throw new WorkbenchNameTakenError(workbench.name);
         const current = await receipt(dir);

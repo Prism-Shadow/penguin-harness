@@ -60,6 +60,7 @@ import {
   resumeTrace,
   scratchpadDir,
   tracesDir,
+  updatedModel,
 } from "@prismshadow/penguin-core";
 import type { CompactionMode, AmspRecord } from "@prismshadow/penguin-core";
 import { promptLabel } from "./trace-prompt-label.js";
@@ -138,6 +139,11 @@ function isAssistantText(msg: AmspRecord): boolean {
     typeof p.text === "string" &&
     p.text.trim() !== ""
   );
+}
+
+/** A `session_update`: a Session-level setting changed, at a Task boundary (see SessionUpdatePayload). */
+function isSessionUpdate(msg: AmspRecord): boolean {
+  return msg.type === "event_msg" && (msg.payload as { type?: string }).type === "session_update";
 }
 
 function isTaskStartingUser(msg: AmspRecord): boolean {
@@ -914,8 +920,16 @@ export class TraceService implements Traces {
       streamed && unitRecords.size > 0
         ? [...unitRecords.keys()].sort((a, b) => a - b).flatMap((k) => unitRecords.get(k)!)
         : await this.expandMessages(projectId, windowRaw, ctx);
-    // The start shard was read for the window above, so its head is on hand.
-    const startMeta = shardMessages.get(start.pos)?.find(isSessionMeta);
+    // The start shard was read for the window above, so its head is on hand. A completed
+    // switch's session_update ahead of the window's start in that shard names the model the
+    // context from there on runs on (the next Task's task_begin can sit behind it, before the
+    // next file opens): the window would otherwise seed the model left behind.
+    const startShard = shardMessages.get(start.pos);
+    const startMeta = startShard?.find(isSessionMeta);
+    let switchedModel: { provider: string; model_id: string } | undefined;
+    for (const m of startShard?.slice(0, start.ordinal) ?? []) {
+      switchedModel = updatedModel(m) ?? switchedModel;
+    }
     return {
       messages: expanded,
       ...(before !== undefined ? { before } : {}),
@@ -923,10 +937,10 @@ export class TraceService implements Traces {
       units: windowUnits,
       ...(startMeta
         ? {
-            contextModel: {
-              provider: startMeta.payload.provider,
-              modelId: startMeta.payload.model_id,
-            },
+            contextModel:
+              switchedModel !== undefined
+                ? { provider: switchedModel.provider, modelId: switchedModel.model_id }
+                : { provider: startMeta.payload.provider, modelId: startMeta.payload.model_id },
             agentState: startMeta.payload.agent_state,
           }
         : {}),
@@ -1079,12 +1093,14 @@ export class TraceService implements Traces {
     for (let i = position.ordinal + 1; i < targetShard.length; i++) {
       const msg = targetShard[i]!;
       const p = msg.payload as { type?: string; status?: string };
-      // The next user Task and housekeeping compaction both belong after the selected reply —
-      // the next Task from its task_begin on, so the fork never ends on an unclosed one.
+      // The next user Task, housekeeping compaction and a model switch all belong after the
+      // selected reply — the next Task from its task_begin on, so the fork never ends on an
+      // unclosed one; a switch's session_update closes the context it copies.
       if (
         isTaskStartingUser(msg) ||
         isTaskBegin(msg) ||
-        (msg.type === "event_msg" && p.type === "compaction_begin")
+        (msg.type === "event_msg" && p.type === "compaction_begin") ||
+        isSessionUpdate(msg)
       ) {
         break;
       }
@@ -1113,7 +1129,8 @@ export class TraceService implements Traces {
     const firstMeta = shards.flat().find(isSessionMeta);
     if (!firstMeta) throw invalid("The source Trace has no session metadata.");
     // The fork's model is the target shard's: one shard is one model context, and a model
-    // switch opens the next context in a new shard headed by its own session_meta.
+    // switch's next context opens a new shard headed by its own session_meta (the cut stops
+    // at the switch's session_update, above).
     const targetMeta = targetShard.find(isSessionMeta) ?? firstMeta;
     const model = { provider: targetMeta.payload.provider, modelId: targetMeta.payload.model_id };
 
@@ -1887,9 +1904,12 @@ export class TraceService implements Traces {
       // created, and its timestamp has nothing to do with this turn (it also gets
       // rewritten verbatim at the start of a new file after compaction splits the file).
       if (messages[k]!.type === "session_meta") continue;
-      // Nor do Task records: the next Task's task_begin can sit at the end of this turn's
-      // file (behind a closing compaction), written when that next Task started.
+      // Nor do Task records, nor a completed switch's session_update: the next Task's
+      // task_begin can sit at the end of this turn's file (behind a closing compaction or
+      // switch), written when that next Task started, and the switch happens at a Task
+      // boundary, possibly hours after this turn ended.
       if (isTaskRecord(messages[k]!)) continue;
+      if (isSessionUpdate(messages[k]!)) continue;
       const ts = messages[k]!.timestamp;
       if (t.endTs === "" || ts > t.endTs) t.endTs = ts;
     }

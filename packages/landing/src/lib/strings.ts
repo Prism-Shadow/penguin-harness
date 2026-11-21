@@ -758,6 +758,14 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
               "谁开启了这个 Session：user、api、schedule、subagent、cli、company 或 workbench。",
           },
         },
+        session_update: {
+          summary:
+            "Session 的一项设置发生变更，记下变更后的取值。目前只有一项：下一个上下文所用的模型，在会话内切换模型完成时写下，位于被离开的 Trace 文件末尾。",
+          fields: {
+            provider: "下一个上下文所用模型的提供方分组；与 model_id 成对出现。",
+            model_id: "下一个上下文发给提供方的模型 id；与 provider 成对出现。",
+          },
+        },
         text: {
           summary: "一段完整文本：用户的输入，或模型的回复。",
           fields: {

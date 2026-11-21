@@ -7,6 +7,7 @@
 import { useState } from "react";
 import {
   AgentAvatar,
+  AppShell,
   Badge,
   Button,
   Card,
@@ -26,7 +27,13 @@ import {
   PageFrame,
   PageHeader,
   ProviderLogo,
+  Rail,
+  RailItem,
   RuledSection,
+  SidebarAccountButton,
+  SidebarFrame,
+  SidebarNavArea,
+  SidebarSwitcherButton,
   Text,
 } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
@@ -52,6 +59,8 @@ export function LayoutBoard() {
   const [query, setQuery] = useState("");
   const [groupOpen, setGroupOpen] = useState(true);
   const [navPage, setNavPage] = useState<NavPage>("overview");
+  const [shellWidth, setShellWidth] = useState<number | null>(null);
+  const [shellFolded, setShellFolded] = useState(false);
   return (
     <div className="gf-board">
       <BoardGroup title={t.page} aside={t.pageHint}>
@@ -211,6 +220,72 @@ export function LayoutBoard() {
               ))}
             </NavList>
           </div>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.shell} aside={t.shellHint}>
+        {/* The app window as the Web App lays it out: the pinned sidebar's end edge drags its
+            width (and steps it with the arrow keys once focused), a double click puts back the
+            theme's width, and folding to the rail and out again keeps the width dragged. */}
+        <div className="lib-box" style={{ height: 360 }}>
+          <AppShell
+            navCollapsed={shellFolded}
+            navResize={{ width: shellWidth, label: t.shellResize, onChange: setShellWidth }}
+            nav={
+              shellFolded ? (
+                <Rail
+                  head={
+                    <RailItem
+                      label={t.shellUnfold}
+                      glyph={ICONS.chevronRightPipe}
+                      className="shrink-0"
+                      onClick={() => setShellFolded(false)}
+                    />
+                  }
+                >
+                  {NAV_PAGES.slice(0, 3).map((page) => (
+                    <RailItem
+                      key={page.key}
+                      label={t.navRows[page.key]}
+                      glyph={page.glyph}
+                      active={navPage === page.key}
+                      onClick={() => setNavPage(page.key)}
+                    />
+                  ))}
+                </Rail>
+              ) : (
+                <SidebarFrame
+                  switcher={<SidebarSwitcherButton label={t.shellProject} onClick={() => {}} />}
+                  collapse={{ label: t.shellFold, onClick: () => setShellFolded(true) }}
+                  pinned={
+                    <SidebarNavArea>
+                      {NAV_PAGES.slice(0, 3).map((page) => (
+                        <NavRow
+                          key={page.key}
+                          surface="muted"
+                          label={t.navRows[page.key]}
+                          glyph={page.glyph}
+                          active={navPage === page.key}
+                          onClick={() => setNavPage(page.key)}
+                        />
+                      ))}
+                    </SidebarNavArea>
+                  }
+                  account={
+                    <SidebarAccountButton
+                      avatar={<AgentAvatar id={AGENT_ID} size={24} />}
+                      name={t.entityName}
+                      expanded={false}
+                      onClick={() => {}}
+                    />
+                  }
+                />
+              )
+            }
+          >
+            <Text variant="caption" className="block px-3 py-6 text-center">
+              {t.shellBody}
+            </Text>
+          </AppShell>
         </div>
       </BoardGroup>
     </div>
