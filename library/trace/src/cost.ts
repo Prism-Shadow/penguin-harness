@@ -6,6 +6,8 @@
  */
 import { catalogEntryFor, offPeakAt } from "@prismshadow/penguin-library-model/model-catalog/catalog";
 import type { PricingRates, TieredRates } from "@prismshadow/penguin-library-model";
+
+export type { PricingRates, TieredRates };
 import type { CostParts } from "./trace.js";
 
 /**
