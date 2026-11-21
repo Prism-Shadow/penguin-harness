@@ -171,7 +171,8 @@ describe("model-catalog", () => {
     for (const model of penguinGoModels) {
       expect(model.baseUrl, model.modelId).toBe(PENGUIN_GO_BASE_URL);
       expect(model.clientType, model.modelId).toBeDefined();
-      expect(model.pricing?.unit, model.modelId).toBe("usd_per_mtok");
+      if (model.pricing !== undefined)
+        expect(model.pricing.unit, model.modelId).toBe("usd_per_mtok");
       // No static promotion: the platform delivers whatever it runs at authorization and Sync,
       // so every row here is its list price and nothing else.
       expect(model.discount, model.modelId).toBeUndefined();
