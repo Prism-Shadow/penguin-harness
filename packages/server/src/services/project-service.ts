@@ -24,6 +24,8 @@ import fs from "node:fs/promises";
 import {
   DEFAULT_PROJECT_ID,
   projectDir,
+  projectRunDir,
+  ROOT_FOLDER_NAMES,
   provisionProjectAgents,
   provisionProjectBenchmarks,
   type BuiltinBenchmark,
@@ -33,10 +35,12 @@ import { HttpError } from "../http/errors.js";
 import type { ProjectRow } from "@prismshadow/penguin-library-project/repos/projects";
 import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
 import type { SessionManager } from "../runtime/session-manager.js";
+import { removeBelow } from "../workbenches/data-dirs.js";
 import {
+  isNewSemanticId,
+  NEW_ID_RULE,
   PROJECT_ID_MAX_LENGTH,
   PROJECT_SUFFIX_PATTERN,
-  SEMANTIC_ID_PATTERN,
   SEMANTIC_ID_RULE,
 } from "./ids.js";
 import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
@@ -127,11 +131,18 @@ export class ProjectService implements ProjectLifecycle {
    */
   async createProject(owner: UserRow, projectId: string, name?: string): Promise<ProjectSummary> {
     if (owner.isAdmin) {
-      if (!SEMANTIC_ID_PATTERN.test(projectId)) {
+      if (!isNewSemanticId(projectId)) {
         throw new HttpError(
           400,
           "invalid_project_id",
-          `Project id must be 2–64 characters: ${SEMANTIC_ID_RULE} (the hyphen is reserved as the user namespace separator).`,
+          `Project id must be 2–64 characters: ${SEMANTIC_ID_RULE}; ${NEW_ID_RULE} (the hyphen is reserved as the user namespace separator).`,
+        );
+      }
+      if (ROOT_FOLDER_NAMES.includes(projectId)) {
+        throw new HttpError(
+          400,
+          "invalid_project_id",
+          `Project id ${projectId} is the name of a folder the data root keeps for itself (${ROOT_FOLDER_NAMES.join(", ")}); choose another.`,
         );
       }
     } else {
@@ -316,6 +327,9 @@ export class ProjectService implements ProjectLifecycle {
     this.orgCache.deleteProject(projectId);
     this.traceIndex.removeProject(projectId);
     await fs.rm(projectDir(this.root, projectId), { recursive: true, force: true });
+    // Its workbenches' runtime files (sockets, locks) sit apart, at a short path (core's runDir).
+    // A link where a level belongs is left alone rather than followed; the deletion stands.
+    await removeBelow(this.root, projectRunDir(this.root, projectId)).catch(() => undefined);
   }
 
   // —— Member authorization ——

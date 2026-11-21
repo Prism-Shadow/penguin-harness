@@ -13,6 +13,8 @@
  *   reload; restoring the default order asks first and then clears it.
  * - The header's New folder makes a folder of the apps checked in its dialog, under the name
  *   typed there, at the first checked app's place.
+ * - A system app's tile opens its own page, where the nav keeps the App Center lit, Benchmark
+ *   detail pages included.
  */
 import { test, expect } from "@playwright/test";
 import { ADMIN_ID, ADMIN_PASSWORD, login, provisionAndLogin } from "./auth.mjs";
@@ -65,7 +67,7 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await expect(toggle).toBeEnabled({ timeout: 30_000 });
 
   await page.goto(`${BASE}/apps`);
-  await expect(page.getByText("The App Center is empty")).toBeVisible();
+  await expect(page.getByText("No apps from agents yet")).toBeVisible();
   await expect(page.getByRole("button", { name: "Create with AI" })).toBeVisible();
 
   await openSupportRow(page);
@@ -142,13 +144,14 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
-  await setAccountPrefs(page.request, { lang: "en" });
+  await setAccountPrefs(page.request, { lang: "en", themeId: "doodle" });
   await page.goto(`${BASE}/apps`);
   const grid = page.getByRole("list", { name: "App Center" });
   const tile = (name) => grid.getByRole("button", { name: new RegExp(`^${name},`) });
   const names = () =>
     grid
-      .locator(":scope > li")
+      // The workbenches' tiles and folders: the system apps lead the grid untouched.
+      .locator(':scope > li:not([data-app^="system_agent/"])')
       .evaluateAll((items) =>
         items.map((li) => li.querySelector(":scope > button > span:last-child")?.textContent ?? ""),
       );
@@ -173,11 +176,58 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   await expect.poll(names).toEqual(["New folder", "Beta"]);
 
   const folder = grid.getByRole("button", { name: /^New folder, folder, 2 apps/ });
+  // Inspect the two ends of the actual CSS transitions without racing the display refresh.
+  const slow = await page.addStyleTag({
+    content:
+      "[data-unfold-surface][data-layout-motion], [data-unfold-surface] [data-layout-motion] { transition-duration: 2s; }",
+  });
   await folder.click();
-  const panel = page.getByRole("dialog", { name: "New folder" });
+  const panel = page.getByRole("region", { name: "New folder" });
+  const positions = await panel.evaluate((node) => {
+    const animations = node.getAnimations({ subtree: true });
+    for (const part of animations) {
+      part.pause();
+      part.currentTime = 0;
+    }
+    const trigger = document.querySelector(`[aria-controls="${node.id}"]`);
+    const bounds = (el) => {
+      const { x, y, width } = el.getBoundingClientRect();
+      const radius =
+        (parseFloat(getComputedStyle(el).borderTopLeftRadius) * width) / el.offsetWidth;
+      return [x, y, width, radius].map(Math.round);
+    };
+    const pairs = [...trigger.querySelectorAll("[data-unfold-source]")].map((mini) => {
+      const slot = [...node.querySelectorAll("[data-unfold-art]")].find(
+        (el) => el.dataset.unfoldArt === mini.dataset.unfoldSource,
+      );
+      return [
+        bounds(mini.querySelector("[data-app-icon-shape]")),
+        bounds(slot.firstElementChild.querySelector("[data-app-icon-shape]")),
+      ];
+    });
+    for (const part of animations) part.finish();
+    return pairs;
+  });
+  for (const [preview, icon] of positions) {
+    expect(icon).toEqual(preview);
+    // The projected corner matches the preview and leaves a straight side on the 20px tile.
+    expect(icon[3]).toBeLessThanOrEqual(icon[2] / 4);
+  }
+  await slow.evaluate((style) => style.remove());
   await expect(panel.getByRole("button", { name: /^Alpha,/ })).toBeVisible();
   await expect(panel.getByRole("button", { name: /^Gamma,/ })).toBeVisible();
+  await panel.getByRole("button", { name: /^Gamma,/ }).click();
+  const window = page.getByRole("region", { name: "Gamma" });
+  await expect(window.frameLocator("iframe").getByRole("heading", { name: "Gamma" })).toBeVisible();
+  await window.getByRole("button", { name: "Close, back to the App Center" }).click();
+  await expect(panel).toBeVisible();
+
   await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await expect(folder).toBeFocused();
+  await folder.press("Enter");
+  await page.goBack();
+  await expect(folder).toHaveAttribute("aria-expanded", "false");
   await expect(panel).toBeHidden();
 
   // The folder moves one step backward from its menu.
@@ -217,7 +267,8 @@ test("the header's New folder makes a folder of the checked apps at the first on
   const grid = page.getByRole("list", { name: "App Center" });
   const names = () =>
     grid
-      .locator(":scope > li")
+      // The workbenches' tiles and folders: the system apps lead the grid untouched.
+      .locator(':scope > li:not([data-app^="system_agent/"])')
       .evaluateAll((items) =>
         items.map((li) => li.querySelector(":scope > button > span:last-child")?.textContent ?? ""),
       );
@@ -238,4 +289,18 @@ test("the header's New folder makes a folder of the checked apps at the first on
   // Kept with the account.
   await page.reload();
   await expect.poll(names).toEqual(["Alpha", "Pair"]);
+});
+
+test("a system app's tile opens its page, where the App Center stays lit", async ({ page }) => {
+  await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
+  await setAccountPrefs(page.request, { lang: "en" });
+  await page.goto(`${BASE}/apps`);
+  const grid = page.getByRole("list", { name: "App Center" });
+  await grid.getByRole("button", { name: "Evaluation Center, system app" }).click();
+  await expect(page).toHaveURL(`${BASE}/benchmark`);
+  const appCenter = page.locator("aside").first().getByRole("link", { name: "App Center" });
+  await expect(appCenter).toHaveAttribute("aria-current", "page");
+  // A Benchmark's own page lies under the Evaluation Center's.
+  await page.goto(`${BASE}/benchmark/no-such-benchmark`);
+  await expect(appCenter).toHaveAttribute("aria-current", "page");
 });

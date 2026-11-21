@@ -148,6 +148,10 @@ import type {
   PasswordChangeRequest,
   PluginFilesResponse,
   PluginInstallRequest,
+  PluginModuleAskRequest,
+  PluginModuleAskResponse,
+  PluginModuleDecideRequest,
+  PluginModuleRequestsResponse,
   PluginLibraryResponse,
   PluginUninstallResponse,
   PrefsResponse,
@@ -253,6 +257,9 @@ import type {
   WorkbenchEnabledRequest,
   WorkbenchInfo,
   WorkbenchesResponse,
+  WorkbenchSidebarRequest,
+  WorkbenchSidebarResponse,
+  WorkbenchSidebarSetResponse,
   WorkbenchVersion,
   VersionRollbackResponse,
   VersionResponse,
@@ -370,6 +377,25 @@ export const adminRunPluginConfigAction = (
   server: string | null,
 ) =>
   apiFetch<PluginConfigActionResponse>("/api/admin/plugin-config/action", {
+    method: "POST",
+    body,
+    server,
+  });
+
+/**
+ * Every request to run a library plugin's server module on a server, and the administrator's
+ * decisions, with each module's state there (admin). `server` names the machine through this
+ * server's tunnel; null is this server. Requests are per server: nothing is merged across.
+ */
+export const adminGetPluginModuleRequests = (server: string | null) =>
+  apiFetch<PluginModuleRequestsResponse>("/api/admin/plugin-modules", { server });
+
+/**
+ * Enables one package's server module, or declines it — which stops an enabled one on that
+ * server (admin). Answers the list. 404 `unknown_request`, 409 `project_gone`.
+ */
+export const adminDecidePluginModule = (body: PluginModuleDecideRequest, server: string | null) =>
+  apiFetch<PluginModuleRequestsResponse>("/api/admin/plugin-modules/decide", {
     method: "POST",
     body,
     server,
@@ -1958,17 +1984,37 @@ export const getAgentPlugins = (projectId: string, agentId: string, machineId: s
     { server: machineId },
   ).then((r) => installedOn(r, machineId));
 
-/** With `machineId`, installs from THAT machine's library onto its Agent. */
+/**
+ * With `machineId`, installs from THAT machine's library onto its Agent. A plugin that also ships
+ * server modules brings them along on that server (`moduleActions` says how), unless
+ * `skipModules` — what a machine's Agent is sent, since the hub keeps that machine's plugin list.
+ */
 export const installAgentPlugins = (
   projectId: string,
   agentId: string,
   names: string[],
   machineId: string | null,
+  { skipModules = false }: { skipModules?: boolean } = {},
 ) =>
   apiFetch<AgentPluginsInstallResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
-    { method: "POST", body: { names } satisfies PluginInstallRequest, server: machineId },
+    {
+      method: "POST",
+      body: (skipModules ? { names, skipModules } : { names }) satisfies PluginInstallRequest,
+      server: machineId,
+    },
   ).then((r) => installedOn(r, machineId));
+
+/**
+ * A library plugin's server module, asked for by hand (any member): the server enables it, or
+ * asks the administrator to, by the rule an install applies. 404 `unknown_plugin`, 400
+ * `no_server_module`.
+ */
+export const askPluginModule = (projectId: string, plugin: string) =>
+  apiFetch<PluginModuleAskResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/plugins/modules`,
+    { method: "POST", body: { plugin } satisfies PluginModuleAskRequest },
+  );
 
 /**
  * Uninstalls a whole plugin from the Agent on its server, in one request (Project owner): its
@@ -2898,6 +2944,17 @@ export const getWorkbenches = (projectId: string, agentId: string, machineId: st
   apiFetch<WorkbenchesResponse>(workbenchesBase(projectId, agentId), {
     server: machineId,
   }).then((r) => ({ ...r, workbenches: iconsOn(r.workbenches, machineId) }));
+/**
+ * The rows of the Agent's sidebar list: a shortcut for each workbench that runs, has a tab and is
+ * not hidden from the sidebar, read from the files without compiling anything. Null from a server
+ * older than the setting, which ignores `view` and answers the full list: everything it lists
+ * is shown there.
+ */
+export const getSidebarApps = (projectId: string, agentId: string, machineId: string | null) =>
+  apiFetch<WorkbenchSidebarResponse | WorkbenchesResponse>(
+    `${workbenchesBase(projectId, agentId)}?view=sidebar`,
+    { server: machineId },
+  ).then((r) => ("apps" in r ? iconsOn(r.apps, machineId) : null));
 /** The Agent-wide switch (Project owner): off, none of the Agent's workbenches runs. */
 export const setWorkbenchesEnabled = (
   projectId: string,
@@ -2989,6 +3046,21 @@ export const removeWorkbench = (
     method: "DELETE",
     server: machineId,
   });
+/**
+ * The sidebar setting (any member): `false` writes the installation's `.hidden-from-sidebar`
+ * marker, `true` removes it. Nothing reloads and no version is recorded.
+ */
+export const setWorkbenchSidebar = (
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  show: boolean,
+  machineId: string | null,
+) =>
+  apiFetch<WorkbenchSidebarSetResponse>(
+    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/sidebar`,
+    { method: "PATCH", body: { show } satisfies WorkbenchSidebarRequest, server: machineId },
+  );
 /** The App Center switch: sets `penguin.appCenter.show` in the workbench's package.json and reloads it. */
 export const setWorkbenchAppCenter = (
   projectId: string,
@@ -3002,11 +3074,15 @@ export const setWorkbenchAppCenter = (
     { method: "PATCH", body: { show } satisfies WorkbenchAppCenterRequest, server: machineId },
   );
 /**
- * The Project's App Center: the shown workbenches of its Agents on this server (local only), each
- * with its build state, and the viewer's own arrangement of them (null: the server's order).
+ * The Project's App Center on one server: the shown workbenches of its Agents there, each with
+ * its build state, and the viewer's own arrangement (null: the server's order). With `machineId`
+ * it is THAT machine's list, read through this server's proxy, its icons re-rooted onto it; the
+ * arrangement that counts is always this server's.
  */
-export const getAppCenter = (projectId: string) =>
-  apiFetch<AppCenterResponse>(`/api/projects/${encodeURIComponent(projectId)}/app-center`);
+export const getAppCenter = (projectId: string, machineId: string | null = null) =>
+  apiFetch<AppCenterResponse>(`/api/projects/${encodeURIComponent(projectId)}/app-center`, {
+    server: machineId,
+  }).then((r) => ({ ...r, shortcuts: iconsOn(r.shortcuts, machineId) }));
 /** Stores the viewer's arrangement of the Project's App Center; null restores the server's order. */
 export const putAppCenterLayout = (projectId: string, layout: AppCenterLayout | null) =>
   apiFetch<AppCenterLayoutResponse>(

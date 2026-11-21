@@ -27,3 +27,4 @@ export type { Http, HttpSlots } from "../http/app.js";
 export type { WebShell, WebShellSlots } from "../http/routes/contributions.js";
 export type { PluginLibrary, PluginLibrarySlots } from "./library-module.js";
 export type { PluginCliCommands, PluginCliCommandsSlots } from "./cli-commands.js";
+export type { SystemAppData, SystemApps, SystemAppsSlots } from "./system-app-modules.js";

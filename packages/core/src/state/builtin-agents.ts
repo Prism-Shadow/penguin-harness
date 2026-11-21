@@ -4,7 +4,9 @@
  *
  * - Every Project comes with `default_agent` (the General Agent, the
  *   default conversational Agent), which has the library's preinstalled plugin set installed at
- *   initialization (plugins marked `preinstall: false` are excluded and stay manual-install).
+ *   initialization (plugins marked `preinstall: false` are excluded and stay manual-install),
+ *   and with the system Agent `system_agent`, which owns the system apps and runs no Session
+ *   (system-agent.ts).
  *   The default Project also includes penguin_support and its support workbench. Other capabilities (creating an Agent, optimizing an Agent, etc.)
  *   are carried by Skills rather than dedicated builtin Agents.
  * - The preset carries no AGENTS.md: the default AGENTS.md is empty, with delegation and task
@@ -18,8 +20,19 @@ import { DEFAULT_AGENT_ID, DEFAULT_PROJECT_ID } from "./paths.js";
 
 export const SUPPORT_AGENT_ID = "penguin_support";
 
-/** The set of Project builtin Agent ids (supplied along with the Project, cannot be deleted from Web). */
-export const BUILTIN_AGENT_IDS: readonly string[] = [DEFAULT_AGENT_ID, SUPPORT_AGENT_ID];
+/** The system Agent's id: the owner of the system apps, in every Project (system-agent.ts). */
+export const SYSTEM_AGENT_ID = "system_agent";
+
+/**
+ * The set of Project builtin Agent ids (supplied along with the Project, cannot be deleted from
+ * Web). `system_agent` is built in only as the system Agent, the id with its `system: true` key
+ * (system-agent.ts): an Agent of the user's that already held the id stays theirs.
+ */
+export const BUILTIN_AGENT_IDS: readonly string[] = [
+  DEFAULT_AGENT_ID,
+  SUPPORT_AGENT_ID,
+  SYSTEM_AGENT_ID,
+];
 
 /** Agent initialization preset (only takes effect at initialization; ignored when loading an existing Agent). */
 export interface AgentPreset {
@@ -31,12 +44,30 @@ export interface AgentPreset {
   agentsMd?: string;
   /** Plugins installed at initialization (installs none by default): their Skills, hooks, MCP servers and workbenches. */
   plugins?: LibraryPlugin[];
+  /** Marks the Agent as the system Agent in its system_config.yaml (system-agent.ts); only its preset sets it. */
+  system?: true;
+}
+
+/**
+ * The system Agent's preset: the default template, no plugins, and the `system: true` key that
+ * makes it the system Agent. Its name and description are for the file and the CLI; the Web App
+ * shows its own words for both.
+ */
+export function systemAgentPreset(): AgentPreset {
+  return {
+    name: "System",
+    description:
+      "Owns the system apps: Models, Plugins, Machines, Cost Center and Evaluation Center.",
+    plugins: [],
+    system: true,
+  };
 }
 
 /**
  * The preset list for a Project's builtin Agents (each initialized in turn when the Project is
  * created; an existing Agent is never overwritten). default_agent
- * installs the library's preinstalled plugins, with no preset AGENTS.md.
+ * installs the library's preinstalled plugins, with no preset AGENTS.md; every Project also gets
+ * the system Agent, after the others.
  */
 export function builtinProjectAgentPresets(
   projectId = DEFAULT_PROJECT_ID,
@@ -66,5 +97,6 @@ export function builtinProjectAgentPresets(
       },
     });
   }
+  presets.push({ agentId: SYSTEM_AGENT_ID, preset: systemAgentPreset() });
   return presets;
 }

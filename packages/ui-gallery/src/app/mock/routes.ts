@@ -33,6 +33,7 @@ import type {
   AppCenterLayout,
   AppCenterLayoutResponse,
   AppCenterResponse,
+  AppCenterShortcut,
   ApprovalMode,
   ArchivedSessionGroup,
   ArchivedSessionGroupsResponse,
@@ -64,6 +65,8 @@ import type {
   GoalResponse,
   InstallResponse,
   InstalledPluginsResponse,
+  PluginModuleAskResponse,
+  PluginModuleRequestsResponse,
   MachinesResponse,
   MachinesUseResponse,
   McpServerTestResponse,
@@ -144,6 +147,7 @@ import type {
   VersionHistoryResponse,
   VersionResponse,
   WorkbenchesResponse,
+  WorkbenchSidebarResponse,
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
@@ -275,6 +279,30 @@ router
   .put("/api/admin/settings", ({ store, body }): ServerSettingsResponse => {
     store.f.serverSettings = { ...store.f.serverSettings, ...record(body) };
     return { settings: store.f.serverSettings };
+  })
+  .get("/api/admin/plugin-modules", ({ store }): PluginModuleRequestsResponse =>
+    moduleLedger(store),
+  )
+  // A decision as the server takes it: enabling lists the module (it runs), declining stops it; a
+  // waiting request whose Project is gone can only be declined.
+  .post("/api/admin/plugin-modules/decide", ({ store, body }): PluginModuleRequestsResponse => {
+    const pkg = str(record(body).package);
+    const decision = str(record(body).decision);
+    if (decision !== "enable" && decision !== "decline") {
+      fail(400, "invalid_request", "decision must be enable or decline.");
+    }
+    const row = store.f.pluginModuleRequests.find((r) => r.package === pkg);
+    if (row === undefined) fail(404, "unknown_request", `No request for ${pkg}.`);
+    if (decision === "enable" && row.projectId === null) {
+      fail(409, "project_gone", "The Project that asked for it is gone.");
+    }
+    const enable = decision === "enable";
+    row.decision = enable ? "enabled" : "declined";
+    row.decidedBy = store.f.user.userId;
+    row.decidedAt = new Date(store.f.now).toISOString();
+    if (enable) row.via = row.requestedBy !== store.f.user.userId ? "approval" : "admin";
+    row.state = enable ? "running" : "off";
+    return moduleLedger(store);
   })
   .get("/api/admin/plugin-config", ({ store }): PluginConfigResponse => ({
     plugins: store.f.pluginConfig,
@@ -2233,6 +2261,12 @@ const installedOf = (ctx: Ctx) => {
 
 const libraryPlugins = (store: DemoStore) => store.f.library.groups.flatMap((g) => g.plugins);
 
+/** The administrator's ledger of module requests, with how many wait. */
+const moduleLedger = (store: DemoStore): PluginModuleRequestsResponse => ({
+  requests: store.f.pluginModuleRequests,
+  pending: store.f.pluginModuleRequests.filter((r) => r.decision === null).length,
+});
+
 router
   .get("/api/plugins", ({ store }): PluginLibraryResponse => store.f.library)
   .get("/api/plugins/registry", ({ store }): PluginIndexResponse => store.f.pluginIndex)
@@ -2279,7 +2313,26 @@ router
     hooks: installedOf(ctx).hooks,
     mcpServers: mcpServerItems(ctx),
     workbenches: [],
+    modules: ctx.store.f.pluginModules,
   }))
+  // A plugin's server module asked for by hand: the demo's server runs what is asked of it.
+  .post("/api/projects/:projectId/plugins/modules", ({ store, body }): PluginModuleAskResponse => {
+    const name = str(record(body).plugin);
+    const plugin = libraryPlugins(store).find((p) => p.name === name);
+    if (plugin === undefined) fail(404, "unknown_plugin", `Plugin is not in the library: ${name}`);
+    if (plugin.modules !== true) {
+      fail(400, "no_server_module", `Plugin ${name} ships no server module.`);
+    }
+    for (const mod of store.f.pluginModules) {
+      if (mod.plugin !== name) continue;
+      mod.state = "running";
+      mod.listed = true;
+    }
+    return {
+      modules: store.f.pluginModules,
+      moduleActions: [{ plugin: name, action: "enabled" }],
+    };
+  })
   .post("/api/projects/:projectId/agents/:agentId/plugins", (ctx): unknown => {
     const installed = installedOf(ctx);
     const agent = agentOf(ctx);
@@ -2313,6 +2366,8 @@ router
         skills: installed.skills,
         hooks: installed.hooks,
         mcpServers: mcpServerItems(ctx),
+        modules: ctx.store.f.pluginModules,
+        moduleActions: [],
       } satisfies AgentPluginsInstallResponse,
       201,
     );
@@ -2848,17 +2903,51 @@ router
 // Workbenches and the Project's plugin list
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * The rows of an Agent's sidebar list (`?view=sidebar`): its installed workbenches that run and
+ * have a tab, none hidden from the sidebar, in the App Center tile's shape.
+ */
+const sidebarApps = (ctx: Ctx): AppCenterShortcut[] => {
+  const agent = agentOf(ctx);
+  const installed = installedOf(ctx);
+  if (installed.workbenchesOff === true) return [];
+  return (installed.workbenches ?? []).flatMap((w): AppCenterShortcut[] => {
+    const first = w.tabs[0];
+    if (first === undefined || w.enabled === false || w.showInSidebar === false) return [];
+    return [
+      {
+        agentId: agent.agentId,
+        agentName: agent.name ?? agent.agentId,
+        workbenchId: w.id,
+        title: w.appCenter?.title ?? first.title,
+        ...(first.titleZh !== undefined ? { titleZh: first.titleZh } : {}),
+        ...(w.icon !== undefined ? { icon: w.icon } : {}),
+        path: `/app/${ctx.params.projectId!}/${agent.agentId}/${w.id}`,
+        tab: first.key,
+        build: w.error === null ? "ready" : "failed",
+      },
+    ];
+  });
+};
+
 router
-  .get("/api/projects/:projectId/agents/:agentId/workbenches", (ctx): WorkbenchesResponse => ({
-    workbenches: [],
-    enabled: installedOf(ctx).workbenchesOff !== true,
-  }))
+  .get(
+    "/api/projects/:projectId/agents/:agentId/workbenches",
+    (ctx): WorkbenchesResponse | WorkbenchSidebarResponse => {
+      if (ctx.query.get("view") === "sidebar") return { apps: sidebarApps(ctx) };
+      const installed = installedOf(ctx);
+      return {
+        workbenches: installed.workbenches ?? [],
+        enabled: installed.workbenchesOff !== true,
+      };
+    },
+  )
   .put(
     "/api/projects/:projectId/agents/:agentId/workbenches/enabled",
     (ctx): WorkbenchesResponse => {
       const installed = installedOf(ctx);
       installed.workbenchesOff = record(ctx.body).enabled === false;
-      return { workbenches: [], enabled: !installed.workbenchesOff };
+      return { workbenches: installed.workbenches ?? [], enabled: !installed.workbenchesOff };
     },
   )
   .put("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/enabled", () =>
@@ -2885,6 +2974,23 @@ router
   .delete("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId", () =>
     notFound("Workbench"),
   )
+  .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/sidebar", (ctx) => {
+    const installed = installedOf(ctx);
+    const show = record(ctx.body).show;
+    if (typeof show !== "boolean") fail(400, "bad_request", "show must be true or false");
+    const all = installed.workbenches ?? [];
+    const current = all.find((w) => w.id === ctx.params.workbenchId);
+    if (!current) notFound("Workbench");
+    const workbench = { ...current, showInSidebar: show };
+    installed.workbenches = all.map((w) => (w.id === workbench.id ? workbench : w));
+    ctx.store.userChannel.event({
+      type: "workbench_updated",
+      projectId: ctx.params.projectId!,
+      agentId: ctx.params.agentId!,
+      workbench,
+    });
+    return { workbench };
+  })
   .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/app-center", () =>
     notFound("Workbench"),
   )
@@ -2896,10 +3002,10 @@ router
     store.f.appCenter = { ...store.f.appCenter, layout };
     return { layout };
   })
-  .get(
-    "/api/projects/:projectId/plugins/installed",
-    ({ store }): InstalledPluginsResponse => store.f.installedPlugins,
-  )
+  .get("/api/projects/:projectId/plugins/installed", ({ store }): InstalledPluginsResponse => ({
+    ...store.f.installedPlugins,
+    modules: store.f.pluginModules,
+  }))
   .put(
     "/api/projects/:projectId/plugins/installed",
     ({ store, body }): InstalledPluginsResponse => {

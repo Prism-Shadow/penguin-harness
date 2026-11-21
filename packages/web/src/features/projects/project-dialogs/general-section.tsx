@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Button,
   ConfirmModal,
@@ -10,10 +10,10 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
 import { toastApiError } from "../../../lib/toast-api-error";
 import { projectDisplayName, useProject } from "../../../state/project";
 import { PROJECT_SETTINGS_SCOPE } from "./shared";
+import { failureNode } from "../../../lib/failure";
 
 export function GeneralSection({
   projectId,
@@ -35,7 +35,7 @@ export function GeneralSection({
   const name = form.draft;
   const [nameBusy, setNameBusy] = useState(false);
   useSaving(nameBusy, PROJECT_SETTINGS_SCOPE);
-  const [nameError, setNameError] = useState<string | undefined>(undefined);
+  const [nameError, setNameError] = useState<ReactNode>(undefined);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const saveName = async () => {
@@ -48,7 +48,7 @@ export function GeneralSection({
       form.adopt(next);
       await reloadProjects();
     } catch (e) {
-      setNameError(apiErrorText(e));
+      setNameError(failureNode(e, { what: "a Project could not be renamed" }));
     } finally {
       setNameBusy(false);
     }

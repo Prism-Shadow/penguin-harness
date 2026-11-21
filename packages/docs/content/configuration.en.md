@@ -12,6 +12,7 @@ The CLI and the server load a `.env` file from the working directory on startup.
 | Variable | Description | Default |
 | --- | --- | --- |
 | `PENGUIN_HOME` | Data root directory | `~/.penguin/data` |
+| `PENGUIN_MACHINE_HOME` | Where workbenches keep what every PenguinHarness of this OS user on this computer shares (the machine level) | `~/.penguin/machine` |
 | `PORT` | Web service listen port | `7364` |
 | `HOST` | Web service listen address | `127.0.0.1` |
 | `PENGUIN_WEB_DB` | Server SQLite database path | `<root>/web.db` |
@@ -214,6 +215,7 @@ The Plugins page does not offer package-global Delete plugin, which would remove
 - The server runs the union of every Project's table, so a plugin one Project asks for is loaded for all of them.
 - An entry of any other shape is dropped when the file is read, and the rest of the file still loads. A `plugins` key that is not a table asks for no plugins.
 - An empty table is written as an empty table: the Project asks for no plugins.
+- A plugin that ships with PenguinHarness and provides a system app of the App Center stays in the list: a write that would take it out of what this server runs for the Project is refused with `409` `system_app_module_locked`, and an entry deleted from the file by hand is written back into this server's `[plugins.<machineId>]` table at the next server start.
 
 ## Command policy
 

@@ -60,6 +60,7 @@ import {
   ICON_GAP,
   ICON_SIZE,
   Input,
+  NoticeStrip,
   PageFrame,
   PageHeader,
   RuledSection,
@@ -69,7 +70,6 @@ import {
   Sparkline,
   TodoNotice,
   UpdatePill,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -99,7 +99,8 @@ import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
 import type { PlacedAgent } from "../../lib/machine-agent-lists";
 import { toneInk } from "../../lib/tone";
 import { employmentsOf, splitByEmployment } from "../../lib/agent-employment";
-import { isBuiltinAgent } from "../../lib/builtin-agents";
+import { holdsSystemAgentId, isBuiltinAgent, isSystemAgent } from "../../lib/builtin-agents";
+import { useSystemApps } from "../../lib/system-apps";
 import {
   AGENT_GROUP_BYS,
   groupByAuthor,
@@ -115,6 +116,7 @@ import { AgentImportDialog } from "./agent-import-dialog";
 import { followAgentDeletion } from "../../lib/agent-deletion-progress";
 import type { PluginPickItem } from "./create-agent-dialog";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /** Card button icons (24x24 line path, rendered via GlyphIcon). */
 const CARD_ICONS = {
@@ -232,6 +234,14 @@ export function AgentsPage() {
   const { user } = useAuth();
   const { currentProject, agents, agentsLoading, reloadAgents, setCurrentAgentId } = useProject();
   const avatarSrc = useAgentAvatarSrc();
+  /** The system apps the viewer sees: the system Agent's card counts them. */
+  const systemAppCount = useSystemApps().length;
+  /**
+   * An Agent of the user's holding the id reserved for the system Agent, which the Project then
+   * lacks: its owner is asked to move it, the only way the system Agent can be added.
+   */
+  const heldSystemId =
+    currentProject?.role === "owner" ? (agents.find(holdsSystemAgentId) ?? null) : null;
   /** Header search, the Models page's shape: name, id and description, case-insensitive. */
   const [query, setQuery] = useState("");
   /** The header's grouping select and the folded author sections, both remembered per browser. */
@@ -268,7 +278,7 @@ export function AgentsPage() {
    * renders carries no meaning here. `null` until a fetch succeeds.
    */
   const [library, setLibrary] = useState<PluginPickItem[] | null>(null);
-  const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [libraryError, setLibraryError] = useState<ReactNode>(null);
   /** In-flight guard for that fetch (StrictMode runs the effect twice), released on failure so reopening retries. */
   const libraryPending = useRef(false);
   /** Open the create dialog. Its form mounts with it, so every opening starts empty. */
@@ -288,7 +298,7 @@ export function AgentsPage() {
       .catch((e: unknown) => {
         // Leave `library` unset and release the guard, so the next open tries again.
         libraryPending.current = false;
-        setLibraryError(apiErrorText(e));
+        setLibraryError(failureNode(e, { what: "the plugin library could not be read" }));
       });
   }, [createOpen, library]);
 
@@ -311,7 +321,7 @@ export function AgentsPage() {
     name: string;
     machine: { machineId: string; label: string } | null;
   } | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<ReactNode>(null);
 
   const projectId = currentProject?.projectId;
   /** Each installed machine's own Agents, mixed into this server's list (lib/machine-agent-lists.ts). */
@@ -377,13 +387,31 @@ export function AgentsPage() {
     [agents, machineLists, matches],
   );
   /**
+   * The system Agent, pinned above the list whichever way it is grouped: no author made it and no
+   * organization employs it, so it is in no group and no group's count. The rest is the list.
+   */
+  const systemRows = useMemo(
+    () => shownAgents.filter((row) => isSystemAgent(row.agent)),
+    [shownAgents],
+  );
+  const listedAgents = useMemo(
+    () => shownAgents.filter((row) => !isSystemAgent(row.agent)),
+    [shownAgents],
+  );
+  /**
    * The list in two sections: the Agents the user works with directly, then the employees of
    * the Project's organizations (agent-employment.ts), a machine's among them. The search box
    * filters both.
    */
-  const sections = useMemo(() => splitByEmployment(shownAgents, (row) => row.agent), [shownAgents]);
+  const sections = useMemo(
+    () => splitByEmployment(listedAgents, (row) => row.agent),
+    [listedAgents],
+  );
   /** The same Agents by who made them, for the grouping by author: employees go with their author. */
-  const authorGroups = useMemo(() => groupByAuthor(shownAgents, (row) => row.agent), [shownAgents]);
+  const authorGroups = useMemo(
+    () => groupByAuthor(listedAgents, (row) => row.agent),
+    [listedAgents],
+  );
 
   /**
    * Stat icon click: same navigation as the "Settings" button plus `?tab=` so the settings
@@ -428,7 +456,7 @@ export function AgentsPage() {
       if (machineId !== null) reloadMachine(machineId);
       else await reloadAgents();
     } catch (e) {
-      setDeleteError(apiErrorText(e));
+      setDeleteError(failureNode(e, { what: "an Agent could not be deleted" }));
       // Hired since the list was read: re-read it, so the card moves to the employees and its
       // delete button turns off.
       if (e instanceof ApiError && e.code === "agent_employed") {
@@ -465,9 +493,10 @@ export function AgentsPage() {
     const outcome = bulkOutcome(labels, results);
     if (outcome.allOk) toastSuccess(S.todo.bulkDone(outcome.ok));
     else {
-      toastError(
-        `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(firstFailure(results))}`,
-      );
+      const failure = firstFailure(results);
+      toastApiError(failure, {
+        text: `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(failure)}`,
+      });
     }
     // The gate reads `AgentSummary.kernelOutdated` off the Project's Agent list, so the dot only
     // goes down once that list is re-read. Runs after a partial failure too — some Agent moved.
@@ -490,7 +519,10 @@ export function AgentsPage() {
    * card is greyed and inert, its controls disabled with the reason — and null for this server's.
    */
   const renderCard = ({ agent: a, on }: PlacedAgent, framed = true) => {
-    const builtin = isBuiltinAgent(a.agentId);
+    const builtin = isBuiltinAgent(a);
+    // The system Agent holds no conversation and no data of its own to export: its card keeps
+    // only its settings, and its words come from the dictionary.
+    const system = isSystemAgent(a);
     const machineId = on?.machine.machineId ?? null;
     /** Whether the server holding the Agent can be acted on right now (this one always can). */
     const reachable = on === null || on.live;
@@ -566,13 +598,17 @@ export function AgentsPage() {
             <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
               {a.agentId}
             </span>
-            <Pill>v{a.version}</Pill>
+            {system ? (
+              <Pill tooltip={S.agent.systemTagHint}>{S.agent.systemTag}</Pill>
+            ) : (
+              <Pill>v{a.version}</Pill>
+            )}
             {/* Kernel-outdated pill: the card the sidebar's Agents dot leads to, so it
                         names the state in words rather than as another bare dot — a capsule in
                         the version badge's own geometry, in the attention tint (behind is
                         unfinished, not failed), opening the settings overview where the update
                         action lives. Not on a card that cannot open it. */}
-            {a.kernelOutdated && reachable && (
+            {a.kernelOutdated && reachable && !system && (
               <UpdatePill onClick={() => openSettingsTab(a.agentId, "overview", machineId)}>
                 {S.agent.kernelUpdateNeeded}
               </UpdatePill>
@@ -580,8 +616,24 @@ export function AgentsPage() {
           </div>
           {/* Description truncated to one line (an empty description still takes up a line, keeping card heights equal) */}
           <p className="mt-1.5 min-h-4 truncate text-xs text-gray-500 dark:text-gray-400">
-            {a.description ?? ""}
+            {system ? S.agent.systemDescription : (a.description ?? "")}
           </p>
+          {/* The system Agent's one count: the system apps this viewer sees, which its settings'
+              Workbenches sub-page lists. */}
+          {system && (
+            <div className="mt-1.5 flex items-center text-xs text-gray-500 dark:text-gray-400">
+              <button
+                type="button"
+                className={STAT_LINK_CLASS}
+                data-tooltip={S.agent.systemAppCount(systemAppCount)}
+                aria-label={S.agent.systemAppCount(systemAppCount)}
+                onClick={() => openSettingsTab(a.agentId, "workbenches", machineId)}
+              >
+                <GlyphIcon d={ICONS.tiles} size={ICON_SIZE.inlineGlyph} />
+                {systemAppCount}
+              </button>
+            </div>
+          )}
           {/* An employee's organizations, one line each: the building every company
                       surface wears, then `<organization> · <title>`. */}
           {employments.map((e) => (
@@ -604,91 +656,100 @@ export function AgentsPage() {
                       cut in half) and the row has no scroll box, so with nowrap the seven
                       items simply spill past the card's padding once the info column is
                       narrower than they are — a phone. Wrapping spends a second line instead,
-                      and never triggers where the row already fits. */}
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-            <span
-              className="inline-flex shrink-0 items-center gap-1 tabular-nums"
-              data-tooltip={S.agent.sessionCount(a.sessionCount)}
-            >
-              <GlyphIcon d={CARD_ICONS.sessions} size={ICON_SIZE.inlineGlyph} />
-              {a.sessionCount}
-            </span>
-            {(
-              [
-                ["tools", STAT_ICONS.toolCalls, a.toolCount, S.agent.toolCount(a.toolCount)],
-                ["skills", CARD_ICONS.skills, a.skillCount, S.skills.skillCount(a.skillCount)],
-                ["hooks", ICONS.fishHook, a.hookCount, S.hooks.hookCount(a.hookCount)],
-                [
-                  "workbenches",
-                  ICONS.anvil,
-                  a.workbenchCount ?? 0,
-                  S.workbenches.count(a.workbenchCount ?? 0),
-                ],
-                ["memory", CARD_ICONS.memory, a.memoryCount, S.agent.memoryCount(a.memoryCount)],
-                [
-                  "vault",
-                  CARD_ICONS.vaultKeys,
-                  a.vaultKeyCount,
-                  S.agent.vaultKeyCount(a.vaultKeyCount),
-                ],
-                [
-                  "schedules",
-                  CARD_ICONS.schedules,
-                  a.scheduleCount,
-                  S.agent.scheduleCount(a.scheduleCount),
-                ],
-              ] as const
-            ).map(([tab, glyph, count, label]) => (
-              <button
-                key={tab}
-                type="button"
-                className={STAT_LINK_CLASS}
-                disabled={!reachable}
-                data-tooltip={label}
-                aria-label={label}
-                onClick={() => openSettingsTab(a.agentId, tab, machineId)}
+                      and never triggers where the row already fits. None on the system
+                      Agent's card: every count there describes a runtime it never runs. */}
+          {!system && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+              <span
+                className="inline-flex shrink-0 items-center gap-1 tabular-nums"
+                data-tooltip={S.agent.sessionCount(a.sessionCount)}
               >
-                <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
-                {count}
-              </button>
-            ))}
-            <span
-              className="inline-flex shrink-0 items-center gap-1"
-              data-tooltip={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}
-              data-tooltip-extra={Boolean(a.updatedAt)}
-            >
-              <GlyphIcon d={STAT_ICONS.elapsed} size={ICON_SIZE.inlineGlyph} />
-              {a.updatedAt ? formatRelativeDays(a.updatedAt, locale) : "—"}
-            </span>
-          </div>
+                <GlyphIcon d={CARD_ICONS.sessions} size={ICON_SIZE.inlineGlyph} />
+                {a.sessionCount}
+              </span>
+              {(
+                [
+                  ["tools", STAT_ICONS.toolCalls, a.toolCount, S.agent.toolCount(a.toolCount)],
+                  ["skills", CARD_ICONS.skills, a.skillCount, S.skills.skillCount(a.skillCount)],
+                  ["hooks", ICONS.fishHook, a.hookCount, S.hooks.hookCount(a.hookCount)],
+                  [
+                    "workbenches",
+                    ICONS.anvil,
+                    a.workbenchCount ?? 0,
+                    S.workbenches.count(a.workbenchCount ?? 0),
+                  ],
+                  ["memory", CARD_ICONS.memory, a.memoryCount, S.agent.memoryCount(a.memoryCount)],
+                  [
+                    "vault",
+                    CARD_ICONS.vaultKeys,
+                    a.vaultKeyCount,
+                    S.agent.vaultKeyCount(a.vaultKeyCount),
+                  ],
+                  [
+                    "schedules",
+                    CARD_ICONS.schedules,
+                    a.scheduleCount,
+                    S.agent.scheduleCount(a.scheduleCount),
+                  ],
+                ] as const
+              ).map(([tab, glyph, count, label]) => (
+                <button
+                  key={tab}
+                  type="button"
+                  className={STAT_LINK_CLASS}
+                  disabled={!reachable}
+                  data-tooltip={label}
+                  aria-label={label}
+                  onClick={() => openSettingsTab(a.agentId, tab, machineId)}
+                >
+                  <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
+                  {count}
+                </button>
+              ))}
+              <span
+                className="inline-flex shrink-0 items-center gap-1"
+                data-tooltip={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}
+                data-tooltip-extra={Boolean(a.updatedAt)}
+              >
+                <GlyphIcon d={STAT_ICONS.elapsed} size={ICON_SIZE.inlineGlyph} />
+                {a.updatedAt ? formatRelativeDays(a.updatedAt, locale) : "—"}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Session activity sparkline, GitHub Pulse style: daily active Session counts
                     against zero with a faint fill, in the success ink (an agent in use is a
                     healthy one). Hidden on narrow screens first, giving the horizontal space back
                     to content and buttons. */}
-        <Sparkline
-          values={a.sessionActivity}
-          label={S.agent.activity(a.sessionActivity.length || 30)}
-          area
-          tone="success"
-          width={100}
-          height={30}
-          className="hidden shrink-0 md:block"
-        />
+        {/* None on the system Agent's card: it never holds a conversation, so the line would
+            only ever be flat, and out of step with the other cards' beside its shorter buttons. */}
+        {!system && (
+          <Sparkline
+            values={a.sessionActivity}
+            label={S.agent.activity(a.sessionActivity.length || 30)}
+            area
+            tone="success"
+            width={100}
+            height={30}
+            className="hidden shrink-0 md:block"
+          />
+        )}
 
         {/* Button group to the right of the sparkline: "New Chat" shows text, the rest are square icon buttons (tooltip shows the full name) */}
         <div className="flex shrink-0 items-center gap-2">
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={!reachable}
-            {...(offReason !== null ? { title: offReason, "data-tooltip-extra": true } : {})}
-            onClick={() => newChat(a.agentId, machineId)}
-          >
-            <GlyphIcon d={CARD_ICONS.newChat} />
-            {S.chat.newSessionMenu}
-          </Button>
+          {!system && (
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={!reachable}
+              {...(offReason !== null ? { title: offReason, "data-tooltip-extra": true } : {})}
+              onClick={() => newChat(a.agentId, machineId)}
+            >
+              <GlyphIcon d={CARD_ICONS.newChat} />
+              {S.chat.newSessionMenu}
+            </Button>
+          )}
           <Button
             size="sm"
             disabled={!reachable}
@@ -699,32 +760,36 @@ export function AgentsPage() {
             {S.common.settings}
           </Button>
           {/* The usage center reads this server's records: a machine's Agent has none here. */}
-          <Button
-            size="icon"
-            title={machineId !== null ? S.agent.usageThisServerOnly : S.nav.usage}
-            aria-label={S.nav.usage}
-            disabled={machineId !== null}
-            onClick={() => navigate(`/usage?agentId=${encodeURIComponent(a.agentId)}`)}
-          >
-            <GlyphIcon
-              d={CARD_ICONS.usage}
-              size={15}
-              className="text-gray-600 dark:text-gray-300"
-            />
-          </Button>
-          <Button
-            size="icon"
-            title={offReason ?? S.agent.exportAgent}
-            aria-label={S.agent.exportAgent}
-            disabled={!reachable}
-            onClick={() => setExporting({ agent: a, on })}
-          >
-            <GlyphIcon
-              d={ICONS.download}
-              size={ICON_SIZE.iconButton}
-              className="text-gray-600 dark:text-gray-300"
-            />
-          </Button>
+          {!system && (
+            <Button
+              size="icon"
+              title={machineId !== null ? S.agent.usageThisServerOnly : S.nav.usage}
+              aria-label={S.nav.usage}
+              disabled={machineId !== null}
+              onClick={() => navigate(`/usage?agentId=${encodeURIComponent(a.agentId)}`)}
+            >
+              <GlyphIcon
+                d={CARD_ICONS.usage}
+                size={15}
+                className="text-gray-600 dark:text-gray-300"
+              />
+            </Button>
+          )}
+          {!system && (
+            <Button
+              size="icon"
+              title={offReason ?? S.agent.exportAgent}
+              aria-label={S.agent.exportAgent}
+              disabled={!reachable}
+              onClick={() => setExporting({ agent: a, on })}
+            >
+              <GlyphIcon
+                d={ICONS.download}
+                size={ICON_SIZE.iconButton}
+                className="text-gray-600 dark:text-gray-300"
+              />
+            </Button>
+          )}
           {/* Built-in Agents can't be deleted: shown as a non-button light gray
                       placeholder (no border/background, no hover response, disabled cursor,
                       explained via tooltip); the transparent border keeps the same box size as
@@ -769,7 +834,7 @@ export function AgentsPage() {
    * built-in default is not one the user set up. Hidden while searching (the list itself is being
    * filtered).
    */
-  const firstAgentCall = !searching && agents.every((a) => isBuiltinAgent(a.agentId)) && (
+  const firstAgentCall = !searching && agents.every(isBuiltinAgent) && (
     <EmptyState
       title={S.agent.firstAgentTitle}
       description={S.agent.firstAgentDesc}
@@ -828,6 +893,11 @@ export function AgentsPage() {
             behind the defaults generation — so the line states the upgradable count alone
             rather than padding it with a zero the page has no meaning for. The per-card capsule
             below and the per-Agent update in settings are untouched. */}
+        {heldSystemId !== null && (
+          <NoticeStrip tone="attention" as="p" className="rounded-md border px-3 py-2 text-xs">
+            {S.agent.systemIdHeld(agentDisplayName(heldSystemId))}
+          </NoticeStrip>
+        )}
         {kernelTodo && (
           <TodoNotice
             text={S.todo.changesUpgradable(noticeCounts(kernelTodo).updated)}
@@ -863,6 +933,7 @@ export function AgentsPage() {
         /* One collapsible section per author, the Plugins page's grouping: a search opens every
            section it leaves, since a match folded away would read as a missing one. */
         <div className="space-y-3">
+          {systemRows.map((row) => renderCard(row))}
           {authorGroups.map(({ author, items }) => (
             <CollapsibleSection
               key={author}
@@ -884,6 +955,7 @@ export function AgentsPage() {
            own, shown only when there is one to list. */
         <>
           <div className="space-y-3">
+            {systemRows.map((row) => renderCard(row))}
             {sections.agents.map((row) => renderCard(row))}
             {firstAgentCall}
           </div>
@@ -892,7 +964,7 @@ export function AgentsPage() {
               title={S.agent.employeesSection}
               count={sections.employees.length}
               info={S.agent.employeesSectionInfo}
-              className={sections.agents.length > 0 ? "mt-8" : ""}
+              className={sections.agents.length + systemRows.length > 0 ? "mt-8" : ""}
             >
               <div className="space-y-3">{sections.employees.map((row) => renderCard(row))}</div>
             </RuledSection>

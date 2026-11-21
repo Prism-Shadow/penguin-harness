@@ -1,4 +1,7 @@
-/** The models page, and the pinned group's balance on the sidebar's account row. */
+/**
+ * The models page, a system app (an App Center tile, lib/system-apps.ts), and the pinned group's
+ * balance on the sidebar's account row.
+ */
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import type { NavBadge } from "../../lib/sidebar-contributions";
 import { ModelsPage } from "./models-page";
@@ -12,13 +15,14 @@ import { PinnedBalanceBadge } from "./group-balance";
         key: "models",
         path: "/models",
         frame: "shell",
-        nav: "main",
+        nav: "none",
         admin: false,
         released: true,
         order: 30,
         title: "Models",
         titleZh: "模型库",
         icon: "chip",
+        app: { order: 10 },
       },
     ],
     "SidebarModule.navBadges": [{ id: "models.balance", anchor: "account", order: 20 }],

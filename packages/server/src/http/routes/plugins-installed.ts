@@ -88,6 +88,7 @@ import {
 } from "../../plugin/loader.js";
 import type { ModuleActor, PluginModules, PluginPackages } from "../../mechanisms/plugins.js";
 import { pluginTableEdits } from "../../services/plugin-tables.js";
+import { isSystemAppModule } from "../../plugin/system-app-modules.js";
 import {
   installedPackageDir,
   installPluginChannel,
@@ -250,8 +251,12 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     return projectId;
   };
 
-  // Reading and editing the Project's tables, shared with the plugin-modules service.
-  const { tablesOf, edit, list } = pluginTableEdits(deps);
+  // Reading and editing the Project's tables, shared with the plugin-modules service. A module
+  // behind a system app is judged by the build this server runs at the moment of the edit.
+  const { tablesOf, edit, list } = pluginTableEdits({
+    ...deps,
+    isLocked: (pkg) => isSystemAppModule(pkg, pluginBases(deps.root, deps.assetsDir())),
+  });
 
   const view = async (
     projectId: string,

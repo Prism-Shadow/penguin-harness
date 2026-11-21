@@ -29,6 +29,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { isConversationAgent } from "../../lib/builtin-agents";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { toastApiError } from "../../lib/toast-api-error";
@@ -90,7 +91,8 @@ export function TraceImportRow() {
     void api
       .listAgents(projectId, null)
       .then((res) => {
-        if (!cancelled) setAgents(res.agents);
+        // The system Agent holds no conversation to import into.
+        if (!cancelled) setAgents(res.agents.filter(isConversationAgent));
       })
       .catch(() => {
         // Unreachable list: the row disables itself rather than offering an empty picker.

@@ -1,6 +1,6 @@
 /**
  * End-to-end test for the plugin library (locale zh-CN):
- * - the sidebar nav shows "插件市场" ("Plugins"), and the page renders the library's plugin
+ * - the App Center shows the "插件市场" ("Plugins") system app, and the page renders the library's plugin
  *   cards across group sections (a collapsible group header: category name + plugin count,
  *   **no icon**; the group name follows the UI language — when the server ships a Chinese
  *   group name it's "Agent 自进化 / 办公效率 / 软件开发 / AI 应用开发", falling back to
@@ -8,7 +8,9 @@
  *   as a mask in the text colour, never inlined; not the book fallback), with metadata showing the plugin's npm
  *   version, its install status and usage count (worded semantically, not a bare number badge);
  * - the "Manage installation" Modal: an Agent row + Install / Installed (hover flips to
- *   Uninstall) button, with optimistic updates on install/uninstall;
+ *   Uninstall) button, with optimistic updates on install/uninstall; its first row,
+ *   「新建空白 Agent」, opens Create Agent over it prefilled with the plugin, and the Agent it
+ *   creates joins the list installed while the list stays open;
  * - Quick invoke is gated on the currently selected agent having the skill installed (here the
  *   current agent is default_agent; its button is disabled for a preinstall:false skill like
  *   remote-claude-code the current agent lacks);
@@ -109,11 +111,12 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   });
   expect(created.ok(), "create helper agent").toBeTruthy();
 
-  // —— Plugin library page: sidebar nav entry + cards in category sections, open on entry ——
+  // —— Plugin library page: the App Center's system app + cards in category sections, open on entry ——
   await page.goto(`${BASE}/chat`);
-  const navLink = page.getByRole("link", { name: "插件市场" });
-  await expect(navLink).toBeVisible();
-  await navLink.click();
+  await page.getByRole("link", { name: "应用中心" }).click();
+  const tile = page.getByRole("button", { name: "插件市场，系统应用" });
+  await expect(tile).toBeVisible();
+  await tile.click();
   await expect(page).toHaveURL(/\/plugins$/);
   const sectionHeader = page.getByRole("button", { name: SECTION_HEADER });
   await expect(sectionHeader).toBeVisible();
@@ -194,6 +197,27 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   // Clicking "已安装" ("Installed") uninstalls: flips back to "安装" ("Install").
   await uninstallHelper.click();
   await expect(page.getByRole("button", { name: "安装 agent_helper" })).toBeVisible();
+  // The first row, 「新建空白 Agent」: Create Agent opens over the list with the plugin ticked;
+  // once created, it closes and the new Agent is in the still-open list, installed.
+  await page.getByRole("button", { name: "新建并安装" }).click();
+  const createDialog = page.getByRole("dialog").filter({ hasText: "创建 Agent" });
+  await expect(createDialog).toBeVisible();
+  await createDialog.getByRole("textbox", { name: "Agent id", exact: true }).fill("blank_analyst");
+  await createDialog.getByRole("button", { name: "创建", exact: true }).click();
+  await expect(createDialog).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "卸载 blank_analyst" })).toContainText("已安装");
+  await expect
+    .poll(async () => {
+      const res = await (
+        await page.request.get(`${BASE}/api/projects/${projectId}/agents/blank_analyst/skills`)
+      ).json();
+      return res.skills.map((s) => s.name);
+    })
+    .toContain("data-analysis");
+  // Deleted again, so the rest of the run sees only the Agents it set up.
+  expect(
+    (await page.request.delete(`${BASE}/api/projects/${projectId}/agents/blank_analyst`)).ok(),
+  ).toBe(true);
   // Escape closes the Modal (built into the Modal).
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);

@@ -10,7 +10,10 @@
  * - Folders do not nest: a folder dropped beside an app inside a folder lands beside that folder.
  *
  * An item's id is its app key (`<agentId>/<workbenchId>`, which always holds a `/`) or its
- * folder's id (which never does), so one string names either.
+ * folder's id (which never does), so one string names either. An app of a machine's Agent is
+ * keyed `<machineId>:<agentId>/<workbenchId>` (lib/app-center-path.ts): two machines' Agents
+ * may share an id, and so may their workbenches. A system app is keyed `system_agent/<page key>`
+ * and arranged like any other app.
  */
 import type {
   AppCenterLayout,
@@ -18,15 +21,35 @@ import type {
   AppCenterShortcut,
 } from "@prismshadow/penguin-server/api";
 
-/** An app's key in a layout: `<agentId>/<workbenchId>`. */
-export function appKeyOf(shortcut: { agentId: string; workbenchId: string }): string {
-  return `${shortcut.agentId}/${shortcut.workbenchId}`;
+import { locatedAppKey } from "../../lib/app-center-path";
+
+/** A shortcut with the server it came from: absent `machineId` is this server. */
+export interface LocatedShortcut extends AppCenterShortcut {
+  machineId?: string;
+  /** The machine's name, written under the tile's name. */
+  machineLabel?: string;
+  /** Its machine is out of reach, or did not answer the last read: shown, but not opened. */
+  unavailable?: boolean;
+  /**
+   * A system app of the system Agent (system-tiles.ts), drawn with its page's glyph: it opens its
+   * page at `path`, never a window, and cannot be removed from the grid.
+   */
+  system?: { glyph: string };
+}
+
+/** An app's key in a layout: `<agentId>/<workbenchId>`, after `<machineId>:` for a machine's. */
+export function appKeyOf(shortcut: {
+  agentId: string;
+  workbenchId: string;
+  machineId?: string;
+}): string {
+  return locatedAppKey(shortcut.agentId, shortcut.workbenchId, shortcut.machineId);
 }
 
 export interface GridApp {
   type: "app";
   id: string;
-  shortcut: AppCenterShortcut;
+  shortcut: LocatedShortcut;
 }
 
 export interface GridFolder {
@@ -40,7 +63,7 @@ export type GridItem = GridApp | GridFolder;
 
 /** The grid the viewer sees: the stored layout over the live shortcuts. */
 export function arrange(
-  shortcuts: readonly AppCenterShortcut[],
+  shortcuts: readonly LocatedShortcut[],
   layout: AppCenterLayout | null,
 ): GridItem[] {
   const live = new Map(shortcuts.map((shortcut) => [appKeyOf(shortcut), shortcut] as const));
@@ -83,6 +106,90 @@ export function layoutOf(grid: readonly GridItem[]): AppCenterLayout {
         : { type: "folder", id: item.id, name: item.name, apps: item.apps.map((app) => app.id) },
     ),
   };
+}
+
+/**
+ * Whether a stored app is one the grid cannot show yet, and the stored arrangement must keep
+ * for it: an app of a machine that has not answered in this tab (and left nothing in it).
+ * `machines` is every machine of the Project and whether it has answered; null while that list
+ * is not known (it is still being read, or this account reads no machines), when every machine's
+ * app is kept. An app of a machine the list no longer names is gone, and is not kept; nor is one
+ * of this server's, which the grid always shows.
+ */
+export function appAwaited(
+  key: string,
+  machines: readonly { machineId: string; answered: boolean }[] | null,
+): boolean {
+  if (!key.slice(0, key.indexOf("/")).includes(":")) return false;
+  if (machines === null) return true;
+  return machines.some((m) => !m.answered && key.startsWith(`${m.machineId}:`));
+}
+
+/**
+ * The layout to store for a grid the viewer just arranged, with the apps it could not show put
+ * back (`awaited`, see {@link appAwaited}): moving the tiles on screen must not drop the place
+ * of a machine's tiles that have not arrived yet. Each goes back after the item it followed in
+ * the stored layout — inside its folder when that folder is still there, first when nothing it
+ * followed is left. A folder the viewer took apart leaves its awaited apps at the top level, after
+ * its own apps, rather than coming back holding only those.
+ */
+export function keepUnseenApps(
+  next: AppCenterLayout,
+  previous: AppCenterLayout | null,
+  awaited: (key: string) => boolean,
+): AppCenterLayout {
+  if (previous === null) return next;
+  const items: AppCenterLayoutItem[] = next.items.map((item) =>
+    item.type === "folder" ? { ...item, apps: [...item.apps] } : item,
+  );
+  const placed = new Set(items.flatMap((item) => (item.type === "app" ? [item.app] : item.apps)));
+  const topIndex = (id: string) =>
+    items.findIndex((item) => (item.type === "app" ? item.app : item.id) === id);
+  /** Where at the top level something that followed `previous.items[before - 1]` goes. */
+  const topAfter = (before: number) => {
+    for (let i = before - 1; i >= 0; i--) {
+      const item = previous.items[i]!;
+      // A folder taken apart left its apps where it was: the last of them is what it was.
+      const ids = item.type === "app" ? [item.app] : [item.id, ...[...item.apps].reverse()];
+      for (const id of ids) {
+        const at = topIndex(id);
+        if (at >= 0) return at + 1;
+      }
+    }
+    return 0;
+  };
+  previous.items.forEach((item, index) => {
+    if (item.type === "app") {
+      if (!awaited(item.app) || placed.has(item.app)) return;
+      items.splice(topAfter(index), 0, { type: "app", app: item.app });
+      placed.add(item.app);
+      return;
+    }
+    const missing = item.apps.filter((app) => awaited(app) && !placed.has(app));
+    if (missing.length === 0) return;
+    const folder = items.find((entry) => entry.type === "folder" && entry.id === item.id);
+    if (folder?.type === "folder") {
+      for (const app of missing) {
+        const was = item.apps.indexOf(app);
+        let at = 0;
+        for (let i = was - 1; i >= 0; i--) {
+          const sibling = folder.apps.indexOf(item.apps[i]!);
+          if (sibling >= 0) {
+            at = sibling + 1;
+            break;
+          }
+        }
+        folder.apps.splice(at, 0, app);
+        placed.add(app);
+      }
+      return;
+    }
+    const own = [...item.apps].reverse().find((app) => topIndex(app) >= 0);
+    const at = own === undefined ? topAfter(index) : topIndex(own) + 1;
+    items.splice(at, 0, ...missing.map((app): AppCenterLayoutItem => ({ type: "app", app })));
+    for (const app of missing) placed.add(app);
+  });
+  return { v: 1, items };
 }
 
 /** Whether two grids store as the same layout (a move that changed nothing writes nothing). */

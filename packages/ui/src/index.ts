@@ -19,9 +19,11 @@ export * from "./layers";
 export * from "./components/icons/icons";
 export * from "./components/icons/glyph-icon/glyph-icon";
 export * from "./components/icons/image-icon/image-icon";
+export * from "./components/icons/app-icon-shape/app-icon-shape";
 export * from "./components/icons/chevron/chevron";
 export * from "./components/icons/marks/marks";
 export * from "./components/icons/spinner/spinner";
+export * from "./components/icons/glyph-app-icon/glyph-app-icon";
 export * from "./components/icons/logos/provider-logo";
 export * from "./components/icons/logos/penguin-logo";
 export * from "./components/icons/avatars/avatar";
@@ -105,7 +107,9 @@ export * from "./components/overlays/report-dialog/report-dialog";
 // errors offer one, where reports open from, and the crash notice.
 export * from "./components/report/redact";
 export * from "./components/report/error-report";
-export * from "./components/report/seriousness";
+export * from "./components/report/reportable";
+export * from "./components/report/failure";
+export * from "./components/report/failure-text";
 export * from "./components/report/report-store";
 export * from "./components/report/report-host";
 export * from "./components/report/report-action";
@@ -115,6 +119,8 @@ export * from "./components/overlays/paged-dialog/paged-dialog";
 export * from "./components/overlays/drawer/drawer";
 export * from "./components/overlays/drawer/sheet";
 export * from "./components/overlays/lightbox/lightbox";
+// A surface that unfolds in place from its trigger, as a launcher's folder does.
+export * from "./components/overlays/unfold-surface/unfold-surface";
 // The unsaved-changes guard: the registry every dirty form and every save in flight joins, the
 // hooks that join it and guard a dialog's close, and the host that draws the one discard prompt
 // and the unload guard.
@@ -170,12 +176,13 @@ export * from "./components/content/a2ui/chart-block";
 export * from "./components/content/a2ui/resources-block";
 
 // W4-A — navigation, notices and readings: the tab bar, the grouped list's header, folder, more
-// row and pager, the create pair, the notice with its variants and the page to-do built on it,
-// the progress bar, the duration slot and its live clock, the beta tag, the disclosure row, and
-// the stat tile and chip.
+// row and pager (with the page number a reader can type over), the create pair, the notice with
+// its variants and the page to-do built on it, the progress bar, the duration slot and its live
+// clock, the beta tag, the disclosure row, and the stat tile and chip.
 export * from "./components/navigation/tabs/tabs";
 export * from "./components/navigation/group-header/group-header";
 export * from "./components/navigation/group-header/pager";
+export * from "./components/navigation/group-header/page-field";
 export * from "./components/actions/create-buttons/create-buttons";
 export * from "./components/feedback/notice/notice";
 export * from "./components/feedback/todo-notice/todo-notice";
@@ -191,6 +198,7 @@ export * from "./components/feedback/retry-status/retry-status";
 export * from "./components/feedback/transfer-progress/transfer-progress";
 export * from "./components/feedback/beta-badge/beta-badge";
 export * from "./components/layout/disclosure-row/disclosure-row";
+export * from "./components/layout/disclosure-row/disclosure-control";
 export * from "./components/data/stat-tile/stat-tile";
 export * from "./components/data/stat-chip/stat-chip";
 

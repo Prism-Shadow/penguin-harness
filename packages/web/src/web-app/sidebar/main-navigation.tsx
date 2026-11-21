@@ -16,6 +16,7 @@ import {
   type NavEntryKey as NavGroupKey,
 } from "../../lib/sidebar-nav-state";
 
+import { APP_CENTER_PATH } from "../../lib/app-center-path";
 import { glyphOf } from "../../lib/nav-icons";
 import { pageTitle } from "../index";
 import { UserMenu } from "./user-menu";
@@ -39,7 +40,11 @@ interface NavEntryView {
   children?: readonly NavEntryView[];
 }
 
-export function createMainSidebarNavigation(scope: MainSidebarState) {
+/**
+ * The nav as the sidebar draws it. `onSystemApp`: the page on screen is a system app or lies under
+ * one (lib/system-apps.ts), where the App Center's row is lit, since that is where those open.
+ */
+export function createMainSidebarNavigation(scope: MainSidebarState, onSystemApp = false) {
   const {
     location,
     locale,
@@ -149,7 +154,7 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
         label={label}
         glyph={glyph}
         href={to}
-        active={isCurrentPath(to, location.pathname)}
+        active={isCurrentPath(to, location.pathname) || (to === APP_CENTER_PATH && onSystemApp)}
         renderLink={renderRouterLink}
         onClick={() => onNavigate?.()}
         {...navEntryDragProps(key)}

@@ -14,8 +14,10 @@
  *   POST   /tabs/:tab/activate         focus a tab (the user) or switch to it (the agent)
  *   DELETE /tabs/:tab                  close a tab
  *   POST   /tabs/:tab/navigate|scan|exec|click|type|screenshot|cdp   the agent's actions
- *   GET    /import/sources             system browser profiles that can be imported (built-in)
- *   POST   /import                     import cookies and / or history from one (built-in)
+ *   GET    /import/sources             system browser profiles that can be imported, and the
+ *                                      caller's connected Chrome extension (built-in)
+ *   POST   /import                     import cookies and / or history from one (built-in); through
+ *                                      the extension, once the user allows it in Chrome
  *   GET    /settings                   the browser's settings (its homepage); admins
  *   PUT    /settings                   replace them: {homepage: address | null}; admins
  *   GET    /history?q=&limit=          search the history (built-in)
@@ -56,7 +58,7 @@ import type {
 import { requireHuman } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
 import { HttpError, errorBody } from "../http/errors.js";
-import { publicOriginOf } from "../http/public-origin.js";
+import { publicOriginOf } from "@prismshadow/penguin-library-http/public-origin";
 import { badRequest } from "../http/validate.js";
 import { isPenguinExtensionOrigin } from "./extension-origin.js";
 import type { ExtensionPairing } from "./extension-pairing.js";
@@ -426,9 +428,11 @@ export function builtinBrowserRoutes(
   });
 
   app.get("/import/sources", async (c) =>
-    c.json({
-      sources: await browser.listImportSources(queryActor(c)),
-    } satisfies BuiltinBrowserImportSourcesResponse),
+    c.json(
+      (await browser.listImportSources(
+        queryActor(c),
+      )) satisfies BuiltinBrowserImportSourcesResponse,
+    ),
   );
 
   app.post("/import", async (c) => {
