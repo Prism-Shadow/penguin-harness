@@ -66,7 +66,27 @@ function parseSemverTuple(ver) {
   return { major, minor, patch, pre: m[4] ?? "" };
 }
 
-function compareSemver(a, b) {
+function comparePreRelease(preA, preB) {
+  const partsA = preA.split(".");
+  const partsB = preB.split(".");
+  const len = Math.max(partsA.length, partsB.length);
+  for (let i = 0; i < len; i += 1) {
+    const idA = partsA[i];
+    const idB = partsB[i];
+    if (idA === undefined) return -1;
+    if (idB === undefined) return 1;
+    if (idA === idB) continue;
+    const numA = /^(?:0|[1-9]\d*)$/.test(idA);
+    const numB = /^(?:0|[1-9]\d*)$/.test(idB);
+    if (numA && numB) return Number(idA) - Number(idB);
+    if (numA) return -1;
+    if (numB) return 1;
+    return idA < idB ? -1 : 1;
+  }
+  return 0;
+}
+
+export function compareSemver(a, b) {
   const ta = parseSemverTuple(a);
   const tb = parseSemverTuple(b);
   if (!ta && !tb) return 0;
@@ -74,9 +94,10 @@ function compareSemver(a, b) {
   if (!tb) return 1;
   const core = ta.major - tb.major || ta.minor - tb.minor || ta.patch - tb.patch;
   if (core !== 0) return core;
+  if (!ta.pre && !tb.pre) return 0;
   if (!ta.pre && tb.pre) return 1;
   if (ta.pre && !tb.pre) return -1;
-  return ta.pre.localeCompare(tb.pre);
+  return comparePreRelease(ta.pre, tb.pre);
 }
 
 /** Extract the RFC revision version (e.g. `v1.0.0`) from raw RFC Markdown. */
@@ -326,6 +347,9 @@ export function refreshRfcPrStatusCache({
     openPrs: pullRequests(states: [OPEN], labels: [${JSON.stringify(RFC_LABEL)}], first: 100, orderBy: {field: CREATED_AT, direction: ASC}) {
       nodes { ${PR_FIELDS} }
     }
+    mergedPrs: pullRequests(states: [MERGED], labels: [${JSON.stringify(RFC_LABEL)}], first: 100, orderBy: {field: CREATED_AT, direction: ASC}) {
+      nodes { ${PR_FIELDS} }
+    }
     ${trackedAliases}
   }
 }`;
@@ -336,6 +360,11 @@ export function refreshRfcPrStatusCache({
 
   for (const node of repo.openPrs?.nodes ?? []) {
     if (node && !immutableNumbers.has(node.number)) {
+      byNumber.set(node.number, node);
+    }
+  }
+  for (const node of repo.mergedPrs?.nodes ?? []) {
+    if (node && !immutableNumbers.has(node.number) && !byNumber.has(node.number)) {
       byNumber.set(node.number, node);
     }
   }
@@ -390,7 +419,8 @@ export function loadRfcPrStatuses({
     ? (readJsonIfExists(seedFile) ?? readJsonIfExists(cacheFile))
     : (readJsonIfExists(cacheFile) ?? readJsonIfExists(seedFile));
   if (offline) {
-    return cached ?? { updatedAt: new Date(now).toISOString(), prs: [] };
+    const offlineData = readJsonIfExists(seedFile) ?? readJsonIfExists(cacheFile);
+    return offlineData ?? { updatedAt: new Date(now).toISOString(), prs: [] };
   }
   try {
     const { cache, fetched } = refreshRfcPrStatusCache({

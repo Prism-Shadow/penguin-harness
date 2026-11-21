@@ -12,12 +12,18 @@
  * - Build-time PR status refresh caches results for 24 hours and never re-fetches merged PRs.
  */
 import { describe, expect, it, vi } from "vitest";
-import { MAX_AGE_MS, refreshRfcPrStatusCache } from "../scripts/rfcs/pr-status.mjs";
+import {
+  compareSemver,
+  extractRfcVersion,
+  MAX_AGE_MS,
+  refreshRfcPrStatusCache,
+} from "../scripts/rfcs/pr-status.mjs";
 import {
   buildRfcIndex,
   buildRfcSearchRecords,
   buildRfcTree,
   collapsibleRfcTreeKeys,
+  compareRfcVersionTuple,
   countRfcTreeDescendantEntries,
   findRfcSearchMatchRanges,
   isMajorRfcVersion,
@@ -140,10 +146,43 @@ describe("buildRfcIndex", () => {
     expect(entry.zh).toBeUndefined();
   });
 
-  it("an open design PR carrying a newer revision is the entry's open revision", () => {
+  it("an open design PR carrying a newer revision is the entry's open revision, unless settled", () => {
     const entry = buildRfcIndex({ "PRFC-0003-plugin.md": landedWithUnmerged })[0]!;
     expect(entry.status).toBe("merged");
     expect(entry.openRevision?.href).toBe(UNMERGED_PR);
+
+    const settledEntry = buildRfcIndex({ "PRFC-0003-plugin.md": landedWithUnmerged }, [
+      {
+        number: 279,
+        title: "docs(rfcs): closed unmerged revision",
+        url: UNMERGED_PR,
+        status: "closed",
+        baseRefName: "main",
+        headRefOid: "sha-closed",
+        rfcs: [{ id: "PRFC-0003-plugin", number: "PRFC-0003", title: "PRFC-0003 Plugin" }],
+      },
+    ])[0]!;
+    expect(settledEntry.openRevision).toBeUndefined();
+
+    const closedDraftEntry = buildRfcIndex({ "PRFC-0005-plugin-versioning.md": openDraft }, [
+      {
+        number: 12,
+        title: "docs(rfcs): closed draft",
+        url: DESIGN_PR,
+        status: "closed",
+        baseRefName: "main",
+        headRefOid: "sha-12",
+        rfcs: [
+          {
+            id: "PRFC-0005-plugin-versioning",
+            number: "PRFC-0005",
+            title: "PRFC-0005 Plugin Versioning",
+          },
+        ],
+      },
+    ])[0]!;
+    expect(closedDraftEntry.status).toBe("closed");
+    expect(closedDraftEntry.en).toBeUndefined();
   });
 
   it("merges request-for-comments GitHub PR records and ignores non-main base branches", () => {
@@ -236,12 +275,63 @@ describe("buildRfcIndex", () => {
       "v1.0.0",
       "v2",
       "v2.0.0",
+      "v2.0.0+build.1",
     ]) {
       expect(isMajorRfcVersion(major)).toBe(true);
     }
-    for (const nonMajor of ["v0.0.0", "v0.1.2", "v1.1.0", "v1.2.0", "v2.3.0"]) {
+    for (const nonMajor of ["v0.0.0", "v0.1.2", "v1.0.0-alpha.1", "v1.1.0", "v1.2.0", "v2.3.0"]) {
       expect(isMajorRfcVersion(nonMajor)).toBe(false);
     }
+
+    expect(compareSemver("v1.0.0-rc.2", "v1.0.0-rc.10")).toBeLessThan(0);
+    expect(compareSemver("v1.0.0-rc.10", "v1.0.0")).toBeLessThan(0);
+    expect(compareRfcVersionTuple("v1.0.0-rc.2", "v1.0.0-rc.10")).toBeLessThan(0);
+    expect(compareRfcVersionTuple("v1.0.0+20261120", "v2.0.0+20260101")).toBeLessThan(0);
+    expect(
+      extractRfcVersion(
+        ["> **Rev**: v1.0.0-rc.2", "", "## Changes", "", "### v1.0.0-rc.10", "- Candidate 10"].join(
+          "\n",
+        ),
+      ),
+    ).toBe("v1.0.0-rc.10");
+  });
+
+  it("orders multiple major-version PRs by semantic version rather than PR number", () => {
+    const index = buildRfcIndex({ "PRFC-0001-module.md": landedEn }, [
+      {
+        number: 1200,
+        title: "docs(rfcs): PRFC-0001 v2.0.0",
+        url: "https://github.com/Prism-Shadow/penguin-harness/pull/1200",
+        status: "merged",
+        baseRefName: "main",
+        headRefOid: "sha-v2",
+        rfcs: [
+          {
+            id: "PRFC-0001-module",
+            number: "PRFC-0001",
+            title: "PRFC-0001 Module",
+            version: "v2.0.0+build.1",
+          },
+        ],
+      },
+      {
+        number: 1500,
+        title: "docs(rfcs): PRFC-0001 v1.0.0 backfill",
+        url: "https://github.com/Prism-Shadow/penguin-harness/pull/1500",
+        status: "merged",
+        baseRefName: "main",
+        headRefOid: "sha-v1",
+        rfcs: [
+          {
+            id: "PRFC-0001-module",
+            number: "PRFC-0001",
+            title: "PRFC-0001 Module",
+            version: "v1.0.0",
+          },
+        ],
+      },
+    ]);
+    expect(index[0]!.prNumber).toBe(1200);
   });
 
   it("selects the last major version PR as main and collects non-main opening PRs as child editions", () => {
@@ -408,9 +498,11 @@ describe("buildRfcIndex", () => {
     expect([...readRfcTreeCollapsed(validSet, mockStorage)]).toEqual(["PRFC-0001-module"]);
   });
 
-  it("resolves RFC entries by exact id or by PRFC number when a slug was renamed", () => {
+  it("resolves RFC entries by exact id, registered slug alias, or unique bare PRFC number", () => {
     expect(rfcEntryOf("PRFC-0024-cli-modules")?.id).toBe("PRFC-0024-cli-modules");
     expect(rfcEntryOf("PRFC-0024-cli-resolution")?.id).toBe("PRFC-0024-cli-modules");
+    expect(rfcEntryOf("PRFC-0024")?.id).toBe("PRFC-0024-cli-modules");
+    expect(rfcEntryOf("PRFC-0024-unknown-typo")).toBeUndefined();
     expect(rfcEntryOf("PRFC-9999-nonexistent")).toBeUndefined();
   });
 
@@ -474,11 +566,12 @@ describe("buildRfcIndex", () => {
         "",
         "## The RFCs",
         "",
-        "Module and Plugin.",
+        "Module and Plugin with `snake_case_identifier`.",
       ].join("\n"),
     });
     expect(searchRfcRecords(records, "FakeFenceHeading")).toEqual([]);
     expect(searchRfcRecords(records, "unsearchable_fence_token_xyz")).toEqual([]);
+    expect(searchRfcRecords(records, "snake_case_identifier")).toHaveLength(1);
     const hits = searchRfcRecords(records, "module");
     expect(hits.length).toBeGreaterThan(0);
     expect(hits.some((h) => h.record.href === "/rfcs/PRFC-0001-module")).toBe(true);
@@ -539,36 +632,74 @@ describe("refreshRfcPrStatusCache optimizations", () => {
     expect(graphql).not.toHaveBeenCalled();
   });
 
-  it("after 24 hours, queries only open PRs and never re-fetches merged PRs", () => {
-    const graphql = vi.fn((_query: string) => ({
-      repository: {
-        openPrs: { nodes: [] },
-        pr_1229: {
-          number: 1229,
-          title: "docs(rfcs): draft RFC PRFC-0004 - plugin scope",
-          url: "https://github.com/Prism-Shadow/penguin-harness/pull/1229",
-          state: "MERGED",
-          isDraft: false,
-          baseRefName: "main",
-          headRefOid: "sha-open",
-          files: { nodes: [{ path: "rfcs/PRFC-0004-plugin-scope.md" }] },
+  it("after 24 hours, queries open and newly merged PRs without re-fetching cached merged blobs", () => {
+    const graphql = vi.fn((query: string) => {
+      if (query.includes("b_0:")) {
+        return {
+          repository: {
+            b_0: { text: "# PRFC-0026 New Merged\n\n> **Rev**: v1.0.0\n\n## Summary\n" },
+          },
+        };
+      }
+      return {
+        repository: {
+          openPrs: { nodes: [] },
+          mergedPrs: {
+            nodes: [
+              {
+                number: 1228,
+                title: "docs(rfcs): move the landed design RFCs into the repository",
+                url: "https://github.com/Prism-Shadow/penguin-harness/pull/1228",
+                state: "MERGED",
+                isDraft: false,
+                baseRefName: "main",
+                headRefOid: "sha-merged",
+                files: { nodes: [{ path: "rfcs/PRFC-0001-module.md" }] },
+              },
+              {
+                number: 1680,
+                title: "docs(rfcs): add PRFC-0026",
+                url: "https://github.com/Prism-Shadow/penguin-harness/pull/1680",
+                state: "MERGED",
+                isDraft: false,
+                baseRefName: "main",
+                headRefOid: "sha-1680",
+                files: { nodes: [{ path: "rfcs/PRFC-0026-new-merged.md" }] },
+              },
+            ],
+          },
+          pr_1229: {
+            number: 1229,
+            title: "docs(rfcs): draft RFC PRFC-0004 - plugin scope",
+            url: "https://github.com/Prism-Shadow/penguin-harness/pull/1229",
+            state: "MERGED",
+            isDraft: false,
+            baseRefName: "main",
+            headRefOid: "sha-open",
+            files: { nodes: [{ path: "rfcs/PRFC-0004-plugin-scope.md" }] },
+          },
         },
-      },
-    }));
+      };
+    });
     const result = refreshRfcPrStatusCache({
       cache: sampleCache,
       now: baseTime + MAX_AGE_MS + 1000,
       graphql,
     });
     expect(result.fetched).toBe(true);
-    expect(graphql).toHaveBeenCalledTimes(1);
-    const query = String(graphql.mock.calls[0]?.[0] ?? "");
-    expect(query).toContain("states: [OPEN]");
-    expect(query).toContain("pr_1229: pullRequest(number: 1229)");
-    expect(query).not.toContain("1228");
+    expect(graphql).toHaveBeenCalledTimes(2);
+    const prQuery = String(graphql.mock.calls[0]?.[0] ?? "");
+    expect(prQuery).toContain("states: [OPEN]");
+    expect(prQuery).toContain("states: [MERGED]");
+    expect(prQuery).toContain("pr_1229: pullRequest(number: 1229)");
+    expect(prQuery).not.toContain("pr_1228");
+    const blobQuery = String(graphql.mock.calls[1]?.[0] ?? "");
+    expect(blobQuery).toContain("sha-1680:rfcs/PRFC-0026-new-merged.md");
+    expect(blobQuery).not.toContain("sha-merged");
     expect(result.cache.prs.map((p) => [p.number, p.status])).toEqual([
       [1228, "merged"],
       [1229, "merged"],
+      [1680, "merged"],
     ]);
   });
 });

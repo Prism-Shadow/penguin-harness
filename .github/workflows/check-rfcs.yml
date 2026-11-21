@@ -11,6 +11,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Check RFC files
         run: |
@@ -163,13 +165,26 @@ jobs:
                 continue
               fi
 
-              # Check if there's a version heading under ## Changes
-              if ! grep -A 10 "^## Changes" "$file" | grep -q "^### v[0-9]"; then
-                echo "❌ $filename has ## Changes section but no version headings (e.g., ### v2.0.0)"
+              # Check if there's a valid SemVer 2.0 version heading under ## Changes
+              CHANGE_VERSIONS=$(awk '/^## Changes[[:space:]]*$/{flag=1; next} /^## /{flag=0} flag && /^### /{sub(/^### +/, ""); sub(/[[:space:]]+$/, ""); print}' "$file")
+              if [ -z "$CHANGE_VERSIONS" ]; then
+                echo "❌ $filename has ## Changes section but no version headings (e.g., ### v1.0.0)"
                 ERROR=1
-              else
-                echo "✅ $filename: ## Changes section present with version"
+                continue
               fi
+
+              # If the document header declares a Rev version, ensure ## Changes records it
+              REV_LINE=$(grep -E '^>[[:space:]]*(-\s*)?(\*\*Rev\*\*:|Rev:|\*\*修订\*\*：|修订：)' "$file" | head -n 1 || true)
+              if [ -n "$REV_LINE" ]; then
+                REV_TOKEN=$(echo "$REV_LINE" | sed -E 's/^>[[:space:]]*(-\s*)?(\*\*Rev\*\*:|Rev:|\*\*修订\*\*：|修订：)[[:space:]]*([^[:space:]（(;；,，]+).*/\3/')
+                if ! echo "$CHANGE_VERSIONS" | grep -Fxq "$REV_TOKEN"; then
+                  echo "❌ $filename declares Rev '$REV_TOKEN' but has no matching '### $REV_TOKEN' in ## Changes"
+                  ERROR=1
+                  continue
+                fi
+              fi
+
+              echo "✅ $filename: ## Changes section present with version"
             done
           else
             echo "ℹ️  No modified RFC files detected (only new additions)"

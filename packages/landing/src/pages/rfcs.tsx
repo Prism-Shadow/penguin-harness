@@ -33,7 +33,8 @@ function formatTreeMarkdown(nodes: readonly RfcTreeNode[], locale: string, depth
   for (const node of nodes) {
     if (node.editionPr) {
       const pr = node.editionPr;
-      lines.push(`${indent}- [#${pr.number} ${pr.title}](${pr.url})`);
+      const safeTitle = pr.title.replace(/([[\]])/g, "\\$1");
+      lines.push(`${indent}- [#${pr.number} ${safeTitle}](${pr.url})`);
     } else if (!node.entry) {
       lines.push(`${indent}- **${node.label}**`);
     } else {

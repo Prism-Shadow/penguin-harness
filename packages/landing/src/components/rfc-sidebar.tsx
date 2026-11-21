@@ -55,6 +55,8 @@ export function RfcSidebar({
     .replace(/\/$/, "")
     .replace(/\.zh$/, "");
   const isIndex = pathname === "/rfcs" || pathname === "/rfcs/";
+  const resolvedActiveId =
+    (!isIndex && activeId ? rfcEntryOf(activeId)?.id : undefined) ?? activeId;
 
   return (
     <nav aria-label={S.rfcs.indexLabel} className="site-sidebar text-sm">
@@ -81,7 +83,7 @@ export function RfcSidebar({
           {rfcEntries
             .filter((entry) => entry.status === "merged" && rfcDocForLocale(entry, locale))
             .map((entry) => {
-              const active = !isIndex && activeId === entry.id;
+              const active = !isIndex && resolvedActiveId === entry.id;
               return (
                 <li key={entry.id}>
                   <Link
@@ -311,7 +313,9 @@ function SmartlogGraphTreeView({
 }) {
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
-  const activeKey = hoveredKey ?? focusedKey;
+  const [activeSource, setActiveSource] = useState<"hover" | "focus">("hover");
+  const activeKey =
+    activeSource === "focus" ? (focusedKey ?? hoveredKey) : (hoveredKey ?? focusedKey);
   const CELL = 24;
   const PAD_L = 12;
   const ROW_H = 34;
@@ -358,11 +362,11 @@ function SmartlogGraphTreeView({
         : firstRootY;
 
   const hoveredRow = hoveredIdx !== null ? rows[hoveredIdx] : undefined;
-  const highlightColorClass = hoveredRow?.node.editionPr
-    ? "text-emerald-500 dark:text-emerald-400"
-    : hoveredRow?.node.entry?.status === "merged"
+  const hoveredStatus = hoveredRow?.node.editionPr?.status ?? hoveredRow?.node.entry?.status;
+  const highlightColorClass =
+    hoveredStatus === "merged"
       ? "text-violet-500 dark:text-violet-400"
-      : hoveredRow?.node.entry?.status === "open"
+      : hoveredStatus === "open"
         ? "text-emerald-500 dark:text-emerald-400"
         : "text-slate-600 dark:text-slate-300";
 
@@ -608,9 +612,15 @@ function SmartlogGraphTreeView({
           return (
             <li
               key={node.key}
-              onMouseEnter={() => setHoveredKey(node.key)}
+              onMouseEnter={() => {
+                setHoveredKey(node.key);
+                setActiveSource("hover");
+              }}
               onMouseLeave={() => setHoveredKey((prev) => (prev === node.key ? null : prev))}
-              onFocus={() => setFocusedKey(node.key)}
+              onFocus={() => {
+                setFocusedKey(node.key);
+                setActiveSource("focus");
+              }}
               onBlur={(event) => {
                 if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
                   setFocusedKey((prev) => (prev === node.key ? null : prev));
@@ -624,6 +634,7 @@ function SmartlogGraphTreeView({
               {hasChildren && (
                 <button
                   type="button"
+                  tabIndex={-1}
                   onClick={() => onToggle(node.key)}
                   aria-expanded={!isCollapsed}
                   aria-label={isCollapsed ? S.rfcs.expandNode(name) : S.rfcs.collapseNode(name)}
@@ -667,7 +678,7 @@ function SmartlogGraphTreeView({
                         {node.label}
                       </span>
                       <span className="rounded-full bg-slate-100 px-1.5 py-0.5 font-mono text-xs leading-none tabular-nums text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                        {isCollapsed ? `+${hiddenChildCount}` : descendantCount}
+                        {isCollapsed ? `+${descendantCount}` : descendantCount}
                       </span>
                     </button>
                   ) : (
@@ -708,26 +719,25 @@ export function RfcTreeView({ locale, headingId }: { locale: string; headingId?:
     readRfcTreeCollapsed(validKeysSet),
   );
 
+  useEffect(() => {
+    writeRfcTreeCollapsed(collapsed);
+  }, [collapsed]);
+
   const toggleNode = useCallback((key: string) => {
     setCollapsedState((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
-      writeRfcTreeCollapsed(next);
       return next;
     });
   }, []);
 
   const expandAll = useCallback(() => {
-    const next = new Set<string>();
-    setCollapsedState(next);
-    writeRfcTreeCollapsed(next);
+    setCollapsedState(new Set<string>());
   }, []);
 
   const collapseAll = useCallback(() => {
-    const next = new Set(collapsibleKeys);
-    setCollapsedState(next);
-    writeRfcTreeCollapsed(next);
+    setCollapsedState(new Set(collapsibleKeys));
   }, [collapsibleKeys]);
 
   const rows = useMemo(() => flattenRfcTree(rfcTree, collapsed), [collapsed]);
@@ -856,8 +866,17 @@ export function RfcShell({
 
   const openSearch = useCallback((trigger?: HTMLElement) => {
     const activeEl = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    searchReturnFocusRef.current = trigger ?? activeEl;
-    if (mobileDetailsRef.current) mobileDetailsRef.current.open = false;
+    const detailsEl = mobileDetailsRef.current;
+    const summaryEl = detailsEl?.querySelector("summary");
+    const fallbackEl =
+      detailsEl?.open &&
+      activeEl &&
+      detailsEl.contains(activeEl) &&
+      summaryEl instanceof HTMLElement
+        ? summaryEl
+        : activeEl;
+    searchReturnFocusRef.current = trigger ?? fallbackEl;
+    if (detailsEl) detailsEl.open = false;
     setSearchOpen(true);
   }, []);
 
@@ -867,6 +886,31 @@ export function RfcShell({
   useEffect(() => {
     if (mobileDetailsRef.current) mobileDetailsRef.current.open = false;
   }, [pathname, hash, key]);
+
+  useEffect(() => {
+    if (!hash) return;
+    const rawId = hash.slice(1);
+    if (!rawId) return;
+    let targetId = rawId;
+    try {
+      targetId = decodeURIComponent(rawId);
+    } catch {
+      // Keep raw fragment if malformed URI component.
+    }
+    const scrollToTarget = (): boolean => {
+      const el = document.getElementById(targetId);
+      if (!el) return false;
+      el.scrollIntoView();
+      onPinToc(targetId);
+      return true;
+    };
+    if (!scrollToTarget()) {
+      const frame = requestAnimationFrame(() => {
+        scrollToTarget();
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [pathname, hash, key, onPinToc]);
 
   const records = useMemo(
     () => buildRfcSearchRecords(locale, { title: S.rfcs.indexLabel, body: indexSearchBody }),

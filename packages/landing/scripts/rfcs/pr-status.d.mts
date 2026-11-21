@@ -5,6 +5,7 @@ export interface RfcPrDocRef {
   number: string;
   title: string;
   titleZh?: string;
+  version?: string;
 }
 
 export interface RfcPrRecord {
@@ -31,7 +32,14 @@ export const CACHE_FILE: string;
 
 export function normalizePrStatus(state: string, isDraft?: boolean): RfcPrStatus;
 export function extractH1Title(raw: string | undefined): string | undefined;
+export function compareSemver(a: string | undefined, b: string | undefined): number;
+export function extractRfcVersion(raw: string | undefined): string | undefined;
 export function runGithubGraphql(query: string): Record<string, unknown>;
+export function hydratePrRecords(
+  nodes: readonly Record<string, unknown>[],
+  cachedByNumber: ReadonlyMap<number, RfcPrRecord>,
+  graphql?: (query: string) => Record<string, unknown>,
+): RfcPrRecord[];
 export function refreshRfcPrStatusCache(options?: {
   cache?: RfcPrStatusCache | null;
   now?: number;

@@ -118,10 +118,14 @@ export function isValidRfcSemver(version: string): boolean {
  * - `v0.0.1`, `v0.0.2` (when `major === 0 && minor === 0 && patch > 0`)
  * - `v0.1.0`, `v0.2.0` / `v0.1`, `v0.2` (when `major === 0 && minor > 0 && patch === 0`)
  * - `v1.0.0`, `v2.0.0` / `v1`, `v2` (when `major > 0 && minor === 0 && patch === 0`)
- * Versions like `v0.1.2`, `v1.1.0`, `v1.2.0` are not major versions.
+ * Pre-release versions (e.g. `v1.0.0-alpha.1`) and non-zero minor/patch releases (e.g. `v0.1.2`,
+ * `v1.1.0`, `v1.2.0`) are not major versions; optional `+build` metadata is ignored.
  */
 export function isMajorRfcVersion(version: string): boolean {
-  const m = /^v?(0|[1-9]\d*)(?:\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?)?$/.exec(version.trim());
+  const m =
+    /^v?(0|[1-9]\d*)(?:\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(
+      version.trim(),
+    );
   if (!m) return false;
   const major = Number(m[1]);
   const minor = Number(m[2] ?? "0");
@@ -130,17 +134,52 @@ export function isMajorRfcVersion(version: string): boolean {
   return nonZeroCount === 1;
 }
 
-function compareRfcVersionTuple(a?: string, b?: string): number {
-  const parse = (v?: string): [number, number, number] | null => {
-    const m = /^v?(0|[1-9]\d*)(?:\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?)?$/.exec((v ?? "").trim());
-    return m ? [Number(m[1]), Number(m[2] ?? "0"), Number(m[3] ?? "0")] : null;
+function comparePreReleaseIdentifiers(preA: string, preB: string): number {
+  const partsA = preA.split(".");
+  const partsB = preB.split(".");
+  const len = Math.max(partsA.length, partsB.length);
+  for (let i = 0; i < len; i += 1) {
+    const idA = partsA[i];
+    const idB = partsB[i];
+    if (idA === undefined) return -1;
+    if (idB === undefined) return 1;
+    if (idA === idB) continue;
+    const numA = /^(?:0|[1-9]\d*)$/.test(idA);
+    const numB = /^(?:0|[1-9]\d*)$/.test(idB);
+    if (numA && numB) return Number(idA) - Number(idB);
+    if (numA) return -1;
+    if (numB) return 1;
+    return idA < idB ? -1 : 1;
+  }
+  return 0;
+}
+
+export function compareRfcVersionTuple(a?: string, b?: string): number {
+  const parse = (
+    v?: string,
+  ): { major: number; minor: number; patch: number; pre: string } | null => {
+    const m =
+      /^v?(0|[1-9]\d*)(?:\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?)?(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(
+        (v ?? "").trim(),
+      );
+    if (!m) return null;
+    const major = Number(m[1]);
+    const minor = Number(m[2] ?? "0");
+    const patch = Number(m[3] ?? "0");
+    if (major === 0 && minor === 0 && patch === 0) return null;
+    return { major, minor, patch, pre: m[4] ?? "" };
   };
   const ta = parse(a);
   const tb = parse(b);
   if (!ta && !tb) return 0;
   if (!ta) return -1;
   if (!tb) return 1;
-  return ta[0] - tb[0] || ta[1] - tb[1] || ta[2] - tb[2];
+  const core = ta.major - tb.major || ta.minor - tb.minor || ta.patch - tb.patch;
+  if (core !== 0) return core;
+  if (!ta.pre && !tb.pre) return 0;
+  if (!ta.pre && tb.pre) return 1;
+  if (ta.pre && !tb.pre) return -1;
+  return comparePreReleaseIdentifiers(ta.pre, tb.pre);
 }
 
 function pickLastMajorRfcPr(items: readonly { pr: RfcPrRecord; ref: RfcPrDocRef }[]): {
@@ -244,6 +283,20 @@ export function buildRfcIndex(
     .slice()
     .sort((a, b) => a.number - b.number);
 
+  const settledPrUrls = new Set(
+    mainPrs.filter((pr) => pr.status === "merged" || pr.status === "closed").map((pr) => pr.url),
+  );
+  const closedPrByUrl = new Map(
+    mainPrs.filter((pr) => pr.status === "closed").map((pr) => [pr.url, pr]),
+  );
+  const closedPrByRfcId = new Map<string, RfcPrRecord>();
+  for (const pr of mainPrs) {
+    if (pr.status !== "closed") continue;
+    for (const ref of pr.rfcs ?? []) {
+      closedPrByRfcId.set(ref.id, pr);
+    }
+  }
+
   const itemsByRfcId = new Map<string, { pr: RfcPrRecord; ref: RfcPrDocRef }[]>();
   for (const pr of mainPrs) {
     if (pr.status === "closed") continue;
@@ -290,28 +343,36 @@ export function buildRfcIndex(
     const mainPr = resolved?.main.pr;
     const openEditions = resolved?.openEditions ?? [];
     const docStatus = en?.status ?? zh?.status ?? "draft";
-    const status: RfcStatus = docStatus === "merged" ? "merged" : (mainPr?.status ?? docStatus);
+    const docPrHref = en?.prHref ?? zh?.prHref;
+    const closedPr =
+      !mainPr && docStatus !== "merged"
+        ? ((docPrHref ? closedPrByUrl.get(docPrHref) : undefined) ?? closedPrByRfcId.get(id))
+        : undefined;
+    const effectivePr = mainPr ?? closedPr;
+    const status: RfcStatus =
+      docStatus === "merged" ? "merged" : (effectivePr?.status ?? docStatus);
     const linked = (doc?: ParsedDocument): RfcDocument | undefined => {
       if (!doc || status === "draft" || status === "closed") return undefined;
       if (status === "open") {
-        const href = mainPr?.url ?? doc.prHref;
+        const href = effectivePr?.url ?? doc.prHref;
         return href ? { href, file: doc.file, raw: doc.raw } : undefined;
       }
       return { href: inSiteHref(doc.id, doc.zh), file: doc.file, raw: doc.raw };
     };
+    const docOpenRevHref = en?.openRevisionHref ?? zh?.openRevisionHref;
+    const validDocOpenRevHref =
+      docOpenRevHref && !settledPrUrls.has(docOpenRevHref) ? docOpenRevHref : undefined;
     const openRevisionHref =
-      (status === "merged" ? openEditions[0]?.url : undefined) ??
-      en?.openRevisionHref ??
-      zh?.openRevisionHref;
-    const prHref = mainPr?.url ?? en?.prHref ?? zh?.prHref;
+      (status === "merged" ? openEditions[0]?.url : undefined) ?? validDocOpenRevHref;
+    const prHref = effectivePr?.url ?? docPrHref;
     entriesById.set(id, {
       id,
       number: id.match(/^PRFC-\d+/)?.[0] ?? id,
       title: en?.title ?? zh!.title,
       titleZh: zh?.title,
       status,
-      ...(mainPr?.number ? { prNumber: mainPr.number } : {}),
-      ...(mainPr?.title ? { prTitle: mainPr.title } : {}),
+      ...(effectivePr?.number ? { prNumber: effectivePr.number } : {}),
+      ...(effectivePr?.title ? { prTitle: effectivePr.title } : {}),
       ...(prHref ? { prHref } : {}),
       en: linked(en),
       zh: linked(zh),
@@ -607,15 +668,22 @@ export function writeRfcTreeCollapsed(
   }
 }
 
-/** Find an RFC entry by its route id (with or without the `.zh` suffix, falling back to a unique 4-digit RFC number). */
+/** Historical slug aliases for RFCs whose file slug was renamed across revisions. */
+const RFC_SLUG_ALIASES: Readonly<Record<string, string>> = {
+  "PRFC-0024-cli-resolution": "PRFC-0024-cli-modules",
+};
+
+/** Find an RFC entry by its route id (with or without `.zh`, supporting registered slug aliases or a unique bare `PRFC-NNNN` number). */
 export function rfcEntryOf(id: string): RfcEntry | undefined {
   const baseId = id.replace(/\.zh$/, "");
-  const exact = rfcEntries.find((entry) => entry.id === baseId);
+  const resolvedId = RFC_SLUG_ALIASES[baseId] ?? baseId;
+  const exact = rfcEntries.find((entry) => entry.id === resolvedId);
   if (exact) return exact;
-  const num = baseId.match(/^PRFC-\d+/)?.[0];
-  if (!num) return undefined;
-  const matches = rfcEntries.filter((entry) => entry.number === num);
-  return matches.length === 1 ? matches[0] : undefined;
+  if (/^PRFC-\d+$/.test(baseId)) {
+    const matches = rfcEntries.filter((entry) => entry.number === baseId);
+    return matches.length === 1 ? matches[0] : undefined;
+  }
+  return undefined;
 }
 
 /** Read `rfcs/README.md` or `rfcs/README.zh.md` into its intro paragraph and its `## ` sections. */
@@ -732,7 +800,8 @@ function markdownToPlain(markdown: string): string {
     .replace(/`([^`]+)`/g, "$1")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/^\s{0,3}(?:#{1,6}|>|[-+*]|\d+[.)])\s+/gm, "")
-    .replace(/(\*\*|~~|__|\*|_)/g, "")
+    .replace(/(\*\*|~~|__|\*)/g, "")
+    .replace(/(^|[^\w])_|_([^\w]|$)/g, "$1$2")
     .replace(/\|/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -746,9 +815,10 @@ function splitMarkdownSections(body: string): { heading: string; anchor: string;
   let fence: { char: string; len: number } | null = null;
   for (const line of body.split("\n")) {
     if (!fence) {
-      const openFence = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
+      const openFence = /^\s{0,3}(`{3,}[^`]*|~{3,}.*)$/.exec(line);
       if (openFence) {
-        const seq = openFence[1]!;
+        const seqMatch = /^(`+|~+)/.exec(openFence[1]!);
+        const seq = seqMatch![1]!;
         fence = { char: seq[0]!, len: seq.length };
         continue;
       }
