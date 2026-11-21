@@ -26,7 +26,9 @@
  *
  * It answers the plugin library too: this server's (`library`) and each machine's own, and an
  * install on an Agent takes the named plugins' Skills from the library of the server that holds
- * the Agent, refusing a plugin that library does not have ({@link AgentServer.skillsOn}). How the
+ * the Agent, refusing a plugin that library does not have ({@link AgentServer.skillsOn}). An Agent
+ * created on this server joins its list under the name it was given, carrying the Skills of the
+ * plugins it was created with; a plugin this server's library lacks refuses the create. How the
  * library's server modules stand on this server (`modules`) rides along on every answer of an
  * Agent's plugins, and an ask for one (`POST …/plugins/modules`) applies the server's rule: a
  * member's ask for a module that is not built in leaves a waiting request, anything else runs.
@@ -293,6 +295,8 @@ export interface AgentServer {
   answerMcpTest(answer: (entry: MCPServerConfig) => McpServerTestResponse): void;
   /** Takes a machine out of reach (being brought back), or brings it back. */
   setReconnecting(machineId: string, reconnecting: boolean): void;
+  /** Takes a machine out of the Project's machines list, or puts it back (the page reads on `machines_changed`). */
+  setListed(machineId: string, listed: boolean): void;
   /** Breaks an organization's chart (or mends it): from then on only its CEO is known to work there. */
   setChartUnreadable(orgId: string, unreadable: boolean): void;
   /** A conversation's messaging bindings as the server that runs it (null: this one) holds them now. */
@@ -404,7 +408,9 @@ export function agentServer(
   let allOn = true;
   /** A workbench as the list describes it: with its switch, unless the server predates them. */
   const listed = (w: WorkbenchInfo): WorkbenchInfo =>
-    options.older ? w : { ...w, enabled: !switchedOff.has(w.id) };
+    options.older
+      ? w
+      : { ...w, enabled: !switchedOff.has(w.id), showInSidebar: w.showInSidebar !== false };
   let vault: VaultEntryInfo[] = [{ key: "GITHUB_TOKEN", valueMasked: "gh****" }];
   let schedules: ScheduleItem[] = (options.schedules ?? [])
     .filter((s) => s.machineId === undefined)
@@ -465,6 +471,8 @@ export function agentServer(
       ...organizations.flatMap((o) => o.employees.map((e) => e.agentId)),
     ]),
   ];
+  /** The names this server's Agents were created with here (a create), as its list answers them. */
+  const createdNames = new Map<string, string>();
   /** The organizations employing an Agent, as the Agent list carries them. */
   const employmentsOf = (agentId: string): Employment[] =>
     organizations.flatMap((o) =>
@@ -511,6 +519,8 @@ export function agentServer(
     pluginUpdates: agentId === AGENT_ID ? pluginUpdates : [],
   });
 
+  /** Machines the list leaves out for now (setListed). */
+  const unlisted = new Set<string>();
   /** The machines list as this server reports it: itself first, then each machine. */
   const machinesList = (): MachineInfo[] => [
     {
@@ -525,32 +535,34 @@ export function agentServer(
       status: null,
       root: "/data",
     },
-    ...machines.map((m): MachineInfo => ({
-      id: `ssh:${m.alias}`,
-      alias: m.alias,
-      installed: { version: "0.2.16", at: "2026-10-01T00:00:00Z" },
-      member: true,
-      machineId: m.machineId,
-      local: false,
-      connection: m.reconnecting === true ? null : { pid: 4242 },
-      socket: null,
-      ...(m.reconnecting === true
-        ? {
-            reconnect: {
-              since: "2026-10-15T00:00:00Z",
-              attempts: 2,
-              maxAttempts: 8,
-              nextAt: null,
-              lastError: null,
-              diagnosis: null,
-            },
-          }
-        : {}),
-      keepConnected: true,
-      api: null,
-      status: { state: "running", checkedAt: "2026-10-15T00:00:00Z", port: 7371 },
-      root: "/home/penguin/.penguin/data",
-    })),
+    ...machines
+      .filter((m) => !unlisted.has(m.machineId))
+      .map((m): MachineInfo => ({
+        id: `ssh:${m.alias}`,
+        alias: m.alias,
+        installed: { version: "0.2.16", at: "2026-10-01T00:00:00Z" },
+        member: true,
+        machineId: m.machineId,
+        local: false,
+        connection: m.reconnecting === true ? null : { pid: 4242 },
+        socket: null,
+        ...(m.reconnecting === true
+          ? {
+              reconnect: {
+                since: "2026-10-15T00:00:00Z",
+                attempts: 2,
+                maxAttempts: 8,
+                nextAt: null,
+                lastError: null,
+                diagnosis: null,
+              },
+            }
+          : {}),
+        keepConnected: true,
+        api: null,
+        status: { state: "running", checkedAt: "2026-10-15T00:00:00Z", port: 7371 },
+        root: "/home/penguin/.penguin/data",
+      })),
   ];
 
   /** What a machine answers itself: its own Agent list; anything else is the shared state below. */
@@ -724,7 +736,7 @@ export function agentServer(
           return {
             ...summaryOf(id),
             ...avatarFields(null, id),
-            name: id === AGENT_ID ? stored.config.name : id,
+            name: id === AGENT_ID ? stored.config.name : (createdNames.get(id) ?? id),
             ...(id === AGENT_ID && stored.config.author !== undefined
               ? { author: stored.config.author }
               : {}),
@@ -1061,10 +1073,13 @@ export function agentServer(
         });
       }
       if (action === "history") return json({ versions: options.workbenchVersions ?? [] });
-      if (action === "app-center" && method === "PATCH") {
+      if ((action === "sidebar" || action === "app-center") && method === "PATCH") {
         const { show } = request.body as { show: boolean };
         const index = workbenches.indexOf(workbench);
-        const next = { ...workbench, appCenter: { ...workbench.appCenter, show } };
+        const next =
+          action === "sidebar"
+            ? { ...workbench, showInSidebar: show }
+            : { ...workbench, appCenter: { ...workbench.appCenter, show } };
         workbenches = workbenches.map((item, i) => (i === index ? next : item));
         return json({ workbench: listed(next) });
       }
@@ -1078,7 +1093,17 @@ export function agentServer(
       return json({ workbench: listed(workbench) });
     }
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "POST") {
-      const body = request.body as { agentId: string; name?: string };
+      const body = request.body as { agentId: string; name?: string; plugins?: string[] };
+      // The plugins are seeded in the same call: an unknown one refuses before the Agent exists.
+      const names = body.plugins ?? [];
+      const missing = names.find((name) => !libraryOf(null).some((p) => p.name === name));
+      if (missing !== undefined) return apiError(404, "unknown_plugin", missing);
+      const skills = libraryOf(null)
+        .filter((p) => names.includes(p.name))
+        .flatMap((p) => p.skills.map((skill) => skill.name));
+      if (skills.length > 0) installs.set(installKey(null, body.agentId), skills);
+      if (!localAgentIds.includes(body.agentId)) localAgentIds = [...localAgentIds, body.agentId];
+      if (body.name !== undefined) createdNames.set(body.agentId, body.name);
       return json({ agent: { ...summaryOf(body.agentId), name: body.name ?? body.agentId } });
     }
     if (path === `${AGENT_PATH}/config`) {
@@ -1282,6 +1307,10 @@ export function agentServer(
     },
     answerMcpTest: (answer) => {
       mcpTest = answer;
+    },
+    setListed: (machineId, listed) => {
+      if (listed) unlisted.delete(machineId);
+      else unlisted.add(machineId);
     },
     setReconnecting: (machineId, reconnecting) => {
       const machine = machines.find((m) => m.machineId === machineId);

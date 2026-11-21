@@ -65,7 +65,8 @@ import {
   toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError, toastFailure } from "../../lib/toast-api-error";
+import { toldFailure } from "../../lib/failure";
 
 /**
  * Brings one card into view once the list has loaded — an opening that names a card (the
@@ -252,7 +253,17 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       adopt(res.plugins);
       const message = localized(res.message, res.messageZh) ?? res.message;
       if (res.ok) toastSuccess(message);
-      else toastError(message);
+      else
+        toastFailure(
+          toldFailure(message, {
+            what: "a plugin's action failed",
+            facts: [
+              ["Plugin", entry.name],
+              ["Action", action],
+            ],
+            detail: res.message,
+          }),
+        );
     } catch (e) {
       toastApiError(e);
     } finally {
@@ -297,7 +308,14 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       },
       {
         installed: (pkg) => toastSuccess(S.plugins.deploymentInstalledToast(pkg)),
-        failed: (pkg, error) => toastError(S.plugins.deploymentFailedToast(pkg, error)),
+        failed: (pkg, error) =>
+          toastFailure(
+            toldFailure(S.plugins.deploymentFailedToast(pkg, error), {
+              what: "a plugin failed to load after it was installed",
+              facts: [["Plugin", pkg]],
+              detail: error,
+            }),
+          ),
         threw: (e) => toastApiError(e),
       },
     );

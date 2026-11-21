@@ -172,7 +172,7 @@ export function OrgStatusDot({ org }: { org: { status: OrgStatus; invalid?: stri
 /**
  * A refresh that failed while the page still holds what it last read: one danger strip
  * naming the failure, the server's reason beside it, and the retry — never a skeleton over
- * data that is already on screen.
+ * data that is already on screen. A failure's words carry 「[报告问题]」 after them (failureNode).
  */
 export function ErrorLine({
   message,
@@ -180,9 +180,9 @@ export function ErrorLine({
   onRetry,
   className = "",
 }: {
-  message: string;
-  /** The server's own wording (apiErrorText), shown after the message. */
-  detail?: string;
+  message: ReactNode;
+  /** The server's own wording (failureNode), shown after the message. */
+  detail?: ReactNode;
   onRetry: () => void;
   className?: string;
 }) {

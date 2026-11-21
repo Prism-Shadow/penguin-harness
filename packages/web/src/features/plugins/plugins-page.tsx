@@ -54,7 +54,6 @@ import {
   Skeleton,
   SkeletonCard,
   TodoNotice,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -84,6 +83,7 @@ import { usePluginRepair } from "./plugin-repair";
 import { samePluginTarget, viewedMachine } from "./viewed-machine";
 import { SettingsDialog } from "../settings";
 import { pickDefaultAgent } from "../ai-create";
+import { pluginPickItems } from "../agents";
 import { toneInk } from "../../lib/tone";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
 import type { InstallTarget } from "./plugin-card";
@@ -97,6 +97,7 @@ import {
 } from "./plugin-reads";
 import {
   agentInstalls,
+  readNewAgentInstalls,
   rereadInstalls,
   useAgentInstalls,
   type InstallsTarget,
@@ -136,7 +137,8 @@ import {
   type LibraryUsage,
   type PluginStatus,
 } from "./plugin-status";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError, toastFailure } from "../../lib/toast-api-error";
+import { toldFailure } from "../../lib/failure";
 
 const NO_INSTALLS: AgentInstalls = { skills: new Map(), hooks: new Map(), mcp: new Map() };
 
@@ -205,7 +207,12 @@ export function PluginsPage() {
     EVERY_VISIT,
   );
   const groups = library.value?.groups ?? null;
-  const error = groups === null ? library.error : null;
+  const error = groups === null ? library.failure : null;
+  /** The same library as the Create agent dialog's picker rows, for 「新建空白 Agent」. */
+  const pickLibrary = useMemo(
+    () => (groups === null ? null : pluginPickItems(groups.flatMap((g) => g.plugins))),
+    [groups],
+  );
   // A return to the same Project is a new visit, not permission for an old reply: a write that
   // answers in a later visit is not taken (its Project's list is read again on entry anyway).
   const projectVisit = useRef({ projectId, generation: 0 });
@@ -432,7 +439,13 @@ export function PluginsPage() {
       installedPlugins.accept(installedPluginsKey(target.projectId, null), next);
       const row = next.plugins.find((p) => p.specifier === specifier);
       if (install && row?.error !== undefined) {
-        toastError(S.plugins.deploymentFailedToast(specifier, row.error));
+        toastFailure(
+          toldFailure(S.plugins.deploymentFailedToast(specifier, row.error), {
+            what: "a plugin failed to load after it was installed",
+            facts: [["Plugin", specifier]],
+            detail: row.error,
+          }),
+        );
       } else {
         toastSuccess(install ? S.plugins.deploymentInstalledToast(specifier) : S.common.saved);
       }
@@ -537,6 +550,21 @@ export function PluginsPage() {
     agentsLoading ||
     targets.some((t) => t.machine === null && unknown.has(t.key) && !unreadable.has(t.key));
 
+  /**
+   * A blank Agent was created from a card's manage-installs dialog, on this server: its installs
+   * are read first and the Agent list after, so its row joins the list already reading Installed.
+   * A failed list read is said; the Agent exists either way.
+   */
+  const blankAgentCreated = async (agent: AgentSummary) => {
+    if (!projectId) return;
+    await readNewAgentInstalls(projectId, null, agent.agentId);
+    try {
+      await reloadAgents();
+    } catch (e) {
+      toastApiError(e);
+    }
+  };
+
   /** Reads one target's lists again (Set up wrote its vault): what its MCP servers wait for moved. */
   const refreshAgentMcp = (key: string) => {
     if (!projectId) return;
@@ -632,7 +660,16 @@ export function PluginsPage() {
         const failed = outcome.kind === "removed" ? outcome.failed : [];
         if (failed.length > 0) {
           const named = failed.map((f) => S.agentPlugins.failedPart(f.name, f.error));
-          toastError(S.agentPlugins.uninstallPartly(plugin.name, named.join(S.todo.listSeparator)));
+          toastFailure(
+            toldFailure(
+              S.agentPlugins.uninstallPartly(plugin.name, named.join(S.todo.listSeparator)),
+              {
+                what: "a plugin's parts could not all be removed",
+                facts: [["Plugin", plugin.name]],
+                detail: failed.map((f) => `${f.name}: ${f.error}`).join("\n"),
+              },
+            ),
+          );
         } else {
           toastSuccess(
             `${S.plugins.uninstalledToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
@@ -705,9 +742,10 @@ export function PluginsPage() {
     const outcome = bulkOutcome(labels, results);
     if (outcome.allOk) toastSuccess(S.todo.bulkDone(outcome.ok));
     else {
-      toastError(
-        `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(firstFailure(results))}`,
-      );
+      const failure = firstFailure(results);
+      toastApiError(failure, {
+        text: `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(failure)}`,
+      });
     }
     // Runs after a partial failure too — some Agent moved, and the gate has to see it. Guarded,
     // because `reloadAgents` rejects on a failed list read and the busy flag disables every
@@ -728,10 +766,11 @@ export function PluginsPage() {
    * written, never sent, so nothing runs (and no token is spent) until the person sends it. The
    * prompt goes in per UI language, overwriting the draft body (any typed-but-unsent text is
    * parked as a draft conversation first, draft-sessions.ts), with the demo's skills
-   * pre-selected and goal mode on when the demo is a goal. handoffAgentId must be cleared: a
-   * leftover handoff target would forward the demo to a different Agent.
+   * pre-selected, goal mode on when the demo is a goal, and the plugin's composer switch on when
+   * it has one. handoffAgentId must be cleared: a leftover handoff target would forward the demo
+   * to a different Agent.
    */
-  const openQuickStart = (quickStart: QuickStartItem) => {
+  const openQuickStart = (quickStart: QuickStartItem, plugin: PluginItem) => {
     const agentId = currentAgent?.agentId;
     if (!agentId) return;
     if (userId && projectId) {
@@ -740,7 +779,7 @@ export function PluginsPage() {
       // the Project's new-chat defaults (new-chat.ts).
       prepareNewChatDraft(userId, projectId);
       const key = draftKey(userId, projectId);
-      const { skills: _skills, goal: _goal, ...rest } = loadDraft(key);
+      const { skills: _skills, goal: _goal, promptHooks: _promptHooks, ...rest } = loadDraft(key);
       saveDraft(key, {
         ...rest,
         agentId,
@@ -749,6 +788,9 @@ export function PluginsPage() {
           ? { skills: quickStart.skills }
           : {}),
         ...(quickStart.goal === true ? { goal: true as const } : {}),
+        ...(plugin.composerMode === true && quickStart.goal !== true
+          ? { promptHooks: [plugin.name] }
+          : {}),
         handoffAgentId: undefined,
       });
     }
@@ -764,7 +806,7 @@ export function PluginsPage() {
   const quickStartLibrary = (plugin: PluginItem) => {
     const demo = libraryQuickStart(plugin);
     if (demo === null || !currentAgent) return;
-    if (pluginComplete(plugin, installed.get(currentAgent.agentId))) openQuickStart(demo);
+    if (pluginComplete(plugin, installed.get(currentAgent.agentId))) openQuickStart(demo, plugin);
     else setPendingQuickStart(plugin);
   };
 
@@ -777,7 +819,7 @@ export function PluginsPage() {
     setQuickStartInstalling(false);
     setPendingQuickStart(null);
     const demo = libraryQuickStart(plugin);
-    if (ok && demo !== null) openQuickStart(demo);
+    if (ok && demo !== null) openQuickStart(demo, plugin);
   };
 
   const rows = pluginRows(groups ?? [], moduleParts(deployment, index ?? [], view));
@@ -827,6 +869,7 @@ export function PluginsPage() {
       categoryTitle={categoryTitle(row.category)}
       showCategory={groupBy !== "category"}
       targets={targets}
+      blankAgent={{ library: pickLibrary, onCreated: blankAgentCreated }}
       installed={installed}
       unknown={unknown}
       failed={unreadable}

@@ -66,7 +66,7 @@
  * streaming reply leaves it open. It opens upward on its own: the composer sits at the bottom of
  * the page, so there is never room below.
  */
-import { useEffect, useId, useRef, useState, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { createPortal } from "react-dom";
 import type { SessionContextResponse } from "@prismshadow/penguin-server/api";
@@ -91,6 +91,7 @@ import {
 } from "../../lib/context";
 import { formatPercent, humanizeTokens } from "../../lib/format";
 import { S } from "../../lib/strings";
+import { failureNode } from "../../lib/failure";
 import { contextComposition, type ContextPartKey } from "./context-parts";
 
 /**
@@ -123,7 +124,9 @@ const CUTTER_HIT_PX = 14;
 const ARROW_MULTIPLIER = 10;
 
 type PanelState =
-  { status: "loading" } | { status: "failed" } | { status: "ready"; data: SessionContextResponse };
+  | { status: "loading" }
+  | { status: "failed"; failure: ReactNode }
+  | { status: "ready"; data: SessionContextResponse };
 
 /** Which Top 5 the panel's ranking lists. */
 type RankingView = "tools" | "files";
@@ -350,8 +353,16 @@ function ContextPanel({
       (data) => {
         if (!cancelled) setState({ status: "ready", data });
       },
-      () => {
-        if (!cancelled) setState({ status: "failed" });
+      (err: unknown) => {
+        if (!cancelled) {
+          setState({
+            status: "failed",
+            failure: failureNode(err, {
+              text: S.chat.contextBreakdownFailed,
+              what: "the context composition could not be read",
+            }),
+          });
+        }
       },
     );
     return () => {
@@ -410,7 +421,7 @@ function ContextPanel({
       ) : state.status === "loading" ? (
         <p className="mt-2 text-gray-400 dark:text-gray-500">{S.common.loading}</p>
       ) : state.status === "failed" ? (
-        <p className="mt-2 text-gray-400 dark:text-gray-500">{S.chat.contextBreakdownFailed}</p>
+        <p className="mt-2 text-gray-400 dark:text-gray-500">{state.failure}</p>
       ) : composition === null ? (
         <p className="mt-2 text-gray-400 dark:text-gray-500">{S.chat.contextBreakdownEmpty}</p>
       ) : (

@@ -23,7 +23,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { PluginModuleStatus } from "@prismshadow/penguin-server/api";
-import { ConfirmModal, ICONS, toastError, toastSuccess } from "@prismshadow/penguin-ui";
+import { ConfirmModal, ICONS, toastSuccess } from "@prismshadow/penguin-ui";
 import { toastInstall } from "../../lib/agent-plugin-install";
 import { S } from "../../lib/strings";
 import { localizedText } from "../../lib/skill-use";
@@ -41,6 +41,8 @@ import {
   type AgentPluginGroup,
   type AgentTarget,
 } from "../plugins";
+import { toastFailure } from "../../lib/toast-api-error";
+import { toldFailure } from "../../lib/failure";
 
 /** What a plugin is called on this page: the library's display name, else its name. */
 export function agentPluginTitle(entry: AgentPluginGroup, locale: "zh" | "en"): string {
@@ -122,7 +124,13 @@ export function useAgentPluginActions({
       const outcome = await uninstallFromAgent(target, entry.name, entry.plugin);
       if (outcome.kind === "removed" && outcome.failed.length > 0) {
         const named = outcome.failed.map((f) => S.agentPlugins.failedPart(f.name, f.error));
-        toastError(S.agentPlugins.uninstallPartly(title, named.join(S.todo.listSeparator)));
+        toastFailure(
+          toldFailure(S.agentPlugins.uninstallPartly(title, named.join(S.todo.listSeparator)), {
+            what: "a plugin's parts could not all be removed",
+            facts: [["Plugin", entry.name]],
+            detail: outcome.failed.map((f) => `${f.name}: ${f.error}`).join("\n"),
+          }),
+        );
       } else {
         toastSuccess(`${S.plugins.uninstalledToast(title, agentName)}${S.agent.takesEffectSuffix}`);
       }

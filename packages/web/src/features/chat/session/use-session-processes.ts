@@ -4,9 +4,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionInfo, SessionProcessInfo } from "@prismshadow/penguin-server/api";
-import { toastError } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
-import { apiErrorText } from "../../../lib/api-error";
+import { toastApiError } from "../../../lib/toast-api-error";
 import { exitedProcessIds, reportableProcessFailure } from "../process-list";
 import type { SessionStreamState } from "../use-session-stream";
 
@@ -103,7 +102,7 @@ export function useSessionProcesses({
           processIds.map((processId) => request(sessionId, processId)),
         );
         const failure = reportableProcessFailure(results, staleStatuses);
-        if (failure !== null) toastError(apiErrorText(failure.error));
+        if (failure !== null) toastApiError(failure.error);
       } finally {
         setProcBusy(null);
         api

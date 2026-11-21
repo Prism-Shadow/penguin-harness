@@ -10,6 +10,7 @@
 import type {
   AgentApiSettings,
   AppCenterResponse,
+  WorkbenchInfo,
   AppCenterShortcut,
   AgentConfigResponse,
   AgentSummary,
@@ -183,10 +184,15 @@ export interface DemoFixtures {
   schedules: ProjectScheduleItem[];
   library: PluginLibraryResponse;
   pluginFiles: Record<string, Record<string, string>>;
-  /** Per Agent: its Skills and hook packages, and whether its Agent-wide workbench switch is off. */
+  /** Installed parts and the workbench settings for each Agent in this demo. */
   installed: Record<
     string,
-    { skills: SkillMetadataItem[]; hooks: HookItem[]; workbenchesOff?: boolean }
+    {
+      skills: SkillMetadataItem[];
+      hooks: HookItem[];
+      workbenches?: WorkbenchInfo[];
+      workbenchesOff?: boolean;
+    }
   >;
   installedPlugins: InstalledPluginsResponse;
   /**
@@ -1835,18 +1841,24 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     const busy = day % 7 !== 0 && day % 7 !== 6;
     const scale = busy ? 1 : 0.25;
     const docsRequests = Math.round((6 + rnd() * 14) * scale);
+    const cacheRead = Math.round(docsRequests * (18_000 + rnd() * 9_000));
+    const cacheWrite = Math.round(docsRequests * (2_000 + rnd() * 1_500));
+    const output = Math.round(docsRequests * (900 + rnd() * 700));
+    const failed = rnd() < 0.15 ? 1 : 0;
+    const aborted = rnd() < 0.1 ? 1 : 0;
     usage.push({
       date,
       agentId: IDS.agents.docs,
       sessionId: day === 0 ? IDS.sessions.done : IDS.sessions.older[day % 4]!,
       provider: DEFAULT_MODEL.provider,
       modelId: DEFAULT_MODEL.modelId,
-      cacheRead: Math.round(docsRequests * (18_000 + rnd() * 9_000)),
-      cacheWrite: Math.round(docsRequests * (2_000 + rnd() * 1_500)),
-      output: Math.round(docsRequests * (900 + rnd() * 700)),
+      cacheRead,
+      cacheWrite,
+      output,
       requests: docsRequests,
-      completed: docsRequests - (rnd() < 0.15 ? 1 : 0),
-      aborted: rnd() < 0.1 ? 1 : 0,
+      // An aborted request is not a completed one: the success rate leaves it out of both sides.
+      completed: docsRequests - failed - aborted,
+      aborted,
     });
     if (day % 3 === 0) {
       const notesRequests = Math.round((2 + rnd() * 5) * scale);

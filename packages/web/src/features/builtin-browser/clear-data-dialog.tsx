@@ -5,11 +5,12 @@
  */
 import { browserState } from "./browser-store";
 import { useEffect, useState } from "react";
-import { Checkbox, ConfirmModal, toastError, toastSuccess } from "@prismshadow/penguin-ui";
+import { Checkbox, ConfirmModal, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import type { BuiltinBrowserStorage } from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
+import { toastApiError } from "../../lib/toast-api-error";
 
 type ClearKind = BuiltinBrowserStorage | "history";
 
@@ -60,7 +61,7 @@ export function ClearDataDialog({ open, onClose }: { open: boolean; onClose: () 
       toastSuccess(S.builtinBrowser.clearDone);
       onClose();
     } catch (err) {
-      toastError(S.builtinBrowser.clearFailed(apiErrorText(err)));
+      toastApiError(err, { text: S.builtinBrowser.clearFailed(apiErrorText(err)) });
     } finally {
       setBusy(false);
     }

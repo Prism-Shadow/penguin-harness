@@ -10,10 +10,11 @@
  * report carries them without its caller knowing them.
  *
  * It never carries what the person did not mean to share. The caller passes no key, prompt,
- * conversation text or base URL; the facts and the raw text are redacted before anything is shown
- * (`redactSecrets`, `redactHomePaths`), and the paths the caller names private (the Workspace) are
- * replaced with `<workspace>`. What the dialog shows is exactly what Copy copies and the link
- * sends; nothing leaves the app until the person presses one of them.
+ * conversation text or base URL; the facts, the title and the raw text all go through one masking
+ * step before anything is shown (`maskPrivate`: secrets and key-shaped strings, the account name in
+ * home paths, e-mail and IP addresses, the paths and values the caller names private, and host
+ * names where the raw text can name the person's machines). What the dialog shows is exactly what
+ * Copy copies and the link sends; nothing leaves the app until the person presses one of them.
  *
  * The bug form (`.github/ISSUE_TEMPLATE/bug_report.yml`) is opened with the fields it requires
  * filled — `summary`, the facts; `system-info`, the environment, "unknown" for a line not read
@@ -22,7 +23,7 @@
  * fit, and says so.
  */
 import type { ReactNode } from "react";
-import { redactHomePaths, redactSecrets } from "./redact";
+import { maskPrivate } from "./redact";
 
 export const ISSUE_FORM_URL = "https://github.com/Prism-Shadow/penguin-harness/issues/new";
 export const ISSUE_URL_CAP = 6000;
@@ -72,6 +73,16 @@ export interface ReportEnvironment {
 
 export const UNKNOWN_ENVIRONMENT: ReportEnvironment = { version: null, install: null, os: null };
 
+/**
+ * What a report masks beyond what every report does: values the caller knows are private (a
+ * machine's alias), and `hosts` where the raw text can name the person's machines (ssh's words, an
+ * MCP server's error) — host names, IPv6 addresses and `user@host`.
+ */
+export interface ReportMask {
+  values?: readonly string[];
+  hosts?: boolean;
+}
+
 /** One fact of a report: its name and its value, in English. */
 export type ReportFact = readonly [name: string, value: string];
 
@@ -90,6 +101,8 @@ export interface ErrorReport {
   keep?: readonly string[];
   /** Paths to keep out of the report, replaced with `<workspace>` (the Session's Workspace). */
   privatePaths?: readonly string[];
+  /** What else to mask (`maskPrivate`): known private values, and host names in a machine's words. */
+  mask?: ReportMask;
   /** Facts about where it ran that the host's environment does not know (another machine's OS). */
   environment?: Partial<ReportEnvironment>;
   /** The dialog's title and lead in place of the shared ones (a provider failure's own words). */
@@ -145,13 +158,13 @@ function issueUrl(base: readonly [string, string][], output: string): string {
 export function buildReport(report: ErrorReport, host: ReportEnvironment): BuiltReport {
   const env: ReportEnvironment = { ...host, ...report.environment };
   const keep = report.keep ?? [];
-  const shareable = (text: string): string => {
-    let out = redactSecrets(text, keep);
-    for (const path of report.privatePaths ?? []) {
-      if (path !== "") out = out.split(path).join("<workspace>");
-    }
-    return redactHomePaths(out);
-  };
+  const shareable = (text: string): string =>
+    maskPrivate(text, {
+      keep,
+      privatePaths: report.privatePaths ?? [],
+      values: report.mask?.values ?? [],
+      hosts: report.mask?.hosts === true,
+    });
   const facts = report.facts.map(([name, value]) => `- ${name}: ${shareable(value)}`);
   const environment: [string, string | null][] = [
     ["PenguinHarness", env.version],

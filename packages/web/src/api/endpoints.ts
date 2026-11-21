@@ -257,6 +257,9 @@ import type {
   WorkbenchEnabledRequest,
   WorkbenchInfo,
   WorkbenchesResponse,
+  WorkbenchSidebarRequest,
+  WorkbenchSidebarResponse,
+  WorkbenchSidebarSetResponse,
   WorkbenchVersion,
   VersionRollbackResponse,
   VersionResponse,
@@ -2941,6 +2944,17 @@ export const getWorkbenches = (projectId: string, agentId: string, machineId: st
   apiFetch<WorkbenchesResponse>(workbenchesBase(projectId, agentId), {
     server: machineId,
   }).then((r) => ({ ...r, workbenches: iconsOn(r.workbenches, machineId) }));
+/**
+ * The rows of the Agent's sidebar list: a shortcut for each workbench that runs, has a tab and is
+ * not hidden from the sidebar, read from the files without compiling anything. Null from a server
+ * older than the setting, which ignores `view` and answers the full list: everything it lists
+ * is shown there.
+ */
+export const getSidebarApps = (projectId: string, agentId: string, machineId: string | null) =>
+  apiFetch<WorkbenchSidebarResponse | WorkbenchesResponse>(
+    `${workbenchesBase(projectId, agentId)}?view=sidebar`,
+    { server: machineId },
+  ).then((r) => ("apps" in r ? iconsOn(r.apps, machineId) : null));
 /** The Agent-wide switch (Project owner): off, none of the Agent's workbenches runs. */
 export const setWorkbenchesEnabled = (
   projectId: string,
@@ -3032,6 +3046,21 @@ export const removeWorkbench = (
     method: "DELETE",
     server: machineId,
   });
+/**
+ * The sidebar setting (any member): `false` writes the installation's `.hidden-from-sidebar`
+ * marker, `true` removes it. Nothing reloads and no version is recorded.
+ */
+export const setWorkbenchSidebar = (
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  show: boolean,
+  machineId: string | null,
+) =>
+  apiFetch<WorkbenchSidebarSetResponse>(
+    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/sidebar`,
+    { method: "PATCH", body: { show } satisfies WorkbenchSidebarRequest, server: machineId },
+  );
 /** The App Center switch: sets `penguin.appCenter.show` in the workbench's package.json and reloads it. */
 export const setWorkbenchAppCenter = (
   projectId: string,
@@ -3045,11 +3074,15 @@ export const setWorkbenchAppCenter = (
     { method: "PATCH", body: { show } satisfies WorkbenchAppCenterRequest, server: machineId },
   );
 /**
- * The Project's App Center: the shown workbenches of its Agents on this server (local only), each
- * with its build state, and the viewer's own arrangement of them (null: the server's order).
+ * The Project's App Center on one server: the shown workbenches of its Agents there, each with
+ * its build state, and the viewer's own arrangement (null: the server's order). With `machineId`
+ * it is THAT machine's list, read through this server's proxy, its icons re-rooted onto it; the
+ * arrangement that counts is always this server's.
  */
-export const getAppCenter = (projectId: string) =>
-  apiFetch<AppCenterResponse>(`/api/projects/${encodeURIComponent(projectId)}/app-center`);
+export const getAppCenter = (projectId: string, machineId: string | null = null) =>
+  apiFetch<AppCenterResponse>(`/api/projects/${encodeURIComponent(projectId)}/app-center`, {
+    server: machineId,
+  }).then((r) => ({ ...r, shortcuts: iconsOn(r.shortcuts, machineId) }));
 /** Stores the viewer's arrangement of the Project's App Center; null restores the server's order. */
 export const putAppCenterLayout = (projectId: string, layout: AppCenterLayout | null) =>
   apiFetch<AppCenterLayoutResponse>(

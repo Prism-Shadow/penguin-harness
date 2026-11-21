@@ -57,6 +57,7 @@ describe("the account's Settings preferences", () => {
       lang: "en",
       currency: "CNY",
       toolAliases: false,
+      activityDisplayMode: "compact",
       notifications: true,
       background: { transparency: 40, mode: "tile", position: "center top" },
     };

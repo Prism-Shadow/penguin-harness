@@ -18,7 +18,13 @@ import type { ProtocolClientType } from "./protocol-client-types";
 import type { ModelGroupSort } from "../features/models/model-sort";
 import type { StartPageSiteId } from "./browser-start-sites";
 import { EVOLUTION_DEMO } from "./evolution-demo";
-import type { AgentAuthor, SemanticIdSuggestReason } from "@prismshadow/penguin-server/api";
+import type {
+  AgentAuthor,
+  BuiltinBrowserCookieSkip,
+  BuiltinBrowserImportNote,
+  SemanticIdSuggestReason,
+} from "@prismshadow/penguin-server/api";
+import type { ImportExtensionRoute } from "./browser-import-route";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -39,6 +45,8 @@ export const zh = {
     userSettings: "用户设置",
     collapseSidebar: "收起侧栏",
     expandSidebar: "展开侧栏",
+    /** The handle on the pinned sidebar's edge: its accessible name and tooltip. */
+    resizeSidebar: "调整侧栏宽度",
     /** The desktop window's title band: back and forward through the pages visited. */
     back: "后退",
     forward: "前进",
@@ -750,6 +758,74 @@ export const zh = {
       (c.failed > 0 ? `，失败 ${c.failed}` : ""),
     importHistoryResult: (h: { found: number; imported: number }): string =>
       `历史记录：已导入 ${h.imported} / ${h.found} 条`,
+    /** Under the counts: why that many cookies were skipped; `browser` is the source's name. */
+    importSkip: ({ reason, count: n }: BuiltinBrowserCookieSkip, browser: string): string => {
+      switch (reason) {
+        case "app_bound":
+          return `${n} 个受 ${browser} 的应用绑定加密保护，只有 ${browser} 自己能读取。`;
+        case "dpapi":
+          return `${n} 个的密钥 Windows 未能解开。`;
+        case "keychain":
+          return `${n} 个的密钥钥匙串未放行；在 macOS 询问时选择「允许」，再导入一次。`;
+        case "keyring":
+          return `${n} 个的密钥未能从桌面密钥环取得。`;
+        case "undecryptable":
+          return `${n} 个无法解密。`;
+        case "partitioned":
+          return `${n} 个是只属于某个站点或容器的分区 Cookie。`;
+        case "expired":
+          return `${n} 个已过期。`;
+      }
+    },
+    /** Anything else the import reports. */
+    importNote: (note: BuiltinBrowserImportNote, browser: string): string => {
+      const store = (which: "cookies" | "history") =>
+        which === "cookies" ? " Cookie 库" : "历史记录";
+      switch (note.code) {
+        case "no_cookie_store":
+          return "这个个人资料没有 Cookie 库。";
+        case "no_history":
+          return "这个来源没有可导入的历史记录。";
+        case "store_busy":
+          return `${browser} 正占用它的${store(note.store)}，关闭 ${browser} 后再导入。`;
+        case "store_unreadable":
+          return `无法读取 ${browser} 的${store(note.store)}。`;
+        case "cookies_not_set":
+          return (
+            `${note.count} 个 Cookie 未能写入内置浏览器` +
+            (note.errors.length > 0 ? `：${note.errors.join("；")}` : "。")
+          );
+      }
+    },
+    /** The group the user's connected Chrome extension is listed under, and its row's hint. */
+    importExtensionGroup: "经 Chrome 扩展",
+    importExtensionHint:
+      "读取扩展所在的 Chrome 个人资料的 Cookie，导入前要在 Chrome 中选择「允许」。",
+    /** The import button while the extension waits for the user's answer in Chrome. */
+    importWaitingChrome: "等待 Chrome 确认…",
+    /**
+     * Windows, a Chrome profile's cookies chosen: why most of them will be skipped, and the way
+     * round it the extension's state leaves.
+     */
+    importAppBoundHint: (route: ImportExtensionRoute): string =>
+      route === "not_paired"
+        ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取：在「设置 › 浏览器」中连接你的 Chrome 后可经扩展导入，或直接在浏览器面板中登录。"
+        : route === "disconnected"
+          ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取：让你的 Chrome 连上 PenguinHarness Browser 扩展后可经扩展导入，或直接在浏览器面板中登录。"
+          : route === "connected"
+            ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取，可改选下方的「经 Chrome 扩展」导入。"
+            : "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取，可直接在浏览器面板中登录。",
+    /** After app-bound skips: how to get those cookies, given the extension's state. */
+    importAppBoundAdvice: (route: ImportExtensionRoute): string =>
+      route === "connected"
+        ? "选择「经 Chrome 扩展」再导入一次即可取回它们，也可以直接在浏览器面板中登录。"
+        : route === "not_paired"
+          ? "在「设置 › 浏览器」中连接你的 Chrome 后，可经扩展导入它们；也可以直接在浏览器面板中登录。"
+          : route === "disconnected"
+            ? "让你的 Chrome 连上 PenguinHarness Browser 扩展后，可经扩展导入它们；也可以直接在浏览器面板中登录。"
+            : "可以直接在浏览器面板中登录这些网站。",
+    /** The outcome's way back to the form with the extension chosen. */
+    importUseExtension: "经 Chrome 扩展导入",
     importFailed: (reason: string): string => `导入失败：${reason}`,
     /** The clear-browsing-data confirmation. */
     clearTitle: "清除浏览数据",
@@ -1161,6 +1237,12 @@ export const zh = {
     launcherInfo:
       "在对话正文右缘浮动的圆形按钮，展开后是工作台各块面板与终端的快捷方式；这里关掉后它就不再出现，展开里的「隐藏悬浮球」同样会关掉它。",
     toolAliases: "工具短名",
+    activityDisplayMode: "思考显示方式",
+    activityDisplayModeInfo:
+      "标准列出每一步，点开可看详情。展开直接显示思考和工具调用的内容。紧凑跟随当前步骤，可前后翻页。",
+    activityDisplayStandard: "标准",
+    activityDisplayExpanded: "展开",
+    activityDisplayCompact: "紧凑",
     toolAliasesInfo:
       "对话里的工具卡片用短名称呼内置工具，read_file 显示为「读取」。其余工具（含 MCP 工具）与轨迹观测始终是工具原本的名字；悬停短名也能看到它。",
     notifications: "任务完成通知",
@@ -1367,6 +1449,8 @@ export const zh = {
     /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
     showInAppCenterHint:
       "打开后，这个工作台会作为一个应用出现在「应用中心」页面：Project 的每个成员都能在那里看到它的图标，点一下即可打开使用，不必先进入对话。关闭只是把入口从应用中心撤下，工作台本身、它的数据与历史版本都不受影响。拨动开关会改写工作台 package.json 中的 penguin.appCenter.show，并记为一个版本。",
+    /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
+    showInSidebar: "展示到侧边栏",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "打开",
     /** The row's "⋯" button, which holds its other actions. */
@@ -1381,7 +1465,7 @@ export const zh = {
     loading: "加载中…",
     emptyTitle: "应用中心还是空的",
     empty:
-      "Workbench 是由 Agent 托管、嵌在对话旁的页面，也可以整页打开。Agent 创建 Workbench，并在 Agent 设置的工作台行打开「展示到应用中心」开关后，它就会出现在这里。",
+      "Workbench 是由 Agent 托管、嵌在对话旁的页面，也可以整页打开。Agent 创建的 Workbench 加载后就会出现在这里；不想在这里看到的，可在 Agent 设置的工作台行关掉「展示到应用中心」。",
     /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
     broken: "加载失败",
     /** A tile whose app is still being built: it opens once the build is done. */
@@ -1440,8 +1524,8 @@ export const zh = {
     /** The windowed app's title bar. */
     windowClose: "关闭，回到应用中心",
     windowFullScreen: "全屏打开",
-    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
-    machinesNote: "机器上 Agent 的应用不在这里，请从它们的 Agent 设置页进入。",
+    /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
+    machinesOffline: (names: string) => `暂时无法连接：${names}。已缓存的内容仍可查看。`,
     aiCreateTitle: "用 AI 创建应用",
     aiCreateDescription: "选定的 Agent 会做一个 Workbench，并让它出现在应用中心。",
     aiCreatePlaceholder: "描述你想要的应用，例如：一个记录每日待办的看板",
@@ -3648,6 +3732,13 @@ export const zh = {
     /** Top toast shown on successful install / uninstall. */
     installedToast: (plugin: string, agent: string): string => `已将 ${plugin} 安装到 ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string => `已从 ${agent} 卸载 ${plugin}`,
+    /** The manage-installs dialog's first row: a new Agent for this plugin, made through the Create agent dialog. */
+    blankAgent: "新建空白 Agent",
+    blankAgentCreate: "新建并安装",
+    /** The row button's hint: it opens a dialog rather than creating at once. */
+    blankAgentHint: "打开「创建 Agent」对话框，已勾选此插件",
+    /** Names the new Agent alone: its default name is the plugin's title, which the list's title already shows. */
+    blankAgentCreatedToast: (agent: string): string => `已新建 ${agent}，并装上此插件`,
     updateOutdated: (n: number): string => `有新版本：更新 ${n} 个 Agent 的安装`,
     updateConfirmTitle: (name: string): string => `更新 ${name}`,
     updateConfirmWarning: (name: string): string =>
@@ -4798,6 +4889,8 @@ Benchmark：
       heavy: "完整输出正在同步",
       /** Under an unfolded output or thinking block while its whole text arrives. */
       body: "正在加载完整内容",
+      /** On an unfolded output or thinking block the reader did not open (an Expanded view, a search): fetch the whole. */
+      bodyLoad: "加载完整内容",
       /** The fetch failed: a notice line like the earlier-messages one, the failure in parentheses. */
       bodyFailed: (reason: string) => `[加载失败]：完整内容没能加载（${reason}）`,
       /** The Trace panel bringing a machine's Trace file over before it opens it. */
@@ -5054,6 +5147,17 @@ Benchmark：
     } as Record<string, string>,
     workRunning: "运行中",
     workDone: "运行完毕",
+    workFailed: "运行失败",
+    workStopped: "已停止",
+    workRetryStep: (n: number) => `第 ${n} 次重试`,
+    previousWorkStep: "上一步",
+    nextWorkStep: "下一步",
+    latestWorkStep: "最新步骤",
+    waitingWorkStep: "查看待处理步骤",
+    workElapsed: "总耗时",
+    /** The words around the step number in Compact's pager; the number between them is a field. */
+    workStepWords: ["第 ", " 步"] as readonly [before: string, after: string],
+    workStepJump: "跳转到步骤",
     workGroupSteps: (n: number) => `${n} 步`,
     approvalWaiting: "待审批",
     copyCode: "复制代码",
@@ -5242,6 +5346,11 @@ Benchmark：
     goalBudgetInvalid: "无效预算：应为正数，可带 k/m 后缀（500k、2m）",
     goalBudgetSave: "保存预算",
     goalRemove: "退出目标模式",
+    /** The remove label of a composer switch's chip (a plugin's mode, e.g. Plan mode). */
+    switchOff: (title: string): string => `关闭${title}`,
+    /** The end of a "+" menu row for a composer mode the Agent lacks: picking it installs the plugin on the Agent, then turns the mode on. */
+    switchInstall: "安装",
+    switchInstalling: "正在安装…",
     /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
     goalPluginMissing: "目标模式需要 goal 插件：安装到此 Agent 后即可发起目标。",
     goalPluginInstall: "安装到此 Agent",
@@ -5799,7 +5908,8 @@ Benchmark：
     rangeCustom: "自定义",
     chartRequestsByAgent: "各 Agent 请求与成功率",
     chartRequestsByModel: "各模型请求与成功率",
-    legendSuccessRate: "成功率",
+    legendRequestCount: "请求数（左轴）",
+    legendSuccessRate: "成功率（右轴）",
     chartTokenTrend: "Token 变化",
     chartCostTrend: "成本变化",
     legendOther: (n: number): string => `其他 ${n} 项`,
@@ -5883,6 +5993,8 @@ Benchmark：
     inProgress: "进行中",
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
+    /** A `session_update` row's summary: what the record is, ahead of the model it names. */
+    sessionUpdate: "Session 设置变更",
     exportFile: "导出",
     /** The round navigator the toolbar's rounds button opens: its title, and how many rounds it lists. */
     roundNav: "轮次导航",
@@ -7158,13 +7270,13 @@ Benchmark：
     },
   },
   /**
-   * The problem report (the UI package's `ReportStrings`): 「[报告问题]」 after a serious error, the
+   * The problem report (the UI package's `ReportStrings`): 「[报告问题]」 after a failure, the
    * report dialog it opens, and the notice a crashed part of the page shows.
    */
   report: {
     action: "报告问题",
     title: "报告问题",
-    lead: "这类错误多半是 PenguinHarness 的缺陷。提交到 GitHub 能帮助改进这个开源项目。",
+    lead: "这可能是 PenguinHarness 的缺陷，也可能来自网络、模型服务或所连的机器。如果你认为问题出在 PenguinHarness，欢迎到 GitHub 提交 issue，帮助改进这个开源项目。",
     check: "报告已去掉密钥、Token 与个人路径一类的内容，发送前仍请检查有没有不想公开的信息。",
     label: "报告",
     copy: "复制",
@@ -7249,6 +7361,8 @@ Benchmark：
       unknown_plugin: "该插件不在插件库中。",
       goal_plugin_not_installed:
         "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装，并确认其钩子包已启用。",
+      prompt_hook_not_installed:
+        "这个 Agent 已没有该开关所需的钩子包，或钩子已关闭。请关闭这个开关，或重新安装对应插件。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
       hook_too_large: "该钩子包过大，超出了导入限制。",
       workbench_too_large: "该工作台的源码过大，超出了导出限制。",
@@ -7338,6 +7452,8 @@ Benchmark：
       browser_unavailable:
         "浏览器现在不可用：内置浏览器需要打开 PenguinHarness 桌面应用，你的 Chrome 需要连上 PenguinHarness Browser 扩展。",
       source_not_found: "找不到这个浏览器配置文件。",
+      import_declined: "你没有在 Chrome 中允许这次导入。",
+      extension_outdated: "Chrome 中的 PenguinHarness Browser 扩展版本过旧，请更新后重试。",
       shell_unreachable: "无法联系桌面应用。",
       timeout: "操作超时，请重试。",
     },
