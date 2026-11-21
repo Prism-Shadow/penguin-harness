@@ -95,7 +95,7 @@ import { SessionSources } from "./runtime/session-sources.js";
 import { SessionDriverRegistry } from "./runtime/session-drivers.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
-import { UsageService } from "./services/usage-service.js";
+import { UsageServiceProvider } from "./services/usage-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
 import { ModelOAuthProvider } from "./services/model-oauth-service.js";
 import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
@@ -496,7 +496,7 @@ export class PluginIndexModule {}
 export class SandboxSettingsModule {}
 
 @Module({
-  children: [ErrorsRepo, ErrorRecorder, UsageRepo, UsageRecorder, UsageService],
+  children: [ErrorsRepo, ErrorRecorder, UsageRepo, UsageRecorder, UsageServiceProvider],
   exports: [ErrorLog, Errors, UsageStore, UsageRecording, UsageQueries],
 })
 export class ObservabilityModule {}

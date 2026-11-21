@@ -177,6 +177,12 @@
         "../../library/messaging/src/repos/messaging-conversations.ts"
       ],
       "@prismshadow/penguin-library-observability": ["../../library/observability/src/index.ts"],
+      "@prismshadow/penguin-library-observability/usage-service": [
+        "../../library/observability/src/usage-service.ts"
+      ],
+      "@prismshadow/penguin-library-observability/dates": [
+        "../../library/observability/src/dates.ts"
+      ],
       "@prismshadow/penguin-library-observability/observability": [
         "../../library/observability/src/observability.ts"
       ],

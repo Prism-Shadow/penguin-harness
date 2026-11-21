@@ -12,6 +12,7 @@
  */
 export { ErrorLog, Errors, UsageStore, UsageRecording, UsageQueries } from "./observability.js";
 export type { UsageContext, ErrorSource, ErrorKind, ErrorRecordArgs } from "./observability.js";
+export type { UsageClock } from "./observability.js";
 export type {
   UsageGroupBy,
   UsageQuery,
@@ -34,3 +35,27 @@ export type {
   ErrorContext,
   UsageErrorItem,
 } from "./observability.js";
+export { UsageService } from "./usage-service.js";
+export type {
+  PricingRates,
+  TieredRates,
+  PricingLookup,
+} from "./usage-service.js";
+export {
+  requestCostUsd,
+  requestCostParts,
+  sumCostParts,
+  ZERO_COST_PARTS,
+  ratesAt,
+} from "./usage-service.js";
+export {
+  formatLocalDate,
+  localDateMinusDays,
+  formatLocalHourKey,
+  formatLocalMinuteKey,
+  enumerateTsBuckets,
+  localWeekStart,
+  localMonthKey,
+  enumerateBuckets,
+} from "./dates.js";
+export type { BucketGranularity } from "./dates.js";

@@ -78,9 +78,9 @@ import {
   requestCostUsd,
   sumCostParts,
   ZERO_COST_PARTS,
-} from "./usage-service.js";
+} from "@prismshadow/penguin-library-observability/usage-service";
 import type { TieredRates } from "@prismshadow/penguin-library-model";
-import type { PricingLookup } from "./usage-service.js";
+import type { PricingLookup } from "@prismshadow/penguin-library-observability/usage-service";
 import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import {
   cloneScanState,
