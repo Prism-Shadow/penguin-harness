@@ -22,9 +22,11 @@ export const OFFLINE_DIR = "offline";
 
 /**
  * The packages to carry as offline archives: listed in `indexFile`, found under `pluginsSrc`, and
- * not among `shipped` (the names the builtin prefix carries). Sorted by directory name.
+ * not among `shipped` (the names the builtin prefix carries). Sorted by directory name. A tree
+ * without the index (a checkout staged with plugins alone) lists nothing, so carries nothing.
  */
 export async function offlineCandidates({ pluginsSrc, indexFile, shipped }) {
+  if (!fs.existsSync(indexFile)) return [];
   const listed = new Set(
     JSON.parse(await fsp.readFile(indexFile, "utf8")).map((row) => String(row.name)),
   );
