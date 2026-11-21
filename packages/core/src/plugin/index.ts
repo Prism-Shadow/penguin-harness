@@ -60,6 +60,7 @@ export { Interface } from "../kernel/markers.js";
 export { sessionShell } from "../environment/tools/command/shell.js";
 
 export type * from "./sandbox.js";
+export type * from "./agent-state.js";
 export type * from "./languages.js";
 export type * from "./library.js";
 
