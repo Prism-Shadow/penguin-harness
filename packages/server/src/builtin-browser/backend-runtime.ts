@@ -33,8 +33,8 @@ import type {
   BuiltinBrowserUnavailableReason,
   DesktopBrowserCommand,
   DesktopBrowserEvent,
-} from "../api/types.js";
-import { HttpError } from "../http/errors.js";
+} from "@prismshadow/penguin-server/api";
+import { HttpError } from "../plugin/index.js";
 import { BrowserActions, DEFAULT_ACTION_TIMING } from "./actions.js";
 import type { ActionTiming } from "./actions.js";
 import { BrowserDriver, mapLinkError, tabCrashedError } from "./driver.js";

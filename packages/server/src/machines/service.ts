@@ -198,6 +198,7 @@ function localModelsOf(config: ProjectConfig): LocalModels {
     ...(config.providers !== undefined ? { providers: config.providers } : {}),
     ...(config.default_model !== undefined ? { defaultModel: config.default_model } : {}),
     ...(config.vision_model !== undefined ? { visionModel: config.vision_model } : {}),
+    ...(config.tools !== undefined ? { toolModels: config.tools } : {}),
     ...(config.name !== undefined ? { name: config.name } : {}),
   };
 }
