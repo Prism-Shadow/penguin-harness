@@ -12,6 +12,8 @@
 
 `penguin` 的命令行成为模块机制（[PRFC-0001](./PRFC-0001-module.zh.md#the-three-primitives)）之下的一组命令贡献。一条命令是一个 `@Component` 类的一份贡献：它的**静态半**写在 manifest 里——一个**命令 key**（这条命令答的 argv 路径）加每种语言一行 summary——它的**代码半**是类上的 `@Bind` 字段，与沙箱后端同一个类形状（[PRFC-0001](./PRFC-0001-module.zh.md#slots-and-contributions) 把槽写成 `Slot<Data, Code>`：清单里携带的 data 与绑定的实现 code，正是一份贡献的这两半）。收集这些贡献的宿主有两个，各在自己的进程里：CLI 自有的命令是 CLI 树上 `CliCommandsModule.commands` 槽的贡献，入口静态 boot、由构建固定；插件的命令是 server 树上 `PluginCliCommandsProvider.commands` 槽的贡献——知道它们、运行它们的都是 server，CLI 经两条路由取用，同 web 应用读自己的贡献一个读法。归属由进程决定——一条命令属于能运行它的那个进程，CLI 从不为分派而加载插件代码。
 
+随 CLI 发布的插件——CLI 包自己的依赖——也可以携带在 CLI 进程里运行的命令：它的 `./cli` 导出是一个 **CLI 模块**，由 CLI 的构建列出并编译进来，所以 CLI 依然从不在运行时加载插件代码（[v1.2.0](#v120)）。
+
 ## Motivation
 [motivation]: #motivation
 
@@ -74,6 +76,39 @@ CLI 自有的二十条命令各是这样一个 `@Component` 类，贡献给 `Cli
 
 `penguin exec <id> [args…]` 直接按点分 id 点名一条插件命令——`sandbox.wsl.restart`，至少两段——id 之后的所有选项（包括 `--help`）都归那条命令。两个插件贡献同一 id 时，用 npm 全名点名：`penguin exec <包>:<id>`，scope 不可省略。`penguin exec ls [包]` 列出各插件贡献的 id，旁边是各自的摘要。同其他需要 server 的命令一样，server 未运行时它会启动一个。
 
+### 随 CLI 发布的插件的命令：由构建固定的 CLI 模块
+
+有些命令作用于运行它的终端：`penguin browser` 从 stdin 读 exec 脚本，把截图与取值存到给定的任意路径，边执行边输出。server 上的运行做不到：它没有 stdin，只能把文件交回命令的输出选项所指的那一个目录，输出也要缓冲进回复才一并送达。所以随 CLI 发布的插件可以携带在 CLI 自己进程里运行的命令，与 CLI 自有命令一样。
+
+它的包导出 `./cli` 子路径，即一个 **CLI 模块**：命令类、它的构建在 CLI 源码上生成的表（不是 `.` 入口随包发布的 server 表），以及命令读取的消息组。命令类的写法与其他命令相同，贡献给 CLI 的 `ShippedCommandsModule.commands`：
+
+```ts
+// plugins/<name>/src/cli/index.ts —— 包的 "./cli" 导出
+@Component({
+  contributes: {
+    "ShippedCommandsModule.commands": [
+      { id: "demo.cli", key: "demo", summary: { en: "Say hello", zh: "打招呼" } },
+    ],
+  },
+})
+export class DemoCommand {
+  @Bind("demo.cli") command!: CliCommandCode<DemoMessages>;
+  setup() {
+    this.command = { register: (command, ctx) => registerDemo(node(command), ctx.messages) };
+  }
+}
+
+export default {
+  modules: [DemoCommand],
+  ifaces: table, // 本包在 src/cli 上的 gen-ifaces 产物
+  messages: { en: demoEn, zh: demoZh },
+} satisfies CliModule;
+```
+
+CLI 的构建列出 CLI 包依赖中所有导出 `./cli` 的插件——即插件库宿主所认的 `@penguinharness/*` 包——并把这些模块编译进 CLI；启动时 CLI 逐个 boot，把它们的命令接在自有命令之后。它们出现在 `penguin --help` 里，自己解析参数，读写调用方的终端。之后才装到 server 上的插件永远进不了这张列表：它的命令归 server，见上文。
+
+CLI 模块的代码只经一个库包 `@prismshadow/penguin-library-cli` 使用宿主——连接解析、server 客户端及其错误、终端输入、文本工具，以及这些文字所出自的宿主消息组。它从不 import server 包或 CLI 包：二者都依赖自己发布的插件，反向 import 就成环。
+
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
@@ -119,6 +154,17 @@ CLI 的隐式分派是 argv 与列表的一个纯函数。**命令词**是 argv 
 
 一处降级明说：列表取不到时——server 未在跑，或查询失败——CLI 无法知道是否有插件本会答，于是退回自己的解析、报未知命令。隐式分派把「问不到」与「没有命中」同样对待；`penguin exec` 的存在，正是让需要这条命令的调用方不必依赖那个回退。
 
+### 随 CLI 发布的插件的 CLI 模块
+
+- **契约。** `@prismshadow/penguin-core/cli` 的 `CliModule`：`{ modules, ifaces, messages? }`——命令类、包自己为它们生成的表，以及可选的消息组 `{ en, zh }`。命令类贡献给 `ShippedCommandsModule.commands`，其数据半是 `CliCommandData`、代码半是 `CliCommandCode`，与 CLI 自己的槽相同。随包发布的命令贡献给这个槽而不是 `CliCommandsModule.commands`，所以 CLI 自有命令的生成表从不列出它。
+- **列表。** CLI 包的 `gen:ifaces` 另写 `cli-modules.gen.ts`：包 `dependencies` 中 `package.json` 的 `exports` 含 `./cli` 的每个 `@penguinharness/*` 项，按包名排序，每项在 CLI 需要时才 import 自己的模块，所以求值时抛错的模块只坏它自己。插件加上 `exports` 时要把 `./package.json` 留在其中，插件库宿主要解析它。依赖未安装是错误，而不是漏掉一个模块。CLI 的 tsup 构建把列出的 `./cli` 模块打包进去，推送的编译本就内联一切，所以产物自带它运行的代码。
+- **启动。** 每次调用、每个模块一棵树：根是 CLI 的 `ShippedCommandsModule`，模块的类是它的额外子节点，各与模块自己表里的 manifest 配对。这棵树对照 CLI 的表并折入模块的表来检查，两者都有的键以 CLI 的条目为准——与 server 折入插件表的方式相同。启动失败的模块（类不在它的表里、检查不通过）什么都不贡献，CLI 向 stderr 写一条点名其包的警告；CLI 其余部分照常运行。
+- **命令。** 接在 CLI 自有命令与 server 包的命令之后，按列表顺序注册，各在其 key 定位的节点上。每条命令轮到时对照程序当时的样子检查：key 不过 `cliCommandKeyFault`、与本模块已贡献的 key 重复，或某一段已是程序上某条命令的名称或别名（CLI 自有的或之前的模块加的，`help` 也算），带警告剔除：随包发布的模块只增加命令，从不扩展或替换 CLI 已有的命令。
+- **消息。** register 收到宿主的消息包，外加该模块在本次调用语言下的消息组；宿主已有的组仍归宿主，并给出警告。语言由 CLI 解析，模块从不自己解析。
+- **哪些在运行时拦下，哪些只有构建拦得住。** 运行时，下列情形只损失相关的模块或命令，向 stderr 写一条点名其包的警告，CLI 其余部分照常运行：求值时抛错的模块、类 boot 不起来的模块、被上述检查剔除的命令，以及 register 抛错的命令——它的节点连同它的 key 新建后又空出来的组都从程序上撤下。随包发布的命令在执行中途失败，与任何命令一样：一行错误、退出码 1，只影响那一次调用。其余只有构建拦得住：列出的插件未安装（生成器拒绝）、模块编译或打包失败、默认导出不是 `CliModule`（生成列表的类型检查）。
+- **访问层。** `@prismshadow/penguin-library-cli` 是位于 server、CLI 与各插件之下的私有库包：server 的 `cli` 子路径为 server 包自己的命令重新导出它，插件的 CLI 模块把它打包进去。
+- **原地阶段。** 迁入插件之前，`penguin browser` 就是这样一个模块：它仍在 server 包里，对照 server 的表启动，CLI 把它手写在生成列表之后。
+
 ## Invariants
 [invariants]: #invariants
 
@@ -128,11 +174,13 @@ CLI 的隐式分派是 argv 与列表的一个纯函数。**命令词**是 argv 
 
 manifest 里的 key 是命令路径的唯一来源；help 打印的 summary 与它同住在同一条目里。另一条路——register 自己调 `program.command("…")`——把路径放进两处，两处第一次被人各改一头就互相矛盾：help 说一套，分派答另一套。破坏它，静态半就不再是数据：不运行代码就无法列出、无法校验、无法投影。
 
-### 插件的命令归属 server
+### CLI 从不在运行时加载插件代码
 
-> 无论 CLI 如何分派，插件的命令仍由 server 发现与运行，CLI 仍只经 [server 的命令 API](./PRFC-0024-cli-modules.zh.md#guide-level-explanation) 取用——从不为分派而加载插件代码。
+> 无论插件的命令以何种方式抵达命令行，CLI 仍只运行它的构建编译进来的插件代码——它所发布的插件的 [CLI 模块](./PRFC-0024-cli-modules.zh.md#随-cli-发布的插件的-cli-模块)——其余插件的命令仍只经 [server 的命令 API](./PRFC-0024-cli-modules.zh.md#guide-level-explanation) 取用：它从不在运行时加载插件代码。
 
-这是本 RFC 之所以存在的归属决定。CLI 是客户端；发现与执行住在贡献所在的树所属的进程里，信任模型就是插件平台自己的那一个（[PRFC-0003](./PRFC-0003-plugin.zh.md#principles)）——一个进程、一次信任决定——而不是在 CLI 内部再长出一个更弱的。破坏它，此后每一个插件表面（技能、工具、hook）都得重新回答「哪个进程运行插件代码」，而 CLI 成为一个必须靠推送才正确的插件宿主。
+这是本 RFC 之所以存在的归属决定。随 CLI 发布的 CLI 模块与 CLI 自有命令同等地位——一起审阅、一起定版本、在同一个产物里发布——所以在 CLI 进程里运行它不增加任何信任决定。CLI 永远不会成为运行时的插件宿主：管理员所装之物的发现与执行，住在贡献所在的树所属的进程里，信任模型就是插件平台自己的那一个（[PRFC-0003](./PRFC-0003-plugin.zh.md#principles)）——一个进程、一次信任决定——而不是在 CLI 内部再长出一个更弱的。破坏它，此后每一个插件表面（技能、工具、hook）都得重新回答「哪个进程运行插件代码」，而 CLI 成为一个必须靠推送才正确的插件宿主。读取一个包不等于运行它：CLI 确实会解析它所发布的插件，以读取其插件库内容（core 的插件库宿主），这仍在承诺之内。
+
+本不变量取代 v1.0.0 声明、v1.2.0 退场的「插件的命令归属 server」。那一条承诺每条插件命令都由 server 发现与运行；随包发布的 CLI 模块在 CLI 自己的进程里运行其命令之后，它已不再如字面成立。它所保护的——CLI 永远不会成为运行时的插件宿主——由上面这条承诺。
 
 ### 隐式分派永不瞎猜
 
@@ -145,6 +193,8 @@ manifest 里的 key 是命令路径的唯一来源；help 打印的 summary 与�
 
 二十个命令组件静态 boot，单文件拼装没有这个代价：实测 `penguin version` 慢了约 60 ms，这是入口 boot 的价钱。一条命令现在是一个类加一条 manifest 条目——对贡献者比一次函数调用更繁，换来的是一张能列出、能校验、能对外服务的表。隐式分派要有在跑的 server 才看得见插件命令；离线时 CLI 只认识自己。输出缓冲把一次运行的 stdout 与 stderr 整个握在内存里，无上限；而且一次运行在途时，server 自己的 stdout 与 stderr 也被重定向进那份回复，窗口内 server 打印的任何东西都会被一并捕获。回退把「问不到 server」与「没有插件命中」混为一谈——列表取不到时报的是未知命令，而点破降级会更诚实。退出码 2 成为 CLI 公开契约的一部分，脚本从此可见。
 
+每个随包发布的 CLI 模块在每次调用时各 boot 一棵树，各自加在 CLI 自有命令表已付的启动代价之上。而且这类模块的命令只随 CLI 的构建变化：经 server 送达的插件更新到不了它们。
+
 ## Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
@@ -153,6 +203,8 @@ manifest 里的 key 是命令路径的唯一来源；help 打印的 summary 与�
 **server 连内建命令也一并收集**——一个宿主管全部——被否，因为内建命令表由构建固定，而启动 server 的构建就是 CLI 的；把内建收进 server 的树，`penguin --help` 就要依赖 server 可达，或把表发两份。
 
 **维持手写注册**今天不花什么，日后每条命令都花：宿主继续长，help、分派与（将来的）补全各自手工重读注册，插件则被彻底挡在终端之外。
+
+**随 CLI 发布的插件的命令也经 server 运行**——所有插件一条路——对作用于调用方终端的命令被否。server 上的运行知道调用方的 Project 与 Session，也按调用方目录交换选项指定的文件，但它仍没有 stdin，只能存进命令选项所指的那一个输出目录、而不能存到任意给定路径，输出也缓冲在回复里。**让 CLI 从 server 包 import 随包插件的 CLI 一半**（浏览器的 CLI 一半原先就在那里）能让代码原地不动，却闭合一个依赖环——server 与 CLI 为插件库内容都依赖该插件——所以访问层移进一个位于三者之下的库包。**所有随包模块共用一棵树**被否，因为一个模块 boot 失败会连带其余；一个模块一棵树，失败只属于它自己。
 
 ## Prior art
 [prior-art]: #prior-art
@@ -177,6 +229,16 @@ manifest 里的 key 是命令路径的唯一来源；help 打印的 summary 与�
 ---
 
 ## Changes
+
+### v1.2.0
+
+- 说明：v1.1.0 是成员插件命令那一版修订，由 [#1639](https://github.com/Prism-Shadow/penguin-harness/pull/1639) 与设计 PR [#485](https://github.com/Prism-Shadow/penguin-harness-design/pull/485) 携带；两者谁后合入，谁取下一个版本号。
+- 新增：随 CLI 发布的插件可以携带在 CLI 进程里运行的命令——它的 `./cli` 导出是一个 CLI 模块（`CliModule`），其类贡献给 CLI 的 `ShippedCommandsModule.commands`，在构建时从 CLI 包的依赖中列出，对照模块自己的表启动，带着自己的消息组（「Guide-level」新增「随 CLI 发布的插件的命令：由构建固定的 CLI 模块」，「Reference-level」新增「随 CLI 发布的插件的 CLI 模块」，「Summary」新增一段）。
+- 新增：库包 `@prismshadow/penguin-library-cli`，CLI 模块的代码用它代替 server 包。
+- 删除：不变量「插件的命令归属 server」，按名退场。随包发布的 CLI 模块在 CLI 自己的进程里运行其命令，server 不再发现与运行每一条插件命令。
+- 新增：不变量「CLI 从不在运行时加载插件代码」，保住被删除那一条所保护的东西。
+- 新增：随包模块的哪些失败由 CLI 在运行时拦下、哪些只有构建拦得住（「Reference-level」的「随 CLI 发布的插件的 CLI 模块」）。
+- 新增：「Drawbacks」中的启动与更新代价，「Rationale and alternatives」中被否的方案。
 
 ### v1.0.0
 

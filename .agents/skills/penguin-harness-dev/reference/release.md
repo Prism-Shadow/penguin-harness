@@ -100,6 +100,7 @@ and `check-publishable.mjs` fails if a published package depends on it.
 | `README.md`, `README.zh.md` | The Docker example pins the exact version (`hiyouga/penguinharness:<version>`). |
 | `package.json`, `packages/*/package.json`, `plugins/*/package.json` | Version, in lockstep. |
 | `packages/core/src/index.ts` | `export const VERSION`. |
+| `packages/server/src/plugin/builtin-market.json`, `packages/server/src/plugin/market-covers/` | Refreshed from the community repository's `main` (`Prism-Shadow/penguin-harness-community`, a fresh checkout): `node scripts/sync-market-assets.mjs <community checkout>` copies `assets/plugins/market.json` over `builtin-market.json`, and replaces `market-covers/` with every built-in plugin's `cover.webp` and `cover-640.webp` as the document names them. It prints the bytes the build now carries. Then `pnpm exec prettier --write packages/server/src/plugin/builtin-market.json`, so only the formatting differs. The server answers with this copy and these covers until the published document arrives, and serves the covers offline; the landing site falls back to the copy. Run the server's `plugin-market.test.ts` afterwards: a copy the server refuses fails it. Screenshots are not copied; the server fetches them. |
 | `packages/landing/content/blog/penguinharness-<v-with-dashes>.{en,zh}.md` | The post pair. |
 | `packages/landing/test/blog.test.ts` | The new slug joins the expected list. |
 

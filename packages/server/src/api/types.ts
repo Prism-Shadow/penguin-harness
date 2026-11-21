@@ -4740,6 +4740,77 @@ export interface PluginIndexResponse {
 }
 
 /**
+ * One picture of the plugin market, named by the route this server serves it at
+ * (`GET /api/plugins/market/asset?path=…&rev=…`): the server fetches it from beside the market
+ * document, checks its bytes are a WebP, PNG or JPEG picture and keeps a copy, so a page never
+ * loads a picture from another host. A picture that cannot be had answers 404.
+ */
+export interface MarketImage {
+  /** The full rendition. */
+  url: string;
+  /** The small rendition a card draws; absent, a card draws `url`. */
+  thumbUrl?: string;
+  /** The picture's dominant colour (`#rrggbb`): the field it fades in over. */
+  tone?: string;
+}
+
+/** A screenshot on a plugin's detail: a picture and what it shows. */
+export interface MarketShot extends MarketImage {
+  caption?: string;
+  captionZh?: string;
+}
+
+/** What the market document says a plugin looks like. Every part is optional. */
+export interface PluginArt {
+  cover?: MarketImage;
+  /**
+   * A raster icon, for a plugin whose package is not on this server (an index row has none of its
+   * own); once the package is here, the package's own icon is drawn instead.
+   */
+  icon?: { url: string };
+  screenshots?: MarketShot[];
+}
+
+/**
+ * How many times each plugin is installed, for the market's 热门 / 飙升 (popular / rising) panel:
+ * `installs` in all, `weekly` in the last seven days, by npm package name.
+ *
+ * PLACEHOLDER: no install count exists across deployments yet, so today's numbers are generated
+ * with a fixed seed in the community repository's pipeline and published with
+ * `source: "placeholder"`. Replace them with a real install-count API later: it publishes this
+ * same shape with `source: "live"`, the switch a reader keys on.
+ */
+export interface MarketPopularity {
+  source: "placeholder" | "live";
+  /** The day the numbers were produced (`YYYY-MM-DD`). */
+  generatedAt: string;
+  items: Record<string, { installs: number; weekly: number }>;
+}
+
+/**
+ * GET /api/plugins/market: the market's curation — which plugins are selected, which of them
+ * may lead the selected carousel, and the art of the plugins that have any — keyed by npm package
+ * name (a library plugin's `package`, an index entry's `name`). A name this server does not list
+ * is simply not drawn. `source` says which document answered: the one shipped with this build, or
+ * the published one (plugin/market.ts). Selection is an editorial choice, not a ranking; the only
+ * numbers are the optional `popularity` block, placeholders until a real install-count API exists.
+ */
+export interface PluginMarketResponse {
+  /** Package names allowed to lead the selected carousel, in turn order; each is also in `selected`. */
+  hero: string[];
+  /** Package names of the selected plugins, in display order. */
+  selected: string[];
+  art: Record<string, PluginArt>;
+  source: "embedded" | "published";
+  /**
+   * The document's install counts, as it carries them; absent when it carries none, or a block
+   * that does not read (the rest of the document still answers). Placeholder numbers today
+   * (`source: "placeholder"`), to be replaced by a real install-count API: see MarketPopularity.
+   */
+  popularity?: MarketPopularity;
+}
+
+/**
  * A plugin's long-form docs: the README.md at its package root, as npm ships it.
  * GET /api/plugins/registry/readme?name= answers for an index entry, with `readme` null when
  * the package is not on this server or has none; GET /api/plugins/:plugin/readme answers for a
@@ -6696,6 +6767,16 @@ export interface PluginCliCommandInfo {
   key: string;
   /** Its one-line summary, per language. */
   summary: { en: string; zh: string };
+  /**
+   * Who may run it: the administrator only, or any member of the caller's Project. This server
+   * always says; a client reads an absent one (a server from before member commands) as `admin`.
+   */
+  access?: "admin" | "member";
+  /**
+   * The local files it exchanges: `read`, the options whose value is a file the terminal sends;
+   * `write`, the option naming the directory the terminal saves returned files into.
+   */
+  files?: { read?: string[]; write?: string };
 }
 
 /** GET /api/cli/commands: every command the server's plugins contribute, in load order. */
@@ -6713,13 +6794,39 @@ export interface PluginCliCommandRunRequest {
   language: "en" | "zh";
   /** The program name usage lines print (`penguin`, or `penguin exec <plugin>`). */
   prog: string;
+  /** The caller's Project (an Agent's `PENGUIN_PROJECT_ID`); a member command needs one. */
+  projectId?: string;
+  /** The caller's Session (an Agent's `PENGUIN_SESSION_ID`): a Session of `projectId`. */
+  sessionId?: string;
+  /** The local files the terminal read for the command's `files.read` options. */
+  files?: PluginCliCommandInputFile[];
 }
 
-/** What one run printed, and its exit code. */
+/** One file the terminal sends with a run. */
+export interface PluginCliCommandInputFile {
+  /** The option's value as typed: what the command looks the file up by. */
+  value: string;
+  /** The file's own name, no directory. */
+  name: string;
+  /** Its bytes, base64. */
+  data: string;
+}
+
+/** One file a run hands back to the terminal, which saves it under the command's `files.write`. */
+export interface PluginCliCommandOutputFile {
+  /** A plain file name, no directory. */
+  name: string;
+  mimeType?: string;
+  /** Its bytes, base64. */
+  data: string;
+}
+
+/** What one run printed, its exit code, and the files it handed back. */
 export interface PluginCliCommandRunResponse {
   exitCode: number;
   stdout: string;
   stderr: string;
+  files?: PluginCliCommandOutputFile[];
 }
 
 /**
