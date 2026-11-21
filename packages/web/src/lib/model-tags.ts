@@ -26,7 +26,7 @@ export const TAG_TONE = {
 } as const satisfies Record<string, ToneName>;
 
 export interface ModelTag {
-  key: "default" | "vision" | "visionModel" | "fastMode" | "free" | "discount";
+  key: "default" | "multimodal" | "vision" | "visionModel" | "fastMode" | "free" | "discount";
   label: string;
   /** Hover text, for a mark whose word needs a sentence behind it (a discount's terms). */
   title?: string;
@@ -45,6 +45,11 @@ export interface ModelTagFacts {
   isDefault: boolean;
   /** Accepts image input (the effective annotation: unset counts as supported). */
   vision: boolean;
+  /**
+   * The multimodal jobs this model is the Project's default for (text generation, speech
+   * recognition …), by name; absent or empty when none. Only the models page shows it.
+   */
+  multimodal?: readonly string[];
   /** The Project's vision proxy for read_file. Only the models page shows it. */
   isVisionModel?: boolean;
   /** Fast mode (premium serving tier) is on for this entry. */
@@ -64,6 +69,13 @@ export function modelTags(facts: ModelTagFacts): ModelTag[] {
   const { discount } = facts;
   const tags: Array<ModelTag | false | undefined> = [
     facts.isDefault && { key: "default", label: S.models.default, ...toneOf("status") },
+    facts.multimodal !== undefined &&
+      facts.multimodal.length > 0 && {
+        key: "multimodal",
+        label: S.models.multimodalBadge,
+        title: S.voice.inUseFor(facts.multimodal),
+        ...toneOf("status"),
+      },
     facts.vision && { key: "vision", label: S.models.visionBadge, ...toneOf("capability") },
     facts.isVisionModel && {
       key: "visionModel",

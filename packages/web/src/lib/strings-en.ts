@@ -77,6 +77,13 @@ export const en: Strings = {
     confirmMultimodal: (name: string, operations: readonly string[]) =>
       `Make "${name}" the default model for ${operations.join(", ")}?`,
     multimodalSet: (operations: readonly string[]) => `Default for: ${operations.join(", ")}`,
+    removeMultimodal: "Remove as default multimodal model",
+    removeMultimodalHint: (operations: readonly string[]) =>
+      `Stop using it as this Project's default for: ${operations.join(", ")}`,
+    multimodalRemoved: (operations: readonly string[]) =>
+      `No longer the default for: ${operations.join(", ")}`,
+    followsDefault: (model: string) => `Follows the default chat model (${model})`,
+    followDefault: "Follow the default chat model",
     guideTitle: "Connect a model provider first",
     guideBody:
       "This Project has no model it can use yet: no chat model has an API key. Connect a provider, or add a key on the Models page, then choose the default models.",
@@ -2909,6 +2916,7 @@ export const en: Strings = {
     confirmDefault: (name: string): string =>
       `Make "${name}" the default model? New sessions will use it by default.`,
     default: "Default",
+    multimodalBadge: "Default multimodal",
     setDefault: "Set as default model",
     remove: "Delete model",
     readOnlyHint: "Members have read-only access; only owners can change models and credentials",

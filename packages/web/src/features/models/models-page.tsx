@@ -10,11 +10,11 @@
  *
  * The list is purely for "finding a model": grouped by vendor (group header = logo + vendor
  * name + count + the collapse chevron), with one card per model within a group — the card
- * shows only the display name + status badges (default / vision / fast / free / discount), while
- * context, pricing, and key status are folded into a single line of small text. Clicking a card opens the config dialog
- * (credentials, context, pricing, vision toggle, plus set as default / set as the default for every
- * multimodal operation it can serve / delete — default-models.tsx; the card only marks the
- * operations it is in use for, model-operations.tsx). The header's 「默认模型」 opens every default at
+ * shows only the display name + status badges (default / default multimodal / vision / fast / free /
+ * discount), while context, pricing, and key status are folded into a single line of small text.
+ * Clicking a card opens the config dialog (credentials, context, pricing, vision toggle, plus set as,
+ * or remove as, the default for every multimodal operation it can serve / set as default / delete —
+ * default-models.tsx). The header's 「默认模型」 opens every default at
  * once (default-models-layer.tsx). The group header's right side holds the group's actions in a fixed order
  * (group-header.ts): its balance (one menu: pin, refresh, when it was read), the connection
  * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
@@ -216,7 +216,6 @@ import {
 
 import { useToolBindings } from "../../state/use-tool-bindings";
 import { notifyModelsChanged, requestDefaultModels } from "../../lib/default-models-request";
-import { ModelInUseMark, modelOperations, type ModelOperation } from "./model-operations";
 import { multimodalTargets, VISION_ROW, type MultimodalTarget } from "./default-models";
 import { CONNECT_PARAM } from "./connect-link";
 import { ProviderSettingsDialog } from "./provider-settings-dialog";
@@ -957,9 +956,6 @@ export function ModelsPage() {
   const [visionModel, setVisionModel] = useState<ModelRefDto | undefined>(undefined);
   /** The plugins' tool bindings, read again whenever the table changes (it changes the candidates). */
   const toolBindings = useToolBindings(rows ? projectId : null, null, { refreshKey: rows });
-  /** The operations a row is in use for, which its card marks (model-operations.tsx). */
-  const operationsOf = (row: RowState | undefined) =>
-    row ? modelOperations(toolBindings.bindings, rowRef(row), locale) : [];
   /** The multimodal defaults a row can serve: what its dialog's 「设为默认多模态模型」 sets. */
   const multimodalOf = (row: RowState | undefined): MultimodalTarget[] =>
     row
@@ -1143,6 +1139,26 @@ export function ModelsPage() {
     }
     if (taken.length > 0) toastSuccess(S.defaultModels.multimodalSet(taken));
     return taken.length > 0;
+  };
+
+  /**
+   * 「移除默认多模态模型」: the model stops being the Project's default for every multimodal operation
+   * it holds — the vision model cleared (the whole table), each binding unbound — and one toast
+   * names them. A refused write is its own toast; the rest still go.
+   */
+  const removeMultimodalDefault = async (ref: ModelRefDto): Promise<boolean> => {
+    const row = rows?.find((r) => sameModelRef(rowRef(r), ref));
+    if (!rows || !row) return false;
+    const removed: string[] = [];
+    for (const target of multimodalOf(row).filter((t) => t.current)) {
+      const landed =
+        target.key === VISION_ROW
+          ? await persist(rows, defaultModel, undefined, null)
+          : await toolBindings.bind(target.key, null);
+      if (landed) removed.push(target.title);
+    }
+    if (removed.length > 0) toastSuccess(S.defaultModels.multimodalRemoved(removed));
+    return removed.length > 0;
   };
 
   /**
@@ -1810,7 +1826,7 @@ export function ModelsPage() {
                       speed={speedResults.get(refMapKey(row.provider, row.modelId))}
                       usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
                       hourTick={hourTick}
-                      operations={operationsOf(row)}
+                      multimodal={multimodalOf(row).filter((target) => target.current)}
                       onOpen={() => {
                         setEditingMovedToCustom(false);
                         setEditing(rowRef(row));
@@ -2230,6 +2246,8 @@ export function ModelsPage() {
             let ok: boolean;
             if (action === "setMultimodal") {
               ok = await setMultimodalDefault(rowRef(next));
+            } else if (action === "removeMultimodal") {
+              ok = await removeMultimodalDefault(rowRef(next));
             } else if (action === "remove") {
               // Filter by the **identity as loaded**: rows / pointers are both keyed by the
               // paired reference as loaded. If the user edited identity fields before
@@ -2699,7 +2717,7 @@ export function ModelCard({
   usedTokens,
   hourTick,
   onOpen,
-  operations,
+  multimodal,
   onMoveToCustom,
 }: {
   row: RowState;
@@ -2714,8 +2732,8 @@ export function ModelCard({
   /** Bumped on the hour (see useHourTick): the cue to re-read a time-of-day price. */
   hourTick: number;
   onOpen: () => void;
-  /** The Project operations this model can serve; the card marks the ones it is in use for. */
-  operations?: readonly ModelOperation[];
+  /** The multimodal defaults this model holds (default-models.tsx): its tag and the tag's tooltip. */
+  multimodal?: readonly MultimodalTarget[];
   /** Opens the config dialog with this row already moved to the custom group; absent for a member, who cannot write the config. */
   onMoveToCustom?: () => void;
 }) {
@@ -2767,6 +2785,11 @@ export function ModelCard({
     isDefault,
     // A tool model's image input is no chat capability: no "vision" tag on it.
     vision: row.vision && row.chatEligible !== false,
+    // Tagged when it holds a multimodal binding, its tooltip naming every default it holds; the
+    // vision proxy alone has a tag of its own.
+    multimodal: multimodal?.some((target) => target.key !== VISION_ROW)
+      ? multimodal.map((target) => target.title)
+      : [],
     isVisionModel,
     fastMode: row.fastMode,
     free: isFreeModel(row),
@@ -2858,9 +2881,6 @@ export function ModelCard({
           <span data-slot="name" className="min-w-0 flex-1 truncate text-sm font-medium">
             {modelLabelOf(row.displayName, row.modelId)}
           </span>
-          {/* The Project operations this model is in use for: one quiet glyph, named in its
-              tooltip. Assigning happens in the model's dialog or in Project settings. */}
-          <ModelInUseMark operations={operations ?? []} />
           {/* What this model has spent over its whole life, on the row's right edge. Recessive by
               design — grey, on the small rung below the name: it is context for a name you are
               scanning past, not a figure the page is about. A model that has never run shows
@@ -2935,7 +2955,13 @@ export function ModelCard({
 // Config dialog (shared by editing an existing model / adding a custom model)
 // ---------------------------------------------------------------------------
 
-type DialogAction = "save" | "setDefault" | "setVisionModel" | "setMultimodal" | "remove";
+type DialogAction =
+  | "save"
+  | "setDefault"
+  | "setVisionModel"
+  | "setMultimodal"
+  | "removeMultimodal"
+  | "remove";
 
 /**
  * Confirmation text per action (S is a live runtime binding, must be read at render time, not
@@ -2948,6 +2974,8 @@ const CONFIRM_TITLE: Record<DialogAction, () => string> = {
   setDefault: () => S.models.confirmDefaultTitle,
   setVisionModel: () => S.models.confirmVisionModelTitle,
   setMultimodal: () => S.defaultModels.confirmMultimodalTitle,
+  // Never asked (it only takes the model off its own assignments); kept for the record's shape.
+  removeMultimodal: () => S.defaultModels.removeMultimodal,
   remove: () => S.models.confirmDeleteTitle,
 };
 const CONFIRM_BODY: Record<
@@ -2958,6 +2986,7 @@ const CONFIRM_BODY: Record<
   setDefault: (n) => S.models.confirmDefault(n),
   setVisionModel: (n) => S.models.confirmVisionModel(n),
   setMultimodal: (n, _pct, operations) => S.defaultModels.confirmMultimodal(n, operations),
+  removeMultimodal: (_n, _pct, operations) => S.defaultModels.removeMultimodalHint(operations),
   remove: (n) => S.models.confirmDelete(n),
 };
 
@@ -3500,6 +3529,10 @@ function ModelDialog({
   const changed = draft.dirty || movedToCustom;
   /** The multimodal operations it can serve that another model holds: what 「设为默认多模态模型」 sets. */
   const pendingMultimodal = multimodal.filter((target) => !target.current);
+  /** The ones it holds: what 「移除默认多模态模型」 takes it off, and its header tag. */
+  const heldMultimodal = multimodal.filter((target) => target.current);
+  /** It holds a multimodal binding (the vision proxy alone has a tag of its own). */
+  const heldBinding = heldMultimodal.some((target) => target.key !== VISION_ROW);
   // Errors show once there is something to save; an empty model id is marked by its asterisk.
   const shownErrors: FieldErrors =
     changed && form.modelId.trim() === ""
@@ -3810,37 +3843,45 @@ function ModelDialog({
    */
   const slots: Record<ModelDialogSlot, ReactNode> = {
     // Model-level actions: test connectivity (for a new model, fill in the id and key to verify
-    // before saving) / set default / set as the default for every multimodal operation it can
-    // serve / remove. Each multimodal default one by one is the 「默认模型」 dialog's.
+    // before saving) / set as, or remove as, the default for every multimodal operation it can
+    // serve / set default / remove. Each multimodal default one by one is the 「默认模型」 dialog's.
     actions: canEdit && (
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" disabled={testing || !form.modelId.trim()} onClick={() => void runTest()}>
           {testing ? S.models.testing : S.models.testConnection}
         </Button>
+        {/* One button beside the test: 「设为」 while some multimodal operation it can serve has
+            another default (asked first), 「移除」 once it holds them all (at once: it only takes
+            this model off its own assignments). A binding names the saved model, so it waits
+            while the draft holds unsaved edits. */}
+        {!isNew &&
+          (pendingMultimodal.length > 0 ? (
+            <Button
+              size="sm"
+              title={S.defaultModels.setMultimodalHint(pendingMultimodal.map((t) => t.title))}
+              disabled={saving || changed || multimodalBusy}
+              onClick={() => setConfirming("setMultimodal")}
+            >
+              {S.defaultModels.setMultimodal}
+            </Button>
+          ) : (
+            heldMultimodal.length > 0 && (
+              <Button
+                size="sm"
+                title={S.defaultModels.removeMultimodalHint(heldMultimodal.map((t) => t.title))}
+                disabled={saving || changed || multimodalBusy}
+                onClick={() => void submit("removeMultimodal")}
+              >
+                {S.defaultModels.removeMultimodal}
+              </Button>
+            )
+          ))}
         {/* Setting the default writes the draft with it, so it waits for the draft to be valid,
             like Save; removing writes nothing of the draft. A tool model cannot hold a chat. */}
         {!isNew && !isDefault && form.chatEligible !== false && (
           <Button size="sm" disabled={saving || !valid} onClick={() => setConfirming("setDefault")}>
             {S.models.setDefault}
           </Button>
-        )}
-        {/* Shown while some multimodal operation it can serve has another default; a binding
-            names the saved model, so it waits while the draft holds unsaved edits. */}
-        {!isNew && pendingMultimodal.length > 0 && (
-          <Button
-            size="sm"
-            title={S.defaultModels.setMultimodalHint(pendingMultimodal.map((t) => t.title))}
-            disabled={saving || changed || multimodalBusy}
-            onClick={() => setConfirming("setMultimodal")}
-          >
-            {S.defaultModels.setMultimodal}
-          </Button>
-        )}
-        {/* What it already holds, named quietly beside the action. */}
-        {!isNew && multimodal.some((target) => target.current) && (
-          <span className="text-xs text-fg-muted">
-            {S.voice.inUseFor(multimodal.filter((t) => t.current).map((t) => t.title))}
-          </span>
         )}
         {!isNew && (
           <>
@@ -4256,9 +4297,20 @@ function ModelDialog({
                   {form.modelId}
                 </span>
               )}
-              {(isDefault || (form.vision && form.chatEligible !== false) || isVisionModel) && (
+              {(isDefault ||
+                heldBinding ||
+                (form.vision && form.chatEligible !== false) ||
+                isVisionModel) && (
                 <span className="flex flex-wrap items-center gap-1 pt-0.5">
                   {isDefault && <Pill tone={TAG_TONE.status}>{S.models.default}</Pill>}
+                  {heldBinding && (
+                    <Pill
+                      tone={TAG_TONE.status}
+                      tooltip={S.voice.inUseFor(heldMultimodal.map((t) => t.title))}
+                    >
+                      {S.models.multimodalBadge}
+                    </Pill>
+                  )}
                   {form.vision && form.chatEligible !== false && (
                     <Pill tone={TAG_TONE.capability}>{S.models.visionBadge}</Pill>
                   )}

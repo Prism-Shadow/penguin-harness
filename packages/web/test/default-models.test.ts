@@ -5,6 +5,8 @@
  *   understanding when it can read images for another model, and each multimodal binding of the
  *   multimodal tools plugin that accepts it — marking the ones it already holds; web search, page
  *   reading and other plugins' bindings are tools, never part of it.
+ * - A model that is the default for some multimodal job carries a 「默认多模态」 tag naming them in
+ *   its tooltip, beside its other marks; one that holds none carries no such tag.
  * - A new chat starts on the Project's default, and on nothing when there is none.
  * - A Project with no default opens, for its owner, the default-models dialog when some chat model
  *   has a key behind it (an environment key counts), else the guide to connecting a provider; a
@@ -15,6 +17,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { MULTIMODAL_TOOLS_PACKAGE, type ToolBinding } from "../src/api/tool-types";
 import { multimodalTargets, VISION_ROW } from "../src/features/models/default-models";
 import { defaultChatModel } from "../src/lib/model-grouping";
+import { modelTags } from "../src/lib/model-tags";
 import {
   dismissOnboarding,
   onboardingDismissed,
@@ -73,6 +76,23 @@ describe("the multimodal defaults a model can take", () => {
     expect(
       multimodalTargets({ ...search, chatEligible: false }, bindings, undefined, "en"),
     ).toEqual([]);
+  });
+});
+
+describe("the default multimodal tag", () => {
+  it("marks a model that holds multimodal defaults, naming them, and no other", () => {
+    setActiveStrings(en);
+    const tags = modelTags({
+      isDefault: true,
+      vision: true,
+      free: false,
+      multimodal: ["Text generation", "Image understanding"],
+    });
+    expect(tags.map((tag) => tag.label)).toEqual(["Default", "Default multimodal", "Vision"]);
+    expect(tags[1]?.title).toBe("In use: Text generation, Image understanding");
+    expect(modelTags({ isDefault: false, vision: true, free: false, multimodal: [] })).toEqual([
+      expect.objectContaining({ key: "vision" }),
+    ]);
   });
 });
 

@@ -45,6 +45,7 @@ export function ModelCatalogSelect({
   title = S.chat.chooseModel,
   purpose = "chat",
   onClear,
+  clearLabel,
 }: {
   models: ModelInfo[];
   /** Currently selected (provider, modelId) pair; null = not yet chosen. */
@@ -60,6 +61,8 @@ export function ModelCatalogSelect({
   /** Tool callers supply the candidates for one specific operation. */
   purpose?: "chat" | "tool";
   onClear?: () => void;
+  /** The clear action's words (the picker's own when absent). */
+  clearLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   // Something to pick: the list the picker will show once every model is listed.
@@ -100,6 +103,7 @@ export function ModelCatalogSelect({
                 onClear();
                 setOpen(false);
               },
+              ...(clearLabel !== undefined ? { clearLabel } : {}),
             }
           : {})}
         models={models}

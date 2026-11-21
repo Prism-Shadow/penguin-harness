@@ -28,11 +28,14 @@ import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { useToolBindings } from "../../state/use-tool-bindings";
 import { clearDraftModelRef, dispatchChatDefaultsChanged } from "../chat";
-import { ModelCatalogSelect } from "../model-picker";
+import { ModelCatalogSelect, modelLabel } from "../model-picker";
 import { putVisionModel } from "./vision-model";
 
 /** Image understanding's row: the vision model. No binding key has a colon, so none collides. */
 export const VISION_ROW = ":vision";
+
+/** Text generation's row: with nothing bound it follows the default chat model. */
+const TEXT_ROW = "t2t";
 
 /**
  * The multimodal rows, in the dialog's order: the multimodal tools plugin's bindings and the
@@ -174,12 +177,21 @@ export function ProjectDefaultModelsDialog({
     choices: ModelInfo[],
     value: ModelRefDto | undefined,
     onPick: (model: ModelRefDto) => void,
-    options: { hint?: string; purpose?: "chat" | "tool"; onClear?: () => void } = {},
+    options: {
+      hint?: string;
+      purpose?: "chat" | "tool";
+      onClear?: () => void;
+      /** What the picker reads while nothing is chosen (the default: 「未指定」). */
+      emptyLabel?: string;
+      clearLabel?: string;
+      /** Something serves the row while nothing is chosen: the picker shows even with no candidate. */
+      covered?: boolean;
+    } = {},
   ): DefaultModelRow => ({
     key,
     title,
     ...(options.hint !== undefined ? { hint: options.hint } : {}),
-    ...(choices.length === 0 && value === undefined
+    ...(choices.length === 0 && value === undefined && options.covered !== true
       ? { empty }
       : {
           control: (
@@ -189,17 +201,24 @@ export function ProjectDefaultModelsDialog({
               title={title}
               models={choices}
               value={value ?? null}
-              emptyLabel={S.voice.unbound}
+              emptyLabel={options.emptyLabel ?? S.voice.unbound}
               disabled={busy}
               onChange={onPick}
               {...(options.onClear && owner ? { onClear: options.onClear } : {})}
+              {...(options.clearLabel !== undefined ? { clearLabel: options.clearLabel } : {})}
             />
           ),
         }),
   });
 
-  const bindingRow = (binding: ToolBinding): DefaultModelRow =>
-    pickerRow(
+  // Text generation with nothing bound runs on the default chat model (the plugin's fallback),
+  // which its row names; clearing a bound model goes back to following it.
+  const defaultChat = table?.defaultModel
+    ? models.find((m) => sameModelRef(m, table.defaultModel))
+    : undefined;
+  const bindingRow = (binding: ToolBinding): DefaultModelRow => {
+    const follows = binding.key === TEXT_ROW && isMultimodalBinding(binding);
+    return pickerRow(
       binding.key,
       binding.title[locale],
       binding.candidates.flatMap((ref) => byKey.get(refKey(ref)) ?? []),
@@ -207,8 +226,18 @@ export function ProjectDefaultModelsDialog({
       (model) => {
         if (!sameModelRef(model, binding.model)) void tools.bind(binding.key, model);
       },
-      binding.model ? { onClear: () => void tools.bind(binding.key, null) } : {},
+      {
+        ...(binding.model ? { onClear: () => void tools.bind(binding.key, null) } : {}),
+        ...(follows && defaultChat
+          ? {
+              emptyLabel: S.defaultModels.followsDefault(modelLabel(defaultChat)),
+              clearLabel: S.defaultModels.followDefault,
+              covered: true,
+            }
+          : {}),
+      },
     );
+  };
 
   const bindings = tools.bindings ?? [];
   const multimodal: DefaultModelRow[] = MULTIMODAL_ROWS.flatMap((key): DefaultModelRow[] => {

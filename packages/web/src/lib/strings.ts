@@ -96,6 +96,14 @@ export const zh = {
     confirmMultimodal: (name: string, operations: readonly string[]) =>
       `确定把「${name}」设为以下各项的默认模型？${operations.join("、")}。`,
     multimodalSet: (operations: readonly string[]) => `已设为默认：${operations.join("、")}`,
+    /** The same action once the model holds every multimodal default it can serve. */
+    removeMultimodal: "移除默认多模态模型",
+    removeMultimodalHint: (operations: readonly string[]) =>
+      `不再作为本项目以下各项的默认模型：${operations.join("、")}`,
+    multimodalRemoved: (operations: readonly string[]) => `已移除默认：${operations.join("、")}`,
+    /** Text generation with nothing bound: it runs on the default chat model. */
+    followsDefault: (model: string) => `跟随默认对话模型（${model}）`,
+    followDefault: "跟随默认对话模型",
     /** The first-run guide, before any chat model has a key. */
     guideTitle: "先连接一个模型供应商",
     guideBody:
@@ -3156,6 +3164,8 @@ export const zh = {
     confirmDefault: (name: string): string =>
       `确定把「${name}」设为默认模型？新建的 Session 将默认使用它。`,
     default: "默认",
+    /** The card's tag on a model that is the Project's default for some multimodal job. */
+    multimodalBadge: "默认多模态",
     setDefault: "设为默认模型",
     remove: "删除模型",
     readOnlyHint: "member 只读；模型与 credential 修改仅 owner 可执行",

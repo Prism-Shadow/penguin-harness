@@ -14,12 +14,13 @@ A new Project, and **Restore defaults**, no longer set DeepSeek V4.1 Flash as th
 
 - The Models page header's **Default models** (replacing its way to Project settings › Multimodal models) opens one dialog with three groups: **Chat** (the default chat model); **Multimodal** (text generation, image generation, image understanding — the Project's vision model —, video generation, speech recognition and speech synthesis); and, quieter, **Tools** (web search, reading a web page, and the bindings other plugins declare).
 - Each row is a picker over the configured models that can serve it, saved as it is picked. A row nothing can serve says "Connect a provider that offers this kind of model" and links to the Models page. A member sees the same rows, read-only.
+- Text generation with nothing bound reads "Follows the default chat model (<model>)"; picking a model binds it, and the picker's **Follow the default chat model** unbinds it again.
 - The dialog is `DefaultModelsDialog` in `@prismshadow/penguin-ui`, with a **Models** board in the component gallery beside the guide (`ModelSetupGuide`).
 
 ## Set as default multimodal model
 
-- A model's settings no longer list each multimodal job with its own **Set default**. Beside **Set as default model**, **Set as default multimodal model** makes the model the default for every multimodal job it can do and does not hold yet, after a confirmation naming them, and a toast names the ones it took. It is not shown for a model that can do none of them, or holds them all; it waits while the dialog has unsaved edits. The jobs it already holds are named beside it.
-- Web search and page reading are tools: they are set in the **Default models** dialog only. A model card still marks the jobs it is in use for with one quiet glyph.
+- A model's settings no longer list each multimodal job with its own **Set default**. Right beside **Test connection**, **Set as default multimodal model** makes the model the default for every multimodal job it can do and does not hold yet, after a confirmation naming them, and a toast names the ones it took. Once it holds them all, the button reads **Remove as default multimodal model**, which unbinds it from each (image understanding clears the vision model) without asking, and a toast names what was removed. It is not shown for a model that can do none of them; it waits while the dialog has unsaved edits.
+- A model that holds a multimodal binding carries a **Default multimodal** tag on its card and in its settings, in the tone of **Default**, naming the jobs on hover; the chip glyph is gone. Web search and page reading are tools: they are set in the **Default models** dialog only.
 
 ## First-run guide
 
