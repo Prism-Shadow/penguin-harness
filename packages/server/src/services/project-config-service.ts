@@ -30,6 +30,7 @@
 import type {
   ChatDefaultsDto,
   CommandPolicyDto,
+  ModelTestRequestSource,
   ProjectConfigStore,
 } from "@prismshadow/penguin-library-project";
 import type {
@@ -84,6 +85,7 @@ import {
   metaMaxTokens,
   migrateProjectConfigTable,
   parseProviderTable,
+  parseToolModelTable,
   projectConfigFromTable,
   projectConfigPath,
   providerConnectionShape,
@@ -134,8 +136,9 @@ import type {
   PlatformCatalogPricing,
   PlatformModelApplyResult,
   PlatformModelCatalog,
-} from "./platform-auth-types.js";
+} from "@prismshadow/penguin-library-model/platform-auth-flow";
 import { detectModelProtocol } from "./protocol-detect.js";
+import { testToolModel } from "./tool-model-test.js";
 import { migratePenguinGoRoutes } from "./project-config-migrations.js";
 import { presetProjectConfig } from "./project-config-seed.js";
 import {
@@ -295,6 +298,18 @@ function optRef(v: unknown): ModelRef | undefined {
 /** Whether an entry matches a paired reference (the entry's provider / model_id fields must be strings). */
 function entryMatches(m: RawTable, provider: string, modelId: string): boolean {
   return m.provider === provider && m.model_id === modelId;
+}
+
+/** The `[tools]` bindings that name a row of the table, as DTOs: what the models view reports. */
+function configuredToolModels(raw: RawTable): Record<string, ModelRefDto> {
+  const rows = asArray(raw.models);
+  const out: Record<string, ModelRefDto> = {};
+  for (const [key, ref] of Object.entries(parseToolModelTable(raw.tools) ?? {})) {
+    if (rows.some((m) => entryMatches(m, ref.provider, ref.model_id))) {
+      out[key] = { provider: ref.provider, modelId: ref.model_id };
+    }
+  }
+  return out;
 }
 
 /** In-process Map/Set key for a paired reference (\0-separated to avoid concatenation ambiguity; never persisted, not an id format). */
@@ -1097,6 +1112,51 @@ export class ProjectConfigService implements ProjectConfigStore {
     return { provider: ref.provider, modelId: ref.modelId };
   }
 
+  async getToolModels(projectId: string): Promise<Record<string, ModelRefDto>> {
+    return configuredToolModels(await this.readRaw(projectId));
+  }
+
+  /**
+   * Binds one `[tools]` key, or with null unbinds it: read-modify-write of the same toml, under
+   * the lock the whole-table PUT and "Restore defaults" take, so a binding saved beside them sees
+   * their final rows. The model must be a configured row (400 otherwise); the key's grammar and
+   * which models it accepts are the declaring plugin's (ToolModelBindings checks them first).
+   */
+  async setToolModel(
+    projectId: string,
+    key: string,
+    model: ModelRefDto | null,
+  ): Promise<Record<string, ModelRefDto>> {
+    return this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, async () => {
+      const raw = await this.readRaw(projectId);
+      if (
+        model !== null &&
+        !asArray(raw.models).some((m) => entryMatches(m, model.provider, model.modelId))
+      ) {
+        throw badRequest(
+          `The model must be included in models: ${showRef(model.provider, model.modelId)}.`,
+        );
+      }
+      const tools: RawTable = { ...asTable(raw.tools) };
+      if (model === null) delete tools[key];
+      else tools[key] = { provider: model.provider, model_id: model.modelId };
+      const next: RawTable = { ...raw };
+      if (Object.keys(tools).length > 0) next.tools = tools;
+      else delete next.tools;
+      await this.writeRaw(projectId, next);
+      return configuredToolModels(next);
+    });
+  }
+
+  /** The key the host resolves for one request to this model (the Sessions' resolver), if any. */
+  async modelRequestApiKey(projectId: string, model: ModelRefDto): Promise<string | undefined> {
+    return this.modelApiKeyResolver?.({
+      projectId,
+      provider: model.provider,
+      modelId: model.modelId,
+    });
+  }
+
   /**
    * New-chat defaults (`[default_chat]`): read leniently — same tolerance as core's
    * loadProjectConfig (an invalid value drops that key; a missing/malformed block reads as
@@ -1382,10 +1442,18 @@ export class ProjectConfigService implements ProjectConfigStore {
     }
   }
 
-  async testModel(projectId: string, req: ModelTestRequest): Promise<ModelTestResponse> {
+  async testModel(
+    projectId: string,
+    req: ModelTestRequest,
+    testRequestFor?: ModelTestRequestSource,
+  ): Promise<ModelTestResponse> {
     const raw = await this.readRaw(projectId);
     // Testable even if the model isn't in the config yet (validate before saving when adding a custom model): in that case all parameters come from the request body.
     const entry = asArray(raw.models).find((m) => entryMatches(m, req.provider, req.modelId)) ?? {};
+    // A tool model refuses the chat probe (a speech recognizer takes no text): the binding that
+    // accepts it names what to send instead (ToolModelBindings.testRequest).
+    const toolTest = await this.toolModelTest(projectId, raw, entry, req, testRequestFor);
+    if (toolTest !== undefined) return toolTest;
     // Fast mode follows the form draft like baseUrl (the frontend always sends the current
     // toggle), falling back to the stored annotation: the probe then exercises exactly the
     // serving tier sessions would use, so a model rejecting fast_mode fails the test with
@@ -1463,6 +1531,51 @@ export class ProjectConfigService implements ProjectConfigStore {
       }
     } catch (err) {
       // Defensive: an unexpected exception during construction/iteration (the LLM layer promises not to throw; this is a fallback).
+      return {
+        ok: false,
+        message: (err instanceof Error ? err.message : String(err)).slice(0, 300),
+      };
+    }
+  }
+
+  /**
+   * The connection test of a model a binding names its own test request for, over the same draft
+   * connection the chat probe reads (draftCredential, and the managed key unless the draft names
+   * or clears one); undefined when no binding names one, and the chat probe is the test.
+   */
+  private async toolModelTest(
+    projectId: string,
+    raw: RawTable,
+    entry: RawTable,
+    req: ModelTestRequest,
+    testRequestFor: ModelTestRequestSource | undefined,
+  ): Promise<ModelTestResponse | undefined> {
+    if (testRequestFor === undefined) return undefined;
+    const credential = draftCredential(raw, req);
+    const body = testRequestFor({
+      provider: req.provider,
+      modelId: req.modelId,
+      ...(credential.clientType !== undefined ? { clientType: credential.clientType } : {}),
+      ...(entry.vision === false ? { vision: false } : {}),
+    });
+    if (body === undefined) return undefined;
+    try {
+      const managedApiKey =
+        req.apiKey === undefined && req.clearApiKey !== true
+          ? await this.modelApiKeyResolver?.({
+              projectId,
+              provider: req.provider,
+              modelId: req.modelId,
+            })
+          : undefined;
+      return await testToolModel({
+        provider: req.provider,
+        modelId: req.modelId,
+        credential,
+        ...(managedApiKey !== undefined ? { managedApiKey } : {}),
+        body,
+      });
+    } catch (err) {
       return {
         ok: false,
         message: (err instanceof Error ? err.message : String(err)).slice(0, 300),
@@ -1660,6 +1773,7 @@ export class ProjectConfigService implements ProjectConfigStore {
           provider,
           modelId,
           ...(displayName !== undefined ? { displayName } : {}),
+          ...(cat?.tool === true ? { chatEligible: false } : {}),
           isDefault:
             defaultRef !== undefined &&
             defaultRef.provider === provider &&
@@ -1692,10 +1806,12 @@ export class ProjectConfigService implements ProjectConfigStore {
       provider: ref.provider,
       modelId: ref.model_id,
     });
+    const toolModels = configuredToolModels(raw);
     const updatedAt = await this.configUpdatedAt(projectId);
     return {
       ...(defaultRef !== undefined ? { defaultModel: toDto(defaultRef) } : {}),
       ...(visionRef !== undefined ? { visionModel: toDto(visionRef) } : {}),
+      ...(Object.keys(toolModels).length > 0 ? { toolModels } : {}),
       ...(updatedAt !== undefined ? { updatedAt } : {}),
       providers: Object.fromEntries(
         Object.entries(providers).map(([id, connection]) => [id, providerDto(connection)]),
@@ -2032,6 +2148,28 @@ export class ProjectConfigService implements ProjectConfigStore {
       }
     }
 
+    // [tools]: given, the table becomes exactly what was sent, every model in the table being
+    // written; omitted, each stored binding follows a renamed model and goes with a removed one.
+    const toolModels: Record<string, ModelRefDto> = {};
+    if (req.toolModels !== undefined) {
+      for (const [key, ref] of Object.entries(req.toolModels)) {
+        if (!seen.has(refKey(ref.provider, ref.modelId))) {
+          throw badRequest(
+            `toolModels.${key} must be included in models: ${showRef(ref.provider, ref.modelId)}.`,
+          );
+        }
+        toolModels[key] = ref;
+      }
+    } else {
+      for (const [key, ref] of Object.entries(parseToolModelTable(raw.tools) ?? {})) {
+        const followed = renamed.get(refKey(ref.provider, ref.model_id)) ?? {
+          provider: ref.provider,
+          modelId: ref.model_id,
+        };
+        if (seen.has(refKey(followed.provider, followed.modelId))) toolModels[key] = followed;
+      }
+    }
+
     const toRaw = (ref: ModelRefDto): RawTable => ({
       provider: ref.provider,
       model_id: ref.modelId,
@@ -2041,6 +2179,11 @@ export class ProjectConfigService implements ProjectConfigStore {
     else delete next.default_model;
     if (visionModel !== undefined) next.vision_model = toRaw(visionModel);
     else delete next.vision_model;
+    if (Object.keys(toolModels).length > 0) {
+      next.tools = Object.fromEntries(
+        Object.entries(toolModels).map(([key, ref]) => [key, toRaw(ref)]),
+      );
+    } else delete next.tools;
     const commit = async (): Promise<ModelsResponse> => {
       await this.writeRaw(projectId, next);
       if (this.promotions !== undefined) {
@@ -2446,11 +2589,13 @@ export class ProjectConfigService implements ProjectConfigStore {
     if (defaultModel !== undefined) next.default_model = defaultModel;
     else delete next.default_model;
     delete next.vision_model;
+    delete next.tools;
     const changed =
       !sameValue(current, nextModels) ||
       !sameValue(asTable(raw.providers), providers) ||
       !sameValue(optRef(raw.default_model), defaultModel) ||
-      raw.vision_model !== undefined;
+      raw.vision_model !== undefined ||
+      raw.tools !== undefined;
     if (changed) await this.writeRaw(projectId, next);
 
     this.promotions?.replaceAll(projectId, presetPromotions());

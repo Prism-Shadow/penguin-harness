@@ -38,8 +38,9 @@
  *   a window rebuilt under a new id replaces the one in part: every record lands once.
  * - Given a stream that lost frames, it is read again from scratch, a couple of times, and then
  *   the load fails with an error rather than a window with a hole in it.
- * - Given a read the server failed, the page is handed what failed with its words, so only the
- *   server's converged error (`internal`) offers a report, never a code the server named.
+ * - Given a read the server failed, the page is handed what failed with its words and the
+ *   server's code, and it offers a report: a stream's error event carries no status, so whatever
+ *   its code it reads as a failure.
  * - Given a stream that closes a window it never began (the server ends the stream after `done`),
  *   it is closed and read again, never left for the socket to re-issue for ever.
  * - Given a live event equal to a history record that came folded (a long thinking block), the
@@ -68,7 +69,7 @@
  * - Given a reconnect, rebuilding the tail preserves its updates without duplicating them.
  */
 import { describe, expect, it } from "vitest";
-import { isSeriousError } from "@prismshadow/penguin-ui";
+import { isReportable } from "@prismshadow/penguin-ui";
 import {
   approvalDecision,
   assistantText,
@@ -1609,17 +1610,15 @@ describe("history load failure and retry (#6)", () => {
     expect(h.controller.model.items.some((i) => i.kind === "task_stats")).toBe(true);
   });
 
-  it("hands the page what a failed read threw, so only the server's converged error offers a report", async () => {
-    for (const [code, serious] of [
-      ["internal", true],
-      ["machine_unreachable", false],
-    ] as const) {
+  it("hands the page what a failed read threw, its code kept, and it offers a report", async () => {
+    for (const code of ["internal", "machine_unreachable"]) {
       const h = createHarness();
       const p = h.controller.load();
       h.stream.fail(h.stream.next(isWindowRead), "the read failed", code);
       await p;
       expect(h.errors.at(-1)).not.toBeNull();
-      expect(isSeriousError(h.causes.at(-1))).toBe(serious);
+      expect((h.causes.at(-1) as { code?: unknown }).code).toBe(code);
+      expect(isReportable(h.causes.at(-1))).toBe(true);
     }
   });
 

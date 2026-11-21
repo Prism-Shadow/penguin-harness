@@ -62,6 +62,7 @@ import {
   isPartialPayload,
   isTaskRecord,
   normalizeSessionSource,
+  updatedModel,
 } from "@prismshadow/amsp";
 import {
   parseBackgroundTaskDoneMessage,
@@ -206,9 +207,23 @@ export interface BodyLoad {
   doneBytes: number;
   totalBytes: number;
   error: string | null;
+  /** The failed read's error, kept beside its words so the note offers its report. */
+  cause?: unknown;
 }
 
-export interface ThinkingItem {
+/** One clock per Task; its work groups share the live anchor and the settled trace span. */
+interface WorkTiming {
+  startMs: number;
+  durationMs?: number;
+}
+
+interface WorkStep {
+  workTiming?: WorkTiming;
+  /** Only the final work step of a settled Task carries its outcome and trace duration. */
+  workOutcome?: { state: "done" | "failed" | "stopped"; durationMs: number };
+}
+
+export interface ThinkingItem extends WorkStep {
   kind: "thinking";
   id: number;
   thinking: string;
@@ -223,7 +238,7 @@ export interface ThinkingItem {
   bodyLoad?: BodyLoad;
 }
 
-export interface ToolCallItem {
+export interface ToolCallItem extends WorkStep {
   kind: "tool_call";
   id: number;
   toolCallId: string;
@@ -337,7 +352,7 @@ function isReconnectStatus(status: string | undefined): status is ReconnectStatu
 }
 
 /** An LLM Request ending retryable → the engine retries carrying the content already produced. */
-export interface ReconnectItem extends RequestFailureFacts {
+export interface ReconnectItem extends RequestFailureFacts, WorkStep {
   kind: "reconnect";
   id: number;
   /** Trigger status (legacy Traces carry the finer pre-convergence spellings). */
@@ -368,7 +383,12 @@ export interface ReconnectItem extends RequestFailureFacts {
   arrivedAtMs?: number;
 }
 
-export interface CompactionItem {
+/**
+ * A compaction row. It also keeps what a failed request's details report (`RequestFailureFacts`,
+ * set at an end that carries the error pair or did not complete): a refusal hand-off's pair is
+ * the refused request's, and the composer's notice opens its details.
+ */
+export interface CompactionItem extends RequestFailureFacts {
   kind: "compaction";
   id: number;
   reason: CompactionReason;
@@ -441,23 +461,25 @@ export interface CompactionItem {
 }
 
 /**
- * The Session moved to another model between two contexts: derived from two consecutive
- * main-session `session_meta` records naming different (provider, model_id) pairs — an
- * in-session model switch opens its new context on the model the user picked, and nothing else
- * on the stream says so. Model ids rather than display names: the marker renders from the Trace
- * alone, and a model removed from the configuration since must still read.
+ * The Session moved to another model between two contexts: derived from a main-session
+ * `session_update` naming another (provider, model_id) pair than the model held — the record an
+ * in-session model switch leaves when it completes — or, for Traces written without one, from
+ * two consecutive main-session `session_meta` records naming different pairs. The context's own
+ * `session_meta` that follows a `session_update` names the model already held and adds no
+ * second marker. Model ids rather than display names: the marker renders from the Trace alone,
+ * and a model removed from the configuration since must still read.
  */
 export interface ModelChangeItem {
   kind: "model_change";
   id: number;
   from: { provider: string; modelId: string };
   to: { provider: string; modelId: string };
-  /** The timestamp of the `session_meta` that named the new model (ms). */
+  /** The timestamp of the record that named the new model (ms). */
   tsMs?: number;
   /**
    * The switch handed the history over by its Trace path instead of a summary: the
-   * `[model_switch_from]` handoff naming this Session that followed the meta (folded into this
-   * marker rather than shown as a message), with the file it named.
+   * `[model_switch_from]` handoff naming this Session that followed the marker's record (folded
+   * into this marker rather than shown as a message), with the file it named.
    */
   handover?: { tracePath?: string };
 }
@@ -590,9 +612,10 @@ export interface StreamModel {
    * The model the running context was opened on, and the Session its `session_meta` names (null
    * until one arrives, or a history window says which model it starts on). A Session's model
    * can change between contexts — each context's meta records its own — so this follows
-   * rotations, and a main-session meta naming another model than the one held pushes a
-   * model-change marker. The chat page moves its Session row to this model when the two
-   * disagree (see `sessionRowStale`).
+   * rotations, and moves on a main-session `session_update` (the model a completed switch left
+   * for the next context) under the Session already held; a record naming another model than
+   * the one held pushes a model-change marker. The chat page moves its Session row to this model
+   * when the two disagree (see `sessionRowStale`).
    */
   contextModel: { sessionId: string; provider: string; modelId: string } | null;
   /** `contextModel` as the open Task began: a switch only happens between Tasks, so this is the model the whole Task runs on (see `TaskStatsItem.model`). */
@@ -676,6 +699,9 @@ export interface StreamModel {
   openApprovalWaitMs: number;
   /** Task segmentation state. */
   taskOpen: boolean;
+  taskFirstItemId: number;
+  /** Latest normal request or abort outcome, published on the last work step only when the Task closes. */
+  taskOutcome: NonNullable<WorkStep["workOutcome"]>["state"] | null;
   /**
    * Local-clock instant the running Task's header elapsed ticks from — display
    * only; no settled duration is ever derived from it (see finalizeOpenTask,
@@ -687,7 +713,8 @@ export interface StreamModel {
    * from the server's own clock rather than the Trace's tail so that an event
    * still in flight is counted too.
    */
-  taskStartLocalMs: number;
+  readonly taskStartLocalMs: number;
+  taskClock: WorkTiming;
   /** The Task's first message timestamp, in SERVER time: both the settled duration and the back-dated live anchor measure from it. */
   taskFirstTsMs: number;
   /**
@@ -775,7 +802,12 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     openRequestFirstItemId: null,
     openApprovalWaitMs: 0,
     taskOpen: false,
-    taskStartLocalMs: 0,
+    taskFirstItemId: 1,
+    taskOutcome: null,
+    taskClock: { startMs: 0 },
+    get taskStartLocalMs() {
+      return this.taskClock.startMs;
+    },
     taskFirstTsMs: 0,
     taskLastTsMs: 0,
     taskLastReqEndMs: null,
@@ -879,6 +911,26 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
     return;
   }
   if (isEventMessage(msg)) {
+    // session_update: a Session-level setting changed. Like session_meta it is no part of a
+    // Task — the Session writes it at a Task boundary, possibly long before the next Task — so
+    // it opens, touches and times none, and renders nothing of its own. The one setting it
+    // carries today, the model the Session's next context opens on, moves the held model the
+    // way a session_meta does, under the Session already held: a nested child's record changes
+    // nothing, and with no model held there is no Session to name, so the context's own
+    // session_meta says it.
+    if (msg.payload.type === "session_update") {
+      const next = updatedModel(msg);
+      const held = model.contextModel;
+      if (!model.nested && next !== undefined && held !== null) {
+        moveContextModel(
+          model,
+          held.sessionId,
+          { provider: next.provider, modelId: next.model_id },
+          msg.timestamp,
+        );
+      }
+      return;
+    }
     // A Retry's first request opens its Task here, before anything is timed against the
     // cut-short one — the same point a Prompt opens its own (see StreamModel.runEnded).
     if (startsRetryRun(model, msg)) startTask(model, msg.timestamp, nowMs);
@@ -895,28 +947,16 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
   // child, on which model); the main session takes the rest of its identity/config from the
   // Session DTO. A rewritten session_meta (file rotation) overwrites with the same values. On
   // the main session a meta naming another model than the one held means the Session switched
-  // models: a marker says so — never for a same-model rewrite, a nested child's meta, or the
-  // first meta of a model that was told nothing of the context it starts in.
+  // models (see moveContextModel).
   if (msg.type === "session_meta") {
     const p = msg.payload as SessionMetaPayload;
     model.agentState = p.agent_state;
-    const next = { provider: p.provider, modelId: p.model_id };
-    const held = model.contextModel;
-    if (
-      !model.nested &&
-      held !== null &&
-      (held.provider !== next.provider || held.modelId !== next.modelId)
-    ) {
-      const tsMs = tsOf(msg.timestamp);
-      model.items.push({
-        kind: "model_change",
-        id: nextId(model),
-        from: { provider: held.provider, modelId: held.modelId },
-        to: next,
-        ...(tsMs !== undefined ? { tsMs } : {}),
-      });
-    }
-    model.contextModel = { sessionId: p.session_id, ...next };
+    moveContextModel(
+      model,
+      p.session_id,
+      { provider: p.provider, modelId: p.model_id },
+      msg.timestamp,
+    );
   }
   if (msg.type === "session_meta" && model.nested) {
     const p = msg.payload as SessionMetaPayload;
@@ -928,6 +968,38 @@ export function pushMessage(model: StreamModel, msg: AmspRecord, nowMs: number =
       source: normalizeSessionSource(p.source),
     };
   }
+}
+
+/**
+ * The model a record says the Session is on from here: a main-session `session_update` (the
+ * model the next context opens on) or a `session_meta` (the model a context opened on). When it
+ * names another model than the one held, the Session switched models and a marker says so —
+ * never for a same-model record (the meta that confirms a `session_update`, a rotation's
+ * rewrite, the same record served twice), a nested child's meta, or the first record of a model
+ * that was told nothing of the context it starts in.
+ */
+function moveContextModel(
+  model: StreamModel,
+  sessionId: string,
+  next: { provider: string; modelId: string },
+  timestamp: string,
+): void {
+  const held = model.contextModel;
+  if (
+    !model.nested &&
+    held !== null &&
+    (held.provider !== next.provider || held.modelId !== next.modelId)
+  ) {
+    const tsMs = tsOf(timestamp);
+    model.items.push({
+      kind: "model_change",
+      id: nextId(model),
+      from: { provider: held.provider, modelId: held.modelId },
+      to: next,
+      ...(tsMs !== undefined ? { tsMs } : {}),
+    });
+  }
+  model.contextModel = { sessionId, ...next };
 }
 
 /**
@@ -1029,7 +1101,7 @@ export function pushMessages(
   if (model.taskOpen) {
     const tracedSpan = model.taskLastTsMs - model.taskFirstTsMs;
     const serverSpan = serverNowMs === null ? 0 : serverNowMs - model.taskFirstTsMs;
-    model.taskStartLocalMs = nowMs - Math.max(0, tracedSpan, serverSpan);
+    model.taskClock.startMs = nowMs - Math.max(0, tracedSpan, serverSpan);
   }
 }
 
@@ -1116,11 +1188,13 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   // along, and the Task's own next request belongs to it.
   model.runEnded = false;
   model.taskOpen = true;
+  model.taskFirstItemId = model.nextItemId;
+  model.taskOutcome = null;
   model.taskModel = model.contextModel && {
     provider: model.contextModel.provider,
     modelId: model.contextModel.modelId,
   };
-  model.taskStartLocalMs = nowMs;
+  model.taskClock = { startMs: nowMs };
   const ts = Date.parse(timestamp);
   model.taskFirstTsMs = Number.isFinite(ts) ? ts : nowMs;
   model.taskLastTsMs = model.taskFirstTsMs;
@@ -1154,6 +1228,21 @@ function finalizeOpenTask(model: StreamModel): void {
   // latency folded into it.
   const endMs = model.taskLastReqEndMs ?? model.taskLastTsMs;
   const elapsed = Math.max(0, endMs - model.taskFirstTsMs);
+  model.taskClock.durationMs = elapsed;
+  if (model.taskOutcome) {
+    for (let i = model.items.length - 1; i >= 0; i--) {
+      const item = model.items[i]!;
+      if (item.id < model.taskFirstItemId) break;
+      if (
+        item.kind === "thinking" ||
+        item.kind === "tool_call" ||
+        (item.kind === "reconnect" && !item.gaveUp)
+      ) {
+        item.workOutcome = { state: model.taskOutcome, durationMs: elapsed };
+        break;
+      }
+    }
+  }
   const stats = endTask(model.stats, elapsed);
   if (model.nested) return;
   const reply = collectTaskAssistant(model);
@@ -1297,6 +1386,7 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
         const item: ThinkingItem = {
           kind: "thinking",
           id: nextId(model),
+          ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
           thinking: p.thinking ?? "",
           streaming: true,
         };
@@ -1579,6 +1669,7 @@ function handleComplete(
       const item: ThinkingItem = {
         kind: "thinking",
         id: nextId(model),
+        ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
         thinking: p.thinking,
         streaming: false,
         ...(elided !== undefined ? { elided } : {}),
@@ -1794,6 +1885,7 @@ function createToolCard(
   const item: ToolCallItem = {
     kind: "tool_call",
     id: nextId(model),
+    ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
     toolCallId: init.toolCallId,
     name: init.name,
     argumentsText: init.argumentsText,
@@ -1858,6 +1950,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       model.items.push(item);
       // The stop ended the run with its turn held: a Retry's first request opens a new Task.
       model.runEnded = true;
+      model.taskOutcome = "stopped";
       return;
     }
     case "token_usage":
@@ -1957,12 +2050,16 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       }
       const degraded =
         p.status === "completed" && (p.error_code !== undefined || p.error_message !== undefined);
+      // An end that says something failed keeps what its details report: the model the closing
+      // context ran on (the next context's session_meta comes after this end) and the time.
+      const facts = degraded || p.status !== "completed" ? failureFacts(model, tsMs) : {};
       const item = findLastRunningCompaction(model);
       if (item) {
         item.running = false;
         item.status = p.status;
         if (p.error_code !== undefined) item.errorCode = p.error_code;
         if (p.error_message !== undefined) item.errorMessage = p.error_message;
+        Object.assign(item, facts);
         if (tsMs !== undefined && item.beginTsMs !== undefined) {
           item.durationMs = Math.max(0, tsMs - item.beginTsMs);
         }
@@ -2007,6 +2104,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           status: p.status,
           ...(p.error_code !== undefined ? { errorCode: p.error_code } : {}),
           ...(p.error_message !== undefined ? { errorMessage: p.error_message } : {}),
+          ...facts,
         };
         model.items.push(created);
       }
@@ -2023,6 +2121,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         }
         return;
       }
+      model.taskOutcome = null;
       // A retry request was sent: mark the waiting reconnect hint as resent (a no-op when there's no such item before a normal first request).
       const waiting = findLastWaitingReconnect(model);
       if (waiting) waiting.retrying = true;
@@ -2076,6 +2175,13 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // retry_in_ms; `0` is an immediate retry). A request after it opens a new Task.
       model.runEnded =
         p.status === "fatal" || (p.status === "retryable" && p.retry_in_ms === undefined);
+      model.taskOutcome = model.runEnded
+        ? "failed"
+        : p.status === "aborted"
+          ? "stopped"
+          : p.status === "completed"
+            ? "done"
+            : null;
       // A fatal end stops the run — no abort event follows; this request_end is the
       // terminal record, rendered as an error banner.
       if (p.status === "fatal") {
@@ -2098,6 +2204,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         const item: ReconnectItem = {
           kind: "reconnect",
           id: nextId(model),
+          ...(model.taskOpen ? { workTiming: model.taskClock } : {}),
           status: p.status,
           // The core stamps the authoritative ordinal on every retryable request_end; only
           // Traces written before the field existed lack it (rendered as attempt 1).

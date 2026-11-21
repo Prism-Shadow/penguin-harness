@@ -447,6 +447,9 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         "office-productivity": "Office Productivity",
         "software-development": "Software Development",
         "ai-app-development": "AI App Development",
+        "learning-life": "Learning & Life",
+        utilities: "Utilities",
+        entertainment: "Entertainment",
         sandbox: "Agent Sandbox",
         other: "Other",
       } as Record<string, string>,
@@ -460,6 +463,31 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       extensions: "Hooks and workbenches",
       skillCount: (n: number) => (n === 1 ? "1 Skill" : `${n} Skills`),
       preinstalled: "Preinstalled",
+      /** The market's curation: the carousel's eyebrow and a card's tag. */
+      selected: "Selected",
+      /** The selected carousel's accessible name. */
+      selectedPlugins: "Selected plugins",
+      viewDetails: "View details",
+      layoutLabel: "Plugin layout",
+      cardsLayout: "Card view",
+      listLayout: "List view",
+      sortSelected: "Selected first",
+      screenshots: "Screenshots",
+      whatItInstalls: "What it installs",
+      downloadPlugin: "Download plugin",
+      getPenguin: "Get PenguinHarness",
+      source: "Source",
+      carousel: {
+        previous: "Previous",
+        next: "Next",
+        pause: "Pause rotation",
+        play: "Resume rotation",
+        position: (index: number, count: number) => `${index} of ${count}`,
+      },
+      /** The leaderboards whose entries ran a plugin (an RSI toolkit's algorithm). */
+      measuredBy: "Leaderboards that measured it",
+      /** A part's kind on a plugin's page, under "What it installs". */
+      partKinds: { skill: "Skill", hook: "Hook", workbench: "Workbench" },
     },
     benchmarks: {
       title: "Benchmarks",
@@ -755,6 +783,15 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
             workspace: "The Workspace's absolute path.",
             source:
               "What opened the Session: user, api, schedule, subagent, cli, company or workbench.",
+          },
+        },
+        session_update: {
+          summary:
+            "A Session setting changed, with its new value. Today the one setting is the model the next context opens on, written when an in-session model switch completes, at the end of the Trace file it leaves.",
+          fields: {
+            provider:
+              "The provider group of the model the next context opens on; comes with model_id.",
+            model_id: "The model id the next context sends to the provider; comes with provider.",
           },
         },
         text: {

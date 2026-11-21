@@ -20,8 +20,10 @@ import { S } from "../../lib/strings";
 
 /** A block of a model dialog below its identity fields. */
 export type ModelDialogSlot =
-  /** The row of model actions: the connectivity test (and, on a saved model, default / vision / remove). */
+  /** The row of model actions: the connectivity test (and, on a saved model, default / remove). */
   | "actions"
+  /** On a saved model, the Project operations it can serve, each with its short action. */
+  | "tools"
   | "apiKey"
   | "baseUrl"
   /** Context window and max output length. */
@@ -33,6 +35,7 @@ export type ModelDialogSlot =
 /** The blocks in the order the dialog shows them, wherever each is placed. */
 export const MODEL_DIALOG_SLOTS: readonly ModelDialogSlot[] = [
   "actions",
+  "tools",
   "apiKey",
   "baseUrl",
   "limits",

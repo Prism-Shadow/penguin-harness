@@ -110,7 +110,8 @@ CREATE TABLE IF NOT EXISTS usage_records (
   cache_write       INTEGER NOT NULL,
   output            INTEGER NOT NULL,
   total             INTEGER NOT NULL,         -- from token_usage.request (one row per Request)
-  status            TEXT NOT NULL DEFAULT 'completed'  -- request outcome: completed=success (with tokens); others=failure (0 tokens, for success rate)
+  status            TEXT NOT NULL DEFAULT 'completed', -- request outcome: completed=success (with tokens); others=failure (0 tokens, for success rate)
+  purpose           TEXT                      -- what a request outside a chat turn was for ('<package>:<operation>', ProjectModelRequests); NULL = a chat turn's (and the Session title's)
 );                                            -- cost is not stored: computed at query time from current pricing
 CREATE INDEX IF NOT EXISTS idx_usage_project_date ON usage_records(project_id, date);
 CREATE INDEX IF NOT EXISTS idx_usage_session_ts ON usage_records(session_id, ts);  -- (session_id) alone was idx_usage_session (dropped on open): ts makes the last_active_at backfill's MAX(ts) a covering index scan instead of a random row lookup per usage record
@@ -228,6 +229,18 @@ CREATE INDEX IF NOT EXISTS idx_agent_api_keys_agent ON agent_api_keys(project_id
 CREATE TABLE IF NOT EXISTS server_settings (   -- admin-level server-global settings (GET/PUT /api/admin/settings)
   key   TEXT PRIMARY KEY,                     -- setting name, e.g. 'proxy_for_app'
   value TEXT NOT NULL                         -- JSON-encoded value; an absent row means the setting's built-in default
+);
+CREATE TABLE IF NOT EXISTS plugin_module_requests ( -- who asked this server to run a plugin's server module, and what an administrator decided; one row per package. The record of asks and decisions, not of what runs: the plugin tables are that
+  package      TEXT PRIMARY KEY,              -- npm package name, as a plugin table lists it
+  plugin       TEXT NOT NULL,                 -- the library plugin's name, for display
+  project_id   TEXT REFERENCES projects(project_id) ON DELETE SET NULL, -- whose table lists it, or will; NULL once that Project is gone
+  agent_id     TEXT,                          -- the Agent whose install asked first; display only
+  requested_by TEXT NOT NULL,                 -- user id; '' when no person was behind it (company mode's reconcile)
+  requested_at TEXT NOT NULL,
+  decision     TEXT,                          -- NULL pending | 'enabled' | 'declined'
+  decided_by   TEXT,                          -- equals requested_by when nobody else had to decide
+  decided_at   TEXT,
+  via          TEXT                           -- how it was enabled: 'builtin' | 'admin' | 'approval'; NULL while pending or declined
 );
 CREATE TABLE IF NOT EXISTS machine (           -- this server's OWN identity, minted here and never assigned from outside (what 'penguin server status' reports)
   singleton  INTEGER PRIMARY KEY CHECK (singleton = 1),  -- exactly one row, enforced by the schema rather than by convention

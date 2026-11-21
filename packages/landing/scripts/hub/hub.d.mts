@@ -5,6 +5,7 @@ import type {
   LeaderboardDetail,
   PluginDetail,
 } from "../../src/lib/hub/types";
+import type { Published } from "./published.mjs";
 
 export interface Hub {
   index: HubIndex;
@@ -21,6 +22,8 @@ export declare function loadHub(options?: {
   refresh?: boolean;
   repo?: string;
   pluginsDir?: string;
+  /** What the network gave this build; by default the copies `fetchPublished` kept. */
+  published?: Published;
 }): Hub;
 
 export declare function hubRoutes(

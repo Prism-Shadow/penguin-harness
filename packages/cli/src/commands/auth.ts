@@ -25,6 +25,7 @@ import {
   promptPassword,
   readSession,
   sessionFile,
+  terminalInput,
   tokenFromSetCookie,
   writeSession,
   resolveRootOption,
@@ -123,16 +124,29 @@ export function registerAuthCommand(auth: Command, t: Messages): void {
         // A script cannot answer a prompt, so a non-interactive password suppresses both
         // questions; the account is only asked for when the password will be too.
         const given = opts.password ?? process.env.PENGUIN_PASSWORD;
-        const userId =
-          opts.userId ??
-          (given === undefined && process.stdin.isTTY === true
-            ? await promptLine(t.auth.accountPrompt(DEFAULT_USER), DEFAULT_USER)
-            : DEFAULT_USER);
-        // Env before prompt, but never argv by default: a command line is world-readable
-        // through ps. The prompt names the account, so one account's password is not typed
-        // at another's.
-        const password = given ?? (await promptPassword(t.auth.prompt(userId)));
-        if (password === "") return fail(t.auth.emptyPassword);
+        let userId = opts.userId ?? DEFAULT_USER;
+        let password = given;
+        if (given === undefined) {
+          // The terminal both questions are read from: stdin, or the console where the runtime
+          // was given no stdin (the desktop app's launchers on Windows, console-input.ts).
+          const input = terminalInput();
+          try {
+            if (opts.userId === undefined && input.stream.isTTY === true) {
+              userId = await promptLine(
+                t.auth.accountPrompt(DEFAULT_USER),
+                DEFAULT_USER,
+                input.stream,
+              );
+            }
+            // Env before prompt, but never argv by default: a command line is world-readable
+            // through ps. The prompt names the account, so one account's password is not typed
+            // at another's.
+            password = await promptPassword(t.auth.prompt(userId), input.stream);
+          } finally {
+            input.release();
+          }
+        }
+        if (password === "" || password === undefined) return fail(t.auth.emptyPassword);
 
         let answer;
         try {

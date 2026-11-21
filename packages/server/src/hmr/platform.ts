@@ -73,10 +73,12 @@ import { declined, seamHttp } from "./hono-seam.js";
 import {
   PENGUIN_FAMILY,
   RESOURCE_IFACES_RESOURCE_ID,
+  HMR_CHANNELS_RESOURCE_ID,
   HMR_TEST_PLUGINS_RESOURCE_ID,
   claimHmrCapabilities,
   Log,
 } from "./capabilities.js";
+import type { ChannelHub } from "../runtime/channel.js";
 import type { Interfaces, MembersOf, ReassemblyChange } from "./capabilities.js";
 import { PLUGINS_RESOURCE_ID, pluginHostFrom } from "../plugin/host.js";
 import type { PluginHost } from "../plugin/host.js";
@@ -96,7 +98,7 @@ import type { PluginSelection } from "../plugin/unsatisfied.js";
 import { takePushSlip } from "./push-plugins.js";
 import type { PushSlip } from "./push-plugins.js";
 import type { Errors } from "@prismshadow/penguin-library-observability";
-import type { UnsatisfiedPlugin } from "../api/types.js";
+import type { ServerEvent, UnsatisfiedPlugin } from "../api/types.js";
 import { migrate } from "@prismshadow/penguin-library-db/migrations";
 import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
 import type { Auth } from "@prismshadow/penguin-library-auth";
@@ -123,7 +125,7 @@ export interface PlatformApi extends Park {
    * runtime's ws transport authenticates an upgrade, then hands the socket over with the
    * reference it authenticated — a pty's session, or the API socket's user — for the
    * platform's protocol to drive. `url` is the upgrade's own: its public origin (the browser's
-   * scheme, host and port; http/public-origin.ts) with the path and query it asked for.
+   * scheme, host and port; @prismshadow/penguin-library-http/public-origin) with the path and query it asked for.
    */
   terminals(): TerminalManager;
   attachStream(ws: WebSocket, ref: AttachedStream, url: URL, log: (l: string) => void): void;
@@ -744,6 +746,17 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     };
     let inner: Instance<PlatformApi>;
     let op: Promise<unknown> = Promise.resolve();
+    /**
+     * Tells every signed-in tab to re-read GET /api/contributions: a re-assembly changes which
+     * plugin modules run, and the web draws a plugin's web half by that list. Sent once the new
+     * App is the one answering, so the re-read sees it.
+     */
+    const announceContributions = (): void => {
+      const changed: ServerEvent = { type: "contributions_changed" };
+      ctx.resources
+        .claim<ChannelHub | undefined>(HMR_CHANNELS_RESOURCE_ID)
+        ?.broadcast("user:", changed, "server_event");
+    };
     let closed = false;
     /** True while a re-assembly holds the inner instance mid-swap. */
     let swapping = false;
@@ -763,6 +776,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
           });
           if (result.status === "ok") {
             inner = result.instance;
+            announceContributions();
             return true;
           }
           if (result.status === "failed") {

@@ -58,9 +58,10 @@ import {
 import { checkoutFacts, originUrl } from "./build-git-stamp.mjs";
 import { compilePushBundle, pushBundleOptions } from "./push-bundle.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
+import { MARKET_COVERS_NAME, MARKET_COVERS_SOURCE, marketCoverFiles } from "./market-covers.mjs";
 import { buildBuiltinPlugins } from "./build-plugins.mjs";
 import { archiveName, packArchive, prefixPackages } from "./asset-archives.mjs";
-import { typescriptPayload } from "./typescript-payload.mjs";
+import { nodeTypesPayload, typescriptPayload } from "./typescript-payload.mjs";
 import { libraryPayload } from "./library-payload.mjs";
 import { BENCHMARKS_DIR, buildBenchmarks } from "./build-benchmarks.mjs";
 import { createHash } from "node:crypto";
@@ -350,13 +351,19 @@ async function readNativeAssets() {
   // predate it being a dependency (or be a desktop bundle with no node_modules), and a
   // platform that cannot find it compares no plugin interface and loads no workflow.
   // Content-addressed like everything here, so it crosses once.
-  files[`archives/${archiveName("", "typescript")}`] = await packArchive(
-    typescriptPayload(path.join(ROOT, "packages", "server")).map(({ rel, abs }) => ({
+  // The Node declarations a workbench's server code is checked with travel in the same archive.
+  files[`archives/${archiveName("", "typescript")}`] = await packArchive([
+    ...typescriptPayload(path.join(ROOT, "packages", "server")).map(({ rel, abs }) => ({
       rel: `node_modules/typescript/${rel}`,
       abs,
       exec: false,
     })),
-  );
+    ...nodeTypesPayload(path.join(ROOT, "packages", "server")).map(({ rel, abs }) => ({
+      rel: `node_modules/${rel}`,
+      abs,
+      exec: false,
+    })),
+  ]);
   // The scripts that run on the FAR side — the release installers a remote install feeds
   // over, the one thing that has to arrive before the CLI does. A pushed bundle resolves them
   // from its own assets directory, so a push that omits one leaves a server that cannot
@@ -364,6 +371,15 @@ async function readNativeAssets() {
   for (const { name, from } of FAR_SIDE_SCRIPTS) {
     files[name] = await fsp.readFile(path.join(ROOT, from));
   }
+  // The built-in plugins' market covers (scripts/market-covers.mjs), one archive for the folder:
+  // a pushed platform reads them from its unpacked assets (src/plugin/market-covers.ts).
+  files[`archives/${MARKET_COVERS_NAME}.tgz`] = await packArchive(
+    marketCoverFiles(ROOT).map((rel) => ({
+      rel: `${MARKET_COVERS_NAME}/${rel}`,
+      abs: path.join(ROOT, MARKET_COVERS_SOURCE, ...rel.split("/")),
+      exec: false,
+    })),
+  );
   // The builtin plugins, as the npm prefix the loader resolves from (`plugins/package.json`
   // + `plugins/node_modules/<name>/…`, see scripts/build-plugins.mjs), from cache when
   // unchanged — one archive per package, so an unchanged plugin is an unchanged blob.

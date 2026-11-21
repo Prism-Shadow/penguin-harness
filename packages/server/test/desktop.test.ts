@@ -26,7 +26,7 @@ import {
 } from "./helpers.js";
 import type { ErrorBody, MeResponse } from "../src/api/types.js";
 import { wireShellUpdatePort } from "../src/services/desktop-update-port.js";
-import { FakePort } from "./builtin-browser/fake-shell.js";
+import { FakePort } from "./helpers/fake-shell-port.js";
 
 describe("desktop claim", () => {
   /** What a browser gets for a token this server will not honour: the login page, plus the advice it can give there. */

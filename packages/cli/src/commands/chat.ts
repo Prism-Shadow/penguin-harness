@@ -61,6 +61,7 @@ import {
   resolveSessionRef,
   ServerClient,
   listAgentSessions,
+  terminalInput,
 } from "@prismshadow/penguin-server/cli";
 import type { TaskCreateResponse } from "@prismshadow/penguin-server/api";
 import { StreamRenderer, dim, renderHistory } from "../render.js";
@@ -317,14 +318,18 @@ export function registerChatCommand(chat: Command, t: Messages): void {
       }
 
       // TTY: raw mode + bracketed paste + PasteFilter; non-TTY (pipe/test): read stdin directly.
-      const isTTY = Boolean(process.stdin.isTTY);
+      // The keys come from stdin, or from the console itself where the runtime was given no
+      // stdin (the desktop app's launchers on Windows, the server CLI's console-input.ts).
+      const input = terminalInput();
+      const stdin = input.stream;
+      const isTTY = Boolean(stdin.isTTY);
       let pasteFilter: PasteFilter | null = null;
-      let inputStream: NodeJS.ReadableStream = process.stdin;
+      let inputStream: NodeJS.ReadableStream = stdin;
       if (isTTY) {
-        process.stdin.setRawMode(true);
+        stdin.setRawMode(true);
         out.write("\x1b[?2004h");
         pasteFilter = new PasteFilter();
-        process.stdin.pipe(pasteFilter);
+        stdin.pipe(pasteFilter);
         inputStream = pasteFilter;
       }
 
@@ -386,17 +391,23 @@ export function registerChatCommand(chat: Command, t: Messages): void {
           /* ignore */
         }
         try {
-          process.stdin.setRawMode(false);
+          stdin.setRawMode(false);
         } catch {
           /* ignore */
         }
         try {
-          if (pasteFilter) process.stdin.unpipe(pasteFilter);
+          if (pasteFilter) stdin.unpipe(pasteFilter);
         } catch {
           /* ignore */
         }
         try {
-          process.stdin.pause();
+          stdin.pause();
+        } catch {
+          /* ignore */
+        }
+        // A console input opened for the chat would keep the process alive: closed here.
+        try {
+          input.release();
         } catch {
           /* ignore */
         }

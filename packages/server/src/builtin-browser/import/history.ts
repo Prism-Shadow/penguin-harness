@@ -5,10 +5,10 @@
  * Pages a browser keeps hidden (subframes, redirect hops) stay out.
  */
 import type { DatabaseSync } from "node:sqlite";
-import type { BuiltinBrowserHistoryEntry } from "../../api/types.js";
+import type { BuiltinBrowserHistoryEntry } from "@prismshadow/penguin-server/api";
 import type { DiscoveredProfile } from "./discovery.js";
 import type { HistoryReadResult, ImportEnv } from "./index.js";
-import { columnsOf, readDatabaseCopy, unreadableStoreWarning } from "./sqlite-copy.js";
+import { columnsOf, readDatabaseCopy, unreadableStoreNote } from "./sqlite-copy.js";
 
 export const HISTORY_LIMIT = 5000;
 
@@ -27,13 +27,13 @@ export async function readProfileHistory(
   env: ImportEnv,
 ): Promise<HistoryReadResult> {
   const { source, historyFile } = profile;
-  if (historyFile === null) return { entries: [], warnings: ["This profile has no history."] };
+  if (historyFile === null) return { entries: [], notes: [{ code: "no_history" }] };
   const read = source.browser === "firefox" ? readFirefox : readChromium;
   let rows: HistoryRow[];
   try {
     rows = await readDatabaseCopy(historyFile, env, read);
   } catch (err) {
-    return { entries: [], warnings: [unreadableStoreWarning(err, source.browserName, "history")] };
+    return { entries: [], notes: [unreadableStoreNote(err, "history")] };
   }
   const entries: BuiltinBrowserHistoryEntry[] = rows.map((row) => ({
     url: row.url,
@@ -42,7 +42,7 @@ export async function readProfileHistory(
     lastVisitAt: Math.floor(row.last_visit),
     source: source.browser,
   }));
-  return { entries, warnings: [] };
+  return { entries, notes: [] };
 }
 
 function readChromium(db: DatabaseSync): HistoryRow[] {

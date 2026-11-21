@@ -155,7 +155,13 @@ describe("skills api", () => {
       expect(plugin.version, plugin.name).toBe(libraryPlugin(plugin.name)!.version);
       expect(plugin.version, plugin.name).toMatch(/^\d+\.\d+\.\d+/);
       expect(plugin.source, plugin.name).toBe("builtin");
-      expect(plugin.skills.length > 0 || plugin.hooks.length > 0, plugin.name).toBe(true);
+      // Every plugin ships something: a Skill, a hook package, or (an app-only plugin) a workbench.
+      expect(
+        plugin.skills.length > 0 ||
+          plugin.hooks.length > 0 ||
+          (plugin.workbenches ?? []).length > 0,
+        plugin.name,
+      ).toBe(true);
       for (const skill of plugin.skills) {
         // The short description (preferred in compact spots like cards) is passed through for
         // every returned skill; a skill's icon is its plugin's, sent once on the plugin item;

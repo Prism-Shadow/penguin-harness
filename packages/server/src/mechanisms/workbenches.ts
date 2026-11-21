@@ -6,7 +6,8 @@
  *
  * - `WorkbenchHost` is what the server PUBLISHES into every workbench tree (the workbench's
  *   manifest requires it `from: "Host"`): Sessions of the Project's Agents, opened and run
- *   the way the SDK does it and followed live, a small state document, a log line.
+ *   the way the SDK does it and followed live, a small state document, where its own data,
+ *   cache and state folders are, a log line.
  * - `WorkbenchMain` is what a workbench PROVIDES: a JSON request handler the server mounts
  *   under `/api/projects/:p/agents/:a/workbenches/:id/api/*`, which the workbench's own UI
  *   (served from its `ui/` folder) calls.
@@ -14,7 +15,9 @@
  * `Workbenches` is the platform-side mechanism the routes drive: list, reload, switch on and
  * off, dispatch, serve a UI file (and the page runtime compiled pages import), and the version
  * history every successful load commits to the Agent State repository — which is what makes an
- * Agent's own edits to its workbench reversible.
+ * Agent's own edits to its workbench reversible. A method that may record a version takes `by`,
+ * the member whose request it serves: that version is authored by them
+ * (../workbenches/git-identity.ts); without it, by the server's Git identity.
  */
 import type { IconImage } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
@@ -36,6 +39,7 @@ import type {
   WorkbenchRecord,
   IconRef,
 } from "@prismshadow/penguin-library-workbench";
+import type { VersionAuthor } from "../workbenches/git-identity.js";
 
 /**
  * The approval modes a workbench may open a Session with: two of a Session's existing modes,
@@ -43,6 +47,44 @@ import type {
  * mode that puts a call to a person (`read-only`, `always-ask`) is not offered.
  */
 export type WorkbenchApprovalMode = "allow-all" | "deny-all";
+
+/**
+ * Who shares a workbench's folders:
+ *
+ * - `agent` (the default): this Agent's copy of the app alone. Its `dataDir` travels in the
+ *   Agent export with the workbench's data; all three go when the workbench is removed.
+ * - `server`: every copy of the same app (the same plugin's workbench) on this data root, across
+ *   its Projects and Agents — a model's weights, a tool's binaries. Never exported, never removed
+ *   with a workbench.
+ * - `machine`: every data root of this OS user on this computer (the installed app, a dev
+ *   instance) — a small local server one computer runs once. Never exported, never removed.
+ *
+ * The shared levels belong to apps installed from a plugin: the plugin's name is what makes two
+ * copies one app. Only the handler writes them; the Agent's sandboxed commands may not.
+ */
+export type WorkbenchDataLevel = "agent" | "server" | "machine";
+
+/**
+ * Where a workbench's own folders are on the server's machine. The handler reads and writes them
+ * with Node's own `fs` (`node:fs`, `node:path`, `node:net` are typed for it) and serves what its
+ * page needs from its own routes; the host offers no file API.
+ */
+export interface WorkbenchDataPaths {
+  /**
+   * Files kept for good: at the agent level what the handler and the Agent both write, the Agent
+   * with its own file tools (`<agentDir>/app/data/<id>`, exported with the workbench's data); at
+   * a shared level what every copy of the app reads, such as a model's weights.
+   */
+  dataDir: string;
+  /** Files that can be made again. Never exported. */
+  cacheDir: string;
+  /**
+   * Runtime-only files — Unix sockets, pipes, locks — at a short path, since a Unix socket path
+   * holds at most 103 bytes: name a socket with `socketPath`. Never exported; kept across
+   * restarts (unlink a stale socket before listening).
+   */
+  stateDir: string;
+}
 
 /** What a workbench provides (its manifest: `provides: { main: "@prismshadow/penguin-server#WorkbenchMain" }`). */
 @Interface()
@@ -62,6 +104,8 @@ export abstract class WorkbenchHost {
    */
   abstract createSession(opts?: {
     agentId?: string;
+    /** Choose a project model for this Session. Omit it to use the Project default. */
+    model?: { provider: string; modelId: string };
     /**
      * `allow-all` (the default) runs every tool call, as a scheduled run does. `deny-all`
      * denies every tool call in the Session: the mode for a Session that only talks, so
@@ -98,6 +142,21 @@ export abstract class WorkbenchHost {
    * published for the channel hub's idle window ends by itself.
    */
   abstract subscribe(sessionId: string, listener: (record: WorkbenchRecord) => void): () => void;
+  /**
+   * Where this workbench's data, cache and state folders are at `level` (`agent` when left
+   * out). All three exist once this returns, and a link where one of them belongs is refused.
+   * At the agent level the Agent's commands may write them even in a `workspace-write` sandbox,
+   * so a path in them can be handed to the Agent. The `server` and `machine` levels are for an
+   * app installed from a plugin, and throw for a workbench made in place.
+   */
+  abstract dataPaths(level?: WorkbenchDataLevel): WorkbenchDataPaths;
+  /**
+   * What to `listen` on for a local socket called `name` at `level` (`agent` when left out):
+   * `<stateDir>/<name>`, or on Windows a named pipe (`\\.\pipe\penguin-…-<name>`), which is no
+   * path on disk. Throws, naming the limit, when the path would pass the 103 bytes a Unix socket
+   * path holds.
+   */
+  abstract socketPath(name: string, level?: WorkbenchDataLevel): string;
   /** The workbench's own document (`state.json`, kept by the server across reloads and rollbacks). */
   abstract getState(): unknown;
   abstract setState(state: unknown): Promise<void>;
@@ -126,7 +185,12 @@ export abstract class Workbenches {
     agentId: string,
     workbenchId: string,
   ): Promise<WorkbenchInfo>;
-  abstract reload(projectId: string, agentId: string, workbenchId: string): Promise<WorkbenchInfo>;
+  abstract reload(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    by?: VersionAuthor,
+  ): Promise<WorkbenchInfo>;
   /**
    * After its source was written (an archive import): loads it as `reload` does when it runs,
    * and otherwise answers it as it stands, not loaded.
@@ -135,6 +199,7 @@ export abstract class Workbenches {
     projectId: string,
     agentId: string,
     workbenchId: string,
+    by?: VersionAuthor,
   ): Promise<WorkbenchInfo>;
   /**
    * Sets one workbench's own switch. Off unloads it at once (its subscriptions end with its
@@ -146,6 +211,7 @@ export abstract class Workbenches {
     agentId: string,
     workbenchId: string,
     enabled: boolean,
+    by?: VersionAuthor,
   ): Promise<WorkbenchInfo>;
   /**
    * Sets the Agent-wide switch, leaving each workbench's own as it is: off unloads every
@@ -205,12 +271,18 @@ export abstract class Workbenches {
     agentId: string,
     workbenchId: string,
     revision: string,
+    by?: VersionAuthor,
   ): Promise<WorkbenchInfo>;
   /**
    * Deletes the folder, state and switch included, and records the removal; its earlier
    * versions are no longer listed. The instance goes with it.
    */
-  abstract remove(projectId: string, agentId: string, workbenchId: string): Promise<void>;
+  abstract remove(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    by?: VersionAuthor,
+  ): Promise<void>;
   /**
    * The App Center of a Project: a shortcut for every workbench of its Agents on this server
    * whose manifest asks to be shown, in Agent list order and by title within an Agent. Read from
@@ -228,6 +300,23 @@ export abstract class Workbenches {
     workbenchId: string,
   ): Promise<IconImage | null>;
   /**
+   * The rows of one Agent's sidebar list: the App Center's reading with the sidebar's filter, a
+   * shortcut for every workbench that runs, has a tab and carries no `.hidden-from-sidebar`
+   * marker, by title. Nothing is loaded or compiled; the Agent's folder is watched from then on.
+   */
+  abstract sidebar(projectId: string, agentId: string): Promise<AppCenterShortcut[]>;
+  /**
+   * Writes (`show: false`) or removes the installation's `.hidden-from-sidebar` marker. It is no
+   * part of the source, so writing it records no version and does not reload the workbench; the
+   * workbench as it then stands is answered and announced.
+   */
+  abstract setSidebar(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    show: boolean,
+  ): Promise<WorkbenchInfo>;
+  /**
    * Rewrites `penguin.appCenter.show` in the workbench's package.json, and nothing else of it,
    * then reloads the workbench — which records the edit as a version like any other.
    */
@@ -236,6 +325,7 @@ export abstract class Workbenches {
     agentId: string,
     workbenchId: string,
     show: boolean,
+    by?: VersionAuthor,
   ): Promise<WorkbenchInfo>;
   /**
    * Lets go of everything held for one Agent before its folder is deleted or its State is

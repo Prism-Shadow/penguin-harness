@@ -33,6 +33,7 @@
   <a href="https://discord.gg/eFHKqqcU3D"><img src="https://img.shields.io/badge/Discord-join%20chat-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="https://x.com/code_hiyouga"><img src="https://img.shields.io/badge/X-code%5Fhiyouga-000000?logo=x&logoColor=white" alt="X (Twitter)" /></a>
   <a href="https://github.com/Prism-Shadow/penguin-harness-community/blob/main/assets/wechat/penguin.jpg"><img src="https://img.shields.io/badge/WeChat-user%20group-07C160?logo=wechat&logoColor=white" alt="WeChat" /></a>
+  <a href="https://gitcode.com/Prism-Shadow/penguin-harness"><img src="https://gitcode.com/Prism-Shadow/penguin-harness/star/badge.svg" alt="GitCode stars" /></a>
 </p>
 
 <p align="center">
@@ -140,6 +141,8 @@ Agents can also write and optimize their own Skills ([docs](https://penguin.ooo/
 | -------------------- | ----------------------------------------------------------------------------- |
 | Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
 | Office Productivity  | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `trace-lookup`, `agent-company`, `penguin-support` |
+| Utilities | `fridge-keeper`, `action-minutes` |
+| Entertainment | `tabletop-desk`, `party-charades`, `daily-draw` |
 | Software Development | `software-development`, `use-claude-code`                              |
 | AI App Development   | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
 

@@ -62,7 +62,6 @@ import { createStore } from "zustand/vanilla";
 import { toastAttention } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { isCurrentProject } from "../../lib/project-scope";
-import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { markBetaNoticeShown, shouldShowBetaNotice } from "./company-beta";
 import { channelBadgeCounts } from "./channel-list";
@@ -175,8 +174,11 @@ interface CompanyStoreState {
    * listing of the organization now open.
    */
   channels: OrgChannelItem[] | null;
-  /** The last listing attempt's failure, kept beside whatever the list still holds. */
-  channelsError: string | null;
+  /**
+   * The last listing attempt's failure, kept beside whatever the list still holds: the list's
+   * words, with 「[报告问题]」 after them for a failure.
+   */
+  channelsError: ReactNode;
   /** When each channel was last marked read here, so a listing that left earlier cannot resurrect its badge. */
   channelReadAt: ReadonlyMap<string, number>;
   /** Unread messages waiting in the open organization's channels, and how many of those name the user. */
@@ -190,8 +192,8 @@ interface CompanyStoreState {
    * before the first read of the organization now open.
    */
   orgChart: OrgChartResponse | null;
-  /** The last chart read's failure, kept beside whatever the roster still holds. */
-  orgChartError: string | null;
+  /** The last chart read's failure, kept beside whatever the roster still holds (as channelsError). */
+  orgChartError: ReactNode;
   /** The ticket whose detail dialog is open, from wherever it was opened; null when none is. */
   ticketDialog: TicketDialogTarget | null;
   /**
@@ -414,7 +416,13 @@ export function createCompanyStore(options: { serverEnabled?: boolean } = {}) {
         );
         set({ channels, channelsError: null, ...counters(channels) });
       } catch (e) {
-        if (get().currentOrgKey === key) set({ channelsError: apiErrorText(e) });
+        if (get().currentOrgKey !== key) return;
+        set({
+          channelsError: failureNode(e, {
+            text: S.company.channels.loadFailed,
+            what: "an organization's channels could not be listed",
+          }),
+        });
       }
     },
 
@@ -541,7 +549,13 @@ export function createCompanyStore(options: { serverEnabled?: boolean } = {}) {
         const chart = await api.getOrgChart(projectId, orgId);
         if (get().currentOrgKey === key) set({ orgChart: chart, orgChartError: null });
       } catch (e) {
-        if (get().currentOrgKey === key) set({ orgChartError: apiErrorText(e) });
+        if (get().currentOrgKey !== key) return;
+        set({
+          orgChartError: failureNode(e, {
+            text: S.company.sessionList.loadFailed,
+            what: "an organization's chart could not be read",
+          }),
+        });
       }
     },
 
@@ -825,6 +839,7 @@ import {
   type CompanyVersions,
   type TicketDialogTarget,
 } from "../../lib/company-context";
+import { failureNode } from "../../lib/failure";
 
 export { useCompany } from "../../lib/company-context";
 export type { CompanyVersions, TicketDialogTarget } from "../../lib/company-context";

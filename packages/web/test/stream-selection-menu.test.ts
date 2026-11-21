@@ -5,7 +5,8 @@
  * through the composer's control — the same `addReference` the Files panel stages through —
  * and that chip shows the excerpt rather than a path; Copy writes the selection through the
  * clipboard entry and confirms with a toast, the menu-row convention — once the write landed.
- * A link's rows open it in the built-in browser or outside the app, or copy its address.
+ * A link's rows: the agent browser's contributed row first (open it in the built-in browser, or in
+ * the agent's Chrome tab), then the app's own, which open it outside the app or copy its address.
  *
  * Reading the selection and the link off the page and anchoring the panel are DOM work this
  * environment cannot run; the rules deciding them are pinned in selection-menu.test.ts.
@@ -21,11 +22,14 @@ import {
   type CapturedSelection,
 } from "../src/features/chat/stream-selection-menu";
 
+import type { LinkRow } from "@prismshadow/penguin-web-plugin";
+import { browserLinkRow } from "../src/features/builtin-browser/link-row";
 import type { ComposerControl } from "../src/features/chat/chat-input";
 import { ReferenceChip } from "../src/features/chat/reference-chip";
 import { excerptLabel } from "../src/lib/selection-menu";
 import type { ComposerReference } from "../src/lib/workspace-tree";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
+import { S as B } from "../src/features/builtin-browser/strings";
 import { en } from "../src/lib/strings-en";
 
 /** Toasts raised during a test (the real store would leave its dismiss timers running). */
@@ -73,6 +77,12 @@ function rows(props: Parameters<typeof SelectionMenuRows>[0]): Row[] {
   return ([] as ReactNode[]).concat(fragment.props.children).filter(isValidElement) as Row[];
 }
 
+/** The agent browser's contributed row for HREF while `target` can open links, as the menu takes it. */
+const browserRows = (target: "builtin" | "chrome" | null): LinkRow[] => {
+  const row = browserLinkRow(target, HREF);
+  return row === null ? [] : [row];
+};
+
 /** The same for a link's rows. */
 function linkRows(props: Parameters<typeof LinkMenuRows>[0]): Row[] {
   const fragment = LinkMenuRows(props) as ReactElement<{ children: ReactNode }>;
@@ -107,9 +117,9 @@ describe("SelectionMenuRows", () => {
 
   it("names the agent's Chrome tab while the agents drive the user's Chrome, and opens the link there", () => {
     const onDone = vi.fn();
-    const rows = linkRows({ href: HREF, browser: "chrome", desktopShell: false, onDone });
-    expect(rows.map(label)).not.toContain(S.chat.linkMenu.openInBuiltinBrowser);
-    const row = rows.find((r) => label(r) === S.chat.linkMenu.openInChromeTab);
+    const rows = linkRows({ href: HREF, rows: browserRows("chrome"), desktopShell: false, onDone });
+    expect(rows.map(label)).not.toContain(B.linkMenu.openInBuiltinBrowser);
+    const row = rows.find((r) => label(r) === B.linkMenu.openInChromeTab);
     row!.props.onSelect();
     expect(openedInBrowser).toEqual([HREF]);
     expect(onDone).toHaveBeenCalledOnce();
@@ -208,13 +218,13 @@ describe("LinkMenuRows", () => {
     const html = renderToStaticMarkup(
       createElement(LinkMenuRows, {
         href: HREF,
-        browser: "builtin",
+        rows: browserRows("builtin"),
         desktopShell: true,
         onDone: () => {},
       }),
     );
     const at = [
-      S.chat.linkMenu.openInBuiltinBrowser,
+      B.linkMenu.openInBuiltinBrowser,
       S.chat.linkMenu.openExternal,
       S.chat.linkMenu.copyLink,
     ].map((name) => html.indexOf(`>${name}</span>`));
@@ -226,12 +236,12 @@ describe("LinkMenuRows", () => {
     const html = renderToStaticMarkup(
       createElement(LinkMenuRows, {
         href: HREF,
-        browser: null,
+        rows: browserRows(null),
         desktopShell: false,
         onDone: () => {},
       }),
     );
-    expect(html).not.toContain(S.chat.linkMenu.openInBuiltinBrowser);
+    expect(html).not.toContain(B.linkMenu.openInBuiltinBrowser);
     expect(html).not.toContain(S.chat.linkMenu.openExternal);
     expect(html).toContain(`>${S.chat.linkMenu.openInNewTab}</span>`);
     expect(html).toContain(`>${S.chat.linkMenu.copyLink}</span>`);
@@ -242,7 +252,7 @@ describe("LinkMenuRows", () => {
     const html = renderToStaticMarkup(
       createElement(LinkMenuRows, {
         href: HREF,
-        browser: "builtin",
+        rows: browserRows("builtin"),
         desktopShell: true,
         onDone: () => {},
       }),
@@ -254,9 +264,12 @@ describe("LinkMenuRows", () => {
 
   it("opens the link in the built-in browser through the browser's own new tab", () => {
     const onDone = vi.fn();
-    const row = linkRows({ href: HREF, browser: "builtin", desktopShell: true, onDone }).find(
-      (r) => label(r) === S.chat.linkMenu.openInBuiltinBrowser,
-    );
+    const row = linkRows({
+      href: HREF,
+      rows: browserRows("builtin"),
+      desktopShell: true,
+      onDone,
+    }).find((r) => label(r) === B.linkMenu.openInBuiltinBrowser);
     row!.props.onSelect();
     expect(openedInBrowser).toEqual([HREF]);
     expect(onDone).toHaveBeenCalledOnce();
@@ -266,7 +279,7 @@ describe("LinkMenuRows", () => {
     const open = vi.fn();
     vi.stubGlobal("window", { open });
     const onDone = vi.fn();
-    const row = linkRows({ href: HREF, browser: null, desktopShell: true, onDone }).find(
+    const row = linkRows({ href: HREF, rows: browserRows(null), desktopShell: true, onDone }).find(
       (r) => label(r) === S.chat.linkMenu.openExternal,
     );
     row!.props.onSelect();
@@ -278,9 +291,12 @@ describe("LinkMenuRows", () => {
   it("copies the address and confirms with a toast, as Copy does", async () => {
     writeClipboard.mockResolvedValue(true);
     const onDone = vi.fn();
-    const row = linkRows({ href: HREF, browser: "builtin", desktopShell: true, onDone }).find(
-      (r) => label(r) === S.chat.linkMenu.copyLink,
-    );
+    const row = linkRows({
+      href: HREF,
+      rows: browserRows("builtin"),
+      desktopShell: true,
+      onDone,
+    }).find((r) => label(r) === S.chat.linkMenu.copyLink);
     row!.props.onSelect();
     expect(writeClipboard).toHaveBeenCalledExactlyOnceWith(HREF);
     expect(onDone).toHaveBeenCalledOnce();

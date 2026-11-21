@@ -9,7 +9,7 @@
  * anything typed asks before the typing is thrown away. The form is mounted only while the
  * dialog is open, so every opening starts empty.
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Button,
   Modal,
@@ -24,6 +24,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
 import { omitsOldPassword } from "../../lib/account-menu";
+import { failureNode } from "../../lib/failure";
 
 export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return open ? <ChangePasswordForm onClose={onClose} /> : null;
@@ -40,8 +41,11 @@ function ChangePasswordForm({ onClose }: { onClose: () => void }) {
   const noOldPassword = omitsOldPassword({ desktopMode, sessionVia });
   const form = useFormDraft(EMPTY);
   const { oldPassword, newPassword, confirmPassword } = form.draft;
-  /** What the server refused, on the field it is about. Cleared by the next keystroke. */
-  const [refused, setRefused] = useState<{ old?: string; new?: string }>({});
+  /**
+   * What the server refused, on the field it is about; a save it could not complete carries
+   * 「[报告问题]」. Cleared by the next keystroke.
+   */
+  const [refused, setRefused] = useState<{ old?: ReactNode; new?: ReactNode }>({});
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
@@ -72,7 +76,7 @@ function ChangePasswordForm({ onClose }: { onClose: () => void }) {
       if (e instanceof ApiError && e.code === "invalid_password") {
         setRefused({ new: apiErrorText(e) });
       } else {
-        setRefused({ old: apiErrorText(e) });
+        setRefused({ old: failureNode(e, { what: "a password could not be changed" }) });
       }
     } finally {
       setBusy(false);

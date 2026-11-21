@@ -12,8 +12,9 @@
  * name + count + the collapse chevron), with one card per model within a group — the card
  * shows only the display name + status badges (default / vision / fast / free / discount), while
  * context, pricing, and key status are folded into a single line of small text. Clicking a card opens the config dialog
- * (credentials, context, pricing, vision toggle, plus set as default / set as vision model /
- * delete). The group header's right side holds the group's actions in a fixed order
+ * (credentials, context, pricing, vision toggle, plus set as default / delete, and the Project
+ * operations the model can serve: image understanding — the vision model — and the tool bindings
+ * of the enabled plugins, each with its short action; model-operations.tsx). The group header's right side holds the group's actions in a fixed order
  * (group-header.ts): its balance (one menu: pin, refresh, when it was read), the connection
  * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
  * Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
@@ -70,6 +71,7 @@ import type {
   ModelProtocolDetectRequest,
   ModelRefDto,
   ModelsResponse,
+  ModelOAuthErrorCode,
   ModelsUpdateRequest,
   ModelTestRequest,
   ModelUpdateEntry,
@@ -210,6 +212,15 @@ import {
   type ProviderConnections,
 } from "./connection";
 
+import { useToolBindings } from "../../state/use-tool-bindings";
+import { useOpenProjectSettings } from "../../lib/project-settings-location";
+import {
+  ModelInUseMark,
+  ModelOperationsBlock,
+  modelOperations,
+  VISION_OPERATION,
+  type ModelOperation,
+} from "./model-operations";
 import { ProviderSettingsDialog } from "./provider-settings-dialog";
 import { GroupSettingsControl } from "./group-settings-menu";
 import {
@@ -249,7 +260,9 @@ import {
 import { isPinned, usePinnedBalance } from "./balance";
 import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
 import { ConnectDefaultOfferConfirm } from "./connect-default-offer";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError, toastFailure } from "../../lib/toast-api-error";
+import { toastDetectFailed, type DetectMiss } from "./detect-failure";
+import { failureNode, toldFailure, toldNode } from "../../lib/failure";
 
 /**
  * The authorization flows a group's Connect dialog can run, keyed by the flow named in that
@@ -402,6 +415,8 @@ interface DetectOutcome {
 
 /** Local edit state for one model row (string-typed for form use; parsed uniformly on save). */
 export interface RowState {
+  /** False for a tool model (GET /models): an image, speech or web model, never a chat candidate. */
+  chatEligible?: boolean;
   /**
    * Vendor id (entry field, i.e. group membership): a value not in the catalog list is a
    * user-defined group, kept **verbatim** — an operation that only edits the key,
@@ -678,6 +693,7 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
     provider: m.provider,
     modelId: m.modelId,
     original: { provider: m.provider, modelId: m.modelId },
+    ...(m.chatEligible === false ? { chatEligible: false } : {}),
     vision: m.vision !== false,
     contextWindow: m.contextWindow !== undefined ? String(m.contextWindow) : "",
     maxTokens: m.maxTokens !== undefined ? String(m.maxTokens) : "",
@@ -941,6 +957,12 @@ export function ModelsPage() {
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);
   // Vision model used for read_file's proxy reads (describes images for session models with vision=false).
   const [visionModel, setVisionModel] = useState<ModelRefDto | undefined>(undefined);
+  /** The plugins' tool bindings, read again whenever the table changes (it changes the candidates). */
+  const toolBindings = useToolBindings(rows ? projectId : null, null, { refreshKey: rows });
+  /** The operations a row can serve and the ones it is in use for (model-operations.tsx). */
+  const operationsOf = (row: RowState | undefined): ModelOperation[] =>
+    row ? modelOperations(toolBindings.bindings, rowRef(row), locale) : [];
+  const openProjectSettings = useOpenProjectSettings();
   /** Edit target: paired reference of an existing row. */
   const [editing, setEditing] = useState<ModelRefDto | null>(null);
   /**
@@ -1034,7 +1056,7 @@ export function ModelsPage() {
   /** "Add models with AI" dialog: the prompt goes to the Project's default agent. */
   const [aiAddOpen, setAiAddOpen] = useState(false);
   /** Initial load failure: shown inline only when the whole page has no content (there's no context to pop a toast against). */
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
   // Currency follows the user setting (toggled in sidebar settings).
   const { currency } = useTheme();
@@ -1067,7 +1089,7 @@ export function ModelsPage() {
     try {
       adopt(await api.getModels(projectId, null));
     } catch (e) {
-      setLoadError(apiErrorText(e));
+      setLoadError(failureNode(e, { what: "a Project's models could not be listed" }));
     }
     try {
       const totals = await api.getUsageModelTotals(projectId);
@@ -1725,6 +1747,7 @@ export function ModelsPage() {
                       speed={speedResults.get(refMapKey(row.provider, row.modelId))}
                       usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
                       hourTick={hourTick}
+                      operations={operationsOf(row)}
                       onOpen={() => {
                         setEditingMovedToCustom(false);
                         setEditing(rowRef(row));
@@ -1759,14 +1782,14 @@ export function ModelsPage() {
       {/* The header holds search, the owner-only catalog pair — "Add new models" and "Restore
           defaults" — and the pair of create buttons: the AI path and the group form, offered side
           by side (per-model entry points still live in each group header); on narrow screens the
-          actions wrap to their own line and the search box shrinks flexibly, fixed width at >=sm.
+          search takes its own row and the actions wrap below it, with a fixed search width at >=sm.
           A member reads why nothing here is editable behind the title's "?". */}
       <PageHeader
         title={S.models.title}
         info={isOwner ? undefined : S.models.readOnlyHint}
         actions={
           <>
-            <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+            <div className="w-full shrink-0 sm:w-56">
               <Input
                 size="sm"
                 value={query}
@@ -1774,6 +1797,10 @@ export function ModelsPage() {
                 placeholder={S.models.searchPlaceholder}
               />
             </div>
+            {/* Project settings' multimodal page, where every operation's model is chosen at once. */}
+            <Button size="sm" onClick={() => openProjectSettings("multimodal")}>
+              {S.voice.models}
+            </Button>
             {/* "Add new models" appears only while new presets are actually waiting, and the
                 accent says so — adding nothing is a no-op, and a permanent button spent the
                 header's width on one. That is also why the dot is gone: it marked this button as
@@ -2130,6 +2157,11 @@ export function ModelsPage() {
           canEdit={isOwner}
           isDefault={editingRow !== undefined && sameModelRef(rowRef(editingRow), defaultModel)}
           isVisionModel={editingRow !== undefined && sameModelRef(rowRef(editingRow), visionModel)}
+          operations={operationsOf(editingRow)}
+          operationsBusy={toolBindings.busy}
+          onBindOperation={(key) => {
+            if (editingRow) void toolBindings.bind(key, rowRef(editingRow));
+          }}
           onClose={closeModelDialog}
           // The dialog stays open, its draft intact, until the write answers; it closes only
           // once the table holds what it sent.
@@ -2248,7 +2280,7 @@ function AddGroupDialog({
     dropped: number;
     picked: Set<string>;
   } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   /** Detection run counter: a manual pick or an edited URL supersedes an in-flight run (same convention as the model dialog). */
   const detectSeq = useRef(0);
 
@@ -2301,12 +2333,17 @@ function AddGroupDialog({
       } else {
         setDetectFailed(true);
         // Same condition the model dialog reports, so it gets the same sentence.
-        setError(S.models.detectFailedBody);
+        setError(
+          toldNode(S.models.detectFailedBody, {
+            what: "protocol detection found no protocol the endpoint serves",
+            detail: null,
+          }),
+        );
       }
     } catch (e) {
       if (seq !== detectSeq.current) return;
       setDetectFailed(true);
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "protocol detection failed" }));
     } finally {
       if (seq === detectSeq.current) setDetecting(false);
     }
@@ -2351,7 +2388,10 @@ function AddGroupDialog({
         setError(
           listed.unsupported
             ? S.models.groupImportUnsupported
-            : (listed.message ?? S.models.groupImportFailed),
+            : toldNode(listed.message ?? S.models.groupImportFailed, {
+                what: "an endpoint's model list could not be read",
+                detail: listed.message ?? null,
+              }),
         );
         return;
       }
@@ -2367,7 +2407,7 @@ function AddGroupDialog({
         picked: new Set(ids),
       });
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an endpoint's model list could not be read" }));
     } finally {
       setImporting(null);
     }
@@ -2389,7 +2429,7 @@ function AddGroupDialog({
         list.dropped + built.skipped,
       );
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "a model group could not be imported" }));
     } finally {
       setImporting(null);
     }
@@ -2597,6 +2637,7 @@ export function ModelCard({
   usedTokens,
   hourTick,
   onOpen,
+  operations,
   onMoveToCustom,
 }: {
   row: RowState;
@@ -2611,6 +2652,8 @@ export function ModelCard({
   /** Bumped on the hour (see useHourTick): the cue to re-read a time-of-day price. */
   hourTick: number;
   onOpen: () => void;
+  /** The Project operations this model can serve; the card marks the ones it is in use for. */
+  operations?: readonly ModelOperation[];
   /** Opens the config dialog with this row already moved to the custom group; absent for a member, who cannot write the config. */
   onMoveToCustom?: () => void;
 }) {
@@ -2660,7 +2703,8 @@ export function ModelCard({
    */
   const tags = modelTags({
     isDefault,
-    vision: row.vision,
+    // A tool model's image input is no chat capability: no "vision" tag on it.
+    vision: row.vision && row.chatEligible !== false,
     isVisionModel,
     fastMode: row.fastMode,
     free: isFreeModel(row),
@@ -2752,6 +2796,9 @@ export function ModelCard({
           <span data-slot="name" className="min-w-0 flex-1 truncate text-sm font-medium">
             {modelLabelOf(row.displayName, row.modelId)}
           </span>
+          {/* The Project operations this model is in use for: one quiet glyph, named in its
+              tooltip. Assigning happens in the model's dialog or in Project settings. */}
+          <ModelInUseMark operations={operations ?? []} />
           {/* What this model has spent over its whole life, on the row's right edge. Recessive by
               design — grey, on the small rung below the name: it is context for a name you are
               scanning past, not a figure the page is about. A model that has never run shows
@@ -2868,6 +2915,9 @@ function ModelDialog({
   canEdit,
   isDefault,
   isVisionModel,
+  operations,
+  operationsBusy,
+  onBindOperation,
   onClose,
   onSubmit,
 }: {
@@ -2886,6 +2936,12 @@ function ModelDialog({
   canEdit: boolean;
   isDefault: boolean;
   isVisionModel: boolean;
+  /** The tool bindings this model can serve (model-operations.tsx). */
+  operations: readonly ModelOperation[];
+  /** A binding write is in flight. */
+  operationsBusy: boolean;
+  /** Binds the saved model to one of `operations`. */
+  onBindOperation: (key: string) => void;
   onClose: () => void;
   /** Writes the row; resolves with whether it landed (the host closes the dialog when it did). */
   onSubmit: (row: RowState, action: DialogAction) => Promise<boolean>;
@@ -3029,13 +3085,24 @@ function ModelDialog({
    * endpoint diagnosable. The relayed sentence is not lost either way: it goes to the console,
    * where a developer looking into a report can still read it.
    */
-  const reportTestFailure = (message: string) => {
-    if (unroutableFix(form.provider, form.modelId, effectiveClientType) === null) {
-      toastError(S.models.testFailed(message));
-      return;
+  const reportTestFailure = (message: string, error?: unknown) => {
+    let text = S.models.testFailed(message);
+    if (unroutableFix(form.provider, form.modelId, effectiveClientType) !== null) {
+      console.warn(`[models] ${form.provider}/${form.modelId.trim()}: ${message}`);
+      text = S.models.testNotRoutable;
     }
-    console.warn(`[models] ${form.provider}/${form.modelId.trim()}: ${message}`);
-    toastError(S.models.testNotRoutable);
+    // A request that failed goes by the rule; an answer that says the test failed carries the
+    // provider's own words in its report.
+    if (error !== undefined) toastApiError(error, { text, what: "a model test failed" });
+    else {
+      toastFailure(
+        toldFailure(text, {
+          what: "a model test failed",
+          facts: [["Model", `${form.provider}/${form.modelId.trim()}`]],
+          detail: message === "" ? null : message,
+        }),
+      );
+    }
   };
 
   /**
@@ -3073,7 +3140,7 @@ function ModelDialog({
       if (res.ok) toastSuccess(S.models.testOk(res.latencyMs ?? 0));
       else reportTestFailure(res.message ?? "");
     } catch (e) {
-      reportTestFailure(apiErrorText(e));
+      reportTestFailure(apiErrorText(e), e);
     } finally {
       setTesting(false);
     }
@@ -3111,10 +3178,10 @@ function ModelDialog({
     // What an empty result means depends on who asked. A manual run simply failed; a save
     // run silently resolves to the compatible client and says so, because the save it was
     // serving is still going through.
-    const failed = () => {
+    const failed = (miss: DetectMiss) => {
       setDetectFailed(true);
       if (mode === "save") toastInfo(S.models.detectFellBack);
-      else toastError(S.models.detectFailedBody);
+      else toastDetectFailed(miss);
     };
     // The model's own base URL, or — left blank — the one it follows, so a model in a group
     // whose settings name the endpoint can be probed without retyping it.
@@ -3122,7 +3189,7 @@ function ModelDialog({
     // An unusable URL is just another failure: the server would 400 it, and the user gets
     // the same message either way rather than a distinct piece of API error text.
     if (!detectableBaseUrl(baseUrl)) {
-      failed();
+      failed("check");
       return null;
     }
     const seq = ++detectSeq.current;
@@ -3150,10 +3217,10 @@ function ModelDialog({
         set({ clientType: res.detected, ...patch });
         return { clientType: res.detected, ...patch };
       }
-      failed();
+      failed("none");
       return null;
-    } catch {
-      if (seq === detectSeq.current) failed();
+    } catch (error) {
+      if (seq === detectSeq.current) failed({ error });
       return null;
     } finally {
       if (seq === detectSeq.current) setDetecting(false);
@@ -3224,10 +3291,19 @@ function ModelDialog({
           set({ vision: false });
           toastInfo(S.models.detectVisionNo);
         } else {
-          toastError(S.models.detectVisionFailed);
+          toastFailure(
+            toldFailure(S.models.detectVisionFailed, {
+              what: "vision detection failed",
+              facts: [["Model", `${form.provider}/${form.modelId.trim()}`]],
+              detail: res.message ?? null,
+            }),
+          );
         }
-      } catch {
-        toastError(S.models.detectVisionFailed);
+      } catch (error) {
+        toastApiError(error, {
+          text: S.models.detectVisionFailed,
+          what: "vision detection failed",
+        });
       } finally {
         setVisionDetecting(false);
       }
@@ -3668,28 +3744,18 @@ function ModelDialog({
    */
   const slots: Record<ModelDialogSlot, ReactNode> = {
     // Model-level actions: test connectivity (for a new model, fill in the id and key to verify
-    // before saving) / set default / set as vision proxy model / remove.
+    // before saving) / set default / remove. Choosing the vision model moved into the operations
+    // below, as image understanding.
     actions: canEdit && (
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" disabled={testing || !form.modelId.trim()} onClick={() => void runTest()}>
           {testing ? S.models.testing : S.models.testConnection}
         </Button>
-        {/* Setting the default or the vision model writes the draft with it, so those two wait
-            for it to be valid, like Save; removing writes nothing of the draft. */}
-        {!isNew && !isDefault && (
+        {/* Setting the default writes the draft with it, so it waits for the draft to be valid,
+            like Save; removing writes nothing of the draft. A tool model cannot hold a chat. */}
+        {!isNew && !isDefault && form.chatEligible !== false && (
           <Button size="sm" disabled={saving || !valid} onClick={() => setConfirming("setDefault")}>
             {S.models.setDefault}
-          </Button>
-        )}
-        {!isNew && form.vision && !isVisionModel && (
-          <Button
-            size="sm"
-            title={S.models.visionModelHint}
-            data-tooltip-extra
-            disabled={saving || !valid}
-            onClick={() => setConfirming("setVisionModel")}
-          >
-            {S.models.setVisionModel}
           </Button>
         )}
         {!isNew && (
@@ -3710,6 +3776,35 @@ function ModelDialog({
     // API key — "get API key" link next to the label. PasswordInput carries its own show/hide
     // toggle and brings its own <label> wrapper, so this outer container is a <div> (a nested
     // <label> is invalid).
+    // The Project operations this model can serve, each with its short action. Image
+    // understanding is the vision model: it writes the draft with it, like set default, so it
+    // waits for the draft to be valid; a binding names the saved model, so those wait while the
+    // draft holds unsaved edits.
+    tools: !isNew && (
+      <ModelOperationsBlock
+        operations={[
+          ...(form.vision && form.chatEligible !== false
+            ? [
+                {
+                  key: VISION_OPERATION,
+                  title: S.voice.imageUnderstanding,
+                  hint: S.models.visionModelHint,
+                  current: isVisionModel,
+                },
+              ]
+            : []),
+          ...operations,
+        ]}
+        canEdit={canEdit}
+        isDisabled={(op) =>
+          op.key === VISION_OPERATION ? saving || !valid : changed || saving || operationsBusy
+        }
+        onUse={(op) => {
+          if (op.key === VISION_OPERATION) setConfirming("setVisionModel");
+          else onBindOperation(op.key);
+        }}
+      />
+    ),
     apiKey: (
       <div className="space-y-1">
         <div className="block">
@@ -4106,10 +4201,12 @@ function ModelDialog({
                   {form.modelId}
                 </span>
               )}
-              {(isDefault || form.vision || isVisionModel) && (
+              {(isDefault || (form.vision && form.chatEligible !== false) || isVisionModel) && (
                 <span className="flex flex-wrap items-center gap-1 pt-0.5">
                   {isDefault && <Pill tone={TAG_TONE.status}>{S.models.default}</Pill>}
-                  {form.vision && <Pill tone={TAG_TONE.capability}>{S.models.visionBadge}</Pill>}
+                  {form.vision && form.chatEligible !== false && (
+                    <Pill tone={TAG_TONE.capability}>{S.models.visionBadge}</Pill>
+                  )}
                   {isVisionModel && (
                     <Pill tone={TAG_TONE.capability}>{S.models.visionModelBadge}</Pill>
                   )}
@@ -4259,6 +4356,23 @@ const OAUTH_POLL_MS = 2000;
  * the last word on which: it opens a manual flow when the provider would refuse to redirect to
  * the address this page is served from, and the dialog follows the flow it was given.
  */
+/** The flow's own refusals: the authorization asked again is the way on, nothing failed. */
+const OAUTH_REFUSALS: ReadonlySet<ModelOAuthErrorCode> = new Set([
+  "invalid_request",
+  "code_rejected",
+]);
+
+/**
+ * What a flow that ended in an error says: a refusal (or a flow that ran out of time) in its
+ * words alone, a failure with 「[报告问题]」 after them.
+ */
+function oauthFlowError(code: ModelOAuthErrorCode | undefined): ReactNode {
+  if (code === undefined) return S.models.oauthTimedOut;
+  const text = S.models.oauthErrors[code];
+  if (OAUTH_REFUSALS.has(code)) return text;
+  return toldNode(text, { what: "a model provider's authorization failed", code, detail: null });
+}
+
 function ModelOAuthDialog({
   projectId,
   provider,
@@ -4286,7 +4400,7 @@ function ModelOAuthDialog({
   const byHand = manual || redirectRefused;
   const [phase, setPhase] = useState<OAuthPhase>("starting");
   const [flow, setFlow] = useState<{ flowId: string; authorizeUrl: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [code, setCode] = useState("");
   /** How many models use the group key the flow wrote — the sentence the `done` phase reports. */
   const [applied, setApplied] = useState(0);
@@ -4318,7 +4432,7 @@ function ModelOAuthDialog({
         setPhase("ready");
       } catch (e) {
         if (cancelled) return;
-        setError(apiErrorText(e));
+        setError(failureNode(e, { what: "a model provider's authorization could not start" }));
         setPhase("failed");
       }
     })();
@@ -4346,7 +4460,7 @@ function ModelOAuthDialog({
           return;
         }
         if (res.status === "error") {
-          setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);
+          setError(oauthFlowError(res.error));
           setPhase("failed");
         }
       } catch {
@@ -4381,10 +4495,10 @@ function ModelOAuthDialog({
         onAppliedRef.current(n, res.defaultOffer);
         return;
       }
-      setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);
+      setError(oauthFlowError(res.error));
       setPhase("failed");
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "a model provider's authorization code was not taken" }));
       setPhase("failed");
     }
   };

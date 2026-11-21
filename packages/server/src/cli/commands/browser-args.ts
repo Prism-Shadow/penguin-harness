@@ -6,9 +6,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { BuiltinBrowserImportSourcesResponse } from "../../api/types.js";
-import { ApiError, ServerClient } from "../client.js";
-import { resolveConnection } from "../connection.js";
-import type { Messages } from "../i18n.js";
+import {
+  ApiError,
+  ServerClient,
+  resolveConnection,
+  terminalInput,
+} from "@prismshadow/penguin-library-cli";
+import type { BrowserMessages } from "./browser.messages.js";
 
 export const BASE = "/api/builtin-browser";
 export const enc = encodeURIComponent;
@@ -35,7 +39,7 @@ export interface CommonOpts {
 // Connection, errors, arguments
 // ---------------------------------------------------------------------------
 
-export async function connect(opts: CommonOpts, t: Messages): Promise<ServerClient> {
+export async function connect(opts: CommonOpts, t: BrowserMessages): Promise<ServerClient> {
   try {
     return new ServerClient(
       await resolveConnection({ server: opts.server, autoStart: false }, t),
@@ -52,7 +56,7 @@ export async function connect(opts: CommonOpts, t: Messages): Promise<ServerClie
 
 /** Runs an action, turning whatever it throws into the one error line and exit code 1. */
 export function action<A extends unknown[]>(
-  t: Messages,
+  t: BrowserMessages,
   run: (...args: A) => Promise<void>,
 ): (...args: A) => Promise<void> {
   return async (...args) => {
@@ -66,7 +70,7 @@ export function action<A extends unknown[]>(
   };
 }
 
-export function describeError(err: unknown, t: Messages): { code: string; message: string } {
+export function describeError(err: unknown, t: BrowserMessages): { code: string; message: string } {
   if (err instanceof BrowserCliError) return { code: err.code, message: err.message };
   if (err instanceof ApiError) {
     // The repo's `{error: {code, message}}`, and the flat `{error: code, message, reason}` too.
@@ -104,14 +108,14 @@ export const invalid = (message: string): BrowserCliError =>
   new BrowserCliError("invalid_argument", message);
 
 /** `--tab` / a tab positional: a numeric id or `active` (the default). */
-export function tabRef(raw: string | undefined, t: Messages): string {
+export function tabRef(raw: string | undefined, t: BrowserMessages): string {
   const value = raw?.trim() ?? "";
   if (value === "" || value === "active") return "active";
   if (/^\d+$/.test(value)) return value;
   throw invalid(t.browser.tabInvalid(value));
 }
 
-export function positiveInt(flag: string, raw: string, t: Messages): number {
+export function positiveInt(flag: string, raw: string, t: BrowserMessages): number {
   const value = Number(raw);
   if (raw.trim() === "" || !Number.isInteger(value) || value <= 0) {
     throw invalid(t.browser.positiveInt(flag, raw));
@@ -120,7 +124,7 @@ export function positiveInt(flag: string, raw: string, t: Messages): number {
 }
 
 /** `--index`: which match of the selector, counting from 0. */
-export function parseIndex(raw: string, t: Messages): number {
+export function parseIndex(raw: string, t: BrowserMessages): number {
   const value = Number(raw);
   if (raw.trim() === "" || !Number.isInteger(value) || value < 0) {
     throw invalid(t.browser.indexInvalid(raw));
@@ -164,12 +168,13 @@ export function printJson(value: unknown): void {
  * The script, from exactly one source: the argument, `--file`, or stdin — read when the argument
  * is `-`, or when there is no argument and stdin is not a terminal (a heredoc or a pipe, which
  * spares a model all escaping). An implicit stdin that stays silent is "no script": a caller
- * whose stdin is an idle pipe gets the error instead of a hang.
+ * whose stdin is an idle pipe gets the error instead of a hang. "stdin" is the terminal input
+ * (console-input.ts): where the runtime was given none, the console it runs in.
  */
 export async function resolveScript(
   arg: string | undefined,
   file: string | undefined,
-  t: Messages,
+  t: BrowserMessages,
 ): Promise<string> {
   if (file !== undefined && arg !== undefined) throw invalid(t.browser.scriptSources());
   let script: string | null;
@@ -180,22 +185,33 @@ export async function resolveScript(
       throw new BrowserCliError("io_error", t.browser.fileUnreadable(file, errorText(err)));
     }
   } else if (arg === "-") {
-    script = await readStdin();
+    const input = terminalInput();
+    try {
+      script = await readStdin(undefined, input.stream);
+    } finally {
+      input.release();
+    }
   } else if (arg !== undefined) {
     script = arg;
-  } else if (process.stdin.isTTY !== true) {
-    script = await readStdin(STDIN_GRACE_MS);
-    if (script === null || script.trim() === "") throw invalid(t.browser.scriptMissing());
   } else {
-    throw invalid(t.browser.scriptMissing());
+    const input = terminalInput();
+    try {
+      if (input.stream.isTTY === true) throw invalid(t.browser.scriptMissing());
+      script = await readStdin(STDIN_GRACE_MS, input.stream);
+    } finally {
+      input.release();
+    }
+    if (script === null || script.trim() === "") throw invalid(t.browser.scriptMissing());
   }
   if (script === null || script.trim() === "") throw invalid(t.browser.scriptEmpty());
   return script;
 }
 
-/** All of stdin; null when `graceMs` passes before its first byte (or its end). */
-export function readStdin(graceMs?: number): Promise<string | null> {
-  const stdin = process.stdin;
+/** All of `stdin`; null when `graceMs` passes before its first byte (or its end). */
+export function readStdin(
+  graceMs?: number,
+  stdin: NodeJS.ReadStream = process.stdin,
+): Promise<string | null> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let timer: NodeJS.Timeout | undefined;
@@ -237,7 +253,7 @@ export function readStdin(graceMs?: number): Promise<string | null> {
  * `--save`: the whole value to a file — a string as-is, anything else as indented JSON — and the
  * absolute path back for the `[saved to …]` note.
  */
-export function saveValue(file: string, value: unknown, t: Messages): string {
+export function saveValue(file: string, value: unknown, t: BrowserMessages): string {
   const target = path.resolve(file);
   const content =
     value === undefined
@@ -263,14 +279,14 @@ export function errorText(err: unknown): string {
 // ---------------------------------------------------------------------------
 
 /** `--at x,y`: two numbers in CSS pixels. */
-export function parsePoint(raw: string, t: Messages): { x: number; y: number } {
+export function parsePoint(raw: string, t: BrowserMessages): { x: number; y: number } {
   const m = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/.exec(raw);
   if (m === null) throw invalid(t.browser.atInvalid(raw));
   return { x: Number(m[1]), y: Number(m[2]) };
 }
 
 /** `--params`: a JSON object. */
-export function parseParams(raw: string, t: Messages): Record<string, unknown> {
+export function parseParams(raw: string, t: BrowserMessages): Record<string, unknown> {
   let value: unknown;
   try {
     value = JSON.parse(raw);
@@ -297,7 +313,7 @@ function parseDurationMs(raw: string): number | null {
 }
 
 /** `--timeout`: 30s / 2m / bare seconds, more than zero. */
-export function parseTimeout(raw: string, t: Messages): number {
+export function parseTimeout(raw: string, t: BrowserMessages): number {
   const ms = parseDurationMs(raw);
   if (ms === null || ms === 0) throw invalid(t.client.timeoutInvalid(raw));
   return ms;
@@ -321,15 +337,18 @@ export function collect(value: string, previous: string[]): string[] {
 export async function resolveSource(
   client: ServerClient,
   from: string,
-  t: Messages,
+  t: BrowserMessages,
 ): Promise<string> {
   if (from.includes(":")) return from;
   const { sources } = await client.request<BuiltinBrowserImportSourcesResponse>(
     "GET",
     `${BASE}/import/sources${sessionQuery()}`,
   );
+  const exact = sources.find((s) => s.id === from.trim());
+  if (exact !== undefined) return exact.id;
+  // A browser's name means a profile on this computer, never the extension.
   const browser = from.trim().toLowerCase();
-  const matching = sources.filter((s) => s.browser === browser);
+  const matching = sources.filter((s) => s.browser === browser && s.via === undefined);
   if (matching.length === 0) {
     const known = [...new Set(sources.map((s) => s.browser))];
     throw new BrowserCliError("source_not_found", t.browser.sourceNotFound(from, known));

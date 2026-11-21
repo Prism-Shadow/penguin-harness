@@ -19,6 +19,7 @@ export * from "./layers";
 export * from "./components/icons/icons";
 export * from "./components/icons/glyph-icon/glyph-icon";
 export * from "./components/icons/image-icon/image-icon";
+export * from "./components/icons/app-icon-shape/app-icon-shape";
 export * from "./components/icons/chevron/chevron";
 export * from "./components/icons/marks/marks";
 export * from "./components/icons/spinner/spinner";
@@ -48,6 +49,7 @@ export * from "./components/feedback/load-failed/load-failed";
 // W1 — actions.
 export * from "./components/actions/close-button/close-button";
 export * from "./components/actions/button/button";
+export * from "./components/actions/button/inline-icon-button";
 export * from "./components/actions/link/link";
 export * from "./components/actions/text-action/text-action";
 export * from "./components/actions/copy-button/copy-button";
@@ -105,7 +107,9 @@ export * from "./components/overlays/report-dialog/report-dialog";
 // errors offer one, where reports open from, and the crash notice.
 export * from "./components/report/redact";
 export * from "./components/report/error-report";
-export * from "./components/report/seriousness";
+export * from "./components/report/reportable";
+export * from "./components/report/failure";
+export * from "./components/report/failure-text";
 export * from "./components/report/report-store";
 export * from "./components/report/report-host";
 export * from "./components/report/report-action";
@@ -115,6 +119,8 @@ export * from "./components/overlays/paged-dialog/paged-dialog";
 export * from "./components/overlays/drawer/drawer";
 export * from "./components/overlays/drawer/sheet";
 export * from "./components/overlays/lightbox/lightbox";
+// A surface that unfolds in place from its trigger, as a launcher's folder does.
+export * from "./components/overlays/unfold-surface/unfold-surface";
 // The unsaved-changes guard: the registry every dirty form and every save in flight joins, the
 // hooks that join it and guard a dialog's close, and the host that draws the one discard prompt
 // and the unload guard.
@@ -170,12 +176,13 @@ export * from "./components/content/a2ui/chart-block";
 export * from "./components/content/a2ui/resources-block";
 
 // W4-A — navigation, notices and readings: the tab bar, the grouped list's header, folder, more
-// row and pager, the create pair, the notice with its variants and the page to-do built on it,
-// the progress bar, the duration slot and its live clock, the beta tag, the disclosure row, and
-// the stat tile and chip.
+// row and pager (with the page number a reader can type over), the create pair, the notice with
+// its variants and the page to-do built on it, the progress bar, the duration slot and its live
+// clock, the beta tag, the disclosure row, and the stat tile and chip.
 export * from "./components/navigation/tabs/tabs";
 export * from "./components/navigation/group-header/group-header";
 export * from "./components/navigation/group-header/pager";
+export * from "./components/navigation/group-header/page-field";
 export * from "./components/actions/create-buttons/create-buttons";
 export * from "./components/feedback/notice/notice";
 export * from "./components/feedback/todo-notice/todo-notice";
@@ -191,6 +198,7 @@ export * from "./components/feedback/retry-status/retry-status";
 export * from "./components/feedback/transfer-progress/transfer-progress";
 export * from "./components/feedback/beta-badge/beta-badge";
 export * from "./components/layout/disclosure-row/disclosure-row";
+export * from "./components/layout/disclosure-row/disclosure-control";
 export * from "./components/data/stat-tile/stat-tile";
 export * from "./components/data/stat-chip/stat-chip";
 
@@ -266,9 +274,13 @@ export * from "./components/chat/transcript-note/transcript-note";
 export * from "./components/chat/subagent-chip/subagent-chip";
 
 // W6-B — the composer: its card, chip row, toolbar triggers, action button and slash list, the
-// toolbar select, the context ring, the model picker, and the chips with remove buttons.
+// dictation button and its level meter, the toolbar select, the context ring, the model picker,
+// and the chips with remove buttons.
 export * from "./components/chat/composer/composer";
 export * from "./components/chat/composer/toolbar-trigger";
+export * from "./components/chat/composer/record-button";
+export * from "./components/chat/composer/microphone-meter";
+export * from "./components/chat/composer/microphone-levels";
 export * from "./components/chat/menu-select/menu-select";
 export * from "./components/chat/context-ring/context-ring";
 export * from "./components/chat/model-select/model-select";
@@ -359,6 +371,22 @@ export * from "./components/feedback/status-mark/status-mark";
 export * from "./components/actions/glyph-action/glyph-action";
 export * from "./components/data/fact-row/fact-row";
 export * from "./components/navigation/sub-page-bar/sub-page-bar";
+
+// A status page — a plugin's page in Settings: the strip at its head, the version element of a
+// program the subject installs beside itself (with its "Details" fold), and the checklist of its
+// preconditions.
+export * from "./components/layout/status-strip/status-strip";
+export * from "./components/feedback/installed-version/installed-version";
+export * from "./components/data/checklist/checklist";
+
+// The showcase family, shared with the public sites (site.ts): the cover, the cover card and its
+// grid, the selected carousel and its turn-taking, and a product page's parts.
+export * from "./components/showcase/cover";
+export * from "./components/showcase/cover-card";
+export * from "./components/showcase/showcase-layout-toggle";
+export * from "./components/showcase/carousel-rotation";
+export * from "./components/showcase/showcase-carousel";
+export * from "./components/showcase/product-page";
 
 // Dates and times: the date, time, date-and-time and date-range fields, pickers after iOS's that
 // write the native inputs' formats (`YYYY-MM-DD`, `HH:mm`, `YYYY-MM-DDTHH:mm`).

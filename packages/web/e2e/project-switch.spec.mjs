@@ -277,16 +277,21 @@ test("clicking the current Project in the dropdown: Agent and Session lists must
   await expect(generalAgent).toBeVisible();
   await page.getByRole("link", { name: "插件市场" }).click();
   await expect(page).toHaveURL(/\/plugins$/);
-  // The category sections are open on entry. agent-optimization is the Default RSI Toolkit's
-  // only skill.
-  await page.getByRole("button", { name: "管理安装 default-rsi-toolkit" }).click();
+  // agent-optimization is the Default RSI Toolkit's only skill. The market card opens its
+  // detail, whose "Manage installs" lists every Agent; Escape closes the dialog, then the detail.
+  const manageInstalls = async () => {
+    await page.locator('[data-plugin="default-rsi-toolkit"] .showcase-card-open').click();
+    await page.getByRole("button", { name: "管理安装 default-rsi-toolkit" }).click();
+  };
+  await manageInstalls();
   await expect(page.getByRole("button", { name: "卸载 default_agent" })).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
 
   // Staying on the plugin library page while switching to target: the same-named default_agent's state must flip to "Install" (not installed).
   await page.getByRole("button", { name: U }).first().click();
   await byName.first().click();
-  await page.getByRole("button", { name: "管理安装 default-rsi-toolkit" }).click();
+  await manageInstalls();
   await expect(page.getByRole("button", { name: "安装 default_agent" })).toBeVisible();
   await page.keyboard.press("Escape");
 });

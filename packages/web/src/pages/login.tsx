@@ -8,7 +8,7 @@
  * It is also where a rejected sign-in link lands: the server redirects a spent or invalid claim here
  * with `?claimFailed=`, and the page raises a dialog over the form saying how to get a working link.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import {
   Button,
@@ -21,7 +21,6 @@ import {
 } from "@prismshadow/penguin-ui";
 import { PENGUIN_LOGO_URL } from "../lib/brand-logo";
 import { S } from "../lib/strings";
-import { apiErrorText } from "../lib/api-error";
 import { useDocumentTitle } from "../lib/use-document-title";
 import { useAuth } from "../state/auth";
 import { useLocale, type LangPref } from "../state/locale";
@@ -29,6 +28,7 @@ import { useLocale, type LangPref } from "../state/locale";
 import { useTheme, type ThemeMode } from "../state/theme";
 
 import { LoginCircuit } from "./login-circuit";
+import { failureNode } from "../lib/failure";
 
 /** Which advice a failed claim asks for; the server decides it from the deployment, not from the token. */
 type ClaimFailure = "desktop" | "server";
@@ -47,7 +47,9 @@ export function LoginPage() {
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
   // Per-field required errors sit next to their input; `form` holds the auth failure (wrong user/password), which isn't specific to one field.
-  const [errors, setErrors] = useState<{ userId?: string; password?: string; form?: string }>({});
+  const [errors, setErrors] = useState<{ userId?: string; password?: string; form?: ReactNode }>(
+    {},
+  );
   const [busy, setBusy] = useState(false);
   const clearErrors = () => setErrors((p) => (p.userId || p.password || p.form ? {} : p));
 
@@ -77,7 +79,7 @@ export function LoginPage() {
       await login(userId.trim(), password);
       navigate("/chat", { replace: true });
     } catch (e) {
-      setErrors({ form: apiErrorText(e) });
+      setErrors({ form: failureNode(e, { what: "signing in failed" }) });
     } finally {
       setBusy(false);
     }

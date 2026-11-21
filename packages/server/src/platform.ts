@@ -50,6 +50,11 @@ import { PluginConfig, PluginConfigProvider } from "./plugin/config.js";
 import { PluginConfigAdmin, PluginConfigPage } from "./plugin/config-page.js";
 import { IndexSources, PluginIndexSettings, StoredIndexSources } from "./plugin/index-config.js";
 import { PluginCliCommandsProvider } from "./plugin/cli-commands.js";
+import { ToolModelBindings, ToolModelBindingsProvider } from "./services/tool-model-bindings.js";
+import {
+  ProjectModelRequests,
+  ProjectModelRequestsService,
+} from "./services/project-model-requests.js";
 import {
   CoreSessionLoaders,
   DefaultTitleGenerators,
@@ -92,7 +97,7 @@ import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { UsageService } from "./services/usage-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
-import { ModelOAuthService } from "./services/model-oauth-service.js";
+import { ModelOAuthProvider } from "./services/model-oauth-service.js";
 import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
 import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
@@ -147,12 +152,16 @@ import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
 import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
-import { NpmPluginPackages } from "./plugin/install.js";
+import { NpmPluginPackages } from "./plugin/packages.js";
 import { PluginSourceSettings } from "./plugin/source-settings.js";
 import { PluginMirrorSettings } from "./plugin/mirror-settings.js";
 import { PluginLibraryModule } from "./plugin/library-module.js";
-import { PluginUiRoutes } from "./http/routes/plugin-ui.js";
+import { PluginModuleRequestsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-requests";
+import { PluginModules } from "./mechanisms/plugins.js";
+import { PluginModulesService } from "./services/plugin-modules.js";
+import { PluginModuleRoutes } from "./http/routes/plugin-modules.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
+import { PluginMarketRoutes } from "./http/routes/plugin-market.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "./terminal/manager.js";
@@ -177,6 +186,7 @@ import {
 } from "@prismshadow/penguin-library-session";
 import { Workbenches } from "./mechanisms/workbenches.js";
 import { WorkbenchService } from "./workbenches/service.js";
+import { AgentStateHistoryModule } from "./workbenches/engines.js";
 import { WorkbenchRoutes } from "./workbenches/routes.js";
 import { ThemeRoutes } from "./http/routes/themes.js";
 import {
@@ -344,7 +354,7 @@ export class IdentityModule {}
     ShippedBuiltinBenchmarkSeeds,
     ProjectService,
     ProjectConfigService,
-    ModelOAuthService,
+    ModelOAuthProvider,
     PlatformAuthProvider,
     ModelScopeAuthProvider,
     ProjectsRoutes,
@@ -546,7 +556,7 @@ export class CompanyModule {}
     NpmPluginPackages,
     InstalledPluginRoutes,
     PluginCliCommandsProvider,
-    PluginUiRoutes,
+    PluginMarketRoutes,
     SuggestIdRoutes,
     LanguagesModule,
     LanguageRoutes,
@@ -555,11 +565,26 @@ export class CompanyModule {}
 })
 export class ApiModule {}
 
+/**
+ * Workbenches, and the Agent State history behind their versions: `AgentStateHistoryModule`
+ * owns the `engines` slot a plugin contributes a faster engine to (./workbenches/engines.ts).
+ */
 @Module({
-  children: [WorkbenchService, WorkbenchRoutes],
+  children: [AgentStateHistoryModule, WorkbenchService, WorkbenchRoutes],
   exports: [Workbenches],
 })
 export class WorkbenchesModule {}
+
+/**
+ * What a plugin's model tools stand on: the bindings plugins declare, and requests to a Project
+ * model outside a chat turn. A group of its own, above the Projects, Sessions and usage it reads
+ * and the machines its bindings travel to; no operation is named here — those are the plugins'.
+ */
+@Module({
+  children: [ToolModelBindingsProvider, ProjectModelRequestsService],
+  exports: [ToolModelBindings, ProjectModelRequests],
+})
+export class ModelToolsModule {}
 
 /**
  * The server's theme packs: the store under the data root and the routes over it. Its own group:
@@ -570,6 +595,18 @@ export class WorkbenchesModule {}
   exports: [],
 })
 export class ThemesModule {}
+
+/**
+ * A library plugin's server modules, brought along by an install on an Agent (PRFC-0031): the
+ * ledger of requests and decisions, the service that applies the rule, and the member's and the
+ * administrator's routes. Its own group: the Agent service and the installed-plugins routes
+ * reach it as `PluginModules`, and nothing else reads the ledger.
+ */
+@Module({
+  children: [PluginModuleRequestsRepo, PluginModulesService, PluginModuleRoutes],
+  exports: [PluginModules],
+})
+export class PluginModulesModule {}
 
 /** The root: provides nothing and requires nothing; it exists so the groups have a scope to see each other in. */
 @Module({
@@ -591,6 +628,7 @@ export class ThemesModule {}
     CompanyModule,
     ApiModule,
     PluginLibraryModule,
+    PluginModulesModule,
     SandboxModule,
     SandboxSettingsModule,
     TerminalModule,
@@ -600,6 +638,7 @@ export class ThemesModule {}
     HistoryRoutes,
     HistoryLinesRoutes,
     WorkbenchesModule,
+    ModelToolsModule,
     ThemesModule,
     BuiltinBrowserModule,
     AgentApiModule,

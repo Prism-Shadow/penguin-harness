@@ -1,14 +1,15 @@
 /**
  * Workbench tabs beside Chat, and the page a workbench tab shows.
  *
- * The strip lists the Agent's workbenches that ship a UI (lib/workbench-tabs.ts); the frame
+ * The strip lists the Agent's workbenches that ship a UI (lib/workbench-tabs.ts) and are shown in
+ * its sidebar (the sidebar setting, `GET …/workbenches?view=sidebar`); the frame
  * is that UI in an iframe served from the workbench's own `ui/` folder, plus a thin bar
  * with the workbench's version, its load error when the current files do not boot, a
  * reload, and a history fold with one restore button per recorded version. The list
  * refetches when the server announces `workbench_updated` for this Agent, so an Agent
  * editing its own workbench sees the tab update (the iframe keys on `uiRev`).
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
 import { Button, ConfirmModal, NoticeStrip } from "@prismshadow/penguin-ui";
@@ -39,7 +40,9 @@ import {
 import { isSafeMode, useSafeMode } from "../../rescue/safe-mode";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
+import { WorkbenchModelPicker } from "./workbench-model-picker";
 import { localizedText } from "../chat";
+import { failureNode } from "../../lib/failure";
 
 /** The Agent's workbench tabs, kept fresh by the server's `workbench_updated` events. */
 export function useWorkbenchTabs(
@@ -77,13 +80,22 @@ export function useWorkbenchTabs(
       return;
     }
     try {
-      const res = await api.getWorkbenches(projectId, agentId, machineId);
+      const [res, sidebar] = await Promise.all([
+        api.getWorkbenches(projectId, agentId, machineId),
+        api.getSidebarApps(projectId, agentId, machineId),
+      ]);
       if (asked.current !== mine || isSafeMode()) return;
       // A switched-off workbench loads nothing: it offers no tab and has nothing to report.
       const running = runningWorkbenches(res);
+      // Until the sidebar's list replaces this strip, it offers the same apps: none hidden from
+      // the sidebar. A server older than that setting (null) hides none.
+      const shown =
+        sidebar === null
+          ? running
+          : running.filter((w) => sidebar.some((app) => app.workbenchId === w.id));
       setLoaded({
         scope,
-        tabs: workbenchTabsOf(running, machineId),
+        tabs: workbenchTabsOf(shown, machineId),
         notices: workbenchNoticesOf(running),
       });
     } catch {
@@ -229,10 +241,10 @@ export function WorkbenchFrame({
   // Removal is armed by a first click and sent by the second; the arm drops when the tab changes.
   const [removeArmed, setRemoveArmed] = useState(false);
   useEffect(() => setRemoveArmed(false), [tab.workbenchId]);
-  const [failure, setFailure] = useState<string | null>(null);
+  const [failure, setFailure] = useState<ReactNode>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [versions, setVersions] = useState<WorkbenchVersion[] | null>(null);
-  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<ReactNode>(null);
   /** A revision whose restore awaits confirmation: it replaces the workbench's files. */
   const [restoring, setRestoring] = useState<string | null>(null);
 
@@ -244,7 +256,7 @@ export function WorkbenchFrame({
           .versions,
       );
     } catch (err) {
-      setHistoryError(err instanceof Error ? err.message : String(err));
+      setHistoryError(failureNode(err, { what: "a workbench's history could not be read" }));
     }
   }, [projectId, agentId, tab.workbenchId, tab.machineId]);
 
@@ -260,7 +272,7 @@ export function WorkbenchFrame({
         (await api.reloadWorkbench(projectId, agentId, tab.workbenchId, tab.machineId)).workbench,
       );
     } catch (err) {
-      setFailure(err instanceof Error ? err.message : String(err));
+      setFailure(failureNode(err));
     } finally {
       setBusy(null);
     }
@@ -275,7 +287,7 @@ export function WorkbenchFrame({
           .workbench,
       );
     } catch (err) {
-      setFailure(err instanceof Error ? err.message : String(err));
+      setFailure(failureNode(err));
     } finally {
       setBusy(null);
     }
@@ -322,7 +334,7 @@ export function WorkbenchFrame({
       await api.removeWorkbench(projectId, agentId, tab.workbenchId, tab.machineId);
       onRemoved();
     } catch (err) {
-      setFailure(err instanceof Error ? err.message : String(err));
+      setFailure(failureNode(err));
       setBusy(null);
       setRemoveArmed(false);
     }
@@ -497,6 +509,12 @@ export function WorkbenchFrame({
         sandbox={
           tab.pointerLock === true ? PAGE_FRAME_SANDBOX + " allow-pointer-lock" : PAGE_FRAME_SANDBOX
         }
+      />
+      <WorkbenchModelPicker
+        key={`model-picker/${frameKey}`}
+        frame={frameRef}
+        projectId={projectId}
+        machineId={tab.machineId}
       />
       <ConfirmModal
         open={restoring !== null}

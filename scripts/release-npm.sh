@@ -54,14 +54,27 @@ case "$cmd" in
     for p in amsp a2ui chat-markdown core ui server cli; do
       (cd "packages/$p" && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null)
     done
-    # The server embeds an index of the sandbox backends it ships, each at the version its
-    # package.json carries; those packages were just stamped, so the index follows. Left behind,
-    # the server would advertise a version that was never published.
+    # The server embeds an index of the workspace's server-module plugins (the sandbox backends,
+    # and the market-only ones such as computer-use), each at the version its package.json
+    # carries; those packages were just stamped, so the index follows. Left behind, the server
+    # would advertise a version that was never published. An entry for a package of another
+    # repository (an external built-in plugin, scripts/lib/external-plugins.mjs) keeps the version
+    # that repository released: only the plugins/* packages were stamped.
     INDEX=packages/server/src/plugin/builtin-index.json
-    sed -i -E "s/(\"version\": \")[^\"]*\"/\1$V\"/" "$INDEX"
     node -e '
+      const fs = require("fs");
       const [v, file] = process.argv.slice(1);
-      const off = require("./" + file).filter((e) => e.version !== v).map((e) => e.name);
+      const own = new Set();
+      for (const dir of fs.readdirSync("plugins")) {
+        try { own.add(JSON.parse(fs.readFileSync(`plugins/${dir}/package.json`, "utf8")).name); } catch {}
+      }
+      // Rewritten in place, so the file keeps its formatting: an entry names itself before its version.
+      const text = fs.readFileSync(file, "utf8").replace(
+        /("name": "([^"]+)"[^{}]*?"version": ")[^"]*"/g,
+        (whole, head, name) => (own.has(name) ? `${head}${v}"` : whole),
+      );
+      fs.writeFileSync(file, text);
+      const off = JSON.parse(text).filter((e) => own.has(e.name) && e.version !== v).map((e) => e.name);
       if (off.length) { console.error("builtin index not stamped: " + off.join(", ")); process.exit(1); }
     ' "$V" "$INDEX"
     echo "stamped $V"
