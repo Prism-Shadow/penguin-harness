@@ -26,6 +26,7 @@ export interface WorkbenchTab {
   titleZh?: string;
   /** Where the page is served from — through the machine's connection when the workbench lives on one. */
   src: string;
+  pointerLock?: true;
   /** The machine whose server holds the workbench (the Agent's Session runs there); null = this server. */
   machineId: string | null;
   /** The workbench's package name, for the frame's bar. */
@@ -122,6 +123,7 @@ export function workbenchTabsOf(
               title: tab.title,
               ...(tab.titleZh === undefined ? {} : { titleZh: tab.titleZh }),
               src: apiUrl(tab.renderer.iframe.src, machineId),
+              ...(tab.renderer.iframe.pointerLock === true ? { pointerLock: true as const } : {}),
               machineId,
               name: w.name,
               version: w.version,
