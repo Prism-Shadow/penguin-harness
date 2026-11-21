@@ -6,6 +6,7 @@ export default defineConfig({
     "src/builtin-browser-vocab.ts",
     "src/index.ts",
     "src/machine.ts",
+    "src/repos/port-forwards.ts",
   ],
   format: ["esm"],
   target: "node24",

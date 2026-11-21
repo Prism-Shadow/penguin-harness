@@ -35,8 +35,10 @@ import {
   closeConnectionTo,
   connectionTo,
   forgetRefusal,
+  forwardKey,
   heldSessionOf,
   sessionOf,
+  useControlSockets,
 } from "../src/machines/transport/index.js";
 import { SshPasswords } from "../src/machines/ssh-passwords.js";
 
@@ -94,6 +96,10 @@ posixOnly("the session", () => {
       `#!/bin/sh
 echo "$*" >> ${JSON.stringify(logFile)}
 case "$*" in *refused*) echo "deploy@refused: Permission denied (publickey)." >&2; exit 255 ;; esac
+# The master answering a control request: port 65001 will not bind, every other one does.
+case "$*" in *" -O "*:65001:*) echo "Port forwarding failed: bind: Address already in use" >&2; exit 255 ;; *" -O "*) exit 0 ;; esac
+# A session started WITH forwards (the Windows path): ssh warns about the one it could not bind and goes on.
+case "$*" in *" -R 127.0.0.1:65001:"*) echo "Warning: remote port forwarding failed for listen port 65001" >&2 ;; esac
 for a in "$@"; do last=$a; done
 [ "$last" = sh ] && exec /bin/sh
 exit 1
@@ -108,7 +114,8 @@ exit 1
     process.env.PATH = originalPath;
     fs.rmSync(stubBin, { recursive: true, force: true });
   });
-  const spawns = () => fs.readFileSync(logFile, "utf8").trim().split("\n");
+  const spawns = () =>
+    fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n") : [];
 
   it("counts a session a command opened as up, and as a connection only once it is held", async () => {
     const conn = connectionTo({ alias: "nas", user: "deploy" });
@@ -346,6 +353,72 @@ exit 1
       older.closeShell("ssh:nas");
       older.attachSessionRegistry(null);
       newer.attachSessionRegistry(null);
+    }
+  });
+  it("masters a control socket, and asks it for each wanted forward once the session is up", async () => {
+    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    const good = { direction: "in" as const, localPort: 3000, remotePort: 3001 };
+    const bad = { direction: "out" as const, localPort: 5432, remotePort: 65001 };
+    // Wanted before the session exists: recorded, nothing asked yet.
+    await conn.setForwards([good]);
+    expect(spawns()).toHaveLength(0);
+    await conn.hold();
+    expect(spawns()[0]).toMatch(/ -M -S \S+penguin-ssh-\S+\.sock /);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(spawns().filter((line) => line.includes("-O forward"))).toEqual([
+      expect.stringContaining("-O forward -L 127.0.0.1:3000:127.0.0.1:3001 nas"),
+    ]);
+    expect(conn.forwardFacts().get(forwardKey(good))).toEqual({ ok: true });
+
+    // Added live: asked at once; ssh's refusal is the fact, in its words.
+    await conn.setForwards([good, bad]);
+    expect(spawns().filter((line) => line.includes("-O forward"))).toHaveLength(2);
+    expect(conn.forwardFacts().get(forwardKey(bad))).toEqual({
+      ok: false,
+      detail: "Port forwarding failed: bind: Address already in use",
+    });
+    // Dropped live: cancelled, and its fact goes with it.
+    await conn.setForwards([bad]);
+    expect(spawns().filter((line) => line.includes("-O cancel"))).toEqual([
+      expect.stringContaining("-O cancel -L 127.0.0.1:3000:127.0.0.1:3001 nas"),
+    ]);
+    expect(conn.forwardFacts().has(forwardKey(good))).toBe(false);
+  });
+
+  it("without a control socket carries the forwards in its arguments, reopening on a change, and reads ssh's warnings", async () => {
+    useControlSockets(false);
+    try {
+      const conn = connectionTo({ alias: "nas", user: "deploy" });
+      const good = { direction: "in" as const, localPort: 3000, remotePort: 3001 };
+      const bad = { direction: "out" as const, localPort: 5432, remotePort: 65001 };
+      await conn.setForwards([good]);
+      const held = await conn.hold();
+      expect(held.ok).toBe(true);
+      const first = spawns();
+      expect(first).toHaveLength(1);
+      expect(first[0]).toContain("-o ExitOnForwardFailure=no");
+      expect(first[0]).toContain("-L 127.0.0.1:3000:127.0.0.1:3001 -D");
+      expect(first[0]).not.toContain(" -M ");
+      expect(conn.forwardFacts().get(forwardKey(good))).toEqual({ ok: true });
+
+      // A changed set: the live session is reopened with the new arguments, at once.
+      await conn.setForwards([good, bad]);
+      const second = spawns();
+      expect(second).toHaveLength(2);
+      expect(second[1]).toContain("-R 127.0.0.1:65001:127.0.0.1:5432");
+      const again = conn.session();
+      expect(again !== null && held.ok && again.pid !== held.session.pid).toBe(true);
+      await new Promise((r) => setTimeout(r, 200));
+      expect(conn.forwardFacts().get(forwardKey(good))).toEqual({ ok: true });
+      expect(conn.forwardFacts().get(forwardKey(bad))).toEqual({
+        ok: false,
+        detail: "Warning: remote port forwarding failed for listen port 65001",
+      });
+      // The same set again is no reopen.
+      await conn.setForwards([bad, good]);
+      expect(spawns()).toHaveLength(2);
+    } finally {
+      useControlSockets(true);
     }
   });
 });

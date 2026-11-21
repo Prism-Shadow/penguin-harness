@@ -245,6 +245,8 @@ export interface MachineCardProps {
   onRetry: () => Promise<void>;
   /** Stops the server bringing the machine back. Rejects when the request did not go through. */
   onStopRetry: () => Promise<void>;
+  /** Opens this machine's Ports page when it has an addressable id. */
+  onPorts?: (() => void) | null;
 }
 
 /** The card's stats: how the machine is reached, its build, its server's port, the last check. */
@@ -279,6 +281,7 @@ export function MachineCard({
   onDelete,
   onRetry,
   onStopRetry,
+  onPorts = null,
 }: MachineCardProps) {
   const reading = machine.local ? null : readMachine(machine, job, imageVersion);
   const moving = !machine.local && jobMoving(job);
@@ -315,6 +318,11 @@ export function MachineCard({
         canSyncConfig(machine, imageVersion)
           ? { label: card.syncConfig, disabled: busy || moving, onClick: onSyncConfig }
           : null
+      }
+      ports={
+        machine.local || machine.machineId === null || onPorts === null
+          ? null
+          : { label: S.ports.verbTitle, disabled: busy, onClick: onPorts }
       }
     />
   );

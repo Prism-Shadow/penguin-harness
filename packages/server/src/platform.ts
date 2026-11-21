@@ -121,6 +121,7 @@ import { SandboxSettings } from "./sandbox/settings-store.js";
 import { SandboxSettingsStatus } from "./sandbox/settings-status.js";
 import { SchedulerRoutes } from "./http/routes/schedules.js";
 import { Machines, MachinesModule } from "./machines/service.js";
+import { PortForwardsModule } from "./port-forwards/module.js";
 import { OrganizationModule, OrgScheduler, OrgService } from "./runtime/organization/service.js";
 import { OrgRoutes } from "./http/routes/organizations.js";
 import { OrgRuns, OrgSessions } from "./runtime/organization/deps.js";
@@ -593,6 +594,7 @@ export class ThemesModule {}
     SandboxSettingsModule,
     TerminalModule,
     MachinesModule,
+    PortForwardsModule,
     TerminalRelay,
     SessionForwardRoutes,
     HistoryRoutes,
