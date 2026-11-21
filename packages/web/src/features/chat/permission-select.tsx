@@ -4,7 +4,7 @@
  * by it, so the level never depends on colour alone. The menu lists the server's sandbox presets
  * that are in the menu — each a named mode, network level and approval mode, its name led by the
  * shield of the level it sets, so a row shows beforehand the mark the button takes once it is
- * picked — and, for an administrator, More…, which opens the Settings page's Sandbox card, where
+ * picked — and, for an administrator, More…, which opens Settings on the Agent sandbox page, where
  * the presets are renamed, remapped and put in or out of the menu, and where the full settings
  * stay.
  *
@@ -148,7 +148,7 @@ export function PermissionSelect({
   const approvalMode = pending?.approvalMode ?? savedApprovalMode;
   const sandbox: SessionSandbox = { ...savedSandbox, ...pending?.sandbox };
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // The Sandbox card lives on the Plugins page, which only an administrator can open.
+  // The Agent sandbox page is an administrator's alone.
   const isAdmin = useAuth().user?.isAdmin === true;
   const { locale } = useLocale();
   const P = S.chat.permission;
@@ -306,7 +306,7 @@ export function PermissionSelect({
             <>
               <MenuSeparator />
               {/* More…: the presets table and the full settings (masked paths, the temp
-                directory, the backends) are on the Settings page's Sandbox card. Its gear keeps
+                directory, the backends) are on Settings' Agent sandbox page. Its gear keeps
                 its name in the column the level rows' names start in — so it is a node, not a
                 registry path: a path is drawn as a decorative mark, which a theme may drop
                 (Console does), and the name would then step out of line. */}
@@ -332,8 +332,7 @@ export function PermissionSelect({
         <SettingsDialog
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
-          section="plugins"
-          pluginFocus="sandbox"
+          section="sandbox"
         />
       )}
     </>

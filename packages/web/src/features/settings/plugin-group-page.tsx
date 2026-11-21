@@ -6,7 +6,8 @@
  *    summary pill, and the plugin's primary actions (every action the report does not place);
  * 2. the checks — every precondition in one ruled list, the one "check again" at its heading's
  *    other end (when the report has checks; otherwise it is one of the primary actions), a row's
- *    own action on its row, details folded under it;
+ *    own action on its row and, where it names another page of the dialog (a sandbox backend's
+ *    plugin page), a link to it, details folded under it;
  * 3. the group's notices, as the card draws them, for a plugin that has not moved to the report;
  * 4. the options: the switches and fields, those the group marks `security` under their own
  *    heading with a shield, the `advanced` ones in their fold; then what the card puts last
@@ -45,6 +46,7 @@ import { localizedText } from "../../lib/skill-use";
 import type { Locale } from "../../state/locale";
 import { AdvancedFold } from "./advanced-fold";
 import { ConfigNotices } from "./plugin-config-heading";
+import { useSettingsNavigation } from "./settings-navigation";
 
 /**
  * The summary pill's tone: what the state means. Work under way is the app's busy tone (the
@@ -112,6 +114,7 @@ export function PluginGroupPage({
   const actions = live ? (entry.actions ?? []) : [];
   const placed = placedActions(report);
   const words = S.settings.pluginPage;
+  const navigation = useSettingsNavigation();
 
   const button = (id: string | undefined): ReactNode => {
     const action = actions.find((a) => a.id === id);
@@ -128,6 +131,25 @@ export function PluginGroupPage({
       >
         {say(action.title, action.titleZh)}
       </Button>
+    );
+  };
+
+  /** A check row's end: its action, then a link to the page it names when this viewer has it. */
+  const rowEnd = (action: string | undefined, page: string | undefined): ReactNode => {
+    const run = button(action);
+    const link =
+      page !== undefined && navigation?.has(page) === true ? (
+        <Button key="page" size="sm" variant="link" onClick={() => navigation.open(page)}>
+          {words.openPage}
+        </Button>
+      ) : undefined;
+    if (run === undefined) return link;
+    if (link === undefined) return run;
+    return (
+      <>
+        {run}
+        {link}
+      </>
     );
   };
 
@@ -197,7 +219,7 @@ export function PluginGroupPage({
                       detailsName: words.detailsAbout(say(check.label, check.labelZh)),
                     }
                   : {})}
-                action={button(check.action)}
+                action={rowEnd(check.action, check.page)}
               />
             ))}
           </Checklist>

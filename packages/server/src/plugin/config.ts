@@ -45,7 +45,7 @@ import type {
 } from "../api/types.js";
 import { Settings } from "@prismshadow/penguin-library-setting";
 import { maskApiKey } from "../services/project-config-service.js";
-import { pluginHostFrom, pluginPackageOf } from "./host.js";
+import { pluginHostFrom, pluginPackageOf, pluginTitleOf } from "./host.js";
 
 export type { PluginConfigField, PluginConfigNotice, PluginConfiguration } from "../api/types.js";
 
@@ -858,6 +858,8 @@ export interface PluginConfigStoreDeps {
   groups: () => readonly SettingsGroup[];
   /** The npm package of the plugin a module belongs to; undefined for the host's own modules. */
   packageOf?: (module: string) => string | undefined;
+  /** A loaded plugin's display name, from its card; undefined when it carries none. */
+  titleOf?: (pkg: string) => { title: string; titleZh?: string } | undefined;
 }
 
 export class PluginConfigStore {
@@ -928,12 +930,15 @@ export class PluginConfigStore {
   private entry(group: SettingsGroup): PluginConfigEntry {
     const { name, configuration } = group;
     const plugin = group.from === undefined ? undefined : this.deps.packageOf?.(group.from);
+    const title = plugin === undefined ? undefined : this.deps.titleOf?.(plugin);
     return {
       name,
       configuration,
       values: maskValues(configuration, { ...defaultsOf(configuration), ...this.stored(name) }),
       ...(group.parent !== undefined ? { parent: group.parent } : {}),
       ...(plugin !== undefined ? { plugin } : {}),
+      ...(title !== undefined ? { pluginTitle: title.title } : {}),
+      ...(title?.titleZh !== undefined ? { pluginTitleZh: title.titleZh } : {}),
     };
   }
 }
@@ -975,6 +980,7 @@ export class PluginConfigProvider {
       groups: () => groups,
       // The host is claimed per read: the plugins of this generation are recorded after this setup.
       packageOf: (module) => pluginPackageOf(pluginHostFrom(resources), module),
+      titleOf: (pkg) => pluginTitleOf(pluginHostFrom(resources), pkg),
     });
     this.pluginConfig = store;
     this.pluginConfigEntries = store;

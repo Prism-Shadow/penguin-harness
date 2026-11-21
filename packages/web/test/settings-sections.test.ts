@@ -44,6 +44,7 @@ const APP_PAGES: Record<HostSettingsSectionKey, true> = {
   company: true,
   agentApi: true,
   plugins: true,
+  sandbox: true,
   users: true,
 };
 
@@ -114,8 +115,10 @@ describe("contributed pages", () => {
       "company",
       "chromeExtension",
       "agentApi",
-      "plugins",
       "users",
+      // The Plugins group, last: the host's own plugin pages.
+      "plugins",
+      "sandbox",
     ]);
   });
 
@@ -163,7 +166,7 @@ describe("plugin pages on the rail", () => {
 
 describe("settingsGroups", () => {
   it("lists an admin's groups once each, in page order", () => {
-    expect(settingsGroups(admin)).toEqual(["personal", "server"]);
+    expect(settingsGroups(admin)).toEqual(["personal", "server", "plugin"]);
   });
 
   it("collapses to a single group when only one remains, the rail's cue to draw no heading", () => {

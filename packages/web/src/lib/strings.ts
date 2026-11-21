@@ -717,8 +717,12 @@ export const zh = {
       tls: "TLS 握手失败",
       network: "无法连接",
     },
-    /** Admin-only sub-page (server-global): plugin management; each plugin's own options have a page in the Plugins group. */
-    pluginsTitle: "插件管理",
+    /** The Plugins group's first page (admin, server-global): where plugins install from. */
+    pluginsTitle: "插件源",
+    /** The Plugins group's second page (admin, server-global): the sandbox Agents run in. */
+    sandboxTitle: "Agent 运行沙箱",
+    sandboxInfo:
+      "新建的 Session 进入哪种沙箱：开关与预设对之后新建的 Session 生效，已有 Session 保留创建时的策略。检查里每个沙箱后端插件各占一行，它自己的选项与检查在它的插件页。",
     /** An enum option this machine cannot honour, listed greyed out. */
     pluginOptionUnavailable: (title: string, reason: string) => `${title}（不支持：${reason}）`,
     /** A switch one of whose positions this machine cannot honour, under the switch. */
@@ -727,7 +731,7 @@ export const zh = {
     pluginPositionOn: "开启",
     pluginPositionOff: "关闭",
     pluginsInfo:
-      "开关下方是服务端全局的插件管理：插件从哪里安装、沙盒，以及本服务端没有单独页面的插件的选项，表单按其 schema 生成。与插件本身一样是服务器全局的；保存后立即送达，无需重启。各插件自己的选项在左侧「插件」组里各有一页。顶部的开关只影响本浏览器在插件页列出哪些插件。",
+      "插件从哪里安装：npm registry、插件索引与镜像，以及所选机器上在这里没有插件页的插件的选项。与插件本身一样是服务器全局的；保存后立即送达，无需重启。顶部的开关只影响本浏览器在插件市场列出哪些插件。",
     /** A plugin's page in the Plugins group: its parts, the status page's blocks and words. */
     pluginPage: {
       /** The heading over the preconditions; its other end holds the one "check again". */
@@ -754,6 +758,8 @@ export const zh = {
       },
       /** The fold under a check or the version element. */
       details: "详情",
+      /** A check's link to the page it names (a sandbox backend's plugin page). */
+      openPage: "查看",
       /** That fold's accessible name on a check's row: the row it belongs to. */
       detailsAbout: (subject: string) => `详情：${subject}`,
       /** The picked machine holds none of this plugin's settings. */

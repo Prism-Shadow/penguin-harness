@@ -11,7 +11,7 @@
  * collapsed by default (advanced-fold.tsx). A group with a `switch` draws that field alone while
  * it is off, and one that reports a `backend` it lacks offers to install it when the switch is
  * turned on (sandbox-backend-prompt.tsx). An entry naming a
- * `parent` is drawn inside that card (a sandbox backend's own options inside the sandbox's) and
+ * `parent` is drawn inside that card (the plugin index's sources inside plugin sources) and
  * saved with it; notices the entry reports sit under its title. How a card commits — switches
  * when flipped, everything typed on the card's own Save — is plugin-config-card.tsx. A secret
  * field always starts empty and shows the stored value's mask under it: blank keeps what is
@@ -28,11 +28,11 @@
  * truth; a card with unsaved edits keeps them against it. The plugin picks a change up through
  * its watch, so nothing here says "restart".
  *
- * The same page serves a plugin's own page in the Plugins group (`plugin`, plugin-page.tsx): there
- * it draws only that plugin's settings groups, each as a status page (plugin-group-page.tsx), with
- * no browser switch above them. Here, on plugin management, a group a plugin page draws is left
- * out — every group of this server that names its plugin, and on another machine those whose
- * plugin has a page here (`claimed`) — so each group is drawn in exactly one place.
+ * The same page serves every page of the Settings dialog's Plugins group, each settings group as
+ * a status page (plugin-group-page.tsx): the plugin sources page (`host: "sources"`, with the
+ * browser switch above), the Agent sandbox page (`host: "sandbox"`) and a plugin's own page
+ * (`plugin`, plugin-page.tsx). Which page draws which group is plugin-config-groups.ts, so each
+ * group is drawn in exactly one place.
  */
 import { useEffect, useRef, useState } from "react";
 import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
@@ -56,7 +56,7 @@ import {
   writePluginsIncompatibleOnly,
 } from "../../lib/plugins-incompatible-only";
 import { PluginCard } from "./plugin-config-card";
-import { entryPlugin } from "../../lib/plugin-pages";
+import { cardsOn, type GroupPage } from "./plugin-config-groups";
 import { withLiveParts } from "./plugin-config-live";
 import { SandboxBackendPrompt } from "./sandbox-backend-prompt";
 import {
@@ -138,13 +138,22 @@ export function PluginsSection({
   focus,
   claimed,
   plugin,
+  host = "sources",
 }: {
   focus?: string;
-  /** On plugin management: the packages with a page of their own in the Plugins group. */
+  /** On plugin sources: the packages with a page of their own in the Plugins group. */
   claimed?: ReadonlySet<string>;
-  /** On a plugin's page: its package — only its settings groups, as status pages. */
+  /** On a plugin's page: its package — only its settings groups. */
   plugin?: string;
+  /** Without `plugin`: which of the host's own pages this is. */
+  host?: "sources" | "sandbox";
 } = {}) {
+  const page: GroupPage =
+    plugin !== undefined
+      ? { kind: "plugin", plugin }
+      : host === "sandbox"
+        ? { kind: "sandbox" }
+        : { kind: "sources", claimed: claimed ?? new Set() };
   // The language on screen, as the dictionary switch tells it (a remount follows every switch).
   const locale = webLocale();
   const localized = (en: string | undefined, zhText: string | undefined) =>
@@ -375,12 +384,12 @@ export function PluginsSection({
     ) : null;
 
   // A plugin's page has no switch above its groups to rule them off from.
-  const partClass = plugin !== undefined ? "space-y-6" : SERVER_PART;
+  const partClass = page.kind === "sources" ? SERVER_PART : "space-y-6";
 
   // This browser's view of the Plugins page, ruled off from the server's settings below it; a
   // plugin's own page has none.
   const viewRow =
-    plugin !== undefined ? null : (
+    page.kind !== "sources" ? null : (
       <SettingsGroup>
         <ToggleRow
           label={S.settings.pluginsIncompatibleOnly}
@@ -399,16 +408,8 @@ export function PluginsSection({
     );
   }
 
-  // A card per entry with no parent on the page; an entry whose parent is not listed stands
-  // on its own rather than disappearing. Each lands on one page: its plugin's, or this one.
-  const names = new Set(entries.map((e) => e.name));
-  const cards = entries
-    .filter((e) => e.parent === undefined || !names.has(e.parent))
-    .filter((e) => {
-      const own = entryPlugin(e, entries);
-      if (plugin !== undefined) return own === plugin;
-      return own === undefined || (machine !== null && !(claimed?.has(own) ?? false));
-    });
+  // The cards this page draws; each group lands on exactly one page.
+  const cards = cardsOn(page, entries, machine !== null);
   return (
     <SettingsSection>
       {viewRow}
@@ -432,9 +433,8 @@ export function PluginsSection({
           {cards.map((card) => (
             <PluginCard
               key={card.name}
-              {...(plugin !== undefined
-                ? { layout: "page" as const, titled: cards.length > 1 }
-                : {})}
+              layout="page"
+              titled={cards.length > 1}
               members={[card, ...entries.filter((e) => e.parent === card.name)]}
               machine={machine}
               busy={busy}

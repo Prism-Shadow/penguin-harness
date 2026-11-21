@@ -96,7 +96,15 @@ function checkOf(raw: unknown): PluginStatusCheck | undefined {
     id: raw.id,
     label: raw.label,
     state: stateOf(raw.state, CHECK_STATES),
-    ...strings(raw, ["labelZh", "text", "textZh", "details", "detailsZh", "action"] as const),
+    ...strings(raw, [
+      "labelZh",
+      "text",
+      "textZh",
+      "details",
+      "detailsZh",
+      "action",
+      "page",
+    ] as const),
   };
 }
 

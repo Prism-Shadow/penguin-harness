@@ -12,7 +12,7 @@
  * - With a connected machine, the page offers the machine picker, and picking the machine shows
  *   that machine's groups for this plugin.
  * - A picked machine that marks no group with its plugin is not said to have no options: the page
- *   points to plugin management, where a machine on an older build lists them.
+ *   points to the plugin sources page, where a machine on an older build lists them.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act, createElement as h, type ComponentType } from "react";
@@ -150,14 +150,14 @@ describe("a plugin's page with a connected machine", () => {
     expect(fetch.requests.filter(isConfig).map((r) => r.machine)).toEqual([null, MACHINE]);
   });
 
-  it("points to plugin management for a machine that marks no group with its plugin", async () => {
+  it("points to plugin sources for a machine that marks no group with its plugin", async () => {
     world([{ name: "acme-old", configuration: { properties: {} }, values: {} }]);
     await mountInWorld(pluginPage());
     await waitFor(() => hasButton("Machine"), 40);
     await click(button("Machine"));
     await click(button("lab"));
     await waitFor(() => document.body.textContent?.includes("older build") === true, 40);
-    expect(document.body.textContent).toContain("Plugin admin");
+    expect(document.body.textContent).toContain("Plugin sources");
     expect(document.body.textContent).not.toContain("has no options for this plugin");
   });
 });

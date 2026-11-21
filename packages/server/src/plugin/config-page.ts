@@ -64,7 +64,7 @@ export interface SettingsGroupStatus {
    * installs beside itself, the preconditions it checks — asked per read, like the notices. Its
    * `action`s and `recheck` name actions of `actions()`.
    */
-  report?(): PluginStatusReport;
+  report?(): PluginStatusReport | undefined;
   /**
    * Enum options this machine cannot honour right now: drawn greyed out with the reason, and a
    * save choosing one is refused. Asked per read, like the notices.

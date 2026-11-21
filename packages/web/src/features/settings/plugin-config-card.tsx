@@ -391,6 +391,8 @@ export function PluginCard({
   );
 
   if (layout === "page") {
+    // A group with nothing to type (switches only, or a status alone) has nothing to save.
+    const typed = members.some((m) => typedFields(m).length > 0);
     return (
       <PluginGroupPage
         entry={card}
@@ -404,7 +406,7 @@ export function PluginCard({
         after={
           <>
             {nested}
-            {footer}
+            {typed && footer}
           </>
         }
       />

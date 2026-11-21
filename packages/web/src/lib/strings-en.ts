@@ -616,8 +616,12 @@ export const en: Strings = {
       tls: "TLS handshake failed",
       network: "Unreachable",
     },
-    /** Admin-only sub-page (server-global): plugin management; each plugin's own options have a page in the Plugins group. */
-    pluginsTitle: "Plugin admin",
+    /** The Plugins group's first page (admin, server-global): where plugins install from. */
+    pluginsTitle: "Plugin sources",
+    /** The Plugins group's second page (admin, server-global): the sandbox Agents run in. */
+    sandboxTitle: "Agent Sandbox",
+    sandboxInfo:
+      "Which sandbox new Sessions start in: the switch and the presets apply to Sessions created afterwards; existing Sessions keep the policy they were created with. Each sandbox backend plugin has a line in the checks; its own options and checks are on its plugin page.",
     /** An enum option this machine cannot honour, listed greyed out. */
     pluginOptionUnavailable: (title: string, reason: string) =>
       `${title} (not supported: ${reason})`,
@@ -632,7 +636,7 @@ export const en: Strings = {
     pluginPositionOn: "On",
     pluginPositionOff: "Off",
     pluginsInfo:
-      "Below the switch: server-wide plugin management — where plugins install from, the sandbox, and the options of plugins this server has no page for, each drawn from its schema. Server-global, like the plugins themselves; a save applies at once, nothing to restart. Each plugin's own options have a page in the Plugins group on the left. The switch only changes what this browser lists on the Plugins page.",
+      "Where plugins install from: the npm registry, the plugin index and the mirrors, plus the options of a plugin on the picked machine that has no page here. Server-global, like the plugins themselves; a save applies at once, nothing to restart. The switch at the top only changes what this browser lists in the plugin market.",
     /** A plugin's page in the Plugins group: its parts, the status page's blocks and words. */
     pluginPage: {
       /** The heading over the preconditions; its other end holds the one "check again". */
@@ -659,6 +663,8 @@ export const en: Strings = {
       },
       /** The fold under a check or the version element. */
       details: "Details",
+      /** A check's link to the page it names (a sandbox backend's plugin page). */
+      openPage: "Open",
       /** That fold's accessible name on a check's row: the row it belongs to. */
       detailsAbout: (subject: string) => `Details: ${subject}`,
       /** The picked machine holds none of this plugin's settings. */

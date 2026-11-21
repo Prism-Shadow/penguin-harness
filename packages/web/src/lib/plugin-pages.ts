@@ -9,11 +9,13 @@
  *   plugin-config entry names its package in `plugin`; one drawn inside another group's card
  *   stays with that card) and its contributed pages with `visibility: "admin"`.
  *
+ * A page exists only because the plugin contributes something to it — the host names no plugin.
  * A plugin with nothing this viewer may see has no page. The page's name, icon, version and
  * explanation are the plugin library's (`GET /api/plugins`), by package; a plugin the library
- * does not list is named by its first settings group's title, else its first contributed page's
- * name, else its package, and drawn with that page's glyph or the puzzle piece. Pages sort by
- * name in the interface's language.
+ * does not list (a server module with no Skill: a sandbox backend) is named by its own card's
+ * title as the server sends it with its settings group, else that group's title, else its first
+ * contributed page's name, else its package, and drawn with that page's glyph or the puzzle
+ * piece. Pages sort by name in the interface's language, after the host's own pages.
  *
  * Pure, so the rail and its tests read the same rule: the dialog hands in what it has read and
  * the contributions it was booted with.
@@ -55,7 +57,7 @@ export const pluginPageKey = (pkg: string): ContributedSettingsKey =>
 
 /**
  * The plugin page an entry is drawn on: its package, unless it is drawn inside another listed
- * entry's card (a sandbox backend's group inside the sandbox's), which keeps it there.
+ * entry's card (a group a plugin declares with `parent`), which keeps it there.
  */
 export function entryPlugin(
   entry: PluginConfigEntry,
@@ -124,9 +126,13 @@ export function pluginPages<C extends { label: () => string }>(
     page.server.sort(byOrder);
     const item = library.get(page.package);
     if (item !== undefined) page.library = item;
-    const group = input.entries.find((e) => e.name === page.groups[0])?.configuration;
+    const first = input.entries.find((e) => e.name === page.groups[0]);
+    const group = first?.configuration;
     page.title =
       (item?.title !== undefined ? localizedText(locale, item.title, item.titleZh) : undefined) ??
+      (first?.pluginTitle !== undefined
+        ? localizedText(locale, first.pluginTitle, first.pluginTitleZh)
+        : undefined) ??
       (group?.title !== undefined
         ? localizedText(locale, group.title, group.titleZh)
         : undefined) ??

@@ -7,8 +7,11 @@
  *   nothing of the server's.
  * - A group drawn inside another listed group's card (a sandbox backend's) stays with that card,
  *   one whose parent is not listed gets its plugin's page, and the host's own groups get none.
- * - A page is named by the plugin library in the interface's language, else by its first group's
- *   title, else by its first contributed page's name, else by its package; pages sort by name.
+ * - A page is named by the plugin library in the interface's language, else by the plugin's own
+ *   card title the server sends with its group, else by its first group's title, else by its
+ *   first contributed page's name, else by its package; pages sort by name.
+ * - Nothing about a plugin is known in advance: a sandbox backend's group, standing on its own,
+ *   gives that backend a page like any plugin's.
  * - A contributed page in the plugin group that names no plugin is dropped.
  * - A request for a page's key lands on it; the key a contributed page had of its own lands on its
  *   plugin's page at that part; plugin management focused on a group a plugin page draws lands
@@ -131,6 +134,19 @@ describe("plugin pages", () => {
       [BROWSER, "Browser"],
       [COMPUTER, "Computer Use"],
     ]);
+  });
+
+  it("gives a sandbox backend's own group a page, named by its card when the library lacks it", () => {
+    const backend = entry("sandbox-wsl", {
+      plugin: "@penguinharness/sandbox-wsl",
+      pluginTitle: "Windows Sandbox",
+      pluginTitleZh: "Windows 沙箱",
+      configuration: { title: "WSL", properties: {} },
+    });
+    const zhPages = pages(true, { locale: "zh", entries: [...ENTRIES, backend] });
+    const wsl = zhPages.find((p) => p.package === "@penguinharness/sandbox-wsl")!;
+    expect(wsl.groups).toEqual(["sandbox-wsl"]);
+    expect(wsl.title).toBe("Windows 沙箱");
   });
 
   it("drops a plugin-group page that names no plugin", () => {

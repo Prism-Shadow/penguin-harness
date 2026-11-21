@@ -65,6 +65,8 @@ import { AdminUsersSection } from "../admin";
 import { shownSections } from "./contributed-sections";
 import { usePluginPagesIndex } from "./plugin-pages-index";
 import { PluginPageBody, PluginPageHeading, PluginPageIcon } from "./plugin-page";
+import { SettingsNavigationProvider } from "./settings-navigation";
+import { SANDBOX_GROUP } from "./plugin-config-groups";
 
 /** Rail glyphs of the app's own pages (see NAV_ICONS' conventions); a contributed page names its own. */
 const SECTION_ICONS: Record<HostSettingsSectionKey, string> = {
@@ -87,8 +89,10 @@ const SECTION_ICONS: Record<HostSettingsSectionKey, string> = {
   company: ICONS.building,
   /** Angle brackets: programs calling the Agents. The plug that marks the API elsewhere is taken here, by the Chrome extension's page. */
   agentApi: ICONS.angleBrackets,
-  /** Puzzle piece: plugins, the plugin library's own mark. */
+  /** Puzzle piece: where plugins come from, the plugin library's own mark. */
   plugins: ICONS.puzzle,
+  /** The half-filled shield the composer's permission button wears: the sandbox Agents run in. */
+  sandbox: ICONS.shieldHalf,
   /** Two people: user management. */
   users: ICONS.users,
 };
@@ -141,9 +145,14 @@ export function SettingsDialog({
 
   // A request naming a plugin page (or a part of one) lands there; one that may name a plugin
   // page waits for the pages rather than falling back to the first page.
-  const target = pluginPageTarget(active, pages, focus);
+  // The plugin sources page focused on the sandbox's group (the composer's old link) is the
+  // sandbox's page now; focused on a group a plugin page draws, that page.
+  const sandboxFocus = active === "plugins" && focus === SANDBOX_GROUP;
+  const target = sandboxFocus ? null : pluginPageTarget(active, pages, focus);
   const waiting = index === null && mayNamePluginPage(active, contributed);
-  const current = waiting ? null : resolveSettingsSection(target?.key ?? active, sections);
+  const current = waiting
+    ? null
+    : resolveSettingsSection(sandboxFocus ? "sandbox" : (target?.key ?? active), sections);
   if (current === null && !waiting) return null;
   const currentPage = pages.find((page) => page.key === current);
 
@@ -160,6 +169,7 @@ export function SettingsDialog({
     company: S.settings.companyModeTitle,
     agentApi: S.settings.agentApiTitle,
     plugins: S.settings.pluginsTitle,
+    sandbox: S.settings.sandboxTitle,
     users: S.admin.users,
   };
   const groupLabel: Record<SettingsGroupKey, string> = {
@@ -177,6 +187,7 @@ export function SettingsDialog({
     company: S.settings.companyModeServerInfo,
     agentApi: S.settings.agentApiHint,
     plugins: S.settings.pluginsInfo,
+    sandbox: S.settings.sandboxInfo,
   };
 
   const groups: Array<PagedDialogGroup<SettingsSectionKey>> = settingsGroups(sections).map(
@@ -215,52 +226,61 @@ export function SettingsDialog({
   );
 
   const ContributedBody = current === null ? undefined : contributedByKey.get(current)?.code.Body;
+  const goTo = (key: SettingsSectionKey) => {
+    if (key !== current)
+      void guardLeave(() => {
+        setActive(key);
+        setFocus(undefined);
+      }, SETTINGS_SCOPE);
+  };
+  const navigation = {
+    open: (key: string) => goTo(key as SettingsSectionKey),
+    has: (key: string) => sections.some((s) => s.key === key),
+  };
 
   return (
-    <PagedDialog
-      open={open}
-      onClose={requestClose}
-      title={S.settings.title}
-      groups={groups}
-      active={current ?? active ?? ("" as SettingsSectionKey)}
-      onSelect={(key) => {
-        if (key !== current)
-          void guardLeave(() => {
-            setActive(key);
-            setFocus(undefined);
-          }, SETTINGS_SCOPE);
-      }}
-    >
-      {current === "profile" && <ProfileSection />}
-      {current === "general" && <GeneralSection />}
-      {current === "appearance" && <AppearanceSection />}
-      {current === "shortcuts" && <ShortcutsSection />}
-      {current === "archived" && <ArchivedSessionsSection />}
-      {current === "account" && <AccountSection />}
-      {current === "proxy" && <ProxySection />}
-      {current === "uploads" && <UploadsSection />}
-      {current === "company" && <CompanySection />}
-      {current === "agentApi" && <AgentApiSection />}
-      {current === "plugins" && (
-        <PluginsSection
-          {...(focus !== undefined ? { focus } : {})}
-          // Only a page that draws this server's groups claims a package: another machine's groups
-          // for a plugin whose page has none of its own stay reachable here too.
-          claimed={new Set(pages.filter((p) => p.groups.length > 0).map((p) => p.package))}
-        />
-      )}
-      {current === "users" && <AdminUsersSection />}
-      {ContributedBody !== undefined && <ContributedBody />}
-      {currentPage !== undefined && (
-        <PluginPageBody
-          key={currentPage.key}
-          page={currentPage}
-          isAdmin={isAdmin}
-          {...(target?.key === currentPage.key && target.anchor !== undefined
-            ? { anchor: target.anchor }
-            : {})}
-        />
-      )}
-    </PagedDialog>
+    <SettingsNavigationProvider value={navigation}>
+      <PagedDialog
+        open={open}
+        onClose={requestClose}
+        title={S.settings.title}
+        groups={groups}
+        active={current ?? active ?? ("" as SettingsSectionKey)}
+        onSelect={goTo}
+      >
+        {current === "profile" && <ProfileSection />}
+        {current === "general" && <GeneralSection />}
+        {current === "appearance" && <AppearanceSection />}
+        {current === "shortcuts" && <ShortcutsSection />}
+        {current === "archived" && <ArchivedSessionsSection />}
+        {current === "account" && <AccountSection />}
+        {current === "proxy" && <ProxySection />}
+        {current === "uploads" && <UploadsSection />}
+        {current === "company" && <CompanySection />}
+        {current === "agentApi" && <AgentApiSection />}
+        {current === "plugins" && (
+          <PluginsSection
+            host="sources"
+            {...(focus !== undefined ? { focus } : {})}
+            // Only a page that draws this server's groups claims a package: another machine's groups
+            // for a plugin whose page has none of its own stay reachable here too.
+            claimed={new Set(pages.filter((p) => p.groups.length > 0).map((p) => p.package))}
+          />
+        )}
+        {current === "sandbox" && <PluginsSection host="sandbox" />}
+        {current === "users" && <AdminUsersSection />}
+        {ContributedBody !== undefined && <ContributedBody />}
+        {currentPage !== undefined && (
+          <PluginPageBody
+            key={currentPage.key}
+            page={currentPage}
+            isAdmin={isAdmin}
+            {...(target?.key === currentPage.key && target.anchor !== undefined
+              ? { anchor: target.anchor }
+              : {})}
+          />
+        )}
+      </PagedDialog>
+    </SettingsNavigationProvider>
   );
 }

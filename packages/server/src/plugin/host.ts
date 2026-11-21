@@ -152,6 +152,39 @@ export function pluginPackageOf(host: PluginHost, module: string): string | unde
 }
 
 /**
+ * A loaded plugin's display name, from its card (`PluginLibraryModule.cards`, which any of its
+ * modules may contribute): what a page that names another plugin calls it. Undefined when the
+ * package is not loaded or carries no titled card.
+ */
+export function pluginTitleOf(
+  host: PluginHost,
+  specifier: string,
+): { title: string; titleZh?: string } | undefined {
+  const plugin = host.entries().get(specifier);
+  if (plugin === undefined) return undefined;
+  const walk = (def: ModuleDef): { title: string; titleZh?: string } | undefined => {
+    for (const card of def.manifest.contributes["PluginLibraryModule.cards"] ?? []) {
+      if (typeof card.title === "string") {
+        return {
+          title: card.title,
+          ...(typeof card.titleZh === "string" ? { titleZh: card.titleZh } : {}),
+        };
+      }
+    }
+    for (const child of def.children ?? []) {
+      const found = walk(child);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
+  for (const def of [...plugin.modules, ...plugin.replaces]) {
+    const found = walk(def);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/**
  * Registry key for the loaded plugin host.
  *
  * Nothing about the host is the runtime's business: which plugins a deployment runs is

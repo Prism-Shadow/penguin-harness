@@ -21,8 +21,9 @@
  * visibility and place (`order`), and joins the rail among the app's pages by that place, its
  * group kept contiguous. The rule here treats a contributed page exactly like one of the app's.
  * A contribution in the `plugin` group takes no rail entry of its own: it joins its plugin's page
- * (lib/plugin-pages.ts), and the plugin pages come last, under their own heading, in the order
- * the caller gives them — each already holds only what this viewer may see.
+ * (lib/plugin-pages.ts). The Plugins group comes last, under its own heading: the host's own
+ * plugin pages first (plugin sources, the Agent sandbox), then the plugin pages in the order the
+ * caller gives them — each already holds only what this viewer may see.
  *
  * None of this is the boundary. The admin APIs answer a non-admin with 403 whatever the
  * browser chose to render.
@@ -53,6 +54,7 @@ export type HostSettingsSectionKey =
   | "company"
   | "agentApi"
   | "plugins"
+  | "sandbox"
   | "users";
 
 /** Rail heading a page sits under: the viewer's own preferences, the whole server's, a plugin's. */
@@ -102,11 +104,17 @@ const SECTION_RULES: readonly SectionRule[] = [
   { key: "company", group: "server", order: 130, visible: (v) => v.isAdmin },
   // Whether any Agent's public API answers at all: server-global, like company mode.
   { key: "agentApi", group: "server", order: 150, visible: (v) => v.isAdmin },
-  // The sandbox, and the options loaded plugins declare (server-global, like the plugins themselves).
-  { key: "plugins", group: "server", order: 160, visible: (v) => v.isAdmin },
+  // The Plugins group opens with the host's own plugin pages, before any plugin's: where plugins
+  // install from (and the options of a plugin with no page here), then the sandbox Agents run in.
+  // Both server-global, like the plugins themselves.
+  { key: "plugins", group: "plugin", order: 10, visible: (v) => v.isAdmin },
+  { key: "sandbox", group: "plugin", order: 20, visible: (v) => v.isAdmin },
   // Single-user under the desktop shell: the server rejects the admin user routes there.
   { key: "users", group: "server", order: 170, visible: (v) => v.isAdmin && !v.desktopMode },
 ];
+
+/** Where the plugins' own pages start in the Plugins group: after every page the host puts there. */
+const PLUGIN_PAGES_FROM = 1000;
 
 /** A contributed page as the rule judges it: everyone sees it, or admins alone. */
 function ruleOf(section: SettingsSectionData): SectionRule {
@@ -131,10 +139,11 @@ export function visibleSettingsSections(
   pluginPages: readonly { key: string }[] = [],
 ): readonly SettingsSection[] {
   const own = new Set<string>(SECTION_RULES.map((rule) => rule.key));
-  const plugins = pluginPages.map((page, order): SectionRule => ({
+  // After the host's own pages in the group, in the order given.
+  const plugins = pluginPages.map((page, i): SectionRule => ({
     key: page.key as ContributedSettingsKey,
     group: "plugin",
-    order,
+    order: PLUGIN_PAGES_FROM + i,
     visible: () => true,
   }));
   const rules = contributed.filter((c) => c.group !== "plugin" && !own.has(c.key)).map(ruleOf);

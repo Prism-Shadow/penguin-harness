@@ -6810,6 +6810,12 @@ export interface PluginConfigEntry {
    */
   plugin?: string;
   /**
+   * That plugin's display name, from its card, in both languages — what names its page when the
+   * plugin library does not list it (a server-module plugin with no Skill: a sandbox backend).
+   */
+  pluginTitle?: string;
+  pluginTitleZh?: string;
+  /**
    * What the group's status reports in the status page's shape, checked on the way out (a state
    * this build does not know reads as `unknown`, a field of the wrong type is dropped); absent
    * when it reports none, or when its report could not be read.
@@ -6890,6 +6896,12 @@ export interface PluginStatusCheck {
   detailsZh?: string;
   /** The action drawn on this row (open System Settings). */
   action?: string;
+  /**
+   * A Settings page this row opens, drawn as a link on the row: `plugin:<specifier>` for a
+   * plugin's page (the sandbox lists each backend and links it to its plugin's page). A page
+   * the viewer does not have draws no link.
+   */
+  page?: string;
 }
 
 /** Whether a backend that applies to this machine is installed, and this OS's default ones. */

@@ -4,15 +4,21 @@
  * lib/plugin-pages.ts and plugin-page.tsx), against this server's plugin library, its plugin
  * settings and two pages a plugin's web half contributes, behind the fetch fake.
  *
- * - An admin's rail ends with a Plugins group: a page for the plugin whose server module declares
- *   a settings group and one for the plugin whose web half contributes pages, named by the
- *   library; the server's plugin page is called plugin management.
+ * - An admin's rail ends with a Plugins group: the host's own plugin sources and Agent sandbox
+ *   pages first, then a page for the plugin whose server module declares a settings group and one
+ *   for the plugin whose web half contributes pages, named by the library. The server group keeps
+ *   no plugin page.
  * - A member's rail holds only the plugin page with a part for every viewer, and the dialog never
  *   asks for the plugin settings.
  * - A request naming a contributed page by the key it had of its own opens its plugin's page,
  *   headed by the plugin's name and version; an admin sees its personal and server parts under
  *   their headings, a member the personal part alone, bare.
  * - Until the plugin pages are known, a request for one shows no other page in its place.
+ * - Old keys land where their settings went: the plugins key on plugin sources; plugin sources
+ *   focused on the sandbox (the composer's link before this page existed), and the sandbox key,
+ *   on the Agent sandbox page.
+ * - On the Agent sandbox page the sandbox's switch still saves, alone, to the sandbox's group; a
+ *   backend's line links to its plugin's page, which the link opens.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createElement as h } from "react";
@@ -24,7 +30,16 @@ import { setContributedSections } from "../src/features/settings/contributed-sec
 import { AuthProvider } from "../src/state/auth";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import { apiError, json, stubFetch, type FakeFetch } from "./helpers/fetch";
-import { mount, settle, unmountAll, waitFor } from "./helpers/dom";
+import {
+  button,
+  click,
+  hasButton,
+  mount,
+  settle,
+  switchNamed,
+  unmountAll,
+  waitFor,
+} from "./helpers/dom";
 
 const BROWSER = "@acme/browser";
 const HELPER = "@acme/helper";
@@ -47,7 +62,26 @@ const item = (pkg: string, title: string): PluginItem => ({
 });
 
 const ENTRIES: PluginConfigEntry[] = [
-  { name: "sandbox", configuration: { title: "Sandbox", properties: {} }, values: {} },
+  {
+    name: "sandbox",
+    configuration: {
+      title: "Agent Sandbox",
+      switch: "enabled",
+      properties: { enabled: { type: "boolean", title: "Enable" } },
+    },
+    values: { enabled: false },
+    report: {
+      checks: [
+        {
+          id: "acme-backend",
+          label: "Acme Helper",
+          state: "ok",
+          text: "In use",
+          page: `plugin:${HELPER}`,
+        },
+      ],
+    },
+  },
   {
     name: "acme-helper",
     plugin: HELPER,
@@ -73,6 +107,13 @@ function server(me: MeResponse, opts: { holdLibrary?: boolean } = {}) {
           },
         ],
       });
+    }
+    if (request.path === "/api/admin/plugin-config" && request.method === "PUT") {
+      const body = request.body as { name: string; values: Record<string, unknown> };
+      const stored = ENTRIES.map((e) =>
+        e.name === body.name ? { ...e, values: { ...e.values, ...body.values } } : e,
+      );
+      return json({ plugins: stored });
     }
     if (request.path === "/api/admin/plugin-config") {
       return me.user.isAdmin ? json({ plugins: ENTRIES }) : apiError(403, "forbidden");
@@ -113,7 +154,7 @@ function contribute() {
   ]);
 }
 
-async function open(section?: string) {
+async function open(section?: string, pluginFocus?: string) {
   await mount(
     h(
       AuthProvider,
@@ -122,6 +163,7 @@ async function open(section?: string) {
         open: true,
         onClose: () => {},
         ...(section !== undefined ? { section: section as never } : {}),
+        ...(pluginFocus !== undefined ? { pluginFocus } : {}),
       }),
     ),
   );
@@ -148,14 +190,18 @@ describe("the Settings dialog's plugin pages", () => {
     contribute();
     server(ADMIN_ME);
     await open();
-    await waitFor(() => rail().includes("# Plugins"));
+    await waitFor(() => rail().includes("Acme Helper"));
     const rows = rail();
+    expect(rows.slice(rows.indexOf("# Server"), rows.indexOf("# Plugins"))).not.toContain(
+      "Plugin sources",
+    );
     expect(rows.slice(rows.indexOf("# Plugins"))).toEqual([
       "# Plugins",
+      "Plugin sources",
+      "Agent Sandbox",
       "Acme Browser",
       "Acme Helper",
     ]);
-    expect(rows).toContain("Plugin admin");
     expect(rows).not.toContain("Browser");
     expect(rows).not.toContain("Extension");
   });
@@ -164,7 +210,7 @@ describe("the Settings dialog's plugin pages", () => {
     contribute();
     const { fetch } = server(MEMBER_ME);
     await open();
-    await waitFor(() => rail().includes("# Plugins"));
+    await waitFor(() => rail().includes("Acme Browser"));
     const rows = rail();
     expect(rows.slice(rows.indexOf("# Plugins"))).toEqual(["# Plugins", "Acme Browser"]);
     expect(fetch.requests.some((r) => r.path === "/api/admin/plugin-config")).toBe(false);
@@ -200,5 +246,31 @@ describe("the Settings dialog's plugin pages", () => {
     expect(document.body.textContent).not.toContain("Backend and paired browsers");
     releaseLibrary();
     await waitFor(() => heading().includes("Acme Browser"));
+  });
+
+  it.each([
+    ["the plugins key", "plugins", undefined, "Plugin sources"],
+    ["plugin sources focused on the sandbox", "plugins", "sandbox", "Agent Sandbox"],
+    ["the sandbox key", "sandbox", undefined, "Agent Sandbox"],
+  ])("lands %s on the page its settings moved to", async (_, section, focus, page) => {
+    server(ADMIN_ME);
+    await open(section, focus);
+    await waitFor(() => heading().includes(page));
+    expect(heading()).toContain(page);
+  });
+
+  it("saves the sandbox's switch alone on the Agent sandbox page, and links a backend to its plugin's page", async () => {
+    const { fetch } = server(ADMIN_ME);
+    await open("sandbox");
+    await waitFor(() => document.querySelector('[data-plugin-config="sandbox"]') !== null);
+    await click(switchNamed("Enable"));
+    expect(
+      fetch.requests
+        .filter((r) => r.path === "/api/admin/plugin-config" && r.method === "PUT")
+        .map((r) => r.body),
+    ).toEqual([{ name: "sandbox", values: { enabled: true } }]);
+    await waitFor(() => hasButton("Open"));
+    await click(button("Open"));
+    await waitFor(() => heading().includes("Acme Helper"));
   });
 });
