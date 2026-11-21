@@ -10,6 +10,7 @@
  * blocks into banners, what a model request's retry or failure line says and offers, and the
  * Retry a failed or stopped run's last line offers.
  */
+import { isPlainClick } from "../../lib/shortcuts/plain-click";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import {
@@ -271,15 +272,7 @@ function linkifySessionIds(text: string): ReactNode {
         key={`sid-${i}-${idx}`}
         href={`/chat/${sid}`}
         onClick={(event) => {
-          if (
-            event.metaKey ||
-            event.ctrlKey ||
-            event.shiftKey ||
-            event.altKey ||
-            (event.button !== undefined && event.button !== 0)
-          ) {
-            return;
-          }
+          if (!isPlainClick(event)) return;
           event.preventDefault();
           if (typeof window !== "undefined") {
             window.history.pushState({}, "", `/chat/${sid}`);

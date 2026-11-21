@@ -17,6 +17,7 @@
  * then shows that instead. An approval never shows a folded value: its block reads the call the
  * pending approval carries, which the server always sends whole.
  */
+import { isPlainClick } from "../../lib/shortcuts/plain-click";
 import { useMemo } from "react";
 import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
 import { ToolCallCard, useElapsedPast } from "@prismshadow/penguin-ui";
@@ -432,15 +433,7 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
                 key={sid}
                 href={`/chat/${sid}`}
                 onClick={(event) => {
-                  if (
-                    event.metaKey ||
-                    event.ctrlKey ||
-                    event.shiftKey ||
-                    event.altKey ||
-                    (event.button !== undefined && event.button !== 0)
-                  ) {
-                    return;
-                  }
+                  if (!isPlainClick(event)) return;
                   event.preventDefault();
                   if (typeof window !== "undefined") {
                     window.history.pushState({}, "", `/chat/${sid}`);
