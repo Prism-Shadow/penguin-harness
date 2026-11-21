@@ -50,7 +50,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@prismshadow/mmsp": "^0.5.10",
+    "@prismshadow/mmsp": "^0.5.12",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/skills": "workspace:*",
     "commander": "^13.0.0",

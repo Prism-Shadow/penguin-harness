@@ -371,6 +371,7 @@ The pickers offer `low` and above. Many models cannot turn thinking off, but a s
 - `max` is the deepest tier. Each client maps it to the deepest effort its vendor accepts and falls back silently where there is no such tier, so picking it never fails. On Gemini and MiniMax M3 it lands on the same effort as `xhigh`.
 - For MiniMax M3, `none` maps directly to `reasoning.effort = "none"`.
 - For Gemini 4 Argon on Google's official client, `none` maps to `low`, and `xhigh` and `max` map to `high`. `low`, `medium` and `high` keep their values; omitting the level preserves Google's default `medium`.
+- For Gemini 4 Neon on Google's official client, `none` maps to `low` and `max` to `xhigh`. `low`, `medium`, `high` and `xhigh` keep their values.
 - DeepSeek V4 accepts `low`, `high` and `max`, and folds `medium` and `xhigh` into `high` on its side. Pick `max` for DeepSeek's deepest effort.
 
 ### In a new chat
@@ -508,7 +509,7 @@ The table below lists the built-in groups and, for the seven first-party groups,
 
 The OpenAI-compatible gateway groups (openrouter / fireworks / siliconflow / atlascloud / runcrate / tokendance / qwen-pay-as-you-go / qwen-token-plan) go through MMSP's generic OpenAI-protocol clients, whose variable is `OPENAI_API_KEY`; a keyless row there is refused rather than sent your OpenAI key. The same holds for a custom or user-created row with a base URL on itself or its group, unless that is its protocol client's own default endpoint; with none anywhere, it reads its protocol client's pair (see [Set API keys](#set-api-keys)). A vLLM row with a base URL and no key is sent none instead, since a vLLM server checks no key unless it was started with one. ModelScope's credential is an api-inference token, and all three presets pin the generic Responses protocol; a keyless ModelScope row is refused the same way.
 
-- The OpenRouter group uses the Responses client (`client_type = "openai-responses"`) for its presets and for any model you add to it, because OpenRouter serves the Responses API at that same base URL for every model it resells.
+- The OpenRouter group uses the Responses client (`client_type = "openai-responses"`) for its chat presets and for any model you add to it, because OpenRouter serves the Responses API at that same base URL for every model it resells. The image preset `google/gemini-nano-banana-2.1` is the exception: it pins the Images client (`client_type = "openai-image"`) at the same base URL.
 - The other gateway presets use the Chat Completions client (`client_type = "openai-chat"`).
 - ModelScope is an aggregate gateway like Penguin Go, but all three of its presets use MMSP's generic Responses client (`client_type = "openai-responses"`).
 - Either way every gateway carries a base URL, so the credential rule is the same for all of them.
@@ -557,7 +558,8 @@ The preset catalog includes, among others:
 
 - `deepseek-flash` / `deepseek-v4-pro`
 - `MiniMax-M3.1-Flash` / `MiniMax-M3`
-- `gemini-4-argon` / `gemini-3.8-flash`
+- `gemini-4-neon` / `gemini-4-argon` / `gemini-3.8-flash`
+- `gemini-nano-banana-2.1` (Google) / `google/gemini-nano-banana-2.1` (OpenRouter)
 - `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5` / `claude-fable-5-1`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
 - `gpt-6.1-sol` / `gpt-6-astra` / `gpt-6-luna` / `gpt-5.6` / `gpt-5.5`
@@ -572,6 +574,8 @@ The preset catalog includes, among others:
 The list is not exhaustive.
 
 Gemini 4 Argon is preset in Google, Penguin Go and OpenRouter, with a shared input/output context window of 1,048,576 tokens and image input. Google and Penguin Go use `gemini-4-argon`; OpenRouter uses `google/gemini-4-argon`. MMSP's synchronous stream supports up to 65,536 output tokens, including thinking; Google's longer background generation is outside this interface.
+
+Gemini 4 Neon is preset in Google as `gemini-4-neon` and in OpenRouter as `google/gemini-4-neon`, with a 1,048,576-token context window and image input. Both record list prices of $3 input, $15 output and $0.15 cached input per million tokens, with no promotion.
 
 - **DeepSeek images.** `deepseek-flash` is V4.1 Flash and reads images; `deepseek-v4-pro` is the V4 Pro 0813 release and is text-only. To send an image, use `deepseek-flash`.
 - **Retired rows.** DeepSeek still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, and serves both from V4.1 Flash. They are no longer presets, but the catalog keeps them, together with TokenDance's `deepseek-v4-flash-vision-exp`, as retired rows: a Project that still carries one keeps its display name, until **Restore defaults** deletes it with every other model that is not a preset. A retired row is never added to a Project that does not have it, and a new Project never gets one.

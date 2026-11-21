@@ -124,7 +124,7 @@
     "@prismshadow/a2ui": "workspace:*",
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/chat-markdown": "workspace:*",
-    "@prismshadow/mmsp": "^0.5.10",
+    "@prismshadow/mmsp": "^0.5.12",
     "@prismshadow/penguin-core": "workspace:*",
     "@types/node": "^24.0.0",
     "@xterm/headless": "^5.5.0",

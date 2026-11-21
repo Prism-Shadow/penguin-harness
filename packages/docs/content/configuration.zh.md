@@ -104,7 +104,16 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 
 ### 模型条目
 
-Gemini 4 Argon 在 `google` 和 `penguin-go` 分组使用 `model_id = "gemini-4-argon"`，在 `openrouter` 分组使用 `model_id = "google/gemini-4-argon"`。预置条目分别使用 Google 官方 Interactions 客户端、MMSP HTTP 和 OpenRouter Responses。已有 Project 可在模型库页面点击**同步新增模型**补齐这些条目。
+Gemini 4 Argon 在 `google` 和 `penguin-go` 分组使用 `model_id = "gemini-4-argon"`，在 `openrouter` 分组使用 `model_id = "google/gemini-4-argon"`。预置条目分别使用 Google 官方 Interactions 客户端、MMSP HTTP 和 OpenRouter Responses。Gemini 4 Neon 在 `google` 分组使用 `model_id = "gemini-4-neon"`，在 `openrouter` 分组使用 `model_id = "google/gemini-4-neon"`，分别使用 Google 官方 Interactions 客户端和 OpenRouter Responses。已有 Project 可在模型库页面点击**同步新增模型**补齐这些条目。
+
+协议与所在分组不同的条目会在自身存储 `client_type`。例如 OpenRouter 的图像预置固定使用 Images 客户端，而分组使用 Responses：
+
+```toml
+[[models]]
+provider = "openrouter"
+model_id = "google/gemini-nano-banana-2.1"
+client_type = "openai-image"
+```
 
 | 键 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |

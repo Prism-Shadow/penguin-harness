@@ -103,7 +103,16 @@ A new Project writes no `base_url` for these seven first-party groups, so their 
 
 ### Model entries
 
-Gemini 4 Argon uses `model_id = "gemini-4-argon"` in the `google` and `penguin-go` groups, and `model_id = "google/gemini-4-argon"` in `openrouter`. The presets use Google's official Interactions client, MMSP HTTP and OpenRouter Responses respectively. Existing Projects can add these entries with **Add new models** on the models page.
+Gemini 4 Argon uses `model_id = "gemini-4-argon"` in the `google` and `penguin-go` groups, and `model_id = "google/gemini-4-argon"` in `openrouter`. The presets use Google's official Interactions client, MMSP HTTP and OpenRouter Responses respectively. Gemini 4 Neon uses `model_id = "gemini-4-neon"` in `google` and `model_id = "google/gemini-4-neon"` in `openrouter`, through Google's official Interactions client and OpenRouter Responses. Existing Projects can add these entries with **Add new models** on the models page.
+
+A row whose protocol differs from its group's stores its own `client_type`. OpenRouter's image preset, for example, pins the Images client while the group uses Responses:
+
+```toml
+[[models]]
+provider = "openrouter"
+model_id = "google/gemini-nano-banana-2.1"
+client_type = "openai-image"
+```
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
