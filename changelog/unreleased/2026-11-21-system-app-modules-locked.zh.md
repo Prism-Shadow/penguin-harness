@@ -3,6 +3,7 @@
 - **Date:** 2026-11-21
 - **Type:** feature
 - **Scope:** `server`, `web`, `core`, `docs`
+- **PR:** [#1678](https://github.com/Prism-Shadow/penguin-harness/pull/1678)
 
 [English](2026-11-21-system-app-modules-locked.md)
 
