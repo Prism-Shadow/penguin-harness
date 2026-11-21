@@ -2051,6 +2051,10 @@ export class FakeServer {
           this.failSessionCreates -= 1;
           return this.error(503, "server_unavailable", "The server is restarting.");
         }
+        // The server's rule: a Session that names no model runs on the Project's default.
+        if (typeof body?.modelId !== "string" && this.defaultModel === null) {
+          return this.error(400, "no_default_model", "This Project has no default model.");
+        }
         const s = this.addSession({
           projectId: decodeURIComponent(m[1]!),
           agentId: decodeURIComponent(m[2]!),

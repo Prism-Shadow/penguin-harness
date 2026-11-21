@@ -1006,7 +1006,8 @@ export class ProjectConfigService implements ProjectConfigStore {
 
   /**
    * Initial config for a newly created Project: display name + the built-in catalog's seed
-   * (presetProjectConfig: the default model, each built-in group's `[providers.<id>]` table —
+   * (presetProjectConfig: no default model — the user chooses one — each built-in group's
+   * `[providers.<id>]` table —
    * endpoint and protocol — and all preset entries; an entry stores its catalog facts, plus a
    * protocol or endpoint only where it differs from its group's table — and no key). From here
    * on the file alone says where every request goes; the catalog is not read again when one is
@@ -1018,7 +1019,6 @@ export class ProjectConfigService implements ProjectConfigStore {
     const preset = presetProjectConfig();
     await this.writeRaw(projectId, {
       name,
-      ...(preset.default_model !== undefined ? { default_model: preset.default_model } : {}),
       // The factory command-policy rules are seeded exactly like the model presets:
       // copied in at creation, owned by the project from then on.
       ...(preset.command_policy !== undefined ? { command_policy: preset.command_policy } : {}),
@@ -1044,15 +1044,11 @@ export class ProjectConfigService implements ProjectConfigStore {
   async ensurePresetModels(projectId: string): Promise<boolean> {
     const raw = await this.readRaw(projectId);
     if (asArray(raw.models).length > 0) return false;
-    const preset = presetProjectConfig();
     const { providers, added } = presetAdditions(raw);
-    await this.writeRaw(projectId, {
-      ...raw,
-      // Also reset to the preset default_model if the existing one points at a now-deleted model, to keep the default model valid.
-      ...(preset.default_model !== undefined ? { default_model: preset.default_model } : {}),
-      providers,
-      models: added,
-    });
+    // A table with no rows can name no valid default (nor vision model): the stale pointers go,
+    // and the Project starts with no default model, as a new one does.
+    const { default_model: _default, vision_model: _vision, ...rest } = raw;
+    await this.writeRaw(projectId, { ...rest, providers, models: added });
     return true;
   }
 
@@ -2121,7 +2117,9 @@ export class ProjectConfigService implements ProjectConfigStore {
     const targetOf = (ref: ModelRefDto) =>
       req.models.find((m) => m.provider === ref.provider && m.modelId === ref.modelId);
     let visionModel: ModelRefDto | undefined;
-    if (req.visionModel !== undefined) {
+    if (req.visionModel === null) {
+      // Cleared: no model reads images for another.
+    } else if (req.visionModel !== undefined) {
       if (!seen.has(refKey(req.visionModel.provider, req.visionModel.modelId))) {
         throw badRequest(
           `visionModel must be included in models: ${showRef(req.visionModel.provider, req.visionModel.modelId)}.`,
@@ -2499,8 +2497,8 @@ export class ProjectConfigService implements ProjectConfigStore {
    *   table, promotion, key or reference.
    * - `restore`: the model configuration becomes a new Project's (presetProjectConfig) and
    *   keeps only the API keys. The rows are the non-retired presets in catalog order, the
-   *   built-in groups' tables the catalog's, the default model the catalog's, and there is no
-   *   vision model. Everything else goes: every row that is not a preset (the user's own,
+   *   built-in groups' tables the catalog's, and there is no default model and no vision model
+   *   (a new Project's state: the first-run guide asks for a default again). Everything else goes: every row that is not a preset (the user's own,
    *   and those an older catalog added, retired rows included), every user-defined group,
    *   every override on a preset row, and every group setting the catalog does not write
    *   (custom's base URL included; vLLM's returns to the catalog's local address). Promotions

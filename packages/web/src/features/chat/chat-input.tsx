@@ -626,6 +626,7 @@ export function ChatInput({
   initialGoal,
   goalPlugin = null,
   switches,
+  banner,
   onSkillsChange,
   onHandoff,
   initialText,
@@ -858,6 +859,8 @@ export function ChatInput({
    * so a goal engaged here grays the entries out and hides the chips.
    */
   switches?: ComposerSwitches;
+  /** A notice drawn as the composer card's top band (`ComposerBanner`): what Send waits for. */
+  banner?: ReactNode;
   /** Callback when selected skills change (check/prune; the clear after a successful send does not call back, same as onTextChange). */
   onSkillsChange?: (names: string[]) => void;
   /** Draft's initial text (restored on mount; paired with onTextChange for draft auto-caching). */
@@ -2478,6 +2481,7 @@ export function ChatInput({
           container breakpoints) — the card's width changes with the viewport and with the Files
           panel squeezing it, so viewport breakpoints wouldn't judge it accurately. */}
       <ComposerCard
+        banner={banner}
         attachments={
           // The staged images, then the staged files, as one row of tiles at the top of the
           // card: the same tiles the message shows once sent. A file's name is the picked
@@ -2782,6 +2786,8 @@ export function ChatInput({
                 {...(defaultModel !== undefined ? { defaultModel } : {})}
                 onChange={onChangeModel}
                 disabled={busy}
+                // A draft in a Project with no default model starts with none chosen.
+                emptyLabel={S.chat.chooseModel}
               />
             ) : models && onPickSessionModel && variant === "session" ? (
               <ModelCatalogSelect

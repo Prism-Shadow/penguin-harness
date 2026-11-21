@@ -7,8 +7,8 @@
  * Text generation declares none: a model it accepts is a chat model, and the chat probe is its
  * test.
  */
+import { readFileSync } from "node:fs";
 import type { UniConfig, UniMessage } from "@prismshadow/mmsp";
-import { playable } from "./media.js";
 import { operationRequest, type Operation } from "./operations.js";
 
 /** One test request: the request's messages and config, and how long the host waits on it. */
@@ -25,22 +25,18 @@ const TEST_PAGE = "https://penguin.ooo/";
 const VIDEO_TEST_TIMEOUT_MS = 180_000;
 
 /**
- * Half a second of a quiet 440 Hz tone, 16 kHz mono 16-bit PCM in a WAV file: a recording every
- * speech recognizer reads (DeepSeek's takes only PCM WAV and Ogg Opus), generated rather than
- * shipped. It holds no words, so the transcript may be empty.
+ * A spoken sentence for a speech recognizer's test, shipped beside the code (assets/): NASA's
+ * Apollo 11 landing call, "Houston, Tranquility Base here", public domain (NASA, via Wikimedia
+ * Commons), cut to its 1.9 seconds and stored as 16 kHz mono 16-bit PCM WAV, the recording every
+ * speech recognizer reads (DeepSeek's takes only PCM WAV and Ogg Opus). It holds words, so the
+ * recognizer transcribes something and the time the test takes is a real transcription's.
  */
-export function testTone(): Uint8Array {
-  const rate = 16_000;
-  const samples = rate / 2;
-  const pcm = Buffer.alloc(samples * 2);
-  for (let i = 0; i < samples; i++) {
-    pcm.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 440 * i) / rate) * 3000), i * 2);
-  }
-  return playable({ data: pcm, mimeType: `audio/L16; rate=${rate}; channels=1` })!.data;
+export function testSpeech(): Uint8Array {
+  return readFileSync(new URL("../assets/test-speech.wav", import.meta.url));
 }
 
 const BUILDERS: Partial<Record<Operation, () => TestRequest>> = {
-  s2t: () => operationRequest("s2t", { audio: { data: testTone(), mimeType: "audio/wav" } }),
+  s2t: () => operationRequest("s2t", { audio: { data: testSpeech(), mimeType: "audio/wav" } }),
   search: () => operationRequest("search", { text: "PenguinHarness", count: 1 }),
   fetch: () => operationRequest("fetch", { url: TEST_PAGE }),
   t2s: () => operationRequest("t2s", { text: "OK." }),

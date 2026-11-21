@@ -21,13 +21,6 @@ export const en: Strings = {
       "The penguin tools CLI uses the models chosen here. Image understanding is the Project's vision model, which also reads images for models without vision. In chat, dictation uses Speech recognition, read-aloud uses Speech synthesis, and polishing uses Text generation.",
     imageUnderstanding: "Image understanding",
     unbound: "Not set",
-    noModels: "No compatible models",
-    noTools: "The multimodal tools plugin is off in this Project. Turn it on on the Plugins page.",
-    setDefault: "Set default",
-    setDefaultHint: (operation: string) =>
-      `Make this the Project's default ${operation.toLowerCase()} model`,
-    inUse: "In use",
-    inUseFor: (operations: readonly string[]) => `In use: ${operations.join(", ")}`,
     dictation: "Dictation",
     polish: "Polish dictation",
     polishWith: (model: string, provider: string) => `Polished by ${model} (${provider})`,
@@ -56,6 +49,38 @@ export const en: Strings = {
     play: "Play audio",
     audioError: "Could not play the audio for this reply.",
     preparing: "Preparing audio",
+  },
+
+  defaultModels: {
+    title: "Default model settings",
+    intro:
+      "New chats, the multimodal tools and voice use these models by default. Each one is saved as you pick it.",
+    introMember:
+      "New chats, the multimodal tools and voice use these models by default. Only the Project's owner can change them.",
+    introOnboarding:
+      "Pick a default chat model first and new chats will use it; the multimodal and tool defaults can wait. Each one is saved as you pick it.",
+    chat: "Chat",
+    multimodal: "Multimodal",
+    tools: "Tools",
+    chatModel: "Default chat model",
+    chatHint: "Used for new chats",
+    empty: "Connect a provider that offers this kind of model",
+    emptyAction: "Go to Models",
+    done: "Done",
+    followsDefault: (model: string) => `Follows the default chat model (${model})`,
+    followDefault: "Follow the default chat model",
+    guideTitle: "Connect a model provider first",
+    guideBody:
+      "This Project has no model it can use yet: no chat model has an API key. Connect a provider, or add a key on the Models page, then choose the default models.",
+    tokendance: "One wallet for many providers' models, no keys to type",
+    penguinGo: "PenguinHarness's own model service",
+    connect: "Connect",
+    keyText: "Already have an API key from a provider?",
+    keyAction: "Add an API key",
+    later: "Later",
+    composerNone: "No default model yet",
+    composerNoneMember: "No default model yet — ask an owner",
+    composerAction: "Set default model",
   },
 
   nav: {
@@ -2437,6 +2462,11 @@ export const en: Strings = {
     speedTestStart: "Start",
     speedPending: "Testing…",
     speedFailed: "Test failed",
+    latencyTitle: "How long the request took",
+    speedSkipped: "Not tested",
+    speedSkipVideo: "Generating a video takes minutes and costs more, so the speed test skips it.",
+    speedSkipUnused:
+      "This model can't chat and nothing in this Project uses it, so it can't be tested.",
     ttftTitle: "Time to first token (TTFT)",
     tpsTitle: "Output rate (TPS)",
     modelCount: (n: number): string => `${n} model${n === 1 ? "" : "s"}`,
@@ -2716,6 +2746,15 @@ export const en: Strings = {
     confirmDefault: (name: string): string =>
       `Make "${name}" the default model? New sessions will use it by default.`,
     default: "Default",
+    inUse: "In use",
+    usedFor: (jobs: readonly string[]) => `Used for: ${jobs.join(", ")}`,
+    useModel: "Use model",
+    useHint: (jobs: readonly string[]) => `Use it in this Project for: ${jobs.join(", ")}`,
+    confirmUse: (name: string, jobs: readonly string[]) => `Use "${name}" for ${jobs.join(", ")}?`,
+    used: (jobs: readonly string[]) => `Now used for: ${jobs.join(", ")}`,
+    stopUsing: "Stop using model",
+    stopUsingHint: (jobs: readonly string[]) => `Stop using it for: ${jobs.join(", ")}`,
+    stoppedUsing: (jobs: readonly string[]) => `No longer used for: ${jobs.join(", ")}`,
     setDefault: "Set as default model",
     remove: "Delete model",
     readOnlyHint: "Members have read-only access; only owners can change models and credentials",
@@ -2964,6 +3003,7 @@ export const en: Strings = {
     workspace: "Workspace",
     model: "Model",
     modelDefault: "Project default",
+    modelRequired: "This Project has no default model: choose the model this task runs on.",
     deleteTitle: "Delete scheduled task",
     deleteConfirm: (name: string): string => `Delete scheduled task "${name}"?`,
     /** Toasts after a write. A schedule fires on its own clock, so none of them mentions when a conversation picks the change up: there is nothing to pick up. */
@@ -6905,7 +6945,8 @@ Scenarios:
     },
     modelCredentialMissing: (modelId: string) =>
       `Model ${modelId} has no API key yet — configure it on the Models page first`,
-    noDefaultModel: "This project has no default model yet — add one on the Models page first",
+    noDefaultModel:
+      "This project has no default model yet — set one under Default model settings on the Models page",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
       invalid_credentials: "Incorrect username or password.",

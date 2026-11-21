@@ -125,15 +125,15 @@ describe("auth", () => {
     expect(p.name).toBe("bob");
     expect(p.role).toBe("owner");
     expect(p.ownerUserId).toBe("bob");
-    // The initial Project's .project_config.toml carries the display name and preset model config (the default model is written along with it).
+    // The initial Project's .project_config.toml carries the display name and the preset model
+    // config, and no default model: its owner chooses one.
     const toml = await fs.readFile(
       path.join(t.root, "bob-default_project", ".project_config.toml"),
       "utf8",
     );
     expect(toml).toContain('name = "bob"');
-    expect(toml).toContain(
-      'default_model = { provider = "deepseek", model_id = "deepseek-flash" }',
-    );
+    expect(toml).toContain('provider = "deepseek"');
+    expect(toml).not.toContain("default_model");
   });
 
   it("login / me / logout round trip; wrong password 401", async () => {

@@ -27,6 +27,7 @@ import { InputsBoard } from "./boards/inputs";
 import { LayoutBoard } from "./boards/layout";
 import { LoadingBoard } from "./boards/loading";
 import { MachinesBoard } from "./boards/machines";
+import { ModelsBoard } from "./boards/models";
 import { NoticesBoard } from "./boards/notices";
 import { PickersBoard } from "./boards/pickers";
 import { ReportBoard } from "./boards/report";
@@ -61,6 +62,7 @@ export const BOARDS: Readonly<Record<TopicId, ComponentType>> = {
   layout: LayoutBoard,
   data: DataBoard,
   machines: MachinesBoard,
+  models: ModelsBoard,
   status: StatusBoard,
   retry: RetryBoard,
   report: ReportBoard,

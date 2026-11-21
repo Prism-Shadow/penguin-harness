@@ -214,10 +214,8 @@ describe("models preset & catalog enrichment", () => {
     const res = await api.get(url());
     expect(res.status).toBe(200);
     const body = (await res.json()) as ModelsResponse;
-    expect(body.defaultModel).toEqual({
-      provider: "deepseek",
-      modelId: "deepseek-flash",
-    });
+    // No default model: the owner chooses one (the Web App's first-run guide).
+    expect(body.defaultModel).toBeUndefined();
     expect(body.models.map(pairKey)).toEqual(catalogPairs);
     // A retired catalog row is kept only for the Projects that already carry it, so a new
     // Project gets none of them.
@@ -307,7 +305,7 @@ describe("models preset & catalog enrichment", () => {
     expect(sonnet.clientType).toBeUndefined();
     expect(sonnet.effective).toMatchObject({ baseUrlSource: "none", clientTypeSource: "none" });
     expect(pick(body, "deepseek", "deepseek-v4-pro").envKey).toBe("DEEPSEEK_API_KEY");
-    expect(pick(body, "deepseek", "deepseek-flash").isDefault).toBe(true);
+    expect(body.models.some((m) => m.isDefault)).toBe(false);
 
     // A catalog row on a promotion is preset at its LIST price like every other row, and the
     // promotion is seeded beside it in web.db: the rows reporting a discount are exactly the
@@ -997,7 +995,7 @@ describe("default_project presets", () => {
     await t.cleanup();
   });
 
-  it("when the seeded admin adopts default_project, the preset models and the default model are filled in (no prior .project_config.toml)", async () => {
+  it("when the seeded admin adopts default_project, the preset models are filled in and no default model is (no prior .project_config.toml)", async () => {
     // The default_project shared by admin seeding and the CLI (the dir already exists, so writeInitialConfig is skipped).
     t = await createTestApp();
     const { cookie } = await loginAdmin(t.app);
@@ -1005,10 +1003,8 @@ describe("default_project presets", () => {
     const res = await api.get("/api/projects/default_project/models");
     expect(res.status).toBe(200);
     const body = (await res.json()) as ModelsResponse;
-    expect(body.defaultModel).toEqual({
-      provider: "deepseek",
-      modelId: "deepseek-flash",
-    });
+    // No default model: the owner chooses one (the Web App's first-run guide).
+    expect(body.defaultModel).toBeUndefined();
     expect(body.models.map(pairKey)).toEqual(catalogPairs);
     // The built-in groups' tables come with them, as in a new Project.
     expect(Object.keys(body.providers).sort()).toEqual(Object.keys(presetProviderTable()).sort());
@@ -1017,11 +1013,20 @@ describe("default_project presets", () => {
       presetPromotions().length,
     );
 
-    // The point of presets is "works out of the box": creating a Session should succeed without passing a model ref.
-    const created = await api.post(
-      "/api/projects/default_project/agents/default_agent/sessions",
-      {},
+    // A Session that names no model waits for a default: refused, saying how to set one; once
+    // the owner chooses one, it runs on it.
+    const sessions = "/api/projects/default_project/agents/default_agent/sessions";
+    const refused = await api.post(sessions, {});
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as { error: { code: string } }).error.code).toBe(
+      "no_default_model",
     );
+    const chosen = await api.put("/api/projects/default_project/models/default", {
+      provider: "deepseek",
+      modelId: "deepseek-flash",
+    });
+    expect(chosen.status).toBe(200);
+    const created = await api.post(sessions, {});
     expect(created.status).toBe(201);
     const { session } = (await created.json()) as SessionCreateResponse;
     expect(session.provider).toBe("deepseek");
@@ -1243,6 +1248,19 @@ describe("model-reference rekeying and the connectivity test", () => {
     const again = (await (await api.get(url())).json()) as ModelsResponse;
     expect(again.models[0]!.credential?.apiKeyMasked).toBe("sk-s…1234");
     expect(again.defaultModel).toEqual({ provider: "custom", modelId: "new-id" });
+  });
+
+  it("an omitted vision model stays, and a null one is cleared while its row stays", async () => {
+    const vision = { provider: "custom", modelId: "reader" };
+    const models = [{ provider: "custom", modelId: "reader", contextWindow: 4096 }];
+    expect((await api.put(url(), { visionModel: vision, models })).status).toBe(200);
+    const kept = (await (await api.put(url(), { models })).json()) as ModelsResponse;
+    expect(kept.visionModel).toEqual(vision);
+    const cleared = await api.put(url(), { visionModel: null, models });
+    expect(cleared.status).toBe(200);
+    const body = (await cleared.json()) as ModelsResponse;
+    expect(body.visionModel).toBeUndefined();
+    expect(body.models.map(pairKey)).toEqual(["custom\0reader"]);
   });
 
   it("a group change is a rekey too: the credential migrates with it; envKey resolves by client, not by group (PRN-021)", async () => {
