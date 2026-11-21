@@ -93,10 +93,8 @@ export const en: Strings = {
     keyText: "Already have an API key from a provider?",
     keyAction: "Add an API key",
     later: "Later",
-    composerNone:
-      "This Project has no default model yet. Set one, or choose a model for this chat.",
-    composerNoneMember:
-      "This Project has no default model yet. Ask its owner to set one, or choose a model for this chat.",
+    composerNone: "No default model yet",
+    composerNoneMember: "No default model yet — ask an owner",
     composerAction: "Set default model",
   },
 

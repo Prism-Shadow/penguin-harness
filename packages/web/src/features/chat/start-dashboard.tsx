@@ -106,8 +106,9 @@ export function StartDashboard({
     <div className="ui-start">
       {/* The logo spans the name, slogan and version line. The version starts at the name's
           left edge and reaches under the counts at `@2xl`; below that, the counts take their
-          own third row. */}
-      <div data-slot="brand" className="@container mb-10">
+          own third row. The space under it holds a notice floating over the composer (no default
+          model yet) without covering the version line, so the notice never moves the composer. */}
+      <div data-slot="brand" className="@container mb-14">
         <div className="grid grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)] items-center gap-x-3 @2xl:grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)_auto]">
           <StartBrand />
           <VersionLine />

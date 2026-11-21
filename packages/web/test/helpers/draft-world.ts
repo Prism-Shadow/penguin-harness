@@ -10,7 +10,8 @@
  * `session_deleted`, which is how a row reaches, and leaves, every tab's list. A test can refuse
  * the next create or the next task with an error, hold creates or tasks until
  * {@link DraftWorld.release}, and have the next task answer with a self-healed id, as a
- * restarted server does for a Session with no Trace.
+ * restarted server does for a Session with no Trace. A world can also give the Project another
+ * model table (one with no default model, say) and make the signed-in user a member of it.
  *
  * The frame is the app's own shape at the route level: a memory data router at `/chat/new`
  * whose root holds the Project, machines and Session-list providers around the draft and a
@@ -23,6 +24,7 @@ import { Outlet, RouterProvider, createMemoryRouter } from "react-router";
 import type {
   ChatDefaultsDto,
   MachinesResponse,
+  ProjectRole,
   ModelsResponse,
   ServerEvent,
   SessionInfo,
@@ -112,9 +114,19 @@ export interface DraftWorld {
   healNext(): void;
 }
 
-/** `chatDefaults` is the Project's `[default_chat]` block the server answers with (none by default). */
-export function draftWorld(options: { chatDefaults?: ChatDefaultsDto } = {}): DraftWorld {
+/** The model table the current world's Project answers with, and the draft is handed. */
+let projectModels: ModelsResponse = MODELS;
+
+/**
+ * `chatDefaults` is the Project's `[default_chat]` block the server answers with (none by
+ * default); `models` its model table ({@link MODELS} by default); `role` the signed-in user's
+ * role in it (owner by default).
+ */
+export function draftWorld(
+  options: { chatDefaults?: ChatDefaultsDto; models?: ModelsResponse; role?: ProjectRole } = {},
+): DraftWorld {
   socketWorld.reset();
+  projectModels = options.models ?? MODELS;
   /** Every Session by id, with the server that holds it (null = this one). */
   const sessions = new Map<string, { info: SessionInfo; machine: string | null }>();
   let seq = 0;
@@ -165,7 +177,7 @@ export function draftWorld(options: { chatDefaults?: ChatDefaultsDto } = {}): Dr
           {
             projectId: PROJECT_ID,
             name: "Project",
-            role: "owner",
+            role: options.role ?? "owner",
             ownerUserId: "admin",
             createdAt: "2026-01-01T00:00:00Z",
           },
@@ -175,7 +187,7 @@ export function draftWorld(options: { chatDefaults?: ChatDefaultsDto } = {}): Dr
     const project = `/api/projects/${PROJECT_ID}`;
     if (path === `${project}/machines`) return json(machines);
     if (path === `${project}/chat-defaults`) return json(options.chatDefaults ?? {});
-    if (path === `${project}/models`) return json(MODELS);
+    if (path === `${project}/models`) return json(projectModels);
     if (path === `${project}/agents` && method === "GET") {
       return json({
         agents: [
@@ -292,7 +304,7 @@ function Rows() {
 function Draft() {
   const { currentProject } = useProject();
   if (currentProject === null) return null;
-  return h(DraftView, { projectId: currentProject.projectId, models: MODELS });
+  return h(DraftView, { projectId: currentProject.projectId, models: projectModels });
 }
 
 /** A media query that never matches, and never changes (jsdom has no `matchMedia`). */

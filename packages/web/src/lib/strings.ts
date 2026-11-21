@@ -114,9 +114,9 @@ export const zh = {
     keyText: "已有某家供应商的 API key？",
     keyAction: "填写 API key",
     later: "稍后",
-    /** The composer's quiet reminder while a new chat has no model to run on. */
-    composerNone: "这个 Project 还没有默认模型。设置一个，或为这次对话选择一个模型。",
-    composerNoneMember: "这个 Project 还没有默认模型。请所有者设置，或为这次对话选择一个模型。",
+    /** The composer's notice while a new chat has no model to run on, for the owner and a member. */
+    composerNone: "还没有默认模型",
+    composerNoneMember: "还没有默认模型，请找所有者设置",
     composerAction: "设置默认模型",
   },
 

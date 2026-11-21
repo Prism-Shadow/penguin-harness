@@ -26,7 +26,7 @@ A new Project, and **Restore defaults**, no longer set DeepSeek V4.1 Flash as th
 
 - When its owner opens a Project with no default chat model, the **Default models** dialog opens by itself if some chat model already has a key (its own, its group's, or one in the server's environment — the model picker's rule). Otherwise a guide asks to connect TokenDance or Penguin Go (each opens the Models page on its connect flow) or to add a key, and turns into the dialog as soon as a key lands, in this window or when the window is shown again.
 - The guide and the dialog open by themselves over the chat pages only, once per Project in a browser; closing either is remembered there. A member gets neither.
-- After that, a new chat with no model shows a quiet line, "This Project has no default model yet. Set one, or choose a model for this chat.", with **Set default model** for the owner, and Send waits for a model. A new chat no longer starts on the first chat model listed when the Project has no default.
+- After that, a new chat with no model shows an attention notice floating above the composer, "No default model yet", with **Set default model** for the owner (a member reads "No default model yet — ask an owner"); it never moves the composer, and it goes once a model is chosen for the chat or a default is set. Send waits for a model. A new chat no longer starts on the first chat model listed when the Project has no default.
 - Connecting TokenDance or Penguin Go in a Project with no default opens the dialog instead of asking whether to switch the default. The "no API key" guide now covers only a default model without a key.
 
 ## Without a default model
