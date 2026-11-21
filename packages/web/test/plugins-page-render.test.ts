@@ -9,7 +9,7 @@
  *   for what it groups.
  * - A server module's card offers an admin Install, or Remove once listed, each with its words;
  *   a member gets the card read-only — its status, and no way to change the server.
- * - A library plugin's card offers any member quick start and "manage installs".
+ * - A library plugin's card offers any member quick start and "Install on Agent".
  * - A card names its category, except inside that category's own section; a package an admin
  *   installed on the server says so where a shipped one says "built in".
  * - Export offers a library plugin's package and a server module's on this server, and nothing

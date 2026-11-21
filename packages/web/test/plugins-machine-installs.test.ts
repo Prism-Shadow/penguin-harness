@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The plugin market's "manage installs" on a machine's Agents (features/plugins/plugins-page.tsx
+ * The plugin market's "Install on Agent" on a machine's Agents (features/plugins/plugins-page.tsx
  * and plugin-card.tsx): a connected machine's own Agents are install targets of their own, and
  * everything done to one happens on that machine (lib/agent-location.ts).
  *

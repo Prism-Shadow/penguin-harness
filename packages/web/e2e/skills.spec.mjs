@@ -8,8 +8,8 @@
  *   status as a glyph and its usage count, their words on hover; a plugin's detail opens over
  *   the market, in the address, its tile carrying the plugin's custom icon (its icon.svg, served
  *   by URL and drawn as a mask in the text colour, never inlined; not the book fallback);
- * - the "Manage installation" Modal: an Agent row + Install / Installed (hover flips to
- *   Uninstall) button, with optimistic updates on install/uninstall; its first row,
+ * - the install flow's Agents step ("Install on Agent"): an Agent row + Install / Installed
+ *   (hover flips to Uninstall) button, with optimistic updates on install/uninstall; its first row,
  *   「新建空白 Agent」, opens Create Agent over it prefilled with the plugin, and the Agent it
  *   creates joins the list installed while the list stays open;
  * - Quick invoke is gated on the currently selected agent having the skill installed (here the
@@ -106,7 +106,7 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   });
   expect(put.ok(), "put models").toBeTruthy();
 
-  // The install target for "Manage installation": default_agent has all skills preinstalled, so use a blank Agent to exercise the install/uninstall flow.
+  // The install target for "Install on Agent": default_agent has all skills preinstalled, so use a blank Agent to exercise the install/uninstall flow.
   const created = await page.request.post(`${BASE}/api/projects/${projectId}/agents`, {
     data: { agentId: "agent_helper", name: "Helper Agent" },
   });
