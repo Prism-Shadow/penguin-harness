@@ -18,7 +18,7 @@
  * - With a configured model credential, it opens and runs Sessions the SDK's way, inside
  *   its own Project only, with allow-all: nobody is there to answer an ask. Its Sessions
  *   are archived with workbench provenance, including before their first run after a restart.
- * - A Session that only talks is opened with deny-all: the model's tool call in it is denied
+ * - A Session that only talks can select its own model and deny-all: that model's tool call is denied
  *   and the model reads the denial, while one opened without the option still runs its calls;
  *   a mode that would wait for a person is refused by name.
  * - Agent counts include installed workbenches and follow removal without a compiler load.
@@ -161,8 +161,12 @@ export default {
                 if (req.path === "/talk") {
                   // The mode is whatever the page sent, cast past its type as plain JavaScript could.
                   const mode = req.query["mode"];
+                  const modelId = req.query["model"];
                   const opened = await host
-                    .createSession(mode === undefined ? {} : { approvalMode: mode as "deny-all" })
+                    .createSession({
+                      ...(mode === undefined ? {} : { approvalMode: mode as "deny-all" }),
+                      ...(modelId ? { model: { provider: "custom", modelId } } : {}),
+                    })
                     .catch((e: Error) => e.message);
                   if (typeof opened !== "string") {
                     await host.run(opened.sessionId, [{ text: "read the probe: " + (mode ?? "default") }]);
@@ -570,37 +574,49 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
       return { toolUse: { id: `toolu_${mode}`, name: "read_file", input: { file_path: probe } } };
     });
     try {
+      const talkModel = "claude-bento-quiet";
       const configured = await owner.put(`/api/projects/${PROJECT}/models`, {
         defaultModel: { provider: "custom", modelId: MOCK_MODEL_ID },
-        models: [
-          {
-            provider: "custom",
-            modelId: MOCK_MODEL_ID,
-            apiKey: "sk-mock",
-            baseUrl: mock.url,
-            contextWindow: 200_000,
-          },
-        ],
+        models: [MOCK_MODEL_ID, talkModel].map((modelId) => ({
+          provider: "custom",
+          modelId,
+          apiKey: "sk-mock",
+          baseUrl: mock.url,
+          contextWindow: 200_000,
+        })),
       });
       expect(configured.status).toBe(200);
       /** What the model was told the tool call came to, once the Session's turn has ended. */
-      const talk = async (mode?: string) => {
-        const res = await owner.get(`${BASE}/demo/api/talk${mode ? `?mode=${mode}` : ""}`);
+      const talk = async (mode?: string, model?: string) => {
+        const query = new URLSearchParams({
+          ...(mode ? { mode } : {}),
+          ...(model ? { model } : {}),
+        });
+        const res = await owner.get(`${BASE}/demo/api/talk?${query}`);
         const { opened } = (await res.json()) as {
           opened: { sessionId: string; approvalMode: string } | string;
         };
         if (typeof opened === "string") return { opened, toolResult: null };
         await waitFor(() => t.deps.manager.statusOf(opened.sessionId) === "idle", 20_000);
-        const answered = mock.requests
-          .map(requestText)
-          .find(
-            (text) => text.includes('"tool_result"') && text.includes(`toolu_${mode ?? "default"}`),
-          );
-        return { opened, toolResult: answered ?? null };
+        const answered = mock.requests.find((req) => {
+          const text = requestText(req);
+          return text.includes('"tool_result"') && text.includes(`toolu_${mode ?? "default"}`);
+        });
+        return {
+          opened,
+          model: answered?.model,
+          toolResult: answered ? requestText(answered) : null,
+        };
       };
 
-      const quiet = await talk("deny-all");
-      expect(quiet.opened).toMatchObject({ approvalMode: "deny-all", source: "workbench" });
+      const quiet = await talk("deny-all", talkModel);
+      expect(quiet.opened).toMatchObject({
+        provider: "custom",
+        modelId: talkModel,
+        approvalMode: "deny-all",
+        source: "workbench",
+      });
+      expect(quiet.model).toBe(talkModel);
       expect(quiet.toolResult).toContain("Tool call denied by user.");
       expect(quiet.toolResult).not.toContain("the probe was read");
 

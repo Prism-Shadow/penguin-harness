@@ -104,6 +104,8 @@ export abstract class WorkbenchHost {
    */
   abstract createSession(opts?: {
     agentId?: string;
+    /** Choose a project model for this Session. Omit it to use the Project default. */
+    model?: { provider: string; modelId: string };
     /**
      * `allow-all` (the default) runs every tool call, as a scheduled run does. `deny-all`
      * denies every tool call in the Session: the mode for a Session that only talks, so
