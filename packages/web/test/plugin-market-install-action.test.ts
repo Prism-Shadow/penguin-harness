@@ -7,10 +7,12 @@
  *
  * - Given a plugin installed on the machine's Agent and not on the current Agent, once both have
  *   answered the action reads the count alone; until the machine answers it may read Install,
- *   but no frame shows the two together. Pressing the count opens Manage installs, which offers
- *   the current Agent Install and shows the machine's Agent with it.
- * - Given a plugin installed nowhere, the action reads Install; pressing it installs it on the
- *   current Agent, and from then on it reads the count. No frame of the card shows both.
+ *   but no frame shows the two together. Pressing the count opens the install flow on its Agents
+ *   (the server has the plugin), which offers the current Agent Install and shows the machine's
+ *   Agent with it.
+ * - Given a plugin installed nowhere, the action reads Install; pressing it opens the same flow,
+ *   where Install on the current Agent installs it, and from then on the action reads the count.
+ *   No frame of the card shows both.
  * - Either way the action is one line of words, in the cards and in the list.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -69,7 +71,7 @@ describe("the market card's install action", () => {
   });
 
   for (const layout of ["cards", "list"] as const) {
-    it(`reads the count alone for a plugin another Agent has, and opens Manage installs (${layout})`, async () => {
+    it(`reads the count alone for a plugin another Agent has, and opens the install flow (${layout})`, async () => {
       agentServer(undefined, { machines: [GPU], library: [CHARTS] });
       await api.installAgentPlugins(PROJECT_ID, AGENT_ID, ["charts"], "gpu1");
       const seen = watchText(ACTION);
@@ -79,7 +81,7 @@ describe("the market card's install action", () => {
       expect(singleStates(seen.texts())).toBe(true);
 
       await click(action()!);
-      expect(topDialog().textContent).toContain(en.skills.manageInstallTitle("Charts"));
+      expect(topDialog().textContent).toContain(en.plugins.installModel.flowTitle("Charts"));
       expect(button(`${en.skills.install} ${AGENT_ID}`).disabled).toBe(false);
       expect(
         button(`${en.skills.uninstall} ${AGENT_ID} ${en.chat.machineTag("gpu-box")}`),
@@ -87,7 +89,7 @@ describe("the market card's install action", () => {
     });
   }
 
-  it("reads Install for a plugin no Agent has, installs it on the current Agent, then reads the count", async () => {
+  it("reads Install for a plugin no Agent has, installs it on the current Agent from the flow, then reads the count", async () => {
     agentServer(undefined, { library: [CHARTS] });
     await openMarket("cards");
     await waitFor(() => action()?.textContent === INSTALL && !action()!.disabled, 40);
@@ -95,6 +97,7 @@ describe("the market card's install action", () => {
     const seen = watchText(ACTION);
 
     await click(action()!);
+    await click(button(`${en.skills.install} ${AGENT_ID}`));
     await waitFor(() => action()?.textContent === ON_ONE, 40);
     expect(oneLine(action()!)).toBe(true);
     expect(seen.texts()).toEqual([INSTALL, ON_ONE]);

@@ -32,21 +32,22 @@ Each card shows the plugin's icon, name and short description, a line in the for
 | **Not on this server** | — | It runs on other machines only |
 | **Available** | No agent in the Project has it | The Project has not added it |
 
-The details open in a dialog: the version, status and tags, then **About**, with the full description and, when the plugin's package ships a README, that README. Every server plugin has one; for a package that is not on this server yet, the dialog says the README shows once it is installed. A plugin with Skills or hooks also has **Files**, a file browser: the tree on the left has one folder per Skill, with its `SKILL.md` first and its reference files after it, and a **Hooks** folder for the hook scripts; the preview on the right shows the selected file. A plugin that declares MCP servers has an **MCP servers** section after **About**: one row per server with its name, transport and target, the URL or the command, and icons you can point at — a key when the server needs vault keys, a sign-in icon when it signs in with OAuth, which this version does not support yet, and a terminal for a stdio server, with the command it runs on the server. The dialog's buttons are the card's, after **Export**, which downloads the plugin's package as a zip; an admin also sees **Delete** on a plugin installed on the server. See [Import and export plugins](#import-and-export-plugins).
+The details open in a dialog: the version, status and tags, then **About**, with the full description and, when the plugin's package ships a README, that README. Every server plugin has one; for a package that is not on this server yet, the dialog says the README shows once it is installed. A plugin with Skills or hooks also has **Files**, a file browser: the tree on the left has one folder per Skill, with its `SKILL.md` first and its reference files after it, and a **Hooks** folder for the hook scripts; the preview on the right shows the selected file. A plugin that declares MCP servers has an **MCP servers** section after **About**: one row per server with its name, transport and target, the URL or the command, and icons you can point at — a key when the server needs vault keys, a sign-in icon when it signs in with OAuth, which this version does not support yet, and a terminal for a stdio server, with the command it runs on the server. The dialog's buttons are the card's with their words — **Install on Agent** and **Quick start** — and, for an admin, what changes the server: **Uninstall from server**, which uninstalls the plugin from every agent on the server first, and a built-in server module's **Disable server module**. Its footer has **Export**, which downloads the plugin's package as a zip. See [Import and export plugins](#import-and-export-plugins).
 
-The buttons on the right of a card:
+The two buttons at the bottom of a card:
 
 | Button | When it appears | What it does |
 | --- | --- | --- |
-| **Manage installs** | The plugin has Skills, hooks or MCP servers | Installs the plugin on an agent, or uninstalls it. |
-| **Quick start** | The plugin ships at least one Skill | Opens a new chat draft with the plugin's demo. On an agent that does not have the plugin yet, it offers to install it first. |
-| Update | An agent's install is behind the library | Updates those installs. See [Update installed plugins](#update-installed-plugins). |
-| **Install** / **Remove** | A server plugin, for an admin | Installs the plugin on the server, or removes it. See [Server plugins](#server-plugins). |
+| **Install** | No agent in the Project has the plugin | Opens the install flow: the server first when the plugin is not on it yet, then your agents. A plugin of server modules alone has the server step only, for an admin. |
+| **Installed on N Agents** | An agent in the Project has the plugin | Opens the install flow on its agents step. |
+| **Update** | The current agent's install is behind the library | Updates that install. See [Update installed plugins](#update-installed-plugins). |
+| **Quick start** | The plugin ships at least one Skill | Opens a new chat draft with the plugin's demo on the current agent, once it has the plugin. |
 
 ## Install a plugin on an agent
 
-1. On the **Plugins** page, select **Manage installs** on the plugin's card. The dialog lists every agent in the current Project in one list, in the **Agents** page's order: this server's and each connected machine's own agents side by side, a machine's with the machine after the name, as in `[SSH: gpu-box]`. Installing on a machine's agent installs from that machine's plugin library, and the row reads what that machine answers.
-2. Next to the agent, select **Install**.
+1. On the **Plugins** page, select **Install** on the plugin's card, or **Install on Agent** in its details. The install flow opens. A bar across its top shows the step it is on: 1/2, then 2/2.
+2. When the plugin is not on the server yet, the first step is **Install on server**. An admin selects it; the step shows how far the install has got, and the flow moves on when it lands. Anyone else selects **Ask an admin to install**, and the flow ends there.
+3. The **Install on Agents** step lists every agent in the current Project in one list, in the **Agents** page's order: this server's and each connected machine's own agents side by side, a machine's with the machine after the name, as in `[SSH: gpu-box]`. Installing on a machine's agent installs from that machine's plugin library, and the row reads what that machine answers. Next to the agent, select **Install**.
 
 The whole plugin is installed: all of its Skills, its hook package and its MCP servers. New conversations pick it up right away. In a conversation already open, the hook package and the MCP servers apply from the next turn, and the Skills after the next compaction.
 
@@ -72,14 +73,14 @@ New versions of the built-in plugins arrive with PenguinHarness updates. An agen
 
 - a red dot on **Plugins** in the sidebar;
 - a notice at the top of the **Plugins** page, "Changes detected: N to upgrade", with **Update now** and **Dismiss**;
-- an update button on the plugin's card, and an **Update** button next to the agent in **Manage installs**.
+- **Update** on the plugin's card when the current agent's install is behind, and an **Update** button next to the agent in the install flow's agent list.
 
 To update:
 
 1. Choose what to update:
    - To update every outdated plugin, select **Update now** in the notice.
-   - To update one plugin on every agent, select the update button on its card.
-   - To update one plugin on one agent, select **Update** next to the agent in **Manage installs**.
+   - To update one plugin on the current agent, select **Update** on its card.
+   - To update one plugin on another agent, select **Update** next to the agent in the install flow's agent list.
 2. Review what the update will touch, then select **Update**. For each agent, the dialog lists the Skills and the hook package whose installed version differs from the library's, with both versions. The plugin's MCP servers are listed as replaced: they carry no version, and a change to them alone never shows an update.
 
 > [!WARNING]
@@ -164,7 +165,7 @@ To upload a zip file:
 
 The Plugins page views one machine at a time, this server by default. Its picker lists this server and the machines the Project reaches or names in a plugin table; when a selected machine leaves the choices, the page returns to this server. Installed includes the viewed machine's `[plugins.<machineId>]` table and the shared `[plugins]` table. Install and Remove write only that machine's own table. Shared rows are tagged **Shared by all machines** and cannot be removed on the page, including a package pinned in both tables: removing its machine-specific entry would leave it running. Agents and the API can still edit the shared table. Available lists packages neither table asks that machine to run.
 
-The Plugins page does not offer package-global Delete plugin, which would remove the shared and other machines’ entries. Manage installs still edits Agent copies; module Remove writes only the viewed machine’s own table. Replies from a previous Project visit, including a return to the same Project, do not replace the current module snapshot.
+The Plugins page does not offer package-global Delete plugin, which would remove the shared and other machines’ entries. Install on Agent still edits agent copies; module Remove writes only the viewed machine’s own table. Replies from a previous Project visit, including a return to the same Project, do not replace the current module snapshot.
 
 A server plugin extends the server itself rather than an agent: it is an npm package of server modules, such as an Agent Sandbox backend. Its package has a code entry and its `ifaces.json` lists the modules; one package can carry library content beside them (see [Plugin file format](#plugin-file-format)). It is installed on the whole server and shared by every Project: a Project asks for the server plugins it needs, and the server runs every plugin that any of its Projects asks for, so what a plugin contributes is available to every Project.
 
@@ -200,9 +201,9 @@ However it arrives, the package's install scripts run on the server as the serve
 
 A server with no npm (the desktop app's, unless Node.js is installed) installs a package that has no dependencies and no install scripts by itself: by name from the npm registry set under **Plugin Sources** and its mirrors, from a zip or a package directory, and it removes one the same way. It checks a download against the sha512 the registry pins before unpacking it, writes regular files only, and from a zip or a directory takes exactly what `npm pack` would publish, so a file your `.gitignore` or `.npmignore` leaves out, such as `.env`, stays out. There, a package that needs npm, and any link, is refused with the reason and a pointer to Node.js, which includes npm; restart PenguinHarness after installing it so it finds npm.
 
-What happens next depends on the plugin. A plugin of Skills, hooks or MCP servers joins the library, tagged **installed on server**; install it on an agent with **Manage installs**. A plugin of server modules is also added to the Project and loaded, which stops the agent runs in progress, as [installing a server plugin](#server-plugins) does. A plugin from a link or a zip is added for this server only, because another machine would fetch the package's name from the npm registry and could get a different package. To run it on another machine, import it there.
+What happens next depends on the plugin. A plugin of Skills, hooks or MCP servers joins the library, tagged **installed on server**; install it on an agent with **Install on Agent**. A plugin of server modules is also added to the Project and loaded, which stops the agent runs in progress, as [installing a server plugin](#server-plugins) does. A plugin from a link or a zip is added for this server only, because another machine would fetch the package's name from the npm registry and could get a different package. To run it on another machine, import it there.
 
-To delete a plugin of Skills, hooks or MCP servers that an admin installed, open its details and select **Delete**. The package leaves the server and the library; the copies of its Skills and hooks and its MCP servers installed on agents stay, though a stdio server whose command shipped in the package can no longer start. A server plugin is removed with **Remove**.
+To take a plugin an admin installed off the server, open its details and select **Uninstall from server**. It is uninstalled from every agent on the server first, which the confirmation lists, then from each Project's list for this server, and then the package leaves the server and the library. A plugin that a Project lists for all its machines is refused until that Project's configuration drops it. A built-in plugin cannot be uninstalled from the server; a built-in server module is turned off for the Project with **Disable server module**.
 
 ## Write a Skill
 
@@ -485,7 +486,7 @@ Installed Skills live under `agent_state/skills/<name>/`, and hook packages unde
 - Installing a hook package writes `hooks.json`, the plugin's `icon.svg`, and every file under the plugin's `hooks/`.
 - Each install replaces the whole directory, so reinstalling drops files a newer version no longer ships. Reinstalling is how an installed copy is updated.
 - Uninstalling deletes the whole `skills/<name>/` or `hooks/<name>/` directory.
-- A plugin's MCP servers are entries, not directories: installing appends them at the end of `tools.mcpServers` in the agent's `system_config.yaml`, keeping the file's comments, each with `plugin: <plugin name>` and with `${PLUGIN_ROOT}` resolved. Reinstalling first removes every entry carrying the plugin's name, so a server a newer version dropped goes too, and uninstalling removes them. An entry of the same name that the plugin does not own refuses the whole install before anything is written. The servers connect from the agent's next model context. Restoring the agent's default configuration drops them with the rest of `tools`; **Manage installs** puts them back.
+- A plugin's MCP servers are entries, not directories: installing appends them at the end of `tools.mcpServers` in the agent's `system_config.yaml`, keeping the file's comments, each with `plugin: <plugin name>` and with `${PLUGIN_ROOT}` resolved. Reinstalling first removes every entry carrying the plugin's name, so a server a newer version dropped goes too, and uninstalling removes them. An entry of the same name that the plugin does not own refuses the whole install before anything is written. The servers connect from the agent's next model context. Restoring the agent's default configuration drops them with the rest of `tools`; **Install on Agent** puts them back.
 - A plugin counts as installed on an agent when each of its Skills, its hook package and each of its MCP servers are there. A server still waiting for vault keys or a sign-in does not change that.
 - A running Session keeps the hook packages its current model context opened with; the next context, after a compaction or on resume, reads them again. After a hook package is installed, imported or removed through the Web App or the API, or the **Enable hooks** switch changes, the server rebuilds the agent's cached runtimes the next time they are idle, so open conversations pick up the change from their next turn.
 - Besides the Web App, plugins can be installed through the SDK.

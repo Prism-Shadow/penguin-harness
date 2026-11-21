@@ -44,24 +44,19 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import { strToU8, unzipSync, zipSync } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
 import type {
   InstalledPluginsResponse,
   PluginLibraryResponse,
   PluginIndexResponse,
 } from "../src/api/types.js";
-import {
-  installPluginFiles,
-  PluginInstallError,
-  type InstalledPackage,
-} from "../src/plugin/install.js";
+import { installPluginFiles } from "../src/plugin/install.js";
 import { contentTable, writeClassPackage } from "./plugin-fixtures.js";
+import { fakeNpm, type Files } from "./fake-npm.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, tokenClient } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { peakRssGrowth, zeroDirectoryZip } from "./zip-bomb-fixtures.js";
-
-type Files = Record<string, string | Uint8Array>;
 
 const bytes = (value: string | Uint8Array) => (typeof value === "string" ? strToU8(value) : value);
 
@@ -111,71 +106,6 @@ async function modulePackage(): Promise<Files> {
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
-}
-
-/**
- * npm, as far as the server can see it: an install writes the package's files under the
- * prefix's node_modules and records it in the prefix's package.json; a link resolves to the
- * package a test registered for it, and anything else fails the way npm does.
- */
-function fakeNpm() {
-  const calls: string[] = [];
-  /** The packages taken back out of the prefix, in order. */
-  const removed: string[] = [];
-  const links = new Map<string, Files>();
-  const place = async (root: string, files: Files, spec: string): Promise<InstalledPackage> => {
-    const prefix = path.join(root, "plugins");
-    const manifest = JSON.parse(strFromU8(bytes(files["package.json"]!))) as {
-      name: string;
-      version: string;
-    };
-    const dir = path.join(prefix, "node_modules", ...manifest.name.split("/"));
-    await fs.rm(dir, { recursive: true, force: true });
-    for (const [rel, value] of Object.entries(files)) {
-      await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
-      await fs.writeFile(path.join(dir, rel), bytes(value));
-    }
-    const prefixFile = path.join(prefix, "package.json");
-    const own = JSON.parse(
-      await fs
-        .readFile(prefixFile, "utf8")
-        .catch(() => '{"name":"penguin-plugins","private":true}'),
-    ) as { dependencies?: Record<string, string> };
-    own.dependencies = { ...own.dependencies, [manifest.name]: spec };
-    await fs.writeFile(prefixFile, JSON.stringify(own));
-    return { name: manifest.name, version: manifest.version };
-  };
-  return {
-    calls,
-    removed,
-    links,
-    install: async (root: string, source: string) => {
-      calls.push(source);
-      const files = links.get(source);
-      if (files === undefined) throw new PluginInstallError(`404 Not Found - GET ${source}`);
-      return place(root, files, source);
-    },
-    installFiles: async (root: string, files: Record<string, Uint8Array>) => {
-      calls.push("<zip>");
-      return place(root, files, "file:archives/upload.tgz");
-    },
-    installChannel: async (): Promise<InstalledPackage> => {
-      throw new PluginInstallError("no release channel here");
-    },
-    remove: async (root: string, name: string) => {
-      removed.push(name);
-      const prefixFile = path.join(root, "plugins", "package.json");
-      const own = JSON.parse(await fs.readFile(prefixFile, "utf8")) as {
-        dependencies?: Record<string, string>;
-      };
-      delete own.dependencies?.[name];
-      await fs.writeFile(prefixFile, JSON.stringify(own));
-      await fs.rm(path.join(root, "plugins", "node_modules", ...name.split("/")), {
-        recursive: true,
-        force: true,
-      });
-    },
-  };
 }
 
 describe("plugin import and export", () => {

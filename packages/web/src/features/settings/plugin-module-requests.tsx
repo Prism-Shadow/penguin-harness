@@ -171,8 +171,24 @@ export function PluginModuleRequests({
       </Button>
     );
     if (row.decision === "enabled") return button(words.stop, () => setStopping(row));
+    // A package asked for before it was on this server (a member's 「安装到 Agent」): it is
+    // installed on the server from the Plugins page first; until then Enable waits, saying so.
     const enable =
-      row.projectId !== null ? button(words.enable, () => void decide(row, "enable")) : null;
+      row.projectId === null ? null : row.onServer === false ? (
+        <Button
+          key="enable"
+          size="sm"
+          variant="secondary"
+          disabled
+          title={S.plugins.installModel.requestNotOnServer}
+          data-tooltip-extra
+          aria-label={`${words.enable} ${title}`}
+        >
+          {words.enable}
+        </Button>
+      ) : (
+        button(words.enable, () => void decide(row, "enable"))
+      );
     if (row.decision === "declined") return enable;
     return (
       <>

@@ -6,6 +6,9 @@
  *                                                          administrator to — the rule an install applies,
  *                                                          pressed as a button (any member); 404
  *                                                          unknown_plugin, 400 no_server_module
+ *   POST /api/projects/:p/plugins/modules                  a package not on this server yet, asked for by
+ *        { package, agentId? }                             a member's 「安装到 Agent」: a request for the
+ *                                                          administrator (409 plugin_on_server when it is)
  *   GET  /api/admin/plugin-modules                         every request and decision, with each module's
  *                                                          state on this server (administrator)
  *   POST /api/admin/plugin-modules/decide                  enable, or decline — which stops an enabled module
@@ -19,6 +22,7 @@
  * the swap.
  */
 import { Hono } from "hono";
+import { isValidId } from "@prismshadow/penguin-core";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Access } from "@prismshadow/penguin-library-project";
 import type { PluginModuleAskResponse, PluginModuleRequestsResponse } from "../../api/types.js";
@@ -46,7 +50,23 @@ export function projectPluginModuleRoutes(deps: PluginModuleRoutesDeps): Hono<Ap
   app.post("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
-    const name = requireString(await readJson(c), "plugin", { minLen: 1, maxLen: 214 });
+    const body = await readJson(c);
+    const actor = actorOf(c);
+    // A package not on this server yet: the member's 「安装到 Agent」 becomes a request.
+    if (typeof body.package === "string" && body.plugin === undefined) {
+      const pkg = requireString(body, "package", { minLen: 1, maxLen: 214, pattern: PACKAGE_NAME });
+      if (deps.library.list().some((p) => p.packageName === pkg)) {
+        throw new HttpError(409, "plugin_on_server", `${pkg} is on this server already.`);
+      }
+      const agentId =
+        typeof body.agentId === "string" && isValidId(body.agentId) ? body.agentId : null;
+      const moduleActions = await deps.modules.askForPackage(projectId, pkg, actor, agentId);
+      return c.json({
+        modules: await deps.modules.status(projectId, actor),
+        moduleActions,
+      } satisfies PluginModuleAskResponse);
+    }
+    const name = requireString(body, "plugin", { minLen: 1, maxLen: 214 });
     const plugin = deps.library.get(name);
     if (plugin === undefined) {
       throw new HttpError(404, "unknown_plugin", `Plugin is not in the library: ${name}`);
@@ -54,7 +74,6 @@ export function projectPluginModuleRoutes(deps: PluginModuleRoutesDeps): Hono<Ap
     if (!plugin.modules) {
       throw new HttpError(400, "no_server_module", `Plugin ${name} ships no server module.`);
     }
-    const actor = actorOf(c);
     // Last, the way an install calls it: it may re-assemble the App.
     const moduleActions = await deps.modules.ensure(projectId, [name], actor, "explicit");
     return c.json({

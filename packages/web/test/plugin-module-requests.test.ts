@@ -55,6 +55,7 @@ const request = (over: Partial<PluginModuleRequest>): PluginModuleRequest => ({
   via: null,
   builtin: false,
   state: "off",
+  onServer: true,
   ...over,
 });
 

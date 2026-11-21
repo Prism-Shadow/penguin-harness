@@ -11,7 +11,7 @@
  *   for what it groups.
  * - A server module's card offers an admin Install, or Remove once listed, each with its words;
  *   a member gets the card read-only — its status, and no way to change the server.
- * - A library plugin's card offers any member quick start and "manage installs".
+ * - A library plugin's card offers any member quick start and "Install on Agent".
  * - A card names its category, except inside that category's own section; a package an admin
  *   installed on the server says so where a shipped one says "built in".
  * - Export offers a library plugin's package and a server module's on this server, and nothing
@@ -40,7 +40,7 @@
  * - Installing a plugin with a stdio server asks first, and the question shows the command; an
  *   install of several plugins at once (a bulk update, a new Agent's plugins) names each plugin
  *   that runs one, with its commands.
- * - In Manage installs, an Agent whose copy waits for vault values says which; its owner gets
+ * - In the install flow, an Agent whose copy waits for vault values says which; its owner gets
  *   Set up, a member is told the owner sets them. Only the owner may uninstall: a member reads
  *   "Installed" with no Uninstall behind it. Saving writes the vault with every existing
  *   key kept, the new values added, an empty field left out.
@@ -265,7 +265,6 @@ const card = (row: PluginRow, isAdmin: boolean, overrides: Partial<PluginCardPro
     busy: false,
     blocked: false,
     onQuickStart: () => undefined,
-    onDeletePlugin: () => Promise.resolve(),
     onToggleInstall: () => Promise.resolve(true),
     onUpdateOutdated: () => Promise.resolve(),
     onModuleApply: () => undefined,
@@ -276,20 +275,43 @@ const card = (row: PluginRow, isAdmin: boolean, overrides: Partial<PluginCardPro
   });
 
 describe("a server module's card", () => {
-  it("offers an admin Install, and Remove once it is listed, each with its words", () => {
-    const available = card(moduleRow("none"), true);
-    expect(buttonText(available, `${en.plugins.install} sandbox-bwrap`)).toBe(en.plugins.install);
-    expect(buttonText(available, `${en.plugins.uninstall} sandbox-bwrap`)).toBeUndefined();
-    const listed = card(moduleRow("active"), true);
-    expect(buttonText(listed, `${en.plugins.uninstall} sandbox-bwrap`)).toBe(en.plugins.uninstall);
-    expect(buttonText(listed, `${en.plugins.install} sandbox-bwrap`)).toBeUndefined();
+  const words = en.plugins.installModel;
+  it("offers an admin Install on server for a market package, and leaves uninstalling to the detail", () => {
+    const available = card(moduleRow("none", false), true);
+    expect(buttonText(available, `${words.installServer} sandbox-bwrap`)).toBe(words.installServer);
+    const listed = card(moduleRow("active", false), true);
+    for (const html of [available, listed]) {
+      expect(buttonText(html, `${words.uninstallServer} sandbox-bwrap`)).toBeUndefined();
+    }
+    expect(buttonText(listed, `${words.installServer} sandbox-bwrap`)).toBeUndefined();
   });
 
-  it("shows a member its status and no way to change the server", () => {
+  it("offers an admin enabling a module the build ships, never uninstalling it, and leaves disabling to the detail", () => {
+    const available = card(moduleRow("none"), true);
+    expect(buttonText(available, `${words.enableModule} sandbox-bwrap`)).toBe(words.enableModule);
+    const listed = card(moduleRow("active"), true);
+    expect(buttonText(listed, `${words.disableModule} sandbox-bwrap`)).toBeUndefined();
+    for (const html of [available, listed]) {
+      expect(buttonText(html, `${words.uninstallServer} sandbox-bwrap`)).toBeUndefined();
+      expect(buttonText(html, `${words.installServer} sandbox-bwrap`)).toBeUndefined();
+    }
+  });
+
+  it("holds a member's server control on a market package, saying only an admin changes the server", () => {
+    const html = card(moduleRow("none", false), false);
+    const tag =
+      new RegExp(`<button[^>]*aria-label="${words.installServer} sandbox-bwrap"[^>]*>`).exec(
+        html,
+      )?.[0] ?? "";
+    expect(tag).toContain('disabled=""');
+    expect(tag).toContain(`data-tooltip="${words.adminOnly}"`);
+  });
+
+  it("shows a member its status and no way to change a module the build ships", () => {
     for (const state of ["none", "active"] as const) {
       const html = card(moduleRow(state), false);
-      expect(buttonText(html, `${en.plugins.install} sandbox-bwrap`)).toBeUndefined();
-      expect(buttonText(html, `${en.plugins.uninstall} sandbox-bwrap`)).toBeUndefined();
+      expect(buttonText(html, `${words.enableModule} sandbox-bwrap`)).toBeUndefined();
+      expect(buttonText(html, `${words.disableModule} sandbox-bwrap`)).toBeUndefined();
       expect(text(html)).toContain(
         state === "active" ? en.plugins.status.installed : en.plugins.status.available,
       );
@@ -301,10 +323,10 @@ describe("a server module's card", () => {
 });
 
 describe("a library plugin's card", () => {
-  it("offers any member quick start and managing its installs", () => {
+  it("offers any member quick start and installing it on Agents", () => {
     const html = card(libraryRow, false, { categoryTitle: "Office Productivity" });
-    expect(buttonText(html, `${en.skills.manageInstall} data-analysis`)).toBe(
-      en.skills.manageInstall,
+    expect(buttonText(html, `${en.plugins.installModel.installAgent} data-analysis`)).toBe(
+      en.plugins.installModel.installAgent,
     );
     expect(buttonText(html, `${en.skills.quickInvoke} data-analysis`)).toBe(en.skills.quickInvoke);
     expect(text(html)).toContain("v0.2.13");
@@ -417,7 +439,7 @@ describe("exporting a plugin", () => {
 
 describe("installing a server module", () => {
   it("names it and says it goes on the whole server, then what it costs the runs in progress", () => {
-    const html = text(inLocale(ModuleApplyBody, { install: true, name: "sandbox-bwrap" }));
+    const html = text(inLocale(ModuleApplyBody, { mode: "install", name: "sandbox-bwrap" }));
     const body = html.indexOf(en.plugins.applyConfirmInstallBody("sandbox-bwrap"));
     const cost = html.indexOf(en.plugins.applyConfirmWarning(true));
     expect(body).toBeGreaterThanOrEqual(0);
@@ -813,35 +835,5 @@ describe("a plugin's MCP servers", () => {
       { key: "MAIL_CLIENT_ID", value: "replaced-id" },
       { key: "MAIL_CLIENT_SECRET", value: "new-secret" },
     ]);
-  });
-});
-
-describe("a shared plugin's accessible removal", () => {
-  const row = (_installed: boolean, shared?: boolean) => {
-    const r = moduleRow("active");
-    if (shared) Object.assign(r.module!, { shared: true, removeBlocked: en.plugins.sharedHint });
-    return card(r, true);
-  };
-  /** The opening tag of the row's Remove button. */
-  const removeButton = (html: string) =>
-    new RegExp(`<button[^>]*aria-label="${en.plugins.uninstall} sandbox-bwrap"[^>]*>`).exec(
-      html,
-    )?.[0] ?? "";
-
-  it("describes a shared row's disabled Remove by its tag and hint", () => {
-    const html = row(true, true);
-    const button = removeButton(html);
-    expect(button).toContain('disabled=""');
-    const ids = /aria-describedby="([^"]+)"/.exec(button)?.[1]?.split(" ") ?? [];
-    const textOf = (id: string) =>
-      new RegExp(`id="${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*>([^<]*)<`).exec(html)?.[1];
-    expect(ids.map(textOf)).toEqual([en.plugins.sharedTag, en.plugins.sharedHint]);
-  });
-
-  it("leaves an own row's Remove enabled and undescribed", () => {
-    const button = removeButton(row(true));
-    expect(button).not.toBe("");
-    expect(button).not.toContain('disabled=""');
-    expect(button).not.toContain("aria-describedby");
   });
 });

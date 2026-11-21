@@ -189,7 +189,7 @@ Tabs you have not customized are updated to the current built-in defaults. A tab
 > [!WARNING]
 > Restoring the default configuration cannot be undone.
 
-The agent's configuration is overwritten with the current defaults: the custom system prompt, tool list, model and compaction settings, and MCP servers are all replaced. Only the name, the description, the author and the Agent State version are kept. The MCP servers a plugin installed go too; **Manage installs** on the **Plugins** page puts them back.
+The agent's configuration is overwritten with the current defaults: the custom system prompt, tool list, model and compaction settings, and MCP servers are all replaced. Only the name, the description, the author and the Agent State version are kept. The MCP servers a plugin installed go too; **Install on Agent** on the **Plugins** page puts them back.
 
 ## System Prompt tab
 
@@ -280,7 +280,7 @@ Installing a plugin that carries MCP servers adds them to this list too; see [In
 
 A row may also show an icon for a server that cannot connect yet. A conversation skips that server, and its MCP connect row says why:
 
-- A key icon: the server needs setup, because the vault lacks keys its entry references. Point at it for their names. The Project owner adds them on the **Vault** tab, or with **Set up** in the plugin's **Manage installs** dialog.
+- A key icon: the server needs setup, because the vault lacks keys its entry references. Point at it for their names. The Project owner adds them on the **Vault** tab, or with **Set up** in the plugin's install flow, on its agents step.
 - A sign-in icon: the server signs in with OAuth, which this version does not support yet.
 
 ### Test MCP servers
