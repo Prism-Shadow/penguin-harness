@@ -2,13 +2,18 @@
  * The Sandbox card's live status (`PluginConfigPage.status`): what this machine enforces and by
  * what, why each installed backend that is not in use is not, a warning when the saved policy
  * needs isolation no usable backend implements, the enum options no backend here can honour,
- * and which backend packages this OS defaults to. A code contribution, so it must not require
- * plugin configuration itself.
+ * and which backend packages this OS defaults to. Its report lists every registered backend on
+ * one line — in use, installed but not in use (why folded under it), for another platform —
+ * linked to the page of the plugin that registered it, where that backend's own options and
+ * checks are. A code contribution, so it must not require plugin configuration itself.
  */
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { SandboxDimension } from "@prismshadow/penguin-core/plugin";
-import type { PluginConfigNotice } from "../api/types.js";
+import type { PluginConfigNotice, PluginStatusCheck, PluginStatusReport } from "../api/types.js";
 import type { PluginConfigUnavailable, SettingsGroupStatus } from "../plugin/config-page.js";
+import { pluginHostFrom, pluginTitleOf } from "../plugin/host.js";
+import type { PluginHost } from "../plugin/host.js";
 import { Sandbox, SandboxModule } from "./service.js";
 import { SANDBOX_DIMENSIONS, requestedDimensions } from "./dimensions.js";
 import {
@@ -162,6 +167,45 @@ export function unavailableNetworks(
 }
 
 /**
+ * One line per registered backend, in routing order: its plugin's name (the backend's own when no
+ * plugin registered it), where it stands, and a link to that plugin's page. A backend that has not
+ * settled yet is not known.
+ */
+export function backendChecks(sandbox: Sandbox, host: PluginHost): PluginStatusCheck[] {
+  const mounted = new Map(sandbox.backends().map((b) => [b.name, b]));
+  const failed = new Map(sandbox.failures().map((f) => [f.name, f.reason]));
+  const declined = new Set(sandbox.declined());
+  return sandbox.origins().map(({ name, package: pkg }): PluginStatusCheck => {
+    const title = pkg === undefined ? undefined : pluginTitleOf(host, pkg);
+    const base = {
+      id: name,
+      label: title?.title ?? name,
+      ...(title?.titleZh !== undefined ? { labelZh: title.titleZh } : {}),
+      ...(pkg !== undefined ? { page: `plugin:${pkg}` } : {}),
+    };
+    const serving = mounted.get(name);
+    if (serving !== undefined) {
+      const by = serving.mechanism !== undefined ? ` (${serving.mechanism})` : "";
+      return { ...base, state: "ok", text: `In use${by}`, textZh: `在用${by}` };
+    }
+    const reason = failed.get(name);
+    if (reason !== undefined) {
+      return {
+        ...base,
+        state: "action",
+        text: "Installed, not in use",
+        textZh: "已安装，未启用",
+        details: reason,
+      };
+    }
+    if (declined.has(name)) {
+      return { ...base, state: "na", text: "For another platform", textZh: "适用于其他平台" };
+    }
+    return { ...base, state: "unknown", text: "Checking…", textZh: "检查中…" };
+  });
+}
+
+/**
  * The sandbox card's live notices: a warning when the saved policy needs isolation no usable
  * backend implements (every command would be refused), what the machine enforces, and each
  * backend that failed to load, with its reason. A backend that declined because this host is not
@@ -176,9 +220,32 @@ export function unavailableNetworks(
 export class SandboxSettingsStatus {
   @Use(SandboxModule) private readonly sandbox!: Sandbox;
   @Bind("sandbox.status") status!: SettingsGroupStatus;
-  setup() {
+  setup({ resources }: ClassCtx) {
     const sandbox = this.sandbox;
     this.status = {
+      // Every backend on a line of its own, linked to its plugin's page; "check again" loads
+      // the ones that failed again, as a save does.
+      report: (): PluginStatusReport | undefined => {
+        const checks = backendChecks(sandbox, pluginHostFrom(resources));
+        return checks.length === 0 ? undefined : { checks, recheck: "check" };
+      },
+      actions: () =>
+        sandbox.origins().length === 0
+          ? []
+          : [
+              {
+                id: "check",
+                title: "Check again",
+                titleZh: "重新检查",
+                description: "Loads again every backend that failed its check.",
+                descriptionZh: "重新加载每个未通过检查的后端。",
+              },
+            ],
+      run: async (action) => {
+        if (action !== "check") return { ok: false, message: `No action ${action}.` };
+        await sandbox.retryFailed();
+        return { ok: true, message: "Checked again.", messageZh: "已重新检查。" };
+      },
       // The switch and the default as the card shows them, for a document saved before they
       // existed: the switch off its old policy; the default the row that gives that document's
       // start, or none when no row does.
@@ -253,14 +320,7 @@ export class SandboxSettingsStatus {
           text: `This deployment has no usable sandbox backend: until one for this platform is installed from the Plugins page, every mode but Full access refuses every agent command and hook script.${elsewhere}`,
           textZh: `当前部署没有可用的沙盒后端：在插件页安装适用于本平台的后端之前，除「完全访问」外的任何模式都会拒绝 Agent 的每条命令与钩子脚本。${elsewhereZh}`,
         });
-        // With nothing serving, why each installed backend is not in use is the headline.
-        for (const { name, reason } of sandbox.failures()) {
-          notices.push({
-            tone: "attention",
-            text: `${name} is not in use: ${reason}`,
-            textZh: `${name} 未启用：${reason}`,
-          });
-        }
+        // Why each installed backend is not in use is on its own line in the report.
         return notices;
       },
     };

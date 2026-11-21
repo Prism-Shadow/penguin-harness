@@ -122,6 +122,69 @@ export class PluginHost {
 }
 
 /**
+ * The names of the server modules plugins add to the generation `host` belongs to: every loaded
+ * plugin's modules and stand-ins, except those of a plugin this build left out
+ * (plugin/unsatisfied.ts). What `GET /api/contributions` lists as `modules`, so the Web App draws a
+ * plugin's web half only while its server half runs. Read when asked, not at boot: the host
+ * learns what was left out once the tree has booted.
+ */
+export function runningPluginModules(host: PluginHost): string[] {
+  // A host registered by a generation older than the record has none to give.
+  const unmet = typeof host.unsatisfied === "function" ? host.unsatisfied() : new Map();
+  return [...host.entries().values()]
+    .filter((plugin) => unmet.get(plugin.specifier)?.disabled !== true)
+    .flatMap((plugin) => [...plugin.modules, ...plugin.replaces].map((m) => m.manifest.name));
+}
+
+/**
+ * The package (its specifier) of the loaded plugin that adds `module` to the tree — one of its
+ * modules or stand-ins, or a child of one — or undefined for a module of the host's own. What a
+ * settings group declared by that module is said to belong to (the Settings dialog draws it on
+ * the plugin's page).
+ */
+export function pluginPackageOf(host: PluginHost, module: string): string | undefined {
+  const declares = (def: ModuleDef): boolean =>
+    def.manifest.name === module || (def.children ?? []).some(declares);
+  for (const plugin of host.entries().values()) {
+    if ([...plugin.modules, ...plugin.replaces].some(declares)) return plugin.specifier;
+  }
+  return undefined;
+}
+
+/**
+ * A loaded plugin's display name, from its card (`PluginLibraryModule.cards`, which any of its
+ * modules may contribute): what a page that names another plugin calls it. Undefined when the
+ * package is not loaded or carries no titled card.
+ */
+export function pluginTitleOf(
+  host: PluginHost,
+  specifier: string,
+): { title: string; titleZh?: string } | undefined {
+  const plugin = host.entries().get(specifier);
+  if (plugin === undefined) return undefined;
+  const walk = (def: ModuleDef): { title: string; titleZh?: string } | undefined => {
+    for (const card of def.manifest.contributes["PluginLibraryModule.cards"] ?? []) {
+      if (typeof card.title === "string") {
+        return {
+          title: card.title,
+          ...(typeof card.titleZh === "string" ? { titleZh: card.titleZh } : {}),
+        };
+      }
+    }
+    for (const child of def.children ?? []) {
+      const found = walk(child);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
+  for (const def of [...plugin.modules, ...plugin.replaces]) {
+    const found = walk(def);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/**
  * Registry key for the loaded plugin host.
  *
  * Nothing about the host is the runtime's business: which plugins a deployment runs is

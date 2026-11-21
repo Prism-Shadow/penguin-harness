@@ -3,9 +3,9 @@
  * switch: a display preference of this browser, not server configuration, which commits when
  * flipped and which the page, open under this dialog, follows at once (incompatible-only.ts).
  *
- * Under it, ruled off, the server's part (admin only, server-global): first the requests to run a
- * library plugin's server module and what was decided about them (plugin-module-requests.tsx),
- * then the plugin options: one card per settings entry
+ * Under it, ruled off, the server's part (admin only, server-global): on the plugin sources page,
+ * first the requests to run a library plugin's server module and what was decided about them
+ * (plugin-module-requests.tsx); then the plugin options: one card per settings entry
  * — a group a module contributes (the sandbox) or a loaded plugin's declared configuration —
  * drawn from its schema: a string, a secret, a boolean, a number, a choice, a list of lines or
  * a table (a row per preset, say; plugin-config-table.tsx) per field, so the page knows nothing
@@ -13,7 +13,7 @@
  * collapsed by default (advanced-fold.tsx). A group with a `switch` draws that field alone while
  * it is off, and one that reports a `backend` it lacks offers to install it when the switch is
  * turned on (sandbox-backend-prompt.tsx). An entry naming a
- * `parent` is drawn inside that card (a sandbox backend's own options inside the sandbox's) and
+ * `parent` is drawn inside that card (the plugin index's sources inside plugin sources) and
  * saved with it; notices the entry reports sit under its title. How a card commits — switches
  * when flipped, everything typed on the card's own Save — is plugin-config-card.tsx. A secret
  * field always starts empty and shows the stored value's mask under it: blank keeps what is
@@ -29,16 +29,22 @@
  * Values hydrate when the section mounts and every stored response is adopted as the new
  * truth; a card with unsaved edits keeps them against it. The plugin picks a change up through
  * its watch, so nothing here says "restart".
+ *
+ * The same page serves every page of the Settings dialog's Plugins group, each settings group as
+ * a status page (plugin-group-page.tsx): the plugin sources page (`host: "sources"`, with the
+ * browser switch above), the Agent sandbox page (`host: "sandbox"`) and a plugin's own page
+ * (`plugin`, plugin-page.tsx). Which page draws which group is plugin-config-groups.ts, so each
+ * group is drawn in exactly one place.
  */
 import { useEffect, useRef, useState } from "react";
 import type { PluginConfigEntry } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { useLocale } from "../../state/locale";
+import { webLocale } from "@prismshadow/penguin-web-plugin";
 import { localizedText } from "../../lib/skill-use";
 import { apiErrorText } from "../../lib/api-error";
-import { useSessions } from "../../state/sessions";
-import { useProject } from "../../state/project";
+import { useSessionsIfAny } from "../../state/sessions";
+import { useProjectIfAny } from "../../state/project";
 import {
   THIS_SERVER_KEY,
   backendToOffer,
@@ -53,6 +59,7 @@ import {
 } from "../../lib/plugins-incompatible-only";
 import { PluginCard } from "./plugin-config-card";
 import { PluginModuleRequests } from "./plugin-module-requests";
+import { cardsOn, type GroupPage } from "./plugin-config-groups";
 import { withLiveParts } from "./plugin-config-live";
 import { SandboxBackendPrompt } from "./sandbox-backend-prompt";
 import {
@@ -124,11 +131,34 @@ export function ConfigMachinePicker({
   );
 }
 
+const NO_MACHINES: readonly string[] = [];
+const NO_LABELS: ReadonlyMap<string, string> = new Map();
+
 /** The server's part of the page: the machine picker and the cards, under a rule. */
 const SERVER_PART = "space-y-4 border-t border-line-muted pt-4";
 
-export function PluginsSection({ focus }: { focus?: string } = {}) {
-  const { locale } = useLocale();
+export function PluginsSection({
+  focus,
+  claimed,
+  plugin,
+  host = "sources",
+}: {
+  focus?: string;
+  /** On plugin sources: the packages with a page of their own in the Plugins group. */
+  claimed?: ReadonlySet<string>;
+  /** On a plugin's page: its package — only its settings groups. */
+  plugin?: string;
+  /** Without `plugin`: which of the host's own pages this is. */
+  host?: "sources" | "sandbox";
+} = {}) {
+  const page: GroupPage =
+    plugin !== undefined
+      ? { kind: "plugin", plugin }
+      : host === "sandbox"
+        ? { kind: "sandbox" }
+        : { kind: "sources", claimed: claimed ?? new Set() };
+  // The language on screen, as the dictionary switch tells it (a remount follows every switch).
+  const locale = webLocale();
   const localized = (en: string | undefined, zhText: string | undefined) =>
     en === undefined ? undefined : localizedText(locale, en, zhText);
   /** Every entry as stored on the machine on screen; each card holds its own draft (PluginCard). */
@@ -143,13 +173,16 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
     id: string;
     title: string;
   } | null>(null);
-  const { machineIds, machineLabels } = useSessions();
+  // The Project's connected machines; none outside the app's providers (a test, the gallery).
+  const sessions = useSessionsIfAny();
+  const machineIds = sessions?.machineIds ?? NO_MACHINES;
+  const machineLabels = sessions?.machineLabels ?? NO_LABELS;
   /** The machine whose settings the page shows and saves: null for this server. */
   const [machine, setMachine] = useState<string | null>(null);
   /** Why the picked machine's settings could not be read, when they could not. */
   const [loadError, setLoadError] = useState<string | null>(null);
   const nameOf = (id: string) => machineLabels.get(id) ?? id;
-  const projectId = useProject().currentProject?.projectId ?? null;
+  const projectId = useProjectIfAny()?.currentProject?.projectId ?? null;
   /** The backend package the install prompt offers, while it is open. */
   const [offered, setOffered] = useState<string[] | null>(null);
   const [installing, setInstalling] = useState(false);
@@ -192,8 +225,10 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
    * are read again every few seconds — only those: a draft being typed elsewhere on the page is
    * not replaced, and a group that finished gets its new notices and buttons the same way.
    */
-  const inProgress = (entries ?? []).some((e) =>
-    (e.notices ?? []).some((n) => n.tone === "progress"),
+  const inProgress = (entries ?? []).some(
+    (e) =>
+      (e.notices ?? []).some((n) => n.tone === "progress") ||
+      e.report?.version?.state === "preparing",
   );
   useEffect(() => {
     if (!inProgress) return;
@@ -208,11 +243,12 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
             (prev ?? []).map((e) => {
               const next = config.plugins.find((p) => p.name === e.name);
               if (next === undefined) return e;
-              const { notices: _n, actions: _a, ...rest } = e;
+              const { notices: _n, actions: _a, report: _r, ...rest } = e;
               return {
                 ...rest,
                 ...(next.notices !== undefined ? { notices: next.notices } : {}),
                 ...(next.actions !== undefined ? { actions: next.actions } : {}),
+                ...(next.report !== undefined ? { report: next.report } : {}),
               };
             }),
           );
@@ -231,13 +267,15 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   }, [entries, inProgress, machine]);
 
   /**
-   * Runs a group's action: what the deployment must DO once on the machine (the Windows
-   * sandbox's local accounts). The result's own words are what the person sees — the module
-   * knows what happened, this page does not — and the groups it answers with replace ours,
-   * because a setup that worked changes what the card says about itself.
+   * A group action's button: asks first, with the action's own title (see pendingAction) — except
+   * the action the group's own report names as its "check again", which only reads and runs at
+   * once. Decided here from the stored entry, never from what the button says about itself.
    */
-  /** A group action's button: asks first, with the action's own title (see pendingAction). */
   const askAction = (entry: PluginConfigEntry, id: string) => {
+    if (entry.report?.recheck === id) {
+      void runAction(entry, id);
+      return;
+    }
     const action = entry.actions?.find((a) => a.id === id);
     setPendingAction({
       entry,
@@ -246,6 +284,12 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
     });
   };
 
+  /**
+   * Runs a group's action: what the deployment must DO once on the machine (the Windows
+   * sandbox's local accounts). The result's own words are what the person sees — the module
+   * knows what happened, this page does not — and the groups it answers with replace ours,
+   * because a setup that worked changes what the card says about itself.
+   */
   const runAction = async (entry: PluginConfigEntry, action: string) => {
     setBusy(`${entry.name}\0${action}`);
     try {
@@ -342,16 +386,21 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       />
     ) : null;
 
-  // This browser's view of the Plugins page, ruled off from the server's settings below it.
-  const viewRow = (
-    <SettingsGroup>
-      <ToggleRow
-        label={S.settings.pluginsIncompatibleOnly}
-        checked={incompatibleOnly}
-        onChange={(on) => writePluginsIncompatibleOnly(on)}
-      />
-    </SettingsGroup>
-  );
+  // A plugin's page has no switch above its groups to rule them off from.
+  const partClass = page.kind === "sources" ? SERVER_PART : "space-y-6";
+
+  // This browser's view of the Plugins page, ruled off from the server's settings below it; a
+  // plugin's own page has none.
+  const viewRow =
+    page.kind !== "sources" ? null : (
+      <SettingsGroup>
+        <ToggleRow
+          label={S.settings.pluginsIncompatibleOnly}
+          checked={incompatibleOnly}
+          onChange={(on) => writePluginsIncompatibleOnly(on)}
+        />
+      </SettingsGroup>
+    );
 
   // The requests come first among the server's options: they are what waits for the admin.
   const requests = <PluginModuleRequests machine={machine} />;
@@ -360,45 +409,57 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
     return (
       <SettingsSection>
         {viewRow}
-        <div className={SERVER_PART}>
-          {picker}
-          {requests}
-        </div>
+        {(picker !== null || page.kind === "sources") && (
+          <div className={partClass}>
+            {picker}
+            {page.kind === "sources" && requests}
+          </div>
+        )}
       </SettingsSection>
     );
   }
 
-  // A card per entry with no parent on the page; an entry whose parent is not listed stands
-  // on its own rather than disappearing.
-  const names = new Set(entries.map((e) => e.name));
-  const cards = entries.filter((e) => e.parent === undefined || !names.has(e.parent));
+  // The cards this page draws; each group lands on exactly one page.
+  const cards = cardsOn(page, entries, machine !== null);
   return (
     <SettingsSection>
       {viewRow}
-      <div className={SERVER_PART}>
-        {picker}
-        {machine !== null && loadError !== null && (
-          <NoticeStrip tone="attention" as="p" className="rounded-md px-3 py-2 text-xs">
-            {S.plugins.machineUnreadable(nameOf(machine), loadError)}
-          </NoticeStrip>
-        )}
-        {requests}
-        <FocusCard focus={focus} ready={entries.length > 0} />
-        {cards.map((card) => (
-          <PluginCard
-            key={card.name}
-            members={[card, ...entries.filter((e) => e.parent === card.name)]}
-            machine={machine}
-            busy={busy}
-            setBusy={setBusy}
-            locale={locale}
-            onStored={adoptOne}
-            onStoredAll={adopt}
-            onAction={askAction}
-            onSwitchedOn={offerBackend}
-          />
-        ))}
-      </div>
+      {(picker !== null || loadError !== null || cards.length > 0 || page.kind === "sources") && (
+        <div className={partClass}>
+          {picker}
+          {machine !== null && loadError !== null && (
+            <NoticeStrip tone="attention" as="p" className="rounded-md px-3 py-2 text-xs">
+              {S.plugins.machineUnreadable(nameOf(machine), loadError)}
+            </NoticeStrip>
+          )}
+          {page.kind === "sources" && requests}
+          <FocusCard focus={focus} ready={entries.length > 0} />
+          {plugin !== undefined && machine !== null && loadError === null && cards.length === 0 && (
+            <p className="text-sm text-fg-muted">
+              {/* A machine that names any group's plugin is new enough that this one has none there. */}
+              {entries.some((e) => e.plugin !== undefined)
+                ? S.settings.pluginPage.noneOnMachine(nameOf(machine))
+                : S.settings.pluginPage.onAdminPage(nameOf(machine), S.settings.pluginsTitle)}
+            </p>
+          )}
+          {cards.map((card) => (
+            <PluginCard
+              key={card.name}
+              layout="page"
+              titled={cards.length > 1}
+              members={[card, ...entries.filter((e) => e.parent === card.name)]}
+              machine={machine}
+              busy={busy}
+              setBusy={setBusy}
+              locale={locale}
+              onStored={adoptOne}
+              onStoredAll={adopt}
+              onAction={askAction}
+              onSwitchedOn={offerBackend}
+            />
+          ))}
+        </div>
+      )}
       <ConfirmModal
         open={pendingAction !== null}
         title={S.settings.pluginActionTitle}

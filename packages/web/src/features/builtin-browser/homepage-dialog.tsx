@@ -12,12 +12,11 @@
  */
 import { useState } from "react";
 import { Button, Input, Modal, useFormDraft, useGuardedClose } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
-import { S } from "../../lib/strings";
+import * as api from "./api";
+import { apiErrorText, toastApiError } from "@prismshadow/penguin-web-plugin";
+import { S } from "./strings";
 import { homepageFromInput } from "./address";
 import { dispatchBrowser } from "./browser-store";
-import { toastApiError } from "../../lib/toast-api-error";
 
 export function HomepageDialog({
   homepage,

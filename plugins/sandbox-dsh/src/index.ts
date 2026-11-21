@@ -31,6 +31,9 @@ import type {
   SandboxProvider,
   SandboxProviderSource,
 } from "@prismshadow/penguin-core/plugin";
+import { SandboxDshStatus } from "./status.js";
+
+export { DshSandboxView, SandboxDshStatus, dshNotices, dshReport } from "./status.js";
 
 /**
  * Programs the Windows ACL restricted-token runner cannot start — and they include the harness's
@@ -269,6 +272,10 @@ export async function loadDshAdaptor(host: DshLoadHost = {}): Promise<SandboxPro
     "SandboxModule.providers": [
       { id: "sandbox-dsh.provider", name: "dsh-local", dimensions: ["fs-write"] },
     ],
+    // No options: the group gives this backend its page in Settings, where its status shows.
+    "PluginConfigProvider.groups": [
+      { id: "sandbox-dsh", title: "DSH Sandbox", titleZh: "DSH 沙箱", properties: {} },
+    ],
   },
 })
 export class SandboxDsh {
@@ -279,5 +286,5 @@ export class SandboxDsh {
   }
 }
 
-const plugin: Plugin = { modules: [SandboxDsh] };
+const plugin: Plugin = { modules: [SandboxDsh, SandboxDshStatus] };
 export default plugin;

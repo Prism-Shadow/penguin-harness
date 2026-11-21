@@ -507,259 +507,6 @@ export const en: Strings = {
     panelUnavailable: "This panel isn't available",
   },
 
-  builtinBrowser: {
-    panelTitle: "Browser",
-    tabs: "Tabs",
-    newTab: "New tab",
-    closeTab: "Close tab",
-    untitled: "New tab",
-    back: "Back",
-    forward: "Forward",
-    reload: "Reload",
-    stop: "Stop loading",
-    address: "Address",
-    addressPlaceholder: "Search or enter address",
-    suggestions: "History",
-    more: "More",
-    importAction: "Import from browser…",
-    clearDataAction: "Clear browsing data…",
-    setHomepageAction: "Set homepage…",
-    openExternal: "Open in system browser",
-    devTools: "Developer tools",
-    home: "Home",
-    agentBusy: (action: string): string => `An agent is using the browser: ${action}`,
-    agentBusyTab: "An agent is using this tab",
-    actions: {
-      navigate: "opening a page",
-      scan: "reading the page",
-      exec: "running a script",
-      click: "clicking",
-      type: "typing",
-      screenshot: "taking a screenshot",
-      cdp: "sending a DevTools command",
-    },
-    unavailableTitle: "Built-in browser unavailable",
-    unavailableDesktop: "The built-in browser runs in the PenguinHarness desktop app.",
-    unavailableShell: "This desktop app is too old for the built-in browser. Update it to use it.",
-    unavailableWindow: "No app window is available to show the browser.",
-    unavailablePairChrome: "To have agents use your Chrome instead, pair it in Settings › Browser.",
-    useChrome: "Use System Chrome",
-    startPage: {
-      label: "Common sites",
-      sites: {
-        google: "Google",
-        bing: "Bing",
-        baidu: "Baidu",
-        github: "GitHub",
-        stackoverflow: "Stack Overflow",
-        wikipedia: "Wikipedia",
-      },
-    },
-    openFailed: (reason: string): string => `Could not open a tab: ${reason}`,
-    closeFailed: (reason: string): string => `Could not close the tab: ${reason}`,
-    backendBuiltin: "Built-in",
-    backendChrome: "System Chrome",
-    chromeConnected: (name: string | null): string =>
-      name !== null ? `Chrome: connected · ${name}` : "Chrome: connected",
-    chromeNotConnected: "Chrome: not connected",
-    chromeNotPaired: "No Chrome paired",
-    chromeDisabled: "Chrome connections are off",
-    connectChrome: "Connect your Chrome…",
-    manageChrome: "Manage…",
-    switchedToChrome: "Agents now use your Chrome",
-    switchedToBuiltin: "Agents now use the built-in browser",
-    switchRefused: "An agent is using the browser; switch once it is done",
-    switchFailed: (reason: string): string => `Could not switch the browser: ${reason}`,
-    chromeTabCard: "This tab is open in your Chrome",
-    showInChrome: "Show in Chrome",
-    chromeNoTabsTitle: "No agent tabs in your Chrome yet",
-    chromeNoTabsBody: "Pages an agent opens appear in Chrome's Penguin tab group.",
-    chromeDisconnectedTitle: "Chrome is not connected",
-    chromeDisconnectedBody: (name: string | null): string =>
-      name !== null
-        ? `${name} is not connected to this server right now.`
-        : "Your paired Chrome is not connected to this server right now.",
-    reconnectHelp: "Reconnect help",
-    reconnectOpen:
-      "Open Chrome and check that the PenguinHarness Browser extension is turned on in chrome://extensions.",
-    reconnectResume:
-      "Click the extension's icon in the toolbar; if it says it is paused, choose Resume.",
-    reconnectPair:
-      "If the server's address changed, or the server was removed in the extension, pair it again.",
-    chromeDisabledTitle: "Chrome connections are off",
-    chromeDisabledBody: "An admin of this server has turned off Chrome extension connections.",
-    chromeUnpairedIntro:
-      "Install the PenguinHarness Browser extension and pair it, and agents can open and work in pages in your own Chrome, signed in as you are there.",
-    pairTitle: "Connect your Chrome",
-    pairStepInstall:
-      "Install the extension and pin it to the toolbar. The Chrome Web Store is the recommended source: Chrome keeps the extension up to date.",
-    pairStore: "Open the Chrome Web Store",
-    pairStepInstallZip:
-      "If the store does not open, download the zip and unzip it instead. In chrome://extensions, turn on Developer mode, choose Load unpacked and pick the unzipped folder.",
-    pairDownload: "Download the extension (zip)",
-    pairStepOpen:
-      "Click the PenguinHarness Browser icon in the toolbar and choose Settings to open its pairing page.",
-    pairStepPaste: "Paste the server address and the pairing code below, and choose Connect.",
-    pairServer: "Server address",
-    pairCode: "Pairing code",
-    pairCodeExpiry: (time: string): string => `Works once, until ${time}`,
-    pairCodeExpired: "This code has expired",
-    pairNewCode: "New code",
-    pairCodeFailed: (reason: string): string => `Could not create a pairing code: ${reason}`,
-    pairWaiting: "Waiting for Chrome…",
-    pairConnected: "Connected",
-    importTitle: "Import from browser",
-    importIntro:
-      "Copies sign-ins into this Project’s browser storage and history into the built-in browser. Other Projects’ sign-ins and the source browser stay unchanged.",
-    importLoading: "Looking for browsers…",
-    importNone: "No browser to import from was found on this computer.",
-    importSourcesFailed: (reason: string): string => `Could not list the browsers: ${reason}`,
-    importSource: "Import from",
-    importWhat: "What to import",
-    importCookies: "Cookies and sign-ins",
-    importHistory: "History",
-    importDomains: "Only these sites",
-    importDomainsHint:
-      "Comma separated, for example amazon.com, github.com. Leave empty to import every site.",
-    importDomainsPlaceholder: "amazon.com, github.com",
-    importKeychainNote: "Your Mac may ask for Keychain access.",
-    importRun: "Import",
-    importRunning: "Importing…",
-    importDone: "Done",
-    importCookiesResult: (c: {
-      found: number;
-      imported: number;
-      skipped: number;
-      failed: number;
-    }): string =>
-      `Cookies: ${c.imported} of ${c.found} imported` +
-      (c.skipped > 0 ? `, ${c.skipped} skipped` : "") +
-      (c.failed > 0 ? `, ${c.failed} failed` : ""),
-    importHistoryResult: (h: { found: number; imported: number }): string =>
-      `History: ${h.imported} of ${h.found} entries imported`,
-    importSkip: ({ reason, count: n }, browser) => {
-      switch (reason) {
-        case "app_bound":
-          return `${n} protected by ${browser}'s app-bound encryption, which only ${browser} itself can read.`;
-        case "dpapi":
-          return `${n} whose key Windows would not unlock.`;
-        case "keychain":
-          return `${n} whose key the Keychain did not release; allow the access when macOS asks, then import again.`;
-        case "keyring":
-          return `${n} whose key the desktop keyring could not provide.`;
-        case "undecryptable":
-          return `${n} that could not be decrypted.`;
-        case "partitioned":
-          return `${n} partitioned to a single site or container.`;
-        case "expired":
-          return `${n} expired.`;
-      }
-    },
-    importNote: (note, browser) => {
-      const store = (which: "cookies" | "history") =>
-        which === "cookies" ? "cookie store" : "history";
-      switch (note.code) {
-        case "no_cookie_store":
-          return "This profile has no cookie store.";
-        case "no_history":
-          return "This source has no history to import.";
-        case "store_busy":
-          return `${browser} is holding its ${store(note.store)} open; close ${browser} and import again.`;
-        case "store_unreadable":
-          return `The ${store(note.store)} of ${browser} could not be read.`;
-        case "cookies_not_set":
-          return (
-            `${note.count} cookies could not be set in the built-in browser` +
-            (note.errors.length > 0 ? `: ${note.errors.join("; ")}` : ".")
-          );
-      }
-    },
-    importExtensionGroup: "Through the Chrome extension",
-    importExtensionHint:
-      "Reads the cookies of the Chrome profile the extension runs in; Chrome asks you to allow it first.",
-    importWaitingChrome: "Waiting for Chrome…",
-    importAppBoundHint: (route) =>
-      route === "not_paired"
-        ? "On Windows, only Chrome can read most of its cookies: connect your Chrome in Settings › Browser to import them through the extension, or sign in inside the Browser panel."
-        : route === "disconnected"
-          ? "On Windows, only Chrome can read most of its cookies: once your Chrome's PenguinHarness Browser extension is connected, import them through it, or sign in inside the Browser panel."
-          : route === "connected"
-            ? "On Windows, only Chrome can read most of its cookies; choose the Chrome extension below to import them through it."
-            : "On Windows, only Chrome can read most of its cookies; sign in inside the Browser panel instead.",
-    importAppBoundAdvice: (route) =>
-      route === "connected"
-        ? "Import again through the Chrome extension to bring them over, or sign in inside the Browser panel."
-        : route === "not_paired"
-          ? "Connect your Chrome in Settings › Browser to import them through the extension, or sign in inside the Browser panel."
-          : route === "disconnected"
-            ? "Once your Chrome's PenguinHarness Browser extension is connected, import them through it, or sign in inside the Browser panel."
-            : "Sign in to those sites inside the Browser panel instead.",
-    importUseExtension: "Import through the Chrome extension",
-    importFailed: (reason: string): string => `Import failed: ${reason}`,
-    clearTitle: "Clear browsing data",
-    clearBody:
-      "Cookies, cache and site storage are cleared for this Project; history is cleared across the built-in browser. This cannot be undone.",
-    clearCookies: "Cookies and sign-ins",
-    clearCache: "Cached images and files",
-    clearStorage: "Site storage",
-    clearHistory: "History",
-    clearConfirm: "Clear",
-    clearDone: "Browsing data cleared",
-    clearFailed: (reason: string): string => `Could not clear the data: ${reason}`,
-    homepageTitle: "Set homepage",
-    homepageIntro: "New tabs and the Home button open this page.",
-    homepageAddress: "Address",
-    homepagePlaceholder: "example.com",
-    homepageHintEmpty: "Leave empty for none; new tabs then open blank.",
-    homepageHintOpens: (url: string): string => `Opens ${url}`,
-    homepageUseCurrent: "Use current page",
-    homepageClear: "Clear",
-    homepageFailed: (reason: string): string => `Could not save the homepage: ${reason}`,
-    crashedTitle: "This page crashed",
-    crashedOutOfMemory: "It ran out of memory. Close tabs you no longer need, then reload it.",
-    crashedBody: "Reload it to try again.",
-    crashedTab: "The page crashed",
-    load: {
-      memory: (size: string, tabs: number): string =>
-        `The browser is using ${size} across ${tabs} ${tabs === 1 ? "tab" : "tabs"}.`,
-      lowSystemMemory: (percent: number): string =>
-        `This computer is low on memory (${percent}% free).`,
-      manyTabs: (tabs: number): string => `${tabs} tabs are open.`,
-      advice: "Close tabs you no longer need.",
-      join: (sentences: string[]): string => sentences.join(" "),
-      heavyTab: (size: string): string => `Uses ${size} of memory`,
-    },
-  },
-
-  browserSettings: {
-    backend: "Browser agents use",
-    backendInfo:
-      "The built-in browser lives in the desktop app and keeps its own sign-ins. System Chrome is your own Chrome, where agents act only in the tabs they open and the tabs you hand them. Agents cannot switch it themselves.",
-    paired: "Paired Chromes",
-    pairedNone: "No Chrome is paired yet.",
-    pairedLine: (version: string, seen: string | null): string =>
-      seen === null
-        ? `Extension ${version} · never connected`
-        : `Extension ${version} · last seen ${seen}`,
-    connected: "Connected",
-    notConnected: "Not connected",
-    revoke: "Revoke",
-    revokeTitle: "Revoke this Chrome?",
-    revokeBody: (name: string): string =>
-      `Agents lose ${name}: it disconnects now, and it has to be paired again before agents can use it.`,
-    revoked: (name: string): string => `Revoked ${name}`,
-    revokeFailed: (reason: string): string => `Could not revoke it: ${reason}`,
-    connectFirst: "Connect your Chrome",
-    connectAnother: "Connect another Chrome",
-    loadFailed: (reason: string): string => `Could not read the paired Chromes: ${reason}`,
-    disabledNote: "An admin of this server has turned off Chrome extension connections.",
-    allow: "Allow Chrome extension connections",
-    offTitle: "Turn off Chrome extension connections?",
-    offBody:
-      "Every user's extension disconnects at once, and no agent on this server can use a Chrome. Pairings are kept: turn it back on and the extensions reconnect.",
-    off: "Turn off",
-  },
-
   archivedSessions: {
     search: "Search archived chats",
     sourceFilter: "Source",
@@ -798,10 +545,6 @@ export const en: Strings = {
     languageInfo: "Interface language; can follow the browser.",
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "Settings",
-    browserTitle: "Browser",
-    chromeExtensionTitle: "Chrome extension",
-    chromeExtensionInfo:
-      "When on, every user of this server can pair their own Chrome for agents to work in. When off, every extension disconnects; pairings are kept.",
     agentApiTitle: "Agent API",
     agentApiToggle: "Allow the Agent API",
     agentApiHint:
@@ -813,6 +556,8 @@ export const en: Strings = {
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
+    /** The rail's last group: a page per plugin that has options. */
+    groupPlugins: "Plugins",
     /** Personal pages of the settings dialog. */
     profile: "Profile",
     generalTitle: "General",
@@ -872,8 +617,12 @@ export const en: Strings = {
       tls: "TLS handshake failed",
       network: "Unreachable",
     },
-    /** Admin-only sub-page (server-global): the options loaded plugins declare. */
-    pluginsTitle: "Plugins",
+    /** The Plugins group's first page (admin, server-global): where plugins install from. */
+    pluginsTitle: "Plugin sources",
+    /** The Plugins group's second page (admin, server-global): the sandbox Agents run in. */
+    sandboxTitle: "Agent Sandbox",
+    sandboxInfo:
+      "Which sandbox new Sessions start in: the switch and the presets apply to Sessions created afterwards; existing Sessions keep the policy they were created with. Each sandbox backend plugin has a line in the checks; its own options and checks are on its plugin page.",
     /** An enum option this machine cannot honour, listed greyed out. */
     pluginOptionUnavailable: (title: string, reason: string) =>
       `${title} (not supported: ${reason})`,
@@ -888,7 +637,7 @@ export const en: Strings = {
     pluginPositionOn: "On",
     pluginPositionOff: "Off",
     pluginsInfo:
-      "Below the switch: first the server module requests, then the options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here. The switch only changes what this browser lists on the Plugins page.",
+      "Where plugins install from: the npm registry, the plugin index and the mirrors, plus the server module requests and the options of a plugin on the picked machine that has no page here. Server-global, like the plugins themselves; a save applies at once, nothing to restart. The switch at the top only changes what this browser lists in the plugin market.",
     /** The section of requests to run a library plugin's server module, and the decisions on them (admin). */
     moduleRequests: {
       title: "Server module requests",
@@ -922,6 +671,45 @@ export const en: Strings = {
       /** A stop that leaves the module running: these Projects' shared tables still list it. */
       stillListed: (name: string, projects: string) =>
         `The server module of ${name} still runs: the shared plugin table of ${projects} lists it. Remove it on the Plugins page.`,
+    },
+    /** A plugin's page in the Plugins group: its parts, the status page's blocks and words. */
+    pluginPage: {
+      /** The heading over the preconditions; its other end holds the one "check again". */
+      checks: "Checks",
+      /** The heading over the switches and fields. */
+      options: "Options",
+      /** The heading over the fields a plugin marks as security settings. */
+      security: "Security",
+      /** A precondition's state: the mark's tooltip and accessible name. */
+      checkState: {
+        ok: "OK",
+        action: "Needs action",
+        unknown: "Unknown",
+        na: "Not applicable",
+      },
+      /** The version element's state word. */
+      versionState: {
+        installed: "Installed",
+        preparing: "Preparing",
+        failed: "Install failed",
+        missing: "Not installed",
+        unsupported: "Not supported here",
+        unknown: "State unknown",
+      },
+      /** The fold under a check or the version element. */
+      details: "Details",
+      /** A check's link to the page it names (a sandbox backend's plugin page). */
+      openPage: "Open",
+      /** That fold's accessible name on a check's row: the row it belongs to. */
+      detailsAbout: (subject: string) => `Details: ${subject}`,
+      /** The picked machine holds none of this plugin's settings. */
+      noneOnMachine: (machine: string) => `${machine} has no options for this plugin.`,
+      /**
+       * The picked machine names no plugin on any of its groups: none of this plugin's, or a build
+       * older than the naming, which lists every plugin's options on the management page.
+       */
+      onAdminPage: (machine: string, page: string) =>
+        `Nothing on ${machine} is marked as this plugin's options. A machine on an older build does not say which plugin its options belong to and lists them all under ${page}.`,
     },
     /** The page's own switch, above the server's cards: a display preference of this browser. */
     pluginsIncompatibleOnly: "Show only incompatible plugins",
@@ -5124,8 +4912,6 @@ Scenarios:
       aborted: "interrupted",
     } as Record<string, string>,
     linkMenu: {
-      openInBuiltinBrowser: "Open in built-in browser",
-      openInChromeTab: "Open in agent's Chrome tab",
       openExternal: "Open in system browser",
       openInNewTab: "Open in new tab",
       copyLink: "Copy link address",
@@ -7227,12 +7013,6 @@ Scenarios:
       ticket_session_failed: "The ticket session could not be started.",
       handbook_file_not_found: "That document no longer exists.",
       handbook_index_required: "The handbook index (README.md) cannot be deleted.",
-      browser_unavailable:
-        "The browser is not available right now: the built-in browser needs the PenguinHarness desktop app open, and your Chrome needs the PenguinHarness Browser extension connected.",
-      source_not_found: "That browser profile was not found.",
-      import_declined: "The import was not allowed in Chrome.",
-      extension_outdated:
-        "The PenguinHarness Browser extension in Chrome is too old for this. Update it and try again.",
       shell_unreachable: "The desktop app could not be reached.",
       timeout: "That took too long. Try again.",
     },

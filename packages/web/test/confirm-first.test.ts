@@ -14,12 +14,15 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createElement as h } from "react";
 import type { AgentApiKeyInfo } from "@prismshadow/penguin-server/api";
+// The browser reaches the app's own helpers through the plugin face; this hands them over.
+import "../src/web-app/plugin-host";
 import { ApiTab } from "../src/features/agents/api-tab";
 import { AgentApiSection } from "../src/features/settings/agent-api-section";
-import { ChromeExtensionSection } from "../src/features/settings/chrome-extension-section";
+import { ChromeExtensionSection } from "../src/features/builtin-browser/chrome-extension-section";
 import { CompanySection } from "../src/features/settings/company-section";
 import { AuthProvider } from "../src/state/auth";
 import { setActiveStrings, zh } from "../src/lib/strings";
+import { en as browserEn } from "../src/features/builtin-browser/strings";
 import { en } from "../src/lib/strings-en";
 import {
   AGENT_ID,
@@ -110,9 +113,9 @@ const ACTIONS: Action[] = [
   },
   {
     name: "turning Chrome connections off for every user",
-    open: settingsSection(() => h(ChromeExtensionSection), en.browserSettings.allow),
-    press: () => click(switchNamed(en.browserSettings.allow)),
-    confirm: en.browserSettings.off,
+    open: settingsSection(() => h(ChromeExtensionSection), browserEn.browserSettings.allow),
+    press: () => click(switchNamed(browserEn.browserSettings.allow)),
+    confirm: browserEn.browserSettings.off,
     write: {
       method: "PUT",
       path: "/api/admin/settings",
