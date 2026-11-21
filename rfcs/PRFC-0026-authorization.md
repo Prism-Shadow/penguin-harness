@@ -10,7 +10,7 @@
 ## Summary
 [summary]: #summary
 
-This RFC defines the authorization model of the harness, splitting capability boundaries across two API surfaces: **CLI** and **HTTP**. The **CLI surface** executes locally in the caller's process with the current operating system environment (terminal, TTY, filesystem) as its permission core, representing **system permissions**, and obtains Penguin capabilities by calling the HTTP surface. The **HTTP surface** executes in the server process, enforcing **penguin permissions** through named route `id`s, user sessions, and Agent role sessions. Local access to the Penguin Home Root (`PENGUIN_HOME`) is equivalent to Penguin administrator authority (`Access to Penguin Home Root = penguin admin`).
+This RFC defines the authorization model of the harness, splitting capability boundaries across two API surfaces: **CLI** and **HTTP**. The **CLI surface** executes locally in the caller's process with the current operating system environment (terminal, TTY, filesystem) as its permission core, representing **system permissions**, and obtains Penguin capabilities by calling the HTTP surface. The **HTTP surface** executes in the server process, enforcing **penguin permissions** through named route `id`s and role-bound authorization sessions. Local access to the Penguin Home Root (`PENGUIN_HOME`) is equivalent to Penguin administrator authority (`Access to Penguin Home Root = penguin admin`).
 
 ## Motivation
 [motivation]: #motivation
@@ -74,7 +74,7 @@ Role presets are organized as a declarative directed acyclic role tree (`ROLE_TR
 - **Composite role nodes**: Standing personas (`none`, `readonly`, `general`, `system-maintainer`, `admin`, `full-permissions`) sit higher in the same tree, composing domain role nodes through their `children` array.
 - **Auth Refiners (`<roleOrRoute>@<refinerId>`)**: Any role reference or extra grant entry may carry an `@<refinerId>` suffix (for example `agent.maintain@self` or `agent.maintain@withAsk`), binding the granted write routes to a named `AuthRefiner` component.
 
-Each Agent session binds a role identifier and a current grant (`AgentAuthGrant`). On each request, `expandRoleGrant(role, extraGrants)` walks the role tree to compute the effective set of route `id`s (`apiIds`), the per-route refiner bindings (`routeRefiners`), and the orthogonal capability flags (`allEndpoints`, `agentApi`, `crossAgent`).
+Each role-bound session binds a role identifier and a current grant. On each request, `expandRoleGrant(role, extraGrants)` walks the role tree to compute the effective set of route `id`s (`apiIds`), the per-route refiner bindings (`routeRefiners`), and the orthogonal capability flags (`allEndpoints`, `agentApi`, `crossAgent`).
 
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -135,7 +135,7 @@ Every functional domain follows a three-tier progression:
 
 Six composite roles compose these domain nodes and capability flags into standing personas:
 
-| Composite Role (`AgentAuthRole`) | Child Roles (`children`) | `allEndpoints` | `agentApi` (passes `requireHuman`) | `crossAgent` (cross-Agent writes) |
+| Composite Role | Child Roles (`children`) | `allEndpoints` | `agentApi` (passes `requireHuman`) | `crossAgent` (cross-Agent writes) |
 | --- | --- | --- | --- | --- |
 | `none` | `[]` | `false` | `false` | `false` |
 | `readonly` | All domain `*.read` nodes | `false` | `false` | `false` |
@@ -172,14 +172,14 @@ export class AuthSelfRefiner {
 - **Priority-list override**: Contributions to `HttpModule.authRefiners` are collected in module `children` list order (for example `[AuthMyRefiner, AuthWithAskRefiner, AuthSelfRefiner]`) and stably sorted by `order ?? 0` (built-in `AuthWithAskRefiner` and `AuthSelfRefiner` use `1000+` so custom and plugin refiners override them by default). Earlier entries in the list override later entries with the same `id` whenever their declared `scope` matches the route, falling back to later entries for routes outside a narrower custom scope.
 - **Failure and mismatch safety**: Referencing an undefined `@<refinerId>` is rejected immediately with `403 auth_refiner_undefined`. If a refiner in the session fails to match the target action's scope or throws an error, the server returns `403 auth_refiner_mismatch` and instructs the user to start the Agent with `admin` permission to repair its authorization configuration. Inherited `<domain>.read` tiers remain unconditional when expanding `<domain>.maintain@<refinerId>`, and any unconditional grant on the same route supersedes a refined grant.
 
-### Agent session storage and generation re-derivation
+### Authorization sessions and generation re-derivation
 
-`AgentAuthService` and `AgentAuthSessionsRepo` manage Agent tokens and permission state through two database tables:
+The authorization session mechanism decouples **session credentials** from the subject's **current permission generation (`generation`)**, serving Agent sessions today and extending naturally to role-scoped human user sessions:
 
-- `agent_auth_sessions`: stores the SHA-256 `token_hash`, `project_id`, `agent_id`, the `role` and `generation` at issuance, `created_at`, `expires_at`, and `last_used_at`. The raw token is returned only once by `issueSession`; only its hash is stored.
-- `agent_auth_generations`: keyed by `(project_id, agent_id)`, tracks the current `generation`, the current `role`, and the explicitly granted route IDs `allowed_apis` (a JSON array read as `apiIds`).
+- **Session records**: store only the SHA-256 hash of the raw token (the raw token is returned only once at issuance), the subject identity, the `role` and `generation` at issuance, `created_at`, `expires_at`, and `last_used_at`.
+- **Permission generation records**: track the subject's current `generation`, current `role`, and explicitly granted route IDs (`apiIds`).
 
-When a request arrives with an Agent Bearer token, `AgentAuthService.authenticate` verifies that the session row exists and is unexpired, then reads the Agent's current row in `agent_auth_generations` to derive `AgentAuthGrant { role, generation, allEndpoints, apiIds }`. Updating an Agent's role or `apiIds` via `bumpGeneration` takes effect on the next request without re-issuing the token. Archiving or deleting an Agent calls `revokeAll(projectId, agentId)`, deleting both the session rows and the generation row.
+When a request arrives with a session Bearer token, the authentication layer verifies that the session is unexpired and reads the subject's current generation record to derive the effective grant (`{ role, generation, allEndpoints, apiIds, routeRefiners }`). Updating a subject's role or `apiIds` via `bumpGeneration` takes effect on the next request without re-issuing the token. Deactivating or deleting a subject revokes all of its active sessions and its generation state in one step.
 
 ### HTTP authentication and route-level authorization
 
@@ -236,7 +236,7 @@ Business CLI subcommands (including `penguin config model`, `penguin config vaul
 
 **Authorizing by route `id` instead of URL regular expressions**: route `id`s are projected into `ifaces.json` at build time, remain stable across path refactors, and can be enumerated statically.
 
-**Generation counters plus session rows instead of stateless tokens**: `agent_auth_generations` in the database allows immediate revocation of all tokens belonging to an Agent when the Agent is deleted or its role changes, while preserving per-session revocation.
+**Generation counters plus server-side sessions instead of stateless tokens**: re-deriving grants from the current generation allows immediate revocation or live permission updates across all active tokens belonging to a subject when the subject is deleted or its role changes, while preserving per-session revocation.
 
 ## Prior art
 [prior-art]: #prior-art
@@ -253,7 +253,8 @@ Business CLI subcommands (including `penguin config model`, `penguin config vaul
 ## Future possibilities
 [future-possibilities]: #future-possibilities
 
-- Surfacing and editing each Agent role's route `id` allowlist in the administration UI, with per-project or per-Agent overrides.
+- Extending the same declarative role tree and generation-derived authorization sessions to fine-grained human user role sessions and scoped personal access tokens.
+- Surfacing and editing each role's route `id` allowlist in the administration UI, with per-project or per-subject overrides.
 - Issuing short-lived session tokens with an expiration timestamp and a narrower subset of route `id`s for sandboxed subtasks.
 
 ---

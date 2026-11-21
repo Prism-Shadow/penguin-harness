@@ -10,7 +10,7 @@
 ## Summary
 [summary]: #summary
 
-本 RFC 定义这套 harness 的授权模型，将能力边界划分为 **CLI** 与 **HTTP** 两个 API 表面。**CLI 表面**在本地进程中执行，以当前操作系统环境（terminal、TTY、filesystem）为权限核心，代表调用方的 **system permissions**（系统权限），并通过访问 HTTP 表面获得 Penguin 的业务能力。**HTTP 表面**在 Server 进程中执行，承载 **penguin permissions**（应用权限），通过具名的路由 `id`、用户会话与 Agent 角色会话（Agent role/session）对每次调用做授权判定。对 Penguin 数据根（Penguin Home Root）拥有本地访问权限等价于拥有 Penguin 管理员权限（`Access to Penguin Home Root = penguin admin`）。
+本 RFC 定义这套 harness 的授权模型，将能力边界划分为 **CLI** 与 **HTTP** 两个 API 表面。**CLI 表面**在本地进程中执行，以当前操作系统环境（terminal、TTY、filesystem）为权限核心，代表调用方的 **system permissions**（系统权限），并通过访问 HTTP 表面获得 Penguin 的业务能力。**HTTP 表面**在 Server 进程中执行，承载 **penguin permissions**（应用权限），通过具名的路由 `id` 与绑定角色的授权会话对每次调用做授权判定。对 Penguin 数据根（Penguin Home Root）拥有本地访问权限等价于拥有 Penguin 管理员权限（`Access to Penguin Home Root = penguin admin`）。
 
 ## Motivation
 [motivation]: #motivation
@@ -74,7 +74,7 @@ Server 启动时在数据根下写入权限为 `0600` 的 `api-token` 与 `serve
 - **复合角色节点**：顶层预设角色（`none`、`readonly`、`general`、`system-maintainer`、`admin`、`full-permissions`）作为同一棵树上的高层节点，通过 `children` 数组组合各域的角色节点。
 - **权限精化器（`<roleOrRoute>@<refinerId>`）**：角色节点引用或额外授权项可以附加 `@<refinerId>` 后缀（例如 `agent.maintain@self`、`agent.maintain@withAsk`），将对应写路由绑定到具名的 `AuthRefiner` 组件上执行上下文校验。
 
-每个 Agent 会话绑定一个角色标识与一份当前授权（`AgentAuthGrant`），在请求时由 `expandRoleGrant(role, extraGrants)` 递归展开角色树，计算出有效路由 `id` 集合（`apiIds`）、每条路由绑定的精化器列表（`routeRefiners`）以及正交能力标志（`allEndpoints`、`agentApi`、`crossAgent`）。
+每个受控授权会话绑定一个角色标识与一份当前授权，在请求时由 `expandRoleGrant(role, extraGrants)` 递归展开角色树，计算出有效路由 `id` 集合（`apiIds`）、每条路由绑定的精化器列表（`routeRefiners`）以及正交能力标志（`allEndpoints`、`agentApi`、`crossAgent`）。
 
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -135,7 +135,7 @@ Server 启动时在数据根下写入权限为 `0600` 的 `api-token` 与 `serve
 
 在此基础上，六个顶层复合角色通过组合域角色节点与正交能力标志构成标准权限梯度：
 
-| 复合角色（`AgentAuthRole`） | 包含的子角色节点（`children`） | `allEndpoints` | `agentApi`（通过 `requireHuman`） | `crossAgent`（跨 Agent 写） |
+| 复合角色 | 包含的子角色节点（`children`） | `allEndpoints` | `agentApi`（通过 `requireHuman`） | `crossAgent`（跨 Agent 写） |
 | --- | --- | --- | --- | --- |
 | `none` | `[]` | `false` | `false` | `false` |
 | `readonly` | 全部业务域的 `*.read` 节点 | `false` | `false` | `false` |
@@ -172,14 +172,14 @@ export class AuthSelfRefiner {
 - **按列表顺序覆盖（Override）**：`HttpModule.authRefiners` 槽按模块 `children` 列表声明顺序（如 `[AuthMyRefiner, AuthWithAskRefiner, AuthSelfRefiner]`）收集条目，并按可选的 `order ?? 0` 做稳定排序（内置 `AuthWithAskRefiner` 与 `AuthSelfRefiner` 设为 `1000+`，使未指定 `order` 的自定义组件与外部插件默认优先）。同 `id` 的精化器按列表顺序优先匹配；若排在前面的自定义精化器仅声明了窄 `scope`（如 `["agent.config.update"]`），其余路由自动回退到列表中后续同 `id` 的内置实现。
 - **失败与失配保护**：若授权引用了未定义的 `@<refinerId>`，请求直接拒绝并返回 `403 auth_refiner_undefined`。若会话内精化器的 `scope` 未能匹配目标动作或执行异常，服务端返回 `403 auth_refiner_mismatch`，提示用户以 `admin` 权限启动 Agent 修复授权配置。当 `<domain>.maintain@<refinerId>` 展开时，其继承的 `<domain>.read` 只读层保持无条件放行，且同一路由上的无条件授权优先于带精化器的授权，保证常规会话下的高可靠匹配。
 
-### Agent 会话存储与按代（Generation）实时派生
+### 授权会话与按代（Generation）实时派生
 
-`AgentAuthService` 与 `AgentAuthSessionsRepo` 通过两张数据库表管理 Agent 令牌与权限状态：
+授权会话机制将**会话凭证**与**当前权限代际（Generation）**解耦存储，当前用于 Agent 会话并可同样服务于人类用户的受限角色会话：
 
-- `agent_auth_sessions`：存储令牌的 SHA-256 哈希 `token_hash`、`project_id`、`agent_id`、签发时的 `role` 与 `generation`、`created_at`、`expires_at` 以及 `last_used_at`。明文令牌仅在 `issueSession` 时返回一次，落盘只存哈希。
-- `agent_auth_generations`：以 `(project_id, agent_id)` 为复合主键，记录当前代数 `generation`、当前 `role` 以及显式授予的路由 ID 列表 `allowed_apis`（JSON 数组，读取为 `apiIds`）。
+- **会话记录**：仅落盘会话令牌的 SHA-256 哈希（明文令牌仅在签发时返回一次）、关联主体标识、签发时的角色与代数（`generation`）、创建时间、过期时间及最近使用时间。
+- **权限代际记录**：按主体维护当前代数 `generation`、当前角色 `role` 以及显式授予的路由 ID 列表 `apiIds`。
 
-每次请求携带 Agent 令牌到达时，`AgentAuthService.authenticate` 在验证会话未过期后，从 `agent_auth_generations` 读取该 Agent 的当前行并实时派生 `AgentAuthGrant { role, generation, allEndpoints, apiIds }`。通过 `bumpGeneration` 调整 Agent 的角色或 `apiIds` 时，已签发的活跃令牌无需重新签发即可在下一次请求时按新权限生效。当 Agent 被归档或删除时，`revokeAll(projectId, agentId)` 一并删除该 Agent 的全部会话行与代数行。
+每次请求携带会话令牌到达时，鉴权层在验证会话未过期后，读取该主体的当前权限代际并实时展开角色树，派生出有效授权集（`{ role, generation, allEndpoints, apiIds, routeRefiners }`）。调整主体的角色或额外路由授权时，只需递增代数（`bumpGeneration`），已签发的活跃令牌无需重新签发即可在下一次请求时按新权限生效；当主体被归档或注销时，可一次性吊销其全部活跃会话与代际记录。
 
 ### HTTP 鉴权与路由级授权流程
 
@@ -236,7 +236,7 @@ CLI 持有本地进程的 system permissions，而 Penguin 的业务状态归 Se
 
 **按路由 `id` 授权替代按 URL 路径正则授权**：路由 `id` 在编译期投影进 `ifaces.json`，语义稳定且可静态枚举；URL 正则容易随路径重构而失效。
 
-**代数计数器加会话表替代无状态令牌**：数据库中的 `agent_auth_generations` 支持在 Agent 删除或角色变更时立即吊销该 Agent 名下的全部令牌，同时保留按单个 `sessionId` 撤销的能力。
+**代数计数器加服务端会话替代无状态令牌**：按代际实时派生权限支持在主体注销或角色变更时立即使该主体名下的全部令牌切换到新权限或失效，同时保留按单个会话撤销的能力。
 
 ## Prior art
 [prior-art]: #prior-art
@@ -253,7 +253,8 @@ CLI 持有本地进程的 system permissions，而 Penguin 的业务状态归 Se
 ## Future possibilities
 [future-possibilities]: #future-possibilities
 
-- 在管理界面展示并编辑每个 Agent 角色的路由 `id` 白名单，支持按项目或单个 Agent 覆盖默认授权。
+- 将同一套声明式角色树与按代派生的授权会话扩展至人类用户的精细角色会话与受限访问令牌。
+- 在管理界面展示并编辑每个角色的路由 `id` 白名单，支持按项目或单个主体覆盖默认授权。
 - 为沙盒内的短期子任务签发带过期时间与更窄路由 `id` 子集的临时会话令牌。
 
 ---
