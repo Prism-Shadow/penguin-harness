@@ -95,11 +95,49 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  library/cli:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
   library/db:
     dependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  library/http:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-auth':
+        specifier: workspace:*
+        version: link:../auth
+      hono:
+        specifier: ^4.13.11
+        version: 4.13.13
     devDependencies:
       tsup:
         specifier: ^8.3.0
@@ -154,15 +192,21 @@ importers:
 
   library/model:
     dependencies:
+      '@prismshadow/mmsp':
+        specifier: ^0.5.12
+        version: 0.5.12(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core':
         specifier: workspace:*
-        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+        version: link:../../packages/core
       '@prismshadow/penguin-library-agent-api':
         specifier: workspace:*
-        version: link:../agent-api
+        version: file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db':
         specifier: workspace:*
-        version: link:../db
+        version: file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-http':
+        specifier: workspace:*
+        version: file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
     devDependencies:
       tsup:
         specifier: ^8.3.0
@@ -240,7 +284,7 @@ importers:
         version: link:../machine
       '@prismshadow/penguin-library-model':
         specifier: workspace:*
-        version: link:../model
+        version: file:library/model(supports-color@10.2.2)
       '@prismshadow/penguin-library-organization':
         specifier: workspace:*
         version: link:../organization
@@ -447,6 +491,9 @@ importers:
       '@penguinharness/ace-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes':
+        specifier: workspace:*
+        version: link:../../plugins/action-minutes
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
@@ -468,12 +515,18 @@ importers:
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
+      '@penguinharness/daily-draw':
+        specifier: workspace:*
+        version: link:../../plugins/daily-draw
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper':
+        specifier: workspace:*
+        version: link:../../plugins/fridge-keeper
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -483,15 +536,27 @@ importers:
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
+      '@penguinharness/multimodal-tools':
+        specifier: workspace:*
+        version: link:../../plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades':
+        specifier: workspace:*
+        version: link:../../plugins/party-charades
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
+      '@penguinharness/reading-desk':
+        specifier: workspace:*
+        version: link:../../plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/rrsi-rsi-toolkit
@@ -507,6 +572,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/tabletop-desk':
+        specifier: workspace:*
+        version: link:../../plugins/tabletop-desk
       '@penguinharness/trace-lookup':
         specifier: workspace:*
         version: link:../../plugins/trace-lookup
@@ -526,8 +594,8 @@ importers:
         specifier: workspace:*
         version: link:../a2ui
       '@prismshadow/mmsp':
-        specifier: ^0.5.10
-        version: 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        specifier: ^0.5.12
+        version: 0.5.12(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
@@ -553,6 +621,12 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      electron:
+        specifier: ^43.7.6
+        version: 43.8.3(supports-color@10.2.2)
+      node-pty:
+        specifier: ^1.1.0
+        version: 1.1.0
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -575,8 +649,8 @@ importers:
         specifier: workspace:*
         version: link:../amsp
       '@prismshadow/mmsp':
-        specifier: ^0.5.10
-        version: 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        specifier: ^0.5.12
+        version: 0.5.12(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       arktype:
         specifier: ^2.2.3
         version: 2.2.3
@@ -626,6 +700,9 @@ importers:
       '@penguinharness/ace-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes':
+        specifier: workspace:*
+        version: link:../../plugins/action-minutes
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
@@ -647,12 +724,18 @@ importers:
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
+      '@penguinharness/daily-draw':
+        specifier: workspace:*
+        version: link:../../plugins/daily-draw
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper':
+        specifier: workspace:*
+        version: link:../../plugins/fridge-keeper
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -662,15 +745,27 @@ importers:
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
+      '@penguinharness/multimodal-tools':
+        specifier: workspace:*
+        version: link:../../plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades':
+        specifier: workspace:*
+        version: link:../../plugins/party-charades
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
+      '@penguinharness/reading-desk':
+        specifier: workspace:*
+        version: link:../../plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/rrsi-rsi-toolkit
@@ -686,6 +781,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/tabletop-desk':
+        specifier: workspace:*
+        version: link:../../plugins/tabletop-desk
       '@penguinharness/trace-lookup':
         specifier: workspace:*
         version: link:../../plugins/trace-lookup
@@ -822,6 +920,9 @@ importers:
       '@penguinharness/ace-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes':
+        specifier: workspace:*
+        version: link:../../plugins/action-minutes
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
@@ -831,6 +932,9 @@ importers:
       '@penguinharness/agent-evaluation':
         specifier: workspace:*
         version: link:../../plugins/agent-evaluation
+      '@penguinharness/agent-state-git':
+        specifier: workspace:*
+        version: link:../../plugins/agent-state-git
       '@penguinharness/ape-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/ape-rsi-toolkit
@@ -840,15 +944,24 @@ importers:
       '@penguinharness/browser-automation':
         specifier: workspace:*
         version: link:../../plugins/browser-automation
+      '@penguinharness/computer-use':
+        specifier: workspace:*
+        version: link:../../plugins/computer-use
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
+      '@penguinharness/daily-draw':
+        specifier: workspace:*
+        version: link:../../plugins/daily-draw
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper':
+        specifier: workspace:*
+        version: link:../../plugins/fridge-keeper
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -858,18 +971,30 @@ importers:
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
+      '@penguinharness/multimodal-tools':
+        specifier: workspace:*
+        version: link:../../plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades':
+        specifier: workspace:*
+        version: link:../../plugins/party-charades
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
       '@penguinharness/penguin-testing-electron':
         specifier: workspace:*
         version: link:../../plugins/penguin-testing-electron
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
+      '@penguinharness/reading-desk':
+        specifier: workspace:*
+        version: link:../../plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/rrsi-rsi-toolkit
@@ -897,6 +1022,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/tabletop-desk':
+        specifier: workspace:*
+        version: link:../../plugins/tabletop-desk
       '@penguinharness/trace-lookup':
         specifier: workspace:*
         version: link:../../plugins/trace-lookup
@@ -915,6 +1043,9 @@ importers:
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@tailwindcss/vite':
         specifier: ^4.1.0
         version: 4.3.2(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -963,6 +1094,9 @@ importers:
       '@penguinharness/ace-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes':
+        specifier: workspace:*
+        version: link:../../plugins/action-minutes
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
@@ -984,12 +1118,18 @@ importers:
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
+      '@penguinharness/daily-draw':
+        specifier: workspace:*
+        version: link:../../plugins/daily-draw
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper':
+        specifier: workspace:*
+        version: link:../../plugins/fridge-keeper
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -999,15 +1139,27 @@ importers:
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
+      '@penguinharness/multimodal-tools':
+        specifier: workspace:*
+        version: link:../../plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades':
+        specifier: workspace:*
+        version: link:../../plugins/party-charades
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
+      '@penguinharness/plan':
+        specifier: workspace:*
+        version: link:../../plugins/plan
+      '@penguinharness/reading-desk':
+        specifier: workspace:*
+        version: link:../../plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/rrsi-rsi-toolkit
@@ -1023,6 +1175,9 @@ importers:
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
+      '@penguinharness/tabletop-desk':
+        specifier: workspace:*
+        version: link:../../plugins/tabletop-desk
       '@penguinharness/trace-lookup':
         specifier: workspace:*
         version: link:../../plugins/trace-lookup
@@ -1048,11 +1203,14 @@ importers:
         specifier: workspace:*
         version: link:../chat-markdown
       '@prismshadow/mmsp':
-        specifier: ^0.5.10
-        version: 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        specifier: ^0.5.12
+        version: 0.5.12(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
       '@xterm/headless':
         specifier: ^5.5.0
         version: 5.5.0
@@ -1074,6 +1232,9 @@ importers:
       isomorphic-git:
         specifier: ^1.44.0
         version: 1.44.10
+      minimatch:
+        specifier: ^10.2.6
+        version: 10.2.6
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
@@ -1117,9 +1278,15 @@ importers:
       '@prismshadow/penguin-library-auth':
         specifier: workspace:*
         version: file:library/auth(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-cli':
+        specifier: workspace:*
+        version: file:library/cli(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db':
         specifier: workspace:*
         version: file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-http':
+        specifier: workspace:*
+        version: file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-machine':
         specifier: workspace:*
         version: file:library/machine(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -1128,7 +1295,7 @@ importers:
         version: file:library/messaging(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-model':
         specifier: workspace:*
-        version: file:library/model(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+        version: link:../../library/model
       '@prismshadow/penguin-library-observability':
         specifier: workspace:*
         version: file:library/observability(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -1159,9 +1326,6 @@ importers:
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.13.3
       '@types/which':
         specifier: ^3.0.4
         version: 3.0.4
@@ -1382,6 +1546,9 @@ importers:
       '@prismshadow/penguin-web':
         specifier: workspace:*
         version: link:../web
+      '@prismshadow/penguin-web-plugin':
+        specifier: workspace:*
+        version: link:../web-plugin
       '@prismshadow/skills':
         specifier: workspace:*
         version: link:../skills
@@ -1424,6 +1591,9 @@ importers:
       '@prismshadow/penguin-ui':
         specifier: workspace:*
         version: link:../ui
+      '@prismshadow/penguin-web-plugin':
+        specifier: workspace:*
+        version: link:../web-plugin
       '@xterm/addon-clipboard':
         specifier: ^0.1.0
         version: 0.1.0(@xterm/xterm@5.5.0)
@@ -1498,6 +1668,24 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  packages/web-plugin:
+    devDependencies:
+      '@prismshadow/penguin-ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.2.17
+      react:
+        specifier: ^19.1.0
+        version: 19.2.7
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
   plugins/a2ui:
     devDependencies:
       '@prismshadow/penguin-core':
@@ -1505,6 +1693,12 @@ importers:
         version: file:packages/core(ws@8.21.0)
 
   plugins/ace-rsi-toolkit:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+
+  plugins/action-minutes:
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
@@ -1540,6 +1734,24 @@ importers:
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
 
+  plugins/agent-state-git:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      dugite:
+        specifier: 3.3.3
+        version: 3.3.3(bare-buffer@3.7.3)
+      tar:
+        specifier: ^7.5.21
+        version: 7.5.22
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
   plugins/ape-rsi-toolkit:
     devDependencies:
       '@prismshadow/penguin-core':
@@ -1564,7 +1776,31 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  plugins/computer-use:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:>=0.2.0
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/skills':
+        specifier: workspace:>=0.2.0
+        version: link:../../packages/skills
+      commander:
+        specifier: ^13.0.0
+        version: 13.1.0
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
   plugins/continual-learning:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+
+  plugins/daily-draw:
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
@@ -1583,6 +1819,12 @@ importers:
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   plugins/default-rsi-toolkit:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+
+  plugins/fridge-keeper:
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
@@ -1618,6 +1860,30 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  plugins/multimodal-tools:
+    devDependencies:
+      '@prismshadow/mmsp':
+        specifier: ^0.5.12
+        version: 0.5.12(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@prismshadow/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
+      commander:
+        specifier: ^13.0.0
+        version: 13.1.0
+      hono:
+        specifier: ^4.13.11
+        version: 4.13.13
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
   plugins/openskill-rsi-toolkit:
     devDependencies:
       '@prismshadow/penguin-core':
@@ -1625,6 +1891,12 @@ importers:
         version: file:packages/core(ws@8.21.0)
 
   plugins/opro-rsi-toolkit:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+
+  plugins/party-charades:
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
@@ -1650,6 +1922,21 @@ importers:
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  plugins/plan:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+
+  plugins/reading-desk:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -1759,6 +2046,12 @@ importers:
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  plugins/tabletop-desk:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
 
   plugins/trace-lookup:
     devDependencies:
@@ -2758,6 +3051,9 @@ packages:
   '@penguinharness/ace-rsi-toolkit@file:plugins/ace-rsi-toolkit':
     resolution: {directory: plugins/ace-rsi-toolkit, type: directory}
 
+  '@penguinharness/action-minutes@file:plugins/action-minutes':
+    resolution: {directory: plugins/action-minutes, type: directory}
+
   '@penguinharness/agent-company@file:plugins/agent-company':
     resolution: {directory: plugins/agent-company, type: directory}
 
@@ -2779,11 +3075,17 @@ packages:
   '@penguinharness/continual-learning@file:plugins/continual-learning':
     resolution: {directory: plugins/continual-learning, type: directory}
 
+  '@penguinharness/daily-draw@file:plugins/daily-draw':
+    resolution: {directory: plugins/daily-draw, type: directory}
+
   '@penguinharness/data-analysis@file:plugins/data-analysis':
     resolution: {directory: plugins/data-analysis, type: directory}
 
   '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit':
     resolution: {directory: plugins/default-rsi-toolkit, type: directory}
+
+  '@penguinharness/fridge-keeper@file:plugins/fridge-keeper':
+    resolution: {directory: plugins/fridge-keeper, type: directory}
 
   '@penguinharness/goal@file:plugins/goal':
     resolution: {directory: plugins/goal, type: directory}
@@ -2794,14 +3096,27 @@ packages:
   '@penguinharness/model-development@file:plugins/model-development':
     resolution: {directory: plugins/model-development, type: directory}
 
+  '@penguinharness/multimodal-tools@file:plugins/multimodal-tools':
+    resolution: {directory: plugins/multimodal-tools, type: directory}
+    engines: {node: '>=24'}
+
   '@penguinharness/openskill-rsi-toolkit@file:plugins/openskill-rsi-toolkit':
     resolution: {directory: plugins/openskill-rsi-toolkit, type: directory}
 
   '@penguinharness/opro-rsi-toolkit@file:plugins/opro-rsi-toolkit':
     resolution: {directory: plugins/opro-rsi-toolkit, type: directory}
 
+  '@penguinharness/party-charades@file:plugins/party-charades':
+    resolution: {directory: plugins/party-charades, type: directory}
+
   '@penguinharness/penguin-support@file:plugins/penguin-support':
     resolution: {directory: plugins/penguin-support, type: directory}
+
+  '@penguinharness/plan@file:plugins/plan':
+    resolution: {directory: plugins/plan, type: directory}
+
+  '@penguinharness/reading-desk@file:plugins/reading-desk':
+    resolution: {directory: plugins/reading-desk, type: directory}
 
   '@penguinharness/rrsi-rsi-toolkit@file:plugins/rrsi-rsi-toolkit':
     resolution: {directory: plugins/rrsi-rsi-toolkit, type: directory}
@@ -2817,6 +3132,9 @@ packages:
 
   '@penguinharness/software-development@file:plugins/software-development':
     resolution: {directory: plugins/software-development, type: directory}
+
+  '@penguinharness/tabletop-desk@file:plugins/tabletop-desk':
+    resolution: {directory: plugins/tabletop-desk, type: directory}
 
   '@penguinharness/trace-lookup@file:plugins/trace-lookup':
     resolution: {directory: plugins/trace-lookup, type: directory}
@@ -2850,8 +3168,8 @@ packages:
     resolution: {directory: packages/chat-markdown, type: directory}
     engines: {node: '>=24'}
 
-  '@prismshadow/mmsp@0.5.10':
-    resolution: {integrity: sha512-PSKvfwZQEjlNnlQe223qiaK5qwp3PcTMEtGe9hAGiBN2VuVUGAYAkze80Juefz3ODRo3HwI1g2bwRZgzME8vbQ==}
+  '@prismshadow/mmsp@0.5.12':
+    resolution: {integrity: sha512-3mX+UEJcmraSCI3gX3+lxkqOiSMLKnQB3JaOufsy70AX4F4VfrAI+XY0PoDwnMlo1eklR1mElWj3AtSZWq6ovw==}
 
   '@prismshadow/penguin-cli@file:packages/cli':
     resolution: {directory: packages/cli, type: directory}
@@ -2874,8 +3192,16 @@ packages:
     resolution: {directory: library/auth, type: directory}
     engines: {node: '>=24'}
 
+  '@prismshadow/penguin-library-cli@file:library/cli':
+    resolution: {directory: library/cli, type: directory}
+    engines: {node: '>=24'}
+
   '@prismshadow/penguin-library-db@file:library/db':
     resolution: {directory: library/db, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-library-http@file:library/http':
+    resolution: {directory: library/http, type: directory}
     engines: {node: '>=24'}
 
   '@prismshadow/penguin-library-machine@file:library/machine':
@@ -3763,6 +4089,14 @@ packages:
   axios@1.20.0:
     resolution: {integrity: sha512-r8aOh8j9cGKpgQAqpzrUHnSIc6a59Y3Xf/cv8sy1DrHCkZHzQGEuoq1tARk6qSyDdtQGSDgpb9kFlruzPvrgwg==}
 
+  b4a@1.9.0:
+    resolution: {integrity: sha512-dpfcF9fDNR6++cthXR67iyhgqWy9CBouAvIWhIntzBG6cvK/cnIPiZQjBwi/ZqjjBEDGfoNDtmB0kTjroOJ3pQ==}
+    peerDependencies:
+      react-native-b4a: '*'
+    peerDependenciesMeta:
+      react-native-b4a:
+        optional: true
+
   bail@2.0.2:
     resolution: {integrity: sha512-0xO6mYd7JB2YesxDKplafRpsiOzPt9V02ddPCLbY1xYGPOX24NTyN50qnUxgCPcSoYMhKpAuBTjQoRZCAkUDRw==}
 
@@ -3772,6 +4106,47 @@ packages:
   balanced-match@4.0.4:
     resolution: {integrity: sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==}
     engines: {node: 18 || 20 || >=22}
+
+  bare-buffer@3.7.3:
+    resolution: {integrity: sha512-77owW16RX6YgdOzddHtM0oGz8wsd0/F9k/0coz6TPmjUHnr/9FwWODVMNKwyYWM/a/ESdTum855nfQxnsKUygA==}
+    engines: {bare: '>=1.20.0'}
+
+  bare-events@2.9.2:
+    resolution: {integrity: sha512-AIPKioV7/Y/8KfZ3AAhjPJxLLbY49S64Ym5DakZlUg75qQiTgUq9hEJoEwa4eUezPUlXRy/i5NpsKvo9jgKmoA==}
+    peerDependencies:
+      bare-abort-controller: '*'
+    peerDependenciesMeta:
+      bare-abort-controller:
+        optional: true
+
+  bare-fs@4.8.4:
+    resolution: {integrity: sha512-MPC2eyrpbk3A873sK4y6rk+Iv4o2enxTjHZ8zH3HO0mjrpm5XjnguY2XmfidIsDV6vnjpbMBKUAJpV0ISD2SsQ==}
+    engines: {bare: '>=1.28.0'}
+    peerDependencies:
+      bare-buffer: '*'
+    peerDependenciesMeta:
+      bare-buffer:
+        optional: true
+
+  bare-path@3.1.3:
+    resolution: {integrity: sha512-8r+FVU/o4zcFmpCDqbqAYhHHbtXPP+cyZKo7DRGRWc7OLlNs4TMaSQEpXL/sIdzyEG0M7RHw4B7xYMGrTc+qrg==}
+
+  bare-stream@2.13.4:
+    resolution: {integrity: sha512-PcrQ8lVLbiJscNm1Kez+Yp4Gy4AHGcN1lzwjvf5NybWen7VvEgUfyfnXYJ2zNqWnzOfCb1Abq6lH8ti0syQszA==}
+    peerDependencies:
+      bare-abort-controller: '*'
+      bare-buffer: '*'
+      bare-events: '*'
+    peerDependenciesMeta:
+      bare-abort-controller:
+        optional: true
+      bare-buffer:
+        optional: true
+      bare-events:
+        optional: true
+
+  bare-url@2.5.8:
+    resolution: {integrity: sha512-G5KTe5Bj6z5pqIxcn3lWlIFIv0rkXbccx0T0Xuf7t4RapfSWvFlcVbrwYXxFZ00PC4lp57OCIk6uXP/r3GbpDw==}
 
   base64-js@1.5.1:
     resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
@@ -4302,6 +4677,10 @@ packages:
     resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
     engines: {node: '>=12'}
 
+  dugite@3.3.3:
+    resolution: {integrity: sha512-rjsKuSTIitKChloA9E8czVE0zRnSsszP5QStAmx4uzsmEWVLFrtDAl9as/g2c2ceWBoXGqaWwHJ9eJT4nrhe4w==}
+    engines: {node: '>= 20'}
+
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
     engines: {node: '>= 0.4'}
@@ -4441,6 +4820,9 @@ packages:
     resolution: {integrity: sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==}
     engines: {node: '>=6'}
 
+  events-universal@1.0.1:
+    resolution: {integrity: sha512-LUd5euvbMLpwOF8m6ivPCbhQeSiYVNb8Vs0fQ8QjXo0JTkEHpz8pxdQf0gStltaPpw0Cca8b39KxvK9cfKRiAw==}
+
   events@3.3.0:
     resolution: {integrity: sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==}
     engines: {node: '>=0.8.x'}
@@ -4469,6 +4851,9 @@ packages:
 
   fast-deep-equal@3.1.3:
     resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
+
+  fast-fifo@1.3.2:
+    resolution: {integrity: sha512-/d9sfos4yxzpwkDkuN7k2SqFKtYNmCTzgfEpz82x34IM9/zc8KGxQoXg1liNC/izpRM/MBdt44Nmx41ZWqk+FQ==}
 
   fast-uri@3.1.9:
     resolution: {integrity: sha512-hS/0Wt3Ya043oKXs0sIxrMpKQITXhMLIrVAKKXi4gozGC9v7YRWVnXIZzjNPTO02M9BdxLCWqK1yRXgNziVyJQ==}
@@ -5965,6 +6350,9 @@ packages:
   std-env@4.3.0:
     resolution: {integrity: sha512-OtU/EgQ1kIm5KwqQpBC6ZEMXrZRui11w8zgfTWp8cdO9B8OaPsbA8bTHO2P+HNo1VlUTGMVBwPhydu6poeXiag==}
 
+  streamx@2.28.1:
+    resolution: {integrity: sha512-zEzXb0s5Cds7tqMH6rhZ05lcJydCWiQPEwiNngVqzsxCc962vLY4Uw+mW7od8kDH258k2Uz/JrOkdIAAhSh9VA==}
+
   strictdom@1.0.1:
     resolution: {integrity: sha512-cEmp9QeXXRmjj/rVp9oyiqcvyocWab/HaoN4+bwFeZ7QzykJD6L3yD4v12K1x0tHpqRqVpJevN3gW7kyM39Bqg==}
 
@@ -6029,9 +6417,15 @@ packages:
     resolution: {integrity: sha512-uxc/zpqFg6x7C8vOE7lh6Lbda8eEL9zmVm/PLeTPBRhh1xCgdWaQ+J1CUieGpIfm2HdtsUpRv+HshiasBMcc6A==}
     engines: {node: '>=6'}
 
+  tar-stream@3.2.2:
+    resolution: {integrity: sha512-+8NeqHRjQWH9nYlwo2gamAMImZCVzI4UoEgDpWorBt9OEfppiZn+uSkskzQKPWIZyji/C8fpWO7u69G0DX0tbg==}
+
   tar@7.5.22:
     resolution: {integrity: sha512-MFO/QzvtAOmJbkhOaCTvbGcFN9L9b+JunIsDwaKljSOdcLMea3NJ1k9Usz/rjdfSXTq4dfzfeS7W4p4YOAAHeA==}
     engines: {node: '>=18'}
+
+  teex@1.0.1:
+    resolution: {integrity: sha512-eYE6iEI62Ni1H8oIa7KlDU6uQBtqr4Eajni3wX7rpfXD8ysFx8z0+dri+KWEPWpBsxXfxu58x/0jvTVT1ekOSg==}
 
   temp-file@3.4.0:
     resolution: {integrity: sha512-C5tjlC/HCtVUOi3KWVokd4vHVViOmGjtLwIh4MuzPo/nMYTV/p1urt3RnMz2IWXDdKEGJH3k5+KPxtqRsUYGtg==}
@@ -6039,6 +6433,9 @@ packages:
   temp@0.9.4:
     resolution: {integrity: sha512-yYrrsWnrXMcdsnu/7YMYAofM1ktpL5By7vZhf15CrXijWWrEYZks5AXBudalfSWJLlnen/QUJUB5aoB0kqZUGA==}
     engines: {node: '>=6.0.0'}
+
+  text-decoder@1.2.7:
+    resolution: {integrity: sha512-vlLytXkeP4xvEq2otHeJfSQIRyWxo/oZGEbXrtEEF9Hnmrdly59sUbzZ/QgyWuLYHctCHxFF4tRQZNQ9k60ExQ==}
 
   thenify-all@1.6.0:
     resolution: {integrity: sha512-RNxQH/qI8/t3thXJDwcstUO4zeqo64+Uy/+sNVRBx4Xn2OX+OZ9oP+iJnNFqplFra2ZUVeKCSa2oVWi3T4uVmA==}
@@ -7531,6 +7928,8 @@ snapshots:
 
   '@penguinharness/ace-rsi-toolkit@file:plugins/ace-rsi-toolkit': {}
 
+  '@penguinharness/action-minutes@file:plugins/action-minutes': {}
+
   '@penguinharness/agent-company@file:plugins/agent-company': {}
 
   '@penguinharness/agent-development@file:plugins/agent-development': {}
@@ -7545,9 +7944,13 @@ snapshots:
 
   '@penguinharness/continual-learning@file:plugins/continual-learning': {}
 
+  '@penguinharness/daily-draw@file:plugins/daily-draw': {}
+
   '@penguinharness/data-analysis@file:plugins/data-analysis': {}
 
   '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit': {}
+
+  '@penguinharness/fridge-keeper@file:plugins/fridge-keeper': {}
 
   '@penguinharness/goal@file:plugins/goal': {}
 
@@ -7555,11 +7958,19 @@ snapshots:
 
   '@penguinharness/model-development@file:plugins/model-development': {}
 
+  '@penguinharness/multimodal-tools@file:plugins/multimodal-tools': {}
+
   '@penguinharness/openskill-rsi-toolkit@file:plugins/openskill-rsi-toolkit': {}
 
   '@penguinharness/opro-rsi-toolkit@file:plugins/opro-rsi-toolkit': {}
 
+  '@penguinharness/party-charades@file:plugins/party-charades': {}
+
   '@penguinharness/penguin-support@file:plugins/penguin-support': {}
+
+  '@penguinharness/plan@file:plugins/plan': {}
+
+  '@penguinharness/reading-desk@file:plugins/reading-desk': {}
 
   '@penguinharness/rrsi-rsi-toolkit@file:plugins/rrsi-rsi-toolkit': {}
 
@@ -7570,6 +7981,8 @@ snapshots:
   '@penguinharness/skillopt-rsi-toolkit@file:plugins/skillopt-rsi-toolkit': {}
 
   '@penguinharness/software-development@file:plugins/software-development': {}
+
+  '@penguinharness/tabletop-desk@file:plugins/tabletop-desk': {}
 
   '@penguinharness/trace-lookup@file:plugins/trace-lookup': {}
 
@@ -7621,7 +8034,7 @@ snapshots:
       - micromark-util-types
       - supports-color
 
-  '@prismshadow/mmsp@0.5.10(supports-color@10.2.2)(ws@8.21.0)':
+  '@prismshadow/mmsp@0.5.12(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.6.7)
       '@anthropic-ai/sdk': 0.91.1(zod@4.6.7)
@@ -7636,7 +8049,7 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/mmsp@0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+  '@prismshadow/mmsp@0.5.12(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.6.7)
       '@anthropic-ai/sdk': 0.91.1(zod@4.6.7)
@@ -7651,7 +8064,7 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/mmsp@0.5.10(ws@8.21.0)':
+  '@prismshadow/mmsp@0.5.12(ws@8.21.0)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.6.7)
       '@anthropic-ai/sdk': 0.91.1(zod@4.6.7)
@@ -7671,6 +8084,7 @@ snapshots:
       '@modelcontextprotocol/client': 2.3.1
       '@penguinharness/a2ui': file:plugins/a2ui
       '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes': file:plugins/action-minutes
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
@@ -7678,26 +8092,33 @@ snapshots:
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades': file:plugins/party-charades
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/plan': file:plugins/plan
+      '@penguinharness/reading-desk': file:plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/tabletop-desk': file:plugins/tabletop-desk
       '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/a2ui': file:packages/a2ui
-      '@prismshadow/mmsp': 0.5.10(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.12(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server
       commander: 13.1.0
@@ -7721,6 +8142,7 @@ snapshots:
       '@modelcontextprotocol/client': 2.3.1
       '@penguinharness/a2ui': file:plugins/a2ui
       '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes': file:plugins/action-minutes
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
@@ -7728,26 +8150,33 @@ snapshots:
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades': file:plugins/party-charades
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/plan': file:plugins/plan
+      '@penguinharness/reading-desk': file:plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/tabletop-desk': file:plugins/tabletop-desk
       '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/a2ui': file:packages/a2ui
-      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.12(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       commander: 13.1.0
@@ -7770,7 +8199,7 @@ snapshots:
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
       '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.12(supports-color@10.2.2)(ws@8.21.0)
       arktype: 2.2.3
       smol-toml: 1.9.1
       yaml: 2.9.0
@@ -7786,7 +8215,7 @@ snapshots:
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
       '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/mmsp': 0.5.12(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       arktype: 2.2.3
       smol-toml: 1.9.1
       yaml: 2.9.0
@@ -7802,7 +8231,7 @@ snapshots:
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
       '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/mmsp': 0.5.10(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.12(ws@8.21.0)
       arktype: 2.2.3
       smol-toml: 1.9.1
       yaml: 2.9.0
@@ -7825,11 +8254,36 @@ snapshots:
       - ws
       - zod
 
+  '@prismshadow/penguin-library-agent-api@file:library/agent-api(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)
+      '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
   '@prismshadow/penguin-library-agent-api@file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-session': file:library/session(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-auth@file:library/auth(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -7850,9 +8304,57 @@ snapshots:
       - ws
       - zod
 
+  '@prismshadow/penguin-library-cli@file:library/cli(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-db@file:library/db(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
   '@prismshadow/penguin-library-db@file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-http@file:library/http(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)
+      hono: 4.13.13
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-library-http@file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      hono: 4.13.13
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -7886,11 +8388,28 @@ snapshots:
       - ws
       - zod
 
+  '@prismshadow/penguin-library-model@file:library/model(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/mmsp': 0.5.12(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)
+      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
   '@prismshadow/penguin-library-model@file:library/model(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
+      '@prismshadow/mmsp': 0.5.12(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -7946,6 +8465,19 @@ snapshots:
       - ws
       - zod
 
+  '@prismshadow/penguin-library-session@file:library/session(supports-color@10.2.2)':
+    dependencies:
+      '@prismshadow/amsp': file:packages/amsp
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
   '@prismshadow/penguin-library-session@file:library/session(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@prismshadow/amsp': file:packages/amsp
@@ -7992,6 +8524,7 @@ snapshots:
       '@larksuiteoapi/node-sdk': 1.73.0
       '@penguinharness/a2ui': file:plugins/a2ui
       '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes': file:plugins/action-minutes
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
@@ -7999,19 +8532,26 @@ snapshots:
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades': file:plugins/party-charades
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/plan': file:plugins/plan
+      '@penguinharness/reading-desk': file:plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/tabletop-desk': file:plugins/tabletop-desk
       '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
@@ -8020,8 +8560,9 @@ snapshots:
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/chat-markdown': file:packages/chat-markdown
-      '@prismshadow/mmsp': 0.5.10(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.12(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
+      '@types/node': 24.13.3
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       css-tree: 3.2.1
@@ -8029,6 +8570,7 @@ snapshots:
       fflate: 0.8.3
       hono: 4.13.13
       isomorphic-git: 1.44.10
+      minimatch: 10.2.6
       node-pty: 1.1.0
       remark-parse: 11.0.0(supports-color@10.2.2)
       safe-regex: 2.1.1
@@ -8056,6 +8598,7 @@ snapshots:
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/a2ui': file:plugins/a2ui
       '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes': file:plugins/action-minutes
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
@@ -8063,19 +8606,26 @@ snapshots:
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades': file:plugins/party-charades
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/plan': file:plugins/plan
+      '@penguinharness/reading-desk': file:plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/tabletop-desk': file:plugins/tabletop-desk
       '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
@@ -8084,8 +8634,9 @@ snapshots:
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
-      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/mmsp': 0.5.12(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@types/node': 24.13.3
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       css-tree: 3.2.1
@@ -8093,6 +8644,7 @@ snapshots:
       fflate: 0.8.3
       hono: 4.13.13
       isomorphic-git: 1.44.10
+      minimatch: 10.2.6
       node-pty: 1.1.0
       remark-parse: 11.0.0(supports-color@10.2.2)
       safe-regex: 2.1.1
@@ -8120,6 +8672,7 @@ snapshots:
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@penguinharness/a2ui': file:plugins/a2ui
       '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
+      '@penguinharness/action-minutes': file:plugins/action-minutes
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
@@ -8127,19 +8680,26 @@ snapshots:
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
+      '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
       '@penguinharness/openskill-rsi-toolkit': file:plugins/openskill-rsi-toolkit
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/party-charades': file:plugins/party-charades
       '@penguinharness/penguin-support': file:plugins/penguin-support
+      '@penguinharness/plan': file:plugins/plan
+      '@penguinharness/reading-desk': file:plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit': file:plugins/rrsi-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/skilladam-rsi-toolkit': file:plugins/skilladam-rsi-toolkit
       '@penguinharness/skillopt-rsi-toolkit': file:plugins/skillopt-rsi-toolkit
       '@penguinharness/software-development': file:plugins/software-development
+      '@penguinharness/tabletop-desk': file:plugins/tabletop-desk
       '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/trace-rsi-toolkit': file:plugins/trace-rsi-toolkit
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
@@ -8148,8 +8708,9 @@ snapshots:
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
-      '@prismshadow/mmsp': 0.5.10(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@prismshadow/mmsp': 0.5.12(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
+      '@types/node': 24.13.3
       '@xterm/headless': 5.5.0
       commander: 13.1.0
       css-tree: 3.2.1
@@ -8157,6 +8718,7 @@ snapshots:
       fflate: 0.8.3
       hono: 4.13.13
       isomorphic-git: 1.44.10
+      minimatch: 10.2.6
       node-pty: 1.1.0
       remark-parse: 11.0.0(supports-color@10.2.2)
       safe-regex: 2.1.1
@@ -9112,11 +9674,48 @@ snapshots:
       - debug
       - supports-color
 
+  b4a@1.9.0: {}
+
   bail@2.0.2: {}
 
   balanced-match@1.0.2: {}
 
   balanced-match@4.0.4: {}
+
+  bare-buffer@3.7.3: {}
+
+  bare-events@2.9.2: {}
+
+  bare-fs@4.8.4(bare-buffer@3.7.3):
+    dependencies:
+      bare-events: 2.9.2
+      bare-path: 3.1.3
+      bare-stream: 2.13.4(bare-buffer@3.7.3)(bare-events@2.9.2)
+      bare-url: 2.5.8
+      fast-fifo: 1.3.2
+    optionalDependencies:
+      bare-buffer: 3.7.3
+    transitivePeerDependencies:
+      - bare-abort-controller
+      - react-native-b4a
+
+  bare-path@3.1.3: {}
+
+  bare-stream@2.13.4(bare-buffer@3.7.3)(bare-events@2.9.2):
+    dependencies:
+      b4a: 1.9.0
+      streamx: 2.28.1
+      teex: 1.0.1
+    optionalDependencies:
+      bare-buffer: 3.7.3
+      bare-events: 2.9.2
+    transitivePeerDependencies:
+      - react-native-b4a
+
+  bare-url@2.5.8:
+    dependencies:
+      bare-buffer: 3.7.3
+      bare-path: 3.1.3
 
   base64-js@1.5.1: {}
 
@@ -9667,6 +10266,15 @@ snapshots:
 
   dotenv@17.4.2: {}
 
+  dugite@3.3.3(bare-buffer@3.7.3):
+    dependencies:
+      progress: 2.0.3
+      tar-stream: 3.2.2(bare-buffer@3.7.3)
+    transitivePeerDependencies:
+      - bare-abort-controller
+      - bare-buffer
+      - react-native-b4a
+
   dunder-proto@1.0.1:
     dependencies:
       call-bind-apply-helpers: 1.0.2
@@ -9856,6 +10464,12 @@ snapshots:
 
   event-target-shim@5.0.1: {}
 
+  events-universal@1.0.1:
+    dependencies:
+      bare-events: 2.9.2
+    transitivePeerDependencies:
+      - bare-abort-controller
+
   events@3.3.0: {}
 
   eventsource-parser@3.1.0: {}
@@ -9907,6 +10521,8 @@ snapshots:
   extend@3.0.2: {}
 
   fast-deep-equal@3.1.3: {}
+
+  fast-fifo@1.3.2: {}
 
   fast-uri@3.1.9: {}
 
@@ -11812,6 +12428,15 @@ snapshots:
 
   std-env@4.3.0: {}
 
+  streamx@2.28.1:
+    dependencies:
+      events-universal: 1.0.1
+      fast-fifo: 1.3.2
+      text-decoder: 1.2.7
+    transitivePeerDependencies:
+      - bare-abort-controller
+      - react-native-b4a
+
   strictdom@1.0.1: {}
 
   string-width@4.2.3:
@@ -11887,6 +12512,17 @@ snapshots:
 
   tapable@2.3.3: {}
 
+  tar-stream@3.2.2(bare-buffer@3.7.3):
+    dependencies:
+      b4a: 1.9.0
+      bare-fs: 4.8.4(bare-buffer@3.7.3)
+      fast-fifo: 1.3.2
+      streamx: 2.28.1
+    transitivePeerDependencies:
+      - bare-abort-controller
+      - bare-buffer
+      - react-native-b4a
+
   tar@7.5.22:
     dependencies:
       '@isaacs/fs-minipass': 4.0.1
@@ -11894,6 +12530,13 @@ snapshots:
       minipass: 7.1.3
       minizlib: 3.1.0
       yallist: 5.0.0
+
+  teex@1.0.1:
+    dependencies:
+      streamx: 2.28.1
+    transitivePeerDependencies:
+      - bare-abort-controller
+      - react-native-b4a
 
   temp-file@3.4.0:
     dependencies:
@@ -11904,6 +12547,12 @@ snapshots:
     dependencies:
       mkdirp: 0.5.6
       rimraf: 2.6.3
+
+  text-decoder@1.2.7:
+    dependencies:
+      b4a: 1.9.0
+    transitivePeerDependencies:
+      - react-native-b4a
 
   thenify-all@1.6.0:
     dependencies:

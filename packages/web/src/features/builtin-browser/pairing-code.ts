@@ -8,14 +8,15 @@
  * minute left; "New code" replaces it outright. The Chrome connecting uses it up, and the next
  * surface to show asks again.
  */
-import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
+import type { Failure } from "@prismshadow/penguin-ui";
+import * as api from "./api";
+import { failureOf } from "@prismshadow/penguin-web-plugin";
 
 export type PairingCodeState =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "ready"; code: string; expiresAt: string }
-  | { status: "failed"; error: string };
+  | { status: "failed"; failure: Failure };
 
 /** A code with less than this left is not shown: it could lapse while it is being pasted. */
 const FRESH_FOR_MS = 60_000;
@@ -59,7 +60,10 @@ export async function ensurePairingCode(replace = false, now = Date.now()): Prom
     const { code, expiresAt } = await api.createBrowserPairingCode();
     set({ status: "ready", code, expiresAt });
   } catch (err) {
-    set({ status: "failed", error: apiErrorText(err) });
+    set({
+      status: "failed",
+      failure: failureOf(err, { what: "a browser pairing code could not be made" }),
+    });
   }
 }
 

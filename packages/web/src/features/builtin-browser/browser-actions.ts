@@ -3,15 +3,12 @@
  * it feel immediate. Components call these; none of them throws.
  */
 import type { BrowserBackend, BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
-import { toastAttention, toastError, toastSuccess } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { apiErrorText } from "../../lib/api-error";
-import { S } from "../../lib/strings";
-import { openPanel } from "../dock";
+import { toastAttention, toastSuccess } from "@prismshadow/penguin-ui";
+import * as api from "./api";
+import { ApiError, apiErrorText, openPanel, toastApiError } from "@prismshadow/penguin-web-plugin";
+import { S } from "./strings";
 import { browserState, dispatchBrowser } from "./browser-store";
 import { NO_BROWSER_SCOPE, type BrowserGuest } from "./browser-state";
-import { toastApiError } from "../../lib/toast-api-error";
 
 const opening = new Map<Promise<unknown>, string>();
 
@@ -69,7 +66,7 @@ async function openInScope(
     });
     return tab;
   } catch (err) {
-    toastError(S.builtinBrowser.openFailed(apiErrorText(err)));
+    toastApiError(err, { text: S.builtinBrowser.openFailed(apiErrorText(err)) });
     return null;
   } finally {
     dispatchBrowser({ type: "opening", delta: -1, scope });
@@ -130,7 +127,7 @@ export function closeChromeTab(tabId: number): void {
   dispatchBrowser({ type: "chrome-closed", tabId });
   void api.closeBuiltinBrowserTab(tabId).catch((err: unknown) => {
     if (!(err instanceof ApiError && err.status === 404)) {
-      toastError(S.builtinBrowser.closeFailed(apiErrorText(err)));
+      toastApiError(err, { text: S.builtinBrowser.closeFailed(apiErrorText(err)) });
     }
   });
 }
@@ -138,7 +135,7 @@ export function closeChromeTab(tabId: number): void {
 /** Loads an address in a tab of the user's Chrome (the panel hosts no page to load it in). */
 export function navigateChromeTab(tabId: number, url: string): void {
   void api.navigateBuiltinBrowserTab(tabId, url).catch((err: unknown) => {
-    toastError(S.builtinBrowser.openFailed(apiErrorText(err)));
+    toastApiError(err, { text: S.builtinBrowser.openFailed(apiErrorText(err)) });
   });
 }
 
@@ -155,7 +152,7 @@ export async function switchBrowserBackend(backend: BrowserBackend): Promise<boo
     if (err instanceof ApiError && err.code === "action_in_flight") {
       toastAttention(S.builtinBrowser.switchRefused);
     } else {
-      toastError(S.builtinBrowser.switchFailed(apiErrorText(err)));
+      toastApiError(err, { text: S.builtinBrowser.switchFailed(apiErrorText(err)) });
     }
     return false;
   }

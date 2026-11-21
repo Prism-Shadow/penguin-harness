@@ -5,7 +5,7 @@
  * switch or a panel toggle costs one request. A request that fails is not repeated: the next
  * change says it again, and so does the layer after the server may have forgotten (a resync).
  */
-import * as api from "../../api/endpoints";
+import * as api from "./api";
 
 /** How long the tab on screen has to stay put before the server hears of it. */
 export const ON_SCREEN_SETTLE_MS = 250;

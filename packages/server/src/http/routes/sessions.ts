@@ -179,6 +179,7 @@ import type { LiveStreams } from "../../auth/live-streams.js";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { OrgService } from "../../runtime/organization/service.js";
+import type { ToolModelBindings } from "../../services/tool-model-bindings.js";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
 const SESSION_TITLE_MAX = 120;
@@ -486,6 +487,20 @@ function parseGoalField(body: Record<string, unknown>): { budget: number } | nul
     throw badRequest("goal.budget must be a positive integer, or -1 for unlimited.");
   }
   return { budget: (budget as number | undefined) ?? -1 };
+}
+
+/** Validate the optional `promptHooks` field of a task request: hook package names, each once; absent or empty = none. */
+function parsePromptHooks(body: Record<string, unknown>): string[] {
+  const names = body.promptHooks;
+  if (names === undefined) return [];
+  if (
+    !Array.isArray(names) ||
+    names.some((name) => typeof name !== "string" || name.trim() === "") ||
+    new Set(names).size !== names.length
+  ) {
+    throw badRequest("promptHooks must be a list of distinct hook package names.");
+  }
+  return names as string[];
 }
 
 /** What deleting a Session reaches, from this route group's deps (shared with the archive page's batch delete). */
@@ -1175,6 +1190,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const body = await readJson(c);
     const goal = parseGoalField(body);
+    const promptHooks = parsePromptHooks(body);
+    // A goal's round 1 is the goal plugin's protocol; a switch's text behind it would contradict
+    // it (and ride none of the later rounds).
+    if (goal && promptHooks.length > 0) {
+      throw badRequest("promptHooks cannot be combined with goal.");
+    }
     // Interrupt-then-send is a way of starting a Task now, so it cannot also wait its turn in
     // the queue or open a goal, which never queues.
     const interrupt = body.interrupt === true;
@@ -1254,10 +1275,13 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         queueIfBusy,
         interrupt,
         steerIfBusy,
+        promptHooks,
         // Original content, kept while the input waits in the follow-up queue (or as undelivered
         // steering) so a recall (DELETE /follow-ups/:id, DELETE /steer/:id) can hand it back;
         // unused when the task starts directly.
         recall: recallStore(parsed.texts.join("\n"), parsed.images, parsed.attachments, written),
+        // The person sending it drives the run it starts (now, or when it leaves the queue).
+        ...(driver !== null ? { driver } : {}),
       });
       if (driver !== null && steered !== true) {
         if (steerIfBusy) deps.drivers?.note(row.sessionId, driver);
@@ -1307,7 +1331,13 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       row.sessionId,
     );
     try {
-      deps.manager.steer(row.sessionId, input, recallStore(text, images, files, written));
+      // A message from anyone but the run's driver leaves it with no driver (steerRunning).
+      deps.manager.steer(
+        row.sessionId,
+        input,
+        recallStore(text, images, files, written),
+        c.var.sessionVia === "token" ? undefined : c.var.user.userId,
+      );
     } catch (err) {
       // 409 (not running) or any other refusal: the files must not stay behind — the
       // frontend falls back to a normal task POST, which writes its own copies.
@@ -1572,7 +1602,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const driver = c.var.sessionVia === "token" ? null : c.var.user.userId;
     if (driver !== null) deps.drivers?.note(row.sessionId, driver);
-    const { sessionId } = await deps.manager.retryTask(row.sessionId);
+    const { sessionId } = await deps.manager.retryTask(row.sessionId, driver ?? undefined);
     if (driver !== null && sessionId !== row.sessionId) deps.drivers?.note(sessionId, driver);
     return c.json({ sessionId, queued: false } satisfies TaskCreateResponse, 202);
   });
@@ -1904,6 +1934,8 @@ export class SessionApiRoutes {
   @Use() private readonly orgService!: OrgService;
   @Use() private readonly workbenches!: Workbenches;
   @Use() private readonly drafts!: UserDraftsStore;
+  /** Optional for trees without the model tools group: every model then gets the chat probe. */
+  @Use() private readonly toolModelBindings?: ToolModelBindings;
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
@@ -1977,6 +2009,9 @@ export class SessionApiRoutes {
     this.modelsRoutes = modelsRoutes({
       ...modelDeps,
       penguinGoOrigin: this.config.penguinGoOrigin ?? normalizePenguinGoOrigin(undefined),
+      ...(this.toolModelBindings !== undefined
+        ? { toolModelBindings: this.toolModelBindings }
+        : {}),
     });
     this.modelOauthRoutes = modelOAuthRoutes(modelOAuthDeps);
     this.platformAuthRoutes = platformAuthRoutes({ ...modelDeps, platformAuth: this.platformAuth });

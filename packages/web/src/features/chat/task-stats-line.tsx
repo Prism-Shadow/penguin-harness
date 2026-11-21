@@ -33,6 +33,7 @@ import {
   CopyButton,
   GlyphIcon,
   ICONS,
+  InlineIconButton,
   Spinner,
   StatChip,
 } from "@prismshadow/penguin-ui";
@@ -47,6 +48,7 @@ import {
 } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { S } from "../../lib/strings";
+import { ReadReply } from "./voice/voice-scope";
 import { useTheme } from "../../state/theme";
 import { useLocale } from "../../state/locale";
 
@@ -157,26 +159,25 @@ export function TaskStatsLine({
         )}
       </span>
       {/* Pinned at the row's end, outside the scrollable stats span. */}
+      {assistantText && <ReadReply text={assistantText} />}
       <CopyButton text={copyText} label={S.chat.copyReply} size="sm" className="shrink-0" />
       {/* Fork sits to the RIGHT of copy (review request): copy is the frequent action and
           keeps its accustomed spot; the click only opens the confirmation below — the fork
           request fires on Confirm, never directly. */}
       {onFork && assistantText?.trim() && (
         <>
-          <button
-            type="button"
+          <InlineIconButton
             disabled={forking}
-            data-tooltip={S.chat.forkSession}
-            aria-label={S.chat.forkSession}
+            label={S.chat.forkSession}
             onClick={() => setConfirmingFork(true)}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 hover:bg-surface-muted hover:text-fg-muted disabled:cursor-wait disabled:opacity-50"
+            className="shrink-0"
           >
             {forking ? (
               <Spinner size="sm" label={S.common.loading} />
             ) : (
-              <GlyphIcon d={ICONS.gitBranch} size={13} />
+              <GlyphIcon d={ICONS.gitBranch} />
             )}
-          </button>
+          </InlineIconButton>
           <ConfirmModal
             open={confirmingFork}
             title={S.chat.forkSession}

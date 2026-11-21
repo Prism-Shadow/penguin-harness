@@ -310,6 +310,7 @@ describe("2026-09-23-machines-columns → current: 2026-10-04-browser-extensions
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
+        "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
       ]);
@@ -376,6 +377,7 @@ describe("a sessions table from before the sidebar mark: 2026-10-12-sessions-kep
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
+        "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
       ]);
@@ -436,6 +438,7 @@ describe("an agent_api table from before the session settings: 2026-10-14-agent-
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
+        "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
       ]);
@@ -499,6 +502,7 @@ describe("an agent_api table from before the concurrency limit: 2026-10-14-agent
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
+        "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
       ]);
@@ -550,6 +554,7 @@ describe("a machines table from before the adoption times: 2026-10-16-machines-a
         "2026-10-16-machines-adopted-at",
         "2026-09-23-model-tables-adoption",
         "2026-10-26-user-drafts",
+        "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
       ]);
@@ -598,6 +603,7 @@ describe("a database from before the account's drafts: 2026-10-26-user-drafts", 
     try {
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "2026-10-26-user-drafts",
+        "2026-11-19-usage-records-purpose",
         "2026-11-19-plugin-module-requests",
         "2026-11-19-plugin-module-preinstalls",
       ]);
@@ -639,14 +645,66 @@ describe("a database from before the account's drafts: 2026-10-26-user-drafts", 
   });
 });
 
+// Given a usage table from before requests outside a chat turn were recorded, the upgrade adds
+// their purpose while a pushed platform boots, every existing row reads as a chat turn's, and down
+// keeps the column with the purposes recorded since.
+describe("a usage table from before the purpose column: 2026-11-19-usage-records-purpose", () => {
+  /** A root through 2026-10-26-user-drafts whose usage_records table has no `purpose` column. */
+  function openPrePurpose(): DatabaseSync {
+    const db = openFresh();
+    db.exec("ALTER TABLE usage_records DROP COLUMN purpose");
+    stampThrough(db, "2026-10-26-user-drafts");
+    return db;
+  }
+
+  const insertUsage = (db: DatabaseSync) =>
+    db.exec(
+      "INSERT INTO usage_records (ts, date, project_id, agent_id, session_id, provider, model_id," +
+        " cache_read, cache_write, output, total)" +
+        " VALUES ('2026-11-19T00:00:00.000Z', '2026-11-19', 'p1', 'coder', 's1', 'openai', 'gpt', 1, 2, 3, 6)",
+    );
+
+  it("adds the column while a pushed platform boots, leaving every existing row a chat turn's", () => {
+    const db = openPrePurpose();
+    try {
+      insertUsage(db);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "2026-11-19-usage-records-purpose",
+        "2026-11-19-plugin-module-requests",
+        "2026-11-19-plugin-module-preinstalls",
+      ]);
+      expect(db.prepare("SELECT session_id, purpose FROM usage_records").all()).toEqual([
+        { session_id: "s1", purpose: null },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down keeps the column and the purposes in it", () => {
+    const db = openPrePurpose();
+    try {
+      insertUsage(db);
+      migrate(db);
+      db.exec("UPDATE usage_records SET purpose = 'acme-tools:t2i'");
+      rollbackTo(db, "2026-10-26-user-drafts");
+      expect(db.prepare("SELECT purpose FROM usage_records").get()).toEqual({
+        purpose: "acme-tools:t2i",
+      });
+    } finally {
+      db.close();
+    }
+  });
+});
+
 // Given a database from before the module requests, the upgrade adds their table on the swap
 // path, a request outlives its Project with no Project named, and down takes the table away.
 describe("a database from before the module requests: 2026-11-19-plugin-module-requests", () => {
-  /** A root whose line declared everything through 2026-10-26-user-drafts. */
+  /** A root whose line declared everything through 2026-11-19-usage-records-purpose. */
   function openPreModuleRequests(): DatabaseSync {
     const db = openFresh();
     db.exec("DROP TABLE plugin_module_requests;");
-    stampThrough(db, "2026-10-26-user-drafts");
+    stampThrough(db, "2026-11-19-usage-records-purpose");
     return db;
   }
 
@@ -682,7 +740,7 @@ describe("a database from before the module requests: 2026-11-19-plugin-module-r
     try {
       migrate(db);
       const after = shape(db);
-      rollbackTo(db, "2026-10-26-user-drafts");
+      rollbackTo(db, "2026-11-19-usage-records-purpose");
       expect(hasTable(db, "plugin_module_requests")).toBe(false);
       migrate(db);
       expect(shape(db)).toBe(after);

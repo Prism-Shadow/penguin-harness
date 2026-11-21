@@ -87,6 +87,8 @@ import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
 import { SettingsLayer } from "../src/features/settings/settings-layer";
 import { DockScope } from "../src/features/dock/dock-scope";
 import { PinnedBalanceBadge } from "../src/features/models/group-balance";
+import { ProjectSettingsLayer } from "../src/features/projects/project-settings-layer";
+import { DefaultModelsLayer } from "../src/features/models/default-models-layer";
 import { ProjectSwitcher } from "../src/features/projects/project-switcher";
 import {
   companyChannels,
@@ -324,11 +326,13 @@ describe("the booted shell slots", () => {
     expect(new Set(codes).size).toBe(2);
   });
 
-  it("mounts the five layers in their order, the dock's scope last", () => {
+  it("mounts the layers in their order, the dock's scope last", () => {
     expect(codeByOrder(layers)).toEqual([
       TerminalDockRuntime,
       ShortcutRuntime,
       SettingsLayer,
+      ProjectSettingsLayer,
+      DefaultModelsLayer,
       BuiltinBrowserLayer,
       DockScope,
     ]);

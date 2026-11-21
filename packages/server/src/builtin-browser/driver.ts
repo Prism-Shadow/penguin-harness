@@ -13,8 +13,8 @@
  *   is not an error: the call reports `{ reloaded: true }`, as TMWebDriver's `closed` does.
  * - A script that throws is a PageScriptError carrying the page's own message.
  */
-import type { BrowserBackend } from "../api/types.js";
-import { HttpError } from "../http/errors.js";
+import type { BrowserBackend } from "@prismshadow/penguin-server/api";
+import { HttpError } from "../plugin/index.js";
 import {
   BrowserLinkError,
   BrowserUnavailableError,
@@ -145,6 +145,20 @@ export function mapLinkError(
           503,
           "browser_unavailable",
           "The user paused the PenguinHarness Browser extension in Chrome; ask them to resume it.",
+        );
+      }
+      if (err.message === "import_declined") {
+        return new HttpError(
+          403,
+          "import_declined",
+          "The user did not allow, in Chrome, handing its cookies over to this import.",
+        );
+      }
+      if (err.message === "unknown_op" && backend === "chrome") {
+        return new HttpError(
+          409,
+          "extension_outdated",
+          "The PenguinHarness Browser extension in Chrome is too old for this; update it and try again.",
         );
       }
       return new HttpError(422, "cdp_error", err.message);

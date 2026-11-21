@@ -36,3 +36,10 @@ export const demoVideoUrl = (name: string): string => `${COMMUNITY_ASSETS}/video
  * change instead of a sweep over every post.
  */
 export const blogAssetUrl = (name: string): string => `${COMMUNITY_ASSETS}/blog-assets/${name}`;
+
+/**
+ * The plugin market's pictures: each plugin's cover, its thumbnail, its screenshots and, for a
+ * plugin this repository does not bundle, its icon. They sit beside the market document in
+ * `assets/plugins/`, which names them by paths relative to that folder (scripts/hub/market.mjs).
+ */
+export const pluginAssetUrl = (path: string): string => `${COMMUNITY_ASSETS}/plugins/${path}`;

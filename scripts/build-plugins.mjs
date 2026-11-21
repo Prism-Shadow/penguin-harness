@@ -1,10 +1,10 @@
 /**
  * The builtin plugins, shipped as the npm packages they are: every `plugins/*` package with
- * a code entry is built by its own `build` script, packed by `pnpm pack` — exactly what
- * `npm publish` would send — and installed by npm into a staging directory laid out as an npm
- * prefix (`<out>/package.json` + `<out>/node_modules/<name>/…`, dependencies included). That
- * prefix is the one shape both consumers resolve from: the hot push ships it under `plugins/`
- * in its assets, the desktop build stages it beside `skills/`.
+ * a code entry, except the MARKET_ONLY ones, is built by its own `build` script, packed by
+ * `pnpm pack` — exactly what `npm publish` would send — and installed by npm into a staging
+ * directory laid out as an npm prefix (`<out>/package.json` + `<out>/node_modules/<name>/…`,
+ * dependencies included). That prefix is the one shape both consumers resolve from: the hot
+ * push ships it under `plugins/` in its assets, the desktop build stages it beside `skills/`.
  *
  * Nothing about a package is rewritten. Its `package.json`, its `exports`, its `dist/` and its
  * `README.md` reach the target as the package's own build produced them; a dependency it
@@ -25,21 +25,33 @@
  * The licenses of those third-party packages ship beside them as `THIRD-PARTY-NOTICES.md` at the
  * prefix's root (scripts/lib/third-party-notices.mjs); a package without license text fails it.
  *
+ * The prefix also holds the external built-in plugins (scripts/lib/external-plugins.mjs):
+ * `@penguinharness/*` packages published from other repositories, which packages/server pins to
+ * one exact version. Each with a code entry is staged from its locked tarball — the bytes whose
+ * sha512 pnpm-lock.yaml records, checked before anything is built — and listed in the prefix's
+ * manifest beside the `plugins/*` packages, so every consumer of the prefix carries it as built
+ * in. It is unpacked rather than handed to npm: it bundles what it runs, as a `plugins/*`
+ * package does, and the peer ranges it declares on the harness would have npm install the
+ * harness into the prefix.
+ *
  * Cached by content: the hash over every plugin's `src/`, `package.json`, `README.md` and
- * `tsup.config.ts`, and over the lockfile entries the prefix is pinned to, names a directory
- * under `node_modules/.cache/penguin-plugins/`, and an unchanged set is not built, packed or
- * installed again — a push of an unrelated change costs nothing here. Installing needs the registry (for the dependencies) the first time only.
+ * `tsup.config.ts`, over the lockfile entries the prefix is pinned to, and over each external
+ * plugin's locked integrity, names a directory under `node_modules/.cache/penguin-plugins/`, and
+ * an unchanged set is not built, packed, fetched or installed again — a push of an unrelated
+ * change costs nothing here. Installing needs the registry (for the dependencies and the
+ * external plugins) the first time only; `PENGUIN_PLUGIN_TARBALLS` supplies the external
+ * plugins' tarballs to a build without one.
  *
  * Usage (a library for deploy.mjs / desktop build-assets.mjs, and a CLI):
  *   node scripts/build-plugins.mjs --out <dir>      stage the prefix into <dir>
  */
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { externalPins, lockedTarball, unpackPackage } from "./lib/external-plugins.mjs";
 import {
   integrityMismatches,
   lockCacheInput,
@@ -47,14 +59,14 @@ import {
   platformSpecs,
   readPnpmLock,
 } from "./lib/locked-prefix.mjs";
+import { run } from "./lib/run-command.mjs";
 import { readVendoredPackages, thirdPartyNotices } from "./lib/third-party-notices.mjs";
+import { offlineCandidates, stageOfflineArchives } from "./lib/offline-archives.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PLUGINS_SRC = path.join(ROOT, "plugins");
-const CACHE = path.join(ROOT, "node_modules", ".cache", "penguin-plugins");
 const COMPLETE = ".complete";
 /** Folded into the cache key: bump when what this script WRITES changes, not only what it reads. */
-const PACK_FORMAT = 14;
+const PACK_FORMAT = 15;
 /** The prefix's own manifest: npm needs one above `node_modules`, and it is ours, never a package's. */
 const PREFIX_MANIFEST = { name: "penguin-builtin-plugins", private: true, version: "0.0.0" };
 /**
@@ -71,6 +83,20 @@ const NATIVE_DEPENDENCIES = new Map([
   [
     "@deepseek-ai/node-addon-landlock-run",
     "resolves its per-platform launcher binary package at run time (sandbox-dsh)",
+  ],
+]);
+
+/**
+ * The plugins of this repository that are NOT shipped, each with a reason: they are built,
+ * tested and published to npm like every other (at a version of their own where
+ * scripts/lib/own-version-plugins.mjs lists them), and the server's embedded index lists them, but
+ * an administrator installs them from the plugin market — they are not in the builtin prefix, so
+ * nothing carries them to every machine and no `409 plugin_shipped` stands in the market's way.
+ */
+const MARKET_ONLY = new Map([
+  [
+    "@penguinharness/computer-use",
+    "not preinstalled: it downloads its own native program (agent-desktop) on the machine that runs it",
   ],
 ]);
 
@@ -104,29 +130,6 @@ async function walk(dir, prefix = "") {
     else if (e.isFile()) out.push(rel);
   }
   return out.sort();
-}
-
-/** A package manager's command, as the platform names it. */
-function command(name) {
-  return process.platform === "win32" ? `${name}.cmd` : name;
-}
-// cmd.exe does not unquote spawn args by itself: under `shell: true` the args are joined
-// into one command line, so a path with a space (the pack directory lives under the user's
-// temp directory, i.e. their profile) splits into two. Quoted the way run-with-env.mjs quotes.
-const quote = (a) => (/[\s"^&|<>;,()%!]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
-function run(name, args, cwd) {
-  const windows = process.platform === "win32";
-  try {
-    execFileSync(command(name), windows ? args.map(quote) : args, {
-      cwd,
-      stdio: ["ignore", "pipe", "pipe"],
-      shell: windows,
-      env: process.env,
-    });
-  } catch (err) {
-    const stderr = err instanceof Object && "stderr" in err ? String(err.stderr).trim() : "";
-    throw new Error(`${name} ${args.slice(0, 3).join(" ")} failed in ${cwd}\n${stderr}`);
-  }
 }
 
 /**
@@ -167,19 +170,21 @@ async function sourceHash(dir, into) {
 }
 
 /**
- * Every plugin package under `plugins/` with a code entry (`main` or `exports`): the packages of
- * server modules.
+ * Every plugin package under `plugins/` with a code entry (`main` or `exports`) that is not
+ * MARKET_ONLY: the packages of the server modules this build ships.
  */
-async function pluginPackages() {
+export async function pluginPackages(root) {
   const out = [];
-  const entries = fs.existsSync(PLUGINS_SRC) ? await fsp.readdir(PLUGINS_SRC) : [];
+  const src = path.join(root, "plugins");
+  const entries = fs.existsSync(src) ? await fsp.readdir(src) : [];
   for (const dirName of entries.sort()) {
-    const dir = path.join(PLUGINS_SRC, dirName);
+    const dir = path.join(src, dirName);
     const manifestFile = path.join(dir, "package.json");
     if (!fs.existsSync(manifestFile)) continue;
     const pkg = JSON.parse(await fsp.readFile(manifestFile, "utf8"));
     // A package with a code entry is built and packed; one without (skills, hooks) carries no code.
     if (pkg.main === undefined && pkg.exports === undefined) continue;
+    if (MARKET_ONLY.has(pkg.name)) continue;
     const unbundled = Object.keys(pkg.dependencies ?? {}).filter(
       (d) => !NATIVE_DEPENDENCIES.has(d),
     );
@@ -200,37 +205,87 @@ async function pluginPackages() {
  * Builds, packs and installs every builtin plugin into one staged prefix (from cache when
  * nothing changed) and returns `{ dir, files, plugins }`: the prefix directory, the relative
  * paths to ship, and `[{ name, version }]` of what it holds.
+ *
+ * `root` is the checkout whose `plugins/`, packages/server pins and pnpm-lock.yaml it reads, and
+ * `env` the environment its tools run in and `PENGUIN_PLUGIN_TARBALLS` is read from: this
+ * repository and this process's, unless a caller stages another.
  */
-export async function buildBuiltinPlugins({ log = () => {} } = {}) {
-  const plugins = await pluginPackages();
+export async function buildBuiltinPlugins({ log = () => {}, root = ROOT, env = process.env } = {}) {
+  const plugins = await pluginPackages(root);
   // A native module publishes one package per `<os>-<cpu>` (koffi: `@koromix/koffi-win32-x64`)
   // and depends on all of them optionally; the lockfile names them, so the closure holds the
   // ones for TARGET_PLATFORMS and this build never hardcodes a platform triple.
-  const lock = readPnpmLock(ROOT);
-  const importers = plugins.map((p) => path.relative(ROOT, p.dir).split(path.sep).join("/"));
+  const lock = readPnpmLock(root);
+  const importers = plugins.map((p) => path.relative(root, p.dir).split(path.sep).join("/"));
   const closure = lockedClosure(lock, importers, NATIVE_DEPENDENCIES, TARGET_PLATFORMS);
   const builtinNames = new Set(plugins.map((p) => p.name));
+  const externals = externalPins(root, lock);
+  for (const { name } of externals) {
+    if (builtinNames.has(name)) {
+      throw new Error(`${name} is both a plugins/ package and an external pin of packages/server`);
+    }
+  }
+  // Listed in the market but not shipped: carried as offline archives (scripts/lib/offline-archives.mjs).
+  const offline = await offlineCandidates({
+    pluginsSrc: path.join(root, "plugins"),
+    indexFile: path.join(root, "packages", "server", "src", "plugin", "builtin-index.json"),
+    shipped: builtinNames,
+  });
   const h = createHash("sha256").update(`pack ${PACK_FORMAT}\0`);
   h.update(lockCacheInput(lock, closure)).update("\0");
-  for (const plugin of plugins) {
+  for (const plugin of [...plugins, ...offline]) {
     h.update(plugin.name).update("\0");
     await sourceHash(plugin.dir, h);
   }
+  // The locked integrity is the external package's whole content.
+  for (const { name, version, integrity } of externals) {
+    h.update(`external ${name}@${version} ${integrity}\0`);
+  }
   const hash = h.digest("hex").slice(0, 16);
-  const out = path.join(CACHE, hash);
+  const out = path.join(root, "node_modules", ".cache", "penguin-plugins", hash);
   if (fs.existsSync(path.join(out, COMPLETE))) {
-    log(`${plugins.length} builtin plugins: cached (${hash})`);
+    log(`builtin plugins: cached (${hash})`);
   } else {
     await fsp.rm(out, { recursive: true, force: true });
     await fsp.mkdir(out, { recursive: true });
     const packed = await fsp.mkdtemp(path.join(os.tmpdir(), "penguin-plugins-pack-"));
     try {
+      // The external packages first, so a tarball no source supplies, one that is not the
+      // locked one, or a package that cannot ship fails the build before anything is built.
+      // A directory of their own, so the pack loop below never takes one for a plugin's.
+      const fetched = path.join(packed, "external");
+      await fsp.mkdir(fetched);
+      const staged = [];
+      for (const [i, pin] of externals.entries()) {
+        const { file, source } = await lockedTarball(pin, { into: fetched, env });
+        const dir = path.join(fetched, String(i));
+        const manifest = await unpackPackage(file, dir);
+        // A package without one carries content alone: the library reads it from the hosts'
+        // node_modules (scripts/library-payload.mjs), and the prefix holds server modules.
+        if (manifest.main === undefined && manifest.exports === undefined) {
+          log(`plugin ${pin.name}@${pin.version}: ${source}, no code entry: library only`);
+          continue;
+        }
+        const declared = Object.keys({
+          ...manifest.dependencies,
+          ...manifest.optionalDependencies,
+        });
+        if (declared.length > 0) {
+          throw new Error(
+            `${pin.name}@${pin.version} declares runtime dependencies ${declared.join(", ")}: an ` +
+              "external built-in plugin bundles what it runs, since nothing would hold what npm " +
+              "installed beside it to pnpm-lock.yaml",
+          );
+        }
+        staged.push({ pin, dir });
+        log(`plugin ${pin.name}@${pin.version}: ${source}, sha512 verified`);
+      }
       const tarballs = [];
       for (const plugin of plugins) {
         // The package's own build, then the package as npm would publish it (`files` honored,
         // `workspace:` ranges rewritten) — nothing this script decides.
-        run("pnpm", ["--filter", plugin.name, "run", "build"], ROOT);
-        run("pnpm", ["pack", "--pack-destination", packed], plugin.dir);
+        await run("pnpm", ["--filter", plugin.name, "run", "build"], root, env);
+        await run("pnpm", ["pack", "--pack-destination", packed], plugin.dir, env);
         const tarball = (await fsp.readdir(packed)).find(
           (f) => f.endsWith(".tgz") && !tarballs.some((t) => path.basename(t) === f),
         );
@@ -242,17 +297,21 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
       // installs beside them — and --no-save below keeps npm from rewriting it.
       // `overrides` pins every package of the native closure, transitive ones included, to the
       // version pnpm-lock.yaml resolves; without it npm resolves each `^` range afresh.
+      // The external plugins join it once npm is done: listed while npm runs, it would resolve
+      // them from the registry rather than leave the unpacked copies alone.
       const dependencies = Object.fromEntries(plugins.map((p) => [p.name, p.version]));
       const overrides = Object.fromEntries(closure);
-      await fsp.writeFile(
-        path.join(out, "package.json"),
-        `${JSON.stringify({ ...PREFIX_MANIFEST, dependencies, overrides }, null, 2)}\n`,
-      );
+      const writeManifest = () =>
+        fsp.writeFile(
+          path.join(out, "package.json"),
+          `${JSON.stringify({ ...PREFIX_MANIFEST, dependencies, overrides }, null, 2)}\n`,
+        );
+      await writeManifest();
       if (tarballs.length > 0) {
         // npm installs the packages and their dependencies into the prefix; --no-save keeps
         // the prefix's manifest ours (no `file:` paths into a temp directory), --omit=dev
         // leaves the SDK's types and the build tools behind.
-        run(
+        await run(
           "npm",
           [
             "install",
@@ -266,13 +325,14 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
             ...tarballs,
           ],
           out,
+          env,
         );
         // One call for every target: npm reconciles the tree on each install, so a second
         // install would prune the first target's package as extraneous. --force is what makes
         // npm accept a package whose `os`/`cpu` is not this machine's — the point of the call.
         const platformPackages = platformSpecs(lock, closure);
         if (platformPackages.length > 0) {
-          run(
+          await run(
             "npm",
             [
               "install",
@@ -287,6 +347,7 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
               ...platformPackages,
             ],
             out,
+            env,
           );
         }
         if (platformPackages.length > 0) {
@@ -313,6 +374,27 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
         }
         log(`${closure.size} locked third-party packages: verified`);
       }
+      // After npm, which would prune a package its manifest does not name.
+      for (const { pin, dir } of staged) {
+        await fsp.cp(dir, path.join(out, "node_modules", ...pin.name.split("/")), {
+          recursive: true,
+        });
+        dependencies[pin.name] = pin.version;
+      }
+      if (staged.length > 0) await writeManifest();
+      await stageOfflineArchives({
+        out,
+        candidates: offline,
+        build: (plugin) => run("pnpm", ["--filter", plugin.name, "run", "build"], root, env),
+        pack: async (dir, into) => {
+          const before = new Set(await fsp.readdir(into));
+          await run("pnpm", ["pack", "--pack-destination", into], dir, env);
+          const made = (await fsp.readdir(into)).find((f) => f.endsWith(".tgz") && !before.has(f));
+          if (made === undefined) throw new Error(`pnpm pack left no tarball in ${dir}`);
+          return path.join(into, made);
+        },
+        log,
+      });
       // npm installs a package's files with the mode it pleases, and a vendored program
       // arrives without its exec bit — which no consumer of the prefix can guess back.
       for (const rel of await walk(out)) {
@@ -321,7 +403,7 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
         }
       }
       await fsp.writeFile(path.join(out, COMPLETE), hash);
-      log(`${plugins.length} builtin plugins: installed (${hash})`);
+      log(`${Object.keys(dependencies).length} builtin plugins: installed (${hash})`);
     } catch (err) {
       await fsp.rm(out, { recursive: true, force: true });
       throw err;
@@ -330,7 +412,11 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
     }
   }
   const files = (await walk(out)).filter((f) => f !== COMPLETE && !NOT_SHIPPED.has(f));
-  return { dir: out, files, plugins: plugins.map(({ name, version }) => ({ name, version })) };
+  // What the prefix holds is what its manifest names, cached or not: an external package
+  // without a code entry is pinned but not in it.
+  const { dependencies } = JSON.parse(await fsp.readFile(path.join(out, "package.json"), "utf8"));
+  const shipped = Object.entries(dependencies ?? {}).map(([name, version]) => ({ name, version }));
+  return { dir: out, files, plugins: shipped };
 }
 
 /** The prefix as a file map, relative to the prefix, each value an absolute source path. */

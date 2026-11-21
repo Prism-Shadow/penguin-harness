@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 /**
  * Every part of a plugin whose installed content changed since the base commit must carry a new
- * dated version. A plugin's own version is its npm version (package.json, bumped by the release);
- * the dated versions — `YYYY.MM.DD.N` — sit on the parts an install writes into an Agent and the
- * Agent may then edit: each Skill's `SKILL.md` frontmatter `version`, the `version` of the hook
- * package the plugin declares in `src/index.ts` (its `PluginLibraryModule.hooks` contribution),
- * and each workbench's `penguin.version` in its own `package.json`. That version is what tells an
- * installed copy it is behind the library (the Agents page's update flag and the Plugins page
- * read it), so a content change shipped under the old version is invisible to every user until
- * the next unrelated bump.
+ * dated version. A plugin's own version is its npm version (package.json, bumped by the release;
+ * a plugin that carries its own version raises it by hand, a rule checked at the end of this
+ * file); the dated versions — `YYYY.MM.DD.N` — sit on the parts an install writes into an Agent
+ * and the Agent may then edit: each Skill's `SKILL.md` frontmatter `version`, the `version` of
+ * the hook package the plugin declares in `src/index.ts` (its `PluginLibraryModule.hooks`
+ * contribution), and each workbench's `penguin.version` in its own `package.json`. That version
+ * is what tells an installed copy it is behind the library (the Agents page's update flag and the
+ * Plugins page read it), so a content change shipped under the old version is invisible to every
+ * user until the next unrelated bump.
  *
  *   - a change under `plugins/<p>/skills/<s>/` needs that skill's `version` changed;
  *   - a change under `plugins/<p>/workbenches/<w>/` needs its `penguin.version` changed;
@@ -21,12 +22,17 @@
  * The Benchmarks a new Project is seeded with carry date versions too, kept in core's data; their
  * rule is SEEDED_BENCHMARKS below.
  *
+ * Only this repository's `plugins/` is compared. An external built-in plugin
+ * (scripts/lib/external-plugins.mjs) has no files here — the build ships the version its own
+ * repository published, whose release gates its dated versions — so there is nothing to check.
+ *
  * Usage: node scripts/check-plugin-versions.mjs <base-commit>
  * An empty or missing base (a push event, a local run with nothing to compare) passes.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import vm from "node:vm";
+import { OWN_VERSION } from "./lib/own-version-plugins.mjs";
 
 const base = process.argv[2] ?? "";
 if (base.trim() === "") {
@@ -173,6 +179,16 @@ const changed = git("diff", "--name-only", `${base}...HEAD`, "--", "plugins/")
   .split("\n")
   .map((line) => line.trim())
   .filter((line) => line.startsWith("plugins/"));
+// These packages install copies of the shared desk files. A shared runtime change is an
+// installed-source change even when none of the package-local files changed.
+if (git("diff", "--name-only", `${base}...HEAD`, "--", "scripts/workbench-desk/").trim()) {
+  for (const file of git("ls-tree", "-r", "--name-only", "HEAD", "--", "plugins/").split("\n")) {
+    const match = /^plugins\/([^/]+)\/package\.json$/.exec(file);
+    if (match && atHead(file)?.includes("scripts/workbench-desk/build.mjs")) {
+      changed.push(`plugins/${match[1]}/workbenches/${match[1]}/package.json`);
+    }
+  }
+}
 // A plugin is a directory: a file right under plugins/ (the library's README) is nobody's.
 const plugins = [
   ...new Set(
@@ -273,10 +289,56 @@ for (const name of plugins) {
   }
 }
 
+// A plugin that carries its own version (scripts/lib/own-version-plugins.mjs) is published at
+// the version its package.json says, never the release's. A change to anything it is built or
+// packed from must raise that version, or npm, the GitHub Release and the build's offline
+// archive end up with different bytes under one version. Its tests and dev scripts ship nowhere,
+// and a package.json whose `version` alone changed is the raise itself. A plugin that has just
+// joined the list starts its own numbering, so any version is a first one.
+const OWN_VERSION_LIST = "scripts/lib/own-version-plugins.mjs";
+const UNPACKED = /^(test|scripts)\/|^vitest\.config\.[^/]+$/;
+const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
+/** Whether semver `a` is above `b`; anything valid is above a version that does not parse. */
+function semverAbove(a, b) {
+  const [x, y] = [SEMVER.exec(a), SEMVER.exec(b)];
+  if (y === null) return true;
+  for (let i = 1; i <= 3; i += 1) {
+    if (Number(x[i]) !== Number(y[i])) return Number(x[i]) > Number(y[i]);
+  }
+  if (x[4] === y[4]) return false;
+  if (x[4] === undefined || y[4] === undefined) return x[4] === undefined;
+  return x[4].localeCompare(y[4], "en", { numeric: true }) > 0;
+}
+/** A manifest without its `version`: what else a package.json change could alter in the tarball. */
+const manifestBody = (manifest) => canonical({ ...manifest, version: undefined });
+for (const name of plugins) {
+  const dir = `plugins/${name}`;
+  const now = json(atHead(`${dir}/package.json`));
+  const then = json(atBase(`${dir}/package.json`));
+  if (now === null || then === null || !OWN_VERSION.has(now.name)) continue;
+  if (!atBase(OWN_VERSION_LIST)?.includes(JSON.stringify(now.name))) continue;
+  const packed = changed
+    .filter((file) => file.startsWith(`${dir}/`))
+    .map((file) => file.slice(dir.length + 1))
+    .filter((rel) => !UNPACKED.test(rel))
+    .filter((rel) => rel !== "package.json" || manifestBody(now) !== manifestBody(then));
+  if (packed.length === 0) continue;
+  if (typeof now.version !== "string" || !SEMVER.test(now.version)) {
+    problems.push(`${dir}/package.json: version must be semver, got ${now.version}`);
+  } else if (!semverAbove(now.version, then.version)) {
+    problems.push(
+      `${dir} changed (${packed.join(", ")}) but its version ${now.version} is not above ` +
+        `${then.version}: it carries its own version, so raise package.json's version`,
+    );
+  } else {
+    bumped.push(`${name} ${now.version}`);
+  }
+}
+
 if (problems.length > 0) {
   console.error(
     `plugin versions:\n${problems.map((p) => `  - ${p}`).join("\n")}\n` +
-      "Raise the changed part's date version (YYYY.MM.DD.N: today's date, then the next sequence number) so installed copies see the update.",
+      "Raise the changed part's version so installed copies see the update: a Skill's, hook package's or workbench's date version (YYYY.MM.DD.N: today's date, then the next sequence number), or the package.json version of a plugin that carries its own.",
   );
   process.exit(1);
 }

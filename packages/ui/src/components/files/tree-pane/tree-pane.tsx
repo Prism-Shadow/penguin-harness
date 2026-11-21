@@ -48,8 +48,8 @@ export interface TreePaneProps extends Omit<HTMLAttributes<HTMLDivElement>, "chi
   search: TreePaneSearch;
   /** The header's actions, after the search box. */
   actions?: ReactNode;
-  /** The listing failed: said in place of the tree. */
-  error?: string | null;
+  /** The listing failed: said in place of the tree (its words, and 「[报告问题]」 for a failure). */
+  error?: ReactNode;
   /** The first listing is on its way. */
   loading?: boolean;
   /** Waiting for an answer that decides what the tree shows: said in place of it. */

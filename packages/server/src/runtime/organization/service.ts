@@ -110,7 +110,7 @@ import {
 import { isValidTimeZone, zonedDate, zonedDayRange } from "../../organization/zoned.js";
 import { SEMANTIC_ID_RULES } from "../../services/semantic-id.js";
 import { suggestSemanticId } from "../../services/semantic-id-suggest.js";
-import { SEMANTIC_ID_PATTERN } from "../../services/ids.js";
+import { isNewSemanticId } from "../../services/ids.js";
 import { enabledMessagingChannel } from "../messaging/enabled-channel.js";
 import { latestSlotAt, nextSlotAfter, slotInWindow } from "../schedule-file.js";
 import type { ScheduleDefinition } from "../schedule-file.js";
@@ -590,7 +590,7 @@ export class OrganizationService {
     actor: ModuleActor = { userId, isAdmin: false },
   ): Promise<OrganizationDetail> {
     const orgId = req.orgId;
-    if (!SEMANTIC_ID_PATTERN.test(orgId)) {
+    if (!isNewSemanticId(orgId)) {
       throw new HttpError(
         400,
         "invalid_org_id",
@@ -610,6 +610,15 @@ export class OrganizationService {
     }
     const name = req.name?.trim() || orgId;
     if (req.model !== undefined) await this.validateModel(projectId, req.model);
+    // Its desks run on the Project's default when it names no model: with none, the CEO's first
+    // run, and every run after it, would fail.
+    else if ((await this.deps.projectConfig.loadConfig(projectId)).default_model === undefined) {
+      throw new HttpError(
+        400,
+        "no_default_model",
+        "This Project has no default model: choose the model the organization runs on, or set the Project's default model first.",
+      );
+    }
     const workspace =
       req.workspace !== undefined ? await this.requireWorkspaceDir(req.workspace) : undefined;
     // The mission decides the working language unless the request names one: a company given
@@ -933,7 +942,7 @@ export class OrganizationService {
       if (req.model !== undefined) await this.validateModel(projectId, req.model);
       const agentId = req.newAgent?.agentId ?? req.agentId!;
       if (req.newAgent !== undefined) {
-        if (!SEMANTIC_ID_PATTERN.test(agentId))
+        if (!isNewSemanticId(agentId))
           throw badRequest("newAgent.agentId is not a valid Agent id.");
       } else if (!(await this.deps.agents.exists(projectId, agentId))) {
         throw new HttpError(404, "agent_not_found", `Agent does not exist: ${agentId}`);

@@ -26,7 +26,13 @@
  *
  * It answers the plugin library too: this server's (`library`) and each machine's own, and an
  * install on an Agent takes the named plugins' Skills from the library of the server that holds
- * the Agent, refusing a plugin that library does not have ({@link AgentServer.skillsOn}).
+ * the Agent, refusing a plugin that library does not have ({@link AgentServer.skillsOn}). An Agent
+ * created on this server joins its list under the name it was given, carrying the Skills of the
+ * plugins it was created with; a plugin this server's library lacks refuses the create. How the
+ * library's server modules stand on this server (`modules`) rides along on every answer of an
+ * Agent's plugins, and an ask for one (`POST …/plugins/modules`) applies the server's rule: a
+ * member's ask for a module that is not built in leaves a waiting request, anything else runs.
+ * The signed-in user is the administrator unless the suite says `admin: false`.
  *
  * It can hold machines too ({@link FakeMachine}): connected ones answer through their proxy
  * (`/server/<id>/api/…`) with an Agent list of their own — created and deleted there, never
@@ -94,6 +100,7 @@ import type {
   MessagingChannel,
   MessagingChannelState,
   PluginItem,
+  PluginModuleStatus,
   AgentApiKeyInfo,
   AgentApiSettings,
   ModelsResponse,
@@ -288,6 +295,8 @@ export interface AgentServer {
   answerMcpTest(answer: (entry: MCPServerConfig) => McpServerTestResponse): void;
   /** Takes a machine out of reach (being brought back), or brings it back. */
   setReconnecting(machineId: string, reconnecting: boolean): void;
+  /** Takes a machine out of the Project's machines list, or puts it back (the page reads on `machines_changed`). */
+  setListed(machineId: string, listed: boolean): void;
   /** Breaks an organization's chart (or mends it): from then on only its CEO is known to work there. */
   setChartUnreadable(orgId: string, unreadable: boolean): void;
   /** A conversation's messaging bindings as the server that runs it (null: this one) holds them now. */
@@ -300,6 +309,8 @@ export interface AgentServer {
   setBuilding(workbenchId: string, building: boolean): void;
   /** The viewer's App Center arrangement as the server holds it now (null: the default order). */
   appCenterLayout(): AppCenterLayout | null;
+  /** How the library's server modules stand on this server now; another write changes it. */
+  setModules(next: PluginModuleStatus[]): void;
 }
 
 export function agentServer(
@@ -323,6 +334,11 @@ export function agentServer(
     machines?: FakeMachine[];
     /** This server's plugin library (by default empty). */
     library?: PluginItem[];
+    /**
+     * The plugin market's curation (GET /api/plugins/market), with its popularity figures; by
+     * default none, which answers 404 as a server older than the market does.
+     */
+    market?: unknown;
     /** Scheduled tasks the Agent already has, on a machine when one is named (this server's otherwise). */
     schedules?: Array<{ machineId?: string; item: ScheduleItem }>;
     /** List {@link OTHER_PROJECT_ID} beside the Agent's Project. */
@@ -349,6 +365,10 @@ export function agentServer(
     older?: boolean;
     /** The signed-in user's role in the Project (by default its owner). */
     role?: "owner" | "member";
+    /** Whether the signed-in user is the server's administrator (by default yes). */
+    admin?: boolean;
+    /** How the library's server modules stand on this server (by default the field is absent). */
+    modules?: PluginModuleStatus[];
     /** The Skills this server's Agent already has installed (by default none). */
     skills?: string[];
     /** The keys the Agent's API holds; a DELETE of one removes it. */
@@ -387,12 +407,15 @@ export function agentServer(
   let partMcp = [...(options.parts?.mcpServers ?? [])];
   let receipts = [...(options.parts?.receipts ?? [])];
   let pluginUpdates = [...(options.pluginUpdates ?? [])];
+  let modules = options.modules?.map((m) => ({ ...m }));
   /** The workbenches switched off, and the Agent-wide switch. */
   const switchedOff = new Set<string>();
   let allOn = true;
   /** A workbench as the list describes it: with its switch, unless the server predates them. */
   const listed = (w: WorkbenchInfo): WorkbenchInfo =>
-    options.older ? w : { ...w, enabled: !switchedOff.has(w.id) };
+    options.older
+      ? w
+      : { ...w, enabled: !switchedOff.has(w.id), showInSidebar: w.showInSidebar !== false };
   let vault: VaultEntryInfo[] = [{ key: "GITHUB_TOKEN", valueMasked: "gh****" }];
   let schedules: ScheduleItem[] = (options.schedules ?? [])
     .filter((s) => s.machineId === undefined)
@@ -453,6 +476,8 @@ export function agentServer(
       ...organizations.flatMap((o) => o.employees.map((e) => e.agentId)),
     ]),
   ];
+  /** The names this server's Agents were created with here (a create), as its list answers them. */
+  const createdNames = new Map<string, string>();
   /** The organizations employing an Agent, as the Agent list carries them. */
   const employmentsOf = (agentId: string): Employment[] =>
     organizations.flatMap((o) =>
@@ -499,6 +524,8 @@ export function agentServer(
     pluginUpdates: agentId === AGENT_ID ? pluginUpdates : [],
   });
 
+  /** Machines the list leaves out for now (setListed). */
+  const unlisted = new Set<string>();
   /** The machines list as this server reports it: itself first, then each machine. */
   const machinesList = (): MachineInfo[] => [
     {
@@ -513,32 +540,34 @@ export function agentServer(
       status: null,
       root: "/data",
     },
-    ...machines.map((m): MachineInfo => ({
-      id: `ssh:${m.alias}`,
-      alias: m.alias,
-      installed: { version: "0.2.16", at: "2026-10-01T00:00:00Z" },
-      member: true,
-      machineId: m.machineId,
-      local: false,
-      connection: m.reconnecting === true ? null : { pid: 4242 },
-      socket: null,
-      ...(m.reconnecting === true
-        ? {
-            reconnect: {
-              since: "2026-10-15T00:00:00Z",
-              attempts: 2,
-              maxAttempts: 8,
-              nextAt: null,
-              lastError: null,
-              diagnosis: null,
-            },
-          }
-        : {}),
-      keepConnected: true,
-      api: null,
-      status: { state: "running", checkedAt: "2026-10-15T00:00:00Z", port: 7371 },
-      root: "/home/penguin/.penguin/data",
-    })),
+    ...machines
+      .filter((m) => !unlisted.has(m.machineId))
+      .map((m): MachineInfo => ({
+        id: `ssh:${m.alias}`,
+        alias: m.alias,
+        installed: { version: "0.2.16", at: "2026-10-01T00:00:00Z" },
+        member: true,
+        machineId: m.machineId,
+        local: false,
+        connection: m.reconnecting === true ? null : { pid: 4242 },
+        socket: null,
+        ...(m.reconnecting === true
+          ? {
+              reconnect: {
+                since: "2026-10-15T00:00:00Z",
+                attempts: 2,
+                maxAttempts: 8,
+                nextAt: null,
+                lastError: null,
+                diagnosis: null,
+              },
+            }
+          : {}),
+        keepConnected: true,
+        api: null,
+        status: { state: "running", checkedAt: "2026-10-15T00:00:00Z", port: 7371 },
+        root: "/home/penguin/.penguin/data",
+      })),
   ];
 
   /** What a machine answers itself: its own Agent list; anything else is the shared state below. */
@@ -593,17 +622,52 @@ export function agentServer(
       ? (options.library ?? [])
       : (machines.find((m) => m.machineId === machineId)?.library ?? []);
 
+  /**
+   * The server's rule over the named plugins' modules that do not run: a member's ask for one that
+   * is not built in leaves a waiting request, anything else runs. What it did, per plugin.
+   */
+  const askModules = (names: readonly string[]) => {
+    const actions: Array<{ plugin: string; action: "enabled" | "requested" }> = [];
+    modules = modules?.map((m): PluginModuleStatus => {
+      if (!names.includes(m.plugin) || m.state === "running" || m.request !== undefined) return m;
+      if (options.admin === false && !m.builtin) {
+        actions.push({ plugin: m.plugin, action: "requested" });
+        return {
+          ...m,
+          request: { status: "pending", mine: true, requestedAt: "2026-11-19T08:00:00Z" },
+        };
+      }
+      actions.push({ plugin: m.plugin, action: "enabled" });
+      return { ...m, state: "running", listed: true };
+    });
+    return actions;
+  };
+
   const answer = (request: FetchRequest): Response => {
     const { method, path } = request;
     if (request.machine !== null) {
       const own = machineAnswer(request);
       if (own !== null) return own;
     }
-    if (path === "/api/me") return json(ADMIN_ME);
+    if (path === "/api/me") {
+      return json(
+        options.admin === false
+          ? { ...ADMIN_ME, user: { ...ADMIN_ME.user, isAdmin: false } }
+          : ADMIN_ME,
+      );
+    }
+    if (path === `/api/projects/${PROJECT_ID}/plugins/modules` && method === "POST") {
+      const { plugin } = request.body as { plugin: string };
+      if (modules?.some((m) => m.plugin === plugin) !== true) {
+        return apiError(400, "no_server_module", plugin);
+      }
+      return json({ modules, moduleActions: askModules([plugin]) });
+    }
     if (path === "/api/plugins") {
       return json({ groups: [{ id: "all", title: "All", plugins: libraryOf(request.machine) }] });
     }
     if (path === "/api/plugins/registry") return json({ plugins: [], failures: [], pending: [] });
+    if (path === "/api/plugins/market" && options.market !== undefined) return json(options.market);
     if (path === `/api/projects/${PROJECT_ID}/plugins/installed` && method === "GET") {
       return json({
         machineId: request.machine ?? "local-machine",
@@ -616,6 +680,7 @@ export function agentServer(
     const pluginsPath = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/plugins$/.exec(path);
     if (pluginsPath !== null) {
       const key = installKey(request.machine, decodeURIComponent(pluginsPath[1]!));
+      let moduleActions: ReturnType<typeof askModules> | undefined;
       if (method === "POST") {
         const { names } = request.body as { names: string[] };
         const library = libraryOf(request.machine);
@@ -626,6 +691,9 @@ export function agentServer(
           .flatMap((p) => p.skills.map((skill) => skill.name));
         installs.set(key, [...new Set([...(installs.get(key) ?? []), ...skills])]);
         pluginUpdates = pluginUpdates.filter((u) => !names.includes(u.name));
+        if (modules !== undefined && request.machine === null) {
+          moduleActions = askModules(names);
+        }
       }
       const version = (name: string) =>
         libraryOf(request.machine)
@@ -642,6 +710,8 @@ export function agentServer(
         hooks: partHooks,
         mcpServers: partMcp,
         workbenches: receipts,
+        ...(modules !== undefined && request.machine === null ? { modules } : {}),
+        ...(method === "POST" && moduleActions !== undefined ? { moduleActions } : {}),
       });
     }
     if (path === "/api/projects") {
@@ -672,7 +742,7 @@ export function agentServer(
           return {
             ...summaryOf(id),
             ...avatarFields(null, id),
-            name: id === AGENT_ID ? stored.config.name : id,
+            name: id === AGENT_ID ? stored.config.name : (createdNames.get(id) ?? id),
             ...(id === AGENT_ID && stored.config.author !== undefined
               ? { author: stored.config.author }
               : {}),
@@ -1009,10 +1079,13 @@ export function agentServer(
         });
       }
       if (action === "history") return json({ versions: options.workbenchVersions ?? [] });
-      if (action === "app-center" && method === "PATCH") {
+      if ((action === "sidebar" || action === "app-center") && method === "PATCH") {
         const { show } = request.body as { show: boolean };
         const index = workbenches.indexOf(workbench);
-        const next = { ...workbench, appCenter: { ...workbench.appCenter, show } };
+        const next =
+          action === "sidebar"
+            ? { ...workbench, showInSidebar: show }
+            : { ...workbench, appCenter: { ...workbench.appCenter, show } };
         workbenches = workbenches.map((item, i) => (i === index ? next : item));
         return json({ workbench: listed(next) });
       }
@@ -1026,7 +1099,17 @@ export function agentServer(
       return json({ workbench: listed(workbench) });
     }
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "POST") {
-      const body = request.body as { agentId: string; name?: string };
+      const body = request.body as { agentId: string; name?: string; plugins?: string[] };
+      // The plugins are seeded in the same call: an unknown one refuses before the Agent exists.
+      const names = body.plugins ?? [];
+      const missing = names.find((name) => !libraryOf(null).some((p) => p.name === name));
+      if (missing !== undefined) return apiError(404, "unknown_plugin", missing);
+      const skills = libraryOf(null)
+        .filter((p) => names.includes(p.name))
+        .flatMap((p) => p.skills.map((skill) => skill.name));
+      if (skills.length > 0) installs.set(installKey(null, body.agentId), skills);
+      if (!localAgentIds.includes(body.agentId)) localAgentIds = [...localAgentIds, body.agentId];
+      if (body.name !== undefined) createdNames.set(body.agentId, body.name);
       return json({ agent: { ...summaryOf(body.agentId), name: body.name ?? body.agentId } });
     }
     if (path === `${AGENT_PATH}/config`) {
@@ -1231,6 +1314,10 @@ export function agentServer(
     answerMcpTest: (answer) => {
       mcpTest = answer;
     },
+    setListed: (machineId, listed) => {
+      if (listed) unlisted.delete(machineId);
+      else unlisted.add(machineId);
+    },
     setReconnecting: (machineId, reconnecting) => {
       const machine = machines.find((m) => m.machineId === machineId);
       if (machine !== undefined) machine.reconnecting = reconnecting;
@@ -1249,6 +1336,9 @@ export function agentServer(
       else building.delete(workbenchId);
     },
     appCenterLayout: () => appCenterLayout,
+    setModules: (next) => {
+      modules = next.map((m) => ({ ...m }));
+    },
   };
 }
 

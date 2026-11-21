@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type {
   DefaultModelOffer,
   PlatformAuthFlowErrorCode,
@@ -7,14 +7,22 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import type { KeyAuthEndpoints } from "../../api/endpoints";
 import { ApiError } from "../../api/client";
-import { apiErrorText } from "../../lib/api-error";
 import { isElectronRenderer } from "../../lib/desktop-renderer";
 import { S } from "../../lib/strings";
 import { Button, Modal, Spinner } from "@prismshadow/penguin-ui";
+import { failureNode, toldNode } from "../../lib/failure";
 
 const POLL_MS = 3_000;
 
 type Phase = "starting" | "ready" | "waiting" | "applying" | "failed" | "done";
+
+/** The flow's own refusals: the authorization asked again is the way on, nothing failed. */
+const FLOW_REFUSALS: ReadonlySet<PlatformAuthFlowErrorCode> = new Set([
+  "invalid_key",
+  "expired",
+  "locked",
+  "already_delivered",
+]);
 
 /**
  * The localized copy a group's dialog shows. Everything else — the phases, the poll, the
@@ -61,7 +69,7 @@ export function KeyAuthDialog({
   const bridge = !isElectronRenderer(navigator.userAgent);
   const [phase, setPhase] = useState<Phase>("ready");
   const [flow, setFlow] = useState<PlatformAuthStartResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [applied, setApplied] = useState(0);
   const [retrySeconds, setRetrySeconds] = useState(0);
   const [retryableApply, setRetryableApply] = useState(false);
@@ -77,9 +85,18 @@ export function KeyAuthDialog({
   const textsRef = useRef(texts);
   textsRef.current = texts;
 
-  const flowError = (code: PlatformAuthFlowErrorCode | undefined): string =>
-    (code !== undefined ? textsRef.current.errors[code] : undefined) ??
-    textsRef.current.errors.upstream_failed;
+  /** A flow that ended in an error: a refusal in its words alone, a failure with 「[报告问题]」. */
+  const flowError = (code: PlatformAuthFlowErrorCode | undefined): ReactNode => {
+    const text =
+      (code !== undefined ? textsRef.current.errors[code] : undefined) ??
+      textsRef.current.errors.upstream_failed;
+    if (code !== undefined && FLOW_REFUSALS.has(code)) return text;
+    return toldNode(text, {
+      what: "a provider key authorization failed",
+      ...(code !== undefined ? { code } : {}),
+      detail: null,
+    });
+  };
 
   useEffect(
     () => () => {
@@ -132,7 +149,7 @@ export function KeyAuthDialog({
         setPhase("failed");
       } catch (cause) {
         if (stopped) return;
-        setError(apiErrorText(cause));
+        setError(failureNode(cause, { what: "a provider key authorization could not be read" }));
         setRetryableApply(false);
         if (cause instanceof ApiError && cause.code === auth.flowNotFoundCode) {
           setFlow(null);
@@ -195,7 +212,7 @@ export function KeyAuthDialog({
     } catch (cause) {
       authorizationTab?.close();
       if (generation !== startGenerationRef.current) return;
-      setError(apiErrorText(cause));
+      setError(failureNode(cause, { what: "a provider key authorization could not start" }));
       if (cause instanceof ApiError && cause.retryAfterSeconds !== undefined) {
         setRetrySeconds(cause.retryAfterSeconds);
       }
@@ -226,7 +243,7 @@ export function KeyAuthDialog({
         onAppliedRef.current(nextApplied, next.defaultOffer);
       }
     } catch (cause) {
-      setError(apiErrorText(cause));
+      setError(failureNode(cause, { what: "a provider key could not be saved" }));
       setRetryableApply(true);
       setPhase("failed");
     }

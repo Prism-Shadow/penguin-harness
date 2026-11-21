@@ -14,8 +14,10 @@
  *   POST   /tabs/:tab/activate         focus a tab (the user) or switch to it (the agent)
  *   DELETE /tabs/:tab                  close a tab
  *   POST   /tabs/:tab/navigate|scan|exec|click|type|screenshot|cdp   the agent's actions
- *   GET    /import/sources             system browser profiles that can be imported (built-in)
- *   POST   /import                     import cookies and / or history from one (built-in)
+ *   GET    /import/sources             system browser profiles that can be imported, and the
+ *                                      caller's connected Chrome extension (built-in)
+ *   POST   /import                     import cookies and / or history from one (built-in); through
+ *                                      the extension, once the user allows it in Chrome
  *   GET    /settings                   the browser's settings (its homepage); admins
  *   PUT    /settings                   replace them: {homepage: address | null}; admins
  *   GET    /history?q=&limit=          search the history (built-in)
@@ -33,8 +35,8 @@
  * acts for the human driving that session (runtime/session-drivers.ts), whose Chrome it is.
  * The built-in browser and its import, history and data are admins' (403 `admin_required`); on
  * chrome those answer 405 `not_supported`. Choosing a backend and minting a pairing code are the
- * signed-in person's own gestures: the API token gets 403 `human_required` (requireHuman, in
- * auth/middleware.ts). An unavailable browser answers 503 `browser_unavailable` with a `reason`
+ * signed-in person's own gestures: the API token gets 403 `human_required` (requireHuman, from
+ * the plugin face). An unavailable browser answers 503 `browser_unavailable` with a `reason`
  * beside the code.
  */
 import { Hono } from "hono";
@@ -52,12 +54,9 @@ import type {
   BuiltinBrowserSettings,
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
-} from "../api/types.js";
-import { requireHuman } from "../auth/middleware.js";
-import type { AppEnv } from "../auth/middleware.js";
-import { HttpError, errorBody } from "../http/errors.js";
-import { publicOriginOf } from "../http/public-origin.js";
-import { badRequest } from "../http/validate.js";
+} from "@prismshadow/penguin-server/api";
+import { HttpError, badRequest, errorBody, publicOriginOf, requireHuman } from "../plugin/index.js";
+import type { AppEnv } from "../plugin/index.js";
 import { isPenguinExtensionOrigin } from "./extension-origin.js";
 import type { ExtensionPairing } from "./extension-pairing.js";
 import { BrowserUnavailableError } from "./service.js";
@@ -426,9 +425,11 @@ export function builtinBrowserRoutes(
   });
 
   app.get("/import/sources", async (c) =>
-    c.json({
-      sources: await browser.listImportSources(queryActor(c)),
-    } satisfies BuiltinBrowserImportSourcesResponse),
+    c.json(
+      (await browser.listImportSources(
+        queryActor(c),
+      )) satisfies BuiltinBrowserImportSourcesResponse,
+    ),
   );
 
   app.post("/import", async (c) => {

@@ -36,6 +36,7 @@
  * being fixed. The practical consequence, which the changelog states plainly: state that is
  * ALREADY stale when this ships stays stale; only wipes from here on are handled.
  */
+import { forgetCatalogs } from "./catalog-storage";
 import * as api from "../api/endpoints";
 
 /** Where this browser records the data root it last saw. Never swept — it IS the marker. */
@@ -131,6 +132,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     why: "Which theme renders the app (the key lives in @prismshadow/penguin-ui/boot); pure appearance.",
   },
   {
+    kind: "family",
+    key: "penguin.serverModules.",
+    scope: "install",
+    why: "The plugin server modules this server ran when this browser last asked, per account (web-app/running-modules.ts); they are this data root's plugins, so another root's list is stale.",
+  },
+  {
     kind: "exact",
     key: "penguin.themePacks",
     scope: "install",
@@ -174,6 +181,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.activityDisplayMode",
+    scope: "browser",
+    why: "How this browser displays thinking and tool steps.",
+  },
+  {
+    kind: "exact",
     key: "penguin.toolAliases",
     scope: "browser",
     why: "Whether tool cards name the built-in tools by their short alias; a display choice of this browser, naming nothing on the server.",
@@ -195,6 +208,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.sidebarCollapsed",
     scope: "browser",
     why: "Whether the sidebar is a narrow rail; chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.sidebarWidth",
+    scope: "browser",
+    why: "How wide the sidebar was dragged, in px; the same chrome layout, holds no entity.",
   },
   {
     kind: "exact",
@@ -294,9 +313,15 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
-    key: "penguin.pluginsGroupsFolded",
+    key: "penguin.pluginsLayout",
     scope: "browser",
-    why: "Which of the Plugins page's sections are folded, keyed by grouping and category, status or contents id; those ids ship with the build and name nothing on the server.",
+    why: "The chosen plugin catalog view, cards or list, applies across projects and installations.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.pluginsSort",
+    scope: "browser",
+    why: "How the Plugins page orders its cards (selected first, recently updated, most used, name) — the MODE, valid against any root.",
   },
   {
     kind: "exact",
@@ -368,9 +393,21 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.catalog.",
+    scope: "install",
+    why: "What each machine last answered the App Center (sessionStorage, lib/catalog-storage.ts): it names that machine's Agents and apps, so a sweep forgets the tab's copies too (forgetCatalogs).",
+  },
+  {
+    kind: "family",
     key: "penguin.machineSessions.",
     scope: "install",
     why: "The Sessions each machine was last seen holding, shown until its connection is held again. Project id and machine id in the key, Session ids in the value — a new root knows none of them.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.modelOnboardingDismissed",
+    scope: "install",
+    why: "The Projects whose first-run model guide was closed in this browser — Project ids of this root.",
   },
   {
     kind: "exact",
@@ -437,6 +474,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.a2uiDraft.",
     scope: "install",
     why: "A reply's A2UI form or multi-select answers in progress, keyed by Session id: a new root has no such Session.",
+  },
+  {
+    kind: "family",
+    key: "penguin.promptModes.",
+    scope: "install",
+    why: "The composer switches a Session has on (hook package names), keyed by user and Session id: a new root has no such Session.",
   },
   {
     kind: "exact",
@@ -648,7 +691,10 @@ export function reconcileInstallScope(
   if (stored === installId) return "unchanged";
 
   const swept = stored !== null;
-  if (swept) sweep(storage);
+  if (swept) {
+    sweep(storage);
+    forgetCatalogs(() => true);
+  }
   try {
     storage.setItem(INSTALL_ID_KEY, installId);
   } catch {
@@ -752,6 +798,7 @@ export function reactToInstallIdChange(
   if (change.oldValue === null || change.newValue === null) return false;
   if (change.oldValue === change.newValue) return false;
   sweep(storage);
+  forgetCatalogs(() => true);
   return true;
 }
 

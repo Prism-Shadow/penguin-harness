@@ -21,6 +21,7 @@ const TOKEN_FIELDS = [
   "lang",
   "currency",
   "terminalTheme",
+  "activityDisplayMode",
   "steerMode",
 ] as const;
 

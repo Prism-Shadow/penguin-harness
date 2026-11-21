@@ -11,6 +11,8 @@ A plugin package is an npm package whose `package.json` carries npm's own fields
 
 All of these are plugins, and one format covers them all. What differs is where a package's contents land when installed: its contributions to `PluginLibraryModule` — Skills, hooks, MCP servers, workbenches, a card — land in an agent's Agent State, and a package carrying only those needs no code entry point (`goal` is the worked example); the server modules its default export lists — a sandbox backend, for example — land in the server's module tree. One package can carry both.
 
+A server module needs a platform at least as new as the slots it contributes to. A slot is a named contribution point, such as a route group in `HttpModule.routes`. Every slot, and every field of a slot's data, arrives with some release. An older platform does not know a newer slot, or a newer field such as a route group's `origin`. Its check then drops every contribution that module makes to that slot. The plugin runs without that part of itself, and its row on the **Plugins** page says why. Built-in plugins ship with the server they run on. A package published to npm states the oldest release it needs in its README.
+
 ## Checking the format
 
 Nothing loads a plugin package to find out what it is: the table says it. Two checks read that table and the package around it, and they agree because they read the same generated file.

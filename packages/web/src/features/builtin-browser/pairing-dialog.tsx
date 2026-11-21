@@ -18,6 +18,7 @@ import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react
 import {
   Button,
   CopyButton,
+  FailureText,
   GlyphIcon,
   ICONS,
   ICON_GAP,
@@ -26,8 +27,8 @@ import {
   Modal,
   Spinner,
 } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
+import { S } from "./strings";
+import { toneInk } from "@prismshadow/penguin-web-plugin";
 import { browserState, subscribeBrowser } from "./browser-store";
 import {
   ensurePairingCode,
@@ -120,7 +121,14 @@ function CodeValue({ state, now }: { state: PairingCodeState; now: number }) {
       <p className="text-xs text-fg-muted">{S.builtinBrowser.pairCode}</p>
       <div className={`mt-0.5 flex flex-wrap items-center ${ICON_GAP.menu} text-xs`}>
         {state.status === "failed" ? (
-          <span className={toneInk.danger}>{S.builtinBrowser.pairCodeFailed(state.error)}</span>
+          <span className={toneInk.danger}>
+            <FailureText
+              failure={{
+                ...state.failure,
+                text: S.builtinBrowser.pairCodeFailed(state.failure.text),
+              }}
+            />
+          </span>
         ) : state.status === "ready" ? (
           <span className="text-fg-muted">{S.builtinBrowser.pairCodeExpired}</span>
         ) : (

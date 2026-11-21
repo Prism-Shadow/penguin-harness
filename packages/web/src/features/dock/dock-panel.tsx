@@ -76,9 +76,8 @@ import { S } from "../../lib/strings";
 import { chordKeys } from "../../components/ui/chord-kbd";
 import { displayedBinding, useKeymap } from "../../lib/shortcuts/use-keymap";
 import { useCoarsePointer } from "../../lib/use-coarse-pointer";
-import { invalidateSlotClips } from "../builtin-browser";
+import { announceDockLayout } from "./dock-listeners";
 import { confirmClose } from "../../lib/dock-close-guard";
-import { TERMINAL_PANEL } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
 import { DockPanelTitle } from "../../lib/dock-panel-empty";
 import { DockPanelProvider, type DockPanelHandle } from "./panel-context";
@@ -122,13 +121,6 @@ import {
   setPanelWidth,
   usePanelWidthValue,
 } from "./use-panel-width";
-
-/**
- * The picker's leading rows, each shown only where the registry offers it: the agents, the
- * terminal, then the built-in browser — what a conversation most often opens. Every other offered
- * panel follows in registry order, which is where a plugin's panel lands.
- */
-const PICKER_LEAD: readonly PanelId[] = ["agents", TERMINAL_PANEL, "builtin-browser"];
 
 /**
  * Closes a tab once its close guards agree (the Files panel's editor asks about unsaved text),
@@ -507,12 +499,12 @@ export function DockPanel({
   // and nothing floats over the surface as a way out. What the surface covers is coveredElement's.
   const coarsePointer = useCoarsePointer();
   const toggleFullscreen = () => setDockFullscreen(fullscreen ? null : position);
-  // The built-in browser lays its page over the panel's slot by coordinates and caches, per slot,
-  // which ancestors clip it and whether it sits in a lifted surface. The frame's phase — not the
-  // store's flag — is what changes both: the box is lifted, and clipping, through its enter and
-  // exit animations, and back in the flow only once the exit has ended. Each step drops the
-  // caches once it is in the DOM; the layer's frame loop re-reads them on its next tick.
-  const onFullscreenPhase = () => invalidateSlotClips();
+  // A layer that lays content over a panel's slot by coordinates caches, per slot, which
+  // ancestors clip it and whether it sits in a lifted surface. The frame's phase — not the store's
+  // flag — is what changes both: the box is lifted, and clipping, through its enter and exit
+  // animations, and back in the flow only once the exit has ended. Each step is announced once it
+  // is in the DOM (`DockModule.layoutListeners`), and the listener re-measures on its next frame.
+  const onFullscreenPhase = () => announceDockLayout();
 
   // ------------------------------------------------------------------------------ add menu
 
@@ -639,9 +631,11 @@ export function DockPanel({
         openPanel(definition.id, merged ? undefined : position, definition.defaultPosition),
     };
   };
+  // The picker leads with the panels that ask to (`lead`): what a conversation most often opens.
+  // Both runs keep the registry's order, which is where a plugin's panel lands.
   const pickerChoices: DockPickerChoice[] = [
-    ...PICKER_LEAD.flatMap((id) => offered.filter((definition) => definition.id === id)),
-    ...offered.filter((definition) => !PICKER_LEAD.includes(definition.id)),
+    ...offered.filter((definition) => definition.lead === true),
+    ...offered.filter((definition) => definition.lead !== true),
   ].map(pickPanel);
 
   const bodies =

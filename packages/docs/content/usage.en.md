@@ -7,6 +7,7 @@ The Cost Center shows how many Tokens your agents use, what those requests cost,
 
 - To narrow what the page shows, see [Filter by agent, model, and time range](#filter-by-agent-model-and-time-range).
 - For totals, see [Read the summary cards](#read-the-summary-cards).
+- For the requests plugins make for their tools, see [Tool requests](#tool-requests).
 - For trends over time, see [Read the charts](#read-the-charts) and [Gaps in the charts](#gaps-in-the-charts).
 - For failed requests, see [Review and clear server errors](#review-and-clear-server-errors).
 
@@ -30,6 +31,12 @@ The same range and agent filter decide which rows the server error panel lists, 
 Three cards show totals: **Today**, **Last 7 days**, and **Total** for the selected date range. All three follow the agent and model filters. Each card lists the Tokens, the number of requests and the cost.
 
 Prices are shown in the display currency you choose under [Settings › General](/settings#general). Only models with configured pricing count toward cost. When some records have no price, an asterisk appears beside **Cost** and a note at the bottom of the page says so.
+
+## Tool requests
+
+A plugin's tools, such as image generation, speech and web search, call models outside a chat turn. These tool requests count toward **Requests** and **Cost**, both requests charts and the cost trend, but not toward the Token figures. A tool's Tokens are its provider's billing units (a web search counts as 1,000), not text a conversation read or wrote.
+
+While the range has any, each summary card shows them on an **Incl. tool requests** row with their count and cost. A **Tool requests** card below the charts lists them by tool, each with the plugin package it came from. A tool request made outside any Session counts toward the totals, but toward no agent.
 
 ## Read the charts
 

@@ -25,9 +25,8 @@ import type {
   BuiltinBrowserTab,
   BuiltinBrowserTabsResponse,
 } from "../api/types.js";
-import type { Messages } from "./i18n.js";
-import { cutText } from "./cut-text.js";
-import { renderTable } from "./table.js";
+import { cutText, renderTable } from "@prismshadow/penguin-library-cli";
+import type { BrowserMessages } from "./commands/browser.messages.js";
 
 /** `return:` shows at most this many characters; `--save` keeps everything. */
 export const RETURN_LIMIT = 8000;
@@ -41,7 +40,7 @@ const TABLE_TITLE = 60;
 const DIALOG_MESSAGE = 200;
 
 /** `tab 12 · Your Orders · https://www.amazon.com/your-orders/orders`. */
-export function tabHead(tab: BuiltinBrowserTab, t: Messages): string {
+export function tabHead(tab: BuiltinBrowserTab, t: BrowserMessages): string {
   return t.browser.tabHead(tab.id, oneLine(tab.title), tab.url, tab.loading);
 }
 
@@ -49,7 +48,7 @@ export function tabHead(tab: BuiltinBrowserTab, t: Messages): string {
 export function tabList(
   tabs: readonly BuiltinBrowserTab[],
   activeTabId: number | null,
-  t: Messages,
+  t: BrowserMessages,
 ): string {
   const value =
     tabs.length === 0
@@ -66,7 +65,7 @@ export function tabList(
  * backend is the one the user chose (the agent never picks it); a server older than the second
  * backend names none, and the line then ends at the status.
  */
-export function renderStatus(status: BuiltinBrowserStatus, t: Messages): string {
+export function renderStatus(status: BuiltinBrowserStatus, t: BrowserMessages): string {
   const { label, line } = t.browser;
   const backend = backendSuffix(status, t);
   if (!status.available) {
@@ -84,7 +83,7 @@ export function renderStatus(status: BuiltinBrowserStatus, t: Messages): string 
 }
 
 /** ` · backend: <backend>`, naming the user's Chrome when one is paired; empty without a backend. */
-function backendSuffix(status: BuiltinBrowserStatus, t: Messages): string {
+function backendSuffix(status: BuiltinBrowserStatus, t: BrowserMessages): string {
   // Both optional at runtime: an older server answers without them.
   const backend = status.backend as BrowserBackend | undefined;
   const backends = status.backends as BrowserBackendInfo[] | undefined;
@@ -113,7 +112,7 @@ export function formatKB(kb: number): string {
  * then a `warning:` while the server warns about the load. Nothing before the first measurement,
  * or with no tab open.
  */
-function loadLines(status: BuiltinBrowserStatus, t: Messages): string[] {
+function loadLines(status: BuiltinBrowserStatus, t: BrowserMessages): string[] {
   const { metrics } = status;
   if (metrics === undefined || status.tabs.length === 0) return [];
   const { label, line } = t.browser;
@@ -130,7 +129,7 @@ function loadLines(status: BuiltinBrowserStatus, t: Messages): string[] {
 }
 
 /** The `tabs` table: id (the active one starred), title, URL. */
-export function renderTabs(res: BuiltinBrowserTabsResponse, t: Messages): string {
+export function renderTabs(res: BuiltinBrowserTabsResponse, t: BrowserMessages): string {
   if (res.tabs.length === 0) return lines([tabList([], null, t)]);
   return renderTable(
     [t.browser.colId(), t.browser.colTitle(), t.browser.colUrl()],
@@ -142,7 +141,7 @@ export function renderTabs(res: BuiltinBrowserTabsResponse, t: Messages): string
   );
 }
 
-export function renderScan(res: BuiltinBrowserScanResult, t: Messages): string {
+export function renderScan(res: BuiltinBrowserScanResult, t: BrowserMessages): string {
   return lines([
     tabHead(res.tab, t),
     tabList(res.tabs, res.activeTabId, t),
@@ -158,7 +157,7 @@ export function renderScan(res: BuiltinBrowserScanResult, t: Messages): string {
  */
 export function renderExec(
   res: BuiltinBrowserExecResult,
-  t: Messages,
+  t: BrowserMessages,
   opts: { alwaysReturn: boolean; savedTo?: string },
 ): string {
   const { label, line } = t.browser;
@@ -209,7 +208,7 @@ export function returnText(value: unknown): string {
  * {@link RETURN_LIMIT} with a pointer at `--save`; after `--save`, only the first
  * {@link SAVED_PREVIEW} characters and where the rest went.
  */
-function returnLine(value: unknown, t: Messages, savedTo: string | undefined): string {
+function returnLine(value: unknown, t: BrowserMessages, savedTo: string | undefined): string {
   const full = returnText(value);
   let text = full;
   let suffix = "";
@@ -227,7 +226,7 @@ function returnLine(value: unknown, t: Messages, savedTo: string | undefined): s
 }
 
 /** The `cdp` result: compact JSON, cut at {@link RETURN_LIMIT} with a pointer at `--json`. */
-export function renderCdpResult(result: unknown, t: Messages): string {
+export function renderCdpResult(result: unknown, t: BrowserMessages): string {
   const text = JSON.stringify(result ?? null);
   return lines([
     text.length > RETURN_LIMIT
@@ -238,7 +237,7 @@ export function renderCdpResult(result: unknown, t: Messages): string {
 
 export function renderImportSources(
   sources: readonly BuiltinBrowserImportSource[],
-  t: Messages,
+  t: BrowserMessages,
 ): string {
   if (sources.length === 0) return lines([t.browser.noSources()]);
   return renderTable(
@@ -252,17 +251,22 @@ export function renderImportSources(
   );
 }
 
-export function renderImportResult(res: BuiltinBrowserImportResult, t: Messages): string {
+export function renderImportResult(res: BuiltinBrowserImportResult, t: BrowserMessages): string {
   const { label, line } = t.browser;
   return lines([
     line(label.source, res.sourceId),
     ...(res.cookies !== undefined
       ? [line(label.cookies, t.browser.importCookies(res.cookies))]
       : []),
+    ...(res.cookies !== undefined && res.cookies.skips.length > 0
+      ? [line(label.skipped, t.browser.importSkips(res.cookies.skips, res.browserName))]
+      : []),
     ...(res.history !== undefined
       ? [line(label.history, t.browser.importHistory(res.history))]
       : []),
-    ...res.warnings.map((warning) => line(label.warning, oneLine(warning))),
+    ...res.notes.map((note) =>
+      line(label.warning, oneLine(t.browser.importNote(note, res.browserName))),
+    ),
   ]);
 }
 
@@ -271,7 +275,10 @@ export function renderImportResult(res: BuiltinBrowserImportResult, t: Messages)
  * count first so the order reads: `4 visits · 2026-09-23 14:03 · Your Orders · https://…`
  * (local time).
  */
-export function renderHistory(entries: readonly BuiltinBrowserHistoryEntry[], t: Messages): string {
+export function renderHistory(
+  entries: readonly BuiltinBrowserHistoryEntry[],
+  t: BrowserMessages,
+): string {
   if (entries.length === 0) return lines([t.browser.noHistory()]);
   return lines(
     entries.map((e) =>

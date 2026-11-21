@@ -38,7 +38,14 @@ function server() {
   let refuse = false;
   let hold: Promise<void> | undefined;
   const errors: UsageErrorItem[] = [];
-  const bucket: UsageBucket = { total: 0, requests: 0, cost: null, hasUncosted: false };
+  const bucket: UsageBucket = {
+    total: 0,
+    requests: 0,
+    cost: null,
+    hasUncosted: false,
+    toolRequests: 0,
+    toolCost: null,
+  };
   const fetch = stubFetch(async (req) => {
     if (req.path === "/api/me/prefs") {
       if (req.method === "PUT") {
@@ -67,6 +74,7 @@ function server() {
         series: [],
         byAgentSeries: [],
         byModelSeries: [],
+        tools: [],
         agentIds: [],
         models: [],
         errors: {

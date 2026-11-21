@@ -1,5 +1,6 @@
 /**
- * Every endpoint the Web App calls (`packages/web/src/api/endpoints.ts`), answered from the
+ * Every endpoint the Web App calls (`packages/web/src/api/endpoints.ts`, and the wrappers its
+ * features keep beside them, such as the agent browser's `features/builtin-browser/api.ts`), answered from the
  * demo store. Reads answer the fixtures; writes mutate them where the app shows the result
  * (a renamed Session, a saved model table, a new schedule) and answer `demo_read_only` where
  * the operation would need a machine, a registry or a provider behind it. Each handler's
@@ -33,6 +34,7 @@ import type {
   AppCenterLayout,
   AppCenterLayoutResponse,
   AppCenterResponse,
+  AppCenterShortcut,
   ApprovalMode,
   ArchivedSessionGroup,
   ArchivedSessionGroupsResponse,
@@ -64,6 +66,9 @@ import type {
   GoalResponse,
   InstallResponse,
   InstalledPluginsResponse,
+  PluginModuleAskResponse,
+  PluginModuleRequestsResponse,
+  PluginHoldersResponse,
   MachinesResponse,
   MachinesUseResponse,
   McpServerTestResponse,
@@ -92,6 +97,7 @@ import type {
   PluginFilesResponse,
   PluginIndexResponse,
   PluginLibraryResponse,
+  PluginMarketResponse,
   PluginReadmeResponse,
   PrefsResponse,
   BackgroundImagePutResponse,
@@ -144,12 +150,14 @@ import type {
   VersionHistoryResponse,
   VersionResponse,
   WorkbenchesResponse,
+  WorkbenchSidebarResponse,
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
 import { isThemeId } from "@prismshadow/penguin-ui";
 // The catalog decides which groups publish a balance, as it does on the server.
 import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
+import { declaredServerModules } from "../../../../web/src/lib/module-gate";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
@@ -159,6 +167,12 @@ import { IDS } from "./ids";
 import { empty, fail, json, raw, Router } from "./router";
 import type { RequestContext } from "./router";
 import type { DemoStore } from "./store";
+import type {
+  ToolBindingUpdate,
+  ToolBindingsResponse,
+  VoicePolishSettings,
+  VoicePolishUpdate,
+} from "../../../../web/src/api/tool-types";
 import { payloadOf } from "./types";
 import type { AmspRecord } from "./types";
 
@@ -184,7 +198,9 @@ function costOf(day: Pick<UsageDay, "cacheRead" | "cacheWrite" | "output" | "pro
   const rate =
     day.provider === "anthropic"
       ? { cacheRead: 0.2, cacheWrite: 2.5, output: 10 }
-      : { cacheRead: 0.0057, cacheWrite: 0.2857, output: 1.1429 };
+      : day.provider === "openai"
+        ? { cacheRead: 1.25, cacheWrite: 5, output: 30 }
+        : { cacheRead: 0.0057, cacheWrite: 0.2857, output: 1.1429 };
   return (
     (day.cacheRead * rate.cacheRead + day.cacheWrite * rate.cacheWrite + day.output * rate.output) /
     1_000_000
@@ -194,13 +210,16 @@ function costOf(day: Pick<UsageDay, "cacheRead" | "cacheWrite" | "output" | "pro
 export const router = new Router();
 
 // The demo boots its own page table and has no server-side plugin contributions: no pages,
-// no file renderers, and nothing removed.
+// no file renderers and nothing removed. It stands in for every plugin's server half, so it
+// answers as running every server module a booted web module declared: a plugin's web half is
+// drawn in the gallery as it is on a server that runs its module.
 router.get("/api/contributions", (): ContributionsResponse => ({
   pages: [],
   fileRenderers: [],
   pageRemovals: [],
   agentTabs: [],
   sessionTabs: [],
+  modules: declaredServerModules(),
 }));
 
 // ---------------------------------------------------------------------------------------------
@@ -275,6 +294,53 @@ router
   .put("/api/admin/settings", ({ store, body }): ServerSettingsResponse => {
     store.f.serverSettings = { ...store.f.serverSettings, ...record(body) };
     return { settings: store.f.serverSettings };
+  })
+  .get("/api/admin/plugin-modules", ({ store }): PluginModuleRequestsResponse =>
+    moduleLedger(store),
+  )
+  // Who would lose a plugin uninstalled from the server: the demo's Agents that carry its Skills.
+  .get("/api/admin/plugins/holders", ({ store, query }): PluginHoldersResponse => {
+    const pkg = query.get("package") ?? "";
+    const plugin = libraryPlugins(store).find((p) => p.package === pkg) ?? null;
+    const skills = new Set((plugin?.skills ?? []).map((s) => s.name));
+    const agents = store.f.agents
+      .filter((a) => (store.f.installed[a.agentId]?.skills ?? []).some((s) => skills.has(s.name)))
+      .map((a) => ({
+        projectId: IDS.project,
+        projectName: store.f.project.name ?? IDS.project,
+        agentId: a.agentId,
+        agentName: a.name ?? a.agentId,
+      }));
+    return {
+      package: pkg,
+      plugin: plugin?.name ?? null,
+      onServer: plugin?.source === "installed",
+      shipped: plugin !== null && plugin.source !== "installed",
+      shared: [],
+      agents,
+    };
+  })
+  .delete("/api/admin/plugins", () => readOnly("uninstall a plugin from the server"))
+  // A decision as the server takes it: enabling lists the module (it runs), declining stops it; a
+  // waiting request whose Project is gone can only be declined.
+  .post("/api/admin/plugin-modules/decide", ({ store, body }): PluginModuleRequestsResponse => {
+    const pkg = str(record(body).package);
+    const decision = str(record(body).decision);
+    if (decision !== "enable" && decision !== "decline") {
+      fail(400, "invalid_request", "decision must be enable or decline.");
+    }
+    const row = store.f.pluginModuleRequests.find((r) => r.package === pkg);
+    if (row === undefined) fail(404, "unknown_request", `No request for ${pkg}.`);
+    if (decision === "enable" && row.projectId === null) {
+      fail(409, "project_gone", "The Project that asked for it is gone.");
+    }
+    const enable = decision === "enable";
+    row.decision = enable ? "enabled" : "declined";
+    row.decidedBy = store.f.user.userId;
+    row.decidedAt = new Date(store.f.now).toISOString();
+    if (enable) row.via = row.requestedBy !== store.f.user.userId ? "approval" : "admin";
+    row.state = enable ? "running" : "off";
+    return moduleLedger(store);
   })
   .get("/api/admin/plugin-config", ({ store }): PluginConfigResponse => ({
     plugins: store.f.pluginConfig,
@@ -404,6 +470,52 @@ function refreshEffective(store: DemoStore): void {
     effective: effectiveOf(m, providers),
   }));
 }
+
+/**
+ * The model tools, as the Web App reads them: the platform's tool-model bindings and the
+ * multimodal tools plugin's routes. The gallery's server loads no plugin, so no binding is
+ * declared — the settings page lists image understanding alone and the chat shows no voice
+ * controls — and binding a model, running a tool or reading a reply aloud is refused. Transcript
+ * editing's settings are kept in the store, as the plugin keeps them per Project.
+ */
+router
+  .get("/api/projects/:projectId/models/tool-bindings", (): ToolBindingsResponse => ({
+    bindings: [],
+  }))
+  .patch("/api/projects/:projectId/models/tool-bindings", ({ body }) => {
+    const { key } = record(body) as Partial<ToolBindingUpdate>;
+    return fail(
+      404,
+      "unknown_binding",
+      `No enabled plugin declares the tool-model binding '${String(key)}'.`,
+    );
+  })
+  .post("/api/projects/:projectId/multimodal-tools/:operation/run", () =>
+    readOnly("run a multimodal tool"),
+  )
+  .get(
+    "/api/projects/:projectId/multimodal-tools/voice-polish/settings",
+    ({ store }): VoicePolishSettings => store.voicePolish,
+  )
+  .patch(
+    "/api/projects/:projectId/multimodal-tools/voice-polish/settings",
+    ({ store, body }): VoicePolishSettings => {
+      const { enabled, prompt } = record(body) as VoicePolishUpdate;
+      if (enabled === true) return readOnly("turn transcript editing on without a text model");
+      store.voicePolish = {
+        ...store.voicePolish,
+        ...(enabled !== undefined ? { enabled } : {}),
+        ...(prompt !== undefined ? { prompt: prompt ?? store.voicePolish.defaultPrompt } : {}),
+      };
+      return store.voicePolish;
+    },
+  )
+  .post("/api/projects/:projectId/multimodal-tools/voice-polish", () =>
+    readOnly("polish a transcript"),
+  )
+  .post("/api/projects/:projectId/multimodal-tools/read-aloud", () =>
+    readOnly("read a reply aloud"),
+  );
 
 router
   .get("/api/projects/:projectId/models", ({ store }): ModelsResponse => store.f.models)
@@ -1791,12 +1903,39 @@ function filterUsage(store: DemoStore, query: URLSearchParams, withModel: boolea
   );
 }
 
-const bucket = (day: UsageDay[]): UsageResponse["summary"]["today"] => ({
-  total: day.reduce((s, d) => s + d.cacheRead + d.cacheWrite + d.output, 0),
-  requests: day.reduce((s, d) => s + d.requests, 0),
-  cost: day.reduce((s, d) => s + costOf(d), 0),
-  hasUncosted: false,
-});
+/** A day's Tokens as the Token figures count them: a tool request's are not (see UsageDay.purpose). */
+const chatTokens = (d: UsageDay): number =>
+  d.purpose === undefined ? d.cacheRead + d.cacheWrite + d.output : 0;
+
+const bucket = (day: UsageDay[]): UsageResponse["summary"]["today"] => {
+  const tools = day.filter((d) => d.purpose !== undefined);
+  return {
+    total: day.reduce((s, d) => s + chatTokens(d), 0),
+    requests: day.reduce((s, d) => s + d.requests, 0),
+    cost: day.reduce((s, d) => s + costOf(d), 0),
+    hasUncosted: false,
+    toolRequests: tools.reduce((s, d) => s + d.requests, 0),
+    toolCost: tools.length > 0 ? tools.reduce((s, d) => s + costOf(d), 0) : null,
+  };
+};
+
+/** The tool requests by purpose, costliest first. */
+function toolRows(days: UsageDay[]): UsageResponse["tools"] {
+  const rows = new Map<string, UsageResponse["tools"][number]>();
+  for (const d of days) {
+    if (d.purpose === undefined) continue;
+    const row = rows.get(d.purpose) ?? {
+      purpose: d.purpose,
+      requests: 0,
+      cost: 0,
+      hasUncosted: false,
+    };
+    row.requests += d.requests;
+    row.cost = (row.cost ?? 0) + costOf(d);
+    rows.set(d.purpose, row);
+  }
+  return [...rows.values()].sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0));
+}
 
 /** The series bucket a day falls in at a granularity: the day, its ISO week's Monday, or its month. */
 function bucketKey(date: string, granularity: UsageGranularity): string {
@@ -1904,10 +2043,12 @@ router
     for (const d of days) {
       const key = bucketKey(d.date, granularity);
       const point = buckets.get(key)!;
-      point.cacheRead += d.cacheRead;
-      point.cacheWrite += d.cacheWrite;
-      point.output += d.output;
-      point.total += d.cacheRead + d.cacheWrite + d.output;
+      if (d.purpose === undefined) {
+        point.cacheRead += d.cacheRead;
+        point.cacheWrite += d.cacheWrite;
+        point.output += d.output;
+        point.total += d.cacheRead + d.cacheWrite + d.output;
+      }
       point.cost = (point.cost ?? 0) + costOf(d);
       point.requests += d.requests;
       point.completed += d.completed;
@@ -1949,6 +2090,7 @@ router
       series: keys.map((key) => buckets.get(key)!),
       byAgentSeries: [...perAgent.values()],
       byModelSeries: [...perModel.values()],
+      tools: toolRows(days),
       errors: {
         total: store.f.usageErrors.reduce((n, e) => n + e.count, 0),
         rows: store.f.usageErrors.length,
@@ -2233,9 +2375,16 @@ const installedOf = (ctx: Ctx) => {
 
 const libraryPlugins = (store: DemoStore) => store.f.library.groups.flatMap((g) => g.plugins);
 
+/** The administrator's ledger of module requests, with how many wait. */
+const moduleLedger = (store: DemoStore): PluginModuleRequestsResponse => ({
+  requests: store.f.pluginModuleRequests,
+  pending: store.f.pluginModuleRequests.filter((r) => r.decision === null).length,
+});
+
 router
   .get("/api/plugins", ({ store }): PluginLibraryResponse => store.f.library)
   .get("/api/plugins/registry", ({ store }): PluginIndexResponse => store.f.pluginIndex)
+  .get("/api/plugins/market", ({ store }): PluginMarketResponse => store.f.market)
   // The demo installs no languages plugin: every fence is one the bundle carries or plain.
   .get("/api/languages", (): LanguageIndexResponse => ({ languages: [] }))
   .get("/api/plugins/registry/readme", ({ store, query }): PluginReadmeResponse => {
@@ -2278,8 +2427,52 @@ router
     skills: installedOf(ctx).skills,
     hooks: installedOf(ctx).hooks,
     mcpServers: mcpServerItems(ctx),
-    workbenches: [],
+    workbenches: installedOf(ctx).pluginWorkbenches ?? [],
+    modules: ctx.store.f.pluginModules,
   }))
+  // A plugin's server module asked for by hand: the demo's server runs what is asked of it.
+  .post("/api/projects/:projectId/plugins/modules", ({ store, body }): PluginModuleAskResponse => {
+    // A member's ask for a package not on the server yet: a waiting request for the admin.
+    const asked = record(body).package;
+    if (typeof asked === "string" && record(body).plugin === undefined) {
+      const plugin = asked.replace(/^@[^/]+\//, "");
+      if (!store.f.pluginModuleRequests.some((r) => r.package === asked)) {
+        store.f.pluginModuleRequests.push({
+          package: asked,
+          plugin,
+          projectId: IDS.project,
+          projectName: null,
+          agentId: typeof record(body).agentId === "string" ? str(record(body).agentId) : null,
+          requestedBy: store.f.user.userId,
+          requestedByName: null,
+          requestedAt: new Date(store.f.now).toISOString(),
+          decision: null,
+          decidedBy: null,
+          decidedAt: null,
+          via: null,
+          builtin: false,
+          state: "off",
+          onServer: false,
+        });
+      }
+      return { modules: store.f.pluginModules, moduleActions: [{ plugin, action: "requested" }] };
+    }
+    const name = str(record(body).plugin);
+    const plugin = libraryPlugins(store).find((p) => p.name === name);
+    if (plugin === undefined) fail(404, "unknown_plugin", `Plugin is not in the library: ${name}`);
+    if (plugin.modules !== true) {
+      fail(400, "no_server_module", `Plugin ${name} ships no server module.`);
+    }
+    for (const mod of store.f.pluginModules) {
+      if (mod.plugin !== name) continue;
+      mod.state = "running";
+      mod.listed = true;
+    }
+    return {
+      modules: store.f.pluginModules,
+      moduleActions: [{ plugin: name, action: "enabled" }],
+    };
+  })
   .post("/api/projects/:projectId/agents/:agentId/plugins", (ctx): unknown => {
     const installed = installedOf(ctx);
     const agent = agentOf(ctx);
@@ -2313,6 +2506,8 @@ router
         skills: installed.skills,
         hooks: installed.hooks,
         mcpServers: mcpServerItems(ctx),
+        modules: ctx.store.f.pluginModules,
+        moduleActions: [],
       } satisfies AgentPluginsInstallResponse,
       201,
     );
@@ -2848,17 +3043,51 @@ router
 // Workbenches and the Project's plugin list
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * The rows of an Agent's sidebar list (`?view=sidebar`): its installed workbenches that run and
+ * have a tab, none hidden from the sidebar, in the App Center tile's shape.
+ */
+const sidebarApps = (ctx: Ctx): AppCenterShortcut[] => {
+  const agent = agentOf(ctx);
+  const installed = installedOf(ctx);
+  if (installed.workbenchesOff === true) return [];
+  return (installed.workbenches ?? []).flatMap((w): AppCenterShortcut[] => {
+    const first = w.tabs[0];
+    if (first === undefined || w.enabled === false || w.showInSidebar === false) return [];
+    return [
+      {
+        agentId: agent.agentId,
+        agentName: agent.name ?? agent.agentId,
+        workbenchId: w.id,
+        title: w.appCenter?.title ?? first.title,
+        ...(first.titleZh !== undefined ? { titleZh: first.titleZh } : {}),
+        ...(w.icon !== undefined ? { icon: w.icon } : {}),
+        path: `/app/${ctx.params.projectId!}/${agent.agentId}/${w.id}`,
+        tab: first.key,
+        build: w.error === null ? "ready" : "failed",
+      },
+    ];
+  });
+};
+
 router
-  .get("/api/projects/:projectId/agents/:agentId/workbenches", (ctx): WorkbenchesResponse => ({
-    workbenches: [],
-    enabled: installedOf(ctx).workbenchesOff !== true,
-  }))
+  .get(
+    "/api/projects/:projectId/agents/:agentId/workbenches",
+    (ctx): WorkbenchesResponse | WorkbenchSidebarResponse => {
+      if (ctx.query.get("view") === "sidebar") return { apps: sidebarApps(ctx) };
+      const installed = installedOf(ctx);
+      return {
+        workbenches: installed.workbenches ?? [],
+        enabled: installed.workbenchesOff !== true,
+      };
+    },
+  )
   .put(
     "/api/projects/:projectId/agents/:agentId/workbenches/enabled",
     (ctx): WorkbenchesResponse => {
       const installed = installedOf(ctx);
       installed.workbenchesOff = record(ctx.body).enabled === false;
-      return { workbenches: [], enabled: !installed.workbenchesOff };
+      return { workbenches: installed.workbenches ?? [], enabled: !installed.workbenchesOff };
     },
   )
   .put("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/enabled", () =>
@@ -2885,6 +3114,23 @@ router
   .delete("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId", () =>
     notFound("Workbench"),
   )
+  .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/sidebar", (ctx) => {
+    const installed = installedOf(ctx);
+    const show = record(ctx.body).show;
+    if (typeof show !== "boolean") fail(400, "bad_request", "show must be true or false");
+    const all = installed.workbenches ?? [];
+    const current = all.find((w) => w.id === ctx.params.workbenchId);
+    if (!current) notFound("Workbench");
+    const workbench = { ...current, showInSidebar: show };
+    installed.workbenches = all.map((w) => (w.id === workbench.id ? workbench : w));
+    ctx.store.userChannel.event({
+      type: "workbench_updated",
+      projectId: ctx.params.projectId!,
+      agentId: ctx.params.agentId!,
+      workbench,
+    });
+    return { workbench };
+  })
   .patch("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/app-center", () =>
     notFound("Workbench"),
   )
@@ -2896,10 +3142,10 @@ router
     store.f.appCenter = { ...store.f.appCenter, layout };
     return { layout };
   })
-  .get(
-    "/api/projects/:projectId/plugins/installed",
-    ({ store }): InstalledPluginsResponse => store.f.installedPlugins,
-  )
+  .get("/api/projects/:projectId/plugins/installed", ({ store }): InstalledPluginsResponse => ({
+    ...store.f.installedPlugins,
+    modules: store.f.pluginModules,
+  }))
   .put(
     "/api/projects/:projectId/plugins/installed",
     ({ store, body }): InstalledPluginsResponse => {

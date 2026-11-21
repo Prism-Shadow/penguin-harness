@@ -15,15 +15,16 @@
  * package. It is imported by relative path on purpose — see its module doc.
  *
  * The dev server sends the server's page Content-Security-Policy (`WEB_APP_CSP`, imported by
- * relative path from the server's dependency-free `http/page-csp.ts`, which the config bundle
- * inlines), so the two cannot drift.
+ * relative path from the http vocabulary package's `page-csp.ts` — the file itself, not the
+ * package's dist entry, so the config bundle inlines the source and no build is needed), which
+ * the server serves from the same constant, so the two cannot drift.
  */
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import { dropNonWoff2FontSources, penguinUi } from "../ui/src/vite-plugin";
-import { WEB_APP_CSP } from "../server/src/http/page-csp";
+import { WEB_APP_CSP } from "../../library/http/src/page-csp";
 import { penguinManifest } from "./scripts/penguin-manifest";
 
 /**
@@ -104,6 +105,12 @@ export default defineConfig({
   // runs yet. The production build lowers them for its browser target; the dev server
   // transforms for `esnext` by default and would pass them through as a syntax error.
   esbuild: { target: "es2022" },
+  // A shipped plugin's web half is compiled with the app (src/plugin-web.gen.ts): whichever
+  // directory it resolves its imports from, the app and every plugin share one React, one UI
+  // package (its toasts, tooltips and Esc layers) and one face holding the app's handed-over host.
+  resolve: {
+    dedupe: ["react", "react-dom", "@prismshadow/penguin-ui", "@prismshadow/penguin-web-plugin"],
+  },
   build: {
     // Never inline a font. Vite turns any asset under 4 KB into a data: URI, and a font slice the
     // stylesheet references would then ride inside the one render-blocking CSS file for every

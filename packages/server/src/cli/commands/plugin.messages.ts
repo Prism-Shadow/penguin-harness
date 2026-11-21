@@ -114,7 +114,7 @@ export const pluginEn: PluginText = {
     listedOnly: (specifier, projectId) =>
       `${specifier} ships with this server; listed for Project ${projectId}.`,
     libraryNext: () =>
-      "It is in the plugin library: install it on an agent from the Plugins page (Manage installs).",
+      "It is in the plugin library: install it on an agent from the Plugins page (Install on Agent).",
     mcpServerLine: (name, transport, target) => `MCP server: ${name} (${transport}) ${target}`,
     modulesLoaded: (projectId) => `Listed for Project ${projectId} on this server and loaded.`,
     restartNext: () => "Listed; restart the server to load it.",
@@ -169,7 +169,7 @@ export const pluginZh: PluginText = {
     overwriteHint: () => "加上 --overwrite 重新运行即可替换。",
     listedOnly: (specifier, projectId) =>
       `${specifier} 随本服务端自带，已为 Project ${projectId} 启用。`,
-    libraryNext: () => "它已进入插件库：请在插件页通过「管理安装」把它安装到 Agent 上。",
+    libraryNext: () => "它已进入插件库：请在插件页通过「安装到 Agent」把它安装到 Agent 上。",
     mcpServerLine: (name, transport, target) => `MCP Server：${name}（${transport}）${target}`,
     modulesLoaded: (projectId) => `已在本服务端为 Project ${projectId} 启用并载入。`,
     restartNext: () => "已启用；重启服务端后载入。",

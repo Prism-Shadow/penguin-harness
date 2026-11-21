@@ -15,7 +15,7 @@ import type {
   BrowserExtensionsResponse,
   BuiltinBrowserServerEvent,
   BuiltinBrowserUnavailableReason,
-} from "../api/types.js";
+} from "@prismshadow/penguin-server/api";
 import type {
   BrowserExtensionRow,
   BrowserExtensionStore,
