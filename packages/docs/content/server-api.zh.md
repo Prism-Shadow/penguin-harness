@@ -755,6 +755,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET / PUT | `/:orgId/handbook` | 手册索引（`handbook/README.md`） |
 | GET | `/:orgId/handbook/files` | 知识库文件，索引排在最前 |
 | GET / PUT / DELETE | `/:orgId/handbook/files/<path>` | 按相对路径访问单个文档；索引不可删除 |
+| GET | `/:orgId/file?path=<引用的路径>` | 组织消息里引用的文件，只读：须在手册、公共工作区或某位员工的工作区内，Project 配置和 Agent vault 一律拒绝 |
 | GET / POST | `/:orgId/calendar` | 全体员工的事件和运行状态 / 创建事件 |
 | GET / PUT / DELETE | `/:orgId/calendar/:agentId/:name` | 单个事件 |
 | GET / POST | `/:orgId/tickets` | 按列组织的看板，附无法解析的文件 / 创建工单 |
