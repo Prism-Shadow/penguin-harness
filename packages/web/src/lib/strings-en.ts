@@ -15,6 +15,49 @@ import type { Strings } from "./strings";
 export const en: Strings = {
   appName: "PenguinHarness",
 
+  voice: {
+    models: "Multimodal models",
+    modelHelp:
+      "The penguin tools CLI uses the models chosen here. Image understanding is the Project's vision model, which also reads images for models without vision. In chat, dictation uses Speech recognition, read-aloud uses Speech synthesis, and polishing uses Text generation.",
+    imageUnderstanding: "Image understanding",
+    unbound: "Not set",
+    noModels: "No compatible models",
+    noTools: "The multimodal tools plugin is off in this Project. Turn it on on the Plugins page.",
+    setDefault: "Set default",
+    setDefaultHint: (operation: string) =>
+      `Make this the Project's default ${operation.toLowerCase()} model`,
+    inUse: "In use",
+    inUseFor: (operations: readonly string[]) => `In use: ${operations.join(", ")}`,
+    dictation: "Dictation",
+    polish: "Polish dictation",
+    polishWith: (model: string, provider: string) => `Polished by ${model} (${provider})`,
+    polishNeedsText: "Choose a text generation model first",
+    prompt: "Polish instructions",
+    restorePrompt: "Restore default",
+    record: "Dictate",
+    recording: "Recording",
+    permission: "Waiting for microphone",
+    inputLevel: "Microphone level",
+    quiet: "Quiet",
+    soundDetected: "Sound detected",
+    finish: "Finish recording",
+    cancel: "Cancel dictation",
+    transcribing: "Transcribing",
+    polishing: "Polishing",
+    denied: "Allow microphone access in your browser or system settings to dictate.",
+    unsupported:
+      "This browser cannot record audio here. Open this page over HTTPS in a browser with microphone support.",
+    recordFailed: "Could not record from the microphone.",
+    tooLarge: "This recording is too large. Try a shorter recording.",
+    empty: "No speech was recognized.",
+    original: "The original transcript was inserted because polishing was unavailable.",
+    listen: "Read aloud",
+    stop: "Stop reading",
+    play: "Play audio",
+    audioError: "Could not play the audio for this reply.",
+    preparing: "Preparing audio",
+  },
+
   nav: {
     chat: "Chat",
     newChat: "New chat",
@@ -928,6 +971,7 @@ export const en: Strings = {
     leaveAction: "Leave safe mode (load server contributions)",
   },
   modelPicker: {
+    clearAssignment: "Clear assignment",
     groups: "Model groups",
     hideModelsWithoutKey: "Hide models without a key",
     hint: (mod: string): string => `←→ groups / models · ${mod}1–9 jump to a group`,
@@ -1703,6 +1747,7 @@ export const en: Strings = {
     noCredentialTitle: "No model credential configured",
     noCredentialBody:
       "The default model of this Project has no API key yet. Configure it on the Models page before chatting.",
+    noChatModels: "Add a chat model to this project to send a message.",
     goToModels: "Go to Models",
     later: "Later",
   },
@@ -2430,8 +2475,8 @@ export const en: Strings = {
     visionModelBadge: "Proxy vision",
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "Tokens this model has used, all time",
-    setVisionModel: "Set as proxy vision model",
-    visionModelHint: "Describes images for models without vision when they read one with read_file",
+    visionModelHint:
+      "Make this the vision model: it reads images for models without vision, and runs penguin tools i2t",
     priceUnitShort: "/M tok",
     testConnection: "Test connection",
     testing: "Testing…",
@@ -2606,7 +2651,7 @@ export const en: Strings = {
       `Requests go to ${defaultBaseUrl}, or to ${envBaseUrlKey} when it is set`,
     confirmVisionModelTitle: "Set as proxy vision model",
     confirmVisionModel: (name: string): string =>
-      `Make "${name}" the proxy vision model? Models without vision will read images through it when they call read_file.`,
+      `Make "${name}" the proxy vision model? Models without vision will read images through it when they call read_file, and penguin tools i2t runs on it.`,
     addAction: "Add",
     confirmCancelPromotionTitle: "Cancel promotion",
     confirmCancelPromotion: (name: string, pct: number): string =>
@@ -5464,6 +5509,11 @@ Scenarios:
     total: "Total",
     tokens: "Tokens",
     requests: "Requests",
+    /** The summary row of the requests a plugin made for its tools (counted in Requests and Cost, not in Tokens). */
+    toolRequestsIncluded: "Incl. tool requests",
+    /** The card listing tool requests by what they were for. */
+    toolRequests: "Tool requests",
+    toolColumn: "Tool",
     rangeDates: "Start and end dates",
     colCacheRead: "cache_read",
     colCacheWrite: "cache_write",

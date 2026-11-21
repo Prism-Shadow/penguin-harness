@@ -352,6 +352,8 @@ export const ICONS = {
    */
   cross: "M18 6 6 18M6 6l12 12",
   /** A play triangle; drawn with `GlyphIcon`'s `filled` mode where it should read solid. */
+  microphone: "M9 11V6a3 3 0 016 0v5a3 3 0 01-6 0zM5 10v1a7 7 0 0014 0v-1M12 18v3m-3 0h6",
+  speaker: "M3 9h4l5-4v14l-5-4H3zM16 9a4 4 0 010 6m2-9a8 8 0 010 12",
   play: "M7 4l13 8-13 8z",
   /** Two upright bars: paused. */
   pause: "M8 4v16M16 4v16",

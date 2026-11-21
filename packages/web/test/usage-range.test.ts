@@ -25,7 +25,14 @@ const PROJECT: ProjectSummary = {
   ownerUserId: "admin",
   createdAt: "2026-01-01T00:00:00.000Z",
 };
-const EMPTY: UsageBucket = { total: 0, requests: 0, cost: null, hasUncosted: false };
+const EMPTY: UsageBucket = {
+  total: 0,
+  requests: 0,
+  cost: null,
+  hasUncosted: false,
+  toolRequests: 0,
+  toolCost: null,
+};
 const USAGE: UsageResponse = {
   summary: { today: EMPTY, last7d: EMPTY, total: EMPTY },
   groupBy: "date",
@@ -34,6 +41,7 @@ const USAGE: UsageResponse = {
   series: [],
   byAgentSeries: [],
   byModelSeries: [],
+  tools: [],
   agentIds: [],
   models: [],
   errors: { total: 0, unexpected: 0, rows: 0, recent: [], topCode: null },

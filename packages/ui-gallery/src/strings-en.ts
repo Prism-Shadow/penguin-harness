@@ -483,7 +483,7 @@ export const en: GalleryStrings = {
       buttons: {
         title: "Buttons",
         description:
-          "Five variants, five sizes and the icon button; disabled and loading; links, inline glyph actions and keyboard hints; the floating ball that drags to an edge and tucks away.",
+          "Five variants, five sizes and the icon button; disabled and loading; links, inline glyph actions, the inline icon button and keyboard hints; the dictation button and the microphone level; the floating ball that drags to an edge and tucks away.",
       },
       inputs: {
         title: "Inputs and forms",
@@ -662,6 +662,29 @@ export const en: GalleryStrings = {
       ballShow: "Show the exit button",
       ballReadout: (side: "left" | "right", percent: number, tucked: boolean, presses: number) =>
         `${side} edge, ${percent}% down${tucked ? ", tucked" : ""} · pressed ${presses === 1 ? "once" : `${presses} times`}`,
+      inlineIcon: "Inline icon button",
+      inlineIconHint:
+        "A small glyph action in a line of text: faint at rest, filled in on hover. The label is the accessible name and the tooltip; it is disabled while busy.",
+      inlineReplyStats: "1.2k tokens · 4.8 s",
+      inlineRead: "Read aloud",
+      inlineFork: "Fork from here",
+      inlineBusy: "Preparing",
+      record: "Dictation button",
+      recordHint:
+        "It sits just before Send and keeps its place for the whole recording: the microphone at rest, a press to finish while recording, a spinner while it transcribes.",
+      recordIdle: "Dictate",
+      recordRecording: "Finish recording",
+      recordWaiting: "Transcribing",
+      meter: "Microphone level",
+      meterHint:
+        "The readout while recording: the elapsed time and the recent levels, one bar per reading. Under reduced motion words replace the moving bars; with no level to read it only says the recording is running.",
+      meterLevel: "Microphone level",
+      meterQuiet: "Quiet",
+      meterSound: "Sound detected",
+      meterRecording: "Recording",
+      meterLive: "Speaking",
+      meterReduced: "Reduced motion",
+      meterUnavailable: "No level",
     },
     inputs: {
       basics: "Inputs",
