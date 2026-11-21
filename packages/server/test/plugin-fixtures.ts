@@ -169,3 +169,67 @@ export async function writePrefixPackage(
   );
   return dir;
 }
+
+/**
+ * A hybrid plugin (PRFC-0031): a library plugin — its Skills, each at `skills/<name>` — that is
+ * also a server module, the one class its entry exports and its table lists. A plugin's build
+ * leaves this shape: the module class declares the Skills to the plugin library's slot, and
+ * gen-ifaces writes them into the table beside the class.
+ */
+export interface HybridPackage {
+  name: string;
+  /** The module class. */
+  module: string;
+  skills: string[];
+  /** The class stands in for a platform node (`plugin.replaces`) rather than adding one. */
+  replaces?: boolean;
+  /** The entry's source, when it is not the plain class (one whose setup throws, say). */
+  index?: string;
+}
+
+/** The files of a hybrid package, by path relative to its directory. */
+export function hybridPackageFiles(pkg: HybridPackage): Record<string, string> {
+  const plugin = pkg.name.slice(pkg.name.lastIndexOf("/") + 1);
+  const files: Record<string, string> = {
+    "package.json": JSON.stringify({
+      name: pkg.name,
+      version: "1.0.0",
+      description: `The ${plugin} plugin.`,
+      type: "module",
+      main: "./index.js",
+    }),
+    "ifaces.json": JSON.stringify({
+      ifaces: {},
+      types: {},
+      modules: {
+        [pkg.module]: {
+          name: pkg.module,
+          requires: {},
+          provides: {},
+          contributes: {
+            "PluginLibraryModule.skills": pkg.skills.map((name) => ({
+              id: `${plugin}.skill.${name}`,
+              name,
+              path: `skills/${name}`,
+            })),
+          },
+          children: [],
+        },
+      },
+      plugin:
+        pkg.replaces === true
+          ? { modules: [], replaces: [pkg.module] }
+          : { modules: [pkg.module], replaces: [] },
+    }),
+    "index.js":
+      pkg.index ??
+      lower(`import { Module } from ${JSON.stringify(decorators)};
+             @Module() export class ${pkg.module} {}
+             export default { ${pkg.replaces === true ? "replaces" : "modules"}: [${pkg.module}] };`),
+  };
+  for (const name of pkg.skills) {
+    files[`skills/${name}/SKILL.md`] =
+      `---\nname: ${name}\ndescription: Do ${name}.\nversion: 2026.11.19.1\n---\n\n## Before you start\n`;
+  }
+  return files;
+}

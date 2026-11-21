@@ -352,6 +352,10 @@ interface PlusMenuItem {
   active: boolean;
   /** Grayed out and inert (e.g. goal mode while a run is in progress); the menu still opens. */
   disabled?: boolean;
+  /** Drawn greyed but still picked: an offer whose pick does what `trailing` names (an install). */
+  offer?: boolean;
+  /** Words at the row's end: what picking an offer does. */
+  trailing?: ReactNode;
   onSelect: () => void;
 }
 
@@ -381,9 +385,10 @@ function PlusMenu({
       options={items.map((item) => ({
         value: item.key,
         glyph: item.icon,
-        label: item.label,
+        label: item.offer ? <span className="text-fg-subtle">{item.label}</span> : item.label,
         detail: item.desc,
         disabled: item.disabled ?? false,
+        ...(item.trailing !== undefined ? { trailing: item.trailing } : {}),
       }))}
       value={items.filter((item) => item.active).map((item) => item.key)}
       multiple
@@ -991,6 +996,19 @@ export function ChatInput({
       : switches.modes.filter((mode) => switches.on.includes(mode.name));
   const flipSwitch = (name: string) => {
     if (switches) switches.onChange(toggled(switches.on, name));
+  };
+  /** The switches as of the latest render, for an install that answers after it. */
+  const latestSwitches = useRef(switches);
+  latestSwitches.current = switches;
+  /**
+   * A mode the Agent lacks, picked from its offer: installed on the Agent, then switched on, as
+   * picking an installed one would. A refused install says why in a toast and turns nothing on.
+   */
+  const installSwitch = (name: string) => {
+    void switches?.install?.(name).then((installed) => {
+      const now = latestSwitches.current;
+      if (installed && now && !now.on.includes(name)) now.onChange([...now.on, name]);
+    });
   };
   /**
    * Where a send with a staged chip would go — and, for a `/model` fork, whether it may go at
@@ -2624,6 +2642,31 @@ export function ChatInput({
                     disabled: goalOn,
                     onSelect: () => flipSwitch(mode.name),
                   })),
+                  // The composer modes the Agent lacks, greyed, each picked to install it.
+                  ...(switches?.install !== undefined ? (switches.offers ?? []) : []).map(
+                    (mode) => ({
+                      key: `offer:${mode.name}`,
+                      icon: (
+                        <SkillIcon
+                          icon={mode.icon}
+                          fallback={ICONS.fishHook}
+                          size={ICON_SIZE.inlineGlyph}
+                          className="text-fg-subtle"
+                        />
+                      ),
+                      label: mode.title,
+                      desc: mode.description,
+                      active: false,
+                      offer: true,
+                      trailing: mode.installing ? (
+                        S.chat.switchInstalling
+                      ) : (
+                        <span className="text-link">{S.chat.switchInstall}</span>
+                      ),
+                      disabled: goalOn || mode.installing,
+                      onSelect: () => installSwitch(mode.name),
+                    }),
+                  ),
                 ]}
                 footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
                 direction={models && onChangeModel ? "down" : "up"}

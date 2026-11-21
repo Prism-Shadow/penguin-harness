@@ -92,7 +92,7 @@ import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { UsageService } from "./services/usage-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
-import { ModelOAuthService } from "./services/model-oauth-service.js";
+import { ModelOAuthProvider } from "./services/model-oauth-service.js";
 import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
 import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
@@ -151,7 +151,10 @@ import { NpmPluginPackages } from "./plugin/install.js";
 import { PluginSourceSettings } from "./plugin/source-settings.js";
 import { PluginMirrorSettings } from "./plugin/mirror-settings.js";
 import { PluginLibraryModule } from "./plugin/library-module.js";
-import { PluginUiRoutes } from "./http/routes/plugin-ui.js";
+import { PluginModuleRequestsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-requests";
+import { PluginModules } from "./mechanisms/plugins.js";
+import { PluginModulesService } from "./services/plugin-modules.js";
+import { PluginModuleRoutes } from "./http/routes/plugin-modules.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
 import { PluginMarketRoutes } from "./http/routes/plugin-market.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
@@ -345,7 +348,7 @@ export class IdentityModule {}
     ShippedBuiltinBenchmarkSeeds,
     ProjectService,
     ProjectConfigService,
-    ModelOAuthService,
+    ModelOAuthProvider,
     PlatformAuthProvider,
     ModelScopeAuthProvider,
     ProjectsRoutes,
@@ -547,7 +550,6 @@ export class CompanyModule {}
     NpmPluginPackages,
     InstalledPluginRoutes,
     PluginCliCommandsProvider,
-    PluginUiRoutes,
     PluginMarketRoutes,
     SuggestIdRoutes,
     LanguagesModule,
@@ -573,6 +575,18 @@ export class WorkbenchesModule {}
 })
 export class ThemesModule {}
 
+/**
+ * A library plugin's server modules, brought along by an install on an Agent (PRFC-0031): the
+ * ledger of requests and decisions, the service that applies the rule, and the member's and the
+ * administrator's routes. Its own group: the Agent service and the installed-plugins routes
+ * reach it as `PluginModules`, and nothing else reads the ledger.
+ */
+@Module({
+  children: [PluginModuleRequestsRepo, PluginModulesService, PluginModuleRoutes],
+  exports: [PluginModules],
+})
+export class PluginModulesModule {}
+
 /** The root: provides nothing and requires nothing; it exists so the groups have a scope to see each other in. */
 @Module({
   children: [
@@ -593,6 +607,7 @@ export class ThemesModule {}
     CompanyModule,
     ApiModule,
     PluginLibraryModule,
+    PluginModulesModule,
     SandboxModule,
     SandboxSettingsModule,
     TerminalModule,
