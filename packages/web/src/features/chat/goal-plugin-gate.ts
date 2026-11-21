@@ -8,27 +8,19 @@
  * Send until it is in, so nothing is created for a goal that cannot start. The server's 409
  * stays the backstop: a check that cannot be read holds nothing.
  *
- * The Agent is the one the conversation runs on, on the server that holds it — a machine's Agent
- * is asked about, and installed on, over there.
+ * The check and the install are the shared hook-plugin path (hook-plugin-install.ts), the one the
+ * "+" menu's composer-mode offers use too.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AgentPluginsInstallResponse } from "@prismshadow/penguin-server/api";
 
-import { getAgentPlugins, installAgentPlugins } from "../../api/endpoints";
 import { toastApiError } from "../../lib/toast-api-error";
+import { hookPluginInstall, type HookPluginInstall } from "./hook-plugin-install";
 
 /** The library plugin goal mode runs on; its hook package carries the same name. */
 export const GOAL_PLUGIN = "goal";
 
-export interface GoalPluginGate {
-  /** Whether the Agent has the goal hook package. Rejects when the list cannot be read. */
-  check(): Promise<boolean>;
-  /** Installs the goal plugin on the Agent; whether its hook package is there afterwards. Rejects when the install is refused. */
-  install(): Promise<boolean>;
-}
-
-const hasGoalHook = (res: AgentPluginsInstallResponse): boolean =>
-  res.hooks.some((hook) => hook.name === GOAL_PLUGIN);
+/** The goal plugin's check and install on one Agent. */
+export type GoalPluginGate = HookPluginInstall;
 
 /** The gate for one Agent; `machineId` is the machine that holds it (null = this server). */
 export function goalPluginGate(
@@ -36,11 +28,7 @@ export function goalPluginGate(
   agentId: string,
   machineId: string | null,
 ): GoalPluginGate {
-  return {
-    check: async () => hasGoalHook(await getAgentPlugins(projectId, agentId, machineId)),
-    install: async () =>
-      hasGoalHook(await installAgentPlugins(projectId, agentId, [GOAL_PLUGIN], machineId)),
-  };
+  return hookPluginInstall(projectId, agentId, machineId, GOAL_PLUGIN);
 }
 
 /**

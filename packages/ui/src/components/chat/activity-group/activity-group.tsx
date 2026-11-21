@@ -15,14 +15,14 @@
  * follow the duration on a static head, and the body's last line, after the detail, on one that
  * expands.
  *
- * Expand policy, two layers deep: the body opens while the activity runs, so its rows are on
- * screen as they are appended, and folds itself away once it settles, leaving the one-line
- * summary the head exists to be; the rows inside it stay closed — the reader sees that a step happened
- * and how long it took, not its contents, until they ask. The caller's state bridges the gaps
- * between two steps (a work group the model may still add to counts as running), so the card
- * closes once and stays closed rather than flickering on every step. Once the reader toggles it
- * the card is theirs: a later automatic change never fights them. A step waiting on an approval
- * forces the body open (`pending`), since the approval buttons live in it.
+ * Work groups take one of three display modes. Standard lists the steps closed; Expanded opens
+ * every step; Compact pages through the steps behind one sticky line, with a terminal page for
+ * the turn's outcome when the host knows it (separately from a group settling between
+ * messages). The group holds each step's disclosure (`DisclosureControlContext`) so a page change
+ * or a mode change keeps the reader's folds, and tells a step whether the reader opened it or the
+ * mode did: a folded value is fetched only for a step the reader asked for. A step waiting on an
+ * approval or a retry opens the group in every mode, so its actions are on screen. A search
+ * temporarily exposes all loaded rows without changing the reader's page or disclosures.
  *
  * The head is a title bar of its own (the muted ground, a short title that doubles as the state),
  * a different layer from the rows on the surface below it, so the parent and its children read
@@ -50,7 +50,7 @@
  * a fixed phrase in sentence case on the small rung, uppercased only by a theme's recipe; names
  * go in the detail, which no recipe recases.
  */
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { Key, ReactNode } from "react";
 import { useArrived } from "../../../motion/use-arrived";
 import { StatusIcon } from "../../icons/status-icon/status-icon";
@@ -68,7 +68,9 @@ import {
   activityState,
 } from "../../layout/disclosure-row/disclosure-row";
 import type { ActivityKind, ActivityMark } from "../../layout/disclosure-row/disclosure-row";
+import { DisclosureControlContext } from "../../layout/disclosure-row/disclosure-control";
 import { Fold } from "../../layout/fold/fold";
+import { CompactStepHeader } from "./compact-step-header";
 import { WallpaperBackdrop } from "../../shell/app-shell/wallpaper";
 
 /**
@@ -81,10 +83,43 @@ const TITLE_INK: Readonly<Record<ActivityMark["state"], string>> = {
   error: "text-tone-danger-fg",
 };
 
+export type ActivityDisplayMode = "standard" | "expanded" | "compact";
+
+export interface ActivityStepSummary {
+  kind?: ActivityKind;
+  label: string;
+  state: RunState;
+  stateLabel?: string;
+  /** Tool description and, for file operations, the path of this invocation. */
+  description?: string;
+  path?: { short: string; full: string };
+}
+
 /** One of the activity's steps under the head, keyed for React. */
 export interface ActivityGroupRow {
   key: Key;
   content: ReactNode;
+  summary?: ActivityStepSummary | (() => ActivityStepSummary | undefined);
+  /** An approval or a retry is waiting on this step. */
+  needsAction?: boolean;
+}
+
+export interface ActivityStepNavigation {
+  previous: string;
+  next: string;
+  latest: string;
+  waiting: string;
+  /**
+   * The words before and after the step number in the pager's readout (「第 」「 步」,
+   * "Step " and nothing); the number between them is a field the reader can type a step into.
+   */
+  stepWords: readonly [before: string, after: string];
+  /** The step number field's name: what typing a number and pressing Enter does. */
+  jump: string;
+  /** The total time's name, as its tooltip and to a screen reader; the line shows the time alone. */
+  elapsed: string;
+  /** Expose every step to a search of this transcript, preserving the reading position. */
+  revealAll: boolean;
 }
 
 /**
@@ -93,7 +128,13 @@ export interface ActivityGroupRow {
  * attribute stays put on a row for as long as it is mounted (removing it mid-way would cut the
  * reveal short), and a body reopened later mounts every row settled.
  */
-function ActivityRows({ rows }: { rows: readonly ActivityGroupRow[] }) {
+function ActivityRows({
+  rows,
+  revealNew = true,
+}: {
+  rows: readonly ActivityGroupRow[];
+  revealNew?: boolean;
+}) {
   const [present] = useState(() => new Set(rows.map((row) => row.key)));
   return (
     <>
@@ -102,7 +143,7 @@ function ActivityRows({ rows }: { rows: readonly ActivityGroupRow[] }) {
           key={row.key}
           data-depth="1"
           data-last={index === rows.length - 1 ? "true" : undefined}
-          data-reveal={present.has(row.key) ? undefined : true}
+          data-reveal={revealNew && !present.has(row.key) ? true : undefined}
         >
           {row.content}
         </div>
@@ -146,8 +187,9 @@ export interface ActivityGroupProps {
   /** The settled span, shown once nothing is in flight. */
   durationMs?: number;
   /**
-   * The body is forced open, the reader's own open state kept for later: a step waits on an
-   * approval, or the caller needs the rows on screen (a search of the transcript).
+   * A step waits on an approval or a retry, or the caller needs the rows on screen (a search of
+   * the transcript). The body is forced open, the reader's own open state kept for later; in
+   * Compact it opens by default instead, so the reader can still close the line.
    */
   pending?: boolean;
   /**
@@ -155,6 +197,14 @@ export interface ActivityGroupProps {
    * step lands) it adds the chevron.
    */
   rows?: readonly ActivityGroupRow[];
+  /** Presentation of reasoning and tool groups. Other activities keep their normal disclosure. */
+  displayMode?: ActivityDisplayMode;
+  /** Actual end of the turn, reported once on its last work group. */
+  terminal?: { state: "done" | "failed" | "stopped"; label: string; durationMs?: number };
+  /** Whole-turn timing, shared by its work groups. A duration freezes the clock. */
+  runTiming?: { startMs: number; durationMs?: number };
+  /** Pager and action labels for a work group and its transcript-search state. */
+  stepNavigation?: ActivityStepNavigation;
   /** A body of one piece the caller styles, in place of rows; its presence adds the chevron too. */
   children?: ReactNode;
   /**
@@ -163,6 +213,17 @@ export interface ActivityGroupProps {
    * there they stand at the foot of the open body instead, after the detail in full.
    */
   actions?: ReactNode;
+}
+
+interface ReadingState {
+  mode: ActivityDisplayMode;
+  open: boolean | null;
+  pageKey: Key | null;
+  disclosures: ReadonlyMap<Key, boolean>;
+}
+
+function initialReadingState(mode: ActivityDisplayMode): ReadingState {
+  return { mode, open: null, pageKey: null, disclosures: new Map() };
 }
 
 export function ActivityGroup({
@@ -179,14 +240,20 @@ export function ActivityGroup({
   durationMs,
   pending = false,
   rows,
+  stepNavigation,
+  runTiming,
+  displayMode: preference = "standard",
+  terminal,
   children,
   actions,
 }: ActivityGroupProps) {
   const hookState = activityState(state);
   const running = hookState === "running";
   const inFlight = stepRunning ?? state === "running";
-  const [open, setOpen] = useState(running);
-  const userToggled = useRef(false);
+  const displayMode = stepNavigation ? preference : "standard";
+  const [view, setView] = useState(() => initialReadingState(displayMode));
+  // A preference change applies the new defaults before React commits the next frame.
+  if (view.mode !== displayMode) setView(initialReadingState(displayMode));
   /** The reader closed the card: land the view on it once the fold has finished. */
   const landOnClose = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -196,14 +263,74 @@ export function ActivityGroup({
   const expandable = rows !== undefined || hasChildren;
   const hasActions = actions !== undefined && actions !== null;
 
-  // Before any manual toggle, follow the activity's own state: open while it runs, closed the
-  // moment it settles. Afterwards the reader's choice stands, so a settled card they opened
-  // stays open and one they closed mid-run stays closed.
-  useEffect(() => {
-    if (!userToggled.current) setOpen(running);
-  }, [running]);
-
-  const shown = expandable && (open || pending);
+  const compact = displayMode === "compact";
+  const finding = !!stepNavigation?.revealAll;
+  const stepCount = rows?.length ?? 0;
+  const total = stepCount + (terminal ? 1 : 0);
+  const selected =
+    view.pageKey === null ? -1 : (rows?.findIndex((row) => row.key === view.pageKey) ?? -1);
+  const page = selected >= 0 ? selected : total - 1;
+  const pageRow = rows?.[page];
+  const terminalPage = !!terminal && page === stepCount;
+  const pageSummary = compact && !finding ? pageRow?.summary : undefined;
+  const summary: ActivityStepSummary = (terminalPage
+    ? terminal
+    : typeof pageSummary === "function"
+      ? pageSummary()
+      : pageSummary) ?? {
+    label: title,
+    state,
+  };
+  const shown =
+    expandable &&
+    (finding ||
+      (compact
+        ? (view.open ?? pending)
+        : pending || (view.open ?? (displayMode === "expanded" || running))));
+  function toggle() {
+    landOnClose.current = shown && !finding && (compact || !pending);
+    setView((prior) => ({ ...prior, open: !shown }));
+  }
+  function goTo(index: number) {
+    // The newest page has no pinned id, so it continues to follow new arrivals.
+    const pageKey = index === total - 1 ? null : (rows?.[index]?.key ?? null);
+    setView((prior) => ({ ...prior, pageKey }));
+  }
+  // Cycle through simultaneous approvals, including the selected one when the group is shut.
+  const nextWaiting = rows?.findIndex((row, index) => row.needsAction && index > page) ?? -1;
+  const waiting =
+    nextWaiting >= 0
+      ? nextWaiting
+      : (rows?.findIndex((row, index) => row.needsAction && (index !== page || !shown)) ?? -1);
+  function renderRows() {
+    if (!stepNavigation) return rows ?? [];
+    return (rows ?? []).map((row) => {
+      const chosen = view.disclosures.get(row.key);
+      const expanded = chosen ?? displayMode === "expanded";
+      return {
+        ...row,
+        content: (
+          <DisclosureControlContext.Provider
+            value={{
+              open: finding || expanded,
+              // Expanded and a search open rows by policy; only the reader's own opening asks
+              // for what a row holds folded.
+              requested: !finding && chosen === true,
+              toggle: () => {
+                if (!finding)
+                  setView((prior) => ({
+                    ...prior,
+                    disclosures: new Map(prior.disclosures).set(row.key, !expanded),
+                  }));
+              },
+            }}
+          >
+            {row.content}
+          </DisclosureControlContext.Provider>
+        ),
+      };
+    });
+  }
   const showDuration = inFlight
     ? startMs !== undefined
     : durationMs !== undefined && durationMs > 0;
@@ -261,21 +388,50 @@ export function ActivityGroup({
   );
 
   return (
-    <div ref={rootRef} className={`ui-frame ${DISCLOSURE_CARD_CLASS}`}>
-      {expandable ? (
+    <div
+      ref={rootRef}
+      className={`ui-frame ${DISCLOSURE_CARD_CLASS}`}
+      data-step-view={stepNavigation ? (finding ? "find" : displayMode) : undefined}
+    >
+      {compact && stepNavigation && !finding && total > 0 ? (
+        <div
+          data-slot="head"
+          data-step-head=""
+          data-kind={summary.kind ?? kind}
+          data-state={activityState(summary.state)}
+          data-step-terminal={terminalPage || undefined}
+          // A host that floats a control over the transcript's right edge on a phone sets
+          // --activity-head-reserve, so the pager at the line's end stays reachable.
+          className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} flex min-w-0 items-center bg-surface-muted py-0.5 pe-[var(--activity-head-reserve,0.25rem)] sm:pe-1`}
+        >
+          <WallpaperBackdrop />
+          <CompactStepHeader
+            summary={summary}
+            navigation={stepNavigation}
+            page={page}
+            total={total}
+            totalStartMs={runTiming?.startMs ?? startMs}
+            totalDurationMs={runTiming?.durationMs ?? terminal?.durationMs ?? durationMs}
+            totalRunning={runTiming ? runTiming.durationMs === undefined : running && !terminal}
+            open={shown}
+            toggle={toggle}
+            goTo={goTo}
+            showAction={
+              waiting < 0
+                ? undefined
+                : () => {
+                    goTo(waiting);
+                    setView((prior) => ({ ...prior, open: true }));
+                  }
+            }
+          />
+        </div>
+      ) : expandable ? (
         <button
           type="button"
           data-group-header
           aria-expanded={shown}
-          onClick={() => {
-            userToggled.current = true;
-            // Collapsing while the head is stuck: the card's top sits above the fold, so bring the
-            // (now head-only) card back into view once the fold has finished; `nearest` makes
-            // every other case a no-op. A forced-open card keeps its body, so that click moves
-            // nothing.
-            landOnClose.current = open && !pending;
-            setOpen((v) => !v);
-          }}
+          onClick={toggle}
           className={`ui-activity ${DISCLOSURE_HEADER_STICKY_CLASS} ${DISCLOSURE_HEADER_ROW_CLASS}`}
           data-slot="head"
           data-kind={kind}
@@ -311,7 +467,11 @@ export function ActivityGroup({
         >
           {() => (
             <>
-              {rows !== undefined ? <ActivityRows rows={rows} /> : children}
+              {rows !== undefined ? (
+                <ActivityRows rows={renderRows()} revealNew={!compact} />
+              ) : (
+                children
+              )}
               {hasActions && (
                 // The head's detail truncates; here it wraps, so the action follows the whole of
                 // what it is about.
