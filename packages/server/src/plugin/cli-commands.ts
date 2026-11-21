@@ -23,6 +23,14 @@
  * see the Project and that the Session is the Project's, and the command reads both from
  * `ctx.caller`. A member command needs a Project.
  *
+ * Two opt-ins of the data half narrow that further, each for its own command only. With
+ * `requiresProjectListing` the command runs only where the caller's Project lists its plugin for
+ * this machine (403 `plugin_not_enabled`), checked before any code of it runs. With
+ * `tokenCaller: "session-driver"` a call made with the local API token — every Agent's
+ * credential — runs as the person whose run is in progress in the named Session rather than as
+ * the administrator the token stands for (cli-command-caller.ts). Every other command keeps
+ * v1.1's rule.
+ *
  * Output: a member command writes through the context only, and its runs are concurrent. An admin
  * command keeps v1.0's contract as well: for its run the process's stdout and stderr are
  * redirected into the response and `process.exitCode` read back, so those runs are serialized.
@@ -46,9 +54,12 @@ import type {
   CliCommandProgram,
   CliCommandSummary,
 } from "@prismshadow/penguin-core/cli";
-import { isValidId } from "@prismshadow/penguin-core";
-import type { Access } from "@prismshadow/penguin-library-project";
-import type { SessionIndex } from "@prismshadow/penguin-library-session";
+import type { DatabaseSync } from "node:sqlite";
+import { effectivePluginTable, isValidId } from "@prismshadow/penguin-core";
+import type { Users } from "@prismshadow/penguin-library-auth";
+import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
+import type { Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
+import type { SessionDrivers, SessionIndex } from "@prismshadow/penguin-library-session";
 import type {
   PluginCliCommandOutputFile,
   PluginCliCommandRunRequest,
@@ -56,9 +67,10 @@ import type {
   PluginCliCommandsResponse,
 } from "../api/types.js";
 import type { AppEnv } from "../auth/middleware.js";
-import type { Hmr } from "../hmr/capabilities.js";
+import type { Db, Hmr } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
 import { badRequest, readJson, requireString } from "../http/validate.js";
+import { sessionDriverCaller } from "./cli-command-caller.js";
 import { pluginHostFrom } from "./host.js";
 
 /** One plugin command the server holds: its package, its data half, its bound code half. */
@@ -69,6 +81,8 @@ export interface PluginCliCommand {
   /** Absent: `admin`, the default. */
   readonly access?: "admin" | "member";
   readonly files?: CliCommandFiles;
+  readonly requiresProjectListing?: boolean;
+  readonly tokenCaller?: "session-driver";
   readonly code: CliCommandCode;
 }
 
@@ -86,7 +100,9 @@ export abstract class PluginCliCommands {
   /**
    * Parses `args` against the named plugin's commands the caller may run; null when the plugin
    * has none. A non-administrator naming an admin command, or a package with no member command,
-   * is a 403 `admin_required`; a member command with no Project a 400 `project_required`.
+   * is a 403 `admin_required`; a member command with no Project a 400 `project_required`; a
+   * `requiresProjectListing` command where the caller's Project does not list its plugin for this
+   * machine a 403 `plugin_not_enabled`.
    */
   abstract run(
     request: Opaque<"PluginCliCommandRun", PluginCliCommandRun>,
@@ -107,6 +123,8 @@ interface Collected {
   readonly summary: CliCommandSummary;
   readonly access?: "admin" | "member";
   readonly files?: CliCommandFiles;
+  readonly requiresProjectListing?: boolean;
+  readonly tokenCaller?: "session-driver";
   readonly code: CliCommandCode;
 }
 
@@ -166,6 +184,8 @@ export function validPluginCommands(
       summary: c.summary,
       access: c.access === "member" ? "member" : "admin",
       ...(c.files !== undefined ? { files: c.files } : {}),
+      ...(c.requiresProjectListing === true ? { requiresProjectListing: true } : {}),
+      ...(c.tokenCaller === "session-driver" ? { tokenCaller: "session-driver" as const } : {}),
       code: c.code,
     });
   }
@@ -326,6 +346,7 @@ export async function runAsCaller(
   own: readonly PluginCliCommand[],
   run: PluginCliCommandRun,
   caller: CliCommandCaller,
+  listed: (projectId: string, pkg: string) => Promise<boolean> = async () => true,
 ): Promise<PluginCliCommandRunResponse> {
   const target = cliCommandNamedBy(own, run.args);
   let runnable = own;
@@ -340,6 +361,16 @@ export async function runAsCaller(
       400,
       "project_required",
       "This command runs in a Project: run it inside a Session, or set PENGUIN_PROJECT_ID.",
+    );
+  }
+  if (
+    target?.requiresProjectListing === true &&
+    (caller.projectId === undefined || !(await listed(caller.projectId, run.package)))
+  ) {
+    throw new HttpError(
+      403,
+      "plugin_not_enabled",
+      `${run.package} is not enabled for Project ${caller.projectId ?? "(none)"} on this server: install the plugin on one of the Project's Agents, or ask an administrator to.`,
     );
   }
   return runPluginCommands(
@@ -384,8 +415,10 @@ function parseInputFiles(value: unknown): Map<string, CliCommandFile> {
 
 export interface PluginCliCommandRouteDeps {
   commands: PluginCliCommands;
-  access: Pick<Access, "requireProjectAccess">;
+  access: Pick<Access, "requireProjectAccess" | "canAccess">;
   sessions: Pick<SessionIndex, "findById">;
+  users: Pick<Users, "findById">;
+  drivers: Pick<SessionDrivers, "runDriverOf">;
 }
 
 export function pluginCliCommandRoutes(deps: PluginCliCommandRouteDeps): Hono<AppEnv> {
@@ -414,12 +447,19 @@ export function pluginCliCommandRoutes(deps: PluginCliCommandRouteDeps): Hono<Ap
     }
     const language = (body as { language?: unknown }).language;
     if (language !== "en" && language !== "zh") throw badRequest("language must be 'en' or 'zh'.");
+    // The local API token (every Agent's credential) runs a `session-driver` command as the
+    // person whose run is in progress in the Session it names: the command decides, never the
+    // request. That person's access to the Project is what counts then, not the token's — so a
+    // member's own Project, which the administrator cannot open, still reaches its Agents.
+    const own = deps.commands.list().filter((cmd) => cmd.package === pkg);
+    const target = cliCommandNamedBy(own, args);
+    const asDriver = target?.tokenCaller === "session-driver" && c.var.sessionVia === "token";
     // The caller's context, checked here so a command can trust what it reads from ctx.caller.
     const caller: CliCommandCaller = { userId: user.userId, isAdmin: user.isAdmin };
     if (body.projectId !== undefined) {
       const projectId = requireString(body, "projectId", { minLen: 1, maxLen: 128 });
       if (!isValidId(projectId)) throw badRequest("projectId is not a Project id.");
-      deps.access.requireProjectAccess(user.userId, projectId);
+      if (!asDriver) deps.access.requireProjectAccess(user.userId, projectId);
       caller.projectId = projectId;
     }
     if (body.sessionId !== undefined) {
@@ -431,8 +471,9 @@ export function pluginCliCommandRoutes(deps: PluginCliCommandRouteDeps): Hono<Ap
       caller.sessionId = sessionId;
       caller.agentId = row.agentId;
     }
+    const runAs = asDriver ? sessionDriverCaller(caller, deps) : caller;
     const files = parseInputFiles(body.files);
-    const result = await deps.commands.run({ package: pkg, args, language, prog, files }, caller);
+    const result = await deps.commands.run({ package: pkg, args, language, prog, files }, runAs);
     if (result === null) {
       throw new HttpError(
         404,
@@ -466,10 +507,26 @@ export class PluginCliCommandsProvider {
   @Use() private readonly hmr!: Hmr;
   @Use() private readonly access!: Access;
   @Use() private readonly sessions!: SessionIndex;
+  @Use() private readonly users!: Users;
+  @Use() private readonly drivers!: SessionDrivers;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
+  @Use() private readonly db!: Db;
   @Provide() pluginCliCommands!: PluginCliCommands;
   @Bind("PluginCliCommandsProvider.routes") routes!: Hono<AppEnv>;
 
   setup({ contributions }: ClassCtx) {
+    const machineId = new MachinesRepo(this.db as unknown as DatabaseSync).ownId();
+    /** Whether the Project lists the package for this machine (its shared table or its own). */
+    const listed = async (projectId: string, pkg: string): Promise<boolean> => {
+      try {
+        return (
+          pkg in
+          effectivePluginTable(await this.projectConfig.getPluginTables(projectId), machineId)
+        );
+      } catch {
+        return false;
+      }
+    };
     // The kernel checked each entry against the slot's data type at boot, and resolved every
     // code half by its id.
     const collected: Collected[] = (contributions.commands ?? []).map((c) => ({
@@ -479,6 +536,10 @@ export class PluginCliCommandsProvider {
       summary: c.data.summary as unknown as CliCommandSummary,
       ...(c.data.access !== undefined ? { access: c.data.access as "admin" | "member" } : {}),
       ...(c.data.files !== undefined ? { files: c.data.files as unknown as CliCommandFiles } : {}),
+      ...(c.data.requiresProjectListing === true ? { requiresProjectListing: true } : {}),
+      ...(c.data.tokenCaller === "session-driver"
+        ? { tokenCaller: "session-driver" as const }
+        : {}),
       code: c.code as CliCommandCode,
     }));
     const list = (): PluginCliCommand[] => {
@@ -498,7 +559,7 @@ export class PluginCliCommandsProvider {
       list,
       run: async (request, caller) => {
         const own = list().filter((cmd) => cmd.package === request.package);
-        return own.length === 0 ? null : runAsCaller(own, request, caller);
+        return own.length === 0 ? null : runAsCaller(own, request, caller, listed);
       },
     };
     this.pluginCliCommands = pluginCliCommands;
@@ -506,6 +567,8 @@ export class PluginCliCommandsProvider {
       commands: pluginCliCommands,
       access: this.access,
       sessions: this.sessions,
+      users: this.users,
+      drivers: this.drivers,
     });
   }
 }

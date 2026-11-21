@@ -7,9 +7,15 @@
  * /api/admin/plugin-config/action { name, action } — runs one group's action (what a deployment
  * must DO on the machine, like creating the Windows sandbox's local accounts) and answers what
  * happened, together with the groups as they stand afterwards.
+ *
+ * Both writes take a person's sign-in (requireHuman, 403 `human_required`): the local API token
+ * every Agent's shell holds may read the settings but never change them or run their actions —
+ * otherwise an Agent could loosen its own sandbox or switch on a plugin's riskier powers. This
+ * narrows the token; it is not a boundary (see requireHuman).
  */
 import { Hono } from "hono";
 import type { PluginConfigActionResponse, PluginConfigResponse } from "../../api/types.js";
+import { requireHuman } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { PluginConfigError } from "../../plugin/config.js";
 import type { PluginConfigAdmin } from "../../plugin/config-page.js";
@@ -29,6 +35,7 @@ export function adminPluginConfigRoutes(store: PluginConfigAdmin): Hono<AppEnv> 
   app.get("/", (c) => c.json({ plugins: store.describe() } satisfies PluginConfigResponse));
 
   app.put("/", async (c) => {
+    requireHuman(c);
     const body = await readJson(c);
     const name = requireString(body, "name", { minLen: 1, maxLen: 214 });
     const values = (body as { values?: unknown }).values;
@@ -48,6 +55,7 @@ export function adminPluginConfigRoutes(store: PluginConfigAdmin): Hono<AppEnv> 
   });
 
   app.post("/action", async (c) => {
+    requireHuman(c);
     const body = await readJson(c);
     const name = requireString(body, "name", { minLen: 1, maxLen: 214 });
     const action = requireString(body, "action", { minLen: 1, maxLen: 214 });
