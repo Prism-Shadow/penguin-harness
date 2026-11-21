@@ -9,8 +9,11 @@
  *   Web App downloads the same file from the Session's file list.
  * - A tool nobody bound refuses without a request, and a member who is not the owner runs the
  *   commands too.
- * - Transcript editing turns on only with a text generation model bound, then edits a draft on
- *   that model.
+ * - Transcript editing runs on the Project's default chat model while nothing is bound to text
+ *   generation, once an owner turns it on, asking the model for no thinking.
+ * - "Test connection" sends a tool model the request its binding names: a recording to a speech
+ *   recognizer and a page address to a page reader, without the chat probe's knobs; a chat
+ *   model still gets the chat probe.
  * - Once the Session is deleted, the next boot removes its files.
  */
 import { existsSync } from "node:fs";
@@ -188,12 +191,11 @@ describe("the shipped multimodal tools plugin", () => {
     );
   });
 
-  it("edits a dictated draft on the text generation model once an owner turns editing on", async () => {
+  it("edits a dictated draft on the default chat model once an owner turns editing on, asking for no thinking", async () => {
     const settings = `${BASE}/multimodal-tools/voice-polish/settings`;
-    expect((await admin.patch(settings, { enabled: true })).status).toBe(400);
-    expect(
-      (await admin.patch(`${BASE}/models/tool-bindings`, { key: "t2t", model: CHAT })).status,
-    ).toBe(200);
+    // Nothing is bound to speech recognition, so editing waits for an owner to turn it on; the
+    // model it would run on is the default chat model, nothing being bound to text generation.
+    expect(await (await admin.get(settings)).json()).toMatchObject({ enabled: false, model: CHAT });
     const on = await admin.patch(settings, { enabled: true });
     expect(on.status, await on.clone().text()).toBe(200);
     expect(await on.json()).toMatchObject({ enabled: true, model: CHAT });
@@ -203,10 +205,42 @@ describe("the shipped multimodal tools plugin", () => {
     });
     expect(edited.status, await edited.clone().text()).toBe(200);
     expect(await edited.json()).toEqual({ text: "Edited: um so the plan", model: CHAT });
+    expect(mmsp.requests.at(-1)?.config).toMatchObject({ thinking_level: "none" });
     expect(mmsp.requests.at(-1)?.config.system_prompt).toEqual(
-      expect.stringContaining("speech transcript"),
+      expect.stringContaining("speech-recognition transcript"),
     );
     expect(usage().at(-1)?.purpose).toBe(`${PACKAGE}:polish`);
+  });
+
+  it("tests a tool model with a request it takes, and a chat model with the chat probe", async () => {
+    const test = async (modelId: string) => {
+      const res = await admin.post(`${BASE}/models/test`, { provider: "custom", modelId });
+      expect(res.status, await res.clone().text()).toBe(200);
+      expect(await res.json()).toMatchObject({ ok: true });
+      return mmsp.requests.at(-1)!;
+    };
+    // Drafts: the rows are not saved, and follow the group's connection.
+    const recognizer = await test("deepseek-asr");
+    expect(recognizer.model).toBe("deepseek-asr");
+    const [audio] = recognizer.messages[0]!.content_items as {
+      type: string;
+      mime_type?: string;
+      data?: string;
+    }[];
+    expect(audio).toMatchObject({ type: "inline_data.done", mime_type: "audio/wav" });
+    expect(Buffer.from(audio!.data!, "base64").toString("ascii", 0, 4)).toBe("RIFF");
+    expect(recognizer.config).not.toHaveProperty("max_tokens");
+    expect(recognizer.config).not.toHaveProperty("thinking_level");
+
+    const reader = await test("deepseek-fetch");
+    expect(reader.messages).toHaveLength(1);
+    const [page] = reader.messages[0]!.content_items;
+    expect(page?.type).toBe("text.done");
+    expect(new URL(page!.text!).protocol).toBe("https:");
+
+    const chat = await test(CHAT.modelId);
+    expect(chat.messages.at(-1)?.content_items.map((item) => item.type)).toEqual(["text.done"]);
+    expect(chat.config).toHaveProperty("max_tokens");
   });
 
   it("removes a deleted Session's files at the next boot", async () => {

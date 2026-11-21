@@ -13,7 +13,18 @@ The built-in **Multimodal tools** plugin (`@penguinharness/multimodal-tools`) le
 
 - The plugin declares seven tool-model bindings, one `[tools]` key per tool: `t2t`, `search`, `fetch`, `t2i`, `t2v`, `t2s` and `s2t`. An owner binds a configured model to each through `PATCH /api/projects/:projectId/models/tool-bindings`; a picker offers only the models a tool can use, judged by the client MMSP routes the model to and the modalities its registry lists.
 - Image understanding has no binding: it runs on the Project's vision model (`vision_model`), unchanged.
-- Transcript editing for dictation shares the `t2t` model. Whether it is on, and its prompt, are the plugin's per-Project settings, kept in the plugin's folder of the Project.
+- While nothing is bound to `t2t`, text generation (`penguin tools t2t` and transcript editing) runs on the Project's default chat model; `penguin tools list` marks it as such.
+- Transcript editing for dictation shares the text generation model. Whether it is on, and its prompt, are the plugin's per-Project settings, kept in the plugin's folder of the Project (`voice-polish.json`). Until an owner sets the switch, editing is on whenever speech recognition is bound and a text generation model exists; once set, the stored switch decides, so a switch turned off stays off.
+- The default editing prompt asks for a minimal, faithful cleanup only — punctuation, words the recognizer plainly misheard, filler words and stutters — and never to add, drop, reorder or reinterpret content or change the speaker's wording, language or register, keeping the original when unsure. It tells the model to answer at once without thinking, and each editing request asks for the least thinking the model accepts (MMSP's `none`).
+
+## Enabled in every Project
+
+- The plugin is preinstalled. Its card says `preinstall: true`, and a built-in plugin with server modules whose card says so runs for every Project without a `[plugins]` listing, so its bindings and routes are there as soon as the server ships it. This holds until preinstalled built-in modules are listed in Project config ([#1642](https://github.com/Prism-Shadow/penguin-harness/pull/1642)), which then takes over and lets an administrator stop the module.
+
+## Connection test
+
+- **Test connection** on a model a binding accepts sends that binding's own request instead of the chat prompt: half a second of a generated tone (16 kHz PCM WAV) to a speech recognizer, the project's site (`https://penguin.ooo/`) to a page reader, a one-result query to a search model, "OK." to a speech model, one 1K square image to an image model, and one 4-second 360p clip to a video model, which may take up to three minutes. Each is the cheapest request of its kind, sent without the chat prompt's thinking level, output cap or fast mode. A chat model is still tested with the chat prompt.
+- A binding names its request in its code half (`testRequest()` beside `accepts(model)`); the platform sends the request of the first binding in load order that names one and accepts the model.
 
 ## `penguin tools`
 

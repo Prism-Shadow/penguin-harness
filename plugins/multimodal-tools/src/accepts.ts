@@ -2,8 +2,10 @@
  * Which configured models can serve each binding: the code half of every
  * `ToolModelBindingsProvider.bindings` contribution. The host hands each model with the MMSP
  * client a request to it is routed to and what MMSP's registry says the model takes and returns
- * there; a model MMSP does not list is judged by its client alone.
+ * there; a model MMSP does not list is judged by its client alone. The code half also carries the
+ * binding's connection test request (test-requests.ts).
  */
+import { testRequestOf, type TestRequest } from "./test-requests.js";
 
 /** A configured model as a binding's `accepts` sees it (the host's ToolModelCandidate). */
 export interface Candidate {
@@ -18,6 +20,8 @@ export interface Candidate {
 
 export interface BindingCode {
   accepts(model: Candidate): boolean;
+  /** What the connection test sends a model this binding accepts; absent: the chat probe. */
+  testRequest?(): TestRequest;
 }
 
 /** MMSP's clients that do one media or web job and cannot hold a conversation. */
@@ -66,5 +70,9 @@ export const ACCEPTS: Record<string, (m: Candidate) => boolean> = {
 /** The code half of the binding `key`. */
 export function bindingCode(key: string): BindingCode {
   const rule = ACCEPTS[key];
-  return { accepts: (model) => rule?.(model) ?? false };
+  const testRequest = testRequestOf(key);
+  return {
+    accepts: (model) => rule?.(model) ?? false,
+    ...(testRequest !== undefined ? { testRequest } : {}),
+  };
 }

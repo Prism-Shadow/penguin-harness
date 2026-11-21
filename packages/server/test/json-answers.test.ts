@@ -1,6 +1,6 @@
 /**
  * This server's JSON answers as any caller receives them over HTTP — a browser, or a hub
- * reading a machine (http/json-validators.ts, http/json-compression.ts).
+ * reading a machine (@prismshadow/penguin-library-http/json-validators, @prismshadow/penguin-library-http/json-compression).
  *
  * - Given a JSON read, its answer carries a validator; a caller presenting it again is answered
  *   304 with no body, and one presenting another gets the whole answer.

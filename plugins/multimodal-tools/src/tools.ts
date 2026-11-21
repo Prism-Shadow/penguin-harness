@@ -18,14 +18,18 @@ import {
 } from "./operations.js";
 import { Polish } from "./polish.js";
 import { Runs, type Finished, type RunRecord } from "./runs.js";
+import { TEXT_BINDING, textModel } from "./text-model.js";
 import { ToolStore } from "./store.js";
 
 /** One operation as `penguin tools list` shows it: the model it runs on in this Project. */
 export interface OperationView {
   operation: Operation;
   title: { en: string; zh: string };
-  /** `binding`: a `[tools]` key; `vision`: the Project's vision model. */
-  via: "binding" | "vision";
+  /**
+   * `binding`: a `[tools]` key; `vision`: the Project's vision model; `default`: text generation
+   * with nothing bound, on the Project's default chat model (text-model.ts).
+   */
+  via: "binding" | "vision" | "default";
   model?: ModelRef;
 }
 
@@ -46,7 +50,7 @@ export class Tools {
   constructor(private readonly host: ToolsHost) {
     this.store = new ToolStore(host.root);
     this.runs = new Runs(host.requests, this.store);
-    this.polish = new Polish(host.requests, host.bindings, this.store);
+    this.polish = new Polish(host.requests, host.bindings, host.models, this.store);
   }
 
   /** The model an operation runs on in a Project; a 409 naming what to set when there is none. */
@@ -63,7 +67,10 @@ export class Tools {
       }
       return visionModel;
     }
-    const model = await this.host.bindings.get(projectId, key);
+    const model =
+      key === TEXT_BINDING
+        ? (await textModel(this.host.bindings, this.host.models, projectId))?.model
+        : await this.host.bindings.get(projectId, key);
     if (model === undefined) {
       const title =
         (await this.host.bindings.list(projectId)).find(
@@ -72,7 +79,9 @@ export class Tools {
       throw new ToolError(
         409,
         "model_unbound",
-        `No model is bound to ${title} in this Project: bind one in the model settings.`,
+        key === TEXT_BINDING
+          ? `No model is bound to ${title} and this Project has no default chat model: bind one, or set the default chat model, in the model settings.`
+          : `No model is bound to ${title} in this Project: bind one in the model settings.`,
       );
     }
     return model;
@@ -122,9 +131,17 @@ export class Tools {
         };
       }
       const binding = bindings.find((b) => b.key === key && b.package === PACKAGE);
+      const title = binding?.title ?? { en: key, zh: key };
+      if (
+        key === TEXT_BINDING &&
+        binding?.model === undefined &&
+        table.defaultModel !== undefined
+      ) {
+        return { operation, title, via: "default", model: table.defaultModel };
+      }
       return {
         operation,
-        title: binding?.title ?? { en: key, zh: key },
+        title,
         via: "binding",
         ...(binding?.model !== undefined ? { model: binding.model } : {}),
       };

@@ -18,10 +18,12 @@
  * lives in `session_meta`; a context's boundaries in the compaction pair and the file split)
  * and that readers cannot derive it. The PR description says why the existing records could
  * not carry it. The rule itself is stated in the architecture spec's message-format section.
- * Two stated exceptions, both asked for by the owner: `request_begin.thinking_level` (each
+ * Three stated exceptions, all asked for by the owner: `request_begin.thinking_level` (each
  * request's effective level — `session_meta` deliberately omits the level and it can change
- * mid-context, so no existing record carries it), and the `task_begin` / `task_end` pair
- * (where a Task starts and whether it reached its end — see TaskBeginPayload).
+ * mid-context, so no existing record carries it), the `task_begin` / `task_end` pair
+ * (where a Task starts and whether it reached its end — see TaskBeginPayload), and
+ * `session_update` (the model a completed switch left for the next context, which no record
+ * names until that context's file opens — see SessionUpdatePayload).
  *
  * These types are the Trace's vocabulary and AMSP's alike: every Trace line is an AMSP
  * record as it stands. They live in this package, which has no dependency and runs in browsers,
@@ -434,6 +436,35 @@ export interface TaskEndPayload {
 }
 
 /**
+ * A Session-level run setting changed: the record lists the new value of each setting that
+ * changed, under the name the setting already has elsewhere. One setting today, the model
+ * reference: `provider` + `model_id` (as in session_meta) name the model the Session's NEXT
+ * context opens on. Written by the Session when an in-session model switch has completed —
+ * after the next context opened, behind the `compaction_end` when there is one — and streamed
+ * once, when written. Never written for a switch that was refused, stopped, or could not open
+ * its context, nor by a Session that has no Trace file yet.
+ *
+ * Like the Task records it is appended to the current file and never opens a new one: it lands
+ * at the end of the file of the context being left. Until a `request_begin` follows it, that
+ * file's context is closed and the next one opens on the model it names (see
+ * context-state.ts); several in a row, the last wins. Readers draw the model marker from it
+ * and leave it out of Task timing. A patch, so a later setting would be one more optional
+ * field; a record carries at least one setting, and the two model fields come together.
+ *
+ * The third stated exception to the closed-vocabulary rule above (owner decision 2026-11-17):
+ * between a completed switch and the next file's `session_meta`, no record names the target,
+ * and the only alternative was to open that file at once. Traces written before it carry
+ * none; readers derive a switch from consecutive `session_meta` records for them.
+ */
+export interface SessionUpdatePayload {
+  type: "session_update";
+  /** The next context's model: the provider group. Present together with `model_id`. */
+  provider?: string;
+  /** The next context's model: the upstream model id. Present together with `provider`. */
+  model_id?: string;
+}
+
+/**
  * Request boundary event: the boundary of one LLM Request, produced **in pairs** by
  * `context_engine` and written to Trace. `request_end`
  * with `status` of `completed` means the turn has been committed by MMSP — this is the
@@ -671,6 +702,7 @@ export type EventPayload =
   | AbortPayload
   | TaskBeginPayload
   | TaskEndPayload
+  | SessionUpdatePayload
   | RequestBeginPayload
   | RequestEndPayload
   | TokenUsagePayload

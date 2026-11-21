@@ -12,6 +12,7 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 | 变量 | 说明 | 默认值 |
 | --- | --- | --- |
 | `PENGUIN_HOME` | 数据根目录 | `~/.penguin/data` |
+| `PENGUIN_MACHINE_HOME` | 工作台存放这台电脑上本 OS 用户的所有 PenguinHarness 共用内容的位置（machine 级） | `~/.penguin/machine` |
 | `PORT` | Web 服务监听端口 | `7364` |
 | `HOST` | Web 服务监听地址 | `127.0.0.1` |
 | `PENGUIN_WEB_DB` | 服务器 SQLite 数据库路径 | `<root>/web.db` |

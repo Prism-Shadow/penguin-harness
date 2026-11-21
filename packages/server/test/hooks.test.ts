@@ -76,9 +76,12 @@ describe("hooks api", () => {
     await t.cleanup();
   });
 
-  /** Creates a plain Agent with no plugins preinstalled. */
+  /** Creates a plain Agent with no plugins installed, not even the ones every new Agent gets. */
   async function createPlainAgent(agentId: string): Promise<void> {
-    const res = await owner.post(`/api/projects/${projectId}/agents`, { agentId });
+    const res = await owner.post(`/api/projects/${projectId}/agents`, {
+      agentId,
+      defaultPlugins: false,
+    });
     expect(res.status).toBe(201);
   }
 
