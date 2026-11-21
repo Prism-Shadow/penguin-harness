@@ -11,8 +11,9 @@
  *
  * This table is fixed by the build. The CLI bundle a push carries is the same code that
  * starts the server, so the CLI process and the server process see the same commands. A
- * plugin's commands are not here: they are contributions to the server's tree, and the CLI
- * lists and runs them through the server (plugin-cli-commands.ts).
+ * plugin's commands are not here: a plugin the build ships adds them through its CLI module
+ * (cli-modules.ts, its own slot and table), and a plugin installed on a server contributes
+ * them to the server's tree, which lists and runs them (plugin-cli-commands.ts).
  *
  * The host boots this module once per invocation, turns each key into its command node,
  * writes the summary as the node's description, then calls the bound register with that

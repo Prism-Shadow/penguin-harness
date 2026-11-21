@@ -55,6 +55,24 @@ export interface MeRouteDeps {
   serverSettingsRepo: Settings;
   /** The `users` table itself, for the one route that writes a column no service owns (PUT /api/me/profile). */
   usersRepo: Users;
+  /** The ui_prefs keys other modules own (`MeRoutes.ownedPrefs`): PUT /prefs refuses them. */
+  ownedPrefs?: readonly OwnedPref[];
+}
+
+/**
+ * A ui_prefs key a module owns: it is written only through that module's own route — which
+ * checks what the user may choose, or tells other windows — so a plain prefs write naming it is
+ * refused 400 `bad_request` with `message`, and nothing of that write is stored.
+ */
+export interface OwnedPref {
+  key: string;
+  /** The refusal's message: name the route that does write the key. */
+  message: string;
+}
+
+export interface MeRoutesSlots {
+  /** A ui_prefs key the contributing module owns. */
+  ownedPrefs: OwnedPref;
 }
 import { resolvePreviewTarget } from "../../services/preview-token.js";
 import { validateDraftShortcuts } from "../../services/draft-shortcuts.js";
@@ -283,13 +301,9 @@ export function meRoutes(deps: MeRouteDeps): Hono<AppEnv> {
     if (body.keybindings !== undefined) {
       body.keybindings = validateKeybindings(body.keybindings);
     }
-    // Which browser the user's agents drive has its own route, which checks what the user may
-    // choose, waits out an agent's action in flight, and tells their windows; a plain prefs
-    // write would skip all three.
-    if (body.browserBackend !== undefined) {
-      throw badRequest(
-        "browserBackend is chosen through PUT /api/builtin-browser/backend, not the prefs.",
-      );
+    // A key another module owns has its own route, which a plain prefs write would skip.
+    for (const owned of deps.ownedPrefs ?? []) {
+      if (Object.hasOwn(body, owned.key)) throw badRequest(owned.message);
     }
     // Names the image the background route stored; written anywhere else it would name an
     // image the account does not hold, and every browser would keep asking for it.
@@ -387,7 +401,11 @@ export class MeRoutes {
   @Use() private readonly settings!: Settings;
   @Use() private readonly users!: Users;
   @Bind("MeRoutes.routes") routes!: Hono<AppEnv>;
-  setup() {
+  setup({ contributions }: ClassCtx) {
+    const ownedPrefs = (contributions.ownedPrefs ?? []).map((c) => ({
+      key: c.data.key as string,
+      message: c.data.message as string,
+    }));
     this.routes = meRoutes({
       authService: this.auth,
       config: this.config,
@@ -397,6 +415,7 @@ export class MeRoutes {
       backgroundImages: this.backgroundImages,
       serverSettingsRepo: this.settings,
       usersRepo: this.users,
+      ownedPrefs,
     });
   }
 }
