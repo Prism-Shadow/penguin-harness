@@ -12,6 +12,8 @@
  * Only what the compiler reads at run time: its entry and the default library files a
  * program is checked against. The language service, the tsc CLI, the locale catalogues and
  * the type declarations of the API itself are most of the package and none of it is loaded.
+ * Beside it travel the Node declarations a workbench's server code is checked with
+ * ({@link nodeTypesPayload}), for the same reason.
  */
 import { createRequire } from "node:module";
 import fs from "node:fs";
@@ -31,4 +33,31 @@ export function typescriptPayload(serverDir) {
     rel,
     abs: path.join(dir, rel),
   }));
+}
+
+/**
+ * `[{ rel, abs }]` for the Node declarations a workbench's server code is checked with
+ * (packages/server/src/plugin/typescript.ts `nodeTypesRoot`): `@types/node` and the
+ * `undici-types` it references, resolved from `serverDir`, each `rel` relative to
+ * `node_modules/`. Its `package.json` files and declarations only.
+ */
+export function nodeTypesPayload(serverDir) {
+  const out = [];
+  const add = (name, from) => {
+    const dir = path.dirname(createRequire(from).resolve(`${name}/package.json`));
+    const walk = (at) => {
+      for (const entry of fs.readdirSync(path.join(dir, at), { withFileTypes: true })) {
+        const rel = at === "" ? entry.name : `${at}/${entry.name}`;
+        if (entry.isDirectory()) walk(rel);
+        else if (rel === "package.json" || rel.endsWith(".d.ts")) {
+          out.push({ rel: `${name}/${rel}`, abs: path.join(dir, rel) });
+        }
+      }
+    };
+    walk("");
+    return dir;
+  };
+  const node = add("@types/node", path.resolve(serverDir, "package.json"));
+  add("undici-types", path.join(node, "package.json"));
+  return out.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
 }

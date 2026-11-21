@@ -11,7 +11,7 @@ A stream is SSE. Every event is one of two kinds:
 - a **record**: no `event:` name, an `id:` (`<epoch>-<seq>`), and `data:` one record envelope, `{timestamp, type, payload, origin?}`, payloads snake_case as the Trace stores them. `origin` names the subagent Session chain a record came through; the main Session's records have none;
 - a **control frame**: `event: ping` (`{}`, at once and every 20 seconds), and `data: [DONE]`, a run stream's last line.
 
-A reader ignores an event name and a `payload.type` it does not know. A run's records go from `task_begin` to `task_end`. No frame names a run's Session: a new Session's first run opens with its `session_meta`, whose `session_id` names it, and a run that continues a Session is on the `session_id` its request sent. There is no error frame: a run the server could not finish leaves its last `task_begin` unclosed before `[DONE]`, and a body that ends without `[DONE]` is a broken connection.
+A reader ignores an event name and a `payload.type` it does not know. A `session_update` record says a Session-level setting changed — today the model the Session's next context opens on (`provider`, `model_id`), written when an in-session model switch completes; `pendingModel` and `closingCompaction` in `@prismshadow/amsp/records` read whether a Trace file's context is closed. A run's records go from `task_begin` to `task_end`. No frame names a run's Session: a new Session's first run opens with its `session_meta`, whose `session_id` names it, and a run that continues a Session is on the `session_id` its request sent. There is no error frame: a run the server could not finish leaves its last `task_begin` unclosed before `[DONE]`, and a body that ends without `[DONE]` is a broken connection.
 
 ## The routes
 

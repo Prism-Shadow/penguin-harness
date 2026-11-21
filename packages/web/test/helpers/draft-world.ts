@@ -10,7 +10,9 @@
  * `session_deleted`, which is how a row reaches, and leaves, every tab's list. A test can refuse
  * the next create or the next task with an error, hold creates or tasks until
  * {@link DraftWorld.release}, and have the next task answer with a self-healed id, as a
- * restarted server does for a Session with no Trace.
+ * restarted server does for a Session with no Trace. Given a plugin library, it answers the
+ * library and the Agent's plugin lists, and installs a plugin's hook package on the Agent as the
+ * plugin routes do (refusable too).
  *
  * The frame is the app's own shape at the route level: a memory data router at `/chat/new`
  * whose root holds the Project, machines and Session-list providers around the draft and a
@@ -24,6 +26,7 @@ import type {
   ChatDefaultsDto,
   MachinesResponse,
   ModelsResponse,
+  PluginItem,
   ServerEvent,
   SessionInfo,
   SessionsBatchRequest,
@@ -102,8 +105,10 @@ export interface DraftWorld {
   tasks(): FetchRequest[];
   /** Deletes (DELETE /api/sessions/:id), on any server, so far. */
   deletes(): FetchRequest[];
-  /** The next create, or the next task, answers this error instead. */
-  refuseNext(what: "create" | "task", refusal: Refusal): void;
+  /** Plugin installs on the Agent (POST …/agents/helper/plugins), on any server, so far. */
+  installs(): FetchRequest[];
+  /** The next create, task or plugin install answers this error instead. */
+  refuseNext(what: "create" | "task" | "install", refusal: Refusal): void;
   /** Creates, or tasks, wait until {@link release}. */
   hold(what: "create" | "task"): void;
   /** Lets every held request go on (and holds no more); the caller settles the page. */
@@ -113,13 +118,15 @@ export interface DraftWorld {
 }
 
 /**
- * `chatDefaults` is the Project's `[default_chat]` block the server answers with (none by default).
- * `extra` answers what this world does not (another surface's routes, on any server), or passes
- * with undefined.
+ * `chatDefaults` is the Project's `[default_chat]` block the server answers with (none by
+ * default). `plugins` is the plugin library and the hook packages the Agent starts with; without
+ * it the plugin routes are not there. `extra` answers what this world does not (another surface's
+ * routes, on any server), or passes with undefined.
  */
 export function draftWorld(
   options: {
     chatDefaults?: ChatDefaultsDto;
+    plugins?: { library: PluginItem[]; hooks: string[] };
     extra?: (request: FetchRequest) => Response | Promise<Response> | undefined;
   } = {},
 ): DraftWorld {
@@ -127,7 +134,19 @@ export function draftWorld(
   /** Every Session by id, with the server that holds it (null = this one). */
   const sessions = new Map<string, { info: SessionInfo; machine: string | null }>();
   let seq = 0;
-  const refusals: { create: Refusal | null; task: Refusal | null } = { create: null, task: null };
+  const refusals: Record<"create" | "task" | "install", Refusal | null> = {
+    create: null,
+    task: null,
+    install: null,
+  };
+  /** The hook packages the Agent has (the same on every server). */
+  const hooks = [...(options.plugins?.hooks ?? [])];
+  const pluginLists = () => ({
+    skills: [],
+    hooks: hooks.map((name) => ({ name, description: "", version: "", events: ["user_prompt"] })),
+    mcpServers: [],
+    workbenches: [],
+  });
   const holding = { create: false, task: false };
   let waiting: Array<() => void> = [];
   let heal = false;
@@ -158,7 +177,7 @@ export function draftWorld(
   const wait = async (what: "create" | "task") => {
     if (holding[what]) await new Promise<void>((resolve) => waiting.push(resolve));
   };
-  const refused = (what: "create" | "task") => {
+  const refused = (what: "create" | "task" | "install") => {
     const refusal = refusals[what];
     refusals[what] = null;
     return refusal === null ? null : apiError(refusal.status, refusal.code);
@@ -199,6 +218,18 @@ export function draftWorld(
       });
     }
     if (path === `${project}/agents/${AGENT_ID}/skills`) return json({ skills: [] });
+    if (options.plugins !== undefined && path === "/api/plugins") {
+      return json({ groups: [{ id: "other", title: "Other", plugins: options.plugins.library }] });
+    }
+    if (options.plugins !== undefined && path === `${project}/agents/${AGENT_ID}/plugins`) {
+      if (method !== "POST") return json(pluginLists());
+      const refusal = refused("install");
+      if (refusal !== null) return refusal;
+      for (const name of (request.body as { names: string[] }).names) {
+        if (!hooks.includes(name)) hooks.push(name);
+      }
+      return json(pluginLists(), 201);
+    }
     if (path === `${project}/sessions/batch` && method === "POST") {
       const { requests } = request.body as SessionsBatchRequest;
       const here = [...sessions.values()].filter((s) => s.machine === machine);
@@ -270,6 +301,7 @@ export function draftWorld(
     creates: ofKind((r) => r.method === "POST" && r.path.endsWith(`/agents/${AGENT_ID}/sessions`)),
     tasks: ofKind((r) => r.method === "POST" && /^\/api\/sessions\/[^/]+\/tasks$/.test(r.path)),
     deletes: ofKind((r) => r.method === "DELETE" && r.path.startsWith("/api/sessions/")),
+    installs: ofKind((r) => r.method === "POST" && r.path.endsWith(`/agents/${AGENT_ID}/plugins`)),
     refuseNext: (what, refusal) => {
       refusals[what] = refusal;
     },
