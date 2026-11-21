@@ -2691,6 +2691,15 @@ router
   );
 
 // ---------------------------------------------------------------------------------------------
+// Port forwarding: the demo holds no machine session, so it lists none and opens none.
+// ---------------------------------------------------------------------------------------------
+
+router
+  .get("/api/port-forwards", () => ({ forwards: [] }))
+  .post("/api/port-forwards", () => readOnly("forward a port"))
+  .delete("/api/port-forwards/:id", () => readOnly("remove a port forward"));
+
+// ---------------------------------------------------------------------------------------------
 // Version, self-update, desktop
 // ---------------------------------------------------------------------------------------------
 

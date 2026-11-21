@@ -62,6 +62,9 @@ import { machinesColumns } from "./steps/2026-09-23-machines-columns.js";
 import { modelTablesAdoption } from "./steps/2026-09-23-model-tables-adoption.js";
 import { browserExtensions } from "./steps/2026-10-04-browser-extensions.js";
 import { agentApi } from "./steps/2026-10-10-agent-api.js";
+import { portForwards } from "./steps/2026-10-11-port-forwards.js";
+import { portForwardsAdoption } from "./steps/2026-10-11-port-forwards-adoption.js";
+import { portForwardsDirection } from "./steps/2026-10-11-port-forwards-direction.js";
 import { messagingConversations } from "./steps/2026-10-12-messaging-conversations.js";
 import { sessionsKeptAt } from "./steps/2026-10-12-sessions-kept-at.js";
 import { agentApiConcurrency } from "./steps/2026-10-14-agent-api-concurrency.js";
@@ -101,6 +104,9 @@ export const MIGRATIONS: readonly Migration[] = [
   machinesAdoptedAt,
   modelTablesAdoption,
   userDrafts,
+  portForwards,
+  portForwardsAdoption,
+  portForwardsDirection,
 ];
 
 /**

@@ -398,6 +398,11 @@ export function MachinesPage() {
       onDelete={() => setPendingVerb({ kind: "delete", id: machine.id })}
       onRetry={() => retryReconnect(machine)}
       onStopRetry={() => stopReconnecting(machine)}
+      onPorts={
+        machine.local || machine.machineId === null
+          ? null
+          : () => navigate(`/machines/${encodeURIComponent(machine.machineId!)}/ports`)
+      }
     />
   );
 

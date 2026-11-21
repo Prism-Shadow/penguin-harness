@@ -141,6 +141,7 @@ export function open029(): DatabaseSync {
   // No machines tables (the machines migration adds them) and no profile columns.
   db.exec("DROP TABLE machine_project; DROP TABLE machines; DROP TABLE machine;");
   dropProfileColumns(db);
+  dropPortForwards(db);
   stampThrough(db, "2026-08-31-messaging-delivery-flags");
   return db;
 }
@@ -153,6 +154,7 @@ export function openPreProfile(): DatabaseSync {
   db.exec("DROP TABLE IF EXISTS model_promotions");
   dropProfileColumns(db);
   dropCompanyTables(db);
+  dropPortForwards(db);
   stampThrough(db, "2026-09-04-machines");
   return db;
 }
@@ -189,6 +191,7 @@ export function openOrgCaches(): DatabaseSync {
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(PRE_CHANNEL_CHAT_DDL);
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
+  dropPortForwards(db);
   stampThrough(db, "2026-09-16-company-mode-org-caches");
   return db;
 }
@@ -200,6 +203,7 @@ export function openChannels(): DatabaseSync {
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
+  dropPortForwards(db);
   stampThrough(db, "2026-09-16-company-mode-channels");
   return db;
 }
@@ -297,5 +301,17 @@ export function contents(db: DatabaseSync): string {
   ).map((t) => t.name);
   return JSON.stringify(
     tables.map((t) => [t, db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all()]),
+  );
+}
+
+/**
+ * Takes port-forwards' table off a database built from the current declaration. Every fixture
+ * that needs a root WITHOUT the table (the adoption and direction migrations' tests) starts
+ * from the declarative schema, which has it, and takes it off — the drop is exact (its two
+ * indexes and its table), so what remains describes the root the migration then meets.
+ */
+export function dropPortForwards(db: DatabaseSync): void {
+  db.exec(
+    "DROP INDEX IF EXISTS idx_port_forwards_local_in; DROP INDEX IF EXISTS idx_port_forwards_machine; DROP TABLE IF EXISTS port_forwards;",
   );
 }

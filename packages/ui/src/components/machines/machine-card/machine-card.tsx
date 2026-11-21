@@ -83,6 +83,11 @@ export interface MachineCardProps {
   remove: MachineCardAction;
   /** Sync config, on a connected machine on this server's build; null otherwise. */
   sync?: MachineCardAction | null;
+  /**
+   * The machine's port forwards: an icon button to its Ports page, on a machine this server
+   * reaches by its own id; null when there is no such page to open (this server's own entry).
+   */
+  ports?: MachineCardAction | null;
 }
 
 /** One stat: a glyph and a value. */
@@ -129,6 +134,7 @@ export function MachineCard({
   settingsLabel,
   remove,
   sync = null,
+  ports = null,
 }: MachineCardProps) {
   return (
     <Card
@@ -198,6 +204,18 @@ export function MachineCard({
             onClick={sync.onClick}
           >
             <GlyphIcon d={ICONS.upload} size={ICON_SIZE.iconButton} />
+          </Button>
+        )}
+        {ports !== null && (
+          <Button
+            size="icon"
+            data-action="ports"
+            title={ports.label}
+            aria-label={ports.label}
+            disabled={ports.disabled === true}
+            onClick={ports.onClick}
+          >
+            <GlyphIcon d={ICONS.arrowsOpposed} size={ICON_SIZE.iconButton} />
           </Button>
         )}
         <Button

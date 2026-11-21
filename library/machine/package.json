@@ -35,6 +35,10 @@
     "./machine": {
       "types": "./dist/machine.d.ts",
       "import": "./dist/machine.js"
+    },
+    "./repos/port-forwards": {
+      "types": "./dist/repos/port-forwards.d.ts",
+      "import": "./dist/repos/port-forwards.js"
     }
   },
   "scripts": {

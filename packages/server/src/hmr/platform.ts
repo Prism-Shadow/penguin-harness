@@ -310,11 +310,22 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
     "dispose",
   ],
   // A held ssh session to a machine, as the successor's transport claims it back
-  // (machines/transport/ssh-session.ts): commands, the SOCKS port, and its command stream. Every member the adopter calls, for the same reason as `terminal` — and the
-  // group's NAME carries a version, because a member that exists on an old object still runs
-  // the old object's code: a behavior change bumps the name, so the old group is disposed
-  // here (its sessions closed) and the machines are re-held fresh.
-  [SESSION_GROUP]: ["hold", "held", "retarget", "adopt", "run", "session", "close"],
+  // (machines/transport/ssh-session.ts): commands, the SOCKS port, the forwards it carries
+  // and its command stream. Every member the adopter calls, for the same reason as
+  // `terminal` — and the group's NAME carries a version, because a member that exists on an
+  // old object still runs the old object's code: a behavior change bumps the name, so the
+  // old group is disposed here (its sessions closed) and the machines are re-held fresh.
+  [SESSION_GROUP]: [
+    "hold",
+    "held",
+    "retarget",
+    "adopt",
+    "run",
+    "session",
+    "setForwards",
+    "forwardFacts",
+    "close",
+  ],
   agent: ["state", "shape", "stopped"],
 };
 
