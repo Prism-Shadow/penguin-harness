@@ -1,11 +1,14 @@
 /**
  * GET /api/contributions — the web slots' contributions, as data. What a pushed platform
  * or an installed plugin adds to the web app arrives here; the app merges it with its
- * own pages and renders what it has a renderer for.
+ * own pages and renders what it has a renderer for. It also names the server modules plugins
+ * run in this generation (`modules`), which is how the app knows to draw a plugin's web half.
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
-import { Interface, Bind, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { Hmr } from "../../hmr/capabilities.js";
+import { pluginHostFrom, runningPluginModules } from "../../plugin/host.js";
 import type {
   ContributionsResponse,
   RendererRef,
@@ -88,9 +91,11 @@ export interface WebShellSlots {
   },
 })
 export class WebModule {
+  @Use() private readonly hmr!: Hmr;
   @Provide() web!: WebShell;
   @Bind("web.contributions") contributionsRoutes!: Hono<AppEnv>;
   setup({ contributions }: ClassCtx) {
+    const hmr = this.hmr;
     // The kernel checked each contribution's data against its slot's type at boot.
     const collect = <T extends WebContribution>(slot: string): T[] =>
       (contributions[slot] ?? []).map(
@@ -105,7 +110,13 @@ export class WebModule {
       agentTabs: collect("agentTabs"),
       sessionTabs: collect("sessionTabs"),
     };
-    const web: WebShell = { contributions: () => response };
+    // The host is claimed per call: what the boot left out is recorded on it after this setup.
+    const web: WebShell = {
+      contributions: () => ({
+        ...response,
+        modules: runningPluginModules(pluginHostFrom(hmr.resources)),
+      }),
+    };
     this.web = web;
     this.contributionsRoutes = contributionsRoutes({ web });
   }

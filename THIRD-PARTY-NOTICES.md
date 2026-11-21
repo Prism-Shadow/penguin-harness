@@ -362,3 +362,7 @@ in `plugins/computer-use/src/pin.ts`.
 [LICENSE](LICENSE). The upstream repository carries no `NOTICE` file.
 
 Source: <https://github.com/vercel-labs/agent-desktop>
+
+## PptxGenJS and JSZip — the Bento Slides PowerPoint exporter
+
+The Slides workbench includes the browser distribution of PptxGenJS 4.0.1 from its npm package. It includes JSZip. Their license notices ship beside the bundle in `plugins/use-bento-slides/workbenches/slides/ui/vendor/`.

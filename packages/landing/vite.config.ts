@@ -9,8 +9,9 @@
  * when its post is opened (src/lib/blog.ts).
  *
  * The Plugins, Benchmarks and Leaderboards pages read their records at build time from the
- * repository's plugins/ and a fresh clone of penguin-harness-benchmark (`hubData`,
- * scripts/hub-plugin.ts); PENGUIN_BENCHMARK_REPO names a local checkout instead.
+ * repository's plugins/, a fresh clone of penguin-harness-benchmark, and the published plugin
+ * market document and plugin index (`hubData`, scripts/hub-plugin.ts); PENGUIN_BENCHMARK_REPO,
+ * PENGUIN_MARKET_DOC and PENGUIN_PLUGIN_INDEX_DOC name local copies instead.
  *
  * The home page frames the component gallery at `/gallery/`, which only the assembled site
  * serves. In dev, `/gallery/` is passed through to the gallery's own dev server, run under that

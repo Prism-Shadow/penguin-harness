@@ -41,6 +41,7 @@ export { ensureInstallId } from "../install-id.js";
 export { shellPortOf } from "../services/desktop-update-port.js";
 export { profileFromEnv } from "../machines/profile.js";
 export type { Sandbox, SandboxSlots } from "../sandbox/service.js";
+export type { AgentStateEngines, AgentStateEnginesSlots } from "../workbenches/engines.js";
 export type { Terminals } from "../terminal/manager.js";
 export type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 export type { AgentService } from "../services/agent-service.js";

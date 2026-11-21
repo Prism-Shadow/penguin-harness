@@ -24,8 +24,8 @@ import {
   MenuSeparator,
   Tooltip,
 } from "@prismshadow/penguin-ui";
-import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
+import { S } from "./strings";
+import { toneInk } from "@prismshadow/penguin-web-plugin";
 import { AddressBar } from "./address-bar";
 import type { BrowserActivity } from "./browser-state";
 

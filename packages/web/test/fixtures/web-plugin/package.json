@@ -1,0 +1,10 @@
+{
+  "name": "@penguinharness/web-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A plugin with a web half, for the Web App's tests of build-time plugin web modules.",
+  "exports": {
+    "./web": "./src/web/index.ts"
+  }
+}

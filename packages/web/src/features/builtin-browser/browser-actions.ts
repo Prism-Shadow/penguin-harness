@@ -4,14 +4,11 @@
  */
 import type { BrowserBackend, BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
 import { toastAttention, toastSuccess } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
-import { apiErrorText } from "../../lib/api-error";
-import { S } from "../../lib/strings";
-import { openPanel } from "../dock";
+import * as api from "./api";
+import { ApiError, apiErrorText, openPanel, toastApiError } from "@prismshadow/penguin-web-plugin";
+import { S } from "./strings";
 import { browserState, dispatchBrowser } from "./browser-store";
 import { NO_BROWSER_SCOPE, type BrowserGuest } from "./browser-state";
-import { toastApiError } from "../../lib/toast-api-error";
 
 const opening = new Map<Promise<unknown>, string>();
 

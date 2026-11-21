@@ -60,7 +60,7 @@ import {
 import { S } from "../../lib/strings";
 import { hasConfiguredKey, sameModelRef } from "../../lib/model-grouping";
 import { loadModelGroupOrder } from "../../lib/model-group-order";
-import { useProject } from "../../state/project";
+import { useProjectIfAny } from "../../state/project";
 import {
   entryRow,
   groupShortcutIndex,
@@ -91,6 +91,8 @@ function isMacPlatform(): boolean {
 
 export interface ModelPickerModalProps {
   open: boolean;
+  /** Workbenches may open outside the main ProjectProvider. */
+  projectId?: string;
   onClose: () => void;
   /** Names the dialog for assistive tech ("Choose model", "Switch model"). */
   title: string;
@@ -125,13 +127,14 @@ function ModelPickerBody({
   models,
   value,
   defaultModel,
+  projectId: explicitProjectId,
   onPick,
   onClose,
 }: Omit<ModelPickerModalProps, "open" | "title">) {
   // The models page's dragged group order, read once per open (the body remounts on each), so
   // an order changed there is picked up on the next open without a reload.
-  const { currentProject } = useProject();
-  const projectId = currentProject?.projectId ?? null;
+  const project = useProjectIfAny();
+  const projectId = explicitProjectId ?? project?.currentProject?.projectId ?? null;
   const groupOrder = useMemo(() => loadModelGroupOrder(projectId), [projectId]);
 
   const [query, setQuery] = useState("");
