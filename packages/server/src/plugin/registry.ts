@@ -7,7 +7,8 @@
  *
  * Two implementations, one contract:
  *   - the builtin registry serves the index embedded in this package
- *     (builtin-index.json — the four sandbox backends the workspace ships, each row carrying
+ *     (builtin-index.json — the server modules the workspace ships: the four sandbox backends
+ *     and agent-state-git, each row carrying
  *     the descriptions of the package's own card contribution and its icon, so its card renders
  *     on a server the package is not installed on);
  *   - the HTTP registry fetches an `index.json` URL and runs it through the same

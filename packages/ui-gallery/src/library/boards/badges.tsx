@@ -128,6 +128,20 @@ export function BadgesBoard() {
             />
             <Pill>{t.statusMarkReceding}</Pill>
           </div>
+          {/* A facts line with no room for the word (a cover card's): the glyph alone, its word
+              on hover and for assistive technology. */}
+          <div className="lib-row text-xs text-fg-muted">
+            {TONES.map((tone) => (
+              <StatusMark
+                key={tone}
+                glyph={STATUS_GLYPHS[tone]}
+                tone={tone}
+                label={t.statusMarkSamples[tone]}
+                hint={t.statusMarkHint(t.statusMarkSamples[tone])}
+                wordless
+              />
+            ))}
+          </div>
           <span className="lib-caption">{t.statusMarkPill}</span>
         </div>
       </BoardGroup>

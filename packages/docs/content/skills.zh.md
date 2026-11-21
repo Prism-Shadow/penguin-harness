@@ -168,7 +168,7 @@ zip 文件最大 14 MB，最多 200 个文件；解压后单个文件不超过 5
 
 服务端插件扩展的是服务器本身，而不是 Agent：它是一个由服务端模块组成的 npm 包，例如 Agent 运行沙箱后端。它的包有代码入口，`ifaces.json` 列出这些模块；同一个包也可以在模块之外携带插件库内容（见[插件文件格式](#插件文件格式)）。它安装到整个服务端、由所有 Project 共用：每个 Project 声明自己需要的服务端插件，服务器运行任一 Project 要求的全部插件，因此插件提供的能力对所有 Project 都可用。
 
-在**插件市场**页面上，服务端插件和其他插件一样有一张卡片。四个 Agent 运行沙箱后端在 **Agent 运行沙箱**分类下：用于 Linux 的 `sandbox-bwrap`、用于 macOS 的 `sandbox-seatbelt`、用于 Windows 的 `sandbox-wsl`，以及三者通用、只限制文件写入的 `sandbox-dsh`。服务端插件的详情显示它的包名（旁边有复制按钮）和包自带的 README。
+在**插件市场**页面上，服务端插件和其他插件一样有一张卡片。四个 Agent 运行沙箱后端在 **Agent 运行沙箱**分类下：用于 Linux 的 `sandbox-bwrap`、用于 macOS 的 `sandbox-seatbelt`、用于 Windows 的 `sandbox-wsl`，以及三者通用、只限制文件写入的 `sandbox-dsh`。没有分类的 `agent-state-git` 让原生 Git（GitHub Desktop 的构建，由 dugite 固定版本）记录工作台版本；它在一台主机上首次运行时下载这份 Git（24–65 MiB，校验后使用），无法下载或运行时由服务端内置的引擎照常记录。服务端插件的详情显示它的包名（旁边有复制按钮）和包自带的 README。
 
 安装服务端插件：
 
@@ -261,6 +261,11 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `trace-lookup` | 在会话的 Trace 文件里查回更早的内容：先搜出某个细节所在的行，再只读这几行；用于压缩摘要或模型切换指向 Agent 所接续的上一段上下文的 Trace 时（新初始化的 `default_agent` 预装；已有的 Agent 从插件库安装） |
 | | `agent-company` | [公司模式](/company-mode)的完整工具包，包含七个 Skill：`company-setup`（与用户一起创建组织：一次问一个问题、给出摘要供确认，然后执行 `penguin org create`；从不招聘，也不提交工单）、`company-employee`（每个工位 Session 和工单 Session 都要遵循的协议：触发块、工单看板、阻塞、重负载或不可逆的工作先向董事会请示、频道礼仪、预算）、`company-ceo`（把使命拆解为工单、招聘、划分 Workspace、审查、向董事会汇报）、`company-hr`（日历排班、招聘与离职、评估）、`company-finance`（预算、每日审计、告警与暂停）、`company-research`（科研组织的作者与审稿人：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环、只保留能提升指标的改动，每个结论都交给一个设法推翻它的审稿人）和 `company-mirror`（数字分身公司：每位真实同事对应一个分身，绑定到这位同事的机器人，只传话、不开工单）。不预装：组织在创建 CEO、招聘员工时会安装它；需要能创建组织的 Agent 则从插件库安装 |
 | | `penguin-support` | PenguinHarness 产品客服，包含 `penguin-support` Skill（依据官方文档和源码解答产品问题、排查故障）和客服[工作台](#workbench-插件)：问题列表、新建问题弹窗，以及支持追问的对话详情。不预装：默认 Project 的内置客服 Agent「PenguinHarness Support」自带该插件，其他 Agent 可从插件库安装 |
+| 实用工具 | `fridge-keeper` | 按位置、数量和保质期记录食材。 |
+| | `action-minutes` | 记录会议决定、跟进行动项并导出纪要。 |
+| 娱乐 | `tabletop-desk` | 管理出场顺序、掷骰并记录场景笔记。 |
+| | `party-charades` | 两队共用一块屏幕限时猜词。 |
+| | `daily-draw` | 每天抽一支签，在手记里写下感想。 |
 | 软件开发 | `software-development` | 端到端的软件开发，包含两个 Skill：`software-engineering`（在最小范围内调查、实现和验证）和 `web-design`（生成 Web UI 用的 Penguin 视觉语言） |
 | | `use-claude-code` | 通过 SSH 在远程主机上运行 Claude Code：持久 expect 会话、带 stdin 修复的无头 `-p` 模式、tmux 驱动的交互式 TUI，以及多轮连续性（不预装：需要时从插件库安装） |
 | AI 应用开发 | `agent-development` | PenguinHarness 上的 Agent 开发，包含六个 Skill：`agent-initialization`（根据需求搭建 Agent：它的 `AGENTS.md`、Skill 与钩子）、`penguin-sdk`（基于 SDK 构建 Agent/AI/RAG 应用，或经 Agent API 把程序接入 Agent；动手前先问用哪种方式）、`penguin-plugin`（搭建 Agent 在对话旁自己维护的 Workbench；构建、测试、分享与提交插件包——见[插件](/plugins#分享插件)）、`unified-llm-api`（通过 `@prismshadow/mmsp` 调用模型 API）、`penguin-config`（管理模型密钥、默认值和 Vault 机密）和 `penguin-orchestration`（在 shell 里驱动 Agent、Session、成本和定时任务） |
@@ -268,6 +273,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `model-development` | 在自己的硬件上做模型开发，包含三个 Skill：`llamafactory`（微调）、`ollama`（运行本地模型）和 `vllm`（在 OpenAI 兼容端点后面提供服务） |
 | | `skill-porting` | 把外部来源（插件市场、skills.sh 注册表、GitHub 仓库或本地文件夹）的 Skill 经审查和规范化后移植到 Agent；也可以用其中的 `plugin-porting` Skill 把整个 Codex 或 Claude Code 插件转成 PenguinHarness 插件包，安装到服务端；或用其中的 `agent-porting` Skill 把 Claude Code、Codex、DeepSeek Harness、Qoder、Qwen Code 或 WorkBuddy 的 Agent 迁移成新的 Agent（见[导入 Agent](/agents#导入-agent)） |
 | Agent 运行沙箱 | `sandbox-bwrap`、`sandbox-seatbelt`、`sandbox-wsl`、`sandbox-dsh` | 服务端插件，不属于插件库内容：封禁 Agent 执行的每条命令的后端，由管理员安装到服务端。见[服务端插件](#服务端插件)和[设置](/settings#沙盒) |
+| 其他 | `agent-state-git` | 服务端插件：以原生 Git 写入与读回工作台版本，代替服务端内置的引擎。见[服务端插件](#服务端插件) |
 
 ## 工作原理
 
@@ -490,7 +496,7 @@ Skill 分两步加载：先加载索引，正文按需读取。
 
 安装插件时，工作台复制到 Agent State 中的 `agent_state/workbenches/<id>/`，Agent 自己编写的工作台也位于这里。更新替换插件携带的源文件，保留记录状态与历史版本；如果名称已被其他插件或手工创建的工作台使用，则拒绝安装。卸载会删除工作台及其状态，此前的版本不再列出。
 
-工作台每次成功加载且源码有变化时，都会记录一个版本，即 `agent_state.git/` 中的一次提交。这是与 Agent 的 `agent_state/` 并列的裸 git 仓库，由服务端自行写入，不需要安装 git。只有工作台的源码入库；它的 `state.json`、服务端生成的 `.build/` 与 `.harness/`、`node_modules/`、Vault 以及 Agent State 的其余内容都不入库。恢复某个版本会把源码精确换成该版本并重新加载，`state.json` 保持不变。仓库位于 Agent State 之外，Agent State 的快照、导出与导入既不携带它，也不改动它。装有 git 时可以读取历史，例如 `git --git-dir=<agent>/agent_state.git log --oneline -- workbenches/<id>`；不要向仓库提交，也不要删除它。关闭、恢复、移除、导出或导入工作台，见[工作台](/agents#工作台)。
+工作台每次成功加载且源码有变化时，都会记录一个版本，即 `agent_state.git/` 中的一次提交。这是与 Agent 的 `agent_state/` 并列的裸 git 仓库，由服务端自行写入，不需要安装 git。只有工作台的源码入库；它的 `state.json`、服务端生成的 `.build/` 与 `.harness/`、`node_modules/`、Vault 以及 Agent State 的其余内容都不入库。恢复某个版本会把源码精确换成该版本并重新加载，`state.json` 保持不变。仓库位于 Agent State 之外，Agent State 的快照、导出与导入既不携带它，也不改动它。装有 git 时可以读取历史，例如 `git --git-dir=<agent>/agent_state.git log --oneline -- workbenches/<id>`；不要向仓库提交，也不要删除它。由成员的请求（恢复、重载、导入、开关、移除）记录的版本，作者是该成员，名字取其显示名；其余字段，以及 Agent 自己编辑后记录的版本，用服务端的 Git 身份，读法与 git 相同（`GIT_AUTHOR_*` 与 `GIT_COMMITTER_*`，然后是仓库与全局配置中的 `user.*`，然后是 `EMAIL`），都没有时为 `PenguinHarness <penguin@localhost>`。这些提交由服务端自行写入；装上[服务端插件](#服务端插件) `agent-state-git` 后改由原生 Git 写入与读回，工作台越大越快。关闭、恢复、移除、导出或导入工作台，见[工作台](/agents#工作台)。
 
 工作台有三个自己的文件夹，`host.dataPaths()` 建好后以 `{ dataDir, cacheDir, stateDir }` 返回。`dataDir` 即 `<agent>/app/data/<id>/`，与 Agent 的 `agent_state/` 并列，存放工作台与其 Agent 共同读写的文件：处理器用 Node 自带的 `node:fs` 读写（工作台的服务端代码可以直接使用带类型的 Node 模块），页面需要什么由它自己的路由提供；Agent 用自己的文件工具编辑处理器给出的路径。`cacheDir` 即 `<agent>/app/cache/<id>/`，存放可重新生成的文件。`stateDir` 存放 Unix socket、管道、锁等只在运行时有意义的文件，位于数据根目录 `run/` 下的短路径，因为 Unix socket 的路径至多 103 字节；`host.socketPath(name)` 给出要监听的路径，超长时报错并说明上限，在 Windows 上则给出命名管道（`\\.\pipe\…`）。在这些文件夹中写入不触发加载，也不记录版本。在 `workspace-write` 沙盒下，Agent 的命令可以写入这三个文件夹，因此处理器不跟随 Agent 可能留下的链接。导出 Agent 时勾选**含其数据**才带上 `dataDir`，另两个从不导出；移除工作台时三者一并删除。以上是缺省的 Agent 级。从插件安装的应用还可以用 `host.dataPaths("server")`，由本服务器上同一插件工作台的所有副本跨 Project 共用（如 TTS 模型的权重、本地语言模型），或 `host.dataPaths("machine")`，由这台电脑上本 OS 用户的所有 PenguinHarness 共用（如一个精简的本地服务）。这两级只由处理器写入，Agent 的沙盒命令可以读、不能写；它们从不导出，不随工作台删除，也不存放任何一个 Project 不应让另一个看到的内容。
 

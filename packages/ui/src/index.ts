@@ -367,6 +367,15 @@ export * from "./components/actions/glyph-action/glyph-action";
 export * from "./components/data/fact-row/fact-row";
 export * from "./components/navigation/sub-page-bar/sub-page-bar";
 
+// The showcase family, shared with the public sites (site.ts): the cover, the cover card and its
+// grid, the selected carousel and its turn-taking, and a product page's parts.
+export * from "./components/showcase/cover";
+export * from "./components/showcase/cover-card";
+export * from "./components/showcase/showcase-layout-toggle";
+export * from "./components/showcase/carousel-rotation";
+export * from "./components/showcase/showcase-carousel";
+export * from "./components/showcase/product-page";
+
 // Dates and times: the date, time, date-and-time and date-range fields, pickers after iOS's that
 // write the native inputs' formats (`YYYY-MM-DD`, `HH:mm`, `YYYY-MM-DDTHH:mm`).
 export { DateField } from "./components/forms/date-time/date-field";
