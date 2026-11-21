@@ -18,14 +18,20 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import {
+  ActivityGroup,
+  Button,
+  Segmented,
   AssistantText,
+  DisclosureRow,
+  StatusIcon,
+  ToolCallCard,
   DISCLOSURE_OUTPUT_CAP_CLASS,
   DISCLOSURE_OUTPUT_CLASS,
   STREAM_REVEALS,
   StreamText,
   usePrefersReducedMotion,
 } from "@prismshadow/penguin-ui";
-import type { StreamReveal } from "@prismshadow/penguin-ui";
+import type { ActivityDisplayMode, StreamReveal } from "@prismshadow/penguin-ui";
 import { streamScript } from "../../app/mock/stream-script";
 import { streamingAnswer } from "../../app/mock/transcripts";
 import { BoardGroup, ReplayButton } from "../../foundations/shared";
@@ -130,6 +136,10 @@ export function StreamingBoard() {
   const t = S.library.streaming;
   const answer = streamingAnswer(state.lang);
   const [run, setRun] = useState(0);
+  const [activityMode, setActivityMode] = useState<ActivityDisplayMode>("standard");
+  const [finished, setFinished] = useState(false);
+  const [started, setStarted] = useState(Date.now);
+  const activityState = finished ? "done" : "running";
   const stream = useScriptedStream(answer, run);
   const tokens = useStreamTokens();
 
@@ -149,6 +159,76 @@ export function StreamingBoard() {
             <AssistantText key={run} text={stream.text} streaming={stream.streaming} />
           </div>
         </div>
+      </BoardGroup>
+      <BoardGroup
+        title={t.activity}
+        action={
+          <Button
+            variant="secondary"
+            size="xs"
+            onClick={() => {
+              if (finished) setStarted(Date.now());
+              setFinished(!finished);
+            }}
+          >
+            {finished ? t.restart : t.finish}
+          </Button>
+        }
+      >
+        <Segmented
+          value={activityMode}
+          onChange={setActivityMode}
+          options={[
+            { value: "standard", label: t.standard },
+            { value: "expanded", label: t.expanded },
+            { value: "compact", label: t.compact },
+          ]}
+        />
+        <ActivityGroup
+          kind="tool"
+          displayMode={activityMode}
+          state={activityState}
+          title={finished ? t.finished : t.running}
+          runTiming={{ startMs: started, durationMs: finished ? 3000 : undefined }}
+          terminal={finished ? { label: t.finished, state: "done", durationMs: 3000 } : undefined}
+          rows={[
+            {
+              key: "plan",
+              summary: { label: t.thinking, state: "done" },
+              content: (
+                <DisclosureRow
+                  icon={<StatusIcon state="done" />}
+                  label={t.thinking}
+                  activity={{ kind: "thinking", state: "done" }}
+                >
+                  {t.plan}
+                </DisclosureRow>
+              ),
+            },
+            {
+              key: "read",
+              summary: {
+                kind: "tool",
+                label: "read_file",
+                description: t.read,
+                path: { short: "notes.md", full: "notes.md" },
+                state: activityState,
+              },
+              // The tool row reads as in every mode: its name, its description and its time.
+              content: (
+                <ToolCallCard
+                  state={activityState}
+                  name="read_file"
+                  subtitle={t.read}
+                  duration={finished ? { live: false, ms: 1200 } : { live: true, sinceMs: started }}
+                  argumentsText={'{"file_path": "notes.md"}'}
+                  output="# Weekly sync"
+                />
+              ),
+            },
+          ]}
+          stepNavigation={{ ...t.navigation, revealAll: false }}
+        />
       </BoardGroup>
       <BoardGroup title={t.output} aside={stream.streaming ? t.receiving : t.received}>
         <div className="lib-stream lib-stream-output">

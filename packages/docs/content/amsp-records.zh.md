@@ -49,7 +49,7 @@ interface SessionMetaPayload {
 }
 ```
 
-Workspace 在整个 Session 生命周期内不变，模型与系统提示词则按上下文固定：会话内切换模型时，新上下文开在另一个模型上，所用模型只记在这条记录里。
+Workspace 在整个 Session 生命周期内不变，模型与系统提示词则按上下文固定：会话内切换模型时，新上下文开在另一个模型上。每个上下文所用的模型写在它的这条记录里；在下一个上下文的 `session_meta` 写下之前，由切换的 `session_update` 写明（见 [event_msg](#eventmsg)）。
 
 `source` 表示这个 Session 是哪一类会话，同样在整个生命周期内不变：
 
@@ -195,7 +195,7 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
 
 ## event_msg
 
-十四种事件 payload 记录模型上下文之外的运行时事件：
+十五种事件 payload 记录模型上下文之外的运行时事件：
 
 | 事件 `type` | 记录的内容 |
 | --- | --- |
@@ -204,6 +204,7 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
 | `mcp_connect_end` | 总体连接状态与逐个 Server 的结果 |
 | `task_begin` | 一个 Task 的开始 |
 | `task_end` | 最近一个 `task_begin` 所开启的 Task 的结束 |
+| `session_update` | 发生变更的 Session 级设置的新取值：目前为 Session 下一个上下文所用的模型 |
 | `request_begin` | 一次模型请求的开始，带上该请求发出时的思考等级 |
 | `request_end` | 请求的终态，以及重试详情块（`error_code`、`error_message`、`attempt`、`retry_in_ms`） |
 | `approval_decision` | 一次审批决策，与对应的 `tool_call_id` 配对 |
@@ -214,9 +215,11 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
 | `subagent` | 父 Trace 中指向直接子 Session 的指针 |
 | `hook` | 一次钩子回答：钩子点、名称、决策，以及钩子自己的记录 |
 
-这套词汇是封闭的：只有当既有记录都不承载某个事实、读端也推导不出来时，才新增记录或字段。`task_begin` / `task_end` 是两处明示例外之一（另一处是 `request_begin.thinking_level`）：此前没有任何记录说明一个 Task 从哪里开始、是否走到终点，各读端只能从用户的 Prompt 推导。
+这套词汇是封闭的：只有当既有记录都不承载某个事实、读端也推导不出来时，才新增记录或字段。`task_begin` / `task_end` 是三处明示例外之一（另两处是 `request_begin.thinking_level` 与 `session_update`）：此前没有任何记录说明一个 Task 从哪里开始、是否走到终点，各读端只能从用户的 Prompt 推导。
 
 Session 在每个 Task 两侧各写一条：一次 Prompt 的执行，加上随后 stop 钩子留下的 `hook` 记录。stop 钩子以 `continue` 续出的 Task（例如 goal 的一轮）各成一对。手动压缩与模型切换不是 Task，不写这对记录。载荷只有类型：Task 如何结束，由这对记录之间的记录读出（`abort`、终局的 `request_end` 或 `compaction_end`）；由谁发起，由输入本身读出。抛出异常的 Task 不写 `task_end`，因此未闭合的 `task_begin` 表示该 Task 没有走到终点。这对记录在 Trace 中的位置见 [Trace 设计](/sessions-and-traces#trace-设计)。
+
+`session_update` 记录 Session 级运行设置的一次变更，载荷只列出变更后的取值，字段沿用该设置在别处的名字。目前只有一项设置，即模型：`provider` 与 `model_id` 同 `session_meta` 中的这对字段，指 Session **下一个**上下文所用的模型。会话内切换模型完成时，Session 经自己的 Trace 出口写下它，与写 Task 记录相同，从不触发开档：它写在被离开的上下文的文件末尾，有压缩时位于 `compaction_end` 之后，并在写入时推入输出流，恰好一次。在其后出现 `request_begin` 之前，该文件的上下文视为已关闭，下一个上下文开在它所记的模型上；多条时取最后一条。它不是消息，不开启 Task，也不参与 Task 用时的计算。它之所以是明示例外，是因为从切换完成到下一个文件的 `session_meta` 之间，没有别的记录记下目标模型。此前写下的 Trace 不带这条记录，读端由前后两条 `session_meta` 推导切换。
 
 凡是报告失败的 payload 都带同一对错误字段：`error_code` 是稳定、机器可读的原因码，渲染层据此做本地化；`error_message` 是失败的原始文本，原样展示。完整定义如下：
 
@@ -299,6 +302,14 @@ interface TaskBeginPayload {
 interface TaskEndPayload {
   type: "task_end";           // the Task returned, however it ended (the records inside
                               // the pair say how); absent when the Task threw
+}
+
+interface SessionUpdatePayload {
+  type: "session_update";     // a Session-level setting changed: its new value; written
+                              // and streamed by the Session, at the end of the file of the
+                              // context being left
+  provider?: string;          // the model the Session's next context opens on, as in
+  model_id?: string;          // session_meta; the two come together
 }
 
 interface RequestBeginPayload {
@@ -499,8 +510,9 @@ type ToolStatus = "completed" | "aborted" | "fatal";                // tool_call
 
 `@prismshadow/amsp` 导出全部记录类型，此外还有以下内容，`@prismshadow/penguin-core` 全部再导出：
 
-- `records/builders.ts` 里每种消息的构造函数：`userText`、`assistantText`、`toolCall`、`toolCallOutput`、`partialText`、`tokenUsage`、`withOrigin`、`emptyTokenCounts`、`addTokenCounts` 等；
-- 运行时判别函数：`isCompleteModelMessage`、`isPartialPayload`、`isModelMessage`、`isEventMessage`、`isSessionMeta`、`isTaskRecord`，以及 `lastNonTaskRecord`——它找出判定一个 Trace 文件是否被压缩收尾时要看的那条记录。
+- `records/builders.ts` 里每种消息的构造函数：`userText`、`assistantText`、`toolCall`、`toolCallOutput`、`partialText`、`tokenUsage`、`sessionUpdate`、`withOrigin`、`emptyTokenCounts`、`addTokenCounts` 等；
+- 运行时判别函数：`isCompleteModelMessage`、`isPartialPayload`、`isModelMessage`、`isEventMessage`、`isSessionMeta`、`isTaskRecord`；
+- 判定一个 Trace 文件的上下文是否已关闭的读取函数，位于 `records/context-state.ts`：`closingCompaction`（使其收尾的那条完成的 `compaction_end`）、`pendingModel`（一次已完成的切换留给下一个上下文的模型）与 `updatedModel`（一条 `session_update` 所记的模型）。
 
 ```ts
 import { userText, isCompleteModelMessage } from "@prismshadow/amsp";

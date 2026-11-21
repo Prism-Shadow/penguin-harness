@@ -31,6 +31,7 @@ export const en: Strings = {
     userSettings: "User settings",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
+    resizeSidebar: "Resize sidebar",
     back: "Back",
     forward: "Forward",
     collapseGroup: "Collapse",
@@ -1052,6 +1053,12 @@ export const en: Strings = {
     launcherInfo:
       "The round button floating on the conversation's right edge that fans out shortcuts to the workbench's panels and the terminal. Turning it off here removes it; the fan's \"Hide launcher\" entry does the same.",
     toolAliases: "Tool short names",
+    activityDisplayMode: "Reasoning display",
+    activityDisplayModeInfo:
+      "Standard lists each step. Select one to see its details. Expanded shows all thoughts and tool details. Compact follows the current step and lets you page through the others.",
+    activityDisplayStandard: "Standard",
+    activityDisplayExpanded: "Expanded",
+    activityDisplayCompact: "Compact",
     toolAliasesInfo:
       'Tool cards in a conversation name the built-in tools by a short alias: read_file reads as "read". Every other tool (MCP tools included) and the Trace viewer keep the tool\'s own name, and hovering a short name shows it.',
     notifications: "Task completion notifications",
@@ -1259,6 +1266,8 @@ export const en: Strings = {
     /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
     showInAppCenterHint:
       "When on, this workbench appears as an app on the App Center page: every member of the Project sees its icon there and opens it with one click, without starting a chat first. Turning it off only takes the shortcut off the App Center; the workbench, its data and its versions are untouched. Flipping the switch rewrites penguin.appCenter.show in the workbench's package.json and is recorded as a version.",
+    /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
+    showInSidebar: "Show in the sidebar",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "Open",
     /** The row's "⋯" button, which holds its other actions. */
@@ -1273,7 +1282,7 @@ export const en: Strings = {
     loading: "Loading…",
     emptyTitle: "The App Center is empty",
     empty:
-      "A workbench is a page an agent hosts beside the chat, and it can also open full page. Once an agent creates a workbench and its row in the agent's settings has the “Show in the App Center” switch on, it appears here.",
+      "A workbench is a page an agent hosts beside the chat, and it can also open full page. A workbench an agent creates appears here once it loads; to keep one off, turn off “Show in the App Center” on its row in the agent's settings.",
     /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
     broken: "Failed to load",
     /** A tile whose app is still being built: it opens once the build is done. */
@@ -3507,6 +3516,11 @@ export const en: Strings = {
     installedToast: (plugin: string, agent: string): string => `Installed ${plugin} to ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string =>
       `Uninstalled ${plugin} from ${agent}`,
+    blankAgent: "New blank agent",
+    blankAgentCreate: "Create and install",
+    blankAgentHint: "Opens Create agent with this plugin picked",
+    blankAgentCreatedToast: (agent: string): string =>
+      `Created ${agent} with this plugin installed`,
     updateOutdated: (n: number): string => `Update available: update ${n} agent install(s)`,
     updateConfirmTitle: (name: string): string => `Update ${name}`,
     updateConfirmWarning: (name: string): string =>
@@ -4578,6 +4592,8 @@ Scenarios:
       heavy: "Syncing full outputs",
       /** Under an unfolded output or thinking block while its whole text arrives. */
       body: "Loading the full text",
+      /** On an unfolded output or thinking block the reader did not open (an Expanded view, a search): fetch the whole. */
+      bodyLoad: "Load the full text",
       /** The fetch failed: a notice line like the earlier-messages one, the failure in parentheses. */
       bodyFailed: (reason: string) => `[Load failed]: could not load the full text (${reason})`,
       /** The Trace panel bringing a machine's Trace file over before it opens it. */
@@ -4815,6 +4831,16 @@ Scenarios:
     } as Record<string, string>,
     workRunning: "Running",
     workDone: "Done",
+    workFailed: "Run failed",
+    workStopped: "Stopped",
+    workRetryStep: (n: number) => `Retry #${n}`,
+    previousWorkStep: "Previous step",
+    nextWorkStep: "Next step",
+    latestWorkStep: "Latest step",
+    waitingWorkStep: "Review pending step",
+    workElapsed: "Total time",
+    workStepWords: ["Step ", ""],
+    workStepJump: "Go to step",
     workGroupSteps: (n: number) => `${n} ${n === 1 ? "step" : "steps"}`,
     approvalWaiting: "awaiting approval",
     copyCode: "Copy code",
@@ -4969,6 +4995,9 @@ Scenarios:
     goalRemove: "Exit goal mode",
     /** The remove label of a composer switch's chip (a plugin's mode, e.g. Plan mode). */
     switchOff: (title: string): string => `Turn off ${title}`,
+    /** The end of a "+" menu row for a composer mode the Agent lacks: picking it installs the plugin on the Agent, then turns the mode on. */
+    switchInstall: "Install",
+    switchInstalling: "Installing…",
     /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
     goalPluginMissing: "Goal mode needs the goal plugin: install it on this Agent to start a goal.",
     goalPluginInstall: "Install on this Agent",
@@ -5626,6 +5655,8 @@ Scenarios:
     inProgress: "in progress",
     systemPrompt: "System prompt",
     toolDefs: (n: number) => `Tool definitions (${n})`,
+    /** A `session_update` row's summary: what the record is, ahead of the model it names. */
+    sessionUpdate: "Session update",
     exportFile: "Export",
     /** The round navigator the toolbar's rounds button opens: its title, and how many rounds it lists. */
     roundNav: "Turn index",

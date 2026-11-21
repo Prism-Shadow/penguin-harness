@@ -19,6 +19,7 @@ import type {
 import type { AmspRecord } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { MessagingChannel } from "../../api/types.js";
+import type { ModuleActor } from "../../mechanisms/plugins.js";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
 import type { OrgStore } from "../../organization/store.js";
 import type { ErrorSink } from "../error-recorder.js";
@@ -121,6 +122,18 @@ export interface OrgAgentGateway {
   ): Promise<{ installed: string | null; library: string | null }>;
   /** Reinstalls one library plugin over the Agent's copy — the whole-plugin update the Agents page performs. */
   updatePlugin(projectId: string, agentId: string, plugin: string): Promise<void>;
+  /**
+   * Brings the server modules of an Agent's plugins along (PRFC-0031), as `actor` would — null is
+   * the system, which enables built-in modules only and never asks. It may re-assemble the App,
+   * so a flow calls it last, when nothing else it does needs this generation. Absent in tests
+   * that build the deps by hand.
+   */
+  ensureModules?(
+    projectId: string,
+    agentId: string,
+    plugins: readonly string[],
+    actor: ModuleActor | null,
+  ): Promise<void>;
 }
 
 /** Cost attribution by session (UsageService.costBySession / dailyCostForSessions). */
