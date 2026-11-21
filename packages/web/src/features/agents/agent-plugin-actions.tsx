@@ -11,6 +11,9 @@
  * - Uninstall, the owner's: always asks — every part by name, and a workbench's data and versions
  *   going with it. One request takes the whole plugin; a part the server could not remove is named
  *   with why, and nothing left to remove counts as done.
+ * - The server module of an installed plugin, any member's: at once — enabled, or asked of the
+ *   administrator, by the rule an install applies (`askModuleOnAgent`). An install says in its
+ *   toast what became of the module too.
  *
  * One write runs at a time: its button shows it running and the others take no press. Nothing
  * moves before the server answers — the row changes section when the lists read again land.
@@ -19,15 +22,19 @@
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
+import type { PluginModuleStatus } from "@prismshadow/penguin-server/api";
 import { ConfirmModal, ICONS, toastSuccess } from "@prismshadow/penguin-ui";
+import { toastInstall } from "../../lib/agent-plugin-install";
 import { S } from "../../lib/strings";
 import { localizedText } from "../../lib/skill-use";
 import {
   PluginUpdateParts,
   StdioInstallBody,
+  askModuleOnAgent,
   installNeedsConfirm,
   installOnAgent,
   stdioServers,
+  toastModuleAsked,
   toastWriteError,
   uninstallFromAgent,
   type AgentInstalls,
@@ -58,6 +65,8 @@ export interface AgentPluginActions {
   install: (entry: AgentPluginGroup) => void;
   update: (entry: AgentPluginGroup) => void;
   uninstall: (entry: AgentPluginGroup) => void;
+  /** Enables the plugin's server module, or asks the administrator to. */
+  askModule: (entry: AgentPluginGroup, mod: PluginModuleStatus) => void;
   /** The confirmations; render them once, beside the rows. */
   modals: ReactNode;
 }
@@ -93,12 +102,12 @@ export function useAgentPluginActions({
     const title = agentPluginTitle(entry, locale);
     setRunning(entry.name);
     try {
-      await installOnAgent(target, [entry.name]);
+      const done = await installOnAgent(target, [entry.name]);
       const said =
         verb === "update"
           ? S.agentPlugins.updatedToast(title, agentName)
           : S.plugins.installedToast(title, agentName);
-      toastSuccess(`${said}${S.agent.takesEffectSuffix}`);
+      toastInstall(`${said}${S.agent.takesEffectSuffix}`, entry.name, done.modules, machineLabel);
       setPending(null);
       await onChanged();
     } catch (e) {
@@ -134,6 +143,18 @@ export function useAgentPluginActions({
     }
   };
 
+  const runAsk = async (entry: AgentPluginGroup, mod: PluginModuleStatus) => {
+    setRunning(entry.name);
+    try {
+      toastModuleAsked(agentPluginTitle(entry, locale), await askModuleOnAgent(target, mod));
+      await onChanged();
+    } catch (e) {
+      toastWriteError(e, target.machineId);
+    } finally {
+      setRunning(null);
+    }
+  };
+
   const install = (entry: AgentPluginGroup) => {
     if (running !== null || entry.plugin === null) return;
     if (installNeedsConfirm(entry.plugin, installs)) setPending({ entry, verb: "install" });
@@ -146,6 +167,9 @@ export function useAgentPluginActions({
   const uninstall = (entry: AgentPluginGroup) => {
     if (running !== null) return;
     setPending({ entry, verb: "uninstall" });
+  };
+  const askModule = (entry: AgentPluginGroup, mod: PluginModuleStatus) => {
+    if (running === null) void runAsk(entry, mod);
   };
 
   const busy = running !== null;
@@ -229,5 +253,5 @@ export function useAgentPluginActions({
     </>
   );
 
-  return { running, install, update, uninstall, modals };
+  return { running, install, update, uninstall, askModule, modals };
 }

@@ -23,6 +23,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
+import { watchSocket } from "./api-socket.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
@@ -69,6 +70,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   expect(created.ok(), "create helper agent").toBeTruthy();
 
   // No Session exists yet: entering the site lands on the draft page (the brand heading marks the draft page).
+  const frames = await watchSocket(page);
   await page.goto(`${BASE}/chat`);
   await expect(page.getByRole("heading", { name: "PenguinHarness" })).toBeVisible();
 
@@ -92,11 +94,11 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await page.getByRole("button", { name: /claude-4-8-mini/ }).click();
 
   // Switch the approval mode to read-only from the permission button's Approval section (the
-  // button is icon-only; its title spells out the three values).
+  // button is icon-only; its tooltip spells out the three values).
   await page.getByRole("button", { name: /^权限/ }).click();
   await page.getByRole("menuitemradio", { name: /放行只读/ }).click();
   await expect(page.getByRole("button", { name: /^权限/ })).toHaveAttribute(
-    "title",
+    "data-tooltip",
     /审批: 放行只读/,
   );
 
@@ -147,11 +149,11 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
     .toBe(true);
   await expect(page.getByRole("button", { name: "选择模型" })).toContainText("claude-4-8-mini");
   await expect(page.getByRole("button", { name: /^权限/ })).toHaveAttribute(
-    "title",
+    "data-tooltip",
     /审批: 放行只读/,
   );
   // The thinking level is NOT draft state: it restores from the Agent config (written through above), not the cache.
-  await expect(page.getByRole("button", { name: "思考等级" })).toContainText("高 (high)");
+  await expect(thinkingBtn).toHaveText("高");
   // Send: the Session is only created now, and the selections land faithfully in its meta.
   await page.getByRole("button", { name: "发送" }).click();
   await page.waitForURL(/\/chat\/session-/);
@@ -172,7 +174,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   ).json();
   const meta = replay.messages.find((m) => m.type === "session_meta");
   expect(meta?.payload?.thinking_level).toBeUndefined();
-  await expect(page.locator('[data-tooltip="思考等级：高 (high)"]')).toBeVisible();
+  await expect(thinkingBtn).toHaveAttribute("data-tooltip", "思考等级：高");
 
   // On a successful send the cache clears — except the model selection, which carries over as
   // the next conversation's default (switch-becomes-default, like the thinking level above).
@@ -203,6 +205,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   const wsHeader = page
     .getByText(wsLabel, { exact: true })
     .locator("xpath=ancestor::div[contains(@class,'items-center')][1]");
+  await wsHeader.hover();
   await wsHeader.getByRole("button", { name: "在此工作区新建对话" }).click();
   await expect(page.getByRole("heading", { name: "PenguinHarness" })).toBeVisible();
   await expect(page.getByLabel("Workspace")).toContainText(wsLabel);
@@ -220,27 +223,30 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   // climb exactly one level — two un-sequenced loads from the same position used to resend the
   // same parent. The response is gated on an explicit release (not a timeout) so the second
   // press deterministically lands inside the loading window.
-  let releaseDirs;
-  const dirsGate = new Promise((resolve) => {
-    releaseDirs = resolve;
+  const dirsCall = (call) => new URL(call.path, BASE).pathname.endsWith("/dirs");
+  const start = frames.calls.length;
+  const firstDirs = frames.nextCall(dirsCall);
+  const gate = Promise.withResolvers();
+  frames.slowDown(async (call) => {
+    if (dirsCall(call)) await gate.promise;
+    return 0;
   });
-  let dirsRequests = 0;
-  const dirsRoute = (url) => url.pathname.endsWith("/dirs");
-  const gateDirs = async (route) => {
-    dirsRequests += 1;
-    await dirsGate;
-    await route.continue();
-  };
-  await page.route(dirsRoute, gateDirs);
   await finder.getByRole("listbox").focus();
-  await page.keyboard.press("ControlOrMeta+ArrowUp");
-  await page.keyboard.press("ControlOrMeta+ArrowUp");
-  releaseDirs();
+  try {
+    await page.keyboard.press("ControlOrMeta+ArrowUp");
+    await firstDirs;
+    await page.keyboard.press("ControlOrMeta+ArrowUp");
+  } finally {
+    gate.resolve();
+    frames.slowDown(null);
+  }
   // Climbing selects the folder it came from, so one level up shows the parent selected.
   const parentLabel = basename(dirname(namedWs));
   await expect(finder.getByRole("option", { name: parentLabel, selected: true })).toBeVisible();
-  expect(dirsRequests, "double parent while loading fires a single /dirs request").toBe(1);
-  await page.unroute(dirsRoute, gateDirs);
+  expect(
+    frames.calls.slice(start).filter(dirsCall),
+    "double parent issues one /dirs call",
+  ).toHaveLength(1);
   await finder.getByRole("button", { name: "选择", exact: true }).click();
   await expect(finder).toBeHidden();
   await expect(page.getByLabel("Workspace")).toContainText(parentLabel);
@@ -276,24 +282,18 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await expect.poll(async () => (await yOf(tempLabel)) < (await yOf(namedLabel))).toBe(true);
   const tempPin = tempHeader.getByRole("button", { name: "置顶分组" });
   await expect(tempPin).toHaveAttribute("aria-pressed", "true");
-  // The pinned pin doubles as the always-visible indicator. toBeVisible() ignores opacity,
-  // so assert computed opacity directly: pinned = 1 with the mouse elsewhere; an unpinned
-  // header's pin stays hover-gated at 0. Park the mouse first — after the reorder the named
-  // header sits where the temp header was clicked, which would otherwise hover-reveal it.
+  // The pinned action remains opaque with the mouse elsewhere; another group's pin
+  // is hidden until hover. After the reorder, the named header can be under the previous mouse position.
   await page.mouse.move(640, 500);
   await expect.poll(() => tempPin.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
-  await expect
-    .poll(() =>
-      wsHeader
-        .getByRole("button", { name: "置顶分组" })
-        .evaluate((el) => getComputedStyle(el).opacity),
-    )
-    .toBe("0");
+  await expect(wsHeader.getByRole("button", { name: "置顶分组" })).toBeHidden();
+  await wsHeader.hover();
+  await expect(wsHeader.getByRole("button", { name: "置顶分组" })).toBeVisible();
 
   // —— Switch the sidebar to agent mode via the header's list-settings menu (persists in
   // localStorage; the grouping radios moved from the inline toggle into this menu) ——
   await page.getByRole("button", { name: "列表选项" }).click();
-  await page.getByRole("menuitemradio", { name: "按 Agent 分组" }).click();
+  await page.getByRole("menuitemradio", { name: "按智能体分组" }).click();
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem("penguin.sidebarGroupMode")))
     .toBe("agent");
@@ -302,6 +302,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   const helperHeader = page.getByText("Helper Agent", { exact: true }).first();
   await expect(helperHeader).toBeVisible();
   const groupRow = helperHeader.locator("xpath=ancestor::div[contains(@class,'items-center')][1]");
+  await groupRow.hover();
   await groupRow.getByRole("button", { name: "新建对话" }).click();
 
   await expect(page.getByLabel("选择 Agent")).toContainText("Helper Agent");
@@ -384,7 +385,9 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   expect(third.session.agentId).toBe("agent_helper");
   // The source block collapses into the "new conversation on another model" banner, and the
   // typed body follows it.
-  await expect(page.getByText(/换模型新开的会话（原模型 claude-4-8-mini）/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /换模型新开的会话（原模型 claude-4-8-mini）/ }),
+  ).toBeVisible();
   await expect(page.getByText("Fork body typed after the pick")).toBeVisible();
 
   // —— /agent stages the handoff; Enter is what performs it ——
@@ -410,6 +413,8 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   expect(fourth.session.agentId).toBe("default_agent");
   // The [handoff_from] block collapses into the origin banner (the source agent is named
   // without an @ sigil, matching the composer chip), and the typed body follows it.
-  await expect(page.getByText(/由 .*agent_helper.* 的对话交接而来/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /由 .*agent_helper.* 的对话交接而来/ }),
+  ).toBeVisible();
   await expect(page.getByText("Handoff body typed after the pick")).toBeVisible();
 });

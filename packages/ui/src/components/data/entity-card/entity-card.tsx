@@ -4,11 +4,14 @@
  * tile, an avatar) centred against the title and a one-line description, an optional note under
  * them, a facts line (`MetaLine`), a tag line, and the card's controls beside the body.
  *
- * The body is one button that opens the thing's detail: the title's button is the keyboard's way
- * in. A click elsewhere on the card's surface goes to `onBodyClick`, where the caller decides what
- * counts as the body (the web app's `lib/card-open.ts`); a press on one of the card's controls is
- * that control's alone, since the controls sit outside the body's button. The card itself is no
- * control: a control wrapped around other controls hides them from assistive technology.
+ * The lead, the title and the description are one button that opens the thing's detail, the
+ * keyboard's way in. The note, facts and tag lines sit under it, outside the button: a note may
+ * carry controls of its own (a failed install's next steps), and a control inside a button is
+ * both invalid and pressed twice. A click elsewhere on the card's surface, those lines included,
+ * goes to `onBodyClick`, where the caller decides what counts as the body (the web app's
+ * `lib/card-open.ts`); a press on one of the card's controls is that control's alone. The card
+ * itself is no control: a control wrapped around other controls hides them from assistive
+ * technology.
  *
  * The text gives way and the lead and the controls never do: title and description truncate to one
  * line each, a cut-off line showing whole on hover (the description through the app's tooltip
@@ -49,7 +52,7 @@ export interface EntityCardProps extends Omit<HTMLAttributes<HTMLElement>, "titl
   titleHint?: string;
   /** One line under the title; a cut-off line shows whole on hover. */
   description: string;
-  /** A line between the description and the facts (why a thing only partly runs). */
+  /** A line between the description and the facts (why a thing only partly runs); may hold controls. */
   note?: ReactNode;
   /** The facts line's items, in order, as an array (`MetaLine` draws the dots). Omitted: no line. */
   meta?: ReactNode;
@@ -90,11 +93,15 @@ export function EntityCard({
       onClick={onBodyClick}
       className={`@container flex items-center ${ICON_GAP.card} ${className}`}
     >
-      <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
+      <div className="min-w-0 flex-1">
         {/* The lead centred across the title and the description, one line each. */}
-        <div className={`flex items-center ${ICON_GAP.card}`}>
+        <button
+          type="button"
+          onClick={onOpen}
+          className={`flex w-full min-w-0 items-center text-left ${ICON_GAP.card}`}
+        >
           <span className="flex shrink-0">{lead}</span>
-          <div className="min-w-0 flex-1">
+          <span className="block min-w-0 flex-1">
             {/* The display name in the UI font, as a title; the id behind it on hover, as code. */}
             <span
               className="block truncate text-sm font-semibold"
@@ -104,17 +111,17 @@ export function EntityCard({
             >
               {title}
             </span>
-            <p
-              className="mt-0.5 truncate text-xs leading-5 text-fg-muted"
+            <span
+              className="mt-0.5 block truncate text-xs leading-5 text-fg-muted"
               data-tooltip={description}
               data-tooltip-content="text"
             >
               {description}
-            </p>
-          </div>
-        </div>
+            </span>
+          </span>
+        </button>
         {note !== undefined && note !== null && (
-          <p className="mt-2 text-xs text-fg-muted">{note}</p>
+          <div className="mt-2 text-xs text-fg-muted">{note}</div>
         )}
         {meta !== undefined && (
           <div className="mt-2.5">
@@ -124,7 +131,7 @@ export function EntityCard({
         {tags !== undefined && tags.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">{tags}</div>
         )}
-      </button>
+      </div>
       {children}
       {actions !== undefined && actions.length > 0 && (
         <InCardActions.Provider value>

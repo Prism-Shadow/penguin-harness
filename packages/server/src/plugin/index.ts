@@ -41,6 +41,7 @@ export { ensureInstallId } from "../install-id.js";
 export { shellPortOf } from "../services/desktop-update-port.js";
 export { profileFromEnv } from "../machines/profile.js";
 export type { Sandbox, SandboxSlots } from "../sandbox/service.js";
+export type { AgentStateEngines, AgentStateEnginesSlots } from "../workbenches/engines.js";
 export type { Terminals } from "../terminal/manager.js";
 export type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 export type { AgentService } from "../services/agent-service.js";
@@ -53,7 +54,35 @@ export type {
   PluginConfigSlots,
   SettingsGroupDecl,
 } from "./config.js";
+export type {
+  PluginStatusCheck,
+  PluginStatusReport,
+  PluginStatusSummary,
+  PluginStatusVersion,
+  SettingsGroupStatus,
+} from "./config-page.js";
 export type { Http, HttpSlots } from "../http/app.js";
 export type { WebShell, WebShellSlots } from "../http/routes/contributions.js";
 export type { PluginLibrary, PluginLibrarySlots } from "./library-module.js";
-export type { PluginCliCommands, PluginCliCommandsSlots } from "./cli-commands.js";
+export type {
+  PluginCliCommand,
+  PluginCliCommandRun,
+  PluginCliCommands,
+  PluginCliCommandsSlots,
+} from "./cli-commands.js";
+export type {
+  DeclaredBinding,
+  ToolModelBindingCode,
+  ToolModelBindingData,
+  ToolModelBindings,
+  ToolModelBindingsSlots,
+  ToolModelBindingTitle,
+  ToolModelCandidate,
+  ToolModelTestRequest,
+  ToolModelTestSubject,
+} from "../services/tool-model-bindings.js";
+export type {
+  ProjectModelRequest,
+  ProjectModelRequests,
+  ProjectModelScope,
+} from "../services/project-model-requests.js";

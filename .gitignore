@@ -36,6 +36,9 @@ coverage/
 packages/web/test-results/
 # component gallery screenshots (scripts/shots.mjs); never committed
 packages/ui-gallery/shots/
+# the plugin market's pictures, copied from the community repository's assets/plugins/ to try
+# the gallery's market with them; they live in that repository, never here
+packages/ui-gallery/market-assets/
 packages/web/playwright-report/
 
 # blog images staged locally by the landing capture/render scripts, then uploaded to
@@ -63,6 +66,10 @@ dist-ifaces/
 plugins/sandbox-bwrap/vendor/
 # the builtin plugin prefix a workspace server loads from (scripts/stage-dev-plugins.mjs)
 packages/server/plugins/
+# Shared source copied into the standalone desk workbench packages by their builds
+plugins/*/workbenches/*/desk-kit.ts
+plugins/*/workbenches/*/ui/desk-kit.js
+plugins/*/workbenches/*/ui/desk-kit.css
 
 # plugin test instance data (penguin-testing-electron)
 .data/

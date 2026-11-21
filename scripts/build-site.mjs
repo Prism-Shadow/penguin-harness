@@ -26,14 +26,6 @@ import { execSync } from "node:child_process";
 import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  absoluteUrl,
-  blogRoutes,
-  docsRoutes,
-  galleryRoutes,
-  hubRoutes,
-  pageRoutes,
-} from "../packages/landing/scripts/site-routes.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const base = process.env.BASE_PATH ?? "/";
@@ -138,10 +130,16 @@ for (const [pkg, dir] of [
 // that has to name routes from every site. It is also the only way a crawler learns those
 // routes — the pages ship an empty <div id="root"> and build their navigation in JS, so
 // following links is not an option.
+// Imported dynamically after `core` and `plugins` have been built above, because `site-routes.mjs`
+// transitively imports `@prismshadow/penguin-core/plugin-index` from core's built `dist/`.
+const { absoluteUrl, blogRoutes, docsRoutes, galleryRoutes, hubRoutes, pageRoutes, rfcRoutes } =
+  await import("../packages/landing/scripts/site-routes.mjs");
+
 const routes = [
   { route: "/" },
   ...pageRoutes(),
   ...blogRoutes(),
+  ...rfcRoutes(),
   ...hubRoutes(),
   ...docsRoutes(),
   ...galleryRoutes(),

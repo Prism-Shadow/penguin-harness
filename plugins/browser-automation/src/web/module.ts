@@ -2,8 +2,9 @@
  * The agent browser's web half: everything it adds to the app arrives through slots — the layer
  * that hosts the built-in pages and follows the agents (browser-layer.tsx), its share of the user
  * event stream, its dock panel (a lead of the empty dock's picker), what it does when the
- * conversation on screen changes or a dock steps into full screen, its two Settings pages, the
- * handover of a draft's pages to the Session it becomes, and its row in a web link's menu. Its
+ * conversation on screen changes or a dock steps into full screen, its two Settings pages (parts of
+ * the browser-automation plugin's page), the handover of a draft's pages to the Session it
+ * becomes, and its row in a web link's menu. Its
  * copy is its own (strings.ts), and so is its stylesheet (browser.css).
  *
  * It is the browser-automation plugin's, and drawn only while the plugin's server module
@@ -41,21 +42,24 @@ import { invalidateSlotClips } from "./slot-registry";
     "DockModule.scopeListeners": [{ id: "builtin-browser.scope", order: 10 }],
     "DockModule.layoutListeners": [{ id: "builtin-browser.layout", order: 10 }],
     "SettingsModule.sections": [
+      // Both pages join the browser-automation plugin's page in Settings › Plugins.
       {
         id: "builtin-browser.settings",
         key: "browser",
-        group: "personal",
+        group: "plugin",
+        plugin: "@penguinharness/browser-automation",
         visibility: "everyone",
         icon: "appWindow",
-        order: 70,
+        order: 10,
       },
       {
         id: "builtin-browser.chrome-extension",
         key: "chromeExtension",
-        group: "server",
+        group: "plugin",
+        plugin: "@penguinharness/browser-automation",
         visibility: "admin",
         icon: "plug",
-        order: 140,
+        order: 20,
       },
     ],
     "ChatModule.sessionHandovers": [{ id: "builtin-browser.handover", order: 10 }],

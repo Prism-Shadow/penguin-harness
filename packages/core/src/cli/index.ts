@@ -32,12 +32,51 @@ export interface CliCommandSummary {
   zh: string;
 }
 
+/**
+ * The local files a plugin command exchanges with the terminal that runs it. Named by option,
+ * never by operand: the terminal holds no grammar of the command, and an option's value is the
+ * one argument it can find without one (`--image a.png` or `--image=a.png`, up to a bare `--`).
+ */
+export interface CliCommandFiles {
+  /** Options (`--image`) whose value is a local file the terminal reads and sends with the run. */
+  read?: string[];
+  /**
+   * The option (`--out`) whose value is the local directory the terminal saves the run's files
+   * into; absent, or not given on the command line, the current directory.
+   */
+  write?: string;
+}
+
 /** The data half of one command: the slot's data type. */
 export interface CliCommandData {
   /** `a.b.c` — the leading argv segments this command answers; lowercase `[a-z][a-z0-9-]*` segments joined by dots. */
   key: string;
   /** The one-line summary help prints, per language. */
   summary: CliCommandSummary;
+  /**
+   * Who may run it where a host checks (the server): `admin` (the default) or any member of the
+   * caller's Project — the run then needs one, and the command reads it from `ctx.caller`.
+   */
+  access?: "admin" | "member";
+  /** The local files it reads and returns, for the terminal to send and save (plugin commands). */
+  files?: CliCommandFiles;
+  /**
+   * Runs only for a caller whose Project lists the command's plugin for this machine (its
+   * `[plugins]` or `[plugins.<machineId>]` table): a plugin a Project never enabled — loaded
+   * because another Project did — is refused there with 403 `plugin_not_enabled`.
+   */
+  requiresProjectListing?: boolean;
+  /**
+   * Whom a call with the server's local API token runs as — the token every Agent's shell
+   * carries, which stands for the built-in administrator. Absent: that administrator, as for any
+   * other credential. `"session-driver"`: the signed-in person who started the run in progress in
+   * the named Session (for a subagent's Session, its root's run), judged by that person's access
+   * to the Project; a token call that names no Session is refused with 403 `session_required`,
+   * and one with no such run in progress, or whose person cannot open the Project, with 403
+   * `driver_unknown`. A person's own sign-in is never replaced. The Session is the caller's to
+   * name, so this narrows the token; it is not a boundary until per-Session credentials.
+   */
+  tokenCaller?: "session-driver";
 }
 
 /** One command as a collected contribution carries it: the data half plus the manifest's `id`. */
@@ -61,13 +100,55 @@ export interface CliCommandMessages {
   language: string;
 }
 
+/** Where a command writes: what the stream means is the host's (the process's own, or a reply's). */
+export interface CliCommandStream {
+  write(text: string): void;
+}
+
+/** Who runs a command, as the host checked it (the server: the signed-in user and the run's context). */
+export interface CliCommandCaller {
+  userId: string;
+  isAdmin: boolean;
+  /** The caller's Project: the caller can see it. */
+  projectId?: string;
+  /** The caller's Session (an Agent's shell): a Session of `projectId`. */
+  sessionId?: string;
+  /** That Session's Agent. */
+  agentId?: string;
+}
+
+/** A file a command exchanges with the terminal. */
+export interface CliCommandFile {
+  /** A plain file name, no directory: the terminal decides where it lands. */
+  name: string;
+  /** The bytes (opaque in the contract: a host object, not data the manifest check compares). */
+  data: Opaque<"Uint8Array", Uint8Array>;
+  mimeType?: string;
+}
+
 /**
  * What a command's code half may use from the host that runs it: the host's message
  * bundle, resolved once per invocation. The bundle's shape beyond `language` is the
  * host's to define — a contributor types it with the host whose slot it contributes to.
+ *
+ * Output goes through `stdout` / `stderr` and the exit code through `exit`: on the server, runs
+ * of member commands are concurrent, so a command that writes the process's own streams or sets
+ * `process.exitCode` there writes into the server's log instead (admin commands are still
+ * captured from the process, as before). The rest is the server's: the checked caller, the files
+ * the terminal sent, and the files handed back to it.
  */
 export interface CliCommandContext<M extends CliCommandMessages = CliCommandMessages> {
   messages: M;
+  stdout: CliCommandStream;
+  stderr: CliCommandStream;
+  /** This invocation's exit code (default 0; a thrown error is 1). Does not stop the command. */
+  exit(code: number): void;
+  /** Who runs it (the server host). */
+  caller?: CliCommandCaller;
+  /** A file the terminal sent for a `files.read` option, by the option's value as typed; undefined when none was. */
+  input?(value: string): CliCommandFile | undefined;
+  /** Hands a file to the terminal, which saves it under `files.write` (the server host). */
+  output?(file: CliCommandFile): void;
 }
 
 /**
@@ -89,4 +170,29 @@ export function cliCommandKeyFault(key: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * The command an argv names among `commands` (one package's): the one with the longest key whose
+ * every segment is one of the argv's leading words, up to its first option. Undefined when the
+ * words name none in full — help, a group, or unknown words. The server authorizes by it and the
+ * terminal finds the command's `files` by it, so both read the same answer.
+ */
+export function cliCommandNamedBy<C extends { key: string }>(
+  commands: readonly C[],
+  argv: readonly string[],
+): C | undefined {
+  const words: string[] = [];
+  for (const arg of argv) {
+    if (arg.startsWith("-")) break;
+    words.push(arg);
+  }
+  let found: C | undefined;
+  for (const cmd of commands) {
+    const segments = cmd.key.split(".");
+    if (segments.length > words.length) continue;
+    if (!segments.every((segment, i) => segment === words[i])) continue;
+    if (found === undefined || segments.length > found.key.split(".").length) found = cmd;
+  }
+  return found;
 }

@@ -63,7 +63,15 @@ export interface WorkbenchInfo {
 }
 
 /** How the Web App draws a contributed tab: a page of the workbench, or a renderer it carries. */
-export type WorkbenchTabRenderer = { iframe: { src: string } } | { builtin: string };
+export type WorkbenchTabRenderer =
+  | {
+      iframe: {
+        src: string;
+        /** Let a user gesture capture relative mouse movement in this tab. */
+        pointerLock?: boolean;
+      };
+    }
+  | { builtin: string };
 
 /**
  * One tab beside Chat, as the workbench contributed it (`WebModule.sessionTabs`). In a
@@ -131,6 +139,12 @@ export interface AppCenterShortcut {
    * is a monochrome SVG drawn in the text colour. Absent without a declared icon that reads clean.
    */
   icon?: IconRef;
+  /**
+   * The library plugin that installed the workbench, by its name (the folder's `.plugin.json`
+   * receipt); absent for one the Agent or a person wrote. The App Center links such a tile to its
+   * plugin in the market.
+   */
+  plugin?: string;
   /** The full page the tile opens: /app/<projectId>/<agentId>/<workbenchId>[/<tab>]. */
   path: string;
   /** The tab the shortcut opens when the declaration names one; else the workbench's first. */

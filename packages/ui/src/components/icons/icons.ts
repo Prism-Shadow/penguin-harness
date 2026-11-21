@@ -352,6 +352,8 @@ export const ICONS = {
    */
   cross: "M18 6 6 18M6 6l12 12",
   /** A play triangle; drawn with `GlyphIcon`'s `filled` mode where it should read solid. */
+  microphone: "M9 11V6a3 3 0 016 0v5a3 3 0 01-6 0zM5 10v1a7 7 0 0014 0v-1M12 18v3m-3 0h6",
+  speaker: "M3 9h4l5-4v14l-5-4H3zM16 9a4 4 0 010 6m2-9a8 8 0 010 12",
   play: "M7 4l13 8-13 8z",
   /** Two upright bars: paused. */
   pause: "M8 4v16M16 4v16",
@@ -464,6 +466,15 @@ export const ICONS = {
   /** Four rounded tiles of two heights (lucide layout-dashboard). */
   dashboard:
     "M4 3h5a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM15 3h5a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM15 12h5a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1zM4 16h5a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1z",
+  /** Four equal rounded squares, two by two (lucide layout-grid): things laid out as cards. */
+  layoutGrid:
+    "M4 3h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM15 3h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM4 14h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1zM15 14h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z",
+  /**
+   * The grid's left column of squares, each with two lines of text beside it (lucide
+   * layout-list): the same things laid out as rows.
+   */
+  layoutList:
+    "M4 3h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM4 14h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1zM14 4h7M14 9h7M14 15h7M14 20h7",
   /**
    * Four corner brackets opening outward. Brackets rather than an arrow, because what they
    * announce may open in several directions at once, and a mark with a direction in it would

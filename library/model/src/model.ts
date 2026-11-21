@@ -81,6 +81,11 @@ export interface ModelInfo {
   /** Upstream model id (the request id actually sent to MMSP); paired with `provider` forms the entry's unique key. */
   modelId: string;
   /**
+   * False for a model the catalog marks as a tool model (an image, speech or web model a plugin's
+   * tool binds): the chat model pickers do not offer it. Absent for every other model.
+   */
+  chatEligible?: boolean;
+  /**
    * Display name: explicit TOML field (user-edited) takes priority, then the built-in catalog;
    * falls back to unset (frontend shows modelId). The empty string is reported as such and
    * means the user cleared the name on a model the catalog does name — render it as modelId,
@@ -176,6 +181,8 @@ export interface ModelsResponse {
   defaultModel?: ModelRefDto;
   /** Vision model used as a proxy reader for read_file (describes images when the session model has vision=false). */
   visionModel?: ModelRefDto;
+  /** The `[tools]` bindings, by key: only those naming a configured model; absent when none does. */
+  toolModels?: Record<string, ModelRefDto>;
   /**
    * When the Project's model/credential config last changed (ISO; the config file's mtime,
    * so it survives restarts). The web's auth-dead gate compares it against the last auth
@@ -237,11 +244,45 @@ export interface ModelUpdateEntry {
 export interface ModelsUpdateRequest {
   /** Must be included in models (matched by paired reference). */
   defaultModel?: ModelRefDto;
-  /** Vision model used as a proxy reader for read_file: must be included in models and not annotated vision=false; omitted keeps the existing value. */
-  visionModel?: ModelRefDto;
+  /** Vision model used as a proxy reader for read_file: must be included in models and not annotated vision=false; omitted keeps the existing value, null clears it. */
+  visionModel?: ModelRefDto | null;
+  /**
+   * The whole `[tools]` table, by key: present, the table becomes exactly this (each model must be
+   * included in models); omitted, the stored bindings are kept, following a renamed model and
+   * dropped with a removed one. The machine sync sends it; the models page does not.
+   */
+  toolModels?: Record<string, ModelRefDto>;
   /** Group connection changes, merged per provider; a provider absent here keeps its table. */
   providers?: Record<string, ProviderConnectionUpdate>;
   models: ModelUpdateEntry[];
+}
+
+/**
+ * One tool-model binding as `GET …/models/tool-bindings` lists it: a plugin's declaration
+ * (`ToolModelBindingsProvider.bindings`) joined with the Project's `[tools]` entry.
+ */
+export interface ToolModelBindingView {
+  /** The `[tools]` key the plugin declared. */
+  key: string;
+  /** Its name, per language. */
+  title: { en: string; zh: string };
+  /** The plugin package that declares it. */
+  package: string;
+  /** The bound model; absent when none is, or the one bound is no longer configured. */
+  model?: ModelRefDto;
+  /** The configured models the binding accepts, in the models table's order. */
+  candidates: ModelRefDto[];
+}
+
+/** GET / PATCH `…/models/tool-bindings`: every declared binding, in load order. */
+export interface ToolModelBindingsResponse {
+  bindings: ToolModelBindingView[];
+}
+
+/** PATCH `…/models/tool-bindings`: bind one key, or with `model: null` unbind it. */
+export interface ToolModelBindingUpdate {
+  key: string;
+  model: ModelRefDto | null;
 }
 
 export interface ProviderConnectionUpdate {

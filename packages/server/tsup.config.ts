@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "tsup";
 import { FAR_SIDE_SCRIPTS } from "../../scripts/far-side-scripts.mjs";
+import { copyMarketCovers } from "../../scripts/market-covers.mjs";
 
 const jsOnly = process.env.PENGUIN_BUILD_JS_ONLY === "1";
 
@@ -110,5 +111,8 @@ export default defineConfig({
     for (const { name, from } of FAR_SIDE_SCRIPTS) {
       fs.copyFileSync(path.join(repo, from), path.join(here, "dist", name));
     }
+    // The built-in plugins' market covers, read beside the bundle the same way
+    // (scripts/market-covers.mjs); an empty or missing folder fails the build.
+    copyMarketCovers(repo, path.join(here, "dist"));
   },
 });

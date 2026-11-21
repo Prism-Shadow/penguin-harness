@@ -1,0 +1,40 @@
+{
+  "name": "@penguinharness/reading-desk",
+  "version": "0.2.19",
+  "description": "Read local books, keep your place and collect annotated passages in Reading Desk.",
+  "keywords": [
+    "penguin-plugin",
+    "workbench",
+    "reading"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/reading-desk"
+  },
+  "files": [
+    "icon.svg",
+    "workbenches",
+    "skills",
+    "ifaces.json",
+    "LICENSE",
+    "README.md",
+    "README.zh.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "vitest": "^4.1.12"
+  }
+}
