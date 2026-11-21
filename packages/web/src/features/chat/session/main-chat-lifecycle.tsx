@@ -34,8 +34,7 @@ import { advancePanelTaskScope, createPanelTaskScope } from "../panel-task-scope
 import { exitedProcessIds, reportableProcessFailure } from "../process-list";
 import { PROCESS_POLL_MS, STAT_PATHS_PER_REQUEST } from "./main-chat-helpers";
 import { orgKey } from "../../../lib/company-nav";
-import { deskRows } from "../../company/org-sessions";
-import { openTempSession } from "../../company/temp-session";
+import { deskRows, openTempSession } from "../../company";
 import type { useMainChatTranscript } from "./main-chat-transcript";
 
 /** Exact consecutive main ChatPage statements 76..128; called once, in original order. */
