@@ -57,6 +57,7 @@ dialog form {
   background: var(--wb-canvas);
 }
 .brand img {
+  flex: none;
   width: 2.15rem;
 }
 .brand h1 {
@@ -144,6 +145,11 @@ footer button {
   overflow: auto;
   overscroll-behavior: contain;
 }
+/* The page takes focus when a book opens, for the arrow keys; a ring around the whole text is
+   noise, not a cue. */
+.reading #page:focus-visible {
+  outline: none;
+}
 article {
   max-width: 48rem;
   margin: 0 auto;
@@ -181,6 +187,11 @@ mark {
 }
 footer {
   border-top: 1px solid var(--wb-border);
+  /* A full-page workbench carries the app's exit control at the lower right. */
+  padding-inline-end: 3.4rem;
+}
+#highlight[aria-disabled="true"] {
+  opacity: 0.6;
 }
 footer progress {
   flex: 1;
@@ -265,9 +276,18 @@ dialog form h2 {
   }
   .brand {
     gap: 0.35rem;
+    min-width: 0;
   }
   .brand h1 {
     font-size: 1.1rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* The title gives way at phone width; the buttons keep their labels on one line. */
+  .top .tools button {
+    flex: none;
+    white-space: nowrap;
   }
   .brand img {
     width: 1.7rem;
@@ -292,9 +312,6 @@ dialog form h2 {
   }
   body[data-shelf="open"] aside {
     display: block;
-  }
-  footer {
-    padding-inline-end: 3.4rem;
   }
   .chapter-location {
     flex-wrap: wrap;

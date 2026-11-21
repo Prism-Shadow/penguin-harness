@@ -63,9 +63,42 @@ const messages = {
   network: t("Couldn’t reach the workbench. Try again.", "未能连接工作台，请重试。"),
 };
 
+/**
+ * Asks before something that cannot be undone, in a dialog of the page's own. The app frames the
+ * page in a sandbox without `allow-modals`, where `confirm()` is never shown and answers false.
+ */
+export function confirmAction(message, confirmLabel) {
+  return new Promise((resolve) => {
+    const dialog = node("dialog", { className: "confirm" });
+    const done = (yes) => {
+      dialog.close();
+      dialog.remove();
+      resolve(yes);
+    };
+    const cancel = button(t("Cancel", "取消"), () => done(false));
+    dialog.append(
+      node("p", {}, message),
+      node(
+        "div",
+        { className: "wb-row confirm-actions" },
+        cancel,
+        button(confirmLabel, () => done(true), true),
+      ),
+    );
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      done(false);
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+    cancel.focus();
+  });
+}
+
 export function desk(title, render) {
   document.title = title;
-  const screen = node("div", { className: "content" });
+  // Until the first answer the page shows that it is loading, not an empty screen.
+  const screen = node("div", { className: "content" }, hint(t("Loading…", "正在加载…")));
   const status = node("div", { role: "status", className: "status" });
   const dateLabel = node("time", {}, displayDay(today()));
   document.body.replaceChildren(
@@ -112,6 +145,7 @@ export function desk(title, render) {
       }
       status.replaceChildren();
     } catch {
+      if (!saved) screen.replaceChildren();
       status.replaceChildren(messages.network, button(t("Retry", "重试"), load));
     } finally {
       loading = false;

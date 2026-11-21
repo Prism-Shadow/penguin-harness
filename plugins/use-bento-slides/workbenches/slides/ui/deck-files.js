@@ -9,10 +9,10 @@ const labels =
         modified: "上次修改",
         name: "文稿名称",
         sample: "打开示例",
-        open: "打开 Bento HTML / JSON…",
+        open: "导入演示文稿…",
         rename: "重命名",
         remove: "删除",
-        importHint: "打开 Bento JSON 或 HTML 演示文稿",
+        importHint: "选择 Bento 演示文稿文件（.html 或 .json）",
         ai: "使用 AI 创建",
         empty: "还没有保存的演示文稿。",
         loading: "正在读取演示文稿…",
@@ -32,10 +32,10 @@ const labels =
         modified: "Last modified",
         name: "Presentation name",
         sample: "Open sample",
-        open: "Open Bento HTML / JSON…",
+        open: "Import a presentation…",
         rename: "Rename",
         remove: "Delete",
-        importHint: "Open a Bento JSON or HTML presentation",
+        importHint: "Choose a Bento presentation file (.html or .json)",
         ai: "Create with AI",
         empty: "No saved presentations yet.",
         loading: "Loading presentations…",
@@ -68,7 +68,7 @@ export function deckFiles({ onOpen, onRename, onDelete, onRefresh, onBack }) {
   $("show-decks").setAttribute("aria-label", labels.returnHome);
   $("show-decks").title = labels.returnHome;
   $("show-decks").onclick = onBack;
-  $("start-import").title = labels.importHint;
+  $("start-import").title = $("import").title = labels.importHint;
   $("retry-decks").onclick = onRefresh;
   const dialog = $("deck-action");
   let target = null;

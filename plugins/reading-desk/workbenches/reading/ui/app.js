@@ -1,6 +1,6 @@
 import { all, get, remove, save } from "./library.js";
 import { showBookshelf, readingPercent } from "./bookshelf.js";
-import { importBook } from "./import.js";
+import { importBook, newId } from "./import.js";
 import { S, sample, zh } from "./strings.js";
 const $ = (id) => document.getElementById(id);
 const el = (tag, text, props = {}) =>
@@ -164,7 +164,7 @@ function draw(loc) {
   clearTimeout(positionTimer);
   restoring = true;
   selected = null;
-  $("highlight").disabled = true;
+  $("highlight").setAttribute("aria-disabled", "true");
   drawChapters();
   drawText();
   closeShelf();
@@ -274,7 +274,7 @@ document.addEventListener("selectionchange", () => {
       prefix.setEnd(range.startContainer, range.startOffset);
       const start = prefix.toString().length;
       selected = {
-        id: crypto.randomUUID(),
+        id: newId(),
         book: book.id,
         chapter,
         para: Number(paragraph.dataset.para),
@@ -285,7 +285,8 @@ document.addEventListener("selectionchange", () => {
       };
     }
   }
-  $("highlight").disabled = !selected;
+  // Dimmed, not disabled: a click with nothing selected says how to highlight.
+  $("highlight").setAttribute("aria-disabled", String(!selected));
 });
 $("highlight").onpointerdown = (e) => e.preventDefault();
 $("highlight").onclick = async () => {

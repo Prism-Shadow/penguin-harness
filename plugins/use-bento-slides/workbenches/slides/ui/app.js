@@ -892,10 +892,14 @@ async function ask(text, firstModel = null) {
   }
   if (open !== o) return;
   if (!res.ok) {
-    const detail = res.json
-      ? ((await res.json().catch(() => null))?.error ?? res.status)
-      : res.status;
-    talk.messages = [...talk.messages, { role: "error", text: S.askFailed(String(detail)) }];
+    // The server's error is a string, or `{ code, message }` when the request never reached the
+    // handler (a Project with no default model is the common one).
+    const error = res.json ? (await res.json().catch(() => null))?.error : null;
+    const text =
+      error?.code === "no_default_model"
+        ? S.noModel
+        : S.askFailed(String(error?.message ?? error ?? res.status));
+    talk.messages = [...talk.messages, { role: "error", text }];
     talk.status = "idle";
     renderTalk();
     return;
@@ -960,6 +964,13 @@ $("rail-toggle").onclick = () => {
 $("ask").onsubmit = (event) => {
   event.preventDefault();
   if ($("send").disabled) return;
+  // No default model and none chosen for this deck: the request could only fail. Keep the text
+  // and open the model picker instead.
+  if (models.needsModel(open)) {
+    notice(S.noModel);
+    models.pick(false);
+    return;
+  }
   const text = $("prompt").value;
   $("prompt").value = "";
   void ask(text);
@@ -1022,6 +1033,11 @@ $("start-ask").onsubmit = async (event) => {
   if (text === "") return;
   const title = text.split(/[\n。.!?！？]/)[0].slice(0, 40) || S.untitled;
   const chosen = models.startChoice();
+  if (!chosen && models.needsModel(null)) {
+    notice(S.noModel);
+    models.pick(true);
+    return;
+  }
   await createDeck(title, blankDeck(title));
   await ask(text, chosen);
   models.clearStartChoice();
