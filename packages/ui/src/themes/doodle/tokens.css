@@ -237,6 +237,9 @@
   --ui-enter-shift: 10px;
   --ui-enter-scale: 0.92;
   --ui-enter-blur: 0px;
+  --ui-page-duration: 220ms;
+  --ui-page-enter: ui-page-hop;
+  --ui-page-exit: ui-page-fade-out;
   --ui-reveal-blur: 0px;
 
   /* ---- Icons: bold 1.7 round marker stroke + rich 0.32 duotone fill in 9 kawaii sticker hues ---- */

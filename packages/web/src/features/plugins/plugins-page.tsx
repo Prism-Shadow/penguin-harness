@@ -54,7 +54,6 @@ import {
   Skeleton,
   SkeletonCard,
   TodoNotice,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -84,6 +83,7 @@ import { usePluginRepair } from "./plugin-repair";
 import { samePluginTarget, viewedMachine } from "./viewed-machine";
 import { SettingsDialog } from "../settings";
 import { pickDefaultAgent } from "../ai-create";
+import { pluginPickItems } from "../agents";
 import { toneInk } from "../../lib/tone";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
 import type { InstallTarget } from "./plugin-card";
@@ -97,11 +97,14 @@ import {
 } from "./plugin-reads";
 import {
   agentInstalls,
+  readNewAgentInstalls,
   rereadInstalls,
   useAgentInstalls,
   type InstallsTarget,
 } from "./agent-installs";
 import { installOnAgent, toastWriteError, uninstallFromAgent } from "./agent-plugin-writes";
+import { toastInstall } from "../../lib/agent-plugin-install";
+import { useOnPluginModulesChanged, usePluginModuleRequests } from "../../lib/plugin-modules";
 import { StdioDisclosure, StdioInstallBody } from "./plugin-mcp";
 import { ImportPluginModal } from "./plugin-import-modal";
 import {
@@ -134,7 +137,8 @@ import {
   type LibraryUsage,
   type PluginStatus,
 } from "./plugin-status";
-import { toastApiError } from "../../lib/toast-api-error";
+import { toastApiError, toastFailure } from "../../lib/toast-api-error";
+import { toldFailure } from "../../lib/failure";
 
 const NO_INSTALLS: AgentInstalls = { skills: new Map(), hooks: new Map(), mcp: new Map() };
 
@@ -203,7 +207,12 @@ export function PluginsPage() {
     EVERY_VISIT,
   );
   const groups = library.value?.groups ?? null;
-  const error = groups === null ? library.error : null;
+  const error = groups === null ? library.failure : null;
+  /** The same library as the Create agent dialog's picker rows, for 「新建空白 Agent」. */
+  const pickLibrary = useMemo(
+    () => (groups === null ? null : pluginPickItems(groups.flatMap((g) => g.plugins))),
+    [groups],
+  );
   // A return to the same Project is a new visit, not permission for an old reply: a write that
   // answers in a later visit is not taken (its Project's list is read again on entry anyway).
   const projectVisit = useRef({ projectId, generation: 0 });
@@ -251,6 +260,8 @@ export function PluginsPage() {
   const isAdmin = user?.isAdmin === true;
   const isOwner = currentProject?.role === "owner";
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** The administrator's requests to run plugins' server modules on this server, for the notice. */
+  const moduleRequests = usePluginModuleRequests(null, isAdmin);
   /** The import dialog (admin) is open. */
   const [importOpen, setImportOpen] = useState(false);
   /** Free text over names, descriptions and keywords. */
@@ -341,6 +352,11 @@ export function PluginsPage() {
   const remote = useRead(installedPlugins, remoteKey, () =>
     api.getInstalledPlugins(projectId!, viewMachine!),
   );
+  // A module that changed on this server, or on a machine, changes what that server's rows say:
+  // its answer is read again (at once while it is in view).
+  useOnPluginModulesChanged((server) => {
+    if (projectId !== null) installedPlugins.invalidate(installedPluginsKey(projectId, server));
+  });
   const view: PluginView | undefined =
     viewMachine === undefined
       ? undefined
@@ -365,8 +381,8 @@ export function PluginsPage() {
 
   /**
    * A server module change waiting for its confirmation (null = none). Applying one
-   * re-assembles the App, which stops the agent runs in flight in EVERY Project — the same
-   * cost a hot push has — so it is said before it is done.
+   * re-assembles the App for every Project on the server; the runs in flight carry on, but it
+   * changes what the whole server runs, so it is said before it is done.
    */
   const [pendingApply, setPendingApply] = useState<{
     specifier: string;
@@ -423,7 +439,13 @@ export function PluginsPage() {
       installedPlugins.accept(installedPluginsKey(target.projectId, null), next);
       const row = next.plugins.find((p) => p.specifier === specifier);
       if (install && row?.error !== undefined) {
-        toastError(S.plugins.deploymentFailedToast(specifier, row.error));
+        toastFailure(
+          toldFailure(S.plugins.deploymentFailedToast(specifier, row.error), {
+            what: "a plugin failed to load after it was installed",
+            facts: [["Plugin", specifier]],
+            detail: row.error,
+          }),
+        );
       } else {
         toastSuccess(install ? S.plugins.deploymentInstalledToast(specifier) : S.common.saved);
       }
@@ -528,6 +550,21 @@ export function PluginsPage() {
     agentsLoading ||
     targets.some((t) => t.machine === null && unknown.has(t.key) && !unreadable.has(t.key));
 
+  /**
+   * A blank Agent was created from a card's manage-installs dialog, on this server: its installs
+   * are read first and the Agent list after, so its row joins the list already reading Installed.
+   * A failed list read is said; the Agent exists either way.
+   */
+  const blankAgentCreated = async (agent: AgentSummary) => {
+    if (!projectId) return;
+    await readNewAgentInstalls(projectId, null, agent.agentId);
+    try {
+      await reloadAgents();
+    } catch (e) {
+      toastApiError(e);
+    }
+  };
+
   /** Reads one target's lists again (Set up wrote its vault): what its MCP servers wait for moved. */
   const refreshAgentMcp = (key: string) => {
     if (!projectId) return;
@@ -608,9 +645,12 @@ export function PluginsPage() {
           : `${agentDisplayName(target.agent)} ${S.chat.machineTag(target.machine.label)}`;
     try {
       if (on) {
-        await installOnAgent(where, [plugin.name]);
-        toastSuccess(
+        const done = await installOnAgent(where, [plugin.name]);
+        toastInstall(
           `${S.plugins.installedToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
+          plugin.name,
+          done.modules,
+          target?.machine?.label,
         );
       } else {
         // One request: the server takes every part apart. "Nothing of it is here" is the state
@@ -620,7 +660,16 @@ export function PluginsPage() {
         const failed = outcome.kind === "removed" ? outcome.failed : [];
         if (failed.length > 0) {
           const named = failed.map((f) => S.agentPlugins.failedPart(f.name, f.error));
-          toastError(S.agentPlugins.uninstallPartly(plugin.name, named.join(S.todo.listSeparator)));
+          toastFailure(
+            toldFailure(
+              S.agentPlugins.uninstallPartly(plugin.name, named.join(S.todo.listSeparator)),
+              {
+                what: "a plugin's parts could not all be removed",
+                facts: [["Plugin", plugin.name]],
+                detail: failed.map((f) => `${f.name}: ${f.error}`).join("\n"),
+              },
+            ),
+          );
         } else {
           toastSuccess(
             `${S.plugins.uninstalledToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
@@ -693,9 +742,10 @@ export function PluginsPage() {
     const outcome = bulkOutcome(labels, results);
     if (outcome.allOk) toastSuccess(S.todo.bulkDone(outcome.ok));
     else {
-      toastError(
-        `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(firstFailure(results))}`,
-      );
+      const failure = firstFailure(results);
+      toastApiError(failure, {
+        text: `${S.todo.bulkPartial(outcome.ok, failedList(outcome.failed, S.todo.listSeparator))} — ${apiErrorText(failure)}`,
+      });
     }
     // Runs after a partial failure too — some Agent moved, and the gate has to see it. Guarded,
     // because `reloadAgents` rejects on a failed list read and the busy flag disables every
@@ -716,10 +766,11 @@ export function PluginsPage() {
    * written, never sent, so nothing runs (and no token is spent) until the person sends it. The
    * prompt goes in per UI language, overwriting the draft body (any typed-but-unsent text is
    * parked as a draft conversation first, draft-sessions.ts), with the demo's skills
-   * pre-selected and goal mode on when the demo is a goal. handoffAgentId must be cleared: a
-   * leftover handoff target would forward the demo to a different Agent.
+   * pre-selected, goal mode on when the demo is a goal, and the plugin's composer switch on when
+   * it has one. handoffAgentId must be cleared: a leftover handoff target would forward the demo
+   * to a different Agent.
    */
-  const openQuickStart = (quickStart: QuickStartItem) => {
+  const openQuickStart = (quickStart: QuickStartItem, plugin: PluginItem) => {
     const agentId = currentAgent?.agentId;
     if (!agentId) return;
     if (userId && projectId) {
@@ -728,7 +779,7 @@ export function PluginsPage() {
       // the Project's new-chat defaults (new-chat.ts).
       prepareNewChatDraft(userId, projectId);
       const key = draftKey(userId, projectId);
-      const { skills: _skills, goal: _goal, ...rest } = loadDraft(key);
+      const { skills: _skills, goal: _goal, promptHooks: _promptHooks, ...rest } = loadDraft(key);
       saveDraft(key, {
         ...rest,
         agentId,
@@ -737,6 +788,9 @@ export function PluginsPage() {
           ? { skills: quickStart.skills }
           : {}),
         ...(quickStart.goal === true ? { goal: true as const } : {}),
+        ...(plugin.composerMode === true && quickStart.goal !== true
+          ? { promptHooks: [plugin.name] }
+          : {}),
         handoffAgentId: undefined,
       });
     }
@@ -752,7 +806,7 @@ export function PluginsPage() {
   const quickStartLibrary = (plugin: PluginItem) => {
     const demo = libraryQuickStart(plugin);
     if (demo === null || !currentAgent) return;
-    if (pluginComplete(plugin, installed.get(currentAgent.agentId))) openQuickStart(demo);
+    if (pluginComplete(plugin, installed.get(currentAgent.agentId))) openQuickStart(demo, plugin);
     else setPendingQuickStart(plugin);
   };
 
@@ -765,7 +819,7 @@ export function PluginsPage() {
     setQuickStartInstalling(false);
     setPendingQuickStart(null);
     const demo = libraryQuickStart(plugin);
-    if (ok && demo !== null) openQuickStart(demo);
+    if (ok && demo !== null) openQuickStart(demo, plugin);
   };
 
   const rows = pluginRows(groups ?? [], moduleParts(deployment, index ?? [], view));
@@ -787,7 +841,16 @@ export function PluginsPage() {
       );
     }
   }
-  const statusOf = (row: PluginRow): PluginStatus => pluginStatus(row, usages.get(row.key) ?? null);
+  /** How the library's server modules stand on the server in view: its own answer says. */
+  const moduleStates = (view?.remote ?? deployment)?.modules ?? [];
+  const statusOf = (row: PluginRow): PluginStatus =>
+    pluginStatus(
+      row,
+      usages.get(row.key) ?? null,
+      row.library?.modules === true
+        ? moduleStates.find((m) => m.plugin === row.library!.name)
+        : undefined,
+    );
   const unsatisfiedCount = rows.filter((row) => row.module?.unsatisfied !== undefined).length;
   const searching = query.trim() !== "" || incompatibleOnly;
   const visible = rows.filter(
@@ -806,6 +869,7 @@ export function PluginsPage() {
       categoryTitle={categoryTitle(row.category)}
       showCategory={groupBy !== "category"}
       targets={targets}
+      blankAgent={{ library: pickLibrary, onCreated: blankAgentCreated }}
       installed={installed}
       unknown={unknown}
       failed={unreadable}
@@ -939,6 +1003,10 @@ export function PluginsPage() {
           </Notice>
         )}
         <IncompatibleNotice filtered={incompatibleOnly} unsatisfied={unsatisfiedCount} />
+        <ModuleRequestsNotice
+          waiting={isAdmin ? (moduleRequests.value?.pending ?? 0) : 0}
+          onView={() => setSettingsOpen(true)}
+        />
       </PageHeader>
       <SettingsDialog
         open={settingsOpen}
@@ -1134,6 +1202,31 @@ export function IncompatibleNotice({
       }}
     >
       {S.plugins.unsatisfiedNotice(unsatisfied)}
+    </Notice>
+  );
+}
+
+/**
+ * The administrator's notice beside the incompatible-plugins one, while members' requests to run a
+ * plugin's server module wait on this server: how many, and the way to Settings › Plugins, where
+ * they are decided. Nothing while none waits.
+ */
+export function ModuleRequestsNotice({
+  waiting,
+  onView,
+}: {
+  /** How many requests wait for a decision. */
+  waiting: number;
+  onView: () => void;
+}) {
+  if (waiting === 0) return null;
+  return (
+    <Notice
+      tone="attention"
+      className="mt-4"
+      action={{ label: S.plugins.moduleRequestsView, onClick: onView }}
+    >
+      {S.plugins.moduleRequestsNotice(waiting)}
     </Notice>
   );
 }

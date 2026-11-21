@@ -48,6 +48,19 @@ export function resolveLibraryPlugins(
   });
 }
 
+/**
+ * The plugins a new Agent is seeded with: the picked names in pick order, then each
+ * default-install plugin not among them (see `AgentCreation.defaultPlugins`).
+ */
+export function seedPluginNames(
+  picked: readonly string[],
+  defaults: readonly Pick<LibraryPlugin, "name">[],
+): string[] {
+  const names = [...picked];
+  for (const { name } of defaults) if (!names.includes(name)) names.push(name);
+  return names;
+}
+
 const segment = encodeURIComponent;
 
 /** Where a library plugin's icon is served (any signed-in user, like the listing). */
@@ -210,6 +223,8 @@ export function toPluginItem(plugin: LibraryPlugin): PluginItem {
       ? { icon: iconRef(libraryIconRoute(plugin.name), plugin.icon) }
       : {}),
     ...(plugin.quickStart !== undefined ? { quickStart: plugin.quickStart } : {}),
+    ...(plugin.composerMode ? { composerMode: true as const } : {}),
+    ...(plugin.defaultInstall ? { defaultInstall: true as const } : {}),
     mcpServers: plugin.mcpServers.map(toPluginMcpServerItem),
     modules: plugin.modules,
   };

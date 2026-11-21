@@ -2,7 +2,11 @@
  * The folded values of a history window, unfolded on demand. A window carries a bulky value (a
  * tool's output, a long argument, a thinking block) as a preview, and the whole of it is fetched
  * the moment the reader opens its row: the note below sits in the row's body, which is mounted
- * only while the row is open, so mounting it is the fetch's start.
+ * only while the row is open, so mounting it is the fetch's start. A row opened by its list
+ * rather than by the reader — every step in the Expanded display mode, every step a transcript
+ * search reveals — did not ask for the whole: there the note is a text action that fetches
+ * only when pressed, so opening a long conversation never starts one fetch per folded
+ * value.
  *
  * While the values come over the note is the transfer row (after a second, so a local fetch never
  * flashes it); a fetch that failed is a notice line like the transcript's others — 「[加载失败]：
@@ -15,8 +19,11 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import {
   MessageBubble,
+  ReportIssueAction,
   TextAction,
   TransferProgress,
+  reportFor,
+  useDisclosureRequested,
   useElapsedPast,
 } from "@prismshadow/penguin-ui";
 import { elidedRecordsOf } from "../../lib/amsp/stream-model";
@@ -37,23 +44,34 @@ export function hasElidedNote(item: ToolCallItem | ThinkingItem): boolean {
 
 export function ElidedBodyNote({ item }: { item: ToolCallItem | ThinkingItem }) {
   const bodies = useContext(ElidedBodiesContext);
-  // Mounted only while the row is open: the reader opened it.
+  const requested = useDisclosureRequested();
   useEffect(() => {
-    bodies?.load(item);
-  }, [bodies, item]);
+    if (requested) bodies?.load(item);
+  }, [bodies, item, requested]);
   const [since] = useState(() => Date.now());
   const load = item.bodyLoad;
   const past = useElapsedPast(load !== undefined ? since : undefined, QUIET_MS);
   const words = S.chat.historyTransfer;
   if (load !== undefined && load.error !== null) {
+    const report = reportFor(load.cause, {
+      what: "the full content of a folded value could not be loaded",
+    });
     return (
       <MessageBubble
         variant="notice"
-        actions={<TextAction onClick={() => bodies?.load(item)}>{S.common.retry}</TextAction>}
+        actions={
+          <>
+            <TextAction onClick={() => bodies?.load(item)}>{S.common.retry}</TextAction>
+            {report !== null && <ReportIssueAction report={report} />}
+          </>
+        }
       >
         {words.bodyFailed(load.error)}
       </MessageBubble>
     );
+  }
+  if (load === undefined && !requested && bodies) {
+    return <TextAction onClick={() => bodies.load(item)}>{words.bodyLoad}</TextAction>;
   }
   if (load === undefined || !past) return null;
   return (

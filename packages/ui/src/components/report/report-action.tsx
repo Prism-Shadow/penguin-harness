@@ -1,8 +1,8 @@
 /**
  * 「[报告问题]」: the bracketed text action that opens a problem report, set after whatever said
- * something went wrong — a toast, a load-failure notice, a crash notice. It is offered only for a
- * serious error (`isSeriousError`); the caller decides that and passes the report, or a function
- * that builds it when pressed (a report reads the page and the time at that moment).
+ * something failed — a toast, a load-failure notice, an inline failure, a crash notice. It is
+ * offered for every failure and never for a refusal (`isReportable`); the caller decides that and
+ * passes the report, or a function that builds it when pressed.
  */
 import { TextAction } from "../actions/text-action/text-action";
 import { useUiStrings } from "../../strings";

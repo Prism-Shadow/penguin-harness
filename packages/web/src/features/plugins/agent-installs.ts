@@ -82,6 +82,21 @@ export function rereadInstalls(projectId: string, machineId: string | null, agen
   void agentInstalls.read(key, readInstalls(projectId, machineId, agentId));
 }
 
+/**
+ * Reads a just-created Agent's lists and waits for the answer, so its row joins the page with its
+ * installs known. Whatever was remembered under its id goes first: it was an earlier Agent's, one
+ * deleted before this one took the id. Never rejects: a failed read leaves the Agent unknown.
+ */
+export async function readNewAgentInstalls(
+  projectId: string,
+  machineId: string | null,
+  agentId: string,
+): Promise<void> {
+  const key = installsKey(projectId, machineId, agentId);
+  agentInstalls.forget(key);
+  await agentInstalls.read(key, readInstalls(projectId, machineId, agentId));
+}
+
 /** An install response's three lists (and its workbenches), folded into one Agent's snapshot entry. */
 export function installsOf(res: AgentPluginsInstallResponse): AgentInstalls {
   return {

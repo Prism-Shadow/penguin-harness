@@ -153,6 +153,7 @@ import type {
   BuiltinBrowserServerEvent,
   BuiltinBrowserTab,
   BuiltinBrowserTabMetrics,
+  ChromeExtensionCookie,
   DesktopBrowserCommand,
   DesktopBrowserCommandMessage,
   DesktopBrowserCookie,
@@ -164,17 +165,12 @@ import type {
 // ---------------------------------------------------------------------------
 
 /**
- * Unified error response body: `code` is a machine-readable error code, `message` an English
- * user-facing message, and `details`, on the errors that have them, the facts a client acts on
- * beside the code (the Benchmark id a 409 `benchmark_exists` is about, say) — read from there,
- * never parsed out of the message.
+ * Unified error response body and its detail record — the shape lives in the http
+ * vocabulary package (services+http+cli restack T0); re-exported here so the API
+ * contract keeps spelling it.
  */
-export interface ErrorBody {
-  error: { code: string; message: string; details?: ErrorDetails };
-}
-
-/** An error's structured facts, by name; each code that carries them documents its own. */
-export type ErrorDetails = Readonly<Record<string, string>>;
+export type { ErrorBody, ErrorDetails } from "@prismshadow/penguin-library-http/errors";
+import type { ErrorDetails } from "@prismshadow/penguin-library-http/errors";
 
 /** Session approval mode (reuses the CLI enum). */
 
@@ -577,6 +573,8 @@ export interface UiPrefs {
   terminalTheme?: string | null;
   /** Whether tool cards name the built-in tools by their short alias. */
   toolAliases?: boolean | null;
+  /** How the conversation shows thinking and tool steps (the Web App's "standard", "expanded", "compact"). */
+  activityDisplayMode?: string | null;
   /** Whether task-completion notifications were asked for (each browser still needs its own OS permission). */
   notifications?: boolean | null;
   /** Whether the floating dock launcher was put away. */
@@ -990,29 +988,19 @@ export interface ModelOAuthCodeResponse {
 // ---------------------------------------------------------------------------
 // Penguin Go key authorization (/api/projects/:p/platform-auth, owner)
 // ---------------------------------------------------------------------------
-
-export interface PlatformAuthStartResponse {
-  flowId: string;
-  authorizeUrl: string;
-  expiresAt: string;
-}
-
-export type PlatformAuthFlowErrorCode =
-  | "unreachable"
-  | "upstream_failed"
-  | "invalid_key"
-  | "expired"
-  | "locked"
-  | "already_delivered"
-  | "apply_failed";
-
-export interface PlatformAuthFlowStatusResponse {
-  status: "pending" | "applying" | "completed" | "cancelled" | "apply_failed" | "error";
-  error?: PlatformAuthFlowErrorCode;
-  applied?: number;
-  /** The default model offered on the delivered key (see DefaultModelOffer); on every `completed` answer. */
-  defaultOffer?: DefaultModelOffer;
-}
+//
+// The flow wire shapes moved to the model domain package
+// (@prismshadow/penguin-library-model/platform-auth-flow, services+http+cli restack S1),
+// ModelScope's aliases with them; re-exported here so the API contract keeps spelling them.
+export type {
+  PlatformAuthStartResponse,
+  PlatformAuthFlowErrorCode,
+  PlatformAuthFlowStatusResponse,
+  ModelScopeAuthStartResponse,
+  ModelScopeAuthFlowErrorCode,
+  ModelScopeAuthFlowStatusResponse,
+} from "@prismshadow/penguin-library-model/platform-auth-flow";
+import type { PlatformAuthFlowStatusResponse } from "@prismshadow/penguin-library-model/platform-auth-flow";
 
 /** Result of refreshing Penguin Go's catalog with the Project's stored platform key. */
 export interface PlatformModelSyncResponse extends ModelsResponse {
@@ -1020,21 +1008,12 @@ export interface PlatformModelSyncResponse extends ModelsResponse {
   updated: number;
 }
 
-// ---------------------------------------------------------------------------
-// ModelScope key authorization (/api/projects/:p/modelscope-auth, owner)
-// ---------------------------------------------------------------------------
-
 /**
- * The wire shapes are Penguin Go's, deliberately: both flows create a request, poll it, and
- * report the same six states and the same seven failure codes, so the App drives both with one
- * dialog. They are aliases rather than a second declaration because a copy would be the same
- * fields with the same meaning, and a shape that drifted apart in one of the two would be a
- * bug rather than a distinction. The endpoints stay separate regardless — a flow id issued by
- * one is not accepted by the other.
+ * ModelScope key authorization (/api/projects/:p/modelscope-auth, owner): its wire shapes are
+ * Penguin Go's, deliberately — both flows create a request, poll it, and report the same six
+ * states and the same seven failure codes, so the App drives both with one dialog. They moved
+ * beside Penguin Go's to the model domain package (platform-auth-flow), aliases included.
  */
-export type ModelScopeAuthStartResponse = PlatformAuthStartResponse;
-export type ModelScopeAuthFlowErrorCode = PlatformAuthFlowErrorCode;
-export type ModelScopeAuthFlowStatusResponse = PlatformAuthFlowStatusResponse;
 
 // ---------------------------------------------------------------------------
 // New-chat defaults (the `[default_chat]` block of .project_config.toml)
@@ -1254,10 +1233,16 @@ export interface AgentCreateRequest {
   /**
    * Library plugin names installed into the new Agent, seeding it at creation — each plugin's
    * skills and hook package. Every name must exist in the library (404 `unknown_plugin`
-   * otherwise, before anything is created); omitted or empty leaves the Agent with nothing
-   * installed, which is what a plain Agent gets by default.
+   * otherwise, before anything is created). The library's default-install plugins join them
+   * unless `defaultPlugins` is false.
    */
   plugins?: string[];
+  /**
+   * Whether the library's default-install plugins (those whose card sets `defaultInstall`: goal
+   * mode and Plan mode) join `plugins`; omitted = true. A client that sends the complete list it
+   * showed the user, as the Web App's create dialog does, sends false with it.
+   */
+  defaultPlugins?: boolean;
   /**
    * Skills imported from a directory on disk instead of the library. `skillsDirectory` is the
    * absolute path the user picked and `directorySkills` are the names to install from it, read
@@ -1564,6 +1549,7 @@ export type {
   BuiltinBrowserServerEvent,
   BuiltinBrowserTab,
   BuiltinBrowserTabMetrics,
+  ChromeExtensionCookie,
   DesktopBrowserCommand,
   DesktopBrowserCommandMessage,
   DesktopBrowserCookie,
@@ -2392,10 +2378,12 @@ export interface MessagesPageInfo {
   };
   /**
    * The model of the context this window starts in — what the `session_meta` heading that
-   * context's Trace file names. A Session can switch models between contexts, and a window
-   * that starts partway into one does not hold that record: the client seeds it, so the Tasks
-   * ahead of the window's first `session_meta` have their model, and a switch further down the
-   * window is told from a plain rotation. Absent when the Session has no Trace yet.
+   * context's Trace file names, or the model a completed switch's `session_update` ahead of the
+   * window's start in that file names (the next file not opened yet). A Session can switch
+   * models between contexts, and a window that starts partway into one does not hold that
+   * record: the client seeds it, so the Tasks ahead of the window's first `session_meta` have
+   * their model, and a switch further down the window is told from a plain rotation. Absent
+   * when the Session has no Trace yet.
    */
   contextModel?: ModelRefDto;
   /**
@@ -2723,6 +2711,16 @@ export interface TaskCreateRequest {
    * out, or the sandbox refuses to run it) is 409 `goal_start_failed` with the reason.
    */
   goal?: { budget?: number };
+  /**
+   * Hook packages installed on the Agent whose `trigger: "host"` `user_prompt` command this
+   * Task runs (the composer's switches, see `PluginItem.composerMode`): each one's `context`
+   * follows the user's message, stamped `sender: "harness"`, in the order named. Run when the
+   * request is accepted, so a queued or interrupting input waits with its contexts; a steered
+   * input takes none. A package that is not installed, or declares no such command, is 409
+   * `prompt_hook_not_installed`; one whose command fails is 409 `prompt_hook_failed` with the
+   * reason; nothing is started or queued either way. Exclusive with `goal` (400).
+   */
+  promptHooks?: string[];
 }
 
 /** Goal-mode run state, read from the Session's GOAL.json — the goal plugin's file (the chat page's banner restores from it; a live status on an idle Session reads as `aborted`). */
@@ -2748,16 +2746,17 @@ export interface GoalResponse {
  *   A context with a completed turn is closed by an ordinary `manual` compaction pair (always
  *   summarize); one without — just compacted, or its first request never finished — has
  *   nothing to summarize and streams no pair. Then come the new context's opener records
- *   and its `session_meta`: its `provider` / `model_id` name the model the Session now runs
- *   on, the Session reads report that pair from this record on, and `task_state` turns idle
- *   after the switch.
+ *   and the switch's `session_update`: its `provider` / `model_id` name the model the Session
+ *   now runs on, the Session reads report that pair from this record on, and `task_state`
+ *   turns idle after the switch. The new context's `session_meta` streams with the next
+ *   message, when its Trace file opens.
  *   When the summary cannot be had — the model the Session is on is no longer configured or
  *   has no credential (it is then sent nothing, and no pair streams), or the compaction ends
  *   without a summary — the switch still completes, by Trace handoff: right
- *   after the `session_meta` comes a user text that is one whole `[model_switch_from]` block
+ *   after the `session_update` comes a user text that is one whole `[model_switch_from]` block
  *   whose `session` is this Session, naming the Trace file of the context it left. Only a
  *   stopped compaction (`aborted`), or a `fatal` one (the next context could not be opened on the
- *   target; its `error_message` says why), means no switch: no `session_meta` follows and the
+ *   target; its `error_message` says why), means no switch: no `session_update` follows and the
  *   Session keeps its model and its context.
  * - **200** {@link SessionResponse} — a Session that never ran has no context to close: it
  *   switched inside the request, and nothing is streamed.
@@ -3856,7 +3855,8 @@ export interface ScheduleUpsertRequest {
 /**
  * The archive route's query. Each part is `1` (carried) or `0` (left out); an absent part takes
  * its default: all carried but `schedules`, since an imported task runs on its schedule.
- * `workbenchData` is each workbench's `state.json`, and means nothing without `workbenches`.
+ * `workbenchData` is each workbench's `state.json` and its data folder (`app/data/<id>/`), and
+ * means nothing without `workbenches`.
  */
 export interface AgentArchiveQuery {
   skills?: "0" | "1";
@@ -4225,6 +4225,10 @@ export interface PluginItem {
   icon?: IconRef;
   /** The demo the Plugins page's quick start pre-fills (the card's `quickStart`); absent = pre-select its first skill. */
   quickStart?: QuickStartItem;
+  /** The card's `composerMode`: an Agent with the hook package gets it as a switch in the composer's "+" menu (sent as `TaskCreateRequest.promptHooks`). */
+  composerMode?: true;
+  /** The card's `defaultInstall`: every new Agent gets the plugin (see `AgentCreateRequest.defaultPlugins`); absent on a server that predates the field, and for a plugin an admin installed. */
+  defaultInstall?: true;
   /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (its mcpServers contributions); `[]` without any. */
   mcpServers: PluginMcpServerItem[];
   /**
@@ -4598,6 +4602,31 @@ export interface WorkbenchesResponse {
    * predates the switches.
    */
   enabled?: boolean;
+}
+
+/**
+ * GET /api/projects/:p/agents/:a/workbenches?view=sidebar: the rows of the Agent's sidebar list, a
+ * shortcut (the App Center tile's shape) for every workbench that runs, has at least one tab and
+ * carries no `.hidden-from-sidebar` marker, by title; none while the Agent-wide switch is off.
+ * Read from the manifests, load status and the loads under way; nothing is compiled. A server
+ * older than the setting ignores `view` and answers `WorkbenchesResponse`.
+ */
+export interface WorkbenchSidebarResponse {
+  apps: AppCenterShortcut[];
+}
+
+/**
+ * PATCH /api/projects/:p/agents/:a/workbenches/:id/sidebar: the sidebar setting, any member of
+ * the Project. `show: false` writes the installation's `.hidden-from-sidebar` marker and `true`
+ * removes it; the source, its versions and its App Center declaration are untouched.
+ */
+export interface WorkbenchSidebarRequest {
+  show: boolean;
+}
+
+/** The workbench with its `showInSidebar` read back. */
+export interface WorkbenchSidebarSetResponse {
+  workbench: WorkbenchInfo;
 }
 
 /**
@@ -7255,10 +7284,23 @@ export interface BuiltinBrowserImportSource {
   profileName: string;
   hasCookies: boolean;
   hasHistory: boolean;
+  /**
+   * How the source is read. Absent: the profile's own files on this computer. `extension`: the
+   * user's connected Chrome extension (id `chrome-extension`), which hands over the cookies of
+   * the Chrome profile it runs in once the user allows it in Chrome; cookies only, and
+   * `profile` / `profileName` name the extension's Chrome.
+   */
+  via?: "extension";
 }
 
 export interface BuiltinBrowserImportSourcesResponse {
   sources: BuiltinBrowserImportSource[];
+  /**
+   * Why the user's Chrome extension is not among `sources`: none is paired, the paired one is not
+   * connected now, or an admin switched Chrome connections off. Absent when it is listed, and on
+   * a server that offers no Chrome backend at all.
+   */
+  extension?: "extension_not_paired" | "extension_disconnected" | "extension_disabled";
 }
 
 /** POST /api/builtin-browser/import. */
@@ -7272,11 +7314,52 @@ export interface BuiltinBrowserImportRequest {
   domains?: string[];
 }
 
+/**
+ * Why a cookie the import found stayed behind. `app_bound`: Chrome's app-bound encryption
+ * (Chrome 127+ on Windows), which only Chrome itself can undo. `dpapi`, `keychain`, `keyring`:
+ * the platform would not give up the browser's cookie key (Windows DPAPI, the macOS Keychain,
+ * the Linux desktop keyring). `undecryptable`: no key at hand fits the value. `partitioned`: it
+ * belongs to one context only — a partitioned (CHIPS) cookie kept for one top-level site, or a
+ * Firefox container's. `expired`: past its expiry.
+ */
+export type BuiltinBrowserCookieSkipReason =
+  "app_bound" | "dpapi" | "keychain" | "keyring" | "undecryptable" | "partitioned" | "expired";
+
+export interface BuiltinBrowserCookieSkip {
+  reason: BuiltinBrowserCookieSkipReason;
+  count: number;
+}
+
+/**
+ * What else an import reports, as a code (and counts) the Web App and the CLI word in the
+ * reader's language; the server sends no prose. `store`: which of the profile's stores.
+ */
+export type BuiltinBrowserImportNote =
+  /** The profile holds no cookie store. */
+  | { code: "no_cookie_store" }
+  /** The profile holds no history (an extension source never does). */
+  | { code: "no_history" }
+  /** The browser holds the store open (Windows): closing it lets the import read it. */
+  | { code: "store_busy"; store: "cookies" | "history" }
+  /** The store could not be copied or opened. */
+  | { code: "store_unreadable"; store: "cookies" | "history" }
+  /** The built-in browser refused `count` cookies; `errors` holds up to three of its messages, verbatim. */
+  | { code: "cookies_not_set"; count: number; errors: string[] };
+
 export interface BuiltinBrowserImportResult {
   sourceId: string;
-  cookies?: { found: number; imported: number; skipped: number; failed: number };
+  /** The browser imported from, as the source names it ("Chrome", "Firefox"). */
+  browserName: string;
+  cookies?: {
+    found: number;
+    imported: number;
+    skipped: number;
+    failed: number;
+    /** Why the skipped cookies stayed behind: one entry per reason that occurred; the counts add up to `skipped`. */
+    skips: BuiltinBrowserCookieSkip[];
+  };
   history?: { found: number; imported: number };
-  warnings: string[];
+  notes: BuiltinBrowserImportNote[];
 }
 
 export interface BuiltinBrowserHistoryEntry {

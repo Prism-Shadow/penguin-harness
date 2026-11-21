@@ -1,5 +1,5 @@
 /** The owner's new-API-Session defaults, using the App's existing form pickers. */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type {
   AgentApiResponse,
   AgentApiSettings,
@@ -15,13 +15,13 @@ import {
   useSaving,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { useInstantSetting } from "../../lib/instant-setting";
 import { useAgentLocation } from "../../lib/agent-location";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { ModelCatalogSelect, effectiveThinkingLevel, ThinkingLevelSelect } from "../model-picker";
 import { WorkspaceSelect } from "../workspace";
+import { failureNode } from "../../lib/failure";
 
 interface ApiSettingsProps {
   projectId: string;
@@ -44,7 +44,7 @@ export function ApiConcurrencySettings({
   /** The machine the Agent lives on, where its API settings are; null for this server. */
   const machineId = useAgentLocation();
   const [busy, setBusy] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<ReactNode>(null);
   useSaving(busy, form.scope);
   const limit = Number(form.draft.limit);
   const valid = form.draft.limit.trim() !== "" && Number.isSafeInteger(limit) && limit >= 1;
@@ -64,7 +64,7 @@ export function ApiConcurrencySettings({
       onSaved(response);
       form.adopt({ limit: String(response.api.maxConcurrentRuns) });
     } catch (e) {
-      setSaveError(apiErrorText(e));
+      setSaveError(failureNode(e, { what: "an Agent's API concurrency could not be saved" }));
     } finally {
       setBusy(false);
       onBusy(false);
@@ -131,7 +131,7 @@ export function ApiSessionSettings({
   const [models, setModels] = useState<ModelsResponse | null>(null);
   /** The machine the Agent lives on (null: this server): its models, defaults and Workspaces. */
   const machineId = useAgentLocation();
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<ReactNode>(null);
   useEffect(() => {
     let cancelled = false;
     setModels(null);
@@ -151,7 +151,10 @@ export function ApiSessionSettings({
         }
       },
       (error: unknown) => {
-        if (!cancelled) setLoadError(apiErrorText(error));
+        if (cancelled) return;
+        setLoadError(
+          failureNode(error, { what: "an Agent's API conversation settings could not be loaded" }),
+        );
       },
     );
     return () => {

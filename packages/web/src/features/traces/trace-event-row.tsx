@@ -5,9 +5,10 @@
  * **renders** the content (text/thinking and session_meta's system prompt go through Markdown,
  * tool arguments/output go through a code block, token_usage goes through a bucket table,
  * session_meta goes through a field table — the Session's every field — and its system prompt)
- * instead of dumping raw JSON; a `status` other than `completed` (a request's end, a tool
- * result, a compaction or MCP connect end) is shown in the bottom-right of the expanded area — a
- * record that completed carries no mark.
+ * instead of dumping raw JSON; a session_update's summary says what it is and names the model it
+ * sets; a `status` other than `completed` (a request's end, a tool result, a compaction or MCP
+ * connect end) is shown in the bottom-right of the expanded area — a record that completed
+ * carries no mark.
  * Linked highlighting with the timeline — a matched row only gets a
  * background color, never an outline; only one row lights up at a time (each
  * row has its own unique rowKey, so adjacent messages at the same timestamp
@@ -28,6 +29,7 @@ import {
 import type { ToneName } from "@prismshadow/penguin-ui";
 import ReactMarkdown from "react-markdown";
 import { S } from "../../lib/strings";
+import { updatedModel } from "@prismshadow/amsp";
 import type { AmspRecord } from "@prismshadow/amsp";
 import { formatTime, humanizeTokens } from "../../lib/format";
 import { statusTone } from "../../lib/status-tone";
@@ -82,6 +84,8 @@ const TYPE_ICON: Record<string, string> = {
   mcp_connect_begin: ICONS.plug,
   mcp_connect_end: ICONS.plug,
   tool_list_ready: ICONS.wrench,
+  // A Session setting changed: the settings sliders.
+  session_update: ICONS.slidersHorizontal,
 };
 
 function TypeIcon({ type }: { type: string }) {
@@ -173,6 +177,14 @@ export function summarizeEvent(msg: AmspRecord): string {
     }
     case "subagent":
       return String(p["session_id"] ?? "");
+    case "session_update": {
+      // What the record is, then the one setting it carries today: the model the Session's next
+      // context opens on.
+      const model = updatedModel(msg);
+      return [S.traces.sessionUpdate, model ? `${model.provider} / ${model.model_id}` : ""]
+        .filter(Boolean)
+        .join(" · ");
+    }
     default:
       if (msg.type === "session_meta") {
         return `${String(p["session_id"] ?? "")} · ${String(p["model_id"] ?? "")}`;

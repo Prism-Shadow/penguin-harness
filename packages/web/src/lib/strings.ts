@@ -18,7 +18,13 @@ import type { ProtocolClientType } from "./protocol-client-types";
 import type { ModelGroupSort } from "../features/models/model-sort";
 import type { StartPageSiteId } from "./browser-start-sites";
 import { EVOLUTION_DEMO } from "./evolution-demo";
-import type { AgentAuthor, SemanticIdSuggestReason } from "@prismshadow/penguin-server/api";
+import type {
+  AgentAuthor,
+  BuiltinBrowserCookieSkip,
+  BuiltinBrowserImportNote,
+  SemanticIdSuggestReason,
+} from "@prismshadow/penguin-server/api";
+import type { ImportExtensionRoute } from "./browser-import-route";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -39,6 +45,8 @@ export const zh = {
     userSettings: "用户设置",
     collapseSidebar: "收起侧栏",
     expandSidebar: "展开侧栏",
+    /** The handle on the pinned sidebar's edge: its accessible name and tooltip. */
+    resizeSidebar: "调整侧栏宽度",
     /** The desktop window's title band: back and forward through the pages visited. */
     back: "后退",
     forward: "前进",
@@ -750,6 +758,74 @@ export const zh = {
       (c.failed > 0 ? `，失败 ${c.failed}` : ""),
     importHistoryResult: (h: { found: number; imported: number }): string =>
       `历史记录：已导入 ${h.imported} / ${h.found} 条`,
+    /** Under the counts: why that many cookies were skipped; `browser` is the source's name. */
+    importSkip: ({ reason, count: n }: BuiltinBrowserCookieSkip, browser: string): string => {
+      switch (reason) {
+        case "app_bound":
+          return `${n} 个受 ${browser} 的应用绑定加密保护，只有 ${browser} 自己能读取。`;
+        case "dpapi":
+          return `${n} 个的密钥 Windows 未能解开。`;
+        case "keychain":
+          return `${n} 个的密钥钥匙串未放行；在 macOS 询问时选择「允许」，再导入一次。`;
+        case "keyring":
+          return `${n} 个的密钥未能从桌面密钥环取得。`;
+        case "undecryptable":
+          return `${n} 个无法解密。`;
+        case "partitioned":
+          return `${n} 个是只属于某个站点或容器的分区 Cookie。`;
+        case "expired":
+          return `${n} 个已过期。`;
+      }
+    },
+    /** Anything else the import reports. */
+    importNote: (note: BuiltinBrowserImportNote, browser: string): string => {
+      const store = (which: "cookies" | "history") =>
+        which === "cookies" ? " Cookie 库" : "历史记录";
+      switch (note.code) {
+        case "no_cookie_store":
+          return "这个个人资料没有 Cookie 库。";
+        case "no_history":
+          return "这个来源没有可导入的历史记录。";
+        case "store_busy":
+          return `${browser} 正占用它的${store(note.store)}，关闭 ${browser} 后再导入。`;
+        case "store_unreadable":
+          return `无法读取 ${browser} 的${store(note.store)}。`;
+        case "cookies_not_set":
+          return (
+            `${note.count} 个 Cookie 未能写入内置浏览器` +
+            (note.errors.length > 0 ? `：${note.errors.join("；")}` : "。")
+          );
+      }
+    },
+    /** The group the user's connected Chrome extension is listed under, and its row's hint. */
+    importExtensionGroup: "经 Chrome 扩展",
+    importExtensionHint:
+      "读取扩展所在的 Chrome 个人资料的 Cookie，导入前要在 Chrome 中选择「允许」。",
+    /** The import button while the extension waits for the user's answer in Chrome. */
+    importWaitingChrome: "等待 Chrome 确认…",
+    /**
+     * Windows, a Chrome profile's cookies chosen: why most of them will be skipped, and the way
+     * round it the extension's state leaves.
+     */
+    importAppBoundHint: (route: ImportExtensionRoute): string =>
+      route === "not_paired"
+        ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取：在「设置 › 浏览器」中连接你的 Chrome 后可经扩展导入，或直接在浏览器面板中登录。"
+        : route === "disconnected"
+          ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取：让你的 Chrome 连上 PenguinHarness Browser 扩展后可经扩展导入，或直接在浏览器面板中登录。"
+          : route === "connected"
+            ? "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取，可改选下方的「经 Chrome 扩展」导入。"
+            : "Windows 上 Chrome 的 Cookie 多数只有 Chrome 自己能读取，可直接在浏览器面板中登录。",
+    /** After app-bound skips: how to get those cookies, given the extension's state. */
+    importAppBoundAdvice: (route: ImportExtensionRoute): string =>
+      route === "connected"
+        ? "选择「经 Chrome 扩展」再导入一次即可取回它们，也可以直接在浏览器面板中登录。"
+        : route === "not_paired"
+          ? "在「设置 › 浏览器」中连接你的 Chrome 后，可经扩展导入它们；也可以直接在浏览器面板中登录。"
+          : route === "disconnected"
+            ? "让你的 Chrome 连上 PenguinHarness Browser 扩展后，可经扩展导入它们；也可以直接在浏览器面板中登录。"
+            : "可以直接在浏览器面板中登录这些网站。",
+    /** The outcome's way back to the form with the extension chosen. */
+    importUseExtension: "经 Chrome 扩展导入",
     importFailed: (reason: string): string => `导入失败：${reason}`,
     /** The clear-browsing-data confirmation. */
     clearTitle: "清除浏览数据",
@@ -962,7 +1038,40 @@ export const zh = {
     pluginPositionOn: "开启",
     pluginPositionOff: "关闭",
     pluginsInfo:
-      "开关下方是各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。顶部的开关只影响本浏览器在插件页列出哪些插件。",
+      "开关下方先是服务端模块请求，再是各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。顶部的开关只影响本浏览器在插件页列出哪些插件。",
+    /** The section of requests to run a library plugin's server module, and the decisions on them (admin). */
+    moduleRequests: {
+      title: "服务端模块请求",
+      info: "成员把带服务端模块的插件装到 Agent 上，而本服务端既未运行、构建也不自带该模块时，会在这里留下请求。启用会把它列入该 Project 在本服务端的插件表并重新装载服务器插件，正在运行的 Agent 不受影响。内置插件的模块随 Agent 安装自动启用，也记在这里。",
+      empty: "没有等待处理的请求",
+      waiting: "待处理",
+      waitingHint: "等待你启用或拒绝",
+      declined: "已拒绝",
+      declinedHint: "已拒绝或已停用：它不会随 Agent 安装再次启用，成员也不能再请求",
+      /** How an enabled module came to be enabled, and what that means on hover. */
+      via: { builtin: "内置自动", admin: "管理员", approval: "已批准" },
+      viaHint: {
+        builtin: "已启用：内置插件的模块随 Agent 安装自动启用",
+        admin: "已启用：由管理员启用",
+        approval: "已启用：管理员批准了成员的请求",
+      },
+      /** In place of a Project that was deleted, and of a requester that is no person. */
+      projectGone: "Project 已删除",
+      system: "系统",
+      sep: "、",
+      enable: "启用",
+      decline: "拒绝",
+      stop: "停用",
+      stopTitle: (name: string) => `停用 ${name} 的服务端模块？`,
+      stopBody: (name: string) =>
+        `将在本服务端停用 ${name} 的服务端模块，并阻止它随 Agent 安装再次启用。各 Agent 上的 Skill 等内容不受影响。`,
+      enabledToast: (name: string) => `已启用 ${name} 的服务端模块`,
+      declinedToast: (name: string) => `已拒绝 ${name} 的服务端模块请求`,
+      stoppedToast: (name: string) => `已在本服务端停用 ${name} 的服务端模块`,
+      /** A stop that leaves the module running: these Projects' shared tables still list it. */
+      stillListed: (name: string, projects: string) =>
+        `${name} 的服务端模块仍在运行：${projects} 的共享插件表仍列出它，可在插件页移除。`,
+    },
     /** The page's own switch, above the server's cards: a display preference of this browser. */
     pluginsIncompatibleOnly: "只显示不兼容的插件",
     /** A list field's editor: the row buttons and the add row. */
@@ -1128,6 +1237,12 @@ export const zh = {
     launcherInfo:
       "在对话正文右缘浮动的圆形按钮，展开后是工作台各块面板与终端的快捷方式；这里关掉后它就不再出现，展开里的「隐藏悬浮球」同样会关掉它。",
     toolAliases: "工具短名",
+    activityDisplayMode: "思考显示方式",
+    activityDisplayModeInfo:
+      "标准列出每一步，点开可看详情。展开直接显示思考和工具调用的内容。紧凑跟随当前步骤，可前后翻页。",
+    activityDisplayStandard: "标准",
+    activityDisplayExpanded: "展开",
+    activityDisplayCompact: "紧凑",
     toolAliasesInfo:
       "对话里的工具卡片用短名称呼内置工具，read_file 显示为「读取」。其余工具（含 MCP 工具）与轨迹观测始终是工具原本的名字；悬停短名也能看到它。",
     notifications: "任务完成通知",
@@ -1334,6 +1449,8 @@ export const zh = {
     /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
     showInAppCenterHint:
       "打开后，这个工作台会作为一个应用出现在「应用中心」页面：Project 的每个成员都能在那里看到它的图标，点一下即可打开使用，不必先进入对话。关闭只是把入口从应用中心撤下，工作台本身、它的数据与历史版本都不受影响。拨动开关会改写工作台 package.json 中的 penguin.appCenter.show，并记为一个版本。",
+    /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
+    showInSidebar: "展示到侧边栏",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "打开",
     /** The row's "⋯" button, which holds its other actions. */
@@ -1348,7 +1465,7 @@ export const zh = {
     loading: "加载中…",
     emptyTitle: "应用中心还是空的",
     empty:
-      "Workbench 是由 Agent 托管、嵌在对话旁的页面，也可以整页打开。Agent 创建 Workbench，并在 Agent 设置的工作台行打开「展示到应用中心」开关后，它就会出现在这里。",
+      "Workbench 是由 Agent 托管、嵌在对话旁的页面，也可以整页打开。Agent 创建的 Workbench 加载后就会出现在这里；不想在这里看到的，可在 Agent 设置的工作台行关掉「展示到应用中心」。",
     /** A tile whose current files failed to load: it still opens, and its menu shows the error. */
     broken: "加载失败",
     /** A tile whose app is still being built: it opens once the build is done. */
@@ -1407,8 +1524,8 @@ export const zh = {
     /** The windowed app's title bar. */
     windowClose: "关闭，回到应用中心",
     windowFullScreen: "全屏打开",
-    /** Local Agents only: a machine's Agents keep their apps in their own settings. */
-    machinesNote: "机器上 Agent 的应用不在这里，请从它们的 Agent 设置页进入。",
+    /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
+    machinesOffline: (names: string) => `暂时无法连接：${names}。已缓存的内容仍可查看。`,
     aiCreateTitle: "用 AI 创建应用",
     aiCreateDescription: "选定的 Agent 会做一个 Workbench，并让它出现在应用中心。",
     aiCreatePlaceholder: "描述你想要的应用，例如：一个记录每日待办的看板",
@@ -3372,6 +3489,23 @@ export const zh = {
     incompatibleOnlyNotice: "当前只显示不兼容的插件。",
     /** That notice's action: turns the filter off. */
     incompatibleOnlyShowAll: "显示全部",
+    /** The admin's notice while members' requests to run a plugin's server module wait. */
+    moduleRequestsNotice: (n: number) => `${n} 个服务端模块等待启用`,
+    /** That notice's action: opens Settings › Plugins, where they are decided. */
+    moduleRequestsView: "查看",
+    /**
+     * What an install did about the plugin's server module, after the install's own sentence
+     * (`said`): enabled, asked of the admin, stopped by the admin, failed to start, or — on a
+     * machine whose build does not ship it — to be installed for that machine.
+     */
+    moduleInstall: {
+      enabled: (said: string) => `${said}。它的服务端模块已启用。`,
+      requested: (said: string) => `${said}。它的服务端模块需要管理员启用，已发出请求。`,
+      blocked: (said: string) => `${said}。管理员已停用它的服务端模块。`,
+      failed: (said: string, reason: string) => `${said}。但它的服务端模块未能启动：${reason}`,
+      onMachine: (said: string, machine: string) =>
+        `${said}。它的服务端模块未在 ${machine} 上运行，可在插件页为该机器安装。`,
+    },
     repair: "用 AI 修复",
     repairTitle: (name: string) => `用 AI 修复 ${name}？`,
     repairBody: (name: string) =>
@@ -3406,7 +3540,7 @@ export const zh = {
     applyConfirmRemoveBody: (name: string) =>
       `将从服务端移除 ${name}；仍有其他 Project 使用它时会保留。`,
     applyConfirmWarning: (install: boolean) =>
-      `${install ? "安装" : "移除"}会重新装载服务器插件，所有 Project 中正在进行的 Agent 运行都会被中止。`,
+      `${install ? "安装" : "移除"}会重新装载服务器插件；正在运行的 Agent 不受影响。`,
     pageTitle: "插件",
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "机器",
@@ -3448,10 +3582,12 @@ export const zh = {
     status: {
       update: "可更新",
       installed: "已安装",
+      awaiting: "待启用",
       restart: "待重启",
       failed: "加载失败",
       "not-here": "不在本机",
       incompatible: "不兼容",
+      stopped: "已停用",
       available: "可安装",
     },
     /** What a status means for this plugin, on hover over its glyph. */
@@ -3465,6 +3601,8 @@ export const zh = {
       failed: (reason: string) => `加载失败：${reason}`,
       elsewhere: (machines: string) => `只在 ${machines} 上运行，本机不运行`,
       unsynced: "已安装，尚未同步到该机器",
+      awaiting: "等待管理员启用它的服务端模块",
+      stopped: "管理员已停用它的服务端模块",
       /** Appended to a library status counted with Agents on a machine out of reach. */
       lastSeenOn: (n: number) => `（含 ${n} 个在不可达机器上的 Agent，按上次看到）`,
     },
@@ -3533,7 +3671,7 @@ export const zh = {
     /** A folder or a file inside a repository on the link tab, and the action that hands it to the agent tab. */
     importLinkSubpath: "仓库内的文件夹或文件请用「Agent 安装」。",
     importLinkAskAgent: "改为让 Agent 安装",
-    importCost: "含服务端模块的插件会重新装载服务器插件，中止所有 Project 中正在运行的 Agent。",
+    importCost: "含服务端模块的插件会重新装载服务器插件；正在运行的 Agent 不受影响。",
     /** On the npm, link and zip tabs: what installing runs, said plainly. */
     importScriptsRun: "安装脚本将在服务器上运行，请确认来源可信。",
     importAgentWhy:
@@ -3594,6 +3732,13 @@ export const zh = {
     /** Top toast shown on successful install / uninstall. */
     installedToast: (plugin: string, agent: string): string => `已将 ${plugin} 安装到 ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string => `已从 ${agent} 卸载 ${plugin}`,
+    /** The manage-installs dialog's first row: a new Agent for this plugin, made through the Create agent dialog. */
+    blankAgent: "新建空白 Agent",
+    blankAgentCreate: "新建并安装",
+    /** The row button's hint: it opens a dialog rather than creating at once. */
+    blankAgentHint: "打开「创建 Agent」对话框，已勾选此插件",
+    /** Names the new Agent alone: its default name is the plugin's title, which the list's title already shows. */
+    blankAgentCreatedToast: (agent: string): string => `已新建 ${agent}，并装上此插件`,
     updateOutdated: (n: number): string => `有新版本：更新 ${n} 个 Agent 的安装`,
     updateConfirmTitle: (name: string): string => `更新 ${name}`,
     updateConfirmWarning: (name: string): string =>
@@ -3695,6 +3840,47 @@ export const zh = {
     uninstallPartly: (plugin: string, failed: string) =>
       `${plugin} 已卸载，但这些部件没能删除：${failed}`,
     updatedToast: (plugin: string, agent: string) => `已在 ${agent} 上更新 ${plugin}`,
+    /**
+     * A plugin's server module on the Agent's server: the row's mark (it names the module) and the
+     * detail line's state word (the line is named after it), what each means on hover, the two
+     * actions, and the toasts of an ask.
+     */
+    module: {
+      title: "服务端模块",
+      mark: {
+        off: "服务端模块未启用",
+        awaiting: "服务端模块待启用",
+        stopped: "服务端模块已停用",
+        failed: "服务端模块加载失败",
+        restart: "服务端模块待重启",
+      },
+      state: {
+        running: "运行中",
+        off: "未启用",
+        awaiting: "等待管理员启用",
+        stopped: "已停用",
+        failed: "加载失败",
+        restart: "待重启",
+      },
+      hint: {
+        running: "已在这台服务端运行：它的命令与页面可用。",
+        off: "服务端模块未启用：它的命令与页面暂不可用。",
+        offOnMachine: "服务端模块未在这台机器上启用：在插件页为这台机器安装它。",
+        awaiting: "等待管理员启用服务端模块。",
+        stopped: "管理员已停用该插件的服务端模块。",
+        failed: (reason: string) => `服务端模块加载失败：${reason}`,
+        restart: "服务端模块已列入，服务端重启后运行。",
+      },
+      enable: "启用服务端模块",
+      request: "请求管理员启用",
+      asked: {
+        enabled: (name: string) => `已启用 ${name} 的服务端模块`,
+        requested: (name: string) => `已请求管理员启用 ${name} 的服务端模块`,
+        blocked: (name: string) => `管理员已停用 ${name} 的服务端模块`,
+        failed: (name: string, reason: string) => `${name} 的服务端模块未能启动：${reason}`,
+        onMachine: (name: string) => `${name} 的服务端模块需要在插件页为这台机器安装`,
+      },
+    },
     /** A plugin's detail: what of it is on this Agent, by kind, and where each kind is managed. */
     onAgentTitle: "在这个 Agent 上",
     partKinds: {
@@ -4703,6 +4889,8 @@ Benchmark：
       heavy: "完整输出正在同步",
       /** Under an unfolded output or thinking block while its whole text arrives. */
       body: "正在加载完整内容",
+      /** On an unfolded output or thinking block the reader did not open (an Expanded view, a search): fetch the whole. */
+      bodyLoad: "加载完整内容",
       /** The fetch failed: a notice line like the earlier-messages one, the failure in parentheses. */
       bodyFailed: (reason: string) => `[加载失败]：完整内容没能加载（${reason}）`,
       /** The Trace panel bringing a machine's Trace file over before it opens it. */
@@ -4959,6 +5147,17 @@ Benchmark：
     } as Record<string, string>,
     workRunning: "运行中",
     workDone: "运行完毕",
+    workFailed: "运行失败",
+    workStopped: "已停止",
+    workRetryStep: (n: number) => `第 ${n} 次重试`,
+    previousWorkStep: "上一步",
+    nextWorkStep: "下一步",
+    latestWorkStep: "最新步骤",
+    waitingWorkStep: "查看待处理步骤",
+    workElapsed: "总耗时",
+    /** The words around the step number in Compact's pager; the number between them is a field. */
+    workStepWords: ["第 ", " 步"] as readonly [before: string, after: string],
+    workStepJump: "跳转到步骤",
     workGroupSteps: (n: number) => `${n} 步`,
     approvalWaiting: "待审批",
     copyCode: "复制代码",
@@ -5147,6 +5346,11 @@ Benchmark：
     goalBudgetInvalid: "无效预算：应为正数，可带 k/m 后缀（500k、2m）",
     goalBudgetSave: "保存预算",
     goalRemove: "退出目标模式",
+    /** The remove label of a composer switch's chip (a plugin's mode, e.g. Plan mode). */
+    switchOff: (title: string): string => `关闭${title}`,
+    /** The end of a "+" menu row for a composer mode the Agent lacks: picking it installs the plugin on the Agent, then turns the mode on. */
+    switchInstall: "安装",
+    switchInstalling: "正在安装…",
     /** The notice above the composer when goal mode is engaged on an Agent without the goal plugin, and its install button. */
     goalPluginMissing: "目标模式需要 goal 插件：安装到此 Agent 后即可发起目标。",
     goalPluginInstall: "安装到此 Agent",
@@ -5704,7 +5908,8 @@ Benchmark：
     rangeCustom: "自定义",
     chartRequestsByAgent: "各 Agent 请求与成功率",
     chartRequestsByModel: "各模型请求与成功率",
-    legendSuccessRate: "成功率",
+    legendRequestCount: "请求数（左轴）",
+    legendSuccessRate: "成功率（右轴）",
     chartTokenTrend: "Token 变化",
     chartCostTrend: "成本变化",
     legendOther: (n: number): string => `其他 ${n} 项`,
@@ -5788,6 +5993,8 @@ Benchmark：
     inProgress: "进行中",
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
+    /** A `session_update` row's summary: what the record is, ahead of the model it names. */
+    sessionUpdate: "Session 设置变更",
     exportFile: "导出",
     /** The round navigator the toolbar's rounds button opens: its title, and how many rounds it lists. */
     roundNav: "轮次导航",
@@ -7063,13 +7270,13 @@ Benchmark：
     },
   },
   /**
-   * The problem report (the UI package's `ReportStrings`): 「[报告问题]」 after a serious error, the
+   * The problem report (the UI package's `ReportStrings`): 「[报告问题]」 after a failure, the
    * report dialog it opens, and the notice a crashed part of the page shows.
    */
   report: {
     action: "报告问题",
     title: "报告问题",
-    lead: "这类错误多半是 PenguinHarness 的缺陷。提交到 GitHub 能帮助改进这个开源项目。",
+    lead: "这可能是 PenguinHarness 的缺陷，也可能来自网络、模型服务或所连的机器。如果你认为问题出在 PenguinHarness，欢迎到 GitHub 提交 issue，帮助改进这个开源项目。",
     check: "报告已去掉密钥、Token 与个人路径一类的内容，发送前仍请检查有没有不想公开的信息。",
     label: "报告",
     copy: "复制",
@@ -7154,6 +7361,8 @@ Benchmark：
       unknown_plugin: "该插件不在插件库中。",
       goal_plugin_not_installed:
         "目标模式需要 goal 插件——请先在插件库中为该 Agent 安装，并确认其钩子包已启用。",
+      prompt_hook_not_installed:
+        "这个 Agent 已没有该开关所需的钩子包，或钩子已关闭。请关闭这个开关，或重新安装对应插件。",
       skill_too_large: "该技能目录过大，超出了导入限制。",
       hook_too_large: "该钩子包过大，超出了导入限制。",
       workbench_too_large: "该工作台的源码过大，超出了导出限制。",
@@ -7243,6 +7452,8 @@ Benchmark：
       browser_unavailable:
         "浏览器现在不可用：内置浏览器需要打开 PenguinHarness 桌面应用，你的 Chrome 需要连上 PenguinHarness Browser 扩展。",
       source_not_found: "找不到这个浏览器配置文件。",
+      import_declined: "你没有在 Chrome 中允许这次导入。",
+      extension_outdated: "Chrome 中的 PenguinHarness Browser 扩展版本过旧，请更新后重试。",
       shell_unreachable: "无法联系桌面应用。",
       timeout: "操作超时，请重试。",
     },
