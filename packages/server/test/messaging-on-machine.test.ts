@@ -22,8 +22,8 @@ import type { MessagingBindingsResponse } from "../src/api/types.js";
 import type {
   TelegramTransportOpts,
   TelegramUpdate,
-} from "../src/runtime/messaging/telegram-api.js";
-import { createTelegramTransport } from "../src/runtime/messaging/telegram-api.js";
+} from "@prismshadow/penguin-library-messaging/telegram-api";
+import { createTelegramTransport } from "@prismshadow/penguin-library-messaging/telegram-api";
 import { fakeFetch, jsonResponse } from "./fixtures/fetch.js";
 import type { FetchCall } from "./fixtures/fetch.js";
 import { fakeMachinesNode } from "./fixtures/machines.js";

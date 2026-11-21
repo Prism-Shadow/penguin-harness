@@ -74,10 +74,10 @@ import {
   MESSAGING_TEST_MESSAGE,
   messagingImageFailedNotice,
   messagingInboundFileTooLargeNotice,
-} from "../src/runtime/messaging/bridge.js";
-import { MessagingChannelError } from "../src/runtime/messaging/connector.js";
-import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
-import { MessagingMediaTooLargeError, collectUnderCap } from "../src/runtime/messaging/media.js";
+} from "@prismshadow/penguin-library-messaging/bridge";
+import { MessagingChannelError } from "@prismshadow/penguin-library-messaging/connector";
+import { messagingErrorKind } from "@prismshadow/penguin-library-messaging/error-kind";
+import { MessagingMediaTooLargeError, collectUnderCap } from "@prismshadow/penguin-library-messaging/media";
 import type {
   TelegramBotClient,
   TelegramBotUser,
@@ -87,13 +87,13 @@ import type {
   TelegramTransportOpts,
   TelegramUpdate,
   TelegramWebhookInfo,
-} from "../src/runtime/messaging/telegram-api.js";
+} from "@prismshadow/penguin-library-messaging/telegram-api";
 import {
   TELEGRAM_MAX_DOWNLOAD_BYTES,
   TelegramApiError,
   createTelegramTransport,
-} from "../src/runtime/messaging/telegram-api.js";
-import { TelegramConnector, telegramBotIdOf } from "../src/runtime/messaging/telegram-connector.js";
+} from "@prismshadow/penguin-library-messaging/telegram-api";
+import { TelegramConnector, telegramBotIdOf } from "@prismshadow/penguin-library-messaging/telegram-connector";
 import { FakeFeishuSdk } from "./fixtures/feishu.js";
 import { fakeFetch, jsonResponse } from "./fixtures/fetch.js";
 import { forwardingTo } from "./fixtures/forwarding.js";

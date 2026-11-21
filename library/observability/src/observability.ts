@@ -74,6 +74,16 @@ export type ErrorSource =
 /** Error classification: see file header — the criterion is "does a human need to step in". */
 export type ErrorKind = "expected" | "unexpected";
 
+/**
+ * Message truncation length for error records (keep only a readable summary; the full
+ * stack is still logged). The recorder clips with it, and the messaging bridge fits its
+ * file-failure records under it — so it lives with the Errors contract.
+ */
+export const MESSAGE_MAX = 500;
+
+/** What an error sink needs of the recorder: one-sided record (the messaging bridge's deps read it). */
+export type ErrorSink = Pick<Errors, "record">;
+
 export interface ErrorRecordArgs {
   source: ErrorSource;
   /** The caught error (unknown: the value caught may not be an Error; failures from the message stream pass the reason text directly). */

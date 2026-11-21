@@ -3,8 +3,8 @@
  * recorded, each opened connection is handed back so a test can push inbound events, and
  * each failure a test needs is a switch. Nothing here opens a network connection.
  */
-import type { FeishuCard } from "../../src/runtime/messaging/feishu-card.js";
-import { collectUnderCap } from "../../src/runtime/messaging/media.js";
+import type { FeishuCard } from "@prismshadow/penguin-library-messaging/feishu-card";
+import { collectUnderCap } from "@prismshadow/penguin-library-messaging/media";
 import type {
   FeishuApiClient,
   FeishuCredentials,
@@ -12,7 +12,7 @@ import type {
   FeishuImageData,
   FeishuInboundEvent,
   FeishuSdk,
-} from "../../src/runtime/messaging/feishu-sdk.js";
+} from "@prismshadow/penguin-library-messaging/feishu-sdk";
 
 export interface SentText {
   kind: "send" | "reply";

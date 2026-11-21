@@ -48,9 +48,9 @@ import {
   MESSAGING_APPROVAL_NOTICE,
   MESSAGING_TEST_MESSAGE,
   MESSAGING_UNSUPPORTED_NOTICE,
-} from "../src/runtime/messaging/bridge.js";
-import type { MessagingClient } from "../src/runtime/messaging/connector.js";
-import { MessagingUnsupportedError } from "../src/runtime/messaging/media.js";
+} from "@prismshadow/penguin-library-messaging/bridge";
+import type { MessagingClient } from "@prismshadow/penguin-library-messaging/connector";
+import { MessagingUnsupportedError } from "@prismshadow/penguin-library-messaging/media";
 import type {
   QQBotClient,
   QQCredentials,
@@ -59,9 +59,9 @@ import type {
   QQInboundEvent,
   QQSendArgs,
   QQTransport,
-} from "../src/runtime/messaging/qq-api.js";
-import { QQApiError, normalizeDispatch, qqSendErrorText } from "../src/runtime/messaging/qq-api.js";
-import type { QQConnectorOpts } from "../src/runtime/messaging/qq-connector.js";
+} from "@prismshadow/penguin-library-messaging/qq-api";
+import { QQApiError, normalizeDispatch, qqSendErrorText } from "@prismshadow/penguin-library-messaging/qq-api";
+import type { QQConnectorOpts } from "@prismshadow/penguin-library-messaging/qq-connector";
 import {
   QQ_PASSIVE_WINDOW_MS,
   QQ_REPLY_BUDGET,
@@ -69,7 +69,7 @@ import {
   parseQQChatId,
   qqChatIdOf,
   qqConfigOf,
-} from "../src/runtime/messaging/qq-connector.js";
+} from "@prismshadow/penguin-library-messaging/qq-connector";
 import { forwardingTo } from "./fixtures/forwarding.js";
 import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";

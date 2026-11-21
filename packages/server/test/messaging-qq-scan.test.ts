@@ -37,8 +37,8 @@ import {
   decryptQQBotSecret,
   newQQScanKey,
   qqScanQrUrl,
-} from "../src/runtime/messaging/qq-scan.js";
-import type { QQBindPollResult, QQScanTransport } from "../src/runtime/messaging/qq-scan.js";
+} from "@prismshadow/penguin-library-messaging/qq-scan";
+import type { QQBindPollResult, QQScanTransport } from "@prismshadow/penguin-library-messaging/qq-scan";
 import { stubFetch } from "./fixtures/fetch.js";
 import { sessionRow } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";

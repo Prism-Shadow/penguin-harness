@@ -1,7 +1,7 @@
 {
   "name": "@prismshadow/penguin-library-messaging",
   "version": "0.2.18",
-  "description": "The messaging domain: the MessagingBindings and MessagingConversations mechanisms and their repos. A library package - the server imports it; nothing here imports the server.",
+  "description": "The messaging domain: the MessagingBindings and MessagingConversations mechanisms and their repos, the chat-channel bridge and the channel connectors (feishu, telegram, qq, wechat), and the messaging HTTP surface. A library package - the server imports it; nothing here imports the server.",
   "license": "Apache-2.0",
   "author": {
     "name": "Prism-Shadow",
@@ -39,6 +39,126 @@
     "./repos": {
       "types": "./dist/repos/index.d.ts",
       "import": "./dist/repos/index.js"
+    },
+    "./account-holders": {
+      "types": "./dist/account-holders.d.ts",
+      "import": "./dist/account-holders.js"
+    },
+    "./account-routes": {
+      "types": "./dist/account-routes.d.ts",
+      "import": "./dist/account-routes.js"
+    },
+    "./bridge": {
+      "types": "./dist/bridge.d.ts",
+      "import": "./dist/bridge.js"
+    },
+    "./channel-specs": {
+      "types": "./dist/channel-specs.d.ts",
+      "import": "./dist/channel-specs.js"
+    },
+    "./connector": {
+      "types": "./dist/connector.d.ts",
+      "import": "./dist/connector.js"
+    },
+    "./enabled-channel": {
+      "types": "./dist/enabled-channel.d.ts",
+      "import": "./dist/enabled-channel.js"
+    },
+    "./error-kind": {
+      "types": "./dist/error-kind.d.ts",
+      "import": "./dist/error-kind.js"
+    },
+    "./feishu-card": {
+      "types": "./dist/feishu-card.d.ts",
+      "import": "./dist/feishu-card.js"
+    },
+    "./feishu-connector": {
+      "types": "./dist/feishu-connector.d.ts",
+      "import": "./dist/feishu-connector.js"
+    },
+    "./feishu-sdk": {
+      "types": "./dist/feishu-sdk.d.ts",
+      "import": "./dist/feishu-sdk.js"
+    },
+    "./markdown": {
+      "types": "./dist/markdown.d.ts",
+      "import": "./dist/markdown.js"
+    },
+    "./mask": {
+      "types": "./dist/mask.d.ts",
+      "import": "./dist/mask.js"
+    },
+    "./media": {
+      "types": "./dist/media.d.ts",
+      "import": "./dist/media.js"
+    },
+    "./ports": {
+      "types": "./dist/ports.d.ts",
+      "import": "./dist/ports.js"
+    },
+    "./qq-api": {
+      "types": "./dist/qq-api.d.ts",
+      "import": "./dist/qq-api.js"
+    },
+    "./qq-connector": {
+      "types": "./dist/qq-connector.d.ts",
+      "import": "./dist/qq-connector.js"
+    },
+    "./qq-markdown": {
+      "types": "./dist/qq-markdown.d.ts",
+      "import": "./dist/qq-markdown.js"
+    },
+    "./qq-scan": {
+      "types": "./dist/qq-scan.d.ts",
+      "import": "./dist/qq-scan.js"
+    },
+    "./recall": {
+      "types": "./dist/recall.d.ts",
+      "import": "./dist/recall.js"
+    },
+    "./reply-files": {
+      "types": "./dist/reply-files.d.ts",
+      "import": "./dist/reply-files.js"
+    },
+    "./routes": {
+      "types": "./dist/routes.d.ts",
+      "import": "./dist/routes.js"
+    },
+    "./task-attachments": {
+      "types": "./dist/task-attachments.d.ts",
+      "import": "./dist/task-attachments.js"
+    },
+    "./telegram-api": {
+      "types": "./dist/telegram-api.d.ts",
+      "import": "./dist/telegram-api.js"
+    },
+    "./telegram-connector": {
+      "types": "./dist/telegram-connector.d.ts",
+      "import": "./dist/telegram-connector.js"
+    },
+    "./telegram-html": {
+      "types": "./dist/telegram-html.d.ts",
+      "import": "./dist/telegram-html.js"
+    },
+    "./vocabulary": {
+      "types": "./dist/vocabulary.d.ts",
+      "import": "./dist/vocabulary.js"
+    },
+    "./wechat-api": {
+      "types": "./dist/wechat-api.d.ts",
+      "import": "./dist/wechat-api.js"
+    },
+    "./wechat-connector": {
+      "types": "./dist/wechat-connector.d.ts",
+      "import": "./dist/wechat-connector.js"
+    },
+    "./wechat-markdown": {
+      "types": "./dist/wechat-markdown.d.ts",
+      "import": "./dist/wechat-markdown.js"
+    },
+    "./wechat-scan": {
+      "types": "./dist/wechat-scan.d.ts",
+      "import": "./dist/wechat-scan.js"
     }
   },
   "scripts": {
@@ -48,12 +168,25 @@
   },
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*",
-    "@prismshadow/penguin-library-db": "workspace:*"
+    "@prismshadow/penguin-library-db": "workspace:*",
+    "@prismshadow/penguin-library-http": "workspace:*",
+    "@prismshadow/penguin-library-session": "workspace:*",
+    "@prismshadow/penguin-library-setting": "workspace:*",
+    "@prismshadow/penguin-library-observability": "workspace:*",
+    "@prismshadow/penguin-library-project": "workspace:*",
+    "@prismshadow/penguin-library-workspace": "workspace:*",
+    "@prismshadow/a2ui": "workspace:*",
+    "hono": "^4.13.11",
+    "undici": "^7.29.1",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.5",
+    "@prismshadow/chat-markdown": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.3.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "@types/mdast": "^4.0.4"
   },
   "engines": {
     "node": ">=24"
