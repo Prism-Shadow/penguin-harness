@@ -599,6 +599,8 @@ export const en: Strings = {
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
+    /** The rail's last group: a page per plugin that has options. */
+    groupPlugins: "Plugins",
     /** Personal pages of the settings dialog. */
     profile: "Profile",
     generalTitle: "General",
@@ -658,8 +660,12 @@ export const en: Strings = {
       tls: "TLS handshake failed",
       network: "Unreachable",
     },
-    /** Admin-only sub-page (server-global): the options loaded plugins declare. */
-    pluginsTitle: "Plugins",
+    /** The Plugins group's first page (admin, server-global): where plugins install from. */
+    pluginsTitle: "Plugin sources",
+    /** The Plugins group's second page (admin, server-global): the sandbox Agents run in. */
+    sandboxTitle: "Agent Sandbox",
+    sandboxInfo:
+      "Which sandbox new Sessions start in: the switch and the presets apply to Sessions created afterwards; existing Sessions keep the policy they were created with. Each sandbox backend plugin has a line in the checks; its own options and checks are on its plugin page.",
     /** An enum option this machine cannot honour, listed greyed out. */
     pluginOptionUnavailable: (title: string, reason: string) =>
       `${title} (not supported: ${reason})`,
@@ -674,12 +680,64 @@ export const en: Strings = {
     pluginPositionOn: "On",
     pluginPositionOff: "Off",
     pluginsInfo:
-      "Below the switch: first the server module requests, then the options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here. The switch only changes what this browser lists on the Plugins page.",
-    /** The section of requests to run a library plugin's server module, and the decisions on them (admin). */
+      "Where plugins install from: the npm registry, the plugin index and the mirrors. Server-global, like the plugins themselves; a save applies at once, nothing to restart.",
+    /** A plugin's page in the Plugins group: its parts, the status page's blocks and words. */
+    pluginPage: {
+      /** The heading over the preconditions; its other end holds the one "check again". */
+      checks: "Checks",
+      /** The heading over the switches and fields. */
+      options: "Options",
+      /** The heading over the fields a plugin marks as security settings. */
+      security: "Security",
+      /** A precondition's state: the mark's tooltip and accessible name. */
+      checkState: {
+        ok: "OK",
+        action: "Needs action",
+        unknown: "Unknown",
+        na: "Not applicable",
+      },
+      /** The version element's state word. */
+      versionState: {
+        installed: "Installed",
+        preparing: "Preparing",
+        failed: "Install failed",
+        missing: "Not installed",
+        unsupported: "Not supported here",
+        unknown: "State unknown",
+      },
+      /** The fold under a check or the version element. */
+      details: "Details",
+      /** A check's link to the page it names (a sandbox backend's plugin page). */
+      openPage: "Open",
+      /** That fold's accessible name on a check's row: the row it belongs to. */
+      detailsAbout: (subject: string) => `Details: ${subject}`,
+      /** The picked machine holds none of this plugin's settings. */
+      noneOnMachine: (machine: string) => `${machine} has no options for this plugin.`,
+      /** A plugin's page that only a machine has, switched to this server. */
+      notOnThisServer:
+        "This plugin is not installed on this server. Pick a machine that has it above to see its options.",
+      /**
+       * The picked machine names no plugin on any of its groups: none of this plugin's, or a build
+       * older than the naming, which lists every plugin's options on the management page.
+       */
+      onAdminPage: (machine: string, page: string) =>
+        `Nothing on ${machine} is marked as this plugin's options. A machine on an older build does not say which plugin its options belong to and lists them all under ${page}.`,
+    },
+    /**
+     * The Plugins group's page of requests to run a library plugin's server module, and the
+     * decisions on them (admin): its rail name and heading, and its explanation on the "?".
+     */
     moduleRequests: {
-      title: "Server module requests",
+      title: "Module requests",
       info: "A member who installs a plugin with a server module on an agent leaves a request here when this server neither runs the module nor ships it in its build. Enabling lists it in that Project's plugin table for this server and reloads the server's plugins; running agents are not affected. A built-in plugin's module is enabled with the agent install, and is recorded here too.",
       empty: "No requests waiting",
+      /** The rail row's accessible name while requests wait: its name and the count beside it. */
+      waitingCount: (n: number) => `Module requests, ${n} waiting`,
+      /** In place of the list when the server on screen cannot answer (null: this server). */
+      unreadable: (machine: string | null, reason: string) =>
+        machine === null
+          ? `The module requests could not be read: ${reason}`
+          : `The module requests on ${machine} could not be read: ${reason}`,
       waiting: "Waiting",
       waitingHint: "Waiting for you to enable or decline it",
       declined: "Declined",
@@ -709,8 +767,6 @@ export const en: Strings = {
       stillListed: (name: string, projects: string) =>
         `The server module of ${name} still runs: the shared plugin table of ${projects} lists it. Remove it on the Plugins page.`,
     },
-    /** The page's own switch, above the server's cards: a display preference of this browser. */
-    pluginsIncompatibleOnly: "Show only incompatible plugins",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "Leave empty to keep the saved value",
     pluginSecretClear: "Clear stored value",
@@ -3042,7 +3098,7 @@ export const en: Strings = {
         : `This build cannot fully run ${n} installed plugins. Their rows say why.`,
     /** The notice's action: filters the list down to those rows. */
     unsatisfiedShow: "Show",
-    /** Page notice while Settings › Plugins narrows the list to the incompatible plugins. */
+    /** Page notice while the filter beside the search narrows the list to the incompatible plugins. */
     incompatibleOnlyNotice: "Only incompatible plugins are shown.",
     /** That notice's action: turns the filter off. */
     incompatibleOnlyShowAll: "Show all",
@@ -3051,7 +3107,7 @@ export const en: Strings = {
       n === 1
         ? "1 server module is waiting to be enabled"
         : `${n} server modules are waiting to be enabled`,
-    /** That notice's action: opens Settings › Plugins, where they are decided. */
+    /** That notice's action: opens the Settings dialog's module requests page, where they are decided. */
     moduleRequestsView: "View",
     /**
      * What an install did about the plugin's server module, after the install's own sentence
@@ -3128,6 +3184,12 @@ export const en: Strings = {
     openSettings: "Settings",
     pageDesc:
       "Every plugin, by category. Plugins of skills and/or a hook package ship with this build and are installed on agents; server-module plugins, such as the Agent Sandbox backends, are installed on the whole server by an admin.",
+    /**
+     * The filter beside the search: a toggle that narrows the list to the plugins this build cannot
+     * fully run, remembered in this browser; the group's accessible name, and the toggle's words.
+     */
+    filterLabel: "Filter plugins",
+    incompatibleOnlyFilter: "Incompatible only",
     /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
     groupByLabel: "Group by",
     groupBy: {

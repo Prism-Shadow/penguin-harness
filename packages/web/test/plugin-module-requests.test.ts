@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Settings › Plugins, the administrator's server module requests
+ * The list on the Settings dialog's module requests page, the administrator's
  * (features/settings/plugin-module-requests.tsx), against the HTTP fake: what the ledger lists,
  * and a decision answered with the new list.
  *

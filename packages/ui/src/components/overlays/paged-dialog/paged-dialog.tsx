@@ -4,7 +4,8 @@
  * only the pane scrolls, so a long page never carries the rail away with it. Purely
  * presentational: the caller owns which pages exist, which one is active, and what the pane
  * renders; the shell draws the rail (a `NavList` of `NavRow`s, grouped, icon + label, solid-fill
- * active row — the sidebar's convention), the pane heading, and the close control.
+ * active row — the sidebar's convention — and a page's count of what waits on it at the row's
+ * end), the pane heading, and the close control.
  *
  * Built on Modal, so it inherits the portal, the Escape layer stack (nested dialogs and menus
  * close in visual order) and the bottom-sheet posture on narrow screens — where the rail folds
@@ -33,6 +34,16 @@ export interface PagedDialogItem<K extends string> {
    * on every visit.
    */
   info?: ReactNode;
+  /**
+   * The pane heading's content when it says more than the label — a plugin page's icon before
+   * its name and its version after it. `label` stays the rail's text and what the dialog names
+   * the page by.
+   */
+  heading?: ReactNode;
+  /** The rail row's trailing mark: a count of what waits on the page. */
+  badge?: ReactNode;
+  /** The rail row's accessible name when the badge adds to the label ("Module requests, 2 waiting"). */
+  ariaLabel?: string;
 }
 
 export interface PagedDialogGroup<K extends string> {
@@ -119,6 +130,8 @@ export function PagedDialog<K extends string>({
                   label={item.label}
                   tooltip={item.label}
                   glyph={item.icon}
+                  {...(item.badge !== undefined ? { badge: item.badge } : {})}
+                  {...(item.ariaLabel !== undefined ? { ariaLabel: item.ariaLabel } : {})}
                   active={item.key === active}
                   onClick={() => onSelect(item.key)}
                 />
@@ -133,7 +146,7 @@ export function PagedDialog<K extends string>({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 sm:px-6 sm:pt-5">
             <h2 className={`flex min-w-0 items-center ${ICON_GAP.row} text-lg font-semibold`}>
-              {activeLabel}
+              {activeItem?.heading ?? activeLabel}
               {activeItem?.info !== undefined && (
                 <InfoPopover label={activeLabel}>{activeItem.info}</InfoPopover>
               )}

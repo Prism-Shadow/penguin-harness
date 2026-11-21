@@ -17,9 +17,9 @@
  *   Back closes it; closing one a link opened replaces the entry. The plugin a link names shows
  *   its detail even while the tab or the search hides its card.
  *
- * Settings › Plugins can narrow the list to the plugins this build cannot fully run, per browser
- * (incompatible-only.ts), and while it does a notice under the title says so. The status rules
- * are plugin-status.ts.
+ * A filter chip beside the search box narrows the list to the plugins this build cannot fully
+ * run, per browser (incompatible-only.ts), and while it does a notice under the title says so.
+ * The status rules are plugin-status.ts.
  *
  * - A library plugin is installed per Agent, by any member, through its card's "manage
  *   installs" dialog, and uninstalled there by the Project owner; the update nudge appears when
@@ -51,6 +51,7 @@ import { useLocation, useNavigate, useSearchParams } from "react-router";
 import type { AgentSummary, PluginItem, QuickStartItem } from "@prismshadow/penguin-server/api";
 import {
   Button,
+  ChoiceGroup,
   ConfirmModal,
   CoverCardSkeleton,
   GlyphIcon,
@@ -288,13 +289,15 @@ export function PluginsPage() {
   const isAdmin = user?.isAdmin === true;
   const isOwner = currentProject?.role === "owner";
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** The Settings page the dialog opens on: plugin sources from the header, the requests from their notice. */
+  const [settingsSection, setSettingsSection] = useState<"plugins" | "moduleRequests">("plugins");
   /** The administrator's requests to run plugins' server modules on this server, for the notice. */
   const moduleRequests = usePluginModuleRequests(null, isAdmin);
   /** The import dialog (admin) is open. */
   const [importOpen, setImportOpen] = useState(false);
   /** Free text over names, descriptions and keywords. */
   const [query, setQuery] = useState("");
-  /** Only the plugins this build cannot fully run: switched in Settings › Plugins. */
+  /** Only the plugins this build cannot fully run: the filter beside the search, kept per browser. */
   const incompatibleOnly = usePluginsIncompatibleOnly();
   const [groupBy, setGroupBy] = useState<PluginGroupBy>(() => initialPluginsGroupBy());
   const [layout, chooseLayout] = useShowcaseLayout("penguin.pluginsLayout");
@@ -1028,6 +1031,8 @@ export function PluginsPage() {
           <PluginsHeaderActions
             query={query}
             onQuery={setQuery}
+            incompatibleOnly={incompatibleOnly}
+            onIncompatibleOnly={writePluginsIncompatibleOnly}
             isAdmin={isAdmin}
             machinePicker={
               otherMachines.length > 0 ? (
@@ -1041,7 +1046,10 @@ export function PluginsPage() {
                 />
               ) : null
             }
-            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenSettings={() => {
+              setSettingsSection("plugins");
+              setSettingsOpen(true);
+            }}
             onImport={() => setImportOpen(true)}
           />
         }
@@ -1096,13 +1104,16 @@ export function PluginsPage() {
         <IncompatibleNotice filtered={incompatibleOnly} unsatisfied={unsatisfiedCount} />
         <ModuleRequestsNotice
           waiting={isAdmin ? (moduleRequests.value?.pending ?? 0) : 0}
-          onView={() => setSettingsOpen(true)}
+          onView={() => {
+            setSettingsSection("moduleRequests");
+            setSettingsOpen(true);
+          }}
         />
       </PageHeader>
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        section="plugins"
+        section={settingsSection}
       />
       {isAdmin && projectId !== null && (
         <ImportPluginModal
@@ -1304,8 +1315,8 @@ export function PluginsPage() {
  * The notice about incompatible plugins, one at a time. While the list holds only them it says
  * so and offers the whole list back: a filtered list that did not say so would read as plugins
  * gone missing. Otherwise, while this build cannot fully run some listed plugins, it counts them
- * and offers to show only those. Both actions flip the stored preference the Settings switch
- * shows.
+ * and offers to show only those. Both actions flip the stored preference the filter beside the
+ * search shows.
  */
 export function IncompatibleNotice({
   filtered,
@@ -1343,6 +1354,9 @@ export function IncompatibleNotice({
     </Notice>
   );
 }
+
+/** The filter chip's value: the list narrowed to the plugins this build cannot fully run. */
+const INCOMPATIBLE = "incompatible";
 
 /**
  * Each select's width beside the tabs, by language: wide enough for its longest option there
@@ -1413,8 +1427,8 @@ export function PluginsListControls({
 
 /**
  * The administrator's notice beside the incompatible-plugins one, while members' requests to run a
- * plugin's server module wait on this server: how many, and the way to Settings › Plugins, where
- * they are decided. Nothing while none waits.
+ * plugin's server module wait on this server: how many, and the way to the Settings dialog's
+ * module requests page, where they are decided. Nothing while none waits.
  */
 export function ModuleRequestsNotice({
   waiting,
@@ -1439,16 +1453,20 @@ export function ModuleRequestsNotice({
 /**
  * The page header's actions, in the Agents page header's look: every control on the small rung,
  * so the row is one height, at the header's gap. For everyone (a member narrows the list too):
- * the search box. Then, for an admin, the machine picker (which machine's plugins the rows show,
- * and which machine's own table an install or a removal edits), then the pair the Agents page
- * header has: Import plugin, the primary button, and Settings, the secondary one, which opens the
- * Settings dialog's Plugins page — each glyph before words that always show. On a phone the
- * search box takes the first line, and the admin's buttons wrap below it. The grouping and the
- * sort stand at the tab row's end (`PluginsListControls`).
+ * the search box, and beside it the incompatible-only filter, a toggle chip that narrows the list
+ * as the search does. Then, for an admin, the machine picker (which machine's plugins the rows
+ * show, and which machine's own table an install or a removal edits), then the pair the Agents
+ * page header has: Import plugin, the primary button, and Settings, the secondary one, which opens
+ * the Settings dialog's Plugins page — each glyph before words that always show. On a phone the
+ * search box and the filter share the first line, the box taking what the filter leaves, and the
+ * admin's buttons wrap below them. The grouping and the sort stand at the tab row's end
+ * (`PluginsListControls`).
  */
 export function PluginsHeaderActions({
   query,
   onQuery,
+  incompatibleOnly,
+  onIncompatibleOnly,
   isAdmin,
   machinePicker,
   onOpenSettings,
@@ -1456,6 +1474,9 @@ export function PluginsHeaderActions({
 }: {
   query: string;
   onQuery: (query: string) => void;
+  /** Whether the list holds only the plugins this build cannot fully run. */
+  incompatibleOnly: boolean;
+  onIncompatibleOnly: (on: boolean) => void;
   isAdmin: boolean;
   /** The machine picker, when there is another machine to pick; null otherwise. */
   machinePicker: React.ReactNode;
@@ -1475,6 +1496,16 @@ export function PluginsHeaderActions({
             onChange={onQuery}
           />
         </div>
+        <ChoiceGroup
+          shape="chip"
+          size="sm"
+          multiple
+          aria-label={S.plugins.filterLabel}
+          className="shrink-0"
+          options={[{ value: INCOMPATIBLE, label: S.plugins.incompatibleOnlyFilter }]}
+          value={incompatibleOnly ? [INCOMPATIBLE] : []}
+          onChange={(on) => onIncompatibleOnly(on.includes(INCOMPATIBLE))}
+        />
       </div>
       {isAdmin && (
         <>

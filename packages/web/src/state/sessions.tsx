@@ -2217,6 +2217,15 @@ export function useSessions(): SessionsContextValue {
 }
 
 /**
+ * The Session list's state when there is one, null outside a SessionsProvider: for a page that
+ * reads only what it decorates with (the connected machines a picker offers) and works without
+ * it, as `useProjectIfAny` does for the Project.
+ */
+export function useSessionsIfAny(): SessionsContextValue | null {
+  return useContext(SessionsContext);
+}
+
+/**
  * Run status by Session id as this page knows it: every status the user channel has reported
  * (`live`, loaded row or not), with a loaded row's own status winning — a row is written by
  * the same events AND by every list fetch, so it is never older than the remembered entry,

@@ -707,6 +707,8 @@ export const zh = {
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",
+    /** The rail's last group: a page per plugin that has options. */
+    groupPlugins: "插件",
     /** Personal pages of the settings dialog. */
     profile: "个人资料",
     generalTitle: "通用",
@@ -764,8 +766,12 @@ export const zh = {
       tls: "TLS 握手失败",
       network: "无法连接",
     },
-    /** Admin-only sub-page (server-global): the options loaded plugins declare. */
-    pluginsTitle: "插件",
+    /** The Plugins group's first page (admin, server-global): where plugins install from. */
+    pluginsTitle: "插件源",
+    /** The Plugins group's second page (admin, server-global): the sandbox Agents run in. */
+    sandboxTitle: "Agent 运行沙箱",
+    sandboxInfo:
+      "新建的 Session 进入哪种沙箱：开关与预设对之后新建的 Session 生效，已有 Session 保留创建时的策略。检查里每个沙箱后端插件各占一行，它自己的选项与检查在它的插件页。",
     /** An enum option this machine cannot honour, listed greyed out. */
     pluginOptionUnavailable: (title: string, reason: string) => `${title}（不支持：${reason}）`,
     /** A switch one of whose positions this machine cannot honour, under the switch. */
@@ -774,12 +780,63 @@ export const zh = {
     pluginPositionOn: "开启",
     pluginPositionOff: "关闭",
     pluginsInfo:
-      "开关下方先是服务端模块请求，再是各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。顶部的开关只影响本浏览器在插件页列出哪些插件。",
-    /** The section of requests to run a library plugin's server module, and the decisions on them (admin). */
+      "插件从哪里安装：npm registry、插件索引与镜像。与插件本身一样是服务器全局的；保存后立即送达，无需重启。",
+    /** A plugin's page in the Plugins group: its parts, the status page's blocks and words. */
+    pluginPage: {
+      /** The heading over the preconditions; its other end holds the one "check again". */
+      checks: "检查",
+      /** The heading over the switches and fields. */
+      options: "选项",
+      /** The heading over the fields a plugin marks as security settings. */
+      security: "安全设置",
+      /** A precondition's state: the mark's tooltip and accessible name. */
+      checkState: {
+        ok: "通过",
+        action: "需要处理",
+        unknown: "未知",
+        na: "不适用",
+      },
+      /** The version element's state word. */
+      versionState: {
+        installed: "已安装",
+        preparing: "准备中",
+        failed: "安装失败",
+        missing: "未安装",
+        unsupported: "此机器不支持",
+        unknown: "状态未知",
+      },
+      /** The fold under a check or the version element. */
+      details: "详情",
+      /** A check's link to the page it names (a sandbox backend's plugin page). */
+      openPage: "查看",
+      /** That fold's accessible name on a check's row: the row it belongs to. */
+      detailsAbout: (subject: string) => `详情：${subject}`,
+      /** The picked machine holds none of this plugin's settings. */
+      noneOnMachine: (machine: string) => `${machine} 上没有这个插件的选项。`,
+      /** A plugin's page that only a machine has, switched to this server. */
+      notOnThisServer: "本机没有安装这个插件。在上方选择装有它的机器，即可查看它的选项。",
+      /**
+       * The picked machine names no plugin on any of its groups: none of this plugin's, or a build
+       * older than the naming, which lists every plugin's options on the management page.
+       */
+      onAdminPage: (machine: string, page: string) =>
+        `${machine} 上没有标明属于这个插件的选项。版本较旧的机器不标明选项属于哪个插件，它的插件选项都列在「${page}」里。`,
+    },
+    /**
+     * The Plugins group's page of requests to run a library plugin's server module, and the
+     * decisions on them (admin): its rail name and heading, and its explanation on the "?".
+     */
     moduleRequests: {
-      title: "服务端模块请求",
+      title: "模块请求",
       info: "成员把带服务端模块的插件装到 Agent 上，而本服务端既未运行、构建也不自带该模块时，会在这里留下请求。启用会把它列入该 Project 在本服务端的插件表并重新装载服务器插件，正在运行的 Agent 不受影响。内置插件的模块随 Agent 安装自动启用，也记在这里。",
       empty: "没有等待处理的请求",
+      /** The rail row's accessible name while requests wait: its name and the count beside it. */
+      waitingCount: (n: number) => `模块请求，${n} 个待处理`,
+      /** In place of the list when the server on screen cannot answer (null: this server). */
+      unreadable: (machine: string | null, reason: string) =>
+        machine === null
+          ? `无法读取模块请求：${reason}`
+          : `无法读取 ${machine} 上的模块请求：${reason}`,
       waiting: "待处理",
       waitingHint: "等待你启用或拒绝",
       declined: "已拒绝",
@@ -808,8 +865,6 @@ export const zh = {
       stillListed: (name: string, projects: string) =>
         `${name} 的服务端模块仍在运行：${projects} 的共享插件表仍列出它，可在插件页移除。`,
     },
-    /** The page's own switch, above the server's cards: a display preference of this browser. */
-    pluginsIncompatibleOnly: "只显示不兼容的插件",
     /** A list field's editor: the row buttons and the add row. */
     pluginListMoveUp: "上移",
     pluginListMoveDown: "下移",
@@ -3222,13 +3277,13 @@ export const zh = {
     unsatisfiedNotice: (n: number) => `当前构建无法完整运行 ${n} 个已装插件，原因见各自的条目。`,
     /** The notice's action: filters the list down to those rows. */
     unsatisfiedShow: "查看",
-    /** Page notice while Settings › Plugins narrows the list to the incompatible plugins. */
+    /** Page notice while the filter beside the search narrows the list to the incompatible plugins. */
     incompatibleOnlyNotice: "当前只显示不兼容的插件。",
     /** That notice's action: turns the filter off. */
     incompatibleOnlyShowAll: "显示全部",
     /** The admin's notice while members' requests to run a plugin's server module wait. */
     moduleRequestsNotice: (n: number) => `${n} 个服务端模块等待启用`,
-    /** That notice's action: opens Settings › Plugins, where they are decided. */
+    /** That notice's action: opens the Settings dialog's module requests page, where they are decided. */
     moduleRequestsView: "查看",
     /**
      * What an install did about the plugin's server module, after the install's own sentence
@@ -3297,6 +3352,12 @@ export const zh = {
     openSettings: "设置",
     pageDesc:
       "所有插件按分类列出。只含技能和／或钩子包的插件随本次构建自带，装到 Agent 上使用；服务端模块插件（如 Agent 运行沙箱后端）由管理员安装到整个服务端。",
+    /**
+     * The filter beside the search: a toggle that narrows the list to the plugins this build cannot
+     * fully run, remembered in this browser; the group's accessible name, and the toggle's words.
+     */
+    filterLabel: "筛选插件",
+    incompatibleOnlyFilter: "只看不兼容",
     /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
     groupByLabel: "分组方式",
     groupBy: {
