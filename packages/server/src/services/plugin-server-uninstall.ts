@@ -226,7 +226,14 @@ export class PluginServerUninstall {
       await this.deps.removePackage(pkg);
     } catch (err) {
       if (err instanceof PluginInstallError) {
-        throw new HttpError(500, "plugin_remove_failed", `npm: ${err.message}`);
+        // npm's own failures carry the bucket its stderr fell in; any other error (no npm here,
+        // the prefix unreadable) did not come from npm and is not worded as if it had.
+        const fromNpm = err.reason !== undefined && err.reason !== "missing";
+        throw new HttpError(
+          500,
+          "plugin_remove_failed",
+          fromNpm ? `npm: ${err.message}` : err.message,
+        );
       }
       throw err;
     }
