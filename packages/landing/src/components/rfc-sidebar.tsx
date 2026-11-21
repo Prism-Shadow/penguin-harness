@@ -310,6 +310,8 @@ function SmartlogGraphTreeView({
   onToggle: (key: string) => void;
 }) {
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const activeKey = hoveredKey ?? focusedKey;
   const CELL = 24;
   const PAD_L = 12;
   const ROW_H = 34;
@@ -322,10 +324,10 @@ function SmartlogGraphTreeView({
   const totalHeight = rows.length * ROW_H;
 
   const hoveredIdx = useMemo(() => {
-    if (hoveredKey === null) return null;
-    const idx = rows.findIndex((r) => r.node.key === hoveredKey);
+    if (activeKey === null) return null;
+    const idx = rows.findIndex((r) => r.node.key === activeKey);
     return idx >= 0 ? idx : null;
-  }, [hoveredKey, rows]);
+  }, [activeKey, rows]);
 
   // Compute active ancestor lineage set when a row is hovered or keyboard-focused.
   const activeLineageSet = useMemo(() => {
@@ -608,10 +610,10 @@ function SmartlogGraphTreeView({
               key={node.key}
               onMouseEnter={() => setHoveredKey(node.key)}
               onMouseLeave={() => setHoveredKey((prev) => (prev === node.key ? null : prev))}
-              onFocus={() => setHoveredKey(node.key)}
+              onFocus={() => setFocusedKey(node.key)}
               onBlur={(event) => {
                 if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                  setHoveredKey((prev) => (prev === node.key ? null : prev));
+                  setFocusedKey((prev) => (prev === node.key ? null : prev));
                 }
               }}
               style={{ height: `${ROW_H}px`, paddingLeft: `${contentLeft}px` }}

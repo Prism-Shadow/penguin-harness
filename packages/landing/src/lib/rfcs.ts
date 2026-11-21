@@ -103,7 +103,7 @@ export interface RfcTreeNode {
 export const RFC_TREE_COLLAPSED_STORAGE_KEY = "penguin-rfc-tree-collapsed-v1";
 
 /** SemVer 2.0 format required by `check-rfcs` (`vMAJOR.MINOR.PATCH`, e.g. `v0.0.1`, `v0.1.0`, `v1.0.0`). */
-export const RFC_SEMVER_REGEX =
+const RFC_SEMVER_REGEX =
   /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
 /** Whether `version` is a valid SemVer 2.0 RFC version (`vMAJOR.MINOR.PATCH` and not `v0.0.0`). */
@@ -607,25 +607,15 @@ export function writeRfcTreeCollapsed(
   }
 }
 
-/** Find an RFC entry by its route id (with or without the `.zh` suffix, falling back to 4-digit RFC number). */
+/** Find an RFC entry by its route id (with or without the `.zh` suffix, falling back to a unique 4-digit RFC number). */
 export function rfcEntryOf(id: string): RfcEntry | undefined {
   const baseId = id.replace(/\.zh$/, "");
   const exact = rfcEntries.find((entry) => entry.id === baseId);
   if (exact) return exact;
   const num = baseId.match(/^PRFC-\d+/)?.[0];
-  return num ? rfcEntries.find((entry) => entry.number === num) : undefined;
-}
-
-/** Look up one language version's raw document by its in-site id (with or without the .zh suffix). */
-export function rfcDocumentOf(id: string): { doc: ParsedDocument; raw: string } | null {
-  const zh = id.endsWith(".zh");
-  const file = `${zh ? id.slice(0, -3) : id}${zh ? ".zh.md" : ".md"}`;
-  const raw = Object.entries(documents).find(
-    ([path]) => path.slice(path.lastIndexOf("/") + 1) === file,
-  )?.[1];
-  if (raw === undefined) return null;
-  const doc = parseRfcDocument(file, raw);
-  return doc ? { doc, raw } : null;
+  if (!num) return undefined;
+  const matches = rfcEntries.filter((entry) => entry.number === num);
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 /** Read `rfcs/README.md` or `rfcs/README.zh.md` into its intro paragraph and its `## ` sections. */
@@ -753,21 +743,25 @@ function splitMarkdownSections(body: string): { heading: string; anchor: string;
     { heading: "", anchor: "", lines: [] },
   ];
   let current = sections[0]!;
-  let fenceMarker: string | null = null;
+  let fence: { char: string; len: number } | null = null;
   for (const line of body.split("\n")) {
-    const fenceMatch = /^\s*(```+|~~~+)/.exec(line);
-    if (fenceMatch) {
-      const marker = fenceMatch[1]!.slice(0, 3);
-      if (!fenceMarker) {
-        fenceMarker = marker;
+    if (!fence) {
+      const openFence = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
+      if (openFence) {
+        const seq = openFence[1]!;
+        fence = { char: seq[0]!, len: seq.length };
         continue;
       }
-      if (fenceMarker === marker) {
-        fenceMarker = null;
-        continue;
+    } else {
+      const closeFence = /^\s{0,3}(`{3,}|~{3,})\s*$/.exec(line);
+      if (closeFence) {
+        const seq = closeFence[1]!;
+        if (seq[0] === fence.char && seq.length >= fence.len) {
+          fence = null;
+        }
       }
+      continue;
     }
-    if (fenceMarker) continue;
     const match = /^(#{2,3})\s+(.+?)\s*$/.exec(line);
     if (match) {
       const heading = markdownToPlain(match[2]!);

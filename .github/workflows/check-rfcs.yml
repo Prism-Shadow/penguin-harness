@@ -110,7 +110,7 @@ jobs:
             REV_LINE=$(grep -E '^>[[:space:]]*(-\s*)?(\*\*Rev\*\*:|Rev:|\*\*修订\*\*：|修订：)' "$file" | head -n 1 || true)
             if [ -n "$REV_LINE" ]; then
               REV_TOKEN=$(echo "$REV_LINE" | sed -E 's/^>[[:space:]]*(-\s*)?(\*\*Rev\*\*:|Rev:|\*\*修订\*\*：|修订：)[[:space:]]*([^[:space:]（(;；,，]+).*/\3/')
-              if ! echo "$REV_TOKEN" | grep -qE "$SEMVER_RE" || [ "$REV_TOKEN" = "v0.0.0" ]; then
+              if ! echo "$REV_TOKEN" | grep -qE "$SEMVER_RE" || echo "$REV_TOKEN" | grep -qE '^v0\.0\.0($|[+-])'; then
                 echo "❌ $filename has invalid Rev version '$REV_TOKEN' (must follow SemVer 2.0, e.g. v0.0.1, v0.1.0, v1.0.0)"
                 ERROR=1
                 FILE_SEMVER_OK=0
@@ -133,7 +133,7 @@ jobs:
 
             while IFS= read -r ver; do
               [ -z "$ver" ] && continue
-              if ! echo "$ver" | grep -qE "$SEMVER_RE" || [ "$ver" = "v0.0.0" ]; then
+              if ! echo "$ver" | grep -qE "$SEMVER_RE" || echo "$ver" | grep -qE '^v0\.0\.0($|[+-])'; then
                 echo "❌ $filename has invalid Changes version '### $ver' (must follow SemVer 2.0, e.g. v0.0.1, v0.1.0, v1.0.0)"
                 ERROR=1
                 FILE_SEMVER_OK=0

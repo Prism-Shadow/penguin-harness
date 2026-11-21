@@ -54,9 +54,16 @@ export function extractH1Title(raw) {
 }
 
 function parseSemverTuple(ver) {
-  const m = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?/.exec(ver ?? "");
+  const m =
+    /^v(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(
+      ver ?? "",
+    );
   if (!m) return null;
-  return [Number(m[1]), Number(m[2]), Number(m[3] ?? "0")];
+  const major = Number(m[1]);
+  const minor = Number(m[2]);
+  const patch = Number(m[3] ?? "0");
+  if (major === 0 && minor === 0 && patch === 0) return null;
+  return { major, minor, patch, pre: m[4] ?? "" };
 }
 
 function compareSemver(a, b) {
@@ -65,7 +72,11 @@ function compareSemver(a, b) {
   if (!ta && !tb) return 0;
   if (!ta) return -1;
   if (!tb) return 1;
-  return ta[0] - tb[0] || ta[1] - tb[1] || ta[2] - tb[2];
+  const core = ta.major - tb.major || ta.minor - tb.minor || ta.patch - tb.patch;
+  if (core !== 0) return core;
+  if (!ta.pre && tb.pre) return 1;
+  if (ta.pre && !tb.pre) return -1;
+  return ta.pre.localeCompare(tb.pre);
 }
 
 /** Extract the RFC revision version (e.g. `v1.0.0`) from raw RFC Markdown. */
@@ -73,18 +84,20 @@ export function extractRfcVersion(raw) {
   if (!raw) return undefined;
   const candidates = [];
   const revMatch = raw.match(
-    /^\s*>\s*(?:-\s*)?(?:\*\*Rev\*\*:|Rev:|\*\*修订\*\*：|修订：)\s*(v\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)/m,
+    /^\s*>\s*(?:-\s*)?(?:\*\*Rev\*\*:|Rev:|\*\*修订\*\*：|修订：)\s*([^\s（(;；,，]+)/m,
   );
-  if (revMatch?.[1]) candidates.push(revMatch[1]);
-  const changesIdx = raw.indexOf("\n## Changes");
-  if (changesIdx >= 0) {
-    const afterChanges = raw.slice(changesIdx + 1);
+  if (revMatch?.[1] && parseSemverTuple(revMatch[1])) {
+    candidates.push(revMatch[1]);
+  }
+  const changesMatch = /^##\s+Changes\s*$/m.exec(raw);
+  if (changesMatch && changesMatch.index !== undefined) {
+    const afterChanges = raw.slice(changesMatch.index + changesMatch[0].length);
     const nextSectionIdx = afterChanges.search(/\n##\s+/);
     const changesBlock = nextSectionIdx >= 0 ? afterChanges.slice(0, nextSectionIdx) : afterChanges;
-    for (const m of changesBlock.matchAll(
-      /^###\s+(v\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)/gm,
-    )) {
-      if (m[1]) candidates.push(m[1]);
+    for (const m of changesBlock.matchAll(/^###\s+(\S+)\s*$/gm)) {
+      if (m[1] && parseSemverTuple(m[1])) {
+        candidates.push(m[1]);
+      }
     }
   }
   if (candidates.length === 0) return undefined;

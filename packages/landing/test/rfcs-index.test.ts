@@ -465,10 +465,12 @@ describe("buildRfcIndex", () => {
       body: [
         "Every design decision is recorded as an RFC.",
         "",
+        "````md",
         "```sh",
         "## FakeFenceHeading",
         "unsearchable_fence_token_xyz",
         "```",
+        "````",
         "",
         "## The RFCs",
         "",
