@@ -74,6 +74,9 @@ const SWEEP_EVERY_MS = 24 * 60 * 60 * 1000;
         path: "skills/multimodal-tools",
       },
     ],
+    "PluginLibraryModule.workbenches": [
+      { id: "multimodal-tools.workbench.images", name: "images", path: "workbenches/images" },
+    ],
     "ToolModelBindingsProvider.bindings": [
       {
         id: "multimodal-tools.binding.t2t",

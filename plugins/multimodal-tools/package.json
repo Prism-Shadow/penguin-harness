@@ -35,6 +35,7 @@
   "files": [
     "dist",
     "skills",
+    "workbenches",
     "icon.svg",
     "ifaces.json",
     "LICENSE",

@@ -374,6 +374,13 @@ export * from "./components/data/fact-row/fact-row";
 export * from "./components/data/impact-list/impact-list";
 export * from "./components/navigation/sub-page-bar/sub-page-bar";
 
+// A status page — a plugin's page in Settings: the strip at its head, the version element of a
+// program the subject installs beside itself (with its "Details" fold), and the checklist of its
+// preconditions.
+export * from "./components/layout/status-strip/status-strip";
+export * from "./components/feedback/installed-version/installed-version";
+export * from "./components/data/checklist/checklist";
+
 // The showcase family, shared with the public sites (site.ts): the cover, the cover card and its
 // grid, the selected carousel and its turn-taking, and a product page's parts.
 export * from "./components/showcase/cover";

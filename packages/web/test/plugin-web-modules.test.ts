@@ -266,7 +266,8 @@ describe("a plugin's web half in the booted tree", () => {
     expect(fixtureLayer()).toBe("");
     expect(railKeys()).not.toContain("fixtureBoard");
     expect(dockPanelDefinition("builtin-browser")).toBeDefined();
-    expect(railKeys()).toContain("browser");
+    // The browser's pages are parts of its plugin's page, not rail entries: still drawn.
+    expect(shownSections().map((c) => c.data.key)).toContain("browser");
     setRunningServerModules(["SomeOtherModule"]);
     expect(dockPanelDefinition("fixture.board")).toBeUndefined();
     expect(linkActionRows(HREF)).toEqual([]);
@@ -282,9 +283,9 @@ describe("a plugin's web half in the booted tree", () => {
     expect(rows.map((r) => r.label)).toEqual(["Pin to board"]);
     rows[0]!.onSelect();
     expect(seen.pinned).toEqual([HREF]);
-    // By its order: after the account page (60) and the browser's own (70).
+    // By its order: after the account page (60).
     const keys = railKeys();
-    expect(keys.slice(keys.indexOf("account"))).toEqual(["account", "browser", "fixtureBoard"]);
+    expect(keys.slice(keys.indexOf("account"))).toEqual(["account", "fixtureBoard"]);
 
     setRunningServerModules([]);
     expect(dockPanelDefinition("fixture.board")).toBeUndefined();
