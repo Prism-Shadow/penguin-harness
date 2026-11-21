@@ -7,6 +7,8 @@
 import { describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 import { MIGRATIONS, appliedMigrations, migrate, rollbackTo } from "../src/migrations/index.js";
+import { SCHEMA_SQL } from "../src/schema.js";
+import { portForwardsDirection } from "../src/migrations/steps/2026-10-11-port-forwards-direction.js";
 import {
   columns,
   hasTable,
@@ -657,6 +659,78 @@ describe("numbered roots other lines stamped: adopted whole", () => {
       migrate(db, { swapPath: true });
       expect(db.prepare("SELECT * FROM model_promotions").all()).toEqual([]);
       expect(db.prepare("SELECT * FROM model_provider_auth_tokens").all()).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+// A database that traveled from a line running the FIRST form of port_forwards: the table
+// without `direction`, usually with no ledger of its own. The base migration must not fail
+// on the missing column (its uniqueness index names it), and the direction repair must both
+// rebuild the table and keep the rows.
+describe("a first-form port_forwards table, no ledger of its own", () => {
+  /** The first deployed form, with a row the person saved on the other line. */
+  function openFirstForm(): DatabaseSync {
+    const db = openFresh();
+    dropPortForwards(db);
+    stampThrough(db, "2026-09-23-model-tables-adoption");
+    db.exec(`
+      CREATE TABLE port_forwards (
+        id          TEXT PRIMARY KEY,
+        machine_id  TEXT NOT NULL,
+        workspace   TEXT NOT NULL,
+        remote_port INTEGER NOT NULL,
+        local_port  INTEGER NOT NULL UNIQUE,
+        created_at  TEXT NOT NULL,
+        UNIQUE (machine_id, workspace, remote_port)
+      );
+      INSERT INTO port_forwards (id, machine_id, workspace, remote_port, local_port, created_at)
+        VALUES ('fw1', 'm1', '/srv/app', 3001, 3000, '2026-10-20T00:00:00.000Z');
+    `);
+    return db;
+  }
+
+  it("migrates on the swap path: the row is kept as an 'in' forward and the shape is current", () => {
+    const db = openFirstForm();
+    try {
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "2026-10-26-user-drafts",
+        "2026-10-11-port-forwards",
+        "2026-10-11-port-forwards-adoption",
+        "2026-10-11-port-forwards-direction",
+      ]);
+      expect(db.prepare("SELECT * FROM port_forwards WHERE id = 'fw1'").get()).toEqual({
+        id: "fw1",
+        machine_id: "m1",
+        workspace: "/srv/app",
+        direction: "in",
+        remote_port: 3001,
+        local_port: 3000,
+        created_at: "2026-10-20T00:00:00.000Z",
+      });
+      // The uniqueness index is real: two 'in' forwards cannot share a local port here.
+      expect(() =>
+        db.exec(
+          "INSERT INTO port_forwards (id, machine_id, workspace, direction, remote_port, local_port, created_at)" +
+            " VALUES ('fw2', 'm1', '/srv/app', 'in', 4001, 3000, 'now')",
+        ),
+      ).toThrow();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("a cold boot repairs the first-form table before its declarative DDL, then migrates it", () => {
+    const db = openFirstForm();
+    try {
+      // The repair openDatabase runs before SCHEMA_SQL: same up the ledger runs, re-runnable.
+      portForwardsDirection.up(db);
+      db.exec(SCHEMA_SQL); // must not fail on the repaired table
+      migrate(db);
+      expect(db.prepare("SELECT direction FROM port_forwards WHERE id = 'fw1'").get()).toEqual({
+        direction: "in",
+      });
     } finally {
       db.close();
     }

@@ -1,4 +1,5 @@
 import type { Migration } from "../migration.js";
+import { portForwards } from "./2026-10-11-port-forwards.js";
 
 export const portForwardsDirection: Migration = {
   name: "2026-10-11-port-forwards-direction",
@@ -16,7 +17,23 @@ export const portForwardsDirection: Migration = {
   swapSafe: true,
   up(db) {
     const cols = db.prepare("PRAGMA table_info(port_forwards)").all() as { name: string }[];
-    if (cols.length === 0 || cols.some((c) => c.name === "direction")) return;
+    if (cols.length === 0) {
+      // The ledger says this root has the table, the file says otherwise (dropped by hand, or
+      // carried across machines and lines): stand the current shape back up. Re-running the
+      // base step keeps its DDL in one place.
+      portForwards.up(db);
+      return;
+    }
+    if (cols.some((c) => c.name === "direction")) {
+      // Already the current shape — but the uniqueness index is created by the base step only
+      // when it sees the column, and that step may have run before a first-form table existed
+      // here. IF NOT EXISTS makes this the repair for a column without its index, at no cost
+      // when the index is already there.
+      db.exec(
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_port_forwards_local_in ON port_forwards(local_port) WHERE direction = 'in';`,
+      );
+      return;
+    }
     db.exec(`
       CREATE TABLE port_forwards_v2 (
         id          TEXT PRIMARY KEY,

@@ -130,6 +130,18 @@ describe("port forwarding API", () => {
       remotePort: 5433,
     });
     expect(unnamed.status).toBe(400);
+    // An `out` local port names a service over there; nothing binds it here, so the
+    // privileged range an `in` listener needs is not a limit for it.
+    const privilegedName = await admin.post("/api/port-forwards", {
+      machineId: MACHINE,
+      workspace: WORKSPACE,
+      direction: "out",
+      remotePort: 5434,
+      localPort: 80,
+    });
+    expect(privilegedName.status).toBe(201);
+    const made = (await privilegedName.json()) as PortForwardInfo;
+    expect((await admin.delete(`/api/port-forwards/${made.id}`)).status).toBe(204);
   });
 
   it("validates the ports and the filter", async () => {

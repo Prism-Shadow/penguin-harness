@@ -3,9 +3,10 @@
  * and the machines feature's held connections, and its route group.
  *
  * A platform-layer feature end to end — the forwards ride the machine session that already
- * exists — so a hot push delivers it, and a swap keeps every forward up: the session that
- * carries them is delivered to the successor (machines/transport/ssh-session.ts), and the
- * successor's setup only hands it the same wanted set again.
+ * exists — so a hot push delivers it. The successor re-holds every machine once (the held
+ * session's registry shape gains the forward members, so the shape check hands the old
+ * groups over), and its setup hands each session the same wanted set again; the forwards
+ * are asked of the new master as it comes up, not carried live through the swap.
  */
 import type { DatabaseSync } from "node:sqlite";
 import type { Hono } from "hono";

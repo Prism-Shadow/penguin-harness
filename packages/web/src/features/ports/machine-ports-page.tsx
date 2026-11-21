@@ -50,6 +50,13 @@ export function MachinePortsPage() {
     return () => window.clearInterval(timer);
   }, [load]);
 
+  // A different machine is a different page: what the last one showed must not flash here.
+  useEffect(() => {
+    setForwards(null);
+    setMachine(null);
+    setError(null);
+  }, [machineId]);
+
   useEffect(() => {
     if (projectId === null) return;
     let live = true;

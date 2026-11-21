@@ -84,6 +84,7 @@ function MachinePorts({
   const load = useCallback(async () => {
     try {
       setForwards((await listPortForwards(machineId, workspace)).forwards);
+      setError(null); // a poll that recovered must not leave the last failure on the board
     } catch (err) {
       // A failed poll keeps the rows it had: a blip must not empty the list under the reader.
       setForwards((current) => current ?? []);

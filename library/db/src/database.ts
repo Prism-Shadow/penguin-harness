@@ -9,6 +9,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { migrate } from "./migrations/index.js";
+import { portForwardsDirection } from "./migrations/steps/2026-10-11-port-forwards-direction.js";
 import { SCHEMA_SQL } from "./schema.js";
 
 // Fetch the runtime module via process.getBuiltinModule (node >=22.3): avoids static
@@ -57,6 +58,13 @@ export function openDatabase(dbPath: string): DatabaseSync {
   // lock rather than failing SQLITE_BUSY at once.
   db.exec("PRAGMA busy_timeout = 5000;");
   db.exec("PRAGMA foreign_keys = ON;");
+  // SCHEMA_SQL's DDL for port_forwards names the direction column (the table's UNIQUE
+  // constraint and its uniqueness index both do), so a web.db that traveled from a line
+  // running the FIRST form of the table would fail it before any migration could repair
+  // the shape. The direction repair brings the table to the shape SCHEMA_SQL declares —
+  // up is re-runnable, so a table already in that shape is untouched — and runs BEFORE
+  // the declarative DDL, keeping one DDL source for both tracks.
+  portForwardsDirection.up(db);
   db.exec(SCHEMA_SQL);
   // Columns added to the schema after a web.db was formed: CREATE TABLE IF NOT EXISTS never
   // touches an existing table, so they are ALTERed in here. Keep the list in sync with

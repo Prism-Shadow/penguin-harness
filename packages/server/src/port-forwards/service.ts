@@ -5,7 +5,7 @@
  *
  * A forward is `(machine, Workspace, direction, remotePort ⇄ localPort)`. It belongs to a
  * Workspace — a directory on a machine — not to a Session: every conversation in that
- * Workspace sees the same list. The record is in web.db (db/repos/port-forwards.ts); what is
+ * Workspace sees the same list. The record is in web.db (library/machine/src/repos/port-forwards.ts); what is
  * here is the bookkeeping between the record and the session that carries it.
  *
  * THE SESSION CARRIES IT. Every forward of a machine is handed to that machine's session as
@@ -155,7 +155,22 @@ export class PortForwardService {
       localPort,
       createdAt: this.now().toISOString(),
     };
-    this.repo.insert(row);
+    try {
+      this.repo.insert(row);
+    } catch (err) {
+      // Two creates for the same (machine, workspace, direction, remote port) can both pass
+      // the find above — the async port probe sits between them. The table's UNIQUE constraint
+      // is the referee; answer it as the 409 it means, not as a 500.
+      if (!(err instanceof Error) || !err.message.includes("UNIQUE constraint failed")) throw err;
+      const raced = this.repo.find(
+        input.machineId,
+        input.workspace,
+        input.direction,
+        input.remotePort,
+      );
+      if (raced === null) throw err;
+      return { error: "forward_exists", existing: this.#info(raced) };
+    }
     await this.#sync(input.machineId);
     return this.#info(row);
   }

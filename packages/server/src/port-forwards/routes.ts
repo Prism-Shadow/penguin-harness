@@ -49,8 +49,18 @@ export function portForwardRoutes(forwards: PortForwardService): Hono<AppEnv> {
     const remotePort = body.remotePort;
     if (!isPort(remotePort)) throw badRequest("remotePort must be a port (1-65535).");
     const localPort = body.localPort ?? undefined;
-    if (localPort !== undefined && (!isPort(localPort) || localPort < MIN_LOCAL_PORT)) {
-      throw badRequest(`localPort must be a port (${MIN_LOCAL_PORT}-65535).`);
+    // An `out` forward's local port names the service being sent, and no bind of ours listens
+    // on it — any port is the caller's to name. An `in` one binds here, so below 1024 it would
+    // need privileges this server should not have.
+    if (
+      localPort !== undefined &&
+      (!isPort(localPort) || (direction === "in" && localPort < MIN_LOCAL_PORT))
+    ) {
+      throw badRequest(
+        direction === "in"
+          ? `localPort must be a port (${MIN_LOCAL_PORT}-65535).`
+          : "localPort must be a port (1-65535).",
+      );
     }
     // An `out` forward sends a service of ours: which one is the caller's to say.
     if (direction === "out" && localPort === undefined) {

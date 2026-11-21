@@ -364,21 +364,65 @@ class MachineShell implements MachineSession {
       }
       return;
     }
+    const asks: Array<() => Promise<void>> = [];
     for (const key of dropped) {
       const spec = this.#forwards.get(key)!;
       this.#forwards.delete(key);
       this.#forwardFacts.delete(key);
-      if (this.#child !== null && this.#forwardsApplied) await this.#control("cancel", spec);
+      if (this.#child !== null && this.#forwardsApplied) {
+        asks.push(async () => {
+          const child = this.#child;
+          const said = await this.#control("cancel", spec);
+          if (this.#child !== child) return;
+          if (!said.ok) {
+            // The master is alive and refused: the listener may still be up, though nothing
+            // wanted holds it. Say so where a reader can see it instead of silently 204-ing.
+            this.#forwardFacts.set(forwardKey(spec), said);
+          }
+        });
+      }
     }
     for (const key of added) this.#forwards.set(key, wanted.get(key)!);
     if (this.#child !== null && this.#forwardsApplied) {
-      for (const key of added) await this.#ask(this.#forwards.get(key)!);
+      for (const key of added) {
+        const spec = this.#forwards.get(key)!;
+        asks.push(async () => {
+          const child = this.#child;
+          const result = await this.#control("forward", spec);
+          if (this.#child !== child) return; // that master is gone; the next apply re-asks
+          if (!this.#forwards.has(forwardKey(spec))) {
+            // Dropped while this ask was queued or on the wire: take the listener back.
+            await this.#control("cancel", spec);
+            return;
+          }
+          this.#forwardFacts.set(forwardKey(spec), result);
+        });
+      }
     }
+    // Every ask goes through the control queue, serialized with any first-apply still in
+    // flight: the master hears this session's decisions in the order they were made, and a
+    // cancel of a dropped forward can never be overtaken by the very forward it drops.
+    for (const ask of asks) await this.#enqueueControl(ask);
   }
 
   /** ssh's last word on each wanted forward, by key; absent until the session has been asked. */
   forwardFacts(): ReadonlyMap<string, ForwardFact> {
     return this.#forwardFacts;
+  }
+
+  /**
+   * Every ask of the master — applying the wanted set, one `-O forward` or `-O cancel` — goes
+   * through this queue, so an apply that is still in flight cannot race a delete: the cancel
+   * of the dropped forward is asked only after the forward before it has been answered, and a
+   * forward deleted while its ask was on the wire is cancelled before anything else speaks.
+   * Each queued body binds the child it started against and discards its own writes when that
+   * child is gone — a stale answer must not land in the successor's state.
+   */
+  #controlOps: Promise<unknown> = Promise.resolve();
+  #enqueueControl<T>(body: () => Promise<T>): Promise<T> {
+    const run = this.#controlOps.then(body, body);
+    this.#controlOps = run.catch(() => undefined);
+    return run;
   }
 
   /**
@@ -398,14 +442,19 @@ class MachineShell implements MachineSession {
       }
       return;
     }
-    for (const spec of this.#forwards.values()) await this.#ask(spec);
-  }
-
-  async #ask(spec: ForwardSpec): Promise<void> {
-    const key = forwardKey(spec);
-    const result = await this.#control("forward", spec);
-    if (!this.#forwards.has(key)) return; // dropped while the master was answering
-    this.#forwardFacts.set(key, result);
+    const child = this.#child;
+    for (const spec of this.#forwards.values()) {
+      const key = forwardKey(spec);
+      const result = await this.#control("forward", spec);
+      if (this.#child !== child) return; // that master is gone; the next one is asked afresh
+      if (!this.#forwards.has(key)) {
+        // Dropped while the master was answering: its ask may still have landed, so take the
+        // listener back before any other control work runs.
+        await this.#control("cancel", spec);
+        continue;
+      }
+      this.#forwardFacts.set(key, result);
+    }
   }
 
   /** One `-O forward` / `-O cancel` at the master. Never throws; ssh's own words are the detail. */
@@ -680,7 +729,7 @@ class MachineShell implements MachineSession {
       // wanted on this session are asked of it now. Once per child: a drop resets the flag.
       if (this.#child !== null && !this.#forwardsApplied) {
         this.#forwardsApplied = true;
-        void this.#applyForwards();
+        this.#enqueueControl(() => this.#applyForwards()).catch(() => undefined);
       }
       if (this.#held) return;
       this.#idle = setTimeout(() => this.close(), IDLE_MS);
