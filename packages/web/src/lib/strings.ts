@@ -23,6 +23,53 @@ import { setWebLocale } from "@prismshadow/penguin-web-plugin/host";
 export const zh = {
   appName: "PenguinHarness",
 
+  voice: {
+    /** The Project settings page, the Models header's way there, and the model dialog's block. */
+    models: "多模态模型",
+    modelHelp:
+      "penguin tools 命令使用这里选定的模型；「图片理解」就是项目的视觉模型，也替不支持图片的模型读图。聊天里，语音输入使用「语音识别」，朗读使用「语音合成」，润色使用「文本生成」。",
+    /** Image understanding: the Project's vision model, listed among the operations. */
+    imageUnderstanding: "图片理解",
+    unbound: "未指定",
+    noModels: "没有兼容的模型",
+    noTools: "本项目未启用多模态工具插件，可在插件页启用。",
+    /** A model dialog's action for one operation the model can serve, and its tooltip. */
+    setDefault: "设为默认",
+    setDefaultHint: (operation: string) => `设为本项目的默认${operation}模型`,
+    /** The operation's current model, in the model dialog. */
+    inUse: "已选用",
+    /** The quiet mark on a model card: which operations it is the Project's model for. */
+    inUseFor: (operations: readonly string[]) => `已选用：${operations.join("、")}`,
+    /** The Project settings group that holds dictation's polish. */
+    dictation: "语音输入",
+    polish: "润色语音输入",
+    polishWith: (model: string, provider: string) => `由 ${model}（${provider}）润色`,
+    polishNeedsText: "请先选择文本生成模型",
+    prompt: "润色提示词",
+    restorePrompt: "恢复默认",
+    record: "语音输入",
+    recording: "正在录音",
+    permission: "等待麦克风授权",
+    inputLevel: "麦克风音量",
+    quiet: "安静",
+    soundDetected: "收到声音",
+    finish: "完成录音",
+    cancel: "取消语音输入",
+    transcribing: "正在转写",
+    polishing: "正在润色",
+    denied: "请在浏览器或系统设置中允许使用麦克风。",
+    unsupported: "当前页面无法录音。请通过 HTTPS 在支持麦克风的浏览器中打开。",
+    recordFailed: "未能从麦克风录音。",
+    tooLarge: "录音文件太大，请缩短录音时长。",
+    empty: "未识别到语音。",
+    original: "润色未完成，已插入原始转写。",
+    listen: "朗读回复",
+    stop: "停止朗读",
+    play: "播放语音",
+    audioError: "无法播放这条回复的语音。",
+    preparing: "正在生成语音",
+  },
+
   nav: {
     chat: "对话",
     newChat: "新建对话",
@@ -1024,6 +1071,7 @@ export const zh = {
     leaveAction: "离开安全模式（重新加载服务端贡献）",
   },
   modelPicker: {
+    clearAssignment: "取消指定",
     /** Accessible name of the dialog's provider-group rail. */
     groups: "模型分组",
     /** Footer toggle while models without a key are listed: turns the listing back off. */
@@ -1793,6 +1841,7 @@ export const zh = {
       "这是当前账号最后一个 Project，删除后将无 Project 可用；请先创建新的 Project",
     noCredentialTitle: "尚未配置模型 credential",
     noCredentialBody: "当前 Project 的默认模型尚未配置 API key，发起对话前请先前往模型页配置。",
+    noChatModels: "请为这个项目添加一个支持对话的模型，然后发送消息。",
     goToModels: "前往模型页",
     later: "稍后再说",
   },
@@ -2581,8 +2630,7 @@ export const zh = {
     /** Card's right-edge figure: what this model has spent over its whole life. The unit stays English and is abbreviated the way the rest of the page abbreviates it — `tok/s`, `/M tok`. */
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "该模型累计消耗的 Token（不限时间范围）",
-    setVisionModel: "设为视觉代理模型",
-    visionModelHint: "供不支持图片的模型在 read_file 读图时代读",
+    visionModelHint: "设为视觉模型：不支持图片的模型读图时由它代读，penguin tools i2t 也用它",
     priceUnitShort: "/M tok",
     testConnection: "测试连通性",
     testing: "测试中…",
@@ -2793,7 +2841,7 @@ export const zh = {
       `请求发往 ${defaultBaseUrl}；环境里设置了 ${envBaseUrlKey} 时改发往该地址`,
     confirmVisionModelTitle: "设为视觉代理模型",
     confirmVisionModel: (name: string): string =>
-      `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读。`,
+      `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读，penguin tools i2t 也使用它。`,
     /** The add-model dialog's footer verb (the settings dialog's is the common Save). */
     addAction: "添加",
     /** A save that changes a promoted row's price or identity: the server then drops the promotion. */

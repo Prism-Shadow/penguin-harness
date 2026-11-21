@@ -8,10 +8,12 @@
  *   then scrolls — then a single toolbar row that never
  *   shares a line with the text. The toolbar's left group (a tight cluster of icon triggers, then a
  *   muted hint) is the part allowed to give way: it scrolls sideways on a narrow card, so the right
- *   group (status, model, the action button) always stays on screen. The card is a size container,
- *   so the toolbar collapses by the card's own width rather than the viewport's; it takes the
- *   theme's input focus ring while anything inside it has focus, and carries the glass hook of the
- *   layer floating over the conversation.
+ *   group (status, model, the action button) always stays on screen. While a mode runs inside the
+ *   composer (dictation), the caller's `strip` stands in for the left group — the tools and the
+ *   hint give way to it — and the right group is untouched, so the action button never moves.
+ *   The card is a size container, so the toolbar collapses by the card's own width rather than the
+ *   viewport's; it takes the theme's input focus ring while anything inside it has focus, and
+ *   carries the glass hook of the layer floating over the conversation.
  * - `ChipRow` is the row of chips above the text body (`TagInput` in the composer's place).
  * - `SendButton` is the action button: the accent square with the send arrow, or the stop square
  *   while a run can be stopped.
@@ -42,6 +44,7 @@ export function ComposerCard({
   textarea,
   tools,
   hint,
+  strip,
   actions,
 }: {
   /** The images and files staged for the message (`AttachmentList`), first in the card. */
@@ -54,6 +57,8 @@ export function ComposerCard({
   tools?: ReactNode;
   /** A muted line after them (how to reach the slash commands), shown once the card is wide. */
   hint?: string;
+  /** What stands in for the tools and the hint while a mode runs (a dictation's readout). */
+  strip?: ReactNode;
   /** The right group: status, model and the action button; it never shrinks. */
   actions?: ReactNode;
 }) {
@@ -77,15 +82,21 @@ export function ComposerCard({
       />
       <div className="mt-1 flex items-center justify-between gap-2 text-xs">
         <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
-          <div className="flex shrink-0 items-center gap-px">{tools}</div>
-          {hint !== undefined && hint !== "" && (
-            <span
-              data-tooltip={hint}
-              data-tooltip-content="text"
-              className="hidden min-w-0 truncate text-fg-subtle @lg:block"
-            >
-              {hint}
-            </span>
+          {strip !== undefined && strip !== null ? (
+            strip
+          ) : (
+            <>
+              <div className="flex shrink-0 items-center gap-px">{tools}</div>
+              {hint !== undefined && hint !== "" && (
+                <span
+                  data-tooltip={hint}
+                  data-tooltip-content="text"
+                  className="hidden min-w-0 truncate text-fg-subtle @lg:block"
+                >
+                  {hint}
+                </span>
+              )}
+            </>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">{actions}</div>
