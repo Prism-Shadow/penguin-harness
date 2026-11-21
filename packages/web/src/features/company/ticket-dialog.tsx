@@ -68,7 +68,6 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney } from "../../lib/format";
 import { toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
@@ -100,6 +99,7 @@ import { orgKey } from "../../lib/company-nav";
 import { deskRows } from "./org-sessions";
 import { chatPath, openTempSession } from "./temp-session";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 
@@ -217,7 +217,7 @@ function TicketDialog({
   const { user } = useAuth();
   const me = user?.userId ?? null;
   const [detail, setDetail] = useState<OrgTicketDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   /** The organization's board and roster: the parent picker, the child titles, the owner options. */
   const [tickets, setTickets] = useState<readonly OrgTicketItem[]>([]);
   const [employees, setEmployees] = useState<readonly OrgEmployeeItem[]>([]);
@@ -266,7 +266,7 @@ function TicketDialog({
       setDetail(await api.getOrgTicket(projectId, orgId, ticketId));
       setError(null);
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "a ticket could not be loaded" }));
     }
   }, [projectId, orgId, ticketId]);
   // Another ticket: start blank. A version bump on the same ticket refetches in place, so a

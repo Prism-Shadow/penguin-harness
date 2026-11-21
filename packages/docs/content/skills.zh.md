@@ -253,7 +253,8 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `browser-automation` | 用 `penguin browser` 驱动 Agent 浏览器，即桌面应用的[内置浏览器](/builtin-browser)或[你自己的 Chrome](/builtin-browser#使用你自己的-chrome)：以简化 HTML 或纯文本读取页面，用 JavaScript 以及可信的点击和输入操作页面，提取亚马逊订单这样的数据，登录用的是你自己的账号 |
 | | `use-bento-slides` | 创建和编辑 Bento 演示文稿：单文件 `.bento.html` 幻灯片，文件内容为 JSON，支持素材到图表的映射、morph 过渡和状态幻灯片 |
 | | `humanizer` | 去除任何语言文字中的 AI 写作痕迹，改写成书籍、报纸和百科全书的语体（不预装：需要时从插件库安装） |
-| | `goal` | [目标模式](/goal-mode)背后的 stop 钩子：让 Session 持续朝着目标推进，直到完成、受阻或 Token 预算耗尽（预装） |
+| | `goal` | [目标模式](/goal-mode)背后的 stop 钩子：让 Session 持续朝着目标推进，直到完成、受阻或 Token 预算耗尽（预装，每个新建的 Agent 也都装上） |
+| | `plan` | 计划模式：输入框 **+** 菜单里的开关。开着时，每条消息后面都附上一段提示，请 Agent 先和你讨论目标、可选做法与取舍，方向谈定后再动手；不限制任何工具（预装，每个新建的 Agent 也都装上） |
 | | `continual-learning` | Task 运行超过 30 轮才结束时，把 Task 的精简摘录交给后台子 Agent，由它把有长期价值的发现沉淀到 Agent 的 Skill 中（不预装） |
 | | `trace-lookup` | 在会话的 Trace 文件里查回更早的内容：先搜出某个细节所在的行，再只读这几行；用于压缩摘要或模型切换指向 Agent 所接续的上一段上下文的 Trace 时（新初始化的 `default_agent` 预装；已有的 Agent 从插件库安装） |
 | | `agent-company` | [公司模式](/company-mode)的完整工具包，包含七个 Skill：`company-setup`（与用户一起创建组织：一次问一个问题、给出摘要供确认，然后执行 `penguin org create`；从不招聘，也不提交工单）、`company-employee`（每个工位 Session 和工单 Session 都要遵循的协议：触发块、工单看板、阻塞、重负载或不可逆的工作先向董事会请示、频道礼仪、预算）、`company-ceo`（把使命拆解为工单、招聘、划分 Workspace、审查、向董事会汇报）、`company-hr`（日历排班、招聘与离职、评估）、`company-finance`（预算、每日审计、告警与暂停）、`company-research`（科研组织的作者与审稿人：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环、只保留能提升指标的改动，每个结论都交给一个设法推翻它的审稿人）和 `company-mirror`（数字分身公司：每位真实同事对应一个分身，绑定到这位同事的机器人，只传话、不开工单）。不预装：组织在创建 CEO、招聘员工时会安装它；需要能创建组织的 Agent 则从插件库安装 |
@@ -354,6 +355,8 @@ npm 标准字段：
 | `category` | `rsi`、`office-productivity`、`software-development`、`ai-app-development` 之一，Agent 运行沙箱后端用 `sandbox`；缺失或未知的分类归入「其他」 |
 | `icon` | 包内一个 SVG 的路径；没有时取包根目录的 `icon.svg`，再没有就显示拼图块。SVG 必须是不含脚本、事件、链接和外部引用的纯图形，且不超过 64 KiB，否则不显示 |
 | `preinstall` | 设为 `false` 的插件不进入 `default_agent` 的预装集合，只能从插件库手动安装 |
+| `defaultInstall` | 设为 `true` 的插件装到此后新建的每个 Agent 上：创建对话框里默认勾选，`penguin agent create --no-default-plugins` 不装；已有的 Agent 不变。管理员装进服务端的插件忽略此字段 |
+| `composerMode` | 设为 `true` 时，装有该插件的 Agent 在对话输入框的 **+** 菜单里多出一个以卡片标题命名的开关：开着时，用户每发一条消息都会运行钩子包里 `"trigger": "host"` 的 `user_prompt` 命令，其 context 紧随这条消息。没装该钩子包的 Agent 也列出这个开关，置灰并带「安装」。钩子包没有这样的命令时忽略 |
 | `quickStart` | 插件页「快速开始」预填进新对话草稿的演示：`{ prompt: "…", promptZh: "…", skills: ["…"], goal: true }`——一条发出后就能看到插件工作的提示词、要预选的本插件 Skill，以及草稿是否以目标模式打开。页面从不代为发送；不填时，快速开始预选第一个 Skill |
 | `references` | 原始论文或上游实现的链接，官网的插件页会列出 |
 
@@ -487,6 +490,8 @@ Skill 分两步加载：先加载索引，正文按需读取。
 安装插件时，工作台复制到 Agent State 中的 `agent_state/workbenches/<id>/`，Agent 自己编写的工作台也位于这里。更新替换插件携带的源文件，保留记录状态与历史版本；如果名称已被其他插件或手工创建的工作台使用，则拒绝安装。卸载会删除工作台及其状态，此前的版本不再列出。
 
 工作台每次成功加载且源码有变化时，都会记录一个版本，即 `agent_state.git/` 中的一次提交。这是与 Agent 的 `agent_state/` 并列的裸 git 仓库，由服务端自行写入，不需要安装 git。只有工作台的源码入库；它的 `state.json`、服务端生成的 `.build/` 与 `.harness/`、`node_modules/`、Vault 以及 Agent State 的其余内容都不入库。恢复某个版本会把源码精确换成该版本并重新加载，`state.json` 保持不变。仓库位于 Agent State 之外，Agent State 的快照、导出与导入既不携带它，也不改动它。装有 git 时可以读取历史，例如 `git --git-dir=<agent>/agent_state.git log --oneline -- workbenches/<id>`；不要向仓库提交，也不要删除它。由成员的请求（恢复、重载、导入、开关、移除）记录的版本，作者是该成员，名字取其显示名；其余字段，以及 Agent 自己编辑后记录的版本，用服务端的 Git 身份，读法与 git 相同（`GIT_AUTHOR_*` 与 `GIT_COMMITTER_*`，然后是仓库与全局配置中的 `user.*`，然后是 `EMAIL`），都没有时为 `PenguinHarness <penguin@localhost>`。这些提交由服务端自行写入；装上[服务端插件](#服务端插件) `agent-state-git` 后改由原生 Git 写入与读回，工作台越大越快。关闭、恢复、移除、导出或导入工作台，见[工作台](/agents#工作台)。
+
+工作台有三个自己的文件夹，`host.dataPaths()` 建好后以 `{ dataDir, cacheDir, stateDir }` 返回。`dataDir` 即 `<agent>/app/data/<id>/`，与 Agent 的 `agent_state/` 并列，存放工作台与其 Agent 共同读写的文件：处理器用 Node 自带的 `node:fs` 读写（工作台的服务端代码可以直接使用带类型的 Node 模块），页面需要什么由它自己的路由提供；Agent 用自己的文件工具编辑处理器给出的路径。`cacheDir` 即 `<agent>/app/cache/<id>/`，存放可重新生成的文件。`stateDir` 存放 Unix socket、管道、锁等只在运行时有意义的文件，位于数据根目录 `run/` 下的短路径，因为 Unix socket 的路径至多 103 字节；`host.socketPath(name)` 给出要监听的路径，超长时报错并说明上限，在 Windows 上则给出命名管道（`\\.\pipe\…`）。在这些文件夹中写入不触发加载，也不记录版本。在 `workspace-write` 沙盒下，Agent 的命令可以写入这三个文件夹，因此处理器不跟随 Agent 可能留下的链接。导出 Agent 时勾选**含其数据**才带上 `dataDir`，另两个从不导出；移除工作台时三者一并删除。以上是缺省的 Agent 级。从插件安装的应用还可以用 `host.dataPaths("server")`，由本服务器上同一插件工作台的所有副本跨 Project 共用（如 TTS 模型的权重、本地语言模型），或 `host.dataPaths("machine")`，由这台电脑上本 OS 用户的所有 PenguinHarness 共用（如一个精简的本地服务）。这两级只由处理器写入，Agent 的沙盒命令可以读、不能写；它们从不导出，不随工作台删除，也不存放任何一个 Project 不应让另一个看到的内容。
 
 工作台可以在 Agent 工作时实时跟随它发起的会话。页面引入 `../sdk/workbench.js`，这是服务端为每个工作台提供的页面 SDK；`followSession(sessionId)` 以当前登录用户的权限读取该 Session 的 [AMSP 记录](/amsp-records)，回答因此随 Agent 的生成逐字出现；`abortSession(sessionId)` 停止当前这一轮。工作台的服务端代码通过 `host.subscribe(sessionId, listener)` 收到同样的记录。发起任务与保存结果仍由工作台自己的处理器完成，用 `host.sessionResult` 读取结果、定时轮询的做法照常可用。这些都不需要 Agent API 密钥。
 

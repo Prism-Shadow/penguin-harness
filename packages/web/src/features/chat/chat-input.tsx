@@ -162,6 +162,7 @@ import {
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
 import { useGoalPluginGate } from "./goal-plugin-gate";
 import type { GoalPluginGate } from "./goal-plugin-gate";
+import { toggled, type ComposerSwitches } from "./prompt-modes";
 import { mergeRecalledDraft } from "./recall-draft";
 import { buildExampleFill } from "./example-fill";
 import {
@@ -343,13 +344,18 @@ function SkillSelect({
 /** One entry of the composer's "+" extension menu. */
 interface PlusMenuItem {
   key: string;
-  icon: string;
+  /** A 24×24 line path, or a mark of its own (a plugin's icon). */
+  icon: string | ReactNode;
   label: string;
   desc: string;
   /** Whether the entry is currently engaged (rendered with a check mark; clicking toggles). */
   active: boolean;
   /** Grayed out and inert (e.g. goal mode while a run is in progress); the menu still opens. */
   disabled?: boolean;
+  /** Drawn greyed but still picked: an offer whose pick does what `trailing` names (an install). */
+  offer?: boolean;
+  /** Words at the row's end: what picking an offer does. */
+  trailing?: ReactNode;
   onSelect: () => void;
 }
 
@@ -379,9 +385,10 @@ function PlusMenu({
       options={items.map((item) => ({
         value: item.key,
         glyph: item.icon,
-        label: item.label,
+        label: item.offer ? <span className="text-fg-subtle">{item.label}</span> : item.label,
         detail: item.desc,
         disabled: item.disabled ?? false,
+        ...(item.trailing !== undefined ? { trailing: item.trailing } : {}),
       }))}
       value={items.filter((item) => item.active).map((item) => item.key)}
       multiple
@@ -617,6 +624,7 @@ export function ChatInput({
   initialSkills,
   initialGoal,
   goalPlugin = null,
+  switches,
   onSkillsChange,
   onHandoff,
   initialText,
@@ -843,6 +851,12 @@ export function ChatInput({
    * it and Send is held. Absent or null, nothing is checked and the server refuses instead.
    */
   goalPlugin?: GoalPluginGate | null;
+  /**
+   * The composer's switches (prompt-modes.ts): each one the Agent offers is a "+" menu entry, and
+   * each one on is a chip. The caller owns which are on and sends them with every Task but a goal,
+   * so a goal engaged here grays the entries out and hides the chips.
+   */
+  switches?: ComposerSwitches;
   /** Callback when selected skills change (check/prune; the clear after a successful send does not call back, same as onTextChange). */
   onSkillsChange?: (names: string[]) => void;
   /** Draft's initial text (restored on mount; paired with onTextChange for draft auto-caching). */
@@ -975,6 +989,27 @@ export function ChatInput({
       ? S.chat.goalBudgetValue(humanizeTokens(goalBudget))
       : S.chat.goalBudgetUnlimited;
   const goalGate = useGoalPluginGate(goalPlugin, goalOn);
+  /** The switches on, as their chips show them; none while a goal is engaged, which takes none. */
+  const switchesOn =
+    switches === undefined || goalOn
+      ? []
+      : switches.modes.filter((mode) => switches.on.includes(mode.name));
+  const flipSwitch = (name: string) => {
+    if (switches) switches.onChange(toggled(switches.on, name));
+  };
+  /** The switches as of the latest render, for an install that answers after it. */
+  const latestSwitches = useRef(switches);
+  latestSwitches.current = switches;
+  /**
+   * A mode the Agent lacks, picked from its offer: installed on the Agent, then switched on, as
+   * picking an installed one would. A refused install says why in a toast and turns nothing on.
+   */
+  const installSwitch = (name: string) => {
+    void switches?.install?.(name).then((installed) => {
+      const now = latestSwitches.current;
+      if (installed && now && !now.on.includes(name)) now.onChange([...now.on, name]);
+    });
+  };
   /**
    * Where a send with a staged chip would go — and, for a `/model` fork, whether it may go at
    * all right now (see stagedSendRoute): a fork branches a NEW session off this session's
@@ -2440,7 +2475,8 @@ export function ChatInput({
           pendingModel !== null ||
           selectedSkills.length > 0 ||
           references.length > 0 ||
-          goalOn ? (
+          goalOn ||
+          switchesOn.length > 0 ? (
             <ChipRow
               leading={
                 // Goal-mode chip: the budget stays compact as a value button; its editor is a
@@ -2455,7 +2491,27 @@ export function ChatInput({
                     onRemove={() => toggleGoal(false)}
                     control={goalBudgetPicker}
                   />
-                ) : undefined
+                ) : (
+                  // A switch's chip stays after a send: it holds until it is removed.
+                  switchesOn.map((mode) => (
+                    <Chip
+                      key={mode.name}
+                      label={mode.title}
+                      glyph={
+                        <SkillIcon
+                          icon={mode.icon}
+                          fallback={ICONS.fishHook}
+                          size={13}
+                          className="text-fg-muted"
+                        />
+                      }
+                      tooltip={mode.description}
+                      tooltipExtra
+                      removeLabel={S.chat.switchOff(mode.title)}
+                      onRemove={() => flipSwitch(mode.name)}
+                    />
+                  ))
+                )
               }
               chips={switchChips}
               onRemove={removeChip}
@@ -2567,6 +2623,50 @@ export function ChatInput({
                     disabled: running || compacting || busy,
                     onSelect: () => toggleGoal(!goalOn),
                   },
+                  // A switch holds for the messages that follow, so it stays reachable mid-run.
+                  ...(switches?.modes ?? []).map((mode) => ({
+                    key: `switch:${mode.name}`,
+                    // Drawn like the entries above, whose path glyphs the menu sets in the
+                    // muted subtle ink at the inline size: a plugin's mark takes the same.
+                    icon: (
+                      <SkillIcon
+                        icon={mode.icon}
+                        fallback={ICONS.fishHook}
+                        size={ICON_SIZE.inlineGlyph}
+                        className="text-fg-subtle"
+                      />
+                    ),
+                    label: mode.title,
+                    desc: mode.description,
+                    active: switches?.on.includes(mode.name) === true,
+                    disabled: goalOn,
+                    onSelect: () => flipSwitch(mode.name),
+                  })),
+                  // The composer modes the Agent lacks, greyed, each picked to install it.
+                  ...(switches?.install !== undefined ? (switches.offers ?? []) : []).map(
+                    (mode) => ({
+                      key: `offer:${mode.name}`,
+                      icon: (
+                        <SkillIcon
+                          icon={mode.icon}
+                          fallback={ICONS.fishHook}
+                          size={ICON_SIZE.inlineGlyph}
+                          className="text-fg-subtle"
+                        />
+                      ),
+                      label: mode.title,
+                      desc: mode.description,
+                      active: false,
+                      offer: true,
+                      trailing: mode.installing ? (
+                        S.chat.switchInstalling
+                      ) : (
+                        <span className="text-link">{S.chat.switchInstall}</span>
+                      ),
+                      disabled: goalOn || mode.installing,
+                      onSelect: () => installSwitch(mode.name),
+                    }),
+                  ),
                 ]}
                 footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
                 direction={models && onChangeModel ? "down" : "up"}

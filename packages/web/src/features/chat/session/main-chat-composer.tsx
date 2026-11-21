@@ -1,9 +1,8 @@
 import { useCallback, useMemo, useRef } from "react";
 import type { SessionInfo, SessionPatchRequest } from "@prismshadow/penguin-server/api";
-import { toastError } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
 import { ApiError } from "../../../api/client";
-import { apiErrorText } from "../../../lib/api-error";
+import { toastApiError } from "../../../lib/toast-api-error";
 import type { PermissionPick } from "../../../lib/permission-level";
 import { a2uiDrafts } from "../../../lib/a2ui-drafts";
 import { approvalKey } from "../../../lib/amsp/stream-model";
@@ -94,7 +93,7 @@ export function useMainChatComposer(scope: ReturnType<typeof useMainChatSends>) 
         })
         .then((res) => replace(res.session))
         .catch((e: unknown) => {
-          toastError(apiErrorText(e));
+          toastApiError(e);
         });
     },
     [selected, replace],
@@ -111,7 +110,7 @@ export function useMainChatComposer(scope: ReturnType<typeof useMainChatSends>) 
       try {
         return await api.recallSteer(selected.sessionId, steerId);
       } catch (e) {
-        toastError(apiErrorText(e));
+        toastApiError(e);
         return null;
       }
     },
@@ -127,7 +126,7 @@ export function useMainChatComposer(scope: ReturnType<typeof useMainChatSends>) 
         // is pinned to.
         return await api.recallFollowUp(selected.sessionId, followUpId);
       } catch (e) {
-        toastError(apiErrorText(e));
+        toastApiError(e);
         return null;
       }
     },
@@ -161,7 +160,7 @@ export function useMainChatComposer(scope: ReturnType<typeof useMainChatSends>) 
         await api.postToolCallBackground(selected.sessionId, toolCallId);
       } catch (e) {
         if (e instanceof ApiError && (e.status === 404 || e.status === 409)) return;
-        toastError(apiErrorText(e));
+        toastApiError(e);
       }
     },
     [selected],
@@ -183,7 +182,7 @@ export function useMainChatComposer(scope: ReturnType<typeof useMainChatSends>) 
           ...(pick.sandbox !== undefined ? { sandbox: pick.sandbox } : {}),
         })
         .then((res) => replace(res.session))
-        .catch((e: unknown) => toastError(apiErrorText(e)))
+        .catch((e: unknown) => toastApiError(e))
         .finally(() => setModeSaving(false));
     },
     [selected, modeSaving, replace],

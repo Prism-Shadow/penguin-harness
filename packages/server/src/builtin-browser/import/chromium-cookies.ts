@@ -5,12 +5,12 @@
  * that actually occur among the requested cookies — so importing one site's cookies whose
  * values are all plaintext never prompts for the Keychain.
  *
- * Counts, never values, reach the warnings.
+ * Every row left behind is counted under one reason (skips.ts); counts, never values, leave.
  */
 import type { DatabaseSync } from "node:sqlite";
 import type { ChromiumBrowser } from "./browsers.js";
 import { cipherOf, decryptCookieValue } from "./chromium-decrypt.js";
-import { cookieKeySource, type CookieKeys, type KeyFailure } from "./chromium-keys.js";
+import { cookieKeySource, type CookieKeys } from "./chromium-keys.js";
 import {
   chromiumSameSite,
   inDomains,
@@ -20,7 +20,8 @@ import {
 } from "./cookie-rules.js";
 import type { DiscoveredProfile } from "./discovery.js";
 import type { CookieReadResult, ImportEnv } from "./index.js";
-import { columnsOf, readDatabaseCopy, unreadableStoreWarning } from "./sqlite-copy.js";
+import { SkipTally } from "./skips.js";
+import { columnsOf, readDatabaseCopy, unreadableStoreNote } from "./sqlite-copy.js";
 
 interface CookieRow {
   host_key: string;
@@ -44,28 +45,21 @@ export async function readChromiumCookies(
   env: ImportEnv,
 ): Promise<CookieReadResult> {
   if (profile.cookiesFile === null) {
-    return { cookies: [], found: 0, skipped: 0, warnings: ["This profile has no cookie store."] };
+    return { cookies: [], found: 0, skips: [], notes: [{ code: "no_cookie_store" }] };
   }
   let store: { rows: CookieRow[]; version: number };
   try {
     store = await readDatabaseCopy(profile.cookiesFile, env, readStore);
   } catch (err) {
-    return {
-      cookies: [],
-      found: 0,
-      skipped: 0,
-      warnings: [unreadableStoreWarning(err, browser.name, "cookie store")],
-    };
+    return { cookies: [], found: 0, skips: [], notes: [unreadableStoreNote(err, "cookies")] };
   }
 
   const rows = store.rows.filter((row) => inDomains(row.host_key, domains));
   const now = Math.floor(Date.now() / 1000);
   const keysFor = cookieKeySource(browser, profile.root, env);
 
-  const result: CookieReadResult = { cookies: [], found: rows.length, skipped: 0, warnings: [] };
-  let appBound = 0;
-  let undecryptable = 0;
-  const keyless = new Map<KeyFailure, number>();
+  const cookies: CookieReadResult["cookies"] = [];
+  const skips = new SkipTally();
   for (const row of rows) {
     const stored: StoredCookie = {
       host: row.host_key,
@@ -79,8 +73,12 @@ export async function readChromiumCookies(
     };
     // A partitioned cookie belongs to its host only under one top-level site; written without
     // that site it would reach the host everywhere, so it stays behind.
-    if (row.partition_key || isExpired(stored, now)) {
-      result.skipped++;
+    if (row.partition_key) {
+      skips.add("partitioned");
+      continue;
+    }
+    if (isExpired(stored, now)) {
+      skips.add("expired");
       continue;
     }
     const encrypted = row.encrypted_value;
@@ -89,8 +87,7 @@ export async function readChromiumCookies(
     } else {
       const cipher = cipherOf(encrypted);
       if (cipher === "v20") {
-        appBound++;
-        result.skipped++;
+        skips.add("app_bound");
         continue;
       }
       const available = cipher === "unknown" ? null : await keysFor(cipher);
@@ -99,34 +96,15 @@ export async function readChromiumCookies(
           ? null
           : firstDecryption(encrypted, available, row.host_key, store.version);
       if (value === null) {
-        result.skipped++;
-        if (available?.failure !== undefined) {
-          keyless.set(available.failure, (keyless.get(available.failure) ?? 0) + 1);
-        } else {
-          undecryptable++;
-        }
+        skips.add(available?.failure ?? "undecryptable");
         continue;
       }
       stored.value = value;
     }
-    result.cookies.push(toDesktopCookie(stored));
+    cookies.push(toDesktopCookie(stored));
   }
-
-  if (appBound > 0) {
-    result.warnings.push(
-      `Skipped ${cookieCount(appBound)} protected by ${browser.name}'s app-bound encryption, which can't be imported on Windows; sign in inside the Browser panel instead.`,
-    );
-  }
-  for (const [failure, count] of keyless) {
-    result.warnings.push(keyFailureWarning(failure, count, browser));
-  }
-  if (undecryptable > 0) {
-    result.warnings.push(`Skipped ${cookieCount(undecryptable)} that could not be decrypted.`);
-  }
-  return result;
+  return { cookies, found: rows.length, skips: skips.list(), notes: [] };
 }
-
-const cookieCount = (n: number): string => (n === 1 ? "1 cookie" : `${n} cookies`);
 
 function readStore(db: DatabaseSync): { rows: CookieRow[]; version: number } {
   const columns = columnsOf(db, "cookies");
@@ -171,15 +149,4 @@ function firstDecryption(
     if (value !== null) return value;
   }
   return null;
-}
-
-function keyFailureWarning(failure: KeyFailure, count: number, browser: ChromiumBrowser): string {
-  switch (failure) {
-    case "keychain":
-      return `Skipped ${cookieCount(count)}: the Keychain did not release "${browser.keychainService}". Allow the access when macOS asks, then import again.`;
-    case "keyring":
-      return `Skipped ${cookieCount(count)} encrypted with a key from the desktop keyring, which secret-tool could not provide.`;
-    case "dpapi":
-      return `Skipped ${cookieCount(count)}: Windows could not unlock ${browser.name}'s cookie key.`;
-  }
 }

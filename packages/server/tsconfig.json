@@ -29,12 +29,58 @@
         "../../library/auth/src/repos/auth-sessions.ts"
       ],
       "@prismshadow/penguin-library-auth/repos/users": ["../../library/auth/src/repos/users.ts"],
+      "@prismshadow/penguin-library-http": ["../../library/http/src/index.ts"],
+      "@prismshadow/penguin-library-http/app-env": ["../../library/http/src/app-env.ts"],
+      "@prismshadow/penguin-library-http/attribution": ["../../library/http/src/attribution.ts"],
+      "@prismshadow/penguin-library-http/errors": ["../../library/http/src/errors.ts"],
+      "@prismshadow/penguin-library-http/json-answer": ["../../library/http/src/json-answer.ts"],
+      "@prismshadow/penguin-library-http/json-compression": [
+        "../../library/http/src/json-compression.ts"
+      ],
+      "@prismshadow/penguin-library-http/json-validators": [
+        "../../library/http/src/json-validators.ts"
+      ],
+      "@prismshadow/penguin-library-http/media-type": ["../../library/http/src/media-type.ts"],
+      "@prismshadow/penguin-library-http/page-csp": ["../../library/http/src/page-csp.ts"],
+      "@prismshadow/penguin-library-http/public-origin": [
+        "../../library/http/src/public-origin.ts"
+      ],
+      "@prismshadow/penguin-library-http/settle": ["../../library/http/src/settle.ts"],
+      "@prismshadow/penguin-library-http/validate": ["../../library/http/src/validate.ts"],
       "@prismshadow/penguin-library-workbench": ["../../library/workbench/src/index.ts"],
       "@prismshadow/penguin-library-workbench/workbench": [
         "../../library/workbench/src/workbench.ts"
       ],
       "@prismshadow/penguin-library-model": ["../../library/model/src/index.ts"],
       "@prismshadow/penguin-library-model/model": ["../../library/model/src/model.ts"],
+      "@prismshadow/penguin-library-model/origins": ["../../library/model/src/origins.ts"],
+      "@prismshadow/penguin-library-model/platform-auth-flow": [
+        "../../library/model/src/platform-auth-flow.ts"
+      ],
+      "@prismshadow/penguin-library-model/model-oauth-service": [
+        "../../library/model/src/model-oauth-service.ts"
+      ],
+      "@prismshadow/penguin-library-model/modelscope-auth-service": [
+        "../../library/model/src/modelscope-auth-service.ts"
+      ],
+      "@prismshadow/penguin-library-model/platform-auth-service": [
+        "../../library/model/src/platform-auth-service.ts"
+      ],
+      "@prismshadow/penguin-library-model/model-catalog": [
+        "../../library/model/src/model-catalog/index.ts"
+      ],
+      "@prismshadow/penguin-library-model/model-catalog/catalog": [
+        "../../library/model/src/model-catalog/catalog.ts"
+      ],
+      "@prismshadow/penguin-library-model/model-catalog/client-protocols": [
+        "../../library/model/src/model-catalog/client-protocols.ts"
+      ],
+      "@prismshadow/penguin-library-model/model-catalog/env-keys": [
+        "../../library/model/src/model-catalog/env-keys.ts"
+      ],
+      "@prismshadow/penguin-library-model/model-catalog/seed": [
+        "../../library/model/src/model-catalog/seed.ts"
+      ],
       "@prismshadow/penguin-library-model/repos/model-promotions": [
         "../../library/model/src/repos/model-promotions.ts"
       ],
@@ -104,7 +150,13 @@
       "@prismshadow/penguin-library-setting/attachment-limits": [
         "../../library/setting/src/attachment-limits.ts"
       ],
+      "@prismshadow/penguin-library-setting/plugin-module-requests": [
+        "../../library/setting/src/plugin-module-requests.ts"
+      ],
       "@prismshadow/penguin-library-setting/repos": ["../../library/setting/src/repos/index.ts"],
+      "@prismshadow/penguin-library-setting/repos/plugin-module-requests": [
+        "../../library/setting/src/repos/plugin-module-requests.ts"
+      ],
       "@prismshadow/penguin-library-setting/repos/server-settings": [
         "../../library/setting/src/repos/server-settings.ts"
       ],

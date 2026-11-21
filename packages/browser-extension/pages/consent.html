@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PenguinHarness Browser</title>
+    <link rel="stylesheet" href="pages.css" />
+  </head>
+  <body class="options">
+    <header class="bar">
+      <div class="bar-inner">
+        <img class="logo" src="../icons/penguin-logo.svg" alt="" width="28" height="28" />
+        <h1 id="heading" class="brand"></h1>
+      </div>
+    </header>
+    <main class="page consent">
+      <h2 id="title"></h2>
+      <p id="body"></p>
+      <p id="caution" class="muted small"></p>
+      <div class="actions">
+        <button id="allow" class="primary" type="button" hidden></button>
+        <button id="deny" type="button" hidden></button>
+      </div>
+      <p id="outcome" class="muted" role="status"></p>
+    </main>
+    <script type="module" src="consent.js"></script>
+  </body>
+</html>
