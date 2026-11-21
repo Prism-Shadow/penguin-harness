@@ -115,7 +115,6 @@ import { replyFileMentions } from "./reply-files.js";
 import { Interface, Slot } from "@prismshadow/penguin-core/kernel";
 
 import type { QQScanService } from "./qq-scan.js";
-import type { Channels, Clock, Log, Paths } from "./ports.js";
 import type { Access } from "@prismshadow/penguin-library-project";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { Errors } from "@prismshadow/penguin-library-observability";
