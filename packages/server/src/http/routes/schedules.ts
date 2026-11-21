@@ -314,13 +314,13 @@ async function readItem(
   contributes: {
     "HttpModule.routes": [
       {
-        id: "SchedulerRoutes.routes",
+        id: "schedules",
         prefix: "/api/projects/:projectId/agents/:agentId/schedules",
         auth: "user",
         order: 200,
       },
       {
-        id: "SchedulerRoutes.projectRoutes",
+        id: "schedules.project-routes",
         prefix: "/api/projects/:projectId/schedules",
         auth: "user",
         order: 200,
@@ -335,8 +335,8 @@ export class SchedulerRoutes {
   @Use() private readonly access!: Access;
   @Use() private readonly scheduler!: Scheduling;
   @Use() private readonly schedulesRepo!: Schedules;
-  @Bind("SchedulerRoutes.routes") routes!: Hono<AppEnv>;
-  @Bind("SchedulerRoutes.projectRoutes") projectRoutes!: Hono<AppEnv>;
+  @Bind("schedules") routes!: Hono<AppEnv>;
+  @Bind("schedules.project-routes") projectRoutes!: Hono<AppEnv>;
   setup() {
     const deps: SchedulesRouteDeps = {
       agentConfigService: this.agentConfig,

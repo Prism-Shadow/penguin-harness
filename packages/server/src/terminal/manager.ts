@@ -349,7 +349,7 @@ export type _Check = TerminalManager extends Terminals ? true : never;
   contributes: {
     "HttpModule.routes": [
       {
-        id: "TerminalModule.routes",
+        id: "terminal",
         prefix: "/",
         auth: "none",
         order: 0,
@@ -373,7 +373,7 @@ export class TerminalModule {
   /** Answers `get` for a pty on a machine (machines/terminal-relay.ts). */
   @Use() private readonly remote!: RemoteTerminals;
   @Provide() terminals!: Terminals;
-  @Bind("TerminalModule.routes") routes!: ReturnType<typeof terminalRoutes>;
+  @Bind("terminal") routes!: ReturnType<typeof terminalRoutes>;
   setup({ resources, effect }: ClassCtx, context: Json) {
     const terminals = new TerminalManager(resources, {
       // A pushed bundle's node-pty binaries live where the host materialized them.

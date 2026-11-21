@@ -104,14 +104,14 @@ export function authRoutes(deps: AuthRouteDeps): Hono<AppEnv> {
  */
 @Component({
   contributes: {
-    "HttpModule.routes": [{ id: "AuthRoutes.routes", prefix: "/api/auth", auth: "none", order: 5 }],
+    "HttpModule.routes": [{ id: "auth", prefix: "/api/auth", auth: "none", order: 5 }],
   },
 })
 export class AuthRoutes {
   @Use() private readonly auth!: Auth;
   @Use() private readonly config!: Config;
   @Use() private readonly desktop!: Desktop;
-  @Bind("AuthRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("auth") routes!: Hono<AppEnv>;
   setup() {
     this.routes = authRoutes({
       authService: this.auth,

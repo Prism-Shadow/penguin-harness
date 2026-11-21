@@ -13,6 +13,7 @@ import { Command } from "commander";
 import { agentVaultPath, DEFAULT_PROJECT_ID } from "@prismshadow/penguin-core";
 import { registerConfigCommand } from "../../src/cli/commands/config.js";
 import { getMessages } from "../../src/cli/i18n.js";
+import { serveConfigRoot } from "./seeded-project.js";
 
 let tmpRoot: string;
 let prevHome: string | undefined;
@@ -21,6 +22,7 @@ beforeEach(async () => {
   prevHome = process.env.PENGUIN_HOME;
   tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cli-vault-"));
   process.env.PENGUIN_HOME = tmpRoot;
+  await serveConfigRoot(tmpRoot);
 });
 
 afterEach(async () => {
@@ -105,6 +107,7 @@ describe("penguin config vault", () => {
   it("--root picks the data root (beats PENGUIN_HOME); set/list both target that root", async () => {
     const otherRoot = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cli-vault-root-"));
     try {
+      await serveConfigRoot(otherRoot);
       const set = await runVault([
         "set",
         "--key",

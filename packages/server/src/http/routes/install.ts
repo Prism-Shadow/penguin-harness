@@ -52,7 +52,7 @@ export function installRoutes(deps: InstallRouteDeps): Hono<AppEnv> {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "InstallRoutes.routes",
+        id: "install",
         prefix: "/api/install",
         auth: "none",
         order: 5,
@@ -62,7 +62,7 @@ export function installRoutes(deps: InstallRouteDeps): Hono<AppEnv> {
 })
 export class InstallRoutes {
   @Use() private readonly config!: Config;
-  @Bind("InstallRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("install") routes!: Hono<AppEnv>;
   setup() {
     this.routes = installRoutes({ config: this.config });
   }

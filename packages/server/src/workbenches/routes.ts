@@ -788,19 +788,19 @@ export function appCenterRoutes(deps: AppCenterRouteDeps) {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "WorkbenchManifestModule.routes",
+        id: "workbenches.manifest",
         prefix: "/api/projects/:projectId/agents/:agentId/workbenches",
         auth: "none",
         order: 19,
       },
       {
-        id: "WorkbenchesModule.routes",
+        id: "workbenches",
         prefix: "/api/projects/:projectId/agents/:agentId/workbenches",
         auth: "user",
         order: 20,
       },
       {
-        id: "WorkbenchesModule.appCenterRoutes",
+        id: "workbenches.app-center",
         prefix: "/api/projects/:projectId/app-center",
         auth: "user",
         order: 20,
@@ -816,10 +816,10 @@ export class WorkbenchRoutes {
   @Use() private readonly prefs!: UiPrefsStore;
   @Use() private readonly projects!: Projects;
   @Use() private readonly machines!: Machines;
-  @Bind("WorkbenchesModule.routes") routes!: Hono<AppEnv>;
-  @Bind("WorkbenchesModule.appCenterRoutes") appCenterRoutes!: Hono<AppEnv>;
+  @Bind("workbenches") routes!: Hono<AppEnv>;
+  @Bind("workbenches.app-center") appCenterRoutes!: Hono<AppEnv>;
   /** The manifest on its own auth-less gate, ahead of the session gate — see manifestRoutes. */
-  @Bind("WorkbenchManifestModule.routes") manifestRoutes!: Hono<AppEnv>;
+  @Bind("workbenches.manifest") manifestRoutes!: Hono<AppEnv>;
   setup() {
     this.routes = workbenchRoutes({
       access: this.access,

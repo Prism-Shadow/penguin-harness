@@ -167,6 +167,7 @@ import { registerWorkspaceFileRoutes, workspaceFilesRoutes } from "./workspace-f
 import { archivedSessionsRoutes } from "./archived-sessions.js";
 import { ArchivedSessionsService } from "../../services/archived-sessions-service.js";
 import { PreviewTokens } from "./preview.js";
+import { endpointOf } from "../app.js";
 import type { ModelOAuth } from "@prismshadow/penguin-library-model";
 import type { PlatformAuth } from "../../services/platform-auth-service.js";
 import type { ModelScopeAuth } from "../../services/modelscope-auth-service.js";
@@ -177,6 +178,7 @@ import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { LiveStreams } from "../../auth/live-streams.js";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
+import { AgentAuth } from "../../mechanisms/agent-auth.js";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { OrgService } from "../../runtime/organization/service.js";
 
@@ -1780,110 +1782,480 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "session-api.model-oauth-callback",
+        id: "sessions.model-oauth-callback",
         prefix: "/api/projects/:projectId/model-oauth/callback",
         auth: "none",
         order: 6,
       },
       {
-        id: "session-api.models",
+        id: "sessions.models",
         prefix: "/api/projects/:projectId/models",
         auth: "user",
         order: 100,
       },
       {
-        id: "session-api.model-oauth",
+        id: "sessions.model-oauth",
         prefix: "/api/projects/:projectId/model-oauth",
         auth: "user",
         order: 110,
       },
       {
-        id: "session-api.platform-auth",
+        id: "sessions.platform-auth",
         prefix: "/api/projects/:projectId/platform-auth",
         auth: "user",
         order: 115,
       },
       {
-        id: "session-api.modelscope-auth",
+        id: "sessions.modelscope-auth",
         prefix: "/api/projects/:projectId/modelscope-auth",
         auth: "user",
         order: 116,
       },
       {
-        id: "session-api.chat-defaults",
+        id: "sessions.chat-defaults",
         prefix: "/api/projects/:projectId/chat-defaults",
         auth: "user",
         order: 120,
       },
       {
-        id: "session-api.command-policy",
+        id: "sessions.command-policy",
         prefix: "/api/projects/:projectId/command-policy",
         auth: "user",
         order: 130,
       },
       {
-        id: "session-api.agents",
+        id: "sessions.agents",
         prefix: "/api/projects/:projectId/agents",
         auth: "user",
         order: 140,
       },
       {
-        id: "session-api.agent-deletions",
+        id: "sessions.agent-deletions",
         prefix: "/api/projects/:projectId/agent-deletions",
         auth: "user",
         order: 141,
       },
       {
-        id: "session-api.agent-config",
+        id: "sessions.agent-config",
         prefix: "/api/projects/:projectId/agents/:agentId/config",
         auth: "user",
         order: 170,
       },
       {
-        id: "session-api.vault",
+        id: "sessions.vault",
         prefix: "/api/projects/:projectId/agents/:agentId/vault",
         auth: "user",
         order: 180,
       },
       {
-        id: "session-api.agent-sessions",
+        id: "penguin.session.list",
+        method: "GET",
         prefix: "/api/projects/:projectId/agents/:agentId/sessions",
         auth: "user",
         order: 250,
       },
       {
-        id: "session-api.sessions-batch",
+        id: "penguin.session.create",
+        method: "POST",
+        prefix: "/api/projects/:projectId/agents/:agentId/sessions",
+        auth: "user",
+        order: 250,
+      },
+      {
+        id: "penguin.session.listBatch",
+        method: "POST",
         prefix: "/api/projects/:projectId/sessions/batch",
         auth: "user",
         order: 255,
       },
       {
-        id: "session-api.sessions-archive",
+        id: "penguin.session.archiveWorkspace",
+        method: "POST",
         prefix: "/api/projects/:projectId/sessions/archive",
         auth: "user",
         order: 256,
       },
       {
-        id: "session-api.usage",
+        id: "sessions.usage",
         prefix: "/api/projects/:projectId/usage",
         auth: "user",
         order: 260,
       },
       {
-        id: "session-api.workspace-files",
+        id: "penguin.workspace.listFiles",
+        method: "GET",
         prefix: "/api/projects/:projectId/workspace-files",
         auth: "user",
         order: 265,
       },
       {
-        id: "session-api.sessions",
-        prefix: "/api/sessions",
+        id: "penguin.workspace.readFile",
+        method: "GET",
+        prefix: "/api/projects/:projectId/workspace-files/content",
+        auth: "user",
+        order: 265,
+      },
+      {
+        id: "penguin.workspace.writeFile",
+        method: "PUT",
+        prefix: "/api/projects/:projectId/workspace-files/content",
+        auth: "user",
+        order: 265,
+      },
+      {
+        id: "penguin.workspace.deleteFile",
+        method: "DELETE",
+        prefix: "/api/projects/:projectId/workspace-files/content",
+        auth: "user",
+        order: 265,
+      },
+      {
+        id: "penguin.workspace.createFile",
+        method: "POST",
+        prefix: "/api/projects/:projectId/workspace-files/create",
+        auth: "user",
+        order: 265,
+      },
+      {
+        id: "penguin.workspace.moveFile",
+        method: "POST",
+        prefix: "/api/projects/:projectId/workspace-files/move",
+        auth: "user",
+        order: 265,
+      },
+      {
+        id: "penguin.workspace.searchFiles",
+        method: "GET",
+        prefix: "/api/projects/:projectId/workspace-files/search",
+        auth: "user",
+        order: 265,
+      },
+      {
+        id: "penguin.workspace.revealFile",
+        method: "POST",
+        prefix: "/api/projects/:projectId/workspace-files/reveal",
+        auth: "user",
+        order: 265,
+      },
+      {
+        id: "penguin.session.get",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId",
         auth: "user",
         order: 270,
       },
       {
-        id: "session-api.archived-sessions",
+        id: "penguin.session.update",
+        method: "PATCH",
+        prefix: "/api/sessions/:sessionId",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.fork",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/fork",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.delete",
+        method: "DELETE",
+        prefix: "/api/sessions/:sessionId",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.getScratchpadFile",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/scratchpad/:fileName",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.getTraceImage",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/trace-image",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.getMessages",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/messages",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.getAmsp",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/amsp",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.listApprovals",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/approvals",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.stream",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/stream",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.runTask",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/tasks",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.steer",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/steer",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.deleteSteer",
+        method: "DELETE",
+        prefix: "/api/sessions/:sessionId/steer/:steerId",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.messageSubagent",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/subagents/:childSessionId/message",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.abortSubagent",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/subagents/:childSessionId/abort",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.deleteFollowUp",
+        method: "DELETE",
+        prefix: "/api/sessions/:sessionId/follow-ups/:followUpId",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.interrupt",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/interrupt",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.getGoal",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/goal",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.resolveApproval",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/approvals/:toolCallId",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.backgroundToolCall",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/tool-calls/:toolCallId/background",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.abort",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/abort",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.listProcesses",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/processes",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.killProcess",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/processes/:processId/kill",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.deleteProcess",
+        method: "DELETE",
+        prefix: "/api/sessions/:sessionId/processes/:processId",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.retryNow",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/retry-now",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.retry",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/retry",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.compact",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/compact",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.switchModel",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/switch-model",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.listFiles",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/files",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.readFile",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/files/content",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.writeFile",
+        method: "PUT",
+        prefix: "/api/sessions/:sessionId/files/content",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.deleteFile",
+        method: "DELETE",
+        prefix: "/api/sessions/:sessionId/files/content",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.createFile",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/files/create",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.moveFile",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/files/move",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.searchFiles",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/files/search",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.revealFile",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/files/reveal",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.previewFileRedirect",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/files/preview-redirect",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.statFiles",
+        method: "POST",
+        prefix: "/api/sessions/:sessionId/files/stat",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.getContext",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/context",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.listTraces",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/traces",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.getTrace",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/traces/:index",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.getTraceAnalysis",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/traces/:index/analysis",
+        auth: "user",
+        order: 270,
+      },
+      {
+        id: "penguin.session.listArchivedGroups",
+        method: "GET",
+        prefix: "/api/me/archived-sessions/groups",
+        auth: "user",
+        order: 275,
+      },
+      {
+        id: "penguin.session.listArchived",
+        method: "GET",
         prefix: "/api/me/archived-sessions",
+        auth: "user",
+        order: 275,
+      },
+      {
+        id: "penguin.session.unarchive",
+        method: "POST",
+        prefix: "/api/me/archived-sessions/unarchive",
+        auth: "user",
+        order: 275,
+      },
+      {
+        id: "penguin.session.deleteArchived",
+        method: "POST",
+        prefix: "/api/me/archived-sessions/delete",
         auth: "user",
         order: 275,
       },
@@ -1922,27 +2294,80 @@ export class SessionApiRoutes {
   @Use() private readonly auth!: Auth;
   @Use() private readonly drivers!: SessionDrivers;
   @Use() private readonly agentApi!: AgentApi;
+  @Use() private readonly agentAuth!: AgentAuth;
   @Use() private readonly orgService!: OrgService;
   @Use() private readonly workbenches!: Workbenches;
   @Use() private readonly drafts!: UserDraftsStore;
-  @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
-  @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
-  @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
-  @Bind("session-api.platform-auth") platformAuthRoutes!: Hono<AppEnv>;
-  @Bind("session-api.modelscope-auth") modelScopeAuthRoutes!: Hono<AppEnv>;
-  @Bind("session-api.chat-defaults") chatDefaultsRoutes!: Hono<AppEnv>;
-  @Bind("session-api.command-policy") commandPolicyRoutes!: Hono<AppEnv>;
-  @Bind("session-api.agents") agentsRoutes!: Hono<AppEnv>;
-  @Bind("session-api.agent-deletions") agentDeletionsRoutes!: Hono<AppEnv>;
-  @Bind("session-api.agent-config") agentConfigRoutes!: Hono<AppEnv>;
-  @Bind("session-api.vault") vaultRoutes!: Hono<AppEnv>;
-  @Bind("session-api.agent-sessions") agentSessionsRoutes!: Hono<AppEnv>;
-  @Bind("session-api.sessions-batch") sessionsBatchRoutes!: Hono<AppEnv>;
-  @Bind("session-api.sessions-archive") sessionsArchiveRoutes!: Hono<AppEnv>;
-  @Bind("session-api.usage") usageRoutes!: Hono<AppEnv>;
-  @Bind("session-api.workspace-files") workspaceFilesRoutes!: Hono<AppEnv>;
-  @Bind("session-api.sessions") sessionsRoutes!: Hono<AppEnv>;
-  @Bind("session-api.archived-sessions") archivedSessionsRoutes!: Hono<AppEnv>;
+  @Bind("sessions.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
+  @Bind("sessions.models") modelsRoutes!: Hono<AppEnv>;
+  @Bind("sessions.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
+  @Bind("sessions.platform-auth") platformAuthRoutes!: Hono<AppEnv>;
+  @Bind("sessions.modelscope-auth") modelScopeAuthRoutes!: Hono<AppEnv>;
+  @Bind("sessions.chat-defaults") chatDefaultsRoutes!: Hono<AppEnv>;
+  @Bind("sessions.command-policy") commandPolicyRoutes!: Hono<AppEnv>;
+  @Bind("sessions.agents") agentsRoutes!: Hono<AppEnv>;
+  @Bind("sessions.agent-deletions") agentDeletionsRoutes!: Hono<AppEnv>;
+  @Bind("sessions.agent-config") agentConfigRoutes!: Hono<AppEnv>;
+  @Bind("sessions.vault") vaultRoutes!: Hono<AppEnv>;
+  @Bind("penguin.session.list") listSessionsRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.create") createSessionRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.listBatch") sessionsBatchRoutes!: Hono<AppEnv>;
+  @Bind("penguin.session.archiveWorkspace") sessionsArchiveRoutes!: Hono<AppEnv>;
+  @Bind("sessions.usage") usageRoutes!: Hono<AppEnv>;
+  @Bind("penguin.workspace.listFiles") workspaceListFilesRoute!: Hono<AppEnv>;
+  @Bind("penguin.workspace.readFile") workspaceReadFileRoute!: Hono<AppEnv>;
+  @Bind("penguin.workspace.writeFile") workspaceWriteFileRoute!: Hono<AppEnv>;
+  @Bind("penguin.workspace.deleteFile") workspaceDeleteFileRoute!: Hono<AppEnv>;
+  @Bind("penguin.workspace.createFile") workspaceCreateFileRoute!: Hono<AppEnv>;
+  @Bind("penguin.workspace.moveFile") workspaceMoveFileRoute!: Hono<AppEnv>;
+  @Bind("penguin.workspace.searchFiles") workspaceSearchFilesRoute!: Hono<AppEnv>;
+  @Bind("penguin.workspace.revealFile") workspaceRevealFileRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.get") getSessionRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.update") updateSessionRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.fork") forkSessionRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.delete") deleteSessionRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.getScratchpadFile") getScratchpadFileRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.getTraceImage") getTraceImageRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.getMessages") getMessagesRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.getAmsp") getAmspRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.listApprovals") listApprovalsRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.stream") streamSessionRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.runTask") runTaskRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.steer") steerSessionRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.deleteSteer") deleteSteerRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.messageSubagent") messageSubagentRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.abortSubagent") abortSubagentRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.deleteFollowUp") deleteFollowUpRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.interrupt") interruptSessionRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.getGoal") getGoalRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.resolveApproval") resolveApprovalRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.backgroundToolCall") backgroundToolCallRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.abort") abortSessionRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.listProcesses") listProcessesRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.killProcess") killProcessRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.deleteProcess") deleteProcessRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.retryNow") retryNowRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.retry") retryRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.compact") compactRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.switchModel") switchModelRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.listFiles") sessionListFilesRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.readFile") sessionReadFileRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.writeFile") sessionWriteFileRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.deleteFile") sessionDeleteFileRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.createFile") sessionCreateFileRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.moveFile") sessionMoveFileRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.searchFiles") sessionSearchFilesRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.revealFile") sessionRevealFileRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.previewFileRedirect") previewFileRedirectRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.statFiles") statFilesRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.getContext") getContextRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.listTraces") listTracesRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.getTrace") getTraceRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.getTraceAnalysis") getTraceAnalysisRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.listArchivedGroups") listArchivedGroupsRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.listArchived") listArchivedRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.unarchive") unarchiveSessionsRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.deleteArchived") deleteArchivedSessionsRoute!: Hono<AppEnv>;
   setup() {
     const manager = this.manager as SessionManager;
     const sessionService = this.sessionService as SessionService;
@@ -2031,6 +2456,7 @@ export class SessionApiRoutes {
       traceIndex: this.traceIndex,
       workbenches: this.workbenches,
       drafts: this.drafts,
+      agentAuth: this.agentAuth,
     });
     this.agentDeletionsRoutes = agentDeletionsRoutes({ access, agentService: this.agents });
     this.agentConfigRoutes = agentConfigRoutes({
@@ -2040,21 +2466,85 @@ export class SessionApiRoutes {
       config: this.config,
     });
     this.vaultRoutes = vaultRoutes({ agentConfigService, manager, access });
-    this.agentSessionsRoutes = agentSessionsRoutes(sessionsDeps);
-    this.sessionsBatchRoutes = sessionsBatchRoutes(sessionsDeps);
-    this.sessionsArchiveRoutes = sessionsArchiveRoutes(sessionsDeps);
+    const agentSessions = agentSessionsRoutes(sessionsDeps);
+    this.listSessionsRoute = endpointOf(agentSessions, "GET", "/");
+    this.createSessionRoute = endpointOf(agentSessions, "POST", "/");
+    this.sessionsBatchRoutes = endpointOf(sessionsBatchRoutes(sessionsDeps), "POST", "/");
+    this.sessionsArchiveRoutes = endpointOf(sessionsArchiveRoutes(sessionsDeps), "POST", "/");
     this.usageRoutes = usageRoutes({ access, usageService: this.usage });
-    this.workspaceFilesRoutes = workspaceFilesRoutes({
+    const wfGroup = workspaceFilesRoutes({
       access,
       workspaceFiles: this.workspaceFiles,
       desktopMode: sessionsDeps.desktopMode,
       fileReveal: this.fileReveal,
     });
-    this.sessionsRoutes = sessionsRoutes(sessionsDeps);
+    this.workspaceListFilesRoute = endpointOf(wfGroup, "GET", "/");
+    this.workspaceReadFileRoute = endpointOf(wfGroup, "GET", "/content");
+    this.workspaceWriteFileRoute = endpointOf(wfGroup, "PUT", "/content");
+    this.workspaceDeleteFileRoute = endpointOf(wfGroup, "DELETE", "/content");
+    this.workspaceCreateFileRoute = endpointOf(wfGroup, "POST", "/create");
+    this.workspaceMoveFileRoute = endpointOf(wfGroup, "POST", "/move");
+    this.workspaceSearchFilesRoute = endpointOf(wfGroup, "GET", "/search");
+    this.workspaceRevealFileRoute = endpointOf(wfGroup, "POST", "/reveal");
+    const sGroup = sessionsRoutes(sessionsDeps);
+    this.getSessionRoute = endpointOf(sGroup, "GET", "/:sessionId");
+    this.updateSessionRoute = endpointOf(sGroup, "PATCH", "/:sessionId");
+    this.forkSessionRoute = endpointOf(sGroup, "POST", "/:sessionId/fork");
+    this.deleteSessionRoute = endpointOf(sGroup, "DELETE", "/:sessionId");
+    this.getScratchpadFileRoute = endpointOf(sGroup, "GET", "/:sessionId/scratchpad/:fileName");
+    this.getTraceImageRoute = endpointOf(sGroup, "GET", "/:sessionId/trace-image");
+    this.getMessagesRoute = endpointOf(sGroup, "GET", "/:sessionId/messages");
+    this.getAmspRoute = endpointOf(sGroup, "GET", "/:sessionId/amsp");
+    this.listApprovalsRoute = endpointOf(sGroup, "GET", "/:sessionId/approvals");
+    this.streamSessionRoute = endpointOf(sGroup, "GET", "/:sessionId/stream");
+    this.runTaskRoute = endpointOf(sGroup, "POST", "/:sessionId/tasks");
+    this.steerSessionRoute = endpointOf(sGroup, "POST", "/:sessionId/steer");
+    this.deleteSteerRoute = endpointOf(sGroup, "DELETE", "/:sessionId/steer/:steerId");
+    this.messageSubagentRoute = endpointOf(
+      sGroup,
+      "POST",
+      "/:sessionId/subagents/:childSessionId/message",
+    );
+    this.abortSubagentRoute = endpointOf(
+      sGroup,
+      "POST",
+      "/:sessionId/subagents/:childSessionId/abort",
+    );
+    this.deleteFollowUpRoute = endpointOf(sGroup, "DELETE", "/:sessionId/follow-ups/:followUpId");
+    this.interruptSessionRoute = endpointOf(sGroup, "POST", "/:sessionId/interrupt");
+    this.getGoalRoute = endpointOf(sGroup, "GET", "/:sessionId/goal");
+    this.resolveApprovalRoute = endpointOf(sGroup, "POST", "/:sessionId/approvals/:toolCallId");
+    this.backgroundToolCallRoute = endpointOf(
+      sGroup,
+      "POST",
+      "/:sessionId/tool-calls/:toolCallId/background",
+    );
+    this.abortSessionRoute = endpointOf(sGroup, "POST", "/:sessionId/abort");
+    this.listProcessesRoute = endpointOf(sGroup, "GET", "/:sessionId/processes");
+    this.killProcessRoute = endpointOf(sGroup, "POST", "/:sessionId/processes/:processId/kill");
+    this.deleteProcessRoute = endpointOf(sGroup, "DELETE", "/:sessionId/processes/:processId");
+    this.retryNowRoute = endpointOf(sGroup, "POST", "/:sessionId/retry-now");
+    this.retryRoute = endpointOf(sGroup, "POST", "/:sessionId/retry");
+    this.compactRoute = endpointOf(sGroup, "POST", "/:sessionId/compact");
+    this.switchModelRoute = endpointOf(sGroup, "POST", "/:sessionId/switch-model");
+    this.sessionListFilesRoute = endpointOf(sGroup, "GET", "/:sessionId/files");
+    this.sessionReadFileRoute = endpointOf(sGroup, "GET", "/:sessionId/files/content");
+    this.sessionWriteFileRoute = endpointOf(sGroup, "PUT", "/:sessionId/files/content");
+    this.sessionDeleteFileRoute = endpointOf(sGroup, "DELETE", "/:sessionId/files/content");
+    this.sessionCreateFileRoute = endpointOf(sGroup, "POST", "/:sessionId/files/create");
+    this.sessionMoveFileRoute = endpointOf(sGroup, "POST", "/:sessionId/files/move");
+    this.sessionSearchFilesRoute = endpointOf(sGroup, "GET", "/:sessionId/files/search");
+    this.sessionRevealFileRoute = endpointOf(sGroup, "POST", "/:sessionId/files/reveal");
+    this.previewFileRedirectRoute = endpointOf(sGroup, "GET", "/:sessionId/files/preview-redirect");
+    this.statFilesRoute = endpointOf(sGroup, "POST", "/:sessionId/files/stat");
+    this.getContextRoute = endpointOf(sGroup, "GET", "/:sessionId/context");
+    this.listTracesRoute = endpointOf(sGroup, "GET", "/:sessionId/traces");
+    this.getTraceRoute = endpointOf(sGroup, "GET", "/:sessionId/traces/:index");
+    this.getTraceAnalysisRoute = endpointOf(sGroup, "GET", "/:sessionId/traces/:index/analysis");
     const deletion = sessionDeletionDeps(sessionsDeps);
     const projectEvents = this.projectEvents;
     const machines = this.machines;
-    this.archivedSessionsRoutes = archivedSessionsRoutes({
+    const archivedGroup = archivedSessionsRoutes({
       service: new ArchivedSessionsService({
         listProjects: (userId) => access.listProjects(userId),
         canAccess: (userId, projectId) => access.canAccess(userId, projectId),
@@ -2085,5 +2575,9 @@ export class SessionApiRoutes {
           })),
       }),
     });
+    this.listArchivedGroupsRoute = endpointOf(archivedGroup, "GET", "/groups");
+    this.listArchivedRoute = endpointOf(archivedGroup, "GET", "/");
+    this.unarchiveSessionsRoute = endpointOf(archivedGroup, "POST", "/unarchive");
+    this.deleteArchivedSessionsRoute = endpointOf(archivedGroup, "POST", "/delete");
   }
 }

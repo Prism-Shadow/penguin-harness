@@ -49,13 +49,13 @@ export function remoteRoutes(deps: { authService: Auth }): Hono<AppEnv> {
 @Component({
   contributes: {
     "HttpModule.routes": [
-      { id: "RemoteRoutes.routes", prefix: "/api/remote", auth: "token", order: 55 },
+      { id: "remote", prefix: "/api/remote", auth: "token", order: 55 },
     ],
   },
 })
 export class RemoteRoutes {
   @Use() private readonly auth!: Auth;
-  @Bind("RemoteRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("remote") routes!: Hono<AppEnv>;
   setup() {
     this.routes = remoteRoutes({ authService: this.auth });
   }

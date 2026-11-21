@@ -89,7 +89,7 @@ function backendPrefs(store: UiPrefsStore) {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "BuiltinBrowserRoutes.routes",
+        id: "builtin-browser.routes",
         prefix: "/api/builtin-browser",
         auth: "user",
         order: 205,
@@ -97,7 +97,7 @@ function backendPrefs(store: UiPrefsStore) {
       {
         // In front of the cookie gate (the first gated group mounts at order 10): the
         // extension pairs with a code, not a session.
-        id: "BuiltinBrowserRoutes.pair",
+        id: "builtin-browser.pair",
         prefix: "/api/builtin-browser/extension/pair",
         auth: "none",
         order: 7,
@@ -120,8 +120,8 @@ export class BuiltinBrowserRoutes {
   @Use() private readonly sessions!: SessionIndex;
   @Use() private readonly config!: Config;
   @Provide() gate!: BrowserExtensionGate;
-  @Bind("BuiltinBrowserRoutes.routes") routes!: Hono<AppEnv>;
-  @Bind("BuiltinBrowserRoutes.pair") pairRoutes!: Hono<AppEnv>;
+  @Bind("builtin-browser.routes") routes!: Hono<AppEnv>;
+  @Bind("builtin-browser.pair") pairRoutes!: Hono<AppEnv>;
 
   setup({ effect }: ClassCtx) {
     const users = this.users;

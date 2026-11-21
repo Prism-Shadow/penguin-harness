@@ -86,6 +86,8 @@ export function commandRoutes(deps: CommandRouteDeps): Hono<AppEnv> {
   return app;
 }
 
+import { endpointOf } from "../app.js";
+
 /**
  * The platform's own copy is the one that serves. The runtime no longer mounts these
  * routes itself — it publishes the shell's port as `platform.shellFrames`, and a platform
@@ -95,8 +97,16 @@ export function commandRoutes(deps: CommandRouteDeps): Hono<AppEnv> {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "CommandRoutes.routes",
+        id: "penguin.command.list",
+        method: "GET",
         prefix: "/api/command",
+        auth: "user",
+        order: 10,
+      },
+      {
+        id: "penguin.command.run",
+        method: "POST",
+        prefix: "/api/command/:command",
         auth: "user",
         order: 10,
       },
@@ -105,8 +115,11 @@ export function commandRoutes(deps: CommandRouteDeps): Hono<AppEnv> {
 })
 export class CommandRoutes {
   @Use() private readonly desktop!: Desktop;
-  @Bind("CommandRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("penguin.command.list") listRoute!: Hono<AppEnv>;
+  @Bind("penguin.command.run") runRoute!: Hono<AppEnv>;
   setup() {
-    this.routes = commandRoutes({ shell: () => this.desktop.shell() });
+    const group = commandRoutes({ shell: () => this.desktop.shell() });
+    this.listRoute = endpointOf(group, "GET", "/");
+    this.runRoute = endpointOf(group, "POST", "/:command");
   }
 }

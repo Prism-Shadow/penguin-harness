@@ -73,13 +73,13 @@ export function projectsRoutes(deps: ProjectsRouteDeps): Hono<AppEnv> {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "project-admin.projects",
+        id: "projects",
         prefix: "/api/projects",
         auth: "user",
         order: 80,
       },
       {
-        id: "project-admin.members",
+        id: "projects.members",
         prefix: "/api/projects/:projectId/members",
         auth: "user",
         order: 90,
@@ -91,8 +91,8 @@ export class ProjectAdminRoutes {
   @Use() private readonly projectService!: ProjectLifecycle;
   @Use() private readonly desktop!: Desktop;
   @Use() private readonly machines!: Machines;
-  @Bind("project-admin.projects") projectsRoutes!: Hono<AppEnv>;
-  @Bind("project-admin.members") membersRoutes!: Hono<AppEnv>;
+  @Bind("projects") projectsRoutes!: Hono<AppEnv>;
+  @Bind("projects.members") membersRoutes!: Hono<AppEnv>;
   setup() {
     this.projectsRoutes = projectsRoutes({
       projectService: this.projectService,

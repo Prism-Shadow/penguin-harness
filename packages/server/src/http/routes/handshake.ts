@@ -47,14 +47,14 @@ export function handshakeRoutes(deps: { identity: () => Promise<HandshakeAnswer>
 @Component({
   contributes: {
     "HttpModule.routes": [
-      { id: "HandshakeRoutes.routes", prefix: "/api/handshake", auth: "user", order: 21 },
+      { id: "handshake", prefix: "/api/handshake", auth: "user", order: 21 },
     ],
   },
 })
 export class HandshakeRoutes {
   @Use() private readonly paths!: Paths;
   @Use() private readonly hmr!: Hmr;
-  @Bind("HandshakeRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("handshake") routes!: Hono<AppEnv>;
   setup() {
     const identity = bootIdentity(this.hmr.resources, this.paths.root);
     this.routes = handshakeRoutes({ identity: () => identity });

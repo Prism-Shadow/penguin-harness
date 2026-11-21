@@ -120,7 +120,7 @@ export function suggestIdRoutes(deps: SuggestIdRouteDeps): Hono<AppEnv> {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "SuggestIdRoutes.routes",
+        id: "suggest-id",
         prefix: "/api/projects/:projectId/suggest-id",
         auth: "user",
         order: 146,
@@ -138,7 +138,7 @@ export class SuggestIdRoutes {
   @Use() private readonly settings!: Settings;
   @Use() private readonly errors!: Errors;
   @Use() private readonly log!: Log;
-  @Bind("SuggestIdRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("suggest-id") routes!: Hono<AppEnv>;
   setup() {
     this.routes = suggestIdRoutes({
       access: this.access,

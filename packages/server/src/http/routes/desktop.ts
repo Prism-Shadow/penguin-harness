@@ -230,13 +230,13 @@ export function desktopWindowRoutes(deps: DesktopRouteDeps): Hono<AppEnv> {
 @Component({
   contributes: {
     "HttpModule.routes": [
-      { id: "DesktopRoutes.routes", prefix: "/api/desktop", auth: "none", order: 5 },
+      { id: "desktop", prefix: "/api/desktop", auth: "none", order: 5 },
     ],
   },
 })
 export class DesktopRoutes {
   @Use() private readonly desktop!: Desktop;
-  @Bind("DesktopRoutes.routes") routes!: Hono;
+  @Bind("desktop") routes!: Hono;
   setup() {
     this.routes = desktopRoutes({ desktop: this.desktop.current() });
   }
@@ -245,13 +245,13 @@ export class DesktopRoutes {
 @Component({
   contributes: {
     "HttpModule.routes": [
-      { id: "DesktopUpdateRoutes.routes", prefix: "/api/desktop/update", auth: "user", order: 10 },
+      { id: "desktop.update", prefix: "/api/desktop/update", auth: "user", order: 10 },
     ],
   },
 })
 export class DesktopUpdateRoutes {
   @Use() private readonly desktop!: Desktop;
-  @Bind("DesktopUpdateRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("desktop.update") routes!: Hono<AppEnv>;
   setup() {
     this.routes = desktopUpdateRoutes({ desktop: this.desktop.current() });
   }
@@ -260,13 +260,13 @@ export class DesktopUpdateRoutes {
 @Component({
   contributes: {
     "HttpModule.routes": [
-      { id: "DesktopTrayRoutes.routes", prefix: "/api/desktop/tray", auth: "user", order: 10 },
+      { id: "desktop.tray", prefix: "/api/desktop/tray", auth: "user", order: 10 },
     ],
   },
 })
 export class DesktopTrayRoutes {
   @Use() private readonly desktop!: Desktop;
-  @Bind("DesktopTrayRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("desktop.tray") routes!: Hono<AppEnv>;
   setup() {
     this.routes = desktopTrayRoutes({ desktop: this.desktop.current() });
   }
@@ -276,7 +276,7 @@ export class DesktopTrayRoutes {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "DesktopPrivacySettingsRoutes.routes",
+        id: "desktop.privacy",
         prefix: "/api/desktop/privacy-settings",
         auth: "user",
         order: 10,
@@ -286,7 +286,7 @@ export class DesktopTrayRoutes {
 })
 export class DesktopPrivacySettingsRoutes {
   @Use() private readonly desktop!: Desktop;
-  @Bind("DesktopPrivacySettingsRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("desktop.privacy") routes!: Hono<AppEnv>;
   setup() {
     this.routes = desktopPrivacySettingsRoutes({ desktop: this.desktop.current() });
   }
@@ -295,13 +295,13 @@ export class DesktopPrivacySettingsRoutes {
 @Component({
   contributes: {
     "HttpModule.routes": [
-      { id: "DesktopWindowRoutes.routes", prefix: "/api/desktop/window", auth: "user", order: 10 },
+      { id: "desktop.window", prefix: "/api/desktop/window", auth: "user", order: 10 },
     ],
   },
 })
 export class DesktopWindowRoutes {
   @Use() private readonly desktop!: Desktop;
-  @Bind("DesktopWindowRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("desktop.window") routes!: Hono<AppEnv>;
   setup() {
     this.routes = desktopWindowRoutes({ desktop: this.desktop.current() });
   }

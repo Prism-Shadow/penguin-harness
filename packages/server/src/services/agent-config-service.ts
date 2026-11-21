@@ -37,11 +37,15 @@ import {
   insertSkillsPlaceholder,
   insertVaultPlaceholder,
   VAULT_VALUE_MAX_LENGTH,
+  agentVaultPath,
+  DEFAULT_AGENT_ID,
   isValidVaultKey,
   loadAgentVault,
+  removeVaultEntry,
   resetSystemConfigToDefaults,
   resolveMCPServer,
   saveAgentVault,
+  setVaultEntry,
   systemConfigPath,
   THINKING_LEVEL_NAMES,
 } from "@prismshadow/penguin-core";
@@ -507,13 +511,43 @@ export class AgentConfigService implements AgentConfig {
 
   /** Read the Agent vault (agent_state/.vault.toml): values are always masked, plaintext is never sent to the client. */
   async getVault(projectId: string, agentId: string): Promise<VaultResponse> {
-    await this.requireExists(projectId, agentId);
+    if (!(await this.exists(projectId, agentId)) && agentId !== DEFAULT_AGENT_ID) {
+      const hasVaultFile = await fs
+        .access(agentVaultPath(this.root, projectId, agentId))
+        .then(() => true)
+        .catch(() => false);
+      if (!hasVaultFile) {
+        throw new HttpError(404, "agent_not_found", "Agent does not exist.");
+      }
+    }
     const vault = await loadAgentVault(this.root, projectId, agentId);
     const entries: VaultEntryInfo[] = Object.entries(vault).map(([key, value]) => ({
       key,
       valueMasked: maskApiKey(value),
     }));
     return { entries };
+  }
+
+  /** Set a single vault entry on disk (validates key and value length). */
+  async setVaultEntry(
+    projectId: string,
+    agentId: string,
+    key: string,
+    value: string,
+  ): Promise<void> {
+    try {
+      await setVaultEntry(this.root, projectId, agentId, key, value);
+    } catch (err) {
+      throw badRequest(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** Remove a single vault entry; returns false when the key was not present. */
+  async removeVaultEntry(projectId: string, agentId: string, key: string): Promise<boolean> {
+    const prev = await loadAgentVault(this.root, projectId, agentId);
+    if (prev[key] === undefined) return false;
+    await removeVaultEntry(this.root, projectId, agentId, key);
+    return true;
   }
 
   /**

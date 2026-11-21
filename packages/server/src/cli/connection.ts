@@ -22,9 +22,9 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { resolveRoot } from "@prismshadow/penguin-core";
 import { liveServerLock } from "../lock.js";
 import type { Messages } from "./i18n.js";
+import { resolveRootOption } from "./root-option.js";
 
 /** Hosts that count as this machine for token-file purposes. */
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
@@ -108,7 +108,7 @@ export async function autoStartServer(
     child = spawn(process.execPath, [entry, "server"], {
       detached: true,
       stdio: ["ignore", fd, fd],
-      env: { ...process.env, PORT: "0" },
+      env: { ...process.env, PORT: "0", PENGUIN_HOME: root },
     });
   } finally {
     fs.closeSync(fd);
@@ -138,11 +138,14 @@ export async function autoStartServer(
 
 /** Resolves where to connect (see the module doc for the order); may auto-start a server. */
 export async function resolveConnection(
-  opts: { server?: string; autoStart?: boolean },
+  opts: { server?: string; autoStart?: boolean; root?: string },
   t: Messages,
 ): Promise<Connection> {
-  const root = resolveRoot();
-  const explicit = opts.server?.trim() || process.env.PENGUIN_API_URL?.trim() || "";
+  const root = resolveRootOption(opts.root);
+  const explicit =
+    opts.server?.trim() ||
+    (opts.root === undefined ? process.env.PENGUIN_API_URL?.trim() : undefined) ||
+    "";
   if (explicit !== "") {
     const url = normalizeServerUrl(explicit, t);
     const loopback = isLoopbackUrl(url);

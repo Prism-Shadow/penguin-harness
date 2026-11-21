@@ -249,7 +249,7 @@ export function pluginCliCommandRoutes(commands: PluginCliCommands): Hono<AppEnv
   contributes: {
     "HttpModule.routes": [
       {
-        id: "PluginCliCommandsProvider.routes",
+        id: "cli.commands",
         prefix: "/api/cli/commands",
         auth: "user",
         order: 66,
@@ -260,7 +260,7 @@ export function pluginCliCommandRoutes(commands: PluginCliCommands): Hono<AppEnv
 export class PluginCliCommandsProvider {
   @Use() private readonly hmr!: Hmr;
   @Provide() pluginCliCommands!: PluginCliCommands;
-  @Bind("PluginCliCommandsProvider.routes") routes!: Hono<AppEnv>;
+  @Bind("cli.commands") routes!: Hono<AppEnv>;
 
   setup({ contributions }: ClassCtx) {
     // The kernel checked each entry against the slot's data type at boot, and resolved every

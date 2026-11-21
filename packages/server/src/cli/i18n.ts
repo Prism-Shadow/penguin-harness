@@ -366,6 +366,10 @@ export function defaultMessages(): Messages {
 /** Mask an API key: keep only a few trailing characters; return `-` when unconfigured. */
 export function maskApiKey(apiKey: string | undefined): string {
   if (!apiKey) return "-";
+  // A key already masked by the server (`first4…last4` for keys > 12 chars) converts to `****last4`.
+  if (apiKey.length === 9 && apiKey[4] === "…") {
+    return `****${apiKey.slice(-4)}`;
+  }
   // Mask the whole thing when ≤12 chars: `****last4` reveals too much of a short secret (same threshold as the server-side mask).
   if (apiKey.length <= 12) return "***";
   return `****${apiKey.slice(-4)}`;

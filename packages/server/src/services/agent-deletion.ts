@@ -19,6 +19,7 @@ import { HttpError } from "../http/errors.js";
 import { settleWithin } from "@prismshadow/penguin-library-http/settle";
 import type { UserDraftsStore } from "@prismshadow/penguin-library-auth";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
+import type { AgentAuth } from "../mechanisms/agent-auth.js";
 import type { AgentConfig, AgentLifecycle } from "../mechanisms/agents.js";
 import type { ErrorLog } from "@prismshadow/penguin-library-observability";
 import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-session";
@@ -42,6 +43,8 @@ export interface AgentDeletionDeps {
   schedulesRepo: Pick<Schedules, "deleteByAgent">;
   errorsRepo: Pick<ErrorLog, "deleteByAgent">;
   agentApi: Pick<AgentApi, "deleteByAgent">;
+  /** The Agent's auth sessions and its permission generation row go with the Agent. */
+  agentAuth?: Pick<AgentAuth, "revokeAll">;
 }
 
 /** How long aborted runs get to write their Traces before the folder is moved anyway, ms. */
@@ -148,6 +151,9 @@ async function removeOne(
   // The Agent's API exposure goes with it: a later Agent created under the same id starts
   // off, and no key minted for this one opens it.
   deps.agentApi.deleteByAgent(projectId, agentId);
+  // The Agent's auth sessions die with it: a later Agent under the same id starts without a
+  // session and no generation row, so nothing of this one authenticates or derives.
+  deps.agentAuth?.revokeAll(projectId, agentId);
   return deletion;
 }
 

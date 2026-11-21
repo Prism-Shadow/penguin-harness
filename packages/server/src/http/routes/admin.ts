@@ -66,19 +66,19 @@ export function adminUsersRoutes(deps: AdminRouteDeps): Hono<AppEnv> {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "admin-api.users",
+        id: "admin.users",
         prefix: "/api/admin/users",
         auth: "user",
         order: 30,
       },
       {
-        id: "admin-api.settings",
+        id: "admin.settings",
         prefix: "/api/admin/settings",
         auth: "user",
         order: 40,
       },
       {
-        id: "admin-api.plugin-config",
+        id: "admin.plugin-config",
         prefix: "/api/admin/plugin-config",
         auth: "user",
         order: 45,
@@ -92,9 +92,9 @@ export class AdminRoutes {
   @Use() private readonly proxy!: Proxy;
   @Use() private readonly settings!: Settings;
   @Use() private readonly pluginConfigAdmin!: PluginConfigAdmin;
-  @Bind("admin-api.users") usersRoutes!: Hono<AppEnv>;
-  @Bind("admin-api.settings") settingsRoutes!: Hono<AppEnv>;
-  @Bind("admin-api.plugin-config") pluginConfigRoutes!: Hono<AppEnv>;
+  @Bind("admin.users") usersRoutes!: Hono<AppEnv>;
+  @Bind("admin.settings") settingsRoutes!: Hono<AppEnv>;
+  @Bind("admin.plugin-config") pluginConfigRoutes!: Hono<AppEnv>;
   setup() {
     this.pluginConfigRoutes = adminPluginConfigRoutes(this.pluginConfigAdmin);
     this.usersRoutes = adminUsersRoutes({

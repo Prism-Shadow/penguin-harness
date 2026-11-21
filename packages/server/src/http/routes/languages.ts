@@ -41,7 +41,7 @@ export function languageRoutes(languages: () => Languages): Hono<AppEnv> {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "LanguageRoutes.routes",
+        id: "languages",
         prefix: "/api/languages",
         auth: "user",
         order: 70,
@@ -51,7 +51,7 @@ export function languageRoutes(languages: () => Languages): Hono<AppEnv> {
 })
 export class LanguageRoutes {
   @Use() private readonly languages!: Languages;
-  @Bind("LanguageRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("languages") routes!: Hono<AppEnv>;
   setup() {
     this.routes = languageRoutes(() => this.languages);
   }

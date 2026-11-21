@@ -340,21 +340,21 @@ export function agentMcpServersRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
 @Component({
   contributes: {
     "HttpModule.routes": [
-      { id: "PluginRoutes.library", prefix: "/api/plugins", auth: "user", order: 70 },
+      { id: "plugins.library", prefix: "/api/plugins", auth: "user", order: 70 },
       {
-        id: "PluginRoutes.agent-plugins",
+        id: "plugins.agent-plugins",
         prefix: "/api/projects/:projectId/agents/:agentId/plugins",
         auth: "user",
         order: 222,
       },
       {
-        id: "PluginRoutes.agent-hooks",
+        id: "plugins.agent-hooks",
         prefix: "/api/projects/:projectId/agents/:agentId/hooks",
         auth: "user",
         order: 224,
       },
       {
-        id: "PluginRoutes.agent-mcp-servers",
+        id: "plugins.agent-mcp-servers",
         prefix: "/api/projects/:projectId/agents/:agentId/mcp-servers",
         auth: "user",
         order: 226,
@@ -369,10 +369,10 @@ export class PluginRoutes {
   @Use() private readonly manager!: ManagerIface;
   @Use() private readonly library!: PluginLibrary;
   @Use() private readonly workbenches!: Workbenches;
-  @Bind("PluginRoutes.library") libraryRoutes!: Hono<AppEnv>;
-  @Bind("PluginRoutes.agent-plugins") pluginRoutes!: Hono<AppEnv>;
-  @Bind("PluginRoutes.agent-hooks") hookRoutes!: Hono<AppEnv>;
-  @Bind("PluginRoutes.agent-mcp-servers") mcpServerRoutes!: Hono<AppEnv>;
+  @Bind("plugins.library") libraryRoutes!: Hono<AppEnv>;
+  @Bind("plugins.agent-plugins") pluginRoutes!: Hono<AppEnv>;
+  @Bind("plugins.agent-hooks") hookRoutes!: Hono<AppEnv>;
+  @Bind("plugins.agent-mcp-servers") mcpServerRoutes!: Hono<AppEnv>;
   setup() {
     const deps = {
       config: this.config,
@@ -626,7 +626,7 @@ function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "PluginRegistryRoutes.routes",
+        id: "plugin-registry",
         prefix: "/api/plugins/registry",
         auth: "user",
         order: 69,
@@ -642,7 +642,7 @@ export class PluginRegistryRoutes {
   @Use() private readonly config!: Config;
   @Use() private readonly hmr!: Hmr;
   @Use() private readonly sources!: IndexSources;
-  @Bind("PluginRegistryRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("plugin-registry") routes!: Hono<AppEnv>;
   private cache: CachedRegistry | null = null;
   private cacheUrl: string | null = null;
   /** v1 parked without the snapshot's source URL; v2 names it. A v1 snapshot seeds nothing —

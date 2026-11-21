@@ -3620,13 +3620,13 @@ export abstract class Machines extends Interface<
   contributes: {
     "HttpModule.routes": [
       {
-        id: "MachinesModule.routes",
+        id: "machines",
         prefix: "/api/projects/:projectId/machines",
         auth: "user",
         order: 50,
       },
       {
-        id: "MachinesModule.server-proxy",
+        id: "machines.server-proxy",
         // The manifest is data: the literal, not machines/proxy.ts's SERVER_PROXY_PREFIX,
         // which the generator reads statically and cannot follow.
         prefix: "/server/",
@@ -3653,8 +3653,8 @@ export class MachinesModule {
   @Provide() machines!: Machines;
   /** Session-level requests for a machine's Session, routed by its id (session-forward.ts). */
   @Provide() sessionForward!: MachineSessionForward;
-  @Bind("MachinesModule.routes") routes!: Hono<AppEnv>;
-  @Bind("MachinesModule.server-proxy") serverProxyRoutes!: Hono<AppEnv>;
+  @Bind("machines") routes!: Hono<AppEnv>;
+  @Bind("machines.server-proxy") serverProxyRoutes!: Hono<AppEnv>;
   setup({ effect }: ClassCtx) {
     // This machine's own id is minted on the first boot of this data root and stable ever
     // after — every stored reference to this machine, here and on the machines it reaches,

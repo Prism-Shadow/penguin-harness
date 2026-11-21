@@ -44,6 +44,7 @@ import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-sessi
 import type { Access } from "@prismshadow/penguin-library-project";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { UserDraftsStore } from "@prismshadow/penguin-library-auth";
+import type { AgentAuth } from "../../mechanisms/agent-auth.js";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import { deleteAgentEverywhere } from "../../services/agent-deletion.js";
 import { migrateEmployeeAuthors } from "../../services/agent-author-migration.js";
@@ -64,6 +65,8 @@ export interface AgentsRouteDeps {
   workbenches: Pick<Workbenches, "releaseAgent">;
   /** Users' unsent drafts, which go with the Agent's Sessions. */
   drafts: Pick<UserDraftsStore, "deleteByAgent">;
+  /** Issues the created Agent's auth session (the create response carries the raw token once). */
+  agentAuth: AgentAuth;
 }
 
 /** Window size in days for the card's activity sparkline (last 30 days, including today). */
@@ -152,6 +155,9 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       ...(defaultPlugins !== undefined ? { defaultPlugins } : {}),
       ...(directory !== undefined ? { directory } : {}),
     });
+    // The Agent's auth session, issued at creation: the raw token leaves here once, in the
+    // create response — the owner passes it to the Agent; the row keeps only its hash.
+    const session = deps.agentAuth.issueSession(projectId, agentId, new Date());
     const agent: AgentSummary = {
       ...item,
       activeSessionCount: 0,
@@ -160,7 +166,18 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       // A new Agent's API is off until its owner turns it on.
       apiEnabled: false,
     };
-    return c.json({ agent } satisfies AgentCreateResponse, 201);
+    return c.json(
+      {
+        agent,
+        authSession: {
+          token: session.token,
+          expiresAt: session.expiresAt,
+          generation: session.generation,
+          role: session.role,
+        },
+      } satisfies AgentCreateResponse,
+      201,
+    );
   });
 
   app.delete("/:agentId", async (c) => {
@@ -168,7 +185,11 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     // Deletion is a Project-level management operation: owner only.
     deps.access.requireProjectOwner(c.var.user.userId, projectId);
-    const deletion = await deleteAgentEverywhere(deps, projectId, agentId);
+    const deletion = await deleteAgentEverywhere(
+      { ...deps, agentAuth: deps.agentAuth },
+      projectId,
+      agentId,
+    );
     return c.json({ deletion } satisfies AgentDeleteResponse, 202);
   });
 

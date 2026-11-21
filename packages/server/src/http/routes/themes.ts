@@ -160,7 +160,7 @@ export function themeRoutes(deps: ThemeRouteDeps): Hono<AppEnv> {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "ThemeRoutes.routes",
+        id: "themes",
         prefix: "/api/themes",
         auth: "user",
         order: 10,
@@ -174,7 +174,7 @@ export class ThemeRoutes {
   @Use() private readonly hmr!: Hmr;
   @Use() private readonly channels!: Channels;
   @Use() private readonly clock!: Clock;
-  @Bind("ThemeRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("themes") routes!: Hono<AppEnv>;
   setup() {
     const store = new ThemeStore({
       root: this.paths.root,

@@ -162,14 +162,24 @@ export function historyLinesRoutes(deps: HistoryLinesRouteDeps): Hono<AppEnv> {
   return app;
 }
 
+import { endpointOf } from "../app.js";
+
 @Component({
   contributes: {
     "HttpModule.routes": [
       {
-        id: "HistoryLinesRoutes.routes",
+        id: "penguin.session.getHistoryLines",
         // After the Session forward (268), which takes a machine's Sessions; beside the Session
-        // routes (session-api.sessions, 270), whose paths these are not.
-        prefix: "/api/sessions",
+        // routes (270), whose paths these are not.
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/history-lines",
+        auth: "user",
+        order: 272,
+      },
+      {
+        id: "penguin.session.getTraceBody",
+        method: "GET",
+        prefix: "/api/sessions/:sessionId/trace-body",
         auth: "user",
         order: 272,
       },
@@ -183,9 +193,10 @@ export class HistoryLinesRoutes {
   @Use() private readonly manager!: Sessions;
   @Use() private readonly channels!: Channels;
   @Use() private readonly log!: Log;
-  @Bind("HistoryLinesRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("penguin.session.getHistoryLines") getHistoryLinesRoute!: Hono<AppEnv>;
+  @Bind("penguin.session.getTraceBody") getTraceBodyRoute!: Hono<AppEnv>;
   setup() {
-    this.routes = historyLinesRoutes({
+    const group = historyLinesRoutes({
       traces: this.traces,
       sessions: this.sessionsRepo,
       access: this.access,
@@ -193,5 +204,7 @@ export class HistoryLinesRoutes {
       channels: this.channels,
       log: (line) => this.log.line(line),
     });
+    this.getHistoryLinesRoute = endpointOf(group, "GET", "/:sessionId/history-lines");
+    this.getTraceBodyRoute = endpointOf(group, "GET", "/:sessionId/trace-body");
   }
 }

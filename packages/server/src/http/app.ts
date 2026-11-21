@@ -1,9 +1,9 @@
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { Opaque, Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Hono } from "hono";
+import type { Context, ErrorHandler, MiddlewareHandler } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
 import { Config, Log } from "../hmr/capabilities.js";
-import type { MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import {
   authMiddleware,
@@ -21,9 +21,12 @@ import { bodyLimitBytes } from "@prismshadow/penguin-library-setting/attachment-
 import { isAgentImport, MAX_PACKAGE_BYTES } from "../services/agent-zip.js";
 import { declined } from "../hmr/hono-seam.js";
 import type { Auth, Users } from "@prismshadow/penguin-library-auth";
-import type { Access } from "@prismshadow/penguin-library-project";
+import type { Access, Projects } from "@prismshadow/penguin-library-project";
 import type { Errors } from "@prismshadow/penguin-library-observability";
 import type { Settings } from "@prismshadow/penguin-library-setting";
+import type { AgentAuth } from "../mechanisms/agent-auth.js";
+
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /**
  * The assembled business surface: one request in, one response (or a decline) out.
@@ -45,14 +48,89 @@ export abstract class Http {
 
 export interface HttpSlots {
   /**
-   * A route group. `auth: "user"` accepts a cookie or the local API token; `"token"` accepts
+   * A route group or single-method endpoint. `auth: "user"` accepts a cookie, the local API
+   * token, or an Agent auth session whose grant includes the route's `id`; `"token"` accepts
    * only the local API token, without renewing cookies; `"none"` is public. `order` is the
    * mount position (a stable number, since Hono matches in order). The code half is the Hono app.
    */
   routes: Slot<
-    { prefix: string; auth: "user" | "token" | "none"; order: number },
+    { method?: HttpMethod; prefix: string; auth: "user" | "token" | "none"; order: number },
     Opaque<"Hono", Hono<AppEnv>>
   >;
+}
+
+/**
+ * Extracts one `(method, subPath)` endpoint from a route group as a single-route Hono app
+ * mounted at the endpoint's full path (`mergePath(groupPrefix, subPath)`). Any group-wide
+ * middleware (`ALL /*`) on the source group runs ahead of the route's own handler on the
+ * same `(method, "/")` entry, so mounting the endpoint adds no wildcard middleware.
+ */
+export function endpointOf(
+  group: Hono<AppEnv>,
+  method: HttpMethod,
+  subPath: string,
+): Hono<AppEnv> {
+  const normalized = subPath === "" ? "/" : subPath;
+  const middlewares = group.routes.filter((r) => r.method === "ALL" && r.path === "/*");
+  const matches = group.routes.filter((r) => r.method === method && r.path === normalized);
+  if (matches.length === 0) {
+    throw new Error(`No ${method} ${normalized} route found in group`);
+  }
+  const app = new Hono<AppEnv>();
+  const groupErr = (group as unknown as { errorHandler: ErrorHandler<AppEnv> }).errorHandler;
+  const appErr = (app as unknown as { errorHandler: ErrorHandler<AppEnv> }).errorHandler;
+  if (groupErr !== appErr) {
+    app.onError(groupErr);
+  }
+  for (const mw of middlewares) app.on(method, "/", mw.handler);
+  for (const r of matches) app.on(method, "/", r.handler);
+  return app;
+}
+
+/**
+ * Checks whether an Agent-authenticated request is granted the matched route's `id` and,
+ * when the route is scoped to `:projectId`, that it matches the Agent's own project.
+ */
+function checkRouteAuth(c: Context<AppEnv>, routeId: string): void {
+  const agentAuth = (c.var as AppEnv["Variables"]).agentAuth;
+  if (agentAuth === undefined) return;
+  const { grant } = agentAuth;
+  if (!grant.allEndpoints && !grant.apiIds.includes(routeId)) {
+    throw new HttpError(
+      403,
+      "permission_required",
+      `Agent role "${grant.role}" does not grant "${routeId}".`,
+    );
+  }
+  const routeProjectId = c.req.param("projectId");
+  if (
+    !grant.allEndpoints &&
+    routeProjectId !== undefined &&
+    routeProjectId !== agentAuth.projectId
+  ) {
+    throw new HttpError(
+      403,
+      "permission_required",
+      `Agent session for project "${agentAuth.projectId}" cannot access project "${routeProjectId}".`,
+    );
+  }
+}
+
+function withRouteAuth(source: Hono<AppEnv>, routeId: string): Hono<AppEnv> {
+  if (routeId === "penguin.session.forward") return source;
+  const gated = new Hono<AppEnv>();
+  const sourceErr = (source as unknown as { errorHandler: ErrorHandler<AppEnv> }).errorHandler;
+  const gatedErr = (gated as unknown as { errorHandler: ErrorHandler<AppEnv> }).errorHandler;
+  if (sourceErr !== gatedErr) {
+    gated.onError(sourceErr);
+  }
+  for (const route of source.routes) {
+    gated.on(route.method, route.path, async (c, next) => {
+      checkRouteAuth(c, routeId);
+      return route.handler(c, next);
+    });
+  }
+  return gated;
 }
 
 /**
@@ -65,15 +143,18 @@ export class HttpModule {
   @Use() private readonly config!: Config;
   @Use() private readonly log!: Log;
   @Use() private readonly auth!: Auth;
+  @Use() private readonly agentAuth!: AgentAuth;
   @Use() private readonly errors!: Errors;
   @Use() private readonly settings!: Settings;
   @Use() private readonly access!: Access;
+  @Use() private readonly projects!: Projects;
   @Use() private readonly users!: Users;
   @Provide() http!: Http;
   setup({ contributions }: ClassCtx) {
     const routes = [...(contributions.routes ?? [])]
       .map((c) => ({
         id: c.id,
+        ...(c.data.method !== undefined ? { method: c.data.method as HttpMethod } : {}),
         prefix: c.data.prefix as string,
         auth: c.data.auth as "user" | "token" | "none",
         order: c.data.order as number,
@@ -81,11 +162,31 @@ export class HttpModule {
       }))
       .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 
+    const agentAuthHook =
+      this.agentAuth !== undefined
+        ? {
+            authenticate: (bearer: string, now: Date) => this.agentAuth.authenticate(bearer, now),
+            resolveUser: (projectId: string) => {
+              const project = this.projects?.findById(projectId);
+              if (project !== null && project !== undefined) {
+                const owner = this.users?.findById(project.ownerUserId);
+                if (owner !== null && owner !== undefined) return owner;
+              }
+              return this.users?.findById("admin") ?? null;
+            },
+          }
+        : undefined;
+
     // The HTTP surface, gated on the cookie; and the same surface once per socket user,
     // gated on that user — assembled lazily, since most users never open a socket, and kept,
     // since the one who did opens it on every page load. Hono copies a group's routes into
     // each parent it is mounted on, so mounting the groups twice shares handlers, not state.
-    const cookieGated = this.assemble(routes, authMiddleware(this.auth, this.config.trustProxy));
+    const cookieGated = this.assemble(
+      routes,
+      authMiddleware(this.auth, this.config.trustProxy, {
+        ...(agentAuthHook !== undefined ? { agentAuth: agentAuthHook } : {}),
+      }),
+    );
     const asUser = new Map<string, Hono<AppEnv>>();
     const enteredAs = (userId: string): Hono<AppEnv> => {
       let app = asUser.get(userId);
@@ -113,7 +214,14 @@ export class HttpModule {
 
   /** The whole surface behind one gate: error handling, logging, body cap, JSON-only writes, the runtime-prefix decline, then every group in order. */
   private assemble(
-    routes: { prefix: string; auth: "user" | "token" | "none"; order: number; app: Hono<AppEnv> }[],
+    routes: {
+      id: string;
+      method?: HttpMethod;
+      prefix: string;
+      auth: "user" | "token" | "none";
+      order: number;
+      app: Hono<AppEnv>;
+    }[],
     gate: MiddlewareHandler<AppEnv>,
   ): Hono<AppEnv> {
     const errors = this.errors;
@@ -195,9 +303,24 @@ export class HttpModule {
         : authenticateToken(c, next);
     for (const r of routes) {
       // Each group keeps its own gate, including protected prefixes outside /api.
-      if (r.auth === "user") app.use(`${r.prefix.replace(/\/$/, "")}/*`, once);
-      if (r.auth === "token") app.use(`${r.prefix.replace(/\/$/, "")}/*`, tokenGate);
-      app.route(r.prefix, r.app);
+      if (r.method !== undefined) {
+        if (r.auth === "user") {
+          app.on(r.method, r.prefix, once, async (c, next) => {
+            checkRouteAuth(c, r.id);
+            await next();
+          });
+        }
+        if (r.auth === "token") app.on(r.method, r.prefix, tokenGate);
+        app.route(r.prefix, r.app);
+      } else {
+        if (r.auth === "user") {
+          app.use(`${r.prefix.replace(/\/$/, "")}/*`, once);
+          app.route(r.prefix, withRouteAuth(r.app, r.id));
+        } else {
+          if (r.auth === "token") app.use(`${r.prefix.replace(/\/$/, "")}/*`, tokenGate);
+          app.route(r.prefix, r.app);
+        }
+      }
     }
     return app;
   }

@@ -811,7 +811,18 @@ router
       files: [],
       folderFiles: [],
     };
-    return json({ agent } satisfies AgentCreateResponse, 201);
+    return json(
+      {
+        agent,
+        authSession: {
+          token: "agtk_mock",
+          expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+          generation: 0,
+          role: "general",
+        },
+      } satisfies AgentCreateResponse,
+      201,
+    );
   })
   .get("/api/projects/:projectId/agents/:agentId/config", (ctx): AgentConfigResponse =>
     configOf(ctx),

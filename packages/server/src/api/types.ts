@@ -1256,6 +1256,17 @@ export interface AgentCreateRequest {
 
 export interface AgentCreateResponse {
   agent: AgentSummary;
+  /**
+   * The Agent's auth session, issued at creation. `token` is the raw session token — it
+   * appears once, here; the stored row keeps only its hash. The session runs under the
+   * Agent's CURRENT permission generation (see the Agent auth mechanism).
+   */
+  authSession: {
+    token: string;
+    expiresAt: string;
+    generation: number;
+    role: string;
+  };
 }
 
 /**

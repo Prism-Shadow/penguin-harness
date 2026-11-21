@@ -48,7 +48,7 @@ export function eventsRoutes(deps: EventsRouteDeps): Hono<AppEnv> {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "EventsRoutes.routes",
+        id: "events",
         prefix: "/api/events",
         auth: "user",
         order: 60,
@@ -60,7 +60,7 @@ export class EventsRoutes {
   @Use() private readonly channels!: Channels;
   @Use() private readonly liveStreams!: LiveStreams;
   @Use() private readonly auth!: Auth;
-  @Bind("EventsRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("events") routes!: Hono<AppEnv>;
   setup() {
     this.routes = eventsRoutes({
       channels: this.channels as ChannelHub,

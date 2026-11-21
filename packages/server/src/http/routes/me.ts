@@ -369,7 +369,7 @@ export function meRoutes(deps: MeRouteDeps): Hono<AppEnv> {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "MeRoutes.routes",
+        id: "me",
         prefix: "/api/me",
         auth: "user",
         order: 10,
@@ -386,7 +386,7 @@ export class MeRoutes {
   @Use() private readonly backgroundImages!: BackgroundImageStore;
   @Use() private readonly settings!: Settings;
   @Use() private readonly users!: Users;
-  @Bind("MeRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("me") routes!: Hono<AppEnv>;
   setup() {
     this.routes = meRoutes({
       authService: this.auth,

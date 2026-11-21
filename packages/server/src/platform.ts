@@ -68,6 +68,13 @@ import { UpdateJobService } from "./services/update-job.js";
 import { HarnessHistoryStore } from "./services/harness-history.js";
 import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
 import { AuthSessionsRepo } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
+import { AgentAuthSessionsRepo } from "./db/repos/agent-auth-sessions.js";
+import { AgentAuthService, AgentAuthPermissionProvider } from "./auth/agent-auth-service.js";
+import {
+  AgentAuth,
+  AgentAuthPermissions,
+  AgentAuthSessions,
+} from "./mechanisms/agent-auth.js";
 import { ServerSettingsRepo } from "@prismshadow/penguin-library-setting/repos/server-settings";
 import { UiPrefsRepo } from "@prismshadow/penguin-library-setting/repos/ui-prefs";
 import { UserDraftsRepo } from "@prismshadow/penguin-library-auth/repos/user-drafts";
@@ -318,6 +325,9 @@ export class RuntimeModule {}
   children: [
     UsersRepo,
     AuthSessionsRepo,
+    AgentAuthSessionsRepo,
+    AgentAuthService,
+    AgentAuthPermissionProvider,
     ScryptHasher,
     LiveStreamRegistry,
     AuthService,
@@ -327,7 +337,17 @@ export class RuntimeModule {}
     AuthRoutes,
     RemoteRoutes,
   ],
-  exports: [Users, AuthSessions, Auth, Admin, PasswordHasher, LiveStreams],
+  exports: [
+    Users,
+    AuthSessions,
+    AgentAuthSessions,
+    AgentAuthPermissions,
+    AgentAuth,
+    Auth,
+    Admin,
+    PasswordHasher,
+    LiveStreams,
+  ],
 })
 export class IdentityModule {}
 

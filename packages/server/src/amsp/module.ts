@@ -36,9 +36,9 @@ import { agentApiTryRoutes } from "./try-route.js";
 @Component({
   contributes: {
     "HttpModule.routes": [
-      { id: "AmspRoutes.routes", prefix: "/api/amsp/v1", auth: "none", order: 5 },
+      { id: "amsp.routes", prefix: "/api/amsp/v1", auth: "none", order: 5 },
       {
-        id: "AmspRoutes.try",
+        id: "amsp.try",
         prefix: "/api/projects/:projectId/agents/:agentId/api/try",
         auth: "user",
         order: 224,
@@ -59,8 +59,8 @@ export class AmspRoutes {
   @Use() private readonly clock!: Clock;
   @Use() private readonly access!: Access;
   @Use() private readonly traces!: Traces;
-  @Bind("AmspRoutes.routes") routes!: Hono<AppEnv>;
-  @Bind("AmspRoutes.try") tryRoutes!: Hono<AppEnv>;
+  @Bind("amsp.routes") routes!: Hono<AppEnv>;
+  @Bind("amsp.try") tryRoutes!: Hono<AppEnv>;
 
   setup() {
     const clock = this.clock;

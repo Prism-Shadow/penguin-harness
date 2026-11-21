@@ -57,16 +57,12 @@ import { createInterface } from "node:readline";
 import type { Command } from "commander";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
-import {
-  DEFAULT_AGENT_ID,
-  DEFAULT_PROJECT_ID,
-  loadAgentVault,
-  removeVaultEntry,
-  setVaultEntry,
-} from "@prismshadow/penguin-core";
+import { DEFAULT_AGENT_ID, DEFAULT_PROJECT_ID } from "@prismshadow/penguin-core";
+import type { VaultResponse } from "../../api/types.js";
 import { parseApprovalAnswer } from "../approval.js";
+import { ApiError, ServerClient } from "../client.js";
+import { resolveConnection } from "../connection.js";
 import { terminalInput } from "../console-input.js";
-import { resolveRootOption } from "../root-option.js";
 import { getMessages, maskApiKey, type Messages } from "../i18n.js";
 import { applyLanguageToRc, restartShell } from "../lang-config.js";
 import { registerConfigModelCommand } from "./config-model.js";
@@ -86,14 +82,28 @@ export function registerConfigCommand(config: Command, t: Messages): void {
     .requiredOption("--value <value>", t.config.vaultValue)
     .option("--project-id <id>", t.common.projectId, DEFAULT_PROJECT_ID)
     .option("--agent-id <id>", t.common.agentId, DEFAULT_AGENT_ID)
+    .option("--server <url>", t.common.server)
     .option("--root <dir>", t.common.root)
     .action(async (opts) => {
-      const root = resolveRootOption(opts.root);
       try {
-        await setVaultEntry(root, opts.projectId, opts.agentId, opts.key, opts.value);
+        const client = new ServerClient(
+          await resolveConnection({ server: opts.server, root: opts.root }, t),
+          t,
+        );
+        await client.request(
+          "PUT",
+          `/api/projects/${encodeURIComponent(opts.projectId)}/agents/${encodeURIComponent(opts.agentId)}/vault/entries/${encodeURIComponent(opts.key)}`,
+          { value: opts.value },
+        );
       } catch (err) {
         // Validation errors such as an invalid key name: print an explanation and exit with a non-zero code, without throwing a stack trace.
-        process.stderr.write(`${t.error(err instanceof Error ? err.message : String(err))}\n`);
+        const msg =
+          err instanceof ApiError && err.detail
+            ? err.detail
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        process.stderr.write(`${t.error(msg)}\n`);
         process.exitCode = 1;
         return;
       }
@@ -105,18 +115,25 @@ export function registerConfigCommand(config: Command, t: Messages): void {
     .description(t.config.vaultListDesc)
     .option("--project-id <id>", t.common.projectId, DEFAULT_PROJECT_ID)
     .option("--agent-id <id>", t.common.agentId, DEFAULT_AGENT_ID)
+    .option("--server <url>", t.common.server)
     .option("--root <dir>", t.common.root)
     .action(async (opts) => {
-      const root = resolveRootOption(opts.root);
-      const entries = Object.entries(await loadAgentVault(root, opts.projectId, opts.agentId));
-      if (entries.length === 0) {
+      const client = new ServerClient(
+        await resolveConnection({ server: opts.server, root: opts.root }, t),
+        t,
+      );
+      const res = await client.request<VaultResponse>(
+        "GET",
+        `/api/projects/${encodeURIComponent(opts.projectId)}/agents/${encodeURIComponent(opts.agentId)}/vault`,
+      );
+      if (res.entries.length === 0) {
         process.stdout.write(`${t.vaultListEmpty()}\n`);
         return;
       }
       process.stdout.write(`${t.vaultListTitle()}\n`);
-      const width = Math.max(...entries.map(([key]) => key.length));
-      for (const [key, value] of entries) {
-        process.stdout.write(`${key.padEnd(width)}  ${maskApiKey(value)}\n`);
+      const width = Math.max(...res.entries.map((e) => e.key.length));
+      for (const entry of res.entries) {
+        process.stdout.write(`${entry.key.padEnd(width)}  ${maskApiKey(entry.valueMasked)}\n`);
       }
     });
 
@@ -126,16 +143,34 @@ export function registerConfigCommand(config: Command, t: Messages): void {
     .requiredOption("--key <name>", t.config.vaultKey)
     .option("--project-id <id>", t.common.projectId, DEFAULT_PROJECT_ID)
     .option("--agent-id <id>", t.common.agentId, DEFAULT_AGENT_ID)
+    .option("--server <url>", t.common.server)
     .option("--root <dir>", t.common.root)
     .action(async (opts) => {
-      const root = resolveRootOption(opts.root);
-      const vaultEntries = await loadAgentVault(root, opts.projectId, opts.agentId);
-      if (vaultEntries[opts.key] === undefined) {
-        process.stderr.write(`${t.vaultKeyMissing(opts.key)}\n`);
+      try {
+        const client = new ServerClient(
+          await resolveConnection({ server: opts.server, root: opts.root }, t),
+          t,
+        );
+        await client.request(
+          "DELETE",
+          `/api/projects/${encodeURIComponent(opts.projectId)}/agents/${encodeURIComponent(opts.agentId)}/vault/entries/${encodeURIComponent(opts.key)}`,
+        );
+      } catch (err) {
+        if (err instanceof ApiError && err.code === "vault_key_not_found") {
+          process.stderr.write(`${t.vaultKeyMissing(opts.key)}\n`);
+          process.exitCode = 1;
+          return;
+        }
+        const msg =
+          err instanceof ApiError && err.detail
+            ? err.detail
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        process.stderr.write(`${t.error(msg)}\n`);
         process.exitCode = 1;
         return;
       }
-      await removeVaultEntry(root, opts.projectId, opts.agentId, opts.key);
       process.stdout.write(`${t.vaultRemoved(opts.key)}\n`);
     });
 

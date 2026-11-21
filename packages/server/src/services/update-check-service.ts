@@ -163,7 +163,7 @@ export abstract class UpdateCheck extends Interface<Pick<UpdateCheckService, "ch
   contributes: {
     "HttpModule.routes": [
       {
-        id: "VersionModule.routes",
+        id: "version",
         prefix: "/api/version",
         auth: "user",
         order: 20,
@@ -176,7 +176,7 @@ export class VersionRoutes {
   @Use() private readonly updateCheck!: UpdateCheck;
   @Use() private readonly updateJob!: UpdateJob;
   @Use() private readonly history!: HarnessHistoryIface;
-  @Bind("VersionModule.routes") routes!: Hono<AppEnv>;
+  @Bind("version") routes!: Hono<AppEnv>;
   setup() {
     this.routes = versionRoutes({
       config: this.config,
