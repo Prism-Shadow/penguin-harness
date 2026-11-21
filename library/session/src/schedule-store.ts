@@ -11,8 +11,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { stringify as stringifyToml } from "smol-toml";
 import { atomicWriteFile, resolveModelRef, scheduleDir } from "@prismshadow/penguin-core";
-import type { ProjectConfig } from "@prismshadow/penguin-core";
-import { cacheable, statMtime } from "../internal/mtime-gate.js";
+import type { ModelRef, ProjectConfig } from "@prismshadow/penguin-core";
+import { cacheable, statMtime } from "./mtime-gate.js";
 import {
   parseScheduleFile,
   type ScheduleDefinition,
@@ -227,6 +227,8 @@ export function serializeSchedule(fields: {
 /** Project-config source for model-ref validation (ProjectConfigService: same semantics as core's loadProjectConfig, served from its mtime-gated cache). */
 export interface ScheduleConfigSource {
   loadConfig(projectId: string): Promise<ProjectConfig>;
+  /** The Project's default model reference, or undefined for none (the no-model-refs check). */
+  getDefaultModelRef(projectId: string): Promise<ModelRef | undefined>;
 }
 
 /**

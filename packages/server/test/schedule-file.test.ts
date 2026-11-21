@@ -8,7 +8,7 @@ import {
   parsePeriod,
   parseScheduleFile,
   slotInWindow,
-} from "../src/runtime/schedule-file.js";
+} from "@prismshadow/penguin-library-session/schedule-file";
 
 const BASE = `prompt = "Write the daily report"\nenabled = true\nstart_at = "2026-07-16T09:00:00Z"\n`;
 

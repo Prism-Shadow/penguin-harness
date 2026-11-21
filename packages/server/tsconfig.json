@@ -223,6 +223,21 @@
         "../../library/session/src/repos/sessions.ts"
       ],
       "@prismshadow/penguin-library-session/session": ["../../library/session/src/session.ts"],
+      "@prismshadow/penguin-library-session/schedule-file": [
+        "../../library/session/src/schedule-file.ts"
+      ],
+      "@prismshadow/penguin-library-session/schedule-store": [
+        "../../library/session/src/schedule-store.ts"
+      ],
+      "@prismshadow/penguin-library-session/schedules": [
+        "../../library/session/src/schedules.ts"
+      ],
+      "@prismshadow/penguin-library-session/schedules-status": [
+        "../../library/session/src/schedules-status.ts"
+      ],
+      "@prismshadow/penguin-library-session/mtime-gate": [
+        "../../library/session/src/mtime-gate.ts"
+      ],
       "@prismshadow/penguin-library-setting": ["../../library/setting/src/index.ts"],
       "@prismshadow/penguin-library-setting/attachment-limits": [
         "../../library/setting/src/attachment-limits.ts"
