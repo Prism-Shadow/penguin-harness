@@ -16,8 +16,11 @@
 import type { ErrorReport, ReportFact } from "@prismshadow/penguin-ui";
 import { httpStatusOf, requestIdOf } from "./provider-error";
 
-/** Where the failed request stands: the retry line's phases, and a failure that ended the run. */
-export type RequestFailurePhase = "waiting" | "trying" | "retried" | "gaveUp" | "fatal";
+/**
+ * Where the failed request stands: the retry line's phases, a failure that ended the run, and a
+ * refusal the conversation answered with a hand-off (the composer's notice).
+ */
+export type RequestFailurePhase = "waiting" | "trying" | "retried" | "gaveUp" | "fatal" | "handoff";
 
 export interface RequestFailure {
   phase: RequestFailurePhase;
@@ -62,6 +65,8 @@ function happened(f: RequestFailure): string {
       return `${n} ${n === 1 ? "attempt" : "attempts"} failed (at most ${f.maxAttempts}), and the run ended`;
     case "fatal":
       return `an error no retry can fix ended the run${n > 1 ? ` at attempt ${n}` : ""}`;
+    case "handoff":
+      return "the provider refused the request, and the conversation continued in a new context from a Trace hand-off note";
   }
 }
 

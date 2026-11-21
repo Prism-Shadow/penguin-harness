@@ -1,8 +1,8 @@
 /**
  * 文件: the file tree over a demo workspace, the read-only file browser previewing its README,
- * the Files panel's two panes with the draggable split between them, the path strip at a width
- * that folds it, the file menu's rows for a file and a folder, the in-place editor and the two
- * shapes of drop feedback.
+ * the Files panel's two panes with the draggable split between them, the tree pane in a column
+ * too narrow for its search box, the path strip at a width that folds it, the file menu's rows for
+ * a file and a folder, the in-place editor and the two shapes of drop feedback.
  */
 import { useState } from "react";
 import {
@@ -12,12 +12,14 @@ import {
   FileTree,
   GlyphIcon,
   ICONS,
+  ICON_SIZE,
   IconButton,
   PreviewPane,
   SplitPane,
   TreePane,
   WorkspaceFileEditor,
   WorkspaceFileMenuRows,
+  filesActionClass,
   menuPanelClass,
 } from "@prismshadow/penguin-ui";
 import type {
@@ -66,6 +68,51 @@ const trailing = (row: FileTreeRow) => {
   const size = demoSize(row.path);
   return size === null ? null : <span className="lib-caption">{formatSize(size)}</span>;
 };
+
+/**
+ * The tree pane in a column too narrow for its search box, with the app's refresh and upload
+ * beside it: the box folds into a magnifier, and opens across the row.
+ */
+function NarrowTreePane({ initialQuery }: { initialQuery: string }) {
+  const { S } = useGallery();
+  const t = S.library.files;
+  const tree = useDemoTree();
+  const [query, setQuery] = useState(initialQuery);
+  return (
+    <div className="lib-box flex flex-col" style={{ width: 180, height: 220 }}>
+      <TreePane
+        search={{ value: query, onChange: setQuery, placeholder: t.search }}
+        actions={(
+          [
+            [t.refresh, ICONS.refresh],
+            [t.upload, ICONS.upload],
+          ] as const
+        ).map(([label, glyph]) => (
+          <button
+            key={label}
+            type="button"
+            aria-label={label}
+            data-tooltip={label}
+            className={filesActionClass}
+          >
+            <GlyphIcon d={glyph} size={ICON_SIZE.iconButton} />
+          </button>
+        ))}
+      >
+        <FileTree
+          rows={tree.rows}
+          label={t.treeLabel}
+          selectedPath={tree.selected}
+          toggled={tree.toggled}
+          emptyLabel={t.emptyDir}
+          className="min-h-0 flex-1 overflow-auto"
+          onToggleDir={tree.toggle}
+          onOpenFile={tree.setSelected}
+        />
+      </TreePane>
+    </div>
+  );
+}
 
 export function FilesBoard() {
   const { S } = useGallery();
@@ -193,6 +240,18 @@ export function FilesBoard() {
               />
             }
           />
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.narrow} aside={t.narrowHint}>
+        <div className="lib-row items-start">
+          <div className="lib-stack">
+            <span className="lib-caption">{t.narrowFolded}</span>
+            <NarrowTreePane initialQuery="" />
+          </div>
+          <div className="lib-stack">
+            <span className="lib-caption">{t.narrowQuery}</span>
+            <NarrowTreePane initialQuery="rag" />
+          </div>
         </div>
       </BoardGroup>
       <BoardGroup title={t.crumbs} aside={t.crumbsHint}>

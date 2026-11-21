@@ -182,13 +182,13 @@ export function AppMenu({
       <MenuItem
         glyph={ICONS.appWindow}
         label={S.appCenter.menu.open}
-        disabled={building}
+        disabled={building || app.shortcut.unavailable}
         onSelect={act(close, () => actions.open(app))}
       />
       <MenuItem
         glyph={ICONS.cornersOut}
         label={S.appCenter.menu.openFullScreen}
-        disabled={building}
+        disabled={building || app.shortcut.unavailable}
         onSelect={act(close, () => actions.openFullScreen(app))}
       />
       <MenuSeparator />
@@ -217,11 +217,13 @@ export function AppMenu({
       <MenuItem
         glyph={ICONS.gear}
         label={S.appCenter.menu.viewInSettings}
+        disabled={app.shortcut.unavailable}
         onSelect={act(close, () => actions.viewInSettings(app))}
       />
       <MenuItem
         glyph={ICONS.eyeOff}
         label={S.appCenter.menu.removeFromAppCenter}
+        disabled={app.shortcut.unavailable}
         onSelect={act(close, () => actions.removeFromAppCenter(app))}
       />
       {actions.customized && (

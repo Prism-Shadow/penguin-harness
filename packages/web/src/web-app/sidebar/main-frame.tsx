@@ -73,6 +73,7 @@ export function renderMainSidebarFrame(scope: MainSidebarView) {
         glyph={NEW_CHAT_ICON}
         active={activeSessionId === DRAFT_SESSION_ID}
         onClick={() => newChat()}
+        primary
         className="font-medium"
       />
       {navAreas.pinned.map(renderNavEntry)}

@@ -44,8 +44,8 @@ reads it and hands it to the Web App:
   the cover it draws itself.
 - An App Center shortcut names the library plugin that installed its workbench (`plugin`, from
   the folder's `.plugin.json` receipt); a workbench written by hand names none.
-- The plugin library gains the category `learning-life` (Learning & Life / 学习与生活), listed
-  before the sandbox backends, and the landing site's plugin list orders and colours it.
+- Added Learning & Life, Utilities and Entertainment to the library and the public catalogue. The
+  corresponding category IDs are `learning-life`, `utilities` and `entertainment`.
 - The built-in copy starts from the community master: 31 covered plugins, seven selected with
   Bento slides (which carries the AI PPT workbench) leading. Release preparation refreshes the
   copy and the covers with `node scripts/sync-market-assets.mjs <community checkout>`.

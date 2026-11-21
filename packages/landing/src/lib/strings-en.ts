@@ -448,6 +448,8 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         "software-development": "Software Development",
         "ai-app-development": "AI App Development",
         "learning-life": "Learning & Life",
+        utilities: "Utilities",
+        entertainment: "Entertainment",
         sandbox: "Agent Sandbox",
         other: "Other",
       } as Record<string, string>,
@@ -756,6 +758,15 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
             workspace: "The Workspace's absolute path.",
             source:
               "What opened the Session: user, api, schedule, subagent, cli, company or workbench.",
+          },
+        },
+        session_update: {
+          summary:
+            "A Session setting changed, with its new value. Today the one setting is the model the next context opens on, written when an in-session model switch completes, at the end of the Trace file it leaves.",
+          fields: {
+            provider:
+              "The provider group of the model the next context opens on; comes with model_id.",
+            model_id: "The model id the next context sends to the provider; comes with provider.",
           },
         },
         text: {

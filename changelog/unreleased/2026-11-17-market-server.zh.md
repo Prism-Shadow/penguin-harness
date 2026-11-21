@@ -33,8 +33,8 @@
   返回 404，页面随之改用自己绘制的封面。
 - 应用中心的快捷方式会写明安装其 Workbench 的插件库插件（`plugin`，取自文件夹里的 `.plugin.json`
   回执）；手写的 Workbench 不写。
-- 插件库新增分类 `learning-life`（学习与生活 / Learning & Life），排在沙箱后端之前；公开站点的插件
-  列表为它排序并配色。
+- 插件库和官网目录新增「学习与生活」「实用工具」「娱乐」三个分类，对应的分类 ID 为 `learning-life`、
+  `utilities`、`entertainment`。
 - 内置副本取自社区正本：31 个带封面的插件，精选 7 个，由 Bento 幻灯片（带有 AI PPT 工作台）领衔。
   发布准备时用 `node scripts/sync-market-assets.mjs <社区仓库>` 更新副本与封面。
 

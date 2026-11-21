@@ -445,6 +445,8 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
         "software-development": "软件开发",
         "ai-app-development": "AI 应用开发",
         "learning-life": "学习与生活",
+        utilities: "实用工具",
+        entertainment: "娱乐",
         sandbox: "Agent 运行沙箱",
         other: "其他",
       } as Record<string, string>,
@@ -757,6 +759,14 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
             workspace: "Workspace 的绝对路径。",
             source:
               "谁开启了这个 Session：user、api、schedule、subagent、cli、company 或 workbench。",
+          },
+        },
+        session_update: {
+          summary:
+            "Session 的一项设置发生变更，记下变更后的取值。目前只有一项：下一个上下文所用的模型，在会话内切换模型完成时写下，位于被离开的 Trace 文件末尾。",
+          fields: {
+            provider: "下一个上下文所用模型的提供方分组；与 model_id 成对出现。",
+            model_id: "下一个上下文发给提供方的模型 id；与 provider 成对出现。",
           },
         },
         text: {

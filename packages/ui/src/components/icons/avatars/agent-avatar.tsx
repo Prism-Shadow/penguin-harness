@@ -1,8 +1,9 @@
 /**
  * An Agent's avatar: its own picture when it has one (`src`), else its default avatar — the
- * Agent mascot, the smiling ball penguin, painted in the Agent's colours (agent-avatar-variants.tsx,
- * agent-palette.ts). The default is what an Agent is drawn as wherever it has no picture of its
- * own, and wherever its picture fails to load.
+ * Agent mascot, a small egg-shaped kawaii penguin, painted in the Agent's colours and wearing the
+ * Agent's accessory (agent-avatar-variants.tsx, agent-palette.ts, agent-accessory.ts). The default
+ * is what an Agent is drawn as wherever it has no picture of its own, and wherever its picture
+ * fails to load.
  *
  * The default is drawn in every theme's style at once and carries the `ui-avatar` hook: each
  * drawing is a direct child `<g data-variant="…">`, the foundation shows the `flat` one, and a
@@ -15,12 +16,14 @@
  * alike. It keeps the Agent's tile — the flat drawing's rounded square, at the rendered size —
  * rather than an account's circle, so an Agent and a person stay told apart at a glance.
  *
- * The colour hashes the Agent's id — never its display name — so it survives renames, and every
- * drawing paints the same colours and the same smiling face, so it survives theme switches too. No
- * initial is drawn: every place an avatar sits shows the Agent's name beside it or on hover, and
- * at the 14–18 px most avatars are drawn at, a letter and a penguin do not both fit.
+ * The colour and the accessory hash the Agent's id — never its display name — so they survive
+ * renames, and every drawing paints the same colours, the same face and the same accessory, so
+ * they survive theme switches too. No initial is drawn: every place an avatar sits shows the
+ * Agent's name beside it or on hover, and at the 14–18 px most avatars are drawn at, a letter and
+ * a penguin do not both fit.
  */
 import { useState } from "react";
+import { agentAccessory } from "./agent-accessory";
 import { AGENT_AVATAR_VARIANTS, AGENT_AVATAR_VARIANT_NAMES } from "./agent-avatar-variants";
 import type { AgentAvatarVariant } from "./agent-avatar-variants";
 import { agentColors } from "./agent-palette";
@@ -62,6 +65,7 @@ export function AgentAvatar({
     );
   }
   const colors = agentColors(id);
+  const accessory = agentAccessory(id);
   const drawn = variant === undefined ? AGENT_AVATAR_VARIANT_NAMES : [variant];
   return (
     <svg
@@ -76,7 +80,7 @@ export function AgentAvatar({
         const Drawing = AGENT_AVATAR_VARIANTS[name];
         return (
           <g key={name} data-variant={name}>
-            <Drawing colors={colors} size={size} />
+            <Drawing colors={colors} accessory={accessory} size={size} />
           </g>
         );
       })}

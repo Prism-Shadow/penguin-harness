@@ -58,6 +58,12 @@
  * - A model switch that hands over by Trace path folds its `[model_switch_from]` handoff (naming
  *   this Session) into the model-change marker; a `/model` block naming another Session stays a
  *   Prompt.
+ * - A switch's `session_update` draws the model-change marker under the Session held (one per
+ *   record, several in a row included), and the context's same-model session_meta that follows
+ *   draws none; a Trace without the record still draws it from two metas. A nested child's
+ *   record, one naming no model, and one before any model is held change nothing. The hand-off
+ *   that follows it folds into its marker, live and from history; the Task after it is priced on
+ *   the target; it adds nothing to a Task's span.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -77,6 +83,7 @@ import {
   requestBegin,
   requestEnd,
   sessionMeta,
+  sessionUpdate,
   taskBegin,
   taskEnd,
   thinkingMessage,
@@ -104,6 +111,7 @@ import {
   type BackgroundNoticeItem,
   type CompactionItem,
   type McpConnectItem,
+  type ModelChangeItem,
   type ReconnectItem,
   type StreamModel,
   type SubagentItem,
@@ -113,7 +121,7 @@ import {
   type UserSteeringItem,
   type UserTextItem,
 } from "../src/lib/amsp/stream-model";
-import { refusalHandoffOccurrence } from "../src/lib/amsp/compaction-summary";
+import { refusalHandoff } from "../src/lib/amsp/compaction-summary";
 import { liveSessionElapsedMs } from "../src/lib/amsp/task-stats";
 
 /** A completion notice as core delivers it: steered (engine drain) or unstamped (idle take). */
@@ -160,6 +168,72 @@ function meta(sessionId: string): AmspRecord<SessionMetaPayload> {
 function items(model: StreamModel) {
   return model.items;
 }
+
+describe("the final work step of a Task", () => {
+  const first = "2026-11-19T10:00:00.000Z";
+  const last = "2026-11-19T10:00:04.000Z";
+  const steps = (model: StreamModel) => model.items.filter((item) => item.kind === "thinking");
+  it("waits through the answer, then settles only the last group, identically on replay", () => {
+    const records = [
+      at(userText("question"), first),
+      at(requestBegin(), first),
+      at(thinkingMessage("inspect"), first),
+      at(assistantText("First result"), first),
+      at(thinkingMessage("verify"), first),
+      at(requestEnd("completed"), last),
+    ];
+    const live = createStreamModel();
+    pushMessages(live, records);
+    expect(steps(live).map((item) => item.workOutcome)).toEqual([undefined, undefined]);
+    const clock = steps(live)[0]!.workTiming;
+    expect(clock).toBeDefined();
+    expect(steps(live)[1]!.workTiming).toBe(clock);
+    expect(clock?.durationMs).toBeUndefined();
+    notifyTaskIdle(live);
+    const replay = createStreamModel();
+    pushMessages(replay, records);
+    finalizeHistory(replay);
+    for (const model of [live, replay]) {
+      expect(steps(model).map((item) => item.workTiming?.durationMs)).toEqual([4000, 4000]);
+      expect(steps(model).map((item) => item.workOutcome)).toEqual([
+        undefined,
+        { state: "done", durationMs: 4000 },
+      ]);
+    }
+  });
+  it.each([
+    [requestEnd("fatal"), "failed"],
+    [requestEnd("retryable", { attempt: 3 }), "failed"],
+    [abortEvent("user_abort"), "stopped"],
+  ] as const)(
+    "records an interrupted or failed turn and never overwrites it with a subsequent turn",
+    (end, state) => {
+      const model = createStreamModel();
+      pushMessages(model, [
+        at(userText("question"), first),
+        at(thinkingMessage("observe"), first),
+        at(end, last),
+      ]);
+      pushMessages(model, [
+        at(userText("next question"), last),
+        at(requestBegin(), last),
+        at(thinkingMessage("new turn"), last),
+        at(requestEnd("completed"), last),
+      ]);
+      finalizeHistory(model);
+      const [prior, next] = steps(model);
+      expect(prior?.workOutcome).toEqual({ state, durationMs: 4000 });
+      expect(prior?.workTiming?.durationMs).toBe(4000);
+      expect(next?.workTiming?.durationMs).toBe(0);
+    },
+  );
+  it("leaves an unfinished request without a fabricated completion", () => {
+    const model = createStreamModel();
+    pushMessages(model, [userText("question"), thinkingMessage("inspecting")]);
+    finalizeHistory(model);
+    expect(steps(model)[0]?.workOutcome).toBeUndefined();
+  });
+});
 
 describe("partial aggregation and full-message convergence", () => {
   it("partial_text start/delta/stop accumulates into one streaming item; the full message replaces its content", () => {
@@ -648,6 +722,169 @@ describe("approvals and events", () => {
     expect(models(m)).toEqual([undefined, "a-1", "b-2"]);
   });
 
+  describe("a switch's session_update", () => {
+    const A = { provider: "anthropic", modelId: "a-1" };
+    const B = { provider: "openai", modelId: "b-2" };
+    const metaOn = (to: typeof A, sessionId = "s1") =>
+      sessionMeta({ ...meta(sessionId).payload, provider: to.provider, model_id: to.modelId });
+    const update = (to: typeof A) => sessionUpdate({ provider: to.provider, model_id: to.modelId });
+    const markers = (model: StreamModel) =>
+      model.items.filter((i): i is ModelChangeItem => i.kind === "model_change");
+    /** A completed Task on the held model: its input, one request, its reply and usage. */
+    const round = (m: StreamModel, text: string, t: (s: number) => string): void => {
+      pushMessage(m, at(userText(text), t(1)));
+      pushMessage(m, at(requestBegin(), t(2)));
+      pushMessage(m, at(assistantText(`re: ${text}`), t(3)));
+      pushMessage(m, at(tokenUsage(counts(100), counts(100)), t(4)));
+      pushMessage(m, at(requestEnd("completed"), t(5)));
+    };
+    const first = (s: number) => `2026-11-19T08:00:0${s}.000Z`;
+    const second = (s: number) => `2026-11-19T09:00:0${s}.000Z`;
+    /** A Session on A that answered once, then switched to B through a compaction. */
+    const switched = (): StreamModel => {
+      const m = createStreamModel();
+      pushMessage(m, at(metaOn(A), first(0)));
+      round(m, "task 1", first);
+      pushMessage(
+        m,
+        compactionBegin({ reason: "manual", mode: "summarize", context: 100, turns: 1 }),
+      );
+      pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
+      pushMessage(m, at(update(B), "2026-11-19T08:30:00.000Z"));
+      return m;
+    };
+
+    it("draws the marker from the record, under the Session held, and the context's same-model session_meta that follows adds no second one", () => {
+      const m = switched();
+      expect(items(m).map((i) => i.kind)).toEqual([
+        "user_text",
+        "assistant_text",
+        "task_stats",
+        "compaction",
+        "model_change",
+      ]);
+      expect(markers(m)[0]).toEqual({
+        kind: "model_change",
+        id: expect.any(Number),
+        from: A,
+        to: B,
+        tsMs: Date.parse("2026-11-19T08:30:00.000Z"),
+      });
+      expect(m.contextModel).toEqual({ sessionId: "s1", ...B });
+
+      // The first message opens the next file: its task_begin, then the context's meta on B.
+      pushMessage(m, taskBegin());
+      pushMessage(m, metaOn(B));
+      round(m, "task 2", second);
+      expect(markers(m)).toHaveLength(1);
+    });
+
+    it("a Trace with several switches and no message between draws one marker for each", () => {
+      const m = switched();
+      const C = { provider: "zhipu", modelId: "glm-5" };
+      pushMessage(m, update(C));
+      expect(markers(m).map((i) => [i.from, i.to])).toEqual([
+        [A, B],
+        [B, C],
+      ]);
+      expect(m.contextModel).toEqual({ sessionId: "s1", ...C });
+    });
+
+    it("changes nothing from a nested child, nor when it names no model, nor before any model is held", () => {
+      const m = switched();
+      pushMessage(m, withOrigin(metaOn({ provider: "zhipu", modelId: "glm-5" }, "c1"), "c1"));
+      pushMessage(m, withOrigin(update({ provider: "deepseek", modelId: "ds-1" }), "c1"));
+      // A later setting the record may carry: no model, so no marker and no move.
+      pushMessage(m, sessionUpdate({}));
+      const child = items(m).find((i) => i.kind === "subagent") as SubagentItem;
+      expect(child.model.meta).toMatchObject({ provider: "zhipu", modelId: "glm-5" });
+      expect(markers(child.model)).toEqual([]);
+      expect(markers(m)).toHaveLength(1);
+      expect(m.contextModel).toEqual({ sessionId: "s1", ...B });
+
+      // A window holding no model yet has no Session to name: the context's meta says it.
+      const bare = createStreamModel();
+      pushMessage(bare, update(B));
+      expect(bare.contextModel).toBeNull();
+      pushMessage(bare, metaOn(B));
+      expect(items(bare)).toEqual([]);
+      expect(bare.contextModel).toEqual({ sessionId: "s1", ...B });
+    });
+
+    it("folds the [model_switch_from] hand-off that follows it into its marker, streamed at once or read back from the next file's head", () => {
+      const handoff = userText(
+        buildModelSwitchMessage({
+          sessionId: "s1",
+          tracePath: "/data/traces/s1_001.jsonl",
+          prevModelId: A.modelId,
+        }),
+      );
+      // Live: the switch streams the record, then the block.
+      const live = createStreamModel();
+      pushMessage(live, metaOn(A));
+      round(live, "task 1", first);
+      pushMessage(live, update(B));
+      pushMessage(live, handoff);
+      // History: the block sits at the next file's head, behind the context's meta.
+      const history = createStreamModel();
+      pushMessage(history, metaOn(A));
+      round(history, "task 1", first);
+      pushMessage(history, update(B));
+      pushMessage(history, taskBegin());
+      pushMessage(history, metaOn(B));
+      pushMessage(history, toolListReady([]));
+      pushMessage(history, handoff);
+
+      for (const m of [live, history]) {
+        finalizeHistory(m);
+        // No bubble and no Task of its own: one Task, settled above the marker.
+        expect(items(m).map((i) => i.kind)).toEqual([
+          "user_text",
+          "assistant_text",
+          "task_stats",
+          "model_change",
+        ]);
+        expect(markers(m)[0]).toMatchObject({
+          from: A,
+          to: B,
+          handover: { tracePath: "/data/traces/s1_001.jsonl" },
+        });
+      }
+    });
+
+    it("prices the Task after the switch on the target and the Task before it on the model it ran on", () => {
+      const m = switched();
+      pushMessage(m, taskBegin());
+      pushMessage(m, metaOn(B));
+      round(m, "task 2", second);
+      finalizeHistory(m);
+      const priced = items(m).flatMap((i) => (i.kind === "task_stats" ? [i.model] : []));
+      expect(priced).toEqual([A, B]);
+    });
+
+    it("adds no Task timing: a stopped Task it follows an hour later keeps its own span", () => {
+      const m = createStreamModel();
+      pushMessage(m, at(metaOn(A), first(0)));
+      // Stopped mid-reply: no request_end, so the Task's span runs to its last record.
+      pushMessage(m, at(userText("task 1"), first(1)));
+      pushMessage(m, at(requestBegin(), first(2)));
+      pushMessage(m, at(assistantText("half a reply"), first(3)));
+      pushMessage(m, at(tokenUsage(counts(100), counts(100)), first(3)));
+      pushMessage(m, at(abortEvent(), first(4)));
+      // The switch away from a context that never answered: no compaction, the record alone.
+      pushMessage(m, at(update(B), second(0)));
+      expect(items(m).map((i) => i.kind)).toEqual([
+        "user_text",
+        "assistant_text",
+        "abort",
+        "model_change",
+      ]);
+      finalizeHistory(m);
+      const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
+      expect(stats.stats!.elapsedDeltaMs).toBe(3_000);
+    });
+  });
+
   it("compaction wall time is derived from the begin/end message timestamps", () => {
     const m = createStreamModel();
     pushMessage(
@@ -1113,7 +1350,7 @@ describe("approvals and events", () => {
         gaveUp: r.gaveUp,
       })),
     row: rowOf(m),
-    refusal: refusalHandoffOccurrence(m.items) !== null,
+    refusal: refusalHandoff(m.items) !== null,
     taskOpen: m.taskOpen,
     runEnded: m.runEnded,
   });
@@ -1145,31 +1382,31 @@ describe("approvals and events", () => {
   it("the Session's refusal hand-off is its latest compaction row until a later compaction ends otherwise", () => {
     const m = createStreamModel();
     for (const msg of refusedTask(false)) pushMessage(m, msg);
-    const first = refusalHandoffOccurrence(m.items);
-    expect(first).not.toBeNull();
+    const first = refusalHandoff(m.items)?.occurrence;
+    expect(first).toBeDefined();
     // A later refusal is an occurrence of its own, so a dismissed notice is raised again for it.
     for (const msg of refusedRequest("completed")) {
       pushMessage(m, at(msg, "2026-01-01T00:05:00.000Z"));
     }
-    const second = refusalHandoffOccurrence(m.items);
-    expect(second).not.toBeNull();
+    const second = refusalHandoff(m.items)?.occurrence;
+    expect(second).toBeDefined();
     expect(second).not.toBe(first);
     // A later compaction that completes normally takes it down; so does one that fails.
     pushMessage(
       m,
       compactionBegin({ reason: "manual", mode: "summarize", context: 900, turns: 2 }),
     );
-    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    expect(refusalHandoff(m.items)).toBeNull();
     pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
-    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    expect(refusalHandoff(m.items)).toBeNull();
     for (const msg of refusedRequest("completed")) pushMessage(m, msg);
-    expect(refusalHandoffOccurrence(m.items)).not.toBeNull();
+    expect(refusalHandoff(m.items)).not.toBeNull();
     pushMessage(
       m,
       compactionBegin({ reason: "manual", mode: "summarize", context: 900, turns: 2 }),
     );
     pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "aborted" }));
-    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    expect(refusalHandoff(m.items)).toBeNull();
     // A compaction request the provider refused presents the same way as a refused turn.
     pushMessage(
       m,
@@ -1178,14 +1415,14 @@ describe("approvals and events", () => {
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("fatal", { errorCode: "rejected", errorMessage: REFUSAL }));
     pushMessage(m, degradedEnd("rejected", REFUSAL, 1));
-    expect(refusalHandoffOccurrence(m.items)).not.toBeNull();
+    expect(refusalHandoff(m.items)).not.toBeNull();
     // Any other degraded end is no refusal.
     pushMessage(
       m,
       compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 4 }),
     );
     pushMessage(m, degradedEnd("malformed", "the response contained no usable summary", 3));
-    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    expect(refusalHandoff(m.items)).toBeNull();
   });
 
   it("a refusal whose hand-off could not open the next context settles the retry line it announced", () => {
@@ -1194,7 +1431,7 @@ describe("approvals and events", () => {
     const retry = items(m).find((i) => i.kind === "reconnect") as ReconnectItem;
     expect(retry.gaveUp).toBe(true);
     expect(rowOf(m)).toMatchObject({ status: "fatal", summaryText: undefined });
-    expect(refusalHandoffOccurrence(m.items)).toBeNull();
+    expect(refusalHandoff(m.items)).toBeNull();
     // The next run's first request is no retry of it.
     pushMessage(m, requestBegin());
     expect(retry.retrying).toBe(false);
@@ -1226,7 +1463,7 @@ describe("approvals and events", () => {
         summaryText: undefined,
         thinkingText: undefined,
       });
-      expect(refusalHandoffOccurrence(m.items)).toBeNull();
+      expect(refusalHandoff(m.items)).toBeNull();
     }
   });
 

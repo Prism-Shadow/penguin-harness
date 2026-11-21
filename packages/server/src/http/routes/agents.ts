@@ -26,6 +26,7 @@ import type { OrgService } from "../../runtime/organization/service.js";
 import { HttpError } from "../errors.js";
 import {
   badRequest,
+  optionalBoolean,
   optionalEnum,
   optionalString,
   optionalStringArray,
@@ -37,12 +38,12 @@ import {
 import type { SessionManager } from "../../runtime/session-manager.js";
 import type { SessionService } from "../../services/session-service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
-import type { TraceIndex } from "../../mechanisms/traces.js";
-import type { ErrorLog } from "../../mechanisms/observability.js";
-import type { Schedules, SessionIndex } from "../../mechanisms/sessions.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { AgentApi } from "../../mechanisms/agent-api.js";
-import type { UserDraftsStore } from "../../mechanisms/account-data.js";
+import type { TraceIndex } from "@prismshadow/penguin-library-trace";
+import type { ErrorLog } from "@prismshadow/penguin-library-observability";
+import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-session";
+import type { Access } from "@prismshadow/penguin-library-project";
+import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
+import type { UserDraftsStore } from "@prismshadow/penguin-library-auth";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import { deleteAgentEverywhere } from "../../services/agent-deletion.js";
 import { migrateEmployeeAuthors } from "../../services/agent-author-migration.js";
@@ -123,6 +124,8 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
     // Library plugins to seed the new Agent with (the create dialog's picker); unknown names
     // are rejected before the Agent directory exists.
     const plugins = optionalStringArray(body, "plugins");
+    // The library's default-install plugins join them unless the client sent its complete list.
+    const defaultPlugins = optionalBoolean(body, "defaultPlugins");
     // Skills imported from a directory the user picked. The pair only means anything together, so
     // half of it is a bad request rather than a silently ignored field.
     const skillsDirectory = optionalString(body, "skillsDirectory", {
@@ -146,7 +149,10 @@ export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
       ...(description !== undefined ? { description } : {}),
       ...(author !== undefined ? { author } : {}),
       ...(plugins !== undefined ? { plugins } : {}),
+      ...(defaultPlugins !== undefined ? { defaultPlugins } : {}),
       ...(directory !== undefined ? { directory } : {}),
+      // The creator brings the plugins' server modules along (PRFC-0031).
+      actor: { userId: c.var.user.userId, isAdmin: c.var.user.isAdmin },
     });
     const agent: AgentSummary = {
       ...item,

@@ -33,6 +33,7 @@ import type { MarketSnapshot, MarketSource } from "../../plugin/market.js";
 import { marketPictureDir, marketPictures } from "../../plugin/market-pictures.js";
 import type { MarketPicture, MarketPictures } from "../../plugin/market-pictures.js";
 import { bundledCoversDir, readBundledPicture } from "../../plugin/market-covers.js";
+import { indexMirrorRules } from "../../plugin/mirror-settings.js";
 import { errorBody } from "../errors.js";
 
 /** The headers a picture is answered with, beside its content type. */
@@ -146,7 +147,8 @@ export class PluginMarketRoutes {
       this.config.pluginMarketUrl !== undefined
         ? this.config.pluginMarketUrl
         : resolvePluginMarketUrl(process.env.PENGUIN_PLUGIN_MARKET);
-    const proxy = () => this.config.pluginProxy ?? [];
+    // The mirrors the plugin index fetches try after a source's own URL (Settings › Plugins).
+    const proxy = () => indexMirrorRules();
     const log = (line: string) => this.log.line(line);
     this.source = marketSource({
       url,

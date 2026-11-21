@@ -28,7 +28,7 @@ import {
   finalizeHistory,
   pushMessages,
 } from "../../web/src/lib/amsp/stream-model";
-import { refusalHandoffOccurrence } from "../../web/src/lib/amsp/compaction-summary";
+import { refusalHandoff } from "../../web/src/lib/amsp/compaction-summary";
 import { buildFixtures } from "../src/app/mock/fixtures";
 import { ALL_SESSION_IDS, IDS } from "../src/app/mock/ids";
 import { REPLY_CLOSE_MS, REPLY_HOLD_MS, REPLY_LEAD_MS, resetStore } from "../src/app/mock/store";
@@ -282,7 +282,7 @@ describe("the harness Session", () => {
     // to is the Session's latest compaction: the composer raises its notice for it.
     const refusedRetry = model.items.findLast((item) => item.kind === "reconnect");
     expect(refusedRetry).toMatchObject({ errorCode: "rejected", retrying: true });
-    expect(refusalHandoffOccurrence(model.items)).not.toBeNull();
+    expect(refusalHandoff(model.items)).not.toBeNull();
     expect(kinds.at(-1)).toBe("task_stats");
 
     // The goal banner: a fresh subscription is told the goal run and its outcome.

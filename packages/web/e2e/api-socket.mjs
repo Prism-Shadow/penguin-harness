@@ -44,13 +44,14 @@ export async function watchSocket(page) {
   const holds = [];
   const fakes = [];
   let slowdown = null;
+  const streams = new Map();
   const callOf = new Map();
 
   await page.routeWebSocket(
     (url) => url.pathname === "/api/socket",
     (ws) => {
       const server = ws.connectToServer();
-      ws.onMessage((message) => {
+      ws.onMessage(async (message) => {
         const frame = socketFrame(message);
         // A cancel (`{ id, cancel: true }`) names no endpoint and is not a call.
         if (frame === null || frame.call === undefined) {
@@ -63,6 +64,8 @@ export async function watchSocket(page) {
           path: frame.call.path,
           body: frame.call.body,
         };
+        if (frame.call.headers?.accept === "text/event-stream")
+          streams.set(call.path, { ws, id: call.id });
         callOf.set(call.id, call);
         calls.push(call);
         for (const hook of callHooks) hook(call);
@@ -71,12 +74,14 @@ export async function watchSocket(page) {
           for (let i = callWaiters.length - 1; i >= 0; i -= 1) {
             if (callWaiters[i].test(call)) callWaiters.splice(i, 1)[0].resolve(call);
           }
+          const response =
+            typeof fake.response === "function" ? await fake.response(call) : fake.response;
           ws.send(
             JSON.stringify({
               id: call.id,
-              status: fake.status,
+              status: response.status,
               headers: { "content-type": "application/json" },
-              body: fake.body,
+              body: response.body,
             }),
           );
           return;
@@ -119,6 +124,11 @@ export async function watchSocket(page) {
     },
     nextCall: (test) => new Promise((resolve) => callWaiters.push({ test, resolve })),
     nextAnswer: (test) => new Promise((resolve) => answerWaiters.push({ test, resolve })),
-    answer: (method, path, { status, body }) => fakes.push({ method, path, status, body }),
+    answer: (method, path, response) => fakes.push({ method, path, response }),
+    emit(path, event, data) {
+      const stream = streams.get(path);
+      if (!stream) throw new Error("The page has not subscribed to " + path);
+      stream.ws.send(JSON.stringify({ id: stream.id, event, data: JSON.stringify(data) }));
+    },
   };
 }
