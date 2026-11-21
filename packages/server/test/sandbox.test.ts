@@ -14,6 +14,7 @@ import { PENGUIN_FAMILY, HMR_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilit
 import { packagedPlatform } from "../src/hmr/platform.js";
 import { PluginHost, PLUGINS_RESOURCE_ID } from "../src/plugin/host.js";
 import { SandboxService } from "../src/sandbox/index.js";
+import { agentWritableRoots } from "../src/workbenches/data-dirs.js";
 import type {
   SandboxDimension,
   SandboxPolicy,
@@ -274,6 +275,31 @@ describe("sandbox service — the built-in interface and its optional dimensions
     fs.symlinkSync(elsewhere, app, "dir");
     confine("workspace-write");
     expect(bwrap.calls[3]!.writableRoots).toEqual([scratchpad]);
+  });
+
+  it("lets the Agent's commands write the agent level of its workbench folders, never the server or machine level", async () => {
+    const root = path.join(tmp(), "data");
+    const machine = path.join(tmp(), "machine");
+    const scratchpad = path.join(root, "proj", "agents", "ag", "scratchpad", "session-1");
+    // Every level has folders on disk, as a workbench's first dataPaths() leaves them.
+    const agentLevel = agentWritableRoots(root, "proj", "ag");
+    const shared = [path.join(root, "app"), path.join(root, "run", "server"), machine];
+    for (const dir of [...agentLevel, ...shared]) fs.mkdirSync(dir, { recursive: true });
+    const bwrap = fake("bwrap", ["fs-write", "network"]);
+    const svc = await service([["penguin-bwrap", bwrap.provider]]);
+
+    svc.confinerFor(() => ({ mode: "workspace-write" }), agentLevel)([...ARGV], {
+      ...OPTS,
+      scratchpadDir: scratchpad,
+    });
+
+    const writable = bwrap.calls[0]!.writableRoots!;
+    expect(writable).toEqual([scratchpad, ...agentLevel]);
+    // No writable root is, or holds, a shared level's folder.
+    for (const dir of shared) {
+      for (const root of writable)
+        expect(dir === root || dir.startsWith(root + path.sep)).toBe(false);
+    }
   });
 
   it("requiring a dimension nothing implements is refused, naming what each backend does", async () => {

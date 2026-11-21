@@ -49,6 +49,8 @@ import type {
 } from "@prismshadow/penguin-core/kernel";
 import {
   agentDir,
+  installedPlugin,
+  PLUGIN_NAME_PATTERN,
   userText,
   workbenchCacheDir,
   workbenchDataDir,
@@ -65,6 +67,7 @@ import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type {
   WorkbenchApprovalMode,
+  WorkbenchDataLevel,
   WorkbenchHost,
   Workbenches,
 } from "../mechanisms/workbenches.js";
@@ -92,7 +95,13 @@ import {
   writeAppCenterShow,
   type AppCenterManifest,
 } from "./app-center.js";
-import { ensureDir, removeBelow, socketPathIn } from "./data-dirs.js";
+import {
+  ensureDir,
+  levelFolders,
+  removeBelow,
+  socketPathIn,
+  type WorkbenchPlace,
+} from "./data-dirs.js";
 import { migrateWorkbenches } from "./migrate.js";
 import { WorkbenchSubscriptions } from "./subscribe.js";
 import {
@@ -109,6 +118,7 @@ import { loadTypeScript, nodeTypesRoot } from "../plugin/typescript.js";
 import { openUiRuntime, requireUiRuntime, type UiRuntime, type WebFiles } from "./ui-runtime.js";
 import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
 import {
+  HIDDEN_FROM_SIDEBAR,
   isSafeRelPath,
   isSwitchedOff,
   isTempName,
@@ -732,6 +742,38 @@ export class WorkbenchService implements Workbenches {
     return readAppCenterIcon(dir, workbenchId);
   }
 
+  async sidebar(projectId: string, agentId: string): Promise<AppCenterShortcut[]> {
+    await this.migrate(projectId, agentId);
+    // An edit made while the list is shown loads, and the load is announced.
+    this.watch(projectId, agentId);
+    const base = workbenchesDir(this.paths.root, projectId, agentId);
+    // With the Agent-wide switch off none of its workbenches runs, so none has a row.
+    if (await isSwitchedOff(base)) return [];
+    const agentName = (await this.agentConfig.readCardMeta(projectId, agentId)).name ?? agentId;
+    return agentShortcuts(
+      projectId,
+      { agentId, agentName },
+      base,
+      (workbenchId) => this.building(key(projectId, agentId, workbenchId)),
+      "sidebar",
+    );
+  }
+
+  async setSidebar(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    show: boolean,
+  ): Promise<WorkbenchInfo> {
+    const folder = await this.folder(projectId, agentId, workbenchId);
+    await writeSwitch(folder.dir, show, HIDDEN_FROM_SIDEBAR);
+    const all = await this.agentEnabled(projectId, agentId);
+    const { info, loaded } = await this.settle(projectId, agentId, folder, all);
+    // A marker changes no source, so nothing reloads: the answer is the news open pages need.
+    if (!loaded) this.notify(projectId, agentId, info);
+    return info;
+  }
+
   async setAppCenter(
     projectId: string,
     agentId: string,
@@ -868,7 +910,12 @@ export class WorkbenchService implements Workbenches {
   }
 
   /** A loaded instance, which runs, so both its switches are on. */
-  private info(projectId: string, agentId: string, id: string, l: Loaded): WorkbenchInfo {
+  private async info(
+    projectId: string,
+    agentId: string,
+    id: string,
+    l: Loaded,
+  ): Promise<WorkbenchInfo> {
     const { icon } = l.appCenter;
     return {
       id,
@@ -880,6 +927,7 @@ export class WorkbenchService implements Workbenches {
       loadedAt: l.loadedAt,
       error: l.error,
       hints: hintsOf(l),
+      showInSidebar: !(await isSwitchedOff(l.folder.dir, HIDDEN_FROM_SIDEBAR)),
       enabled: true,
       ...(l.appCenter.appCenter !== undefined ? { appCenter: l.appCenter.appCenter } : {}),
       ...(icon !== undefined ? { icon: appCenterIconRef(projectId, agentId, id, icon) } : {}),
@@ -887,13 +935,13 @@ export class WorkbenchService implements Workbenches {
   }
 
   /** One that does not run, from its folder alone (see WorkbenchInfo). */
-  private idleInfo(
+  private async idleInfo(
     projectId: string,
     agentId: string,
     folder: WorkbenchFolder,
     enabled: boolean,
     declared: AppCenterManifest,
-  ): WorkbenchInfo {
+  ): Promise<WorkbenchInfo> {
     const { appCenter, icon } = declared;
     return {
       id: folder.id,
@@ -905,6 +953,7 @@ export class WorkbenchService implements Workbenches {
       loadedAt: null,
       error: null,
       hints: [],
+      showInSidebar: !(await isSwitchedOff(folder.dir, HIDDEN_FROM_SIDEBAR)),
       enabled,
       ...(appCenter !== undefined ? { appCenter } : {}),
       ...(icon !== undefined
@@ -957,7 +1006,7 @@ export class WorkbenchService implements Workbenches {
       const current = this.loaded.get(k);
       if (current && current.folder.revision === folder.revision) {
         return {
-          info: this.info(projectId, agentId, folder.id, current),
+          info: await this.info(projectId, agentId, folder.id, current),
           loaded: false,
           unloaded: false,
         };
@@ -965,7 +1014,7 @@ export class WorkbenchService implements Workbenches {
       try {
         const fresh = await this.load(projectId, agentId, folder);
         return {
-          info: this.info(projectId, agentId, folder.id, fresh),
+          info: await this.info(projectId, agentId, folder.id, fresh),
           loaded: true,
           unloaded: false,
         };
@@ -976,7 +1025,7 @@ export class WorkbenchService implements Workbenches {
     // A load that started before the switch went off still lands; it is let go with the rest.
     await this.loading.get(k)?.catch(() => undefined);
     const unloaded = this.unload(k);
-    const info = this.idleInfo(
+    const info = await this.idleInfo(
       projectId,
       agentId,
       folder,
@@ -1210,7 +1259,7 @@ export class WorkbenchService implements Workbenches {
       hints: hintsOf(next),
     });
     this.loaded.set(k, next);
-    this.notify(projectId, agentId, this.info(projectId, agentId, folder.id, next));
+    this.notify(projectId, agentId, await this.info(projectId, agentId, folder.id, next));
     return next;
   }
 
@@ -1222,12 +1271,15 @@ export class WorkbenchService implements Workbenches {
   ) {
     const service = this;
     let state: unknown = await readState(folder.dir);
-    const root = service.paths.root;
-    const agent = agentDir(root, projectId, agentId);
-    const dirs = {
-      dataDir: workbenchDataDir(root, projectId, agentId, folder.id),
-      cacheDir: workbenchCacheDir(root, projectId, agentId, folder.id),
-      stateDir: workbenchStateDir(root, projectId, agentId, folder.id),
+    // The plugin it came from names the app at the shared levels; a name no plugin could have
+    // is no app's.
+    const from = await installedPlugin(folder.dir).catch(() => null);
+    const place: WorkbenchPlace = {
+      root: service.paths.root,
+      projectId,
+      agentId,
+      workbenchId: folder.id,
+      plugin: from !== null && PLUGIN_NAME_PATTERN.test(from) ? from : null,
     };
     return {
       listAgents: () => service.agents.list(projectId).map((row) => ({ agentId: row.agentId })),
@@ -1301,16 +1353,18 @@ export class WorkbenchService implements Workbenches {
         return subscriptions.subscribe(sessionId, listener);
       },
       // The folders are made before their paths are handed out: the Agent they are named to
-      // may be sandboxed, and its commands can write them only once they exist.
-      dataPaths: () => {
-        ensureDir(agent, dirs.dataDir, "dataPaths");
-        ensureDir(agent, dirs.cacheDir, "dataPaths");
-        ensureDir(root, dirs.stateDir, "dataPaths");
-        return { ...dirs };
+      // may be sandboxed, and its commands can write the agent level only once it exists.
+      dataPaths: (level?: WorkbenchDataLevel) => {
+        const { paths, bases } = levelFolders(level, place, "dataPaths");
+        ensureDir(bases.dataDir, paths.dataDir, "dataPaths");
+        ensureDir(bases.cacheDir, paths.cacheDir, "dataPaths");
+        ensureDir(bases.stateDir, paths.stateDir, "dataPaths");
+        return paths;
       },
-      socketPath: (name: string) => {
-        const at = socketPathIn(dirs.stateDir, name);
-        if (process.platform !== "win32") ensureDir(root, dirs.stateDir, "socketPath");
+      socketPath: (name: string, level?: WorkbenchDataLevel) => {
+        const { paths, bases } = levelFolders(level, place, "socketPath");
+        const at = socketPathIn(paths.stateDir, name);
+        if (process.platform !== "win32") ensureDir(bases.stateDir, paths.stateDir, "socketPath");
         return at;
       },
       getState: () => state,

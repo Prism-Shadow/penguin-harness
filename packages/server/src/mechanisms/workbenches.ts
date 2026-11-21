@@ -46,24 +46,39 @@ import type {
 export type WorkbenchApprovalMode = "allow-all" | "deny-all";
 
 /**
+ * Who shares a workbench's folders:
+ *
+ * - `agent` (the default): this Agent's copy of the app alone. Its `dataDir` travels in the
+ *   Agent export with the workbench's data; all three go when the workbench is removed.
+ * - `server`: every copy of the same app (the same plugin's workbench) on this data root, across
+ *   its Projects and Agents — a model's weights, a tool's binaries. Never exported, never removed
+ *   with a workbench.
+ * - `machine`: every data root of this OS user on this computer (the installed app, a dev
+ *   instance) — a small local server one computer runs once. Never exported, never removed.
+ *
+ * The shared levels belong to apps installed from a plugin: the plugin's name is what makes two
+ * copies one app. Only the handler writes them; the Agent's sandboxed commands may not.
+ */
+export type WorkbenchDataLevel = "agent" | "server" | "machine";
+
+/**
  * Where a workbench's own folders are on the server's machine. The handler reads and writes them
  * with Node's own `fs` (`node:fs`, `node:path`, `node:net` are typed for it) and serves what its
  * page needs from its own routes; the host offers no file API.
  */
 export interface WorkbenchDataPaths {
   /**
-   * The data folder (`<agentDir>/app/data/<id>`): files the handler and the Agent both write,
-   * the Agent with its own file tools. It travels in the Agent export with the workbench's data
-   * and is removed with the workbench.
+   * Files kept for good: at the agent level what the handler and the Agent both write, the Agent
+   * with its own file tools (`<agentDir>/app/data/<id>`, exported with the workbench's data); at
+   * a shared level what every copy of the app reads, such as a model's weights.
    */
   dataDir: string;
-  /** Files that can be made again (`<agentDir>/app/cache/<id>`): never exported, removed with the workbench. */
+  /** Files that can be made again. Never exported. */
   cacheDir: string;
   /**
-   * Runtime-only files — Unix sockets, pipes, locks — at a short path (`<root>/run/…`), since a
-   * Unix socket path holds at most 103 bytes here: name a socket with `socketPath`. Never
-   * exported, removed with the workbench, kept across restarts (unlink a stale socket before
-   * listening).
+   * Runtime-only files — Unix sockets, pipes, locks — at a short path, since a Unix socket path
+   * holds at most 103 bytes: name a socket with `socketPath`. Never exported; kept across
+   * restarts (unlink a stale socket before listening).
    */
   stateDir: string;
 }
@@ -125,17 +140,20 @@ export abstract class WorkbenchHost {
    */
   abstract subscribe(sessionId: string, listener: (record: WorkbenchRecord) => void): () => void;
   /**
-   * Where this workbench's data, cache and state folders are. All three exist once this
-   * returns, so a path in them can be handed to the Agent, whose commands may write them even in
-   * a `workspace-write` sandbox. A link where one of them belongs is refused.
+   * Where this workbench's data, cache and state folders are at `level` (`agent` when left
+   * out). All three exist once this returns, and a link where one of them belongs is refused.
+   * At the agent level the Agent's commands may write them even in a `workspace-write` sandbox,
+   * so a path in them can be handed to the Agent. The `server` and `machine` levels are for an
+   * app installed from a plugin, and throw for a workbench made in place.
    */
-  abstract dataPaths(): WorkbenchDataPaths;
+  abstract dataPaths(level?: WorkbenchDataLevel): WorkbenchDataPaths;
   /**
-   * What to `listen` on for a local socket called `name`: `<stateDir>/<name>`, or on Windows a
-   * named pipe (`\\.\pipe\penguin-…-<name>`), which is no path on disk. Throws, naming the limit,
-   * when the path would pass the 103 bytes a Unix socket path holds.
+   * What to `listen` on for a local socket called `name` at `level` (`agent` when left out):
+   * `<stateDir>/<name>`, or on Windows a named pipe (`\\.\pipe\penguin-…-<name>`), which is no
+   * path on disk. Throws, naming the limit, when the path would pass the 103 bytes a Unix socket
+   * path holds.
    */
-  abstract socketPath(name: string): string;
+  abstract socketPath(name: string, level?: WorkbenchDataLevel): string;
   /** The workbench's own document (`state.json`, kept by the server across reloads and rollbacks). */
   abstract getState(): unknown;
   abstract setState(state: unknown): Promise<void>;
@@ -265,6 +283,23 @@ export abstract class Workbenches {
     agentId: string,
     workbenchId: string,
   ): Promise<IconImage | null>;
+  /**
+   * The rows of one Agent's sidebar list: the App Center's reading with the sidebar's filter, a
+   * shortcut for every workbench that runs, has a tab and carries no `.hidden-from-sidebar`
+   * marker, by title. Nothing is loaded or compiled; the Agent's folder is watched from then on.
+   */
+  abstract sidebar(projectId: string, agentId: string): Promise<AppCenterShortcut[]>;
+  /**
+   * Writes (`show: false`) or removes the installation's `.hidden-from-sidebar` marker. It is no
+   * part of the source, so writing it records no version and does not reload the workbench; the
+   * workbench as it then stands is answered and announced.
+   */
+  abstract setSidebar(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    show: boolean,
+  ): Promise<WorkbenchInfo>;
   /**
    * Rewrites `penguin.appCenter.show` in the workbench's package.json, and nothing else of it,
    * then reloads the workbench — which records the edit as a version like any other.

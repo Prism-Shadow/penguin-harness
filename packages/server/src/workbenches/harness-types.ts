@@ -142,27 +142,39 @@ the page is not shown in the app.
 
 ## Your folders
 
-\`host.dataPaths()\` returns \`{ dataDir, cacheDir, stateDir }\`: three folders outside this source
-folder, made by the time it returns. Read and write them with Node's own modules —
+\`host.dataPaths(level?)\` returns \`{ dataDir, cacheDir, stateDir }\`: three folders outside this
+source folder, made by the time it returns. Read and write them with Node's own modules —
 \`import { readFile, writeFile, rename } from "node:fs/promises"\`, \`import path from "node:path"\`,
 \`import net from "node:net"\` are typed here, nothing to install — and serve what the page needs
 from your own routes. A write there reloads nothing and enters no version.
 
-- \`dataDir\`: files the handler and the Agent both write, the Agent with its own file tools —
-  what the user edits in the page and asks the Agent to change, uploads, exports. Name a file's
-  path (\`path.join(dataDir, …)\`) in the run's text when you ask the Agent to edit it. The Agent
-  export carries it with the workbench's data; removing the workbench removes it.
-- \`cacheDir\`: files that can be made again. Never exported.
-- \`stateDir\`: runtime-only files — Unix sockets, pipes, locks. Never exported, kept across
-  restarts: unlink a stale socket before listening. A Unix socket path holds at most 103 bytes, so
-  take it from \`host.socketPath("dev.sock")\`, which throws naming the limit when the path would be
-  longer, and on Windows answers a named pipe (\`\\\\.\\pipe\\…\`), which is no file on disk.
+- \`dataDir\`: files kept for good. \`cacheDir\`: files that can be made again, never exported.
+  \`stateDir\`: runtime-only files — Unix sockets, pipes, locks — never exported and kept across
+  restarts: unlink a stale socket before listening.
+- A Unix socket path holds at most 103 bytes, so listen on \`host.socketPath("dev.sock", level?)\`,
+  which throws naming the limit when the path would be longer, and on Windows answers a named pipe
+  (\`\\\\.\\pipe\\…\`), which is no file on disk.
 
-The Agent may write these folders too, so never follow a link out of them: \`lstat\` a path the
-Agent could have written before reading or writing through it. Write a file whole (a temporary
-name beside it, then \`rename\`). Never put code in them. To notice the Agent's writes, \`stat\` the
-file on a timer while a page is connected and compare \`mtimeMs\` and \`size\`. A \`plugin.d.ts\` here
-without \`socketPath\` predates these members; delete \`.harness/\` to take them.
+The level says who shares them:
+
+- \`"agent"\` (the default): this Agent's copy of the app. The Agent edits these files with its own
+  file tools, even in a sandbox: name a file's path (\`path.join(dataDir, …)\`) in the run's text.
+  The Agent export carries \`dataDir\` with the workbench's data; removing the workbench removes all
+  three. Documents the user edits and asks the Agent to change go here, and nothing private ever
+  goes anywhere else.
+- \`"server"\`: every copy of this app on this server, across its Projects and Agents — a model's
+  weights, a tool's binaries. \`"machine"\`: every PenguinHarness on this computer for this OS user —
+  a small local server one computer runs once. Never exported, never removed with a workbench.
+  Only an app installed from a plugin has them (a workbench made in place throws), and only your
+  handler writes them: the Agent's sandboxed commands may read but not write, so download and
+  start what lives there from the handler (\`fetch\`, or a child process it spawns). Put nothing
+  there that one Project must not see from another.
+
+The Agent may write the agent-level folders too, so never follow a link out of them: \`lstat\` a
+path the Agent could have written before reading or writing through it. Write a file whole (a
+temporary name beside it, then \`rename\`). Never put code in them. To notice the Agent's writes,
+\`stat\` the file on a timer while a page is connected and compare \`mtimeMs\` and \`size\`. A
+\`plugin.d.ts\` here without \`socketPath\` predates these members; delete \`.harness/\` to take them.
 
 ## A Session that only talks
 

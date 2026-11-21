@@ -35,7 +35,7 @@ export function EmptyState({
   dashed = false,
 }: {
   title: ReactNode;
-  description?: string;
+  description?: ReactNode;
   action?: ReactNode;
   /** The slot form: a dashed block the size of the missing list, the message in the small rung. */
   dashed?: boolean;

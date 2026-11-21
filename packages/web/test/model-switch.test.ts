@@ -2,16 +2,19 @@
  * In-conversation model switch (model-switch.ts): the picker's gate, what the switch will do to
  * the context (compact, continue, or — the current model unavailable — hand over by Trace path),
  * and the stale-row predicate that makes the Session row follow the running context's
- * `session_meta`. (The Web suite runs in a node environment and renders no React, so the pure
- * helpers are what get exercised.)
+ * `session_meta`, or the `session_update` a completed switch leaves before that context's meta
+ * exists. (The Web suite runs in a node environment and renders no React, so the pure helpers
+ * are what get exercised.)
  */
 import { describe, expect, it } from "vitest";
+import { sessionMeta, sessionUpdate } from "@prismshadow/amsp";
 import type { ModelInfo } from "@prismshadow/penguin-server/api";
 import {
   sessionModelPickerDisabled,
   sessionRowStale,
   switchContextShape as shapeOf,
 } from "../src/features/chat/model-switch";
+import { createStreamModel, pushMessage } from "../src/lib/amsp/stream-model";
 
 const A = { provider: "anthropic", modelId: "a-1" };
 const B = { provider: "openai", modelId: "b-2" };
@@ -117,5 +120,26 @@ describe("sessionRowStale", () => {
 
   it("says nothing about another Session's row: the stream of the conversation the page just left", () => {
     expect(sessionRowStale(on(B, "session-1"), on(A, "session-2"))).toBe(false);
+  });
+
+  it("goes stale as soon as the stream carries a switch's session_update, before the next context's meta exists", () => {
+    const stream = createStreamModel();
+    pushMessage(
+      stream,
+      sessionMeta({
+        session_id: "session-1",
+        provider: A.provider,
+        model_id: A.modelId,
+        model_context_window: 200000,
+        system_prompt: "",
+        agent_state: "/a",
+        workspace: "/w",
+        source: "user",
+      }),
+    );
+    expect(sessionRowStale(stream.contextModel, on(A))).toBe(false);
+    pushMessage(stream, sessionUpdate({ provider: B.provider, model_id: B.modelId }));
+    expect(sessionRowStale(stream.contextModel, on(A))).toBe(true);
+    expect(sessionRowStale(stream.contextModel, on(B))).toBe(false);
   });
 });

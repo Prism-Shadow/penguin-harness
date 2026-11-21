@@ -26,7 +26,10 @@ const event = <Id extends string>(id: Id) => ({ id, envelope: "event_msg", store
 export const FAMILIES = [
   {
     id: "session",
-    records: [{ id: "session_meta", envelope: "session_meta", stored: true }],
+    records: [
+      { id: "session_meta", envelope: "session_meta", stored: true },
+      event("session_update"),
+    ],
   },
   {
     id: "complete",

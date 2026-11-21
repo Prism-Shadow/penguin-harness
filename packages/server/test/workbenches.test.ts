@@ -13,7 +13,8 @@
  *   reloads it. It listens on a local socket in its state folder, and a socket path past the
  *   103 bytes a Unix socket path holds is refused naming the limit.
  * - An Agent named `aux` and a workbench named `report.v2`, made before such names were refused,
- *   still open; a new Agent under a name Windows reserves is refused.
+ *   still open; a new Agent under a name Windows reserves is refused, and so is a new Project
+ *   named after the data root's own folders (`app`, `run`).
  * - With a configured model credential, it opens and runs Sessions the SDK's way, inside
  *   its own Project only, with allow-all: nobody is there to answer an ask. Its Sessions
  *   are archived with workbench provenance, including before their first run after a restart.
@@ -49,6 +50,9 @@
  * - Several contributed tabs are exposed in order.
  * - A tab outside ui/, a closed contribution slot and a malformed tab are each refused.
  * - Pages with no tab get a hint in the API and status file; adding a tab clears it.
+ * - Its folders are at the agent level unless it names another. Installed from a plugin, it also
+ *   has a server and a machine level, the same for every copy of the app, and removing one copy
+ *   leaves them; made in place, a shared level is refused naming the agent level.
  * - Removing a workbench removes its folder, its data, cache and state folders, and its versions
  *   are no longer listed; another workbench's data stays.
  * - A legacy Workflow package loads through the new route after one-time conversion, with its state intact.
@@ -61,7 +65,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { agentDir, agentStateDir, createAgent, workbenchStateDir } from "@prismshadow/penguin-core";
+import {
+  agentDir,
+  agentStateDir,
+  createAgent,
+  runDir,
+  serverAppDir,
+  sharedWorkbenchDirs,
+  workbenchStateDir,
+} from "@prismshadow/penguin-core";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
 import type {
   WorkbenchInfo,
@@ -71,7 +83,7 @@ import type {
   ArchivedSessionsResponse,
   AgentsResponse,
 } from "../src/api/types.js";
-import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
+import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { MOCK_MODEL_ID, requestText, startMockLLM } from "./live-session.js";
 
@@ -195,9 +207,21 @@ export default {
                   const at = path.join(host.dataPaths().dataDir, "notes", "agent.md");
                   return { body: { notes: await readFile(at, "utf8").catch(() => null) } };
                 }
+                if (req.path === "/levels") {
+                  // Every level this copy of the app has, and why a level it has none of is refused.
+                  const ask = (level: "agent" | "server" | "machine") => {
+                    try {
+                      return host.dataPaths(level);
+                    } catch (e) {
+                      return (e as Error).message;
+                    }
+                  };
+                  return { body: { default: host.dataPaths(), agent: ask("agent"), server: ask("server"), machine: ask("machine") } };
+                }
                 if (req.path === "/socket") {
                   // A local socket in the state folder: listen, connect, and say what came back.
-                  const at = host.socketPath("t.sock");
+                  const level = req.query["level"] as "agent" | "server" | undefined;
+                  const at = host.socketPath("t.sock", level);
                   let tooLong: string | null = null;
                   try {
                     host.socketPath("x".repeat(120));
@@ -443,6 +467,18 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     expect(loaded).toMatchObject({ id: "report.v2", error: null });
     const res = await owner.get(`${route}/report.v2/api/greet`);
     expect(await res.json()).toMatchObject({ greeting: "hello", path: "/greet" });
+  });
+
+  it("refuses a new Project named after the data root's own folders, app and run", async () => {
+    const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    for (const projectId of ["app", "run"]) {
+      const res = await admin.post("/api/projects", { projectId, name: projectId });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: { code: "invalid_project_id" } });
+    }
+    expect((await admin.post("/api/projects", { projectId: "apps", name: "apps" })).status).toBe(
+      201,
+    );
   });
 
   it("refuses a new Agent under a name Windows reserves", async () => {
@@ -1118,6 +1154,96 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     // With the tab back there is nothing to hint at.
     await writeContributions({ "WebModule.sessionTabs": [TAB] });
     expect(((await reload()) as { hints: string[] }).hints).toEqual([]);
+  });
+
+  it("keeps its files at the agent level by default; installed from a plugin it also has a server and a machine level, which every copy shares and no removal takes", async () => {
+    const machineHome = path.join(t.root, "machine-home");
+    const before = process.env.PENGUIN_MACHINE_HOME;
+    process.env.PENGUIN_MACHINE_HOME = machineHome;
+    try {
+      // Two Agents with the same plugin's workbench, installed before their first load.
+      const receipt = JSON.stringify({
+        name: "demo",
+        plugin: "demo-plugin",
+        version: "2026.11.19.1",
+        files: [],
+      });
+      await fs.writeFile(path.join(dir, ".plugin.json"), receipt);
+      const twin = `${agentId}_twin`;
+      expect((await owner.post(`/api/projects/${PROJECT}/agents`, { agentId: twin })).status).toBe(
+        201,
+      );
+      const twinDir = path.join(agentStateDir(t.root, PROJECT, twin), "workbenches", "demo");
+      await writeDemo(twinDir);
+      await fs.writeFile(path.join(twinDir, ".plugin.json"), receipt);
+      type Levels = Record<"default" | "agent" | "server" | "machine", Record<string, string>>;
+      const levelsOf = async (agent: string): Promise<Levels> => {
+        const res = await owner.get(
+          `/api/projects/${PROJECT}/agents/${agent}/workbenches/demo/api/levels`,
+        );
+        expect(res.status, await res.clone().text()).toBe(200);
+        return (await res.json()) as Levels;
+      };
+      const mine = await levelsOf(agentId);
+      const theirs = await levelsOf(twin);
+
+      const agentLevel = path.join(agentDir(t.root, PROJECT, agentId), "app");
+      expect(mine.default).toEqual(mine.agent);
+      expect(mine.agent).toEqual({
+        dataDir: path.join(agentLevel, "data", "demo"),
+        cacheDir: path.join(agentLevel, "cache", "demo"),
+        stateDir: workbenchStateDir(t.root, PROJECT, agentId, "demo"),
+      });
+      expect(mine.server).toEqual(
+        sharedWorkbenchDirs(
+          serverAppDir(t.root),
+          path.join(runDir(t.root), "server"),
+          "demo-plugin",
+          "demo",
+        ),
+      );
+      expect(mine.machine).toEqual(
+        sharedWorkbenchDirs(machineHome, path.join(machineHome, "run"), "demo-plugin", "demo"),
+      );
+      // The other copy of the app has its own agent level and the same shared ones.
+      expect(theirs.agent.dataDir).not.toBe(mine.agent.dataDir);
+      expect(theirs.server).toEqual(mine.server);
+      expect(theirs.machine).toEqual(mine.machine);
+      for (const level of [mine.agent, mine.server, mine.machine]) {
+        for (const folder of Object.values(level)) {
+          expect((await fs.stat(folder)).isDirectory()).toBe(true);
+        }
+      }
+
+      // A local socket at the server level, where the path is short enough to hold one.
+      const serverSocket = path.join(mine.server.stateDir!, "t.sock");
+      if (process.platform !== "win32" && Buffer.byteLength(serverSocket) <= 103) {
+        const res = await owner.get(`${base}/demo/api/socket?level=server`);
+        expect(await res.json()).toMatchObject({ at: serverSocket, reply: "pong" });
+      }
+
+      // Removing one copy takes its agent level and leaves what every copy shares.
+      await fs.writeFile(path.join(mine.server.dataDir!, "weights.bin"), "w");
+      await fs.writeFile(path.join(mine.machine.dataDir!, "server.bin"), "m");
+      expect((await owner.delete(`${base}/demo`)).status).toBe(204);
+      await expect(fs.stat(mine.agent.dataDir!)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await fs.readFile(path.join(mine.server.dataDir!, "weights.bin"), "utf8")).toBe("w");
+      expect(await fs.readFile(path.join(mine.machine.dataDir!, "server.bin"), "utf8")).toBe("m");
+      expect((await fs.stat(mine.server.stateDir!)).isDirectory()).toBe(true);
+    } finally {
+      if (before === undefined) delete process.env.PENGUIN_MACHINE_HOME;
+      else process.env.PENGUIN_MACHINE_HOME = before;
+    }
+  });
+
+  it("made in place, it has the agent level only: a shared level is refused, naming the agent level", async () => {
+    const res = await owner.get(`${base}/demo/api/levels`);
+    expect(res.status, await res.clone().text()).toBe(200);
+    const levels = (await res.json()) as Record<string, unknown>;
+    expect(levels.default).toEqual(levels.agent);
+    for (const shared of ["server", "machine"]) {
+      expect(levels[shared]).toMatch(/was made in place: keep its files at the agent level/);
+    }
   });
 
   it("removes the folder and its data on request, and its versions are no longer listed", async () => {

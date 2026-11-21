@@ -1008,7 +1008,7 @@ interface RunFormLive {
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, interrupt?, steerIfBusy?, goal?}` → 202 |
+| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, interrupt?, steerIfBusy?, goal?, promptHooks?}` → 202 |
 | POST | `/steer` | 为正在运行的 Task 排入一条插话消息：`{text, images?}` → 202 |
 | DELETE | `/steer/:steerId` | 撤回一条尚未投递的插话消息 |
 | DELETE | `/follow-ups/:followUpId` | 撤回一个排队的后续 Task |
@@ -1027,6 +1027,7 @@ interface RunFormLive {
 - `POST /tasks` 带 `interrupt: true` 时，忙碌的 Session 会停止当前运行，并把输入接在被打断的那一轮之后发出。输入排到后续 Task 队列的最前面（排在更早的打断之后，同样受队列上限约束），运行按 `POST /abort` 的方式中止，收尾后它最先启动（`queued: true`）；在它之前排队的后续 Task 在它之后启动。被打断那一轮已经产出的内容排在它前面一起发出，已提交的历史不变。尚未投递的插话与 `POST /abort` 时一样退回（`returnedSteering`）。启动之前，该条目以 `interrupt: true` 列在 `pendingFollowUps` 里，可以撤回。Session 空闲时直接启动 Task。与 `queueIfBusy` 或 `goal` 同时使用时返回 400。
 - `POST /tasks` 带 `steerIfBusy: true` 时，不论 Session 此刻在做什么都只需这一个请求，由服务端在会话锁内判定。空闲的 Session 直接启动 Task。有 Task 在运行时，输入作为插话送入，与 `POST /steer` 同一路径：插话镜像、撤回与退回照旧，`file` 部分以 `[attached file: <path>]` 行随插话送达；响应 `{sessionId, queued: false, steered: true}`。压缩期间没有 Task 可插话，运行恰在收束时也不再接受插话，这两种情况按 `queueIfBusy` 入队（`queued: true`）。与 `interrupt` 或 `goal` 同时使用时返回 400；同时带 `queueIfBusy` 不改变任何行为。
 - `POST /tasks` 带 `goal: {budget?}` 时改为启动目标循环。Agent 没有安装 `goal` 插件时返回 409 `goal_plugin_not_installed`。插件的启动钩子运行失败（脚本报错或超时，或沙盒拒绝运行它）时返回 409 `goal_start_failed` 并附上原因，不启动任何 Task。目标就是输入里的文本（去掉开头的标记块），所以输入必须带非空文本（否则返回 400）：只有图片说明不了目标。图片作为普通输入随第 1 轮发送，之后各轮只重新注入目标文本。`file` 部分一律以 400 拒绝，因为没有办法把文件带进每一轮都重新注入的目标。见[目标模式](/goal-mode)。
+- `POST /tasks` 带 `promptHooks: [name, …]` 时，携带的是输入框的开关。对所列的每个钩子包，服务端按顺序以用户的原话运行它 `"trigger": "host"` 的 `user_prompt` 命令，并把 context 以 `sender: "harness"` 标记紧随这条消息发出。这些命令在请求被接受时运行，所以排队或打断的输入带着各自的 context 等待，排队行与撤回仍只是用户自己的内容；转为插话的输入不运行任何命令。Agent 没有该钩子包、或包里没有这样的命令时返回 409 `prompt_hook_not_installed`；命令运行失败时返回 409 `prompt_hook_failed` 并附上原因。两种情况都不启动、也不入队。与 `goal` 同时使用时返回 400。
 - `POST /steer` 在轮次之间把消息作为一条独立的 `[user_steering]` 用户消息投递，图片紧随其后。`text` 和 `images` 任一字段都能单独携带消息，但两者都缺时返回 400。没有 Task 在运行时返回 409 `not_running`。
 - `DELETE /steer/:steerId` 接收 `task_state` 里 `pendingSteering` 的 id，把那条消息从队列撤回。响应 200，带原始内容 `{text, images, files}`，便于输入框恢复消息供编辑：文件以 data URL 的形式从暂存区读回，磁盘上的副本随之删除。消息已经投递给模型时返回 409 `not_pending`。
 - `DELETE /follow-ups/:followUpId` 接收 `task_state` 里 `pendingFollowUps` 的 id，在后续 Task 启动前把它移除。响应 200，带原始内容 `{text, images, files}`；无论以哪种方式排队，每个排队的后续 Task 都带这些内容。后续 Task 已经启动、或 id 未知时返回 409 `follow_up_started`。
@@ -1037,7 +1038,7 @@ interface RunFormLive {
 - `POST /retry-now` 对应重连倒计时上的**立即重试**按钮。它跳过当前的退避等待，立即发起下一次重试，不改动尝试计数。`skipped: false` 表示当时没有等待在进行，这不是错误。
 - `POST /retry` 对应运行出错或被用户中断后的**重试**按钮。运行以 `fatal` 结束、放弃重连或被中断后，没跑完的那一轮输入会连同模型已产出的内容一起留给下一次运行；服务器重启后恢复的 Session 会从自己的 Trace 重建它。这个路由以空输入启动一个 Task，只把那份输入重新发出：不发布或记录新的用户消息，也不运行 `user_prompt` 钩子。响应 202 `{sessionId, queued: false}`；Session 忙碌时返回 409 `task_in_progress` / `compacting`，没有留存的输入时返回 409 `nothing_to_retry`，例如后来的消息已经把它补发出去。
 - `POST /compact` 在没有可压缩内容时返回 409，原因写在错误码里：`compaction_not_configured`（Agent 没有配置压缩）、`nothing_to_compact`（上下文还没有完整的对话轮次）或 `already_compacted`（上次压缩之后没有新内容）。服务器重启后恢复的 Session 会从自己的 Trace 推导出这些状态，所以已有对话无需先跑一个 Task 也能压缩。
-- `POST /switch-model` 接收 `{provider, modelId}`，必须是完整的一对（只给一半返回 400）。它先用当前模型压缩上下文（总是 summarize 模式），再在目标模型上开启下一个上下文。返回 202 并像 `/compact` 一样流式进行，Session 状态为 `compacting`：上下文有完成的轮可总结时，流上先是一对普通的 manual `compaction_begin` / `compaction_end`（否则没有：刚压缩过，或首个请求没有完成），随后是新上下文的开档记录和它的 `session_meta`，其 `provider` / `model_id` 就是 Session 此后所用的模型；从这条记录起 `GET /` 返回新的模型组合。拿不到摘要时切换照样完成，改为交接 Trace 路径：紧跟 `session_meta` 的是一条整条为 `[model_switch_from]` 块的用户文本，其 `session` 为本 Session，点名被离开的上下文的 Trace 文件。压缩以 `completed` 与 `aborted` 之外的状态结束，或当前模型已不在配置中、缺少凭据时都是如此；后一种情形不推压缩事件对，也不向该模型发任何请求。只有压缩以 `aborted` 结束才没有切换：不会跟随 `session_meta`，Session 保持原模型。从未运行过的 Session 没有可压缩的上下文，切换在请求内完成，返回 200 与更新后的 `{session}`，不产生任何事件。拒绝返回 409，原因写在错误码里：`task_in_progress` / `compacting`（忙）、`same_model`、`model_not_configured`（目标不在 Project 的模型表中）、`model_unavailable`（目标无法构造，例如缺少凭据）。这两个码都只针对目标：本 Session 自己的模型已不在配置中或缺少凭据时，服务器照样为切换加载它，交接其历史。切换的压缩请求计入原模型的用量，之后的 Task 计入新模型。
+- `POST /switch-model` 接收 `{provider, modelId}`，必须是完整的一对（只给一半返回 400）。它先用当前模型压缩上下文（总是 summarize 模式），再在目标模型上开启下一个上下文。返回 202 并像 `/compact` 一样流式进行，Session 状态为 `compacting`：上下文有完成的轮可总结时，流上先是一对普通的 manual `compaction_begin` / `compaction_end`（否则没有：刚压缩过，或首个请求没有完成），随后是新上下文的开档记录和一条 `session_update`，其 `provider` / `model_id` 就是 Session 此后所用的模型；从这条记录起 `GET /` 返回新的模型组合。新上下文的 `session_meta` 随下一条消息、在其 Trace 文件开出时上流。拿不到摘要时切换照样完成，改为交接 Trace 路径：紧跟 `session_update` 的是一条整条为 `[model_switch_from]` 块的用户文本，其 `session` 为本 Session，点名被离开的上下文的 Trace 文件。压缩以 `completed` 与 `aborted` 之外的状态结束，或当前模型已不在配置中、缺少凭据时都是如此；后一种情形不推压缩事件对，也不向该模型发任何请求。只有压缩以 `aborted` 结束才没有切换：不会跟随 `session_update`，Session 保持原模型。从未运行过的 Session 没有可压缩的上下文，切换在请求内完成，返回 200 与更新后的 `{session}`，不产生任何事件。拒绝返回 409，原因写在错误码里：`task_in_progress` / `compacting`（忙）、`same_model`、`model_not_configured`（目标不在 Project 的模型表中）、`model_unavailable`（目标无法构造，例如缺少凭据）。这两个码都只针对目标：本 Session 自己的模型已不在配置中或缺少凭据时，服务器照样为切换加载它，交接其历史。切换的压缩请求计入原模型的用量，之后的 Task 计入新模型。
 
 ### 请求体
 
@@ -1360,8 +1361,8 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | POST | `/tabs/:tab/activate` | 设为当前标签页；在 `chrome` 上，Chrome 也会切到该标签页 |
 | DELETE | `/tabs/:tab` | 关闭标签页；`204` |
 | POST | `/tabs/:tab/navigate`、`scan`、`exec`、`click`、`type`、`screenshot`、`cdp` | Agent 的各项操作，见 [penguin browser](/cli#penguin-browser) |
-| GET | `/import/sources` | 内置：可导入的系统浏览器个人资料 |
-| POST | `/import` | 内置：导入 Cookie 与历史记录：`{sourceId, cookies?, history?, domains?}` |
+| GET | `/import/sources` | 内置：可导入的系统浏览器个人资料，以及调用者已连接的 Chrome 扩展（`chrome-extension`，只有 Cookie）→ `{sources, extension?}`，`extension` 说明扩展为何未列出 |
+| POST | `/import` | 内置：导入 Cookie 与历史记录：`{sourceId, cookies?, history?, domains?}` → `{sourceId, browserName, cookies?: {found, imported, skipped, failed, skips}, history?, notes}`；跳过原因与提示都是代码加计数。经扩展导入须用户在 Chrome 中允许（否则 403 `import_declined`） |
 | GET / PUT | `/settings` | 主页：`{homepage}`。仅管理员 |
 | GET / DELETE | `/history?q=&limit=` | 内置：搜索或清空历史记录 |
 | POST | `/clear-data` | 内置：`{storages}`，取 `cookies`、`cache` 和 `storage` 中的若干项 |
