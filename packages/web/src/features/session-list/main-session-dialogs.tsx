@@ -6,6 +6,7 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
+import type { ReactNode } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { workspaceLabel } from "../../lib/session-grouping";
@@ -18,7 +19,8 @@ import type { MainSidebarState } from "./main-sidebar-controller";
 function RenameSessionDialog(props: {
   session: SessionInfo;
   busy: boolean;
-  error: string | null;
+  /** Why the last rename did not land, with 「[报告问题]」 for a failure. */
+  error: ReactNode;
   onRename: (title: string) => void;
   /** Clears the controller's rename error: the dialog edited the text again. */
   onEdit: () => void;

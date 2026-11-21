@@ -125,6 +125,8 @@ export interface LibraryPlugin {
   category?: string;
   /** Whether default_agent gets this plugin at creation (the card's `preinstall`, default true; always false for an installed package — the operator chose it for the server, not for every new Project). */
   preinstall: boolean;
+  /** Whether every new Agent gets this plugin (the card's `defaultInstall`, default false; always false for an installed package, as `preinstall` is). */
+  defaultInstall: boolean;
   /** The package's npm `author`, `homepage`, `repository` URL and `license`, for the detail dialog (each optional). */
   author?: string;
   homepage?: string;
@@ -135,6 +137,8 @@ export interface LibraryPlugin {
   skills: LibrarySkill[];
   workbenches?: LibraryWorkbench[];
   hooks?: LibraryHooks;
+  /** The card's `composerMode`, kept only when the hook package has a `trigger: "host"` `user_prompt` command. */
+  composerMode?: true;
   /** The MCP servers the plugin contributes, each with its full list of setup keys; [] when none. */
   mcpServers: PluginMcpServer[];
   /** The demo the Plugins page's quick start pre-fills (the card's `quickStart`, optional). */
@@ -406,6 +410,16 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
   }
   for (const rel of skipped) warnings.push(`${rel} is not a text file; it is not installed`);
   const mcpServers = readMcpServerEntries(contributions.mcpServers, warnings);
+  // The composer switch runs the hook package's host-triggered user_prompt command, so a card
+  // without one would offer a switch that adds nothing.
+  const composerMode =
+    card.composerMode === true &&
+    (hooks?.manifest.user_prompt ?? []).some((command) => command.trigger === "host");
+  if (card.composerMode === true && !composerMode) {
+    warnings.push(
+      'the card\'s composerMode needs a hook package with a trigger: "host" user_prompt command; ignored',
+    );
+  }
   let quickStart = card.quickStart;
   if (quickStart?.skills !== undefined) {
     const unknown = quickStart.skills.filter((n) => !skills.some((s) => s.name === n));
@@ -436,6 +450,7 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
     version: manifest.version,
     ...(card.category !== undefined ? { category: card.category } : {}),
     preinstall: !root.installed && card.preinstall !== false,
+    defaultInstall: !root.installed && card.defaultInstall === true,
     ...(manifest.author !== undefined ? { author: manifest.author } : {}),
     ...(manifest.homepage !== undefined ? { homepage: manifest.homepage } : {}),
     ...(manifest.repository !== undefined ? { repository: manifest.repository } : {}),
@@ -449,6 +464,7 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
       }),
     ),
     ...(hooks !== undefined ? { hooks } : {}),
+    ...(composerMode ? { composerMode: true as const } : {}),
     ...(workbenches.length > 0 ? { workbenches } : {}),
     mcpServers,
     ...(quickStart !== undefined ? { quickStart } : {}),
@@ -498,6 +514,11 @@ export function loadLibraryPlugins(): LibraryPlugin[] {
 /** The plugins default_agent installs at initialization: every library plugin except those whose card sets `preinstall: false`. */
 export function loadPreinstalledPlugins(): LibraryPlugin[] {
   return loadLibraryPlugins().filter((plugin) => plugin.preinstall);
+}
+
+/** The plugins every new Agent gets at creation: those whose card sets `defaultInstall: true`. */
+export function loadDefaultInstallPlugins(): LibraryPlugin[] {
+  return loadLibraryPlugins().filter((plugin) => plugin.defaultInstall);
 }
 
 /** Reads a single library plugin by name; undefined when the library has no such plugin (names are looked up, never joined into a path). */

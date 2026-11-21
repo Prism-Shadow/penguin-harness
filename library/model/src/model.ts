@@ -482,6 +482,13 @@ export interface ModelOAuthStartResult {
 
 export type ModelOAuthStatus = "pending" | "done" | "error";
 
+/**
+ * Lifetime of a flow. The upstream one-time code is valid for ten minutes, so a flow that
+ * outlived that window can only ever fail — expiring it here keeps the verifier's residency
+ * in memory bounded by the same figure.
+ */
+export const FLOW_TTL_MS = 10 * 60 * 1000;
+
 // ---------------------------------------------------------------------------
 // Promotions and refresh tokens (the rows web.db keeps for the models plumbing)
 // ---------------------------------------------------------------------------

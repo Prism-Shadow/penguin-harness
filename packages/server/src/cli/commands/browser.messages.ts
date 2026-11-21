@@ -2,6 +2,7 @@
  * The messages of browser command moved with its code into the server package, split out of the CLI's message table (hosted whole by the server
 package). Field names and shapes are unchanged; the host's table spreads this file in.
  */
+import type { BuiltinBrowserCookieSkip, BuiltinBrowserImportNote } from "../../api/types.js";
 
 export interface BrowserText {
   /** `penguin browser`: the desktop app's built-in browser (commands/browser.ts, browser-output.ts). */
@@ -67,6 +68,8 @@ export interface BrowserText {
       clicked: string;
       source: string;
       cookies: string;
+      /** Why the skipped cookies stayed behind. */
+      skipped: string;
       history: string;
       warning: string;
       screenshot: string;
@@ -120,6 +123,10 @@ export interface BrowserText {
     importData(cookies: boolean, history: boolean): string;
     importCookies(c: { found: number; imported: number; skipped: number; failed: number }): string;
     importHistory(h: { found: number; imported: number }): string;
+    /** The value of `skipped:`: every reason with its count; `browser` is the source's. */
+    importSkips(skips: readonly BuiltinBrowserCookieSkip[], browser: string): string;
+    /** One of the import's notes, as a `warning:` line's value. */
+    importNote(note: BuiltinBrowserImportNote, browser: string): string;
     noSources(): string;
     noHistory(): string;
     /** A history line's visit count, the order the lines come in. */
@@ -219,6 +226,7 @@ export const browserEn: BrowserText = {
       clicked: "clicked",
       source: "source",
       cookies: "cookies",
+      skipped: "skipped",
       history: "history",
       warning: "warning",
       screenshot: "screenshot",
@@ -281,6 +289,41 @@ export const browserEn: BrowserText = {
     importCookies: (c) =>
       `${c.imported} imported, ${c.skipped} skipped, ${c.failed} failed (${c.found} found)`,
     importHistory: (h) => `${h.imported} imported (${h.found} found)`,
+    importSkips: (skips, browser) =>
+      skips
+        .map(({ reason, count: n }) => {
+          switch (reason) {
+            case "app_bound":
+              return `${n} protected by ${browser}'s app-bound encryption (only ${browser} itself can read them: import them through the connected Chrome extension, or sign in inside the Browser panel)`;
+            case "dpapi":
+              return `${n} whose key Windows would not unlock`;
+            case "keychain":
+              return `${n} whose key the macOS Keychain did not release (allow the access when macOS asks, then import again)`;
+            case "keyring":
+              return `${n} whose key the desktop keyring could not provide`;
+            case "undecryptable":
+              return `${n} that could not be decrypted`;
+            case "partitioned":
+              return `${n} kept for one site or container only`;
+            case "expired":
+              return `${n} expired`;
+          }
+        })
+        .join("; "),
+    importNote: (note, browser) => {
+      switch (note.code) {
+        case "no_cookie_store":
+          return "This profile has no cookie store.";
+        case "no_history":
+          return "This source has no history to import.";
+        case "store_busy":
+          return `${browser} is holding its ${note.store === "cookies" ? "cookie store" : "history"} open; close ${browser} and import again.`;
+        case "store_unreadable":
+          return `The ${note.store === "cookies" ? "cookie store" : "history"} of ${browser} could not be read.`;
+        case "cookies_not_set":
+          return `${note.count} cookies could not be set in the browser${note.errors.length > 0 ? `: ${note.errors.join("; ")}` : "."}`;
+      }
+    },
     noSources: () => "No browser profiles to import from were found on this machine.",
     noHistory: () => "No history matches.",
     visits: (count) => (count === 1 ? "1 visit" : `${count} visits`),
@@ -379,6 +422,7 @@ export const browserZh: BrowserText = {
       clicked: "已点击",
       source: "来源",
       cookies: "Cookie",
+      skipped: "跳过",
       history: "历史记录",
       warning: "警告",
       screenshot: "截图",
@@ -438,6 +482,41 @@ export const browserZh: BrowserText = {
     importCookies: (c) =>
       `导入 ${c.imported}，跳过 ${c.skipped}，失败 ${c.failed}（共找到 ${c.found}）`,
     importHistory: (h) => `导入 ${h.imported}（共找到 ${h.found}）`,
+    importSkips: (skips, browser) =>
+      skips
+        .map(({ reason, count: n }) => {
+          switch (reason) {
+            case "app_bound":
+              return `${n} 个受 ${browser} 的应用绑定加密保护（只有 ${browser} 自己能读取：可经已连接的 Chrome 扩展导入，或在浏览器面板中直接登录）`;
+            case "dpapi":
+              return `${n} 个的密钥 Windows 未能解开`;
+            case "keychain":
+              return `${n} 个的密钥钥匙串未放行（macOS 询问时选择允许，再导入一次）`;
+            case "keyring":
+              return `${n} 个的密钥未能从桌面密钥环取得`;
+            case "undecryptable":
+              return `${n} 个无法解密`;
+            case "partitioned":
+              return `${n} 个只属于某个站点或容器`;
+            case "expired":
+              return `${n} 个已过期`;
+          }
+        })
+        .join("；"),
+    importNote: (note, browser) => {
+      switch (note.code) {
+        case "no_cookie_store":
+          return "这个个人资料没有 Cookie 库。";
+        case "no_history":
+          return "这个来源没有可导入的历史记录。";
+        case "store_busy":
+          return `${browser} 正占用它的${note.store === "cookies" ? " Cookie 库" : "历史记录"}，关闭 ${browser} 后再导入。`;
+        case "store_unreadable":
+          return `无法读取 ${browser} 的${note.store === "cookies" ? " Cookie 库" : "历史记录"}。`;
+        case "cookies_not_set":
+          return `${note.count} 个 Cookie 未能写入浏览器${note.errors.length > 0 ? `：${note.errors.join("；")}` : "。"}`;
+      }
+    },
     noSources: () => "本机没有找到可导入的浏览器个人资料。",
     noHistory: () => "没有匹配的历史记录。",
     visits: (count) => `${count} 次访问`,

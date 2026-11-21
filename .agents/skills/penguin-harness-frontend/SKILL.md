@@ -555,6 +555,28 @@ a module-level constant.
 Chinese belongs only in the zh dictionary, `titleZh` fields, `*.zh.md` documents, and fixtures that
 exercise CJK behaviour. Comments, test names and every other string are English.
 
+## Failures offer the report
+
+Every failure the app shows offers 「[报告问题]」; a refusal does not. A refusal is a 4xx the server
+named (invalid input, a wrong password, no permission, not found, a name taken, a limit) or a check
+the page made before any request. The one rule is `isReportable` in `packages/ui`'s report kit, and
+the helpers in `src/lib/failure.tsx` and `src/lib/toast-api-error.ts` apply it, so a call site never
+decides:
+
+- A caught error goes through `toastApiError(err, ctx)` for a toast, or `failureNode(err, ctx)` for
+  inline text (the state that held `apiErrorText(err)` holds the node instead). Pass the surface's
+  own words in `ctx.text`, never `toastError(apiErrorText(err))`.
+- A result or a record that says something failed (a test that failed, a plugin that did not load, a
+  job's failed step) goes through `toldFailure` / `toldNode`, with what happened in English.
+- `toastError(text)` is for a check before any request only.
+- A report carries as much as it can, masked: every report's text goes through `maskPrivate`
+  (secrets, e-mail and IP addresses, home paths). Words that name the person's machines (ssh's
+  output, a job's log, an MCP server's error) go in `detail` with `mask: { hosts: true }`, plus the
+  values the page knows are private (a machine's alias) in `mask.values`. A surface over a
+  directory passes it as `privatePaths`.
+- The Agent's own work (a tool's failed output, a workbench's build error), a state, and an echo of
+  a failure said in full elsewhere (a tooltip, a badge) carry no action.
+
 ## Popups: portal, do not absolutely position
 
 Anything that overlays — a menu, a picker, an info popover — uses `usePortalPanel`

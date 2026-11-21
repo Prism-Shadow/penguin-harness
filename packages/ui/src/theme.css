@@ -342,6 +342,8 @@
    * - `data-layout-motion`: an element whose size changes between states, the sidebar's width or a
    *   disclosure's `grid-template-rows: 0fr ↔ 1fr` — or whose place does, a dock surface lifting
    *   off the page column to cover it (`top`, `left`); the theme sets the duration and the curve.
+   *   Two values name a shared element instead, a surface unfolding from its trigger:
+   *   `shared-bounds` moves its clip, `shared-artwork` its pieces' transform and opacity.
    * - `data-fold="open" | "closing" | "settled"` beside it: a fold's body (`Fold`). The phase is
    *   the track — `1fr` open or settled, `0fr` closing — and a body opened after mount starts at
    *   `0fr` through `@starting-style`, so it enters the way it leaves. Never `auto`.
@@ -419,6 +421,61 @@
     }
   }
 
+  /* Only the route body is photographed. Chrome, open portals and fixed controls stay in
+     the live document. The transient name leaves the resting shell's stacking order intact. */
+  :root:active-view-transition:has([data-page-viewport]) {
+    view-transition-name: none;
+  }
+  :root:active-view-transition [data-page-viewport] {
+    view-transition-name: penguin-page;
+  }
+  :root:has([data-page-viewport])::view-transition {
+    pointer-events: none;
+  }
+  ::view-transition-group(penguin-page) {
+    overflow: clip;
+    animation-duration: var(--ui-page-duration);
+  }
+  /* A snapshot moves in the top layer, outside the shell's usual overflow clip. When the
+     desktop viewport begins at the edge of the sheet, keep its rounded frame in front. */
+  @media (min-width: 48rem) {
+    :root:not(:has(.ui-shell > [data-slot="main"] > [data-banner]))::view-transition-group(
+        penguin-page
+      ) {
+      border-radius: var(--ui-shell-radius);
+    }
+  }
+  ::view-transition-old(penguin-page),
+  ::view-transition-new(penguin-page) {
+    mix-blend-mode: plus-lighter;
+  }
+  ::view-transition-old(penguin-page) {
+    animation: var(--ui-page-exit) var(--ui-page-duration) ease-in-out both;
+  }
+  ::view-transition-new(penguin-page) {
+    animation: var(--ui-page-enter) var(--ui-page-duration) ease-in-out both;
+  }
+
+  /* The neutral page pair a theme may name for --ui-page-enter / --ui-page-exit. A theme's own
+     page motion is a keyframe in its pack's recipes (Frost's frost, Console's dissolve, Doodle's
+     hop), so an exported pack carries it. */
+  @keyframes ui-page-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes ui-page-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
   [data-reveal] {
     animation: ui-reveal var(--ui-dur-reveal) var(--ui-ease-out) backwards;
   }
@@ -449,6 +506,16 @@
       top, left;
     transition-duration: var(--ui-dur-layout);
     transition-timing-function: var(--ui-ease-layout);
+  }
+  /* A shared element (UnfoldSurface) keeps its final box in layout while its visible bounds
+     travel from its source's, and its artwork from the source's previews; artwork with no
+     preview fades in place. The component writes both endpoints; the same theme timing and both
+     reduced-motion overrides apply. */
+  [data-layout-motion="shared-bounds"] {
+    transition-property: clip-path;
+  }
+  [data-layout-motion="shared-artwork"] {
+    transition-property: transform, opacity;
   }
   [data-layout-motion][data-fold] {
     grid-template-rows: 1fr;
@@ -580,7 +647,18 @@
   animation: none;
   transition: none;
 }
+/* Back/Forward can recall a routed transition after the reader has turned motion off. */
+:root[data-motion="reduced"]::view-transition-group(penguin-page),
+:root[data-motion="reduced"]::view-transition-old(penguin-page),
+:root[data-motion="reduced"]::view-transition-new(penguin-page) {
+  animation-duration: 0s;
+}
 @media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(penguin-page),
+  ::view-transition-old(penguin-page),
+  ::view-transition-new(penguin-page) {
+    animation-duration: 0s;
+  }
   :is([data-presence], [data-backdrop], [data-reveal], .ui-live) {
     animation: none;
   }

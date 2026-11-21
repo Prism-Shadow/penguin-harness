@@ -99,7 +99,7 @@ const DROP_REQUEST_HEADERS = new Set([
   ADOPTED_AT_HEADER,
   // The caller's link is not this one: the encoding asked of the machine is this server's own
   // (answer-decoding.ts), and so is the validator (answer-cache.ts). What the caller holds is
-  // answered here, by this server's own rule (http/json-validators.ts).
+  // answered here, by this server's own rule (@prismshadow/penguin-library-http/json-validators).
   "accept-encoding",
   "if-none-match",
   "if-modified-since",
