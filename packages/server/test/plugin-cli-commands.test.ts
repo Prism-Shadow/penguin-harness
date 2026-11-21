@@ -3,7 +3,17 @@ import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-cor
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import { PluginHost } from "../src/plugin/host.js";
-import { apiClient, createTestApp, loginAdmin, provisionUser, tokenClient } from "./helpers.js";
+import {
+  apiClient,
+  createTestApp,
+  loginAdmin,
+  provisionUser,
+  restartTestApp,
+  tokenClient,
+  waitFor,
+} from "./helpers.js";
+import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
+import type { TestApp } from "./helpers.js";
 import type { PluginCliCommandRunRequest } from "../src/api/types.js";
 import { validPluginCommands, runPluginCommands } from "../src/plugin/cli-commands.js";
 
@@ -479,6 +489,8 @@ describe("routes (e2e)", () => {
  * - Given a file the terminal sent for an option, the command reads it by the option's value and
  *   hands a file back, which the reply carries; a name with a directory part fails the run.
  * - Given two member runs at once, neither waits for the other.
+ * - Given a command that requires its plugin listed, a Project that does not list the package for
+ *   this machine is refused before the code runs; once the Project lists it, it runs.
  */
 describe("member commands, caller context and files", () => {
   let app: Awaited<ReturnType<typeof createTestApp>>;
@@ -488,6 +500,7 @@ describe("member commands, caller context and files", () => {
   /** What the first of two concurrent runs waits on, and the second opens. */
   const latch = { gate: Promise.resolve(), open: () => {} };
   const adminRan: string[] = [];
+  const listedRan: string[] = [];
 
   function toolsPlugin(): ModuleDef {
     const manifest = parseManifest({
@@ -516,12 +529,26 @@ describe("member commands, caller context and files", () => {
             access: "member",
           },
           { id: "acme.reset", key: "tools.reset", summary: { en: "Reset", zh: "重置" } },
+          {
+            id: "acme.listed",
+            key: "tools.listed",
+            summary: { en: "Only where enabled", zh: "仅在启用处" },
+            access: "member",
+            requiresProjectListing: true,
+          },
         ],
       },
       children: [],
     });
     const node = (command: CliCommandProgram) => command as any;
     const bind: Record<string, CliCommandCode> = {
+      "acme.listed": {
+        register: (command, ctx) => {
+          node(command).action(() => {
+            listedRan.push(ctx.caller?.projectId ?? "");
+          });
+        },
+      },
       "acme.whoami": {
         register: (command, ctx) => {
           node(command).action(() => {
@@ -711,5 +738,348 @@ describe("member commands, caller context and files", () => {
     const [a, b] = await Promise.all([first, second]);
     expect(((await a.json()) as { stdout: string }).stdout).toBe("first done\n");
     expect(((await b.json()) as { stdout: string }).stdout).toBe("second done\n");
+  });
+
+  it("runs a command that requires its plugin listed only where the Project lists it", async () => {
+    const store = app.deps.projectConfigService;
+    const before = await store.getPluginTables("default_project");
+    try {
+      await store.setPluginTables("default_project", { all: {}, machines: {} });
+      const refused = await runAs(admin, {
+        args: ["tools", "listed"],
+        projectId: "default_project",
+      });
+      expect(refused.status).toBe(403);
+      expect(((await refused.json()) as { error: { code: string } }).error.code).toBe(
+        "plugin_not_enabled",
+      );
+      expect(listedRan).toEqual([]);
+      await store.setPluginTables("default_project", {
+        all: { "@acme/tools": {} },
+        machines: {},
+      });
+      const ran = await runAs(member, { args: ["tools", "listed"], projectId: "default_project" });
+      expect(ran.status).toBe(200);
+      expect(listedRan).toEqual(["default_project"]);
+    } finally {
+      await store.setPluginTables("default_project", before);
+    }
+  });
+});
+
+/**
+ * `tokenCaller: "session-driver"`: whom the local API token — every Agent's credential, standing
+ * for the administrator — runs such a command as: the person whose run is in progress.
+ *
+ * - Given a run a member started in progress, an Agent's token call naming its Session runs as
+ *   that member — in her own Project too, which the administrator cannot open — and an admin
+ *   command of that kind refuses her; a subagent's Session runs as its root's run.
+ * - Given a follow-up another person queued, the run in progress keeps its driver, and the queued
+ *   run is driven by whoever queued it once it starts; given someone else steering the run, it
+ *   has no driver.
+ * - Given a token call naming no Session, a Session with no run in progress, a run nobody
+ *   started, or a driver who cannot open the Project, it refuses; a Session of another Project is
+ *   not found; after a restart nothing is in progress.
+ * - Given a command without the opt-in, the token stays the administrator (PRFC-0024 v1.1); given
+ *   a person's own sign-in, the person runs it whoever drives the Session.
+ */
+describe("a session-driver command and the local API token", () => {
+  let t: TestApp;
+  let admin: ReturnType<typeof apiClient>;
+  let mia: ReturnType<typeof apiClient>;
+  const ran: string[] = [];
+  /** The held runs by Session: each resolves its run's end. */
+  const held = new Map<string, Array<() => void>>();
+  const steered: string[] = [];
+
+  function whoPlugin(): ModuleDef {
+    const manifest = parseManifest({
+      name: "AcmeWho",
+      requires: {},
+      provides: {},
+      contributes: {
+        "PluginCliCommandsProvider.commands": [
+          {
+            id: "who.me",
+            key: "who.me",
+            summary: { en: "Who runs this", zh: "谁在运行" },
+            access: "member",
+            tokenCaller: "session-driver",
+          },
+          {
+            id: "who.wipe",
+            key: "who.wipe",
+            summary: { en: "Admin only", zh: "仅管理员" },
+            tokenCaller: "session-driver",
+          },
+          {
+            id: "who.plain",
+            key: "who.plain",
+            summary: { en: "Who runs this, as v1.1", zh: "谁在运行（v1.1）" },
+            access: "member",
+          },
+        ],
+      },
+      children: [],
+    });
+    const node = (command: CliCommandProgram) => command as any;
+    const print = (id: string): CliCommandCode => ({
+      register: (command, ctx) => {
+        node(command).action(() => {
+          ran.push(id);
+          ctx.stdout.write(
+            `${JSON.stringify({ userId: ctx.caller?.userId, isAdmin: ctx.caller?.isAdmin })}\n`,
+          );
+        });
+      },
+    });
+    return {
+      manifest,
+      create: () => ({
+        api: {},
+        bind: {
+          "who.me": print("who.me"),
+          "who.wipe": print("who.wipe"),
+          "who.plain": print("who.plain"),
+        },
+      }),
+    };
+  }
+
+  const host = () => {
+    const h = new PluginHost();
+    h.use({ specifier: "@acme/who", modules: [whoPlugin()], replaces: [] });
+    return h;
+  };
+  const agent = () => tokenClient(t.app, t.deps.authService.localApiToken()!);
+  const run = (
+    client: ReturnType<typeof apiClient>,
+    body: Record<string, unknown>,
+    projectId = "default_project",
+  ) =>
+    client.post("/api/cli/commands/run", {
+      package: "@acme/who",
+      language: "en",
+      prog: "penguin",
+      projectId,
+      ...body,
+    });
+  const answer = async (res: Response) => {
+    expect(res.status).toBe(200);
+    return JSON.parse(((await res.json()) as { stdout: string }).stdout) as {
+      userId: string;
+      isAdmin: boolean;
+    };
+  };
+  const refusal = async (res: Response) => ({
+    status: res.status,
+    code: ((await res.json()) as { error: { code: string } }).error.code,
+  });
+  /** A Session whose every run holds until the test ends it (the model is never called). */
+  const heldSession = (projectId = "default_project") => {
+    const sid = uniqueSessionId();
+    held.set(sid, []);
+    adoptSession(
+      t.deps,
+      fakeSession(sid, {
+        async *run() {
+          await new Promise<void>((resolve) => held.get(sid)!.push(resolve));
+        },
+        steer: () => {
+          steered.push(sid);
+          return true;
+        },
+      }),
+      { projectId },
+    );
+    return sid;
+  };
+  /** A person sends a message: the route starts (or queues) a run for them. */
+  const send = async (client: ReturnType<typeof apiClient>, sid: string, extra = {}) => {
+    const res = await client.post(`/api/sessions/${sid}/tasks`, {
+      input: [{ type: "text", text: "go" }],
+      ...extra,
+    });
+    expect(res.status).toBe(202);
+    return (await res.json()) as { queued: boolean };
+  };
+  /** Ends the Session's oldest held run and waits for the Session to settle. */
+  const finish = async (sid: string, next: "idle" | "running" = "idle") => {
+    held.get(sid)!.shift()!();
+    const waiting = next === "running" ? 1 : 0;
+    await waitFor(() => t.deps.manager.statusOf(sid) === next && held.get(sid)!.length === waiting);
+  };
+
+  beforeAll(async () => {
+    t = await createTestApp({ plugins: host(), durableDatabase: true });
+    admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    mia = apiClient(t.app, (await provisionUser(t.app, "mia")).cookie);
+    expect(
+      (await admin.post("/api/projects/default_project/members", { userId: "mia" })).status,
+    ).toBe(201);
+  });
+
+  afterAll(async () => {
+    for (const ends of held.values()) for (const end of ends) end();
+    await t?.cleanup();
+  });
+
+  it("runs as the member whose run is in progress, and refuses her an admin command", async () => {
+    const sid = heldSession();
+    await send(mia, sid);
+    expect(await answer(await run(agent(), { args: ["who", "me"], sessionId: sid }))).toEqual({
+      userId: "mia",
+      isAdmin: false,
+    });
+    ran.length = 0;
+    expect(await refusal(await run(agent(), { args: ["who", "wipe"], sessionId: sid }))).toEqual({
+      status: 403,
+      code: "admin_required",
+    });
+    expect(ran).toEqual([]);
+    await finish(sid);
+    // The run is over: nobody is driving the Session any more.
+    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: sid }))).toEqual({
+      status: 403,
+      code: "driver_unknown",
+    });
+  });
+
+  it("reaches a member's Agent in her own Project, which the administrator cannot open", async () => {
+    expect((await mia.post("/api/projects", { projectId: "mia-own", name: "Mia" })).status).toBe(
+      201,
+    );
+    const sid = heldSession("mia-own");
+    await send(mia, sid);
+    expect(
+      await answer(await run(agent(), { args: ["who", "me"], sessionId: sid }, "mia-own")),
+    ).toEqual({ userId: "mia", isAdmin: false });
+    await finish(sid);
+  });
+
+  it("keeps the driver of the run in progress when another person queues, and hands the queued run its own", async () => {
+    const sid = heldSession();
+    await send(mia, sid);
+    expect((await send(admin, sid, { queueIfBusy: true })).queued).toBe(true);
+    expect((await answer(await run(agent(), { args: ["who", "me"], sessionId: sid }))).userId).toBe(
+      "mia",
+    );
+    await finish(sid, "running");
+    expect((await answer(await run(agent(), { args: ["who", "me"], sessionId: sid }))).userId).toBe(
+      "admin",
+    );
+    await finish(sid);
+  });
+
+  it("leaves a run someone else steered with no driver", async () => {
+    const sid = heldSession();
+    await send(admin, sid);
+    expect(
+      (await mia.post(`/api/sessions/${sid}/steer`, { text: "use the computer for me" })).status,
+    ).toBe(202);
+    expect(steered).toContain(sid);
+    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: sid }))).toEqual({
+      status: 403,
+      code: "driver_unknown",
+    });
+    await finish(sid);
+  });
+
+  it("runs a subagent's Session as its root's run", async () => {
+    const root = heldSession();
+    const child = heldSession();
+    await send(mia, root);
+    const state = t.deps.tree.api<{ childRoots: Map<string, string> }>(
+      "SessionRuntimeModule",
+      "AgentState",
+    );
+    state.childRoots.set(child, root);
+    expect(await answer(await run(agent(), { args: ["who", "me"], sessionId: child }))).toEqual({
+      userId: "mia",
+      isAdmin: false,
+    });
+    await finish(root);
+    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: child }))).toEqual({
+      status: 403,
+      code: "driver_unknown",
+    });
+  });
+
+  it("refuses a token call that names no Session, before any code runs", async () => {
+    ran.length = 0;
+    expect(await refusal(await run(agent(), { args: ["who", "me"] }))).toEqual({
+      status: 403,
+      code: "session_required",
+    });
+    expect(ran).toEqual([]);
+  });
+
+  it("refuses a run nobody started, never guessing its Project's owner", async () => {
+    const sid = heldSession();
+    // The local token starting it — as an Agent's shell, a schedule nobody signed for, the Agent
+    // API or company mode do — makes nobody its driver.
+    await send(agent(), sid);
+    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: sid }))).toEqual({
+      status: 403,
+      code: "driver_unknown",
+    });
+    await finish(sid);
+  });
+
+  it("does not borrow a person from a Session of another Project", async () => {
+    expect(
+      (await admin.post("/api/projects", { projectId: "elsewhere", name: "Elsewhere" })).status,
+    ).toBe(201);
+    const other = heldSession("elsewhere");
+    await send(admin, other);
+    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: other }))).toEqual({
+      status: 404,
+      code: "session_not_found",
+    });
+    await finish(other);
+  });
+
+  it("keeps the token the administrator for a command without the opt-in, and a person themself", async () => {
+    const sid = heldSession();
+    await send(mia, sid);
+    expect(await answer(await run(agent(), { args: ["who", "plain"], sessionId: sid }))).toEqual({
+      userId: "admin",
+      isAdmin: true,
+    });
+    expect(await answer(await run(admin, { args: ["who", "me"], sessionId: sid }))).toEqual({
+      userId: "admin",
+      isAdmin: true,
+    });
+    await finish(sid);
+  });
+
+  it("refuses a driver who can no longer open the Project", async () => {
+    const leo = apiClient(t.app, (await provisionUser(t.app, "leo")).cookie);
+    expect(
+      (await admin.post("/api/projects/default_project/members", { userId: "leo" })).status,
+    ).toBe(201);
+    const sid = heldSession();
+    await send(leo, sid);
+    expect((await admin.delete("/api/projects/default_project/members/leo")).status).toBeLessThan(
+      300,
+    );
+    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: sid }))).toEqual({
+      status: 403,
+      code: "driver_unknown",
+    });
+    await finish(sid);
+  });
+
+  // Last: it replaces `t` with the app booted on the same root.
+  it("finds nothing in progress after a restart", async () => {
+    const sid = heldSession();
+    await send(mia, sid);
+    for (const end of held.get(sid)!) end();
+    held.set(sid, []);
+    t = await restartTestApp(t, { plugins: host() });
+    expect(await refusal(await run(agent(), { args: ["who", "me"], sessionId: sid }))).toEqual({
+      status: 403,
+      code: "driver_unknown",
+    });
   });
 });

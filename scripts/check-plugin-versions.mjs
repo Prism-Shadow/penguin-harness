@@ -21,6 +21,10 @@
  * The Benchmarks a new Project is seeded with carry date versions too, kept in core's data; their
  * rule is SEEDED_BENCHMARKS below.
  *
+ * Only this repository's `plugins/` is compared. An external built-in plugin
+ * (scripts/lib/external-plugins.mjs) has no files here — the build ships the version its own
+ * repository published, whose release gates its dated versions — so there is nothing to check.
+ *
  * Usage: node scripts/check-plugin-versions.mjs <base-commit>
  * An empty or missing base (a push event, a local run with nothing to compare) passes.
  */
@@ -173,6 +177,16 @@ const changed = git("diff", "--name-only", `${base}...HEAD`, "--", "plugins/")
   .split("\n")
   .map((line) => line.trim())
   .filter((line) => line.startsWith("plugins/"));
+// These packages install copies of the shared desk files. A shared runtime change is an
+// installed-source change even when none of the package-local files changed.
+if (git("diff", "--name-only", `${base}...HEAD`, "--", "scripts/workbench-desk/").trim()) {
+  for (const file of git("ls-tree", "-r", "--name-only", "HEAD", "--", "plugins/").split("\n")) {
+    const match = /^plugins\/([^/]+)\/package\.json$/.exec(file);
+    if (match && atHead(file)?.includes("scripts/workbench-desk/build.mjs")) {
+      changed.push(`plugins/${match[1]}/workbenches/${match[1]}/package.json`);
+    }
+  }
+}
 // A plugin is a directory: a file right under plugins/ (the library's README) is nobody's.
 const plugins = [
   ...new Set(

@@ -50,7 +50,7 @@ export function subscribeBuiltinBrowserResync(listener: () => void): () => void 
     resyncListeners.delete(listener);
   };
 }
-import type { UserEventHandler } from "../../state/user-events";
+import type { UserEventHandler } from "@prismshadow/penguin-web-plugin";
 
 /**
  * The browser's handler on the user event stream (main semantics kept: only this server's
@@ -58,7 +58,7 @@ import type { UserEventHandler } from "../../state/user-events";
  * server-parameterized version does not guard; this resolution guards inside the handler
  * against main's single-server browser-events API).
  */
-export const builtinBrowserUserEvents: UserEventHandler = {
+export const builtinBrowserUserEvents: UserEventHandler<ServerEvent> = {
   event: (ev, source) => {
     if (source === null && isBuiltinBrowserEvent(ev)) publishBuiltinBrowserEvent(ev);
   },

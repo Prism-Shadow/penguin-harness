@@ -8,10 +8,14 @@
  * `Chat` carries the page's slots: `sessionTabs`, tabs beside the conversation that another module
  * draws (the Agent's workflow pages), so the page names none of them; and `fileRenderers`, the
  * named components a server's file renderer rule may pick to draw a Workspace file below the reply
- * paragraph that links it (lib/file-renderers.ts).
+ * paragraph that links it (lib/file-renderers.ts); `sessionHandovers`, what another module keeps
+ * under a conversation's id and moves when the conversation takes a new one (session-handover.ts);
+ * and `linkActions`, rows another module adds to the stream's menu for a web link
+ * (link-actions.ts). The last two take the plugin face's types.
  */
 import type { ComponentType } from "react";
 import { Interface, type Slot } from "@prismshadow/penguin-core/kernel";
+import type { LinkAction, Ordered, SessionHandover } from "@prismshadow/penguin-web-plugin";
 
 import type { FileRenderer } from "../../lib/file-renderers";
 
@@ -88,4 +92,8 @@ export interface ChatSlots {
   sessionTabs: Slot<SessionTabData, SessionTab>;
   /** A named file renderer. */
   fileRenderers: Slot<FileRendererData, FileRenderer>;
+  /** Moves what its module keeps under a conversation's old id to its new one, in `order`. */
+  sessionHandovers: Slot<Ordered, SessionHandover>;
+  /** A row of the stream's menu for a web link, before the app's own rows, in `order`. */
+  linkActions: Slot<Ordered, LinkAction>;
 }

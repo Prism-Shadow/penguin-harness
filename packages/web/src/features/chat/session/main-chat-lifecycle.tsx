@@ -1,5 +1,5 @@
 import { scoped } from "../../../lib/project-scope";
-import { adoptBrowserSession } from "../../builtin-browser";
+import { handOverSession } from "../session-handover";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
 import { toastSuccess } from "@prismshadow/penguin-ui";
@@ -747,7 +747,7 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
       // Same conversation under a new id: its docks follow, or they are stranded under
       // an id nothing routes to again — its shells first, so its tabs stay its own. Only
       // someone still on the old id is taken to the new one; whoever moved on stays put.
-      await adoptBrowserSession(currentId, respondedId);
+      await handOverSession(currentId, respondedId);
       await reownTerminals(currentId, respondedId);
       if (adoptDockScope(currentId, respondedId))
         navigate(`/chat/${respondedId}`, { replace: true });

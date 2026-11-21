@@ -4,6 +4,9 @@
 @import "./site-content.css";
 @import "./site-prose.css";
 @import "./components/content/prose/markdown-table.css";
+/* The showcase family's sheet, in Tailwind's `components` layer so a page's utilities beat it; the
+   map onto the sites' palette is below. */
+@import "./components/showcase/showcase.css" layer(components);
 
 /* Pin the public site's scale even inside a gallery previewing another theme or text size.
    Portaled menus carry this scope too, so their typography and colours match the trigger. */
@@ -221,6 +224,54 @@
       display: none;
     }
   }
+}
+
+/* The showcase family (components/showcase/showcase.css) on the sites' own palette: the same
+   cover cards, selected carousel and product page as the Web App's plugin market, mapped here
+   once. Scoped under `.site-ui` and unlayered, so in the gallery it outranks the application
+   theme's map. */
+.site-ui .showcase,
+.site-ui.showcase {
+  --showcase-surface: var(--site-surface);
+  --showcase-surface-muted: var(--site-hover);
+  --showcase-line: var(--site-line);
+  --showcase-line-muted: var(--site-line);
+  --showcase-line-strong: var(--site-gray-400);
+  --showcase-line-w: 1px;
+  --showcase-fg: var(--site-ink);
+  --showcase-fg-muted: var(--site-muted);
+  --showcase-accent: var(--site-accent);
+  --showcase-radius: 12px;
+  --showcase-radius-sm: 8px;
+  --showcase-text-sm: 0.875rem;
+  --showcase-text-xs: 0.75rem;
+  --showcase-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --showcase-dur: var(--site-dur-fast);
+  --showcase-hue-blue: #2f6bd8;
+  --showcase-hue-violet: #6d4fd8;
+  --showcase-hue-pink: #c2417f;
+  --showcase-hue-red: #c8453c;
+  --showcase-hue-orange: #c2601f;
+  --showcase-hue-amber: #a87400;
+  --showcase-hue-green: #2f8552;
+  --showcase-hue-teal: #1f857c;
+  --showcase-hue-slate: #5f6b78;
+  --showcase-field-mix: 12%;
+}
+:root.dark .site-ui .showcase,
+:root.dark .site-ui.showcase {
+  --showcase-surface-muted: #242424;
+  --showcase-line-strong: var(--site-gray-600);
+  --showcase-hue-blue: #8fb0ec;
+  --showcase-hue-violet: #b49ae9;
+  --showcase-hue-pink: #ee8fbc;
+  --showcase-hue-red: #ff8a7a;
+  --showcase-hue-orange: #ef9a6a;
+  --showcase-hue-amber: #e3ad4f;
+  --showcase-hue-green: #7fc193;
+  --showcase-hue-teal: #6cc5b8;
+  --showcase-hue-slate: #a7b2bf;
+  --showcase-field-mix: 20%;
 }
 
 /* Public chrome keeps the same appearance while the gallery changes application themes.

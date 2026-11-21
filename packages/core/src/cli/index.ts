@@ -23,6 +23,9 @@
 import type { Opaque } from "../kernel/markers.js";
 import type { JsonObject } from "../kernel/json.js";
 
+/** A shipped plugin's commands, booted by the CLI from the plugin's `./cli` export (module.ts). */
+export type * from "./module.js";
+
 /** A command's one-line summary, one per language — what help prints. */
 export interface CliCommandSummary {
   en: string;
@@ -57,6 +60,23 @@ export interface CliCommandData {
   access?: "admin" | "member";
   /** The local files it reads and returns, for the terminal to send and save (plugin commands). */
   files?: CliCommandFiles;
+  /**
+   * Runs only for a caller whose Project lists the command's plugin for this machine (its
+   * `[plugins]` or `[plugins.<machineId>]` table): a plugin a Project never enabled — loaded
+   * because another Project did — is refused there with 403 `plugin_not_enabled`.
+   */
+  requiresProjectListing?: boolean;
+  /**
+   * Whom a call with the server's local API token runs as — the token every Agent's shell
+   * carries, which stands for the built-in administrator. Absent: that administrator, as for any
+   * other credential. `"session-driver"`: the signed-in person who started the run in progress in
+   * the named Session (for a subagent's Session, its root's run), judged by that person's access
+   * to the Project; a token call that names no Session is refused with 403 `session_required`,
+   * and one with no such run in progress, or whose person cannot open the Project, with 403
+   * `driver_unknown`. A person's own sign-in is never replaced. The Session is the caller's to
+   * name, so this narrows the token; it is not a boundary until per-Session credentials.
+   */
+  tokenCaller?: "session-driver";
 }
 
 /** One command as a collected contribution carries it: the data half plus the manifest's `id`. */

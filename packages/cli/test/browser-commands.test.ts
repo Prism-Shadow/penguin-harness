@@ -23,6 +23,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BuiltinBrowserExecResult, BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
 import { cli } from "../src/index.js";
 import {
+  browserEn,
+  browserZh,
   getMessages,
   localMinute,
   RETURN_LIMIT,
@@ -30,7 +32,8 @@ import {
 } from "@prismshadow/penguin-server/cli";
 import { FakeServer } from "./fake-server.js";
 
-const t = getMessages("en");
+// The bundle the browser's commands receive: the host's, with the browser module's own group.
+const t = { ...browserEn, ...getMessages("en") };
 const SESSION = "session-2026-09-24-10-00-00-b10b0001";
 
 let server: FakeServer;
@@ -934,7 +937,7 @@ describe("errors", () => {
 
 describe("output in Chinese", () => {
   it("puts every figure of the load into the zh line, and every warning into one sentence", () => {
-    const zh = getMessages("zh");
+    const zh = { ...browserZh, ...getMessages("zh") };
     const memory = zh.browser.memoryLine("2.1 GB", 7, { free: "3.2 GB", total: "16.0 GB" });
     for (const figure of ["2.1 GB", "7", "3.2 GB", "16.0 GB"]) expect(memory).toContain(figure);
     // The first sentence (up to the full-width stop) carries each warning's own clause.
@@ -945,7 +948,7 @@ describe("output in Chinese", () => {
   });
 
   it("labels the exec lines in the zh dictionary", () => {
-    const zh = getMessages("zh");
+    const zh = { ...browserZh, ...getMessages("zh") };
     expect(
       renderExec(execResult({ value: 3, diff: { changed: 2 }, transients: ["已加入购物车"] }), zh, {
         alwaysReturn: true,

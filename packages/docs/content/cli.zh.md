@@ -810,7 +810,7 @@ penguin exec sandbox.wsl.restart --prod
 penguin exec @penguinharness/sandbox-wsl:sandbox.wsl.restart   # id 撞名时
 ```
 
-插件标为 `access: "member"` 的命令，Project 的任何成员都能运行，不限管理员。一次运行带上调用方的 Project 与 Session：在 Agent 的 shell 里取其 `PENGUIN_PROJECT_ID` 与 `PENGUIN_SESSION_ID`；在 Agent 之外，这类命令缺省为 `default_project`。命令还可以声明指名本地文件的选项：每个 `read` 选项所指的文件由 CLI 相对当前目录读取、随运行发送，读不到即在发送任何内容之前停止。命令交回的文件保存到 `write` 选项所指的目录，缺省为当前目录，从不覆盖已有文件（改存为 `name-1.ext`），每个保存的路径都打印到 stderr。
+插件标为 `access: "member"` 的命令，Project 的任何成员都能运行，不限管理员。一次运行带上调用方的 Project 与 Session：在 Agent 的 shell 里取其 `PENGUIN_PROJECT_ID` 与 `PENGUIN_SESSION_ID`；在 Agent 之外，这类命令缺省为 `default_project`。命令还可以声明指名本地文件的选项：每个 `read` 选项所指的文件由 CLI 相对当前目录读取、随运行发送，读不到即在发送任何内容之前停止。命令交回的文件保存到 `write` 选项所指的目录，缺省为当前目录，从不覆盖已有文件（改存为 `name-1.ext`），每个保存的路径都打印到 stderr。命令还可以只在 Project 启用了其插件时运行，也可以要求 Agent 的调用为该 Agent 所在 Session 此刻正在处理其消息的人运行，而不是为本机 API token 所代表的管理员运行；这类命令拒绝以 token 发出、却没有指明 Session 的调用（`session_required`），以及 Session 中没有已登录的人发起的运行正在进行的调用（`driver_unknown`）。
 
 ## penguin server / penguin web
 

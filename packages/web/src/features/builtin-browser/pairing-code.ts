@@ -9,8 +9,8 @@
  * surface to show asks again.
  */
 import type { Failure } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
-import { failureOf } from "../../lib/failure";
+import * as api from "./api";
+import { failureOf } from "@prismshadow/penguin-web-plugin";
 
 export type PairingCodeState =
   | { status: "idle" }

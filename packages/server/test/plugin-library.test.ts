@@ -61,12 +61,23 @@ describe("the shipped library", () => {
       if (plugin.hooks !== undefined) {
         expect(plugin.hooks.manifest.version, plugin.name).toMatch(PLUGIN_VERSION_PATTERN);
       }
+      for (const workbench of plugin.workbenches ?? []) {
+        expect(workbench.version, `${plugin.name}/${workbench.name}`).toMatch(
+          PLUGIN_VERSION_PATTERN,
+        );
+      }
       expect(
         PLUGIN_CATEGORIES.map((c) => c.id),
         plugin.name,
       ).toContain(plugin.category);
       expect(plugin.description.length, plugin.name).toBeGreaterThan(0);
-      expect(plugin.skills.length > 0 || plugin.hooks !== undefined, plugin.name).toBe(true);
+      // A part is a Skill, a hook package or a workbench: an app-only plugin ships just the last.
+      expect(
+        plugin.skills.length > 0 ||
+          plugin.hooks !== undefined ||
+          (plugin.workbenches ?? []).length > 0,
+        plugin.name,
+      ).toBe(true);
     }
   });
 
