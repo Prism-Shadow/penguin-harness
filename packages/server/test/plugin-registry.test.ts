@@ -4,8 +4,9 @@
  * - The shared index format is validated whole: a flat array of per-version entries in order;
  *   a non-array or one malformed entry fails the document, naming the source or the position
  *   (unlike a plugin list's per-entry tolerance).
- * - The builtin catalogue lists the server modules that live in plugins/ (the sandbox backends
- *   in their category, agent-state-git in none), each named,
+ * - The builtin catalogue lists the server modules that live in plugins/ — the sandbox backends
+ *   (in their category) and agent-state-git (in none) the build ships, and the market-only ones it
+ *   does not (computer-use, in the category its card names) — each named,
  *   versioned, titled, described and licensed as the package names itself, described in both
  *   languages as its own card contribution describes it and drawn with its icon.svg (both of which
  *   it publishes), and serves each one's own shipped README.md; a listed package not on this
@@ -465,10 +466,11 @@ describe("the builtin catalogue and the packages it lists", () => {
     for (const entry of index) {
       const pkg = packages.get(entry.name);
       expect(pkg, `${entry.name} is listed but is no package in plugins/`).toBeDefined();
-      // A sandbox backend sits in its category; any other server module in none (Other).
-      expect(entry.categories, entry.name).toEqual(
-        pkg!.dir.startsWith("sandbox-") ? ["sandbox"] : undefined,
-      );
+      // A sandbox backend sits in its category; another server module in the one its card names,
+      // or in none (Other), as the card test below checks.
+      if (pkg!.dir.startsWith("sandbox-")) {
+        expect(entry.categories, entry.name).toEqual(["sandbox"]);
+      }
       expect(pkg!.manifest.version, entry.name).toBe(entry.version);
       expect(pkg!.manifest.description, entry.name).toBe(entry.description);
       expect(pkg!.manifest.license, entry.name).toBe(entry.license);

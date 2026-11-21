@@ -938,6 +938,9 @@ importers:
       '@penguinharness/browser-automation':
         specifier: workspace:*
         version: link:../../plugins/browser-automation
+      '@penguinharness/computer-use':
+        specifier: workspace:*
+        version: link:../../plugins/computer-use
       '@penguinharness/continual-learning':
         specifier: workspace:*
         version: link:../../plugins/continual-learning
@@ -1757,6 +1760,24 @@ importers:
       '@prismshadow/skills':
         specifier: workspace:*
         version: link:../../packages/skills
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  plugins/computer-use:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
+      commander:
+        specifier: ^13.0.0
+        version: 13.1.0
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))

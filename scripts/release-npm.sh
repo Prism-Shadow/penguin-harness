@@ -54,11 +54,12 @@ case "$cmd" in
     for p in amsp a2ui chat-markdown core ui server cli; do
       (cd "packages/$p" && npm version --no-git-tag-version --allow-same-version "$V" >/dev/null)
     done
-    # The server embeds an index of the sandbox backends it ships, each at the version its
-    # package.json carries; those packages were just stamped, so the index follows. Left behind,
-    # the server would advertise a version that was never published. An entry for a package of
-    # another repository (an external built-in plugin, scripts/lib/external-plugins.mjs) keeps
-    # the version that repository released: only the plugins/* packages were stamped.
+    # The server embeds an index of the workspace's server-module plugins (the sandbox backends,
+    # and the market-only ones such as computer-use), each at the version its package.json
+    # carries; those packages were just stamped, so the index follows. Left behind, the server
+    # would advertise a version that was never published. An entry for a package of another
+    # repository (an external built-in plugin, scripts/lib/external-plugins.mjs) keeps the version
+    # that repository released: only the plugins/* packages were stamped.
     INDEX=packages/server/src/plugin/builtin-index.json
     node -e '
       const fs = require("fs");
