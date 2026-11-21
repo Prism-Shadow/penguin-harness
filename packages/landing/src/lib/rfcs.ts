@@ -100,6 +100,19 @@ export interface RfcTreeNode {
   children?: RfcTreeNode[];
 }
 
+/** Visual variants of the borderless RFC Graph Tree view on `/rfcs`. */
+export type RfcTreeStyle = "smartlog" | "metro" | "spine" | "horizontal" | "orthogonal";
+
+export const RFC_TREE_STYLES: readonly RfcTreeStyle[] = [
+  "smartlog",
+  "metro",
+  "spine",
+  "horizontal",
+  "orthogonal",
+];
+
+export const DEFAULT_RFC_TREE_STYLE: RfcTreeStyle = "smartlog";
+export const RFC_TREE_STYLE_STORAGE_KEY = "penguin-rfc-tree-style-v3";
 export const RFC_TREE_COLLAPSED_STORAGE_KEY = "penguin-rfc-tree-collapsed-v1";
 
 /** SemVer 2.0 format required by `check-rfcs` (`vMAJOR.MINOR.PATCH`, e.g. `v0.0.1`, `v0.1.0`, `v1.0.0`). */
@@ -556,6 +569,37 @@ function defaultStorage(): Storage | null {
       : null;
   } catch {
     return null;
+  }
+}
+
+/** Whether `value` is one of the supported RFC Graph Tree visual styles. */
+export function isRfcTreeStyle(value: unknown): value is RfcTreeStyle {
+  return typeof value === "string" && (RFC_TREE_STYLES as readonly string[]).includes(value);
+}
+
+/** Read the persisted RFC Graph Tree visual style from storage. */
+export function readRfcTreeStyle(
+  storage: Pick<Storage, "getItem"> | null | undefined = defaultStorage(),
+): RfcTreeStyle {
+  try {
+    const raw = storage?.getItem(RFC_TREE_STYLE_STORAGE_KEY);
+    return isRfcTreeStyle(raw) ? raw : DEFAULT_RFC_TREE_STYLE;
+  } catch {
+    return DEFAULT_RFC_TREE_STYLE;
+  }
+}
+
+/** Persist the selected RFC Graph Tree visual style to storage. */
+export function writeRfcTreeStyle(
+  style: RfcTreeStyle,
+  storage: Pick<Storage, "setItem"> | null | undefined = defaultStorage(),
+): void {
+  try {
+    if (isRfcTreeStyle(style)) {
+      storage?.setItem(RFC_TREE_STYLE_STORAGE_KEY, style);
+    }
+  } catch {
+    // Ignore storage access errors.
   }
 }
 

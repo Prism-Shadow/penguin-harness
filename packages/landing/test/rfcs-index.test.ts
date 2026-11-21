@@ -19,11 +19,16 @@ import {
   buildRfcTree,
   collapsibleRfcTreeKeys,
   countRfcTreeDescendantEntries,
+  DEFAULT_RFC_TREE_STYLE,
   findRfcSearchMatchRanges,
   isMajorRfcVersion,
+  isRfcTreeStyle,
   isValidRfcSemver,
   readRfcTreeCollapsed,
+  readRfcTreeStyle,
   RFC_TREE_COLLAPSED_STORAGE_KEY,
+  RFC_TREE_STYLE_STORAGE_KEY,
+  RFC_TREE_STYLES,
   rfcBodyMarkdown,
   rfcEntries,
   rfcEntryShortTitle,
@@ -34,6 +39,7 @@ import {
   shortRfcNumber,
   shortRfcTitle,
   writeRfcTreeCollapsed,
+  writeRfcTreeStyle,
 } from "../src/lib/rfcs";
 import type { RfcTreeNode } from "../src/lib/rfcs";
 import { rfcIndexMarkdown } from "../src/pages/rfcs";
@@ -402,6 +408,15 @@ describe("buildRfcIndex", () => {
     ]);
     store.set(RFC_TREE_COLLAPSED_STORAGE_KEY, '["PRFC-0001-module","unknown-key",42]');
     expect([...readRfcTreeCollapsed(validSet, mockStorage)]).toEqual(["PRFC-0001-module"]);
+
+    expect(DEFAULT_RFC_TREE_STYLE).toBe("smartlog");
+    expect(RFC_TREE_STYLES).toEqual(["smartlog", "metro", "spine", "horizontal", "orthogonal"]);
+    expect(isRfcTreeStyle("smartlog")).toBe(true);
+    expect(isRfcTreeStyle("invalid")).toBe(false);
+    expect(readRfcTreeStyle(mockStorage)).toBe("smartlog");
+    writeRfcTreeStyle("metro", mockStorage);
+    expect(store.get(RFC_TREE_STYLE_STORAGE_KEY)).toBe("metro");
+    expect(readRfcTreeStyle(mockStorage)).toBe("metro");
   });
 
   it("merges the language pair into one entry and skips non-PRFC files", () => {
