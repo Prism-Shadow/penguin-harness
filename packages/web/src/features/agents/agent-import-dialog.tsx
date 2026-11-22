@@ -22,6 +22,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
+import { toastInstall } from "../../lib/agent-plugin-install";
 import { S } from "../../lib/strings";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { toneInk } from "../../lib/tone";
@@ -99,8 +100,12 @@ export function AgentImportDialog(props: AgentImportDialogProps) {
         return;
       }
       if (need !== "ready") {
-        await installPorting(projectId, chatAgent.agentId);
-        toastSuccess(S.plugins.installedToast(PORTING_PLUGIN, agentDisplayName(chatAgent)));
+        const done = await installPorting(projectId, chatAgent.agentId);
+        toastInstall(
+          S.plugins.installedToast(PORTING_PLUGIN, agentDisplayName(chatAgent)),
+          PORTING_PLUGIN,
+          done.modules,
+        );
       }
       discardUnsaved(form.scope);
       openAiChat({ agentId: chatAgent.agentId, text: prompt });

@@ -15,7 +15,7 @@
  * Task that finished while the tab was hidden still appears on return without a manual
  * refresh — while a hidden tab fetches nothing. trace-refresh.ts states the rule exactly.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
   DownloadIcon,
@@ -28,7 +28,6 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { formatBytes } from "../../lib/format";
 import { TraceFileView } from "./trace-file-view";
 import { TracePicker } from "./trace-picker";
@@ -39,6 +38,7 @@ import {
   sortTraceFiles,
 } from "./trace-refresh";
 import type { TraceHighlight } from "./timeline-chart";
+import { failureNode } from "../../lib/failure";
 
 interface FileRef {
   index: number;
@@ -63,7 +63,7 @@ export function TracePanel({
   reloadSignal: number;
 }) {
   const [files, setFiles] = useState<FileRef[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [fileIndex, setFileIndex] = useState<number | null>(null);
   const [highlight, setHighlight] = useState<TraceHighlight | null>(null);
 
@@ -106,7 +106,7 @@ export function TracePanel({
         // The listing already on screen is kept: this fires on every settled turn now, so a
         // blip mid-read must not unmount the picker and the view below it. Only a first load
         // (files still null) has nothing to fall back to.
-        setError(apiErrorText(err));
+        setError(failureNode(err, { what: "the Trace files could not be listed" }));
       });
     return () => {
       cancelled = true;

@@ -10,6 +10,7 @@
 import type {
   AgentApiSettings,
   AppCenterResponse,
+  WorkbenchInfo,
   AppCenterShortcut,
   AgentConfigResponse,
   AgentSummary,
@@ -22,6 +23,8 @@ import type {
   DirListResponse,
   HookItem,
   InstalledPluginsResponse,
+  PluginModuleRequest,
+  PluginModuleStatus,
   MachinesResponse,
   MeResponse,
   MemberInfo,
@@ -30,10 +33,14 @@ import type {
   MemoryOverviewResponse,
   ModelEffectiveConnection,
   ModelInfo,
+  MarketPopularity,
   ModelsResponse,
+  PluginArt,
   PluginConfigEntry,
   PluginIndexResponse,
+  PluginItem,
   PluginLibraryResponse,
+  PluginMarketResponse,
   ProjectScheduleItem,
   ProviderConnectionDto,
   ProjectSummary,
@@ -68,7 +75,16 @@ import bundledBenchmarks from "../../../../../node_modules/.cache/penguin-benchm
 import type { AmspRecord } from "../../../../amsp/src/types";
 import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";
 import { IDS } from "./ids";
-import { agentEvaluationPlugin, rsiToolkitPlugins, shippedIcon } from "./library-plugins";
+import {
+  agentEvaluationPlugin,
+  goalPlugin,
+  marketPlugins,
+  penguinSupportPlugin,
+  rsiToolkitPlugins,
+  shippedIcon,
+} from "./library-plugins";
+// The market's curation as this build embeds it: its paths are the gallery's static files.
+import builtinMarket from "../../../../server/src/plugin/builtin-market.json";
 import {
   docsAgentsMd,
   RSI_ROUND,
@@ -97,6 +113,95 @@ type BuiltinBenchmark = Pick<
   cases: Array<{ id: string; title: string; statement: string; rubric: string }>;
 };
 const BUILTIN_BENCHMARKS = bundledBenchmarks as BuiltinBenchmark[];
+
+/** The curation document's shape (plugin/builtin-market.json): paths relative to its folder. */
+interface MarketDocument {
+  hero: string[];
+  selected: string[];
+  popularity?: MarketPopularity;
+  plugins: Record<
+    string,
+    {
+      cover?: { src: string; thumb?: string; tone?: string };
+      icon?: string;
+      screenshots?: Array<{ src: string; thumb?: string; caption?: string; captionZh?: string }>;
+    }
+  >;
+}
+
+/** The covers this build ships beside its curation (server/src/plugin/market-covers/<dir>/). */
+const BUNDLED_PICTURES = import.meta.glob<string>(
+  "../../../../server/src/plugin/market-covers/**/*.{webp,png,jpg}",
+  { eager: true, query: "?url", import: "default" },
+);
+/**
+ * A local copy of the community repository's `assets/plugins/` (packages/ui-gallery/market-assets/,
+ * never committed): the screenshots and anything else the build does not ship, for whoever wants
+ * the gallery's market with every picture.
+ */
+const LOCAL_PICTURES = import.meta.glob<string>("../../../market-assets/**/*.{webp,png,jpg}", {
+  eager: true,
+  query: "?url",
+  import: "default",
+});
+
+/** A path of the document as a URL the gallery serves, or undefined when it has no such picture. */
+function pictureUrl(path: string): string | undefined {
+  return (
+    BUNDLED_PICTURES[`../../../../server/src/plugin/market-covers/${path}`] ??
+    LOCAL_PICTURES[`../../../market-assets/${path}`]
+  );
+}
+
+/**
+ * GET /api/plugins/market as the server answers from the document this build embeds, with its
+ * popularity figures (placeholders, as the document's are for now). The server serves each
+ * picture from its own route; the gallery has none, so a picture is the cover this build ships,
+ * else the local copy of the community assets, and a picture it has neither of is left out — a
+ * cover then falls back to the generated one, as on a server that could not fetch it.
+ */
+function marketFixture(): PluginMarketResponse {
+  const doc = builtinMarket as MarketDocument;
+  const art: Record<string, PluginArt> = {};
+  for (const [name, entry] of Object.entries(doc.plugins)) {
+    const cover = entry.cover === undefined ? undefined : pictureUrl(entry.cover.src);
+    const thumb = entry.cover?.thumb === undefined ? undefined : pictureUrl(entry.cover.thumb);
+    const icon = entry.icon === undefined ? undefined : pictureUrl(entry.icon);
+    const screenshots = (entry.screenshots ?? []).flatMap((shot) => {
+      const url = pictureUrl(shot.src);
+      const thumbUrl = shot.thumb === undefined ? undefined : pictureUrl(shot.thumb);
+      if (url === undefined) return [];
+      return [
+        {
+          url,
+          ...(thumbUrl !== undefined ? { thumbUrl } : {}),
+          ...(shot.caption !== undefined ? { caption: shot.caption } : {}),
+          ...(shot.captionZh !== undefined ? { captionZh: shot.captionZh } : {}),
+        },
+      ];
+    });
+    art[name] = {
+      ...(cover !== undefined
+        ? {
+            cover: {
+              url: cover,
+              ...(thumb !== undefined ? { thumbUrl: thumb } : {}),
+              ...(entry.cover?.tone !== undefined ? { tone: entry.cover.tone } : {}),
+            },
+          }
+        : {}),
+      ...(icon !== undefined ? { icon: { url: icon } } : {}),
+      ...(screenshots.length > 0 ? { screenshots } : {}),
+    };
+  }
+  return {
+    hero: doc.hero,
+    selected: doc.selected,
+    art,
+    source: "embedded",
+    ...(doc.popularity !== undefined ? { popularity: doc.popularity } : {}),
+  };
+}
 
 /**
  * What a model is used with, as GET /models reports it: its own values, else its group's
@@ -181,13 +286,31 @@ export interface DemoFixtures {
   schedules: ProjectScheduleItem[];
   library: PluginLibraryResponse;
   pluginFiles: Record<string, Record<string, string>>;
-  /** Per Agent: its Skills and hook packages, and whether its Agent-wide workbench switch is off. */
+  /**
+   * Installed parts and the workbench settings for each Agent in this demo, and the workbenches
+   * library plugins installed on it (`pluginWorkbenches`, the Agent's plugin listing).
+   */
   installed: Record<
     string,
-    { skills: SkillMetadataItem[]; hooks: HookItem[]; workbenchesOff?: boolean }
+    {
+      skills: SkillMetadataItem[];
+      hooks: HookItem[];
+      workbenches?: WorkbenchInfo[];
+      pluginWorkbenches?: Array<{ name: string; plugin: string; version: string }>;
+      workbenchesOff?: boolean;
+    }
   >;
   installedPlugins: InstalledPluginsResponse;
+  /**
+   * How the library's server modules stand on the demo's server, and the administrator's ledger
+   * of requests to run them: none by default — the demo library has no plugin that is both — so
+   * a suite or a frame that wants the section populated puts its rows here.
+   */
+  pluginModules: PluginModuleStatus[];
+  pluginModuleRequests: PluginModuleRequest[];
   pluginIndex: PluginIndexResponse;
+  /** The market's curation: the selected plugins, which may lead, and their art. */
+  market: PluginMarketResponse;
   readmes: Record<string, string>;
   benchmarks: BenchmarkSummary[];
   benchmarkCases: Record<string, BenchmarkCaseSummary[]>;
@@ -233,6 +356,11 @@ export interface UsageDay {
   requests: number;
   completed: number;
   aborted: number;
+  /**
+   * A plugin's tool requests (`<package>:<operation>`): requests and cost like the rest, but
+   * their Tokens stay out of the Token figures. Absent on a chat turn's day.
+   */
+  purpose?: string;
 }
 
 export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFixtures {
@@ -372,7 +500,16 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
       systemPrompt,
       maxTurns: 40,
       model: { maxTokens: 32_000, thinkingLevel: "medium", timeoutMs: 120_000 },
-      compaction: { maxContextLength: 800_000, maxSessionTurns: 60, mode: "summarize" },
+      compaction: {
+        maxContextLength: 800_000,
+        maxSessionTurns: 60,
+        mode: "summarize",
+        maxRounds: 8,
+        reminder:
+          "Tool round {{ROUNDS_USED}} done. Reply with the summary as soon as the hand-off files are written.",
+        handoffNote:
+          "No summary of the earlier conversation could be written.\n\n{{ERROR}}\n\n{{USER_MESSAGES}}\n\n{{LAST_TURN}}\n\nTrace file: {{TRACE_PATH}}",
+      },
       memory: {
         enabled: true,
         prompt: "# Memory\n\n{{USER_MEMORY_INDEX}}",
@@ -808,85 +945,27 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
     shortDescriptionZh: zh,
     version,
   });
-  // The self-evolution toolkits and the evaluator are the shipped packages' own listings; the
-  // other groups are the demo's.
+  // The self-evolution toolkits, the evaluator and the market's plugins are the shipped
+  // packages' own listings, in their cards' categories; the demo adds a few of its own, and the
+  // server's order holds: categories in the library's order, plugins by name within each.
   const toolkits = rsiToolkitPlugins();
   const evaluationPlugin = agentEvaluationPlugin();
+  const supportPlugin = penguinSupportPlugin();
+  const market = marketPlugins();
+  const byName = (plugins: PluginItem[]) =>
+    [...plugins].sort((a, b) => a.name.localeCompare(b.name));
   const library: PluginLibraryResponse = {
     groups: [
       { id: "rsi", title: "Agent Self-Evolution", titleZh: "Agent 自进化", plugins: toolkits },
       {
-        id: "developer",
-        title: "Developer",
-        titleZh: "开发",
-        plugins: [
-          {
-            name: IDS.plugins.registry,
-            description:
-              "Answer questions about Claude Code from its documentation, with citations.",
-            descriptionZh: "基于 Claude Code 文档回答问题，并给出引用。",
-            shortDescription: "Claude Code docs, with citations",
-            shortDescriptionZh: "带引用的 Claude Code 文档问答",
-            version: "0.2.13",
-            package: `@penguinharness/${IDS.plugins.registry}`,
-            source: "builtin",
-            skills: [
-              skill(
-                "claude-code-expert",
-                "检索并引用 Claude Code 文档",
-                "Search and cite the Claude Code docs",
-                "2026.09.20.1",
-              ),
-              skill("docs-sync", "从上游同步文档语料库", "Sync the docs corpus from upstream"),
-            ],
-            hooks: [],
-            mcpServers: [],
-          },
-          {
-            name: "penguin-sdk",
-            description:
-              "Build with the PenguinHarness SDK: the Session, Agent State and AMSP record APIs.",
-            descriptionZh: "使用 PenguinHarness SDK 开发：Session、Agent State 与 AMSP 记录接口。",
-            version: "0.2.13",
-            package: "@penguinharness/penguin-sdk",
-            source: "builtin",
-            skills: [
-              skill("penguin-sdk", "PenguinHarness SDK 用法", "How to use the PenguinHarness SDK"),
-            ],
-            hooks: [],
-            mcpServers: [],
-          },
-          {
-            name: "web-design",
-            description: "Design and build web pages that do not read as templated defaults.",
-            descriptionZh: "设计并实现不像模板默认值的网页。",
-            version: "0.2.13",
-            package: "@penguinharness/web-design",
-            source: "builtin",
-            skills: [skill("web-design", "网页视觉设计", "Web visual design")],
-            hooks: [],
-            mcpServers: [],
-          },
-        ],
-      },
-      {
-        id: "office",
+        id: "office-productivity",
         title: "Office Productivity",
         titleZh: "办公效率",
-        plugins: [
-          {
-            name: "goal",
-            description:
-              "Run a Session round after round until an objective is met, within a token budget.",
-            descriptionZh: "在 Token 预算内一轮轮推进，直到达成目标。",
-            version: "0.2.13",
-            package: "@penguinharness/goal",
-            source: "builtin",
-            skills: [],
-            hooks: ["stop"],
-            hookVersion: "2026.09.02.1",
-            mcpServers: [],
-          },
+        plugins: byName([
+          ...market.office,
+          ...market.studios,
+          goalPlugin(),
+          supportPlugin,
           {
             name: "continual-learning",
             description: "Write what a Session learned into the Agent's memory when it ends.",
@@ -917,13 +996,43 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
             hooks: [],
             mcpServers: [],
           },
-        ],
+        ]),
+      },
+      {
+        id: "software-development",
+        title: "Software Development",
+        titleZh: "软件开发",
+        plugins: byName([
+          ...market.software,
+          {
+            name: IDS.plugins.registry,
+            description:
+              "Answer questions about Claude Code from its documentation, with citations.",
+            descriptionZh: "基于 Claude Code 文档回答问题，并给出引用。",
+            shortDescription: "Claude Code docs, with citations",
+            shortDescriptionZh: "带引用的 Claude Code 文档问答",
+            version: "0.2.13",
+            package: `@penguinharness/${IDS.plugins.registry}`,
+            source: "builtin",
+            skills: [
+              skill(
+                "claude-code-expert",
+                "检索并引用 Claude Code 文档",
+                "Search and cite the Claude Code docs",
+                "2026.09.20.1",
+              ),
+              skill("docs-sync", "从上游同步文档语料库", "Sync the docs corpus from upstream"),
+            ],
+            hooks: [],
+            mcpServers: [],
+          },
+        ]),
       },
       {
         id: "ai-app-development",
         title: "AI App Development",
         titleZh: "AI 应用开发",
-        plugins: [evaluationPlugin],
+        plugins: byName([...market.aiApp, evaluationPlugin]),
       },
     ],
   };
@@ -935,6 +1044,27 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
         "#!/usr/bin/env node\n// BM25 over corpus/*.md\n",
       "skills/docs-sync/SKILL.md":
         "---\nname: docs-sync\nversion: 2026.09.11.1\ndescription: Sync the docs corpus from upstream\n---\n\n# Docs sync\n",
+    },
+    // The market's detail shots open these: a Skill's head, and a workbench's manifest and page.
+    a2ui: {
+      "skills/a2ui/SKILL.md":
+        "---\nname: a2ui\nversion: 2026.11.04.1\ndescription: Make a reply easier to read and act on with rich blocks inside ordinary Markdown.\n---\n\n# A2UI interactive answers\n\nWrite a block as a fenced code block whose info string names it: `choice`, `form`, `steps`, `callout`, `chart`, `weather`, `clock`.\n\nRun `scripts/check.mjs` on the draft before sending it.\n",
+      "skills/a2ui/scripts/check.mjs":
+        "#!/usr/bin/env node\n// Validates every block of a draft reply and prints a self-review rubric.\n",
+    },
+    "penguin-support": {
+      "skills/penguin-support/SKILL.md":
+        "---\nname: penguin-support\nversion: 2026.10.14.2\ndescription: Answer PenguinHarness product questions from the official documentation and source code.\n---\n\n# PenguinHarness support\n\nSearch the docs first, then the source; cite every answer.\n",
+      "workbenches/support/package.json":
+        '{\n  "name": "penguin-support-workbench",\n  "penguin": { "version": "2026.11.04.1", "appCenter": { "show": true } }\n}\n',
+      "workbenches/support/ui/index.html":
+        '<!doctype html>\n<title>Support</title>\n<main id="app"></main>\n<script type="module" src="app.js"></script>\n',
+    },
+    "bento-studio": {
+      "workbenches/studio/package.json":
+        '{\n  "name": "bento-studio-workbench",\n  "penguin": { "version": "2026.11.14.1", "appCenter": { "show": true } }\n}\n',
+      "workbenches/studio/ui/index.html":
+        '<!doctype html>\n<title>AI PPT Workbench</title>\n<main id="deck"></main>\n<script type="module" src="app.js"></script>\n',
     },
     goal: {
       "hooks/hooks.json":
@@ -972,12 +1102,17 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
       ],
       hooks: [],
     },
-    // Every toolkit and the evaluator, each Skill wearing its plugin's icon, as an install writes it.
+    // Every toolkit and the evaluator, each Skill wearing its plugin's icon, as an install writes
+    // it; and the Q&A assistant, whose support workbench is on the App Center.
     [IDS.agents.general]: {
-      skills: [...toolkits, evaluationPlugin].flatMap((plugin) =>
+      skills: [...toolkits, evaluationPlugin, supportPlugin].flatMap((plugin) =>
         plugin.skills.map((s) => ({ ...s, ...(plugin.icon ? { icon: plugin.icon } : {}) })),
       ),
       hooks: [],
+      pluginWorkbenches: (supportPlugin.workbenches ?? []).map((w) => ({
+        ...w,
+        plugin: supportPlugin.name,
+      })),
     },
   };
 
@@ -1819,18 +1954,24 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
     const busy = day % 7 !== 0 && day % 7 !== 6;
     const scale = busy ? 1 : 0.25;
     const docsRequests = Math.round((6 + rnd() * 14) * scale);
+    const cacheRead = Math.round(docsRequests * (18_000 + rnd() * 9_000));
+    const cacheWrite = Math.round(docsRequests * (2_000 + rnd() * 1_500));
+    const output = Math.round(docsRequests * (900 + rnd() * 700));
+    const failed = rnd() < 0.15 ? 1 : 0;
+    const aborted = rnd() < 0.1 ? 1 : 0;
     usage.push({
       date,
       agentId: IDS.agents.docs,
       sessionId: day === 0 ? IDS.sessions.done : IDS.sessions.older[day % 4]!,
       provider: DEFAULT_MODEL.provider,
       modelId: DEFAULT_MODEL.modelId,
-      cacheRead: Math.round(docsRequests * (18_000 + rnd() * 9_000)),
-      cacheWrite: Math.round(docsRequests * (2_000 + rnd() * 1_500)),
-      output: Math.round(docsRequests * (900 + rnd() * 700)),
+      cacheRead,
+      cacheWrite,
+      output,
       requests: docsRequests,
-      completed: docsRequests - (rnd() < 0.15 ? 1 : 0),
-      aborted: rnd() < 0.1 ? 1 : 0,
+      // An aborted request is not a completed one: the success rate leaves it out of both sides.
+      completed: docsRequests - failed - aborted,
+      aborted,
     });
     if (day % 3 === 0) {
       const notesRequests = Math.round((2 + rnd() * 5) * scale);
@@ -1846,6 +1987,42 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
         requests: notesRequests,
         completed: notesRequests,
         aborted: 0,
+      });
+    }
+    // The docs Agent's tool requests through the multimodal-tools plugin: an image every few
+    // days, web searches on the busy ones (MMSP counts a search as 1,000 prompt tokens).
+    if (day % 4 === 1) {
+      const images = 1 + Math.round(rnd() * 2);
+      usage.push({
+        date,
+        agentId: IDS.agents.docs,
+        sessionId: IDS.sessions.older[day % 4]!,
+        provider: "openai",
+        modelId: "gpt-image-2.5-flare",
+        cacheRead: 0,
+        cacheWrite: images * 120,
+        output: images * 4_200,
+        requests: images,
+        completed: images,
+        aborted: 0,
+        purpose: "@penguinharness/multimodal-tools:t2i",
+      });
+    }
+    if (busy && day % 2 === 0) {
+      const searches = 2 + Math.round(rnd() * 4);
+      usage.push({
+        date,
+        agentId: IDS.agents.docs,
+        sessionId: day === 0 ? IDS.sessions.done : IDS.sessions.older[day % 4]!,
+        provider: "deepseek",
+        modelId: "deepseek-search",
+        cacheRead: 0,
+        cacheWrite: searches * 1_000,
+        output: 0,
+        requests: searches,
+        completed: searches,
+        aborted: 0,
+        purpose: "@penguinharness/multimodal-tools:search",
       });
     }
   }
@@ -1988,7 +2165,10 @@ export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFi
     pluginFiles,
     installed,
     installedPlugins,
+    pluginModules: [],
+    pluginModuleRequests: [],
     pluginIndex,
+    market: marketFixture(),
     readmes,
     benchmarks,
     benchmarkCases,

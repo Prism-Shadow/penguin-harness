@@ -16,22 +16,26 @@
  * same PUT's `providers`, which the far side merges per group and per field: a value we hold
  * replaces theirs, and one we do not hold is left as it is there.
  *
+ * The tool-model bindings (`[tools]`) travel in the same PUT, as a whole table: the machine's
+ * bindings follow ours exactly, so a binding cleared here is cleared there, and one whose model the
+ * sent table lacks is not sent. A machine on a build without bindings ignores the field.
+ *
  * A value this server takes from its own environment (an API key, a base URL) is not in the
  * config and so never travels; `envSourced` names each one, for the sync to say so.
  */
+import type {
+  ModelInfo,
+  ModelUpdateEntry,
+  ModelsResponse,
+  ModelsUpdateRequest,
+  ProviderConnectionUpdate,
+} from "@prismshadow/penguin-library-model";
 import type { MachineApi } from "./machine-api.js";
 import { effectiveConnection, providerConnectionShape } from "@prismshadow/penguin-core";
 import { catalogEntryFor } from "../model-catalog/catalog.js";
 import { modelEnvironment } from "../model-catalog/env-keys.js";
 import type { ModelEntry, ModelRef, ProviderTable } from "@prismshadow/penguin-core";
-import type {
-  ModelInfo,
-  ModelRefDto,
-  ModelUpdateEntry,
-  ModelsResponse,
-  ModelsUpdateRequest,
-  ProviderConnectionUpdate,
-} from "../api/types.js";
+import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
 
 /** This side's half of the merge: a Project's configured models and groups, keys in plaintext. */
 export interface LocalModels {
@@ -40,6 +44,8 @@ export interface LocalModels {
   providers?: ProviderTable;
   defaultModel?: ModelRef;
   visionModel?: ModelRef;
+  /** The tool-model bindings (`[tools]`), by key; absent = none. */
+  toolModels?: Record<string, ModelRef>;
   /** Display name, so a Project created on the machine reads as the same Project it is. */
   name?: string;
 }
@@ -206,6 +212,15 @@ export function planModelSync(local: LocalModels, remote: ModelsResponse): Model
       : undefined;
   const defaultModel = follow(local.defaultModel);
   const visionModel = follow(local.visionModel);
+  // The bindings follow ours as a whole table — absent keys are unbound over there too — limited
+  // to models in the table being sent, theirs included, which the PUT requires of each. Sent only
+  // when there is something to say: a binding of ours, or one of theirs to clear.
+  const sent = new Set(models.map((entry) => refKey(entry.provider, entry.modelId)));
+  const toolModels = Object.fromEntries(
+    Object.entries(local.toolModels ?? {})
+      .filter(([, ref]) => sent.has(refKey(ref.provider, ref.model_id)))
+      .map(([key, ref]) => [key, { provider: ref.provider, modelId: ref.model_id }] as const),
+  );
   const providers = Object.fromEntries(
     Object.entries(local.providers ?? {})
       .map(([id, connection]) => [id, providerFromLocal(connection)] as const)
@@ -215,6 +230,9 @@ export function planModelSync(local: LocalModels, remote: ModelsResponse): Model
     models,
     ...(defaultModel !== undefined ? { defaultModel } : {}),
     ...(visionModel !== undefined ? { visionModel } : {}),
+    ...(Object.keys(toolModels).length > 0 || Object.keys(remote.toolModels ?? {}).length > 0
+      ? { toolModels }
+      : {}),
     ...(Object.keys(providers).length > 0 ? { providers } : {}),
   };
 }

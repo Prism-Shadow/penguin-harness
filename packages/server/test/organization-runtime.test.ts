@@ -20,23 +20,23 @@ import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { parseOrgTriggerMessage, saveProjectConfig } from "@prismshadow/penguin-core";
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import { openDatabase } from "../src/db/database.js";
-import { MembersRepo } from "../src/db/repos/members.js";
-import { OrgCacheRepo } from "../src/db/repos/organizations.js";
-import { ProjectsRepo } from "../src/db/repos/projects.js";
-import { SessionsRepo } from "../src/db/repos/sessions.js";
-import { UsersRepo } from "../src/db/repos/users.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
+import { MembersRepo } from "@prismshadow/penguin-library-project/repos/members";
+import { OrgCacheRepo } from "@prismshadow/penguin-library-organization/organizations";
+import { ProjectsRepo } from "@prismshadow/penguin-library-project/repos/projects";
+import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
+import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
 import { OrgStore } from "../src/organization/store.js";
 import { parseChannelConfig, serializeCalendarEvent } from "../src/organization/files.js";
 import { DEFAULT_CHANNEL_ID, ticketPath } from "../src/organization/paths.js";
 import { zonedDate } from "../src/organization/zoned.js";
-import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
+import type { ErrorRecordArgs } from "@prismshadow/penguin-library-observability";
 import { DEFAULT_EMPLOYEE_PLUGINS } from "../src/runtime/organization/deps.js";
 import type { OrgDeps } from "../src/runtime/organization/deps.js";
 import { OrganizationScheduler } from "../src/runtime/organization/scheduler.js";
 import { OrganizationService } from "../src/runtime/organization/service.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
-import type { UtilityCompletion } from "../src/services/project-config-service.js";
+import type { UtilityCompletion } from "@prismshadow/penguin-library-project";
 import type { ServerEvent } from "../src/api/types.js";
 import { makeTempRoot } from "./helpers.js";
 
@@ -575,6 +575,21 @@ describe("organization runtime", () => {
 
       expect((await fs.stat(chartFile)).mtimeMs).toBe(stamp);
     });
+  });
+
+  it("refuses an organization naming no model while the Project has no default, creating nothing", async () => {
+    await saveProjectConfig(root, P, { models: [{ provider: "custom", model_id: "m-bench" }] });
+    await expect(
+      service.create(P, { orgId: ORG, mission: "Build it" }, "alice"),
+    ).rejects.toMatchObject({ status: 400, code: "no_default_model" });
+    expect(await store.exists(P, ORG)).toBe(false);
+    expect(existingAgents.has(CEO)).toBe(false);
+    await service.create(
+      P,
+      { orgId: ORG, mission: "Build it", model: { provider: "custom", modelId: "m-bench" } },
+      "alice",
+    );
+    expect(await store.exists(P, ORG)).toBe(true);
   });
 
   it("refuses a taken organization id and cleans up when the CEO cannot be created", async () => {

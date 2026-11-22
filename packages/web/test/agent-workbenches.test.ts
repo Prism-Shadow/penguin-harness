@@ -12,7 +12,12 @@
  *   or from its words; a refused write leaves it where the file says.
  * - The More menu's first row is the same App Center setting, checkable: picking it writes at once
  *   and the row's switch follows.
+ * - A machine's Agent has the App Center switch too, and it writes on that machine: the App
+ *   Center lists a machine's apps, and this is where one taken off it comes back.
  * - The row leads with the workbench's own App Center icon when it has one, else no image.
+ * - The More menu's sidebar row is checked by default; picking it writes the sidebar setting at
+ *   once and nothing of the App Center's, and a refused write puts it back.
+ * - "Open" on a workbench hidden from the sidebar opens its full page: it has no tab beside a chat.
  */
 import { createElement as h } from "react";
 import { afterEach, expect, it } from "vitest";
@@ -175,6 +180,25 @@ it("shows the workbench in the App Center from the More menu's checkable row, an
   ).toEqual([["PATCH", { show: true }]]);
   expect((await menuRow()).getAttribute("aria-checked")).toBe("true");
 });
+it("offers a machine's Agent the App Center switch too, and writes it on that machine", async () => {
+  setActiveStrings(en);
+  const server = agentServer(undefined, {
+    workbenches: [info([])],
+    machines: [{ machineId: "gpu1", alias: "gpu-box", agents: [AGENT_ID] }],
+  });
+  await mountAgentApp(h(AgentSettingsPage), {
+    at: `/agents/${AGENT_ID}?machine=gpu1&tab=workbenches`,
+  });
+  await waitFor(() => document.body.textContent?.includes("Support") === true);
+  await click(appCenterSwitch());
+  await waitFor(() => appCenterSwitch().getAttribute("aria-checked") === "true");
+  expect(
+    server
+      .writes()
+      .filter((request) => request.path.endsWith("/app-center"))
+      .map((request) => [request.machine, request.body]),
+  ).toEqual([["gpu1", { show: true }]]);
+});
 const row = () => appCenterSwitch().closest("li")!;
 it("leads the row with the workbench's own App Center icon", async () => {
   await open([], { icon: { url: "/api/icons/support.png?rev=1", tint: false } });
@@ -183,4 +207,49 @@ it("leads the row with the workbench's own App Center icon", async () => {
 it("leads the row with the anvil tile when the workbench names no icon", async () => {
   await open();
   expect(row().querySelector("img")).toBeNull();
+});
+/** The More menu's sidebar row, the menu opened for it. */
+async function sidebarRow() {
+  await click(button(`${en.workbenches.more} Support`));
+  return menuItem(en.workbenches.showInSidebar);
+}
+it("takes the workbench off the sidebar from the More menu, writing nothing of the App Center; a refused write puts it back", async () => {
+  const { server } = await open();
+  const sidebarWrites = () =>
+    server.writes().filter((request) => request.path.endsWith("/sidebar"));
+  expect((await sidebarRow()).getAttribute("aria-checked")).toBe("true");
+  server.refuseNext(500, "internal_error", "Disk full");
+  await click(menuItem(en.workbenches.showInSidebar));
+  await waitFor(() => sidebarWrites().length === 1);
+  const refused = await sidebarRow();
+  await waitFor(() => refused.getAttribute("aria-disabled") !== "true");
+  expect(refused.getAttribute("aria-checked")).toBe("true");
+
+  await click(refused);
+  await waitFor(() => sidebarWrites().length === 2);
+  const written = await sidebarRow();
+  await waitFor(() => written.getAttribute("aria-checked") === "false");
+  expect(sidebarWrites().map((request) => [request.method, request.body])).toEqual([
+    ["PATCH", { show: false }],
+    ["PATCH", { show: false }],
+  ]);
+  expect(server.writes().filter((request) => request.path.endsWith("/app-center"))).toEqual([]);
+  expect(appCenterSwitch().getAttribute("aria-checked")).toBe("false");
+});
+it("opens a workbench hidden from the sidebar on its full page", async () => {
+  setActiveStrings(en);
+  const tab = { id: "support.main", key: "main", title: "Support" };
+  agentServer(undefined, {
+    workbenches: [
+      info([{ ...tab, renderer: { iframe: { src: "/support" } } }], { showInSidebar: false }),
+    ],
+  });
+  const router = await mountAgentApp(h(AgentSettingsPage), {
+    at: `/agents/${AGENT_ID}?tab=workbenches`,
+    extra: [{ path: "/app/*", element: h("p", null, "Full page") }],
+  });
+  await waitFor(() => hasButton(`${en.workbenches.open} Support`));
+  await click(button(`${en.workbenches.open} Support`));
+  expect(whereIs(router)).toBe(`/app/${PROJECT_ID}/${AGENT_ID}/support/main`);
+  expect(document.body.textContent).toContain("Full page");
 });

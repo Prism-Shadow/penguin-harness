@@ -13,6 +13,20 @@
  * Project's default reference, 400 if there is none); the new Session is
  * added to session-manager's active table (state idle).
  */
+import type {
+  SessionCategory,
+  TraceIndex,
+  TraceIndexStore,
+} from "@prismshadow/penguin-library-trace";
+import type {
+  ApprovalMode,
+  SessionSandbox,
+  SessionSandboxPreset,
+  UnavailableSandboxBackend,
+  SessionIndex,
+  SessionOrigins,
+} from "@prismshadow/penguin-library-session";
+import type { ServerEvent, ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import fs from "node:fs/promises";
 import {
   agentsDir,
@@ -28,20 +42,14 @@ import type {
   ThinkingLevelName,
 } from "@prismshadow/penguin-core";
 import type {
-  ApprovalMode,
   MessagingChannel,
-  SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
-  SessionSandbox,
-  SessionSandboxPreset,
   SessionSource,
-  ServerEvent,
-  UnavailableSandboxBackend,
 } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { SessionManager } from "../runtime/session-manager.js";
 import {
   listCategory,
@@ -53,9 +61,6 @@ import {
 import type { ListingView } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { matchesWorkspaceGroup } from "./workspace-group.js";
-import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
-import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
-import type { ProjectConfigStore } from "../mechanisms/projects.js";
 import type { SandboxDimension, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { aboveSandboxCeiling } from "./sandbox-ceiling.js";
 
@@ -75,6 +80,15 @@ function networkOf(policy: SandboxSettings): SessionSandbox["network"] {
  * (`ceiling`), each preset wider than them is marked `aboveCeiling`, by the comparison
  * `applySandboxPick` refuses a non-admin's pick with.
  */
+
+/**
+ * The refusal of a Session created with no model in a Project that has no default model: a new
+ * Project starts with none until its owner chooses one. Worded for every caller — the Web App,
+ * the CLI, the Agent API — so it names both ways out.
+ */
+export const NO_DEFAULT_MODEL_MESSAGE =
+  "This Project has no default model. Name the model for this Session (provider and model id), or set the Project's default model first: Default model settings on the Models page, or `penguin config model default --provider <group> --model-id <id>`.";
+
 export function sessionSandboxOf(
   policy: SandboxSettings,
   dimensions: readonly SandboxDimension[] = [],
@@ -829,11 +843,7 @@ export class SessionService {
       // The guard above leaves only "both omitted" here: fall back to the Project default.
       const def = await this.deps.projectConfig.getDefaultModelRef(args.projectId);
       if (def === undefined) {
-        throw new HttpError(
-          400,
-          "no_default_model",
-          "This Project has no default model yet. Add a model on the Models page and set it as the default first.",
-        );
+        throw new HttpError(400, "no_default_model", NO_DEFAULT_MODEL_MESSAGE);
       }
       modelId = def.model_id;
       provider = def.provider;

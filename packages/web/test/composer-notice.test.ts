@@ -1,10 +1,12 @@
 /**
  * Which attention notice the composer raises above its input (features/chat/composer-notice.ts),
- * fed the way the conversation page feeds it: the Session's items through
- * `refusalHandoffOccurrence`. One slot, one notice at a time.
+ * fed the way the conversation page feeds it: the Session's items through `refusalHandoff`, its
+ * occurrence and the provider's words. One slot, one notice at a time.
  *
  * - Given the Session's latest compaction was forced by a refused request, the refusal notice
- *   takes the slot, over a small window too, the same live and rebuilt from history.
+ *   takes the slot, over a small window too, carrying the provider's own words — the same live
+ *   and rebuilt from history.
+ * - Given a refusal the provider gave no words for, the notice is raised without any.
  * - Dismissing it puts that occurrence down: the small-window notice comes through, and the next
  *   refusal is raised again; a later compaction that ends otherwise takes it down by itself.
  * - With no refusal, the small-window notice is raised while the window is below the threshold,
@@ -21,11 +23,12 @@ import {
 } from "@prismshadow/amsp";
 import type { AmspRecord } from "@prismshadow/amsp";
 import { composerNotice } from "../src/features/chat/composer-notice";
-import { refusalHandoffOccurrence } from "../src/lib/amsp/compaction-summary";
+import { refusalHandoff } from "../src/lib/amsp/compaction-summary";
 import {
   createStreamModel,
   pushMessage,
   pushMessages,
+  type ChatItem,
   type StreamModel,
 } from "../src/lib/amsp/stream-model";
 
@@ -39,12 +42,12 @@ const stamped = (sec: number, msg: AmspRecord): AmspRecord => ({
 });
 
 /** A request the provider refuses as sent, and the hand-off span that answers it. */
-const refused = (sec: number): AmspRecord[] =>
+const refused = (sec: number, errorMessage: string | null = REFUSAL): AmspRecord[] =>
   [
     requestBegin(),
     requestEnd("retryable", {
       errorCode: "rejected",
-      errorMessage: REFUSAL,
+      ...(errorMessage !== null ? { errorMessage } : {}),
       attempt: 2,
       retryInMs: 0,
     }),
@@ -54,9 +57,15 @@ const refused = (sec: number): AmspRecord[] =>
       mode: "summarize",
       status: "completed",
       errorCode: "rejected",
-      errorMessage: REFUSAL,
+      ...(errorMessage !== null ? { errorMessage } : {}),
     }),
   ].map((msg) => stamped(sec, msg));
+
+/** The Session's refusal hand-off as the conversation page hands it to the composer. */
+const handoffOf = (items: readonly ChatItem[]) => {
+  const found = refusalHandoff(items);
+  return found && { occurrence: found.occurrence, message: found.item.errorMessage };
+};
 
 /** The notice the composer of Session `s1` raises over `model`, with these settings. */
 const noticeFor = (
@@ -67,7 +76,7 @@ const noticeFor = (
   composerNotice({
     sessionId: "s1",
     model: MODEL,
-    refusalHandoff: refusalHandoffOccurrence(model.items),
+    refusalHandoff: handoffOf(model.items),
     contextWindow: settings.contextWindow,
     compactionLimit: settings.compactionLimit,
     dismissed,
@@ -76,17 +85,28 @@ const noticeFor = (
 const SMALL_WINDOW = { contextWindow: 128_000, compactionLimit: 256_000 };
 
 describe("the composer's attention notice", () => {
-  it("is the refusal's, over a small window too, the same live and rebuilt from history", () => {
+  it("is the refusal's, over a small window too, carrying the provider's own words, the same live and rebuilt from history", () => {
     const live = createStreamModel();
     const records = [stamped(0, userText("fix the links")), ...refused(10)];
     for (const msg of records) pushMessage(live, msg);
     const rebuilt = createStreamModel();
     pushMessages(rebuilt, records);
     for (const m of [live, rebuilt]) {
-      expect(noticeFor(m, new Set())).toMatchObject({ kind: "refused" });
-      expect(noticeFor(m, new Set(), SMALL_WINDOW)).toMatchObject({ kind: "refused" });
+      expect(noticeFor(m, new Set())).toMatchObject({ kind: "refused", message: REFUSAL });
+      expect(noticeFor(m, new Set(), SMALL_WINDOW)).toMatchObject({
+        kind: "refused",
+        message: REFUSAL,
+      });
     }
     expect(noticeFor(rebuilt, new Set())).toEqual(noticeFor(live, new Set()));
+  });
+
+  it("is raised without any words for a refusal the provider gave none for", () => {
+    const m = createStreamModel();
+    for (const msg of refused(10, null)) pushMessage(m, msg);
+    const notice = noticeFor(m, new Set());
+    expect(notice).toMatchObject({ kind: "refused" });
+    expect(notice).toHaveProperty("message", undefined);
   });
 
   it("once dismissed, lets the small-window notice through, and is raised again for the next refusal", () => {
@@ -144,7 +164,7 @@ describe("the composer's attention notice", () => {
       composerNotice({
         sessionId: undefined,
         model: MODEL,
-        refusalHandoff: refusalHandoffOccurrence(m.items),
+        refusalHandoff: handoffOf(m.items),
         ...SMALL_WINDOW,
         dismissed: new Set(),
       }),

@@ -1,9 +1,12 @@
 /**
  * The App Center: a Project's home screen of workbench shortcuts, and the one manifest key behind
- * it. A workbench asks to be shown with `penguin.appCenter` in its own package.json, beside
+ * it. A workbench says how it is shown with `penguin.appCenter` in its own package.json, beside
  * `penguin.version` and `penguin.modules`:
  *
- *   "appCenter": { "show": true, "title"?: "…", "titleZh"?: "…", "icon"?: "ui/icon.svg", "tab"?: "<key>" }
+ *   "appCenter": { "show"?: false, "title"?: "…", "titleZh"?: "…", "icon"?: "ui/icon.svg", "tab"?: "<key>" }
+ *
+ * Every workbench is shown unless it says `show: false`: one with no `appCenter`, or one without
+ * `show`, is shown (SHOWN_UNLESS_SAID), so an app an Agent wrote without the key is found.
  *
  * The files are the truth. The shortcut list is read from the manifests, each folder's last load
  * status (`.build/status.json`) and whether a load of it is under way, never by loading a
@@ -18,6 +21,10 @@
  * A declaration that does not hold up (a wrong type, an icon outside `ui/`, missing, too large or
  * not a clean image of the format its name says, a tab the manifest does not contribute) is not a
  * load error: the workbench loads as before, has no shortcut, and its load hints name the fix.
+ *
+ * The same reader answers an Agent's sidebar list (GET …/workbenches?view=sidebar) with another
+ * filter: every workbench with a tab whose installation carries no `.hidden-from-sidebar` marker,
+ * declared for the App Center or not. It compiles nothing either.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -25,12 +32,27 @@ import { iconImage, MAX_ICON_BYTES } from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
 import type { IconRef } from "../api/types.js";
 import { iconRev } from "../http/icon-response.js";
-import type { AppCenterShortcut, WorkbenchAppCenter } from "../mechanisms/workbenches.js";
+import type { AppCenterShortcut, WorkbenchAppCenter } from "@prismshadow/penguin-library-workbench";
 import { readLoadStatus } from "./compile.js";
-import { isSafeRelPath, isSwitchedOff, isWorkbenchId, TMP_SUFFIX, UI_DIR } from "./store.js";
+import {
+  HIDDEN_FROM_SIDEBAR,
+  isSafeRelPath,
+  isSwitchedOff,
+  isWorkbenchId,
+  TMP_SUFFIX,
+  UI_DIR,
+} from "./store.js";
 
 const TITLE_MAX = 60;
 const TABS_KEY = "WebModule.sessionTabs";
+
+/**
+ * What a workbench that does not say `show` gets: shown. This also puts every workbench written
+ * before the default changed, and so without the key, in the App Center (compat C2 option a,
+ * pending the user's choice). `false` restores the earlier rule, where only `show: true` made a
+ * shortcut.
+ */
+const SHOWN_UNLESS_SAID = true;
 
 /** A tab as the manifest writes it, read without the load's checks: what a shortcut's defaults need. */
 interface ManifestTab {
@@ -115,9 +137,10 @@ async function checkDeclaration(
   value: unknown,
   tabs: readonly ManifestTab[],
 ): Promise<Checked> {
-  if (!isRecord(value)) return { problem: 'it must be an object such as { "show": true }' };
+  if (!isRecord(value)) return { problem: 'it must be an object such as { "show": false }' };
   const { show, title, titleZh, icon, tab } = value;
-  if (typeof show !== "boolean") return { problem: '"show" must be true or false' };
+  if (show !== undefined && typeof show !== "boolean")
+    return { problem: '"show" must be true or false' };
   const titled = titleProblem("title", title) ?? titleProblem("titleZh", titleZh);
   if (titled !== null) return { problem: titled };
   let file: IconImage | null = null;
@@ -133,7 +156,7 @@ async function checkDeclaration(
   }
   return {
     appCenter: {
-      show,
+      show: show ?? SHOWN_UNLESS_SAID,
       ...(typeof title === "string" ? { title } : {}),
       ...(typeof titleZh === "string" ? { titleZh } : {}),
       ...(typeof icon === "string" ? { icon } : {}),
@@ -163,8 +186,19 @@ async function readDeclaration(
   const penguin = isRecord(pkg) && isRecord(pkg["penguin"]) ? pkg["penguin"] : null;
   if (penguin === null) return { manifest: { name, tabs: [], hint: null }, icon: null };
   const tabs = manifestTabs(penguin);
-  if (penguin["appCenter"] === undefined)
-    return { manifest: { name, tabs, hint: null }, icon: null };
+  // No declaration reads as the default, shown. The manifest reports that effective value, so the
+  // row's switch reads what the App Center does.
+  if (penguin["appCenter"] === undefined) {
+    return {
+      manifest: {
+        name,
+        tabs,
+        ...(SHOWN_UNLESS_SAID ? { appCenter: { show: true } } : {}),
+        hint: null,
+      },
+      icon: null,
+    };
+  }
   const checked = await checkDeclaration(dir, penguin["appCenter"], tabs);
   if ("problem" in checked) {
     const hint =
@@ -228,37 +262,58 @@ export function appCenterIconRef(
   return { url: `${base}/app-center/icon?rev=${icon.rev}`, tint: icon.tint };
 }
 
-/** The shortcut a shown declaration makes: its titles, icon URL, the page it opens, its build. */
+/**
+ * The shortcut a workbench makes: its titles, icon URL, the page it opens, its build. What the
+ * declaration leaves out (or all of it, for a workbench the sidebar lists without one) comes
+ * from its first tab, then its package name.
+ */
 function shortcutOf(
   projectId: string,
   agent: { agentId: string; agentName: string },
   workbenchId: string,
-  manifest: AppCenterManifest & { appCenter: WorkbenchAppCenter },
+  manifest: AppCenterManifest,
   build: Pick<AppCenterShortcut, "build" | "error">,
 ): AppCenterShortcut {
   const { appCenter, tabs } = manifest;
   const first = tabs[0];
-  const titleZh = appCenter.titleZh ?? first?.titleZh;
-  const tab = appCenter.tab ?? first?.key;
+  const titleZh = appCenter?.titleZh ?? first?.titleZh;
+  const tab = appCenter?.tab ?? first?.key;
   const page = `/app/${segment(projectId)}/${segment(agent.agentId)}/${segment(workbenchId)}`;
   return {
     agentId: agent.agentId,
     agentName: agent.agentName,
     workbenchId,
-    title: appCenter.title ?? first?.title ?? manifest.name,
+    title: appCenter?.title ?? first?.title ?? manifest.name,
     ...(titleZh !== undefined ? { titleZh } : {}),
     ...(manifest.icon !== undefined
       ? { icon: appCenterIconRef(projectId, agent.agentId, workbenchId, manifest.icon) }
       : {}),
-    path: appCenter.tab !== undefined ? `${page}/${segment(appCenter.tab)}` : page,
+    path: appCenter?.tab !== undefined ? `${page}/${segment(appCenter.tab)}` : page,
     ...(tab !== undefined ? { tab } : {}),
     ...build,
   };
 }
 
 /**
+ * Which of an Agent's workbenches a listing keeps: the App Center's tiles, or the rows of the
+ * Agent's sidebar list (GET …/workbenches?view=sidebar).
+ */
+export type ShortcutView = "appCenter" | "sidebar";
+
+/**
+ * Whether a workbench whose own switch is on belongs in `view`. The App Center keeps a
+ * declaration that holds up and is shown. The sidebar keeps one with at least one tab whose
+ * installation carries no `.hidden-from-sidebar` marker, declared for the App Center or not.
+ */
+async function inView(view: ShortcutView, dir: string, manifest: AppCenterManifest) {
+  if (view === "sidebar")
+    return manifest.tabs.length > 0 && !(await isSwitchedOff(dir, HIDDEN_FROM_SIDEBAR));
+  return manifest.appCenter?.show === true;
+}
+
+/**
  * One Agent's shortcuts, by title: every folder under `base` with a package.json whose
- * declaration holds up and says `show: true`, and whose own switch is on (one turned off serves
+ * declaration holds up and is shown (not `show: false`), and whose own switch is on (one turned off serves
  * nothing, so it has no tile; the caller leaves out an Agent whose Agent-wide switch is off). `building` says whether a load of a folder is under
  * way or queued in this process; the caller keeps that, this module keeps no state.
  */
@@ -267,6 +322,8 @@ export async function agentShortcuts(
   agent: { agentId: string; agentName: string },
   base: string,
   building: (workbenchId: string) => boolean,
+  /** Which filter: the App Center's, or the sidebar's ({@link inView}); the reading is the same. */
+  view: ShortcutView = "appCenter",
 ): Promise<AppCenterShortcut[]> {
   const entries = await fs.readdir(base, { withFileTypes: true }).catch(() => []);
   const out: AppCenterShortcut[] = [];
@@ -274,10 +331,9 @@ export async function agentShortcuts(
     if (!entry.isDirectory() || !isWorkbenchId(entry.name)) continue;
     const dir = path.join(base, entry.name);
     const manifest = await readAppCenterManifest(dir, entry.name);
-    if (manifest.appCenter?.show !== true || (await isSwitchedOff(dir))) continue;
-    const shown = { ...manifest, appCenter: manifest.appCenter };
+    if (!(await inView(view, dir, manifest)) || (await isSwitchedOff(dir))) continue;
     const build = await buildOf(dir, building(entry.name));
-    out.push(shortcutOf(projectId, agent, entry.name, shown, build));
+    out.push(shortcutOf(projectId, agent, entry.name, manifest, build));
   }
   return out.sort(
     (a, b) => a.title.localeCompare(b.title) || a.workbenchId.localeCompare(b.workbenchId),

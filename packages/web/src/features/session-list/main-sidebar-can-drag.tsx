@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { loadPinnedSessions } from "./pinned-sessions";
 import { loadWorkspaceRegistry } from "./workspace-registry";
@@ -76,7 +76,7 @@ export function useMainSidebarCanDrag(scope: ReturnType<typeof useMainSidebarSea
   const [renamingSession, setRenamingSession] = useState<SessionInfo | null>(null);
   const [renameText, setRenameText] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
-  const [renameError, setRenameError] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState<ReactNode>(null);
   /** Session whose messaging-binding dialog is open (null = none). */
   const [messagingSession, setMessagingSession] = useState<SessionInfo | null>(null);
   return {

@@ -20,8 +20,8 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "../../../web/src/app";
 import { bootWeb } from "../../../web/src/web-root";
-import { requestSettings } from "../../../web/src/lib/settings-request";
-import type { SettingsSectionKey } from "../../../web/src/lib/settings-sections";
+import { requestSettings, requestSettingsPage } from "../../../web/src/lib/settings-request";
+import type { HostSettingsSectionKey } from "../../../web/src/lib/settings-sections";
 import "./app.css";
 import { parseFrameParams } from "./frame";
 import { installGuestFrame } from "./guest-frame";
@@ -30,7 +30,7 @@ import { getStore } from "./mock/store";
 import { rsiPrompt } from "./mock/rsi-transcript";
 import { installEvolutionAutoplay } from "./evolution-autoplay";
 
-/** The dialog's pages, as `open=settings.<page>` may name them. */
+/** The dialog's own pages, as `open=settings.<page>` may name them. */
 const SETTINGS_PAGES = [
   "profile",
   "general",
@@ -41,9 +41,12 @@ const SETTINGS_PAGES = [
   "company",
   "plugins",
   "users",
-] as const satisfies readonly SettingsSectionKey[];
+] as const satisfies readonly HostSettingsSectionKey[];
 
-const isSettingsPage = (value: string): value is SettingsSectionKey =>
+/** The pages a shipped plugin contributes, as the same parameter may name them. */
+const CONTRIBUTED_SETTINGS_PAGES: readonly string[] = ["storage"];
+
+const isSettingsPage = (value: string): value is HostSettingsSectionKey =>
   (SETTINGS_PAGES as readonly string[]).includes(value);
 
 const params = parseFrameParams(window.location.search);
@@ -86,7 +89,8 @@ void bootWeb().then((Root) => {
 
   if (params.open === "settings" || params.open?.startsWith("settings.")) {
     const page = params.open.slice("settings.".length);
-    requestSettings(isSettingsPage(page) ? { section: page } : {});
+    if (CONTRIBUTED_SETTINGS_PAGES.includes(page)) requestSettingsPage({ section: page });
+    else requestSettings(isSettingsPage(page) ? { section: page } : {});
   }
 
   // What the screenshot script waits for: the app mounted and its fonts loaded.

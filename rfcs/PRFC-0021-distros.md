@@ -1,4 +1,4 @@
-# PRFC-0021 Distro Channels: the shared vocabulary of how the harness reaches a machine
+# PRFC-0021 Penguin Distro Channels
 
 [中文版](PRFC-0021-distros.zh.md)
 

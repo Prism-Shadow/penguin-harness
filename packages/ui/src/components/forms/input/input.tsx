@@ -153,7 +153,8 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   info?: ReactNode;
   /** Accessible name for that "?" (defaults to the generic "More info"). */
   infoLabel?: string;
-  error?: string;
+  /** The error under the box: a rule's words, or a failure's with 「[报告问题]」 after them. */
+  error?: ReactNode;
   /**
    * Marks the field red without rendering error text: use this when the input has a custom
    * wrapper (a trailing menu button, say) and the caller places the error text outside that

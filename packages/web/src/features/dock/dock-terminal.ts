@@ -12,7 +12,6 @@
  * terminal at all until its first send.
  */
 import { useSyncExternalStore } from "react";
-import { toastError } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { onCommand } from "../../lib/shortcuts/dispatcher";
 import {
@@ -41,6 +40,7 @@ import {
   type DockPosition,
 } from "./dock-state";
 import { revealDocks } from "./dock-reveal";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** The terminal panel's id in the registry and the dock store (and its stored tab key). */
 export const TERMINAL_PANEL = "terminal";
@@ -221,7 +221,11 @@ export async function createShell(position?: DockPosition): Promise<boolean> {
         ? `${message} — ${S.terminal.noTerminalApi}`
         : message;
     console.error("[terminal] create failed:", detail);
-    toastError(`${S.terminal.createFailed}: ${detail}`);
+    toastApiError(err, {
+      text: `${S.terminal.createFailed}: ${detail}`,
+      what: "a terminal could not be started",
+      privatePaths: [workspace ?? HOME_CWD],
+    });
     return false;
   } finally {
     void refreshTerminals();

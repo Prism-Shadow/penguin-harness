@@ -1,0 +1,76 @@
+# The computer-use plugin on a real desktop, on each operating system it supports: agent-desktop
+# installed by the plugin's own installer from the npm registry, then commands through the
+# plugin's own command handler (plugins/computer-use/scripts/smoke.mjs says what each runner
+# checks). Its unit suites run in CI with the other plugins; this job is what they cannot show —
+# the pinned program, downloaded and verified, operating a real window.
+#
+# Path-filtered: it runs when the plugin or this file changes, on any pull request whatever its
+# base, and by hand.
+name: Computer Use smoke
+
+on:
+  pull_request:
+    paths:
+      - "plugins/computer-use/**"
+      - ".github/workflows/computer-use-smoke.yml"
+  push:
+    branches: [main]
+    paths:
+      - "plugins/computer-use/**"
+      - ".github/workflows/computer-use-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: computer-use-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          build: "@penguinharness/computer-use..."
+
+      # Linux: a desktop session without one — Xvfb, a session bus (dbus-run-session), the
+      # accessibility bus, and a window manager, which agent-desktop needs to prove windows.
+      - name: Desktop packages (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q xvfb dbus-x11 at-spi2-core openbox python3-gi gir1.2-gtk-3.0
+
+      - name: Smoke (Linux)
+        if: runner.os == 'Linux'
+        env:
+          FIXTURE_PYTHON: /usr/bin/python3
+        run: |
+          dbus-run-session -- bash -c '
+            set -e
+            Xvfb :99 -screen 0 1280x800x24 -nolisten tcp &
+            sleep 1
+            export DISPLAY=:99 XDG_SESSION_TYPE=x11
+            /usr/libexec/at-spi-bus-launcher --launch-immediately &
+            sleep 1
+            openbox &
+            sleep 1
+            /usr/bin/python3 -I plugins/computer-use/scripts/gtk-fixture.py &
+            echo $! > "$RUNNER_TEMP/fixture.pid"
+            sleep 2
+            # Not the last command: bash would exec node in its own place, which makes the
+            # fixture (started by this shell) a child of the smoke — one it must refuse.
+            FIXTURE_PID_FILE="$RUNNER_TEMP/fixture.pid" node plugins/computer-use/scripts/smoke.mjs
+            exit $?
+          '
+
+      - name: Smoke (${{ runner.os }})
+        if: runner.os != 'Linux'
+        run: node plugins/computer-use/scripts/smoke.mjs

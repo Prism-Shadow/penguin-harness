@@ -10,6 +10,35 @@
  * pairing of request_begin/end, tool call duration pairing, reconnect / compaction
  * counts, and Token trend.
  */
+import type {
+  AgentTraceSessionEntry,
+  AgentTracesResponse,
+  RequestSpan,
+  SessionCategory,
+  SessionContextParts,
+  ToolCallSpan,
+  TraceAnalysisResponse,
+  TraceEventsResponse,
+  TraceFileInfo,
+  TraceImportResponse,
+  TraceModelSegment,
+  TraceOtherSpan,
+  TraceTaskStats,
+  TraceToolSpan,
+  UsageTrendPointInTrace,
+  ForkTraceResult,
+  HistoryTraceFile,
+  HistoryWindowRead,
+  ImportedSession,
+  MessageCursor,
+  MessagesPageRequest,
+  MessagesPageResult,
+  RecordSource,
+  WindowPriorStats,
+  TraceIndex,
+  TraceIndexStore,
+  Traces,
+} from "@prismshadow/penguin-library-trace";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -31,31 +60,16 @@ import {
   resumeTrace,
   scratchpadDir,
   tracesDir,
+  updatedModel,
 } from "@prismshadow/penguin-core";
 import type { CompactionMode, AmspRecord } from "@prismshadow/penguin-core";
 import { promptLabel } from "./trace-prompt-label.js";
+import type { SessionCategoryCounts, HistoryMessage, TracePosition } from "../api/types.js";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type {
-  AgentTraceSessionEntry,
-  AgentTracesResponse,
-  RequestSpan,
-  SessionCategory,
-  SessionCategoryCounts,
-  SessionContextParts,
-  HistoryMessage,
-  TracePosition,
-  ToolCallSpan,
-  TraceAnalysisResponse,
-  TraceEventsResponse,
-  TraceFileInfo,
-  TraceImportResponse,
-  TraceModelSegment,
-  TraceOtherSpan,
-  TraceTaskStats,
-  TraceToolSpan,
-  UsageTrendPointInTrace,
-} from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
-import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
+  TraceFileRow,
+  TraceSessionRow,
+} from "@prismshadow/penguin-library-trace/repos/trace-index";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
 import {
@@ -65,8 +79,9 @@ import {
   sumCostParts,
   ZERO_COST_PARTS,
 } from "./usage-service.js";
-import type { PricingLookup, TieredRates } from "./usage-service.js";
-import type { ProjectConfigStore } from "../mechanisms/projects.js";
+import type { TieredRates } from "@prismshadow/penguin-library-model";
+import type { PricingLookup } from "./usage-service.js";
+import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import {
   cloneScanState,
   deserializePrefix,
@@ -77,26 +92,19 @@ import {
   scanMessages,
   serializePrefix,
 } from "./message-window.js";
-import type {
-  ChildAggregate,
-  MessageCursor,
-  ScanState,
-  WindowPriorStats,
-} from "./message-window.js";
+import type { ChildAggregate, ScanState } from "./message-window.js";
 import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdown.js";
 import { sessionIdCreatedAt } from "./session-service.js";
 import { listCategory, listingMarksOf, readRecordedSource } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { TraceLineIndex } from "./trace-line-index.js";
 import type { TraceLineIndexEntry } from "./trace-line-index.js";
-import type { RecordSource } from "./history-layout.js";
 import { fileIdentityOf } from "./history-wire.js";
 import { traceRecordImage, withImagesByReference } from "./trace-images.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { elideHistoryRecord } from "@prismshadow/penguin-core/interfaces";
 import type { Paths } from "../hmr/capabilities.js";
-import type { TraceIndex, TraceIndexStore, Traces } from "../mechanisms/traces.js";
-import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
+import type { SessionIndex, SessionOrigins } from "@prismshadow/penguin-library-session";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -131,6 +139,11 @@ function isAssistantText(msg: AmspRecord): boolean {
     typeof p.text === "string" &&
     p.text.trim() !== ""
   );
+}
+
+/** A `session_update`: a Session-level setting changed, at a Task boundary (see SessionUpdatePayload). */
+function isSessionUpdate(msg: AmspRecord): boolean {
+  return msg.type === "event_msg" && (msg.payload as { type?: string }).type === "session_update";
 }
 
 function isTaskStartingUser(msg: AmspRecord): boolean {
@@ -251,81 +264,16 @@ interface LocatedFile {
 }
 
 /** A windowed history read's request shape (see readMessagesPage). */
-export type MessagesPageRequest = (
-  { kind: "tail"; limit: number } | { kind: "before"; cursor: MessageCursor; limit: number }
-) & {
-  /**
-   * The window's byte budget as the `history` stream sends its records — images by reference
-   * and bodies elided (core's history-elision.ts) — capped at MESSAGES_PAGE_MAX_BYTES. Absent:
-   * MESSAGES_PAGE_MAX_BYTES of records with their bodies whole, as `/messages` serves them.
-   */
-  budget?: number;
-};
 
 /**
  * A history window with where each record was read from: what `readMessagesPage` (or, for
  * `full`, `readMessages`) returns, plus `sources`, parallel to `messages` — the input of the
  * history layout (history-layout.ts) and of each record's body refs.
  */
-export interface HistoryWindowRead {
-  messages: HistoryMessage[];
-  sources: RecordSource[];
-  /** The window's page facts; absent for the full transcript. */
-  page?: Omit<MessagesPageResult, "messages">;
-}
 
 /** One Trace file of a Session or a descendant, as the machine leg of a history stream reads it. */
-export interface HistoryTraceFile {
-  agentId: string;
-  sessionId: string;
-  fileIndex: number;
-  path: string;
-  /** Inode and device, decimal: an NTFS file id passes 2^53. */
-  ino: string;
-  dev: string;
-  birthtimeMs: number;
-  /** Bytes, as the line index last saw the file. */
-  size: number;
-  /** One past the last `\n`: whole lines end here; an unterminated tail lies beyond. */
-  scanned: number;
-  /** Each record's first byte and one past its last, by ordinal (trace-line-index.ts). */
-  starts: number[];
-  ends: number[];
-  /** A rotated shard (its Session has a newer one): it never changes again. */
-  final: boolean;
-}
 
 /** A windowed history read's result (route maps it onto MessagesResponse.page). */
-export interface MessagesPageResult {
-  /** The window's records with their `tracePosition`, images still inline (the route references them). */
-  messages: AmspRecord[];
-  /** Cursor of the window's first unit; absent = the window reaches the beginning. */
-  before?: string;
-  /** Cumulative stats before the window (earlierTurns = prior.turns). */
-  prior: WindowPriorStats;
-  /** The units (Tasks) the window holds: the scanner's boundaries from its start on. */
-  units: number;
-  /**
-   * The model of the context the window starts in: the `session_meta` heading the shard its
-   * first unit lies in. One shard is one model context, and a window that starts partway into
-   * one does not hold that record. Absent for an empty transcript.
-   */
-  contextModel?: { provider: string; modelId: string };
-  /** Agent State directory from the same context's metadata, for memory-change detection. */
-  agentState?: string;
-}
-
-export interface ForkTraceResult {
-  sessionId: string;
-  createdAt: string;
-  /**
-   * The model the fork resumes on: the `session_meta` of the shard the cut falls in. Each shard
-   * records its own context's model, so a source that switched models mid-way forks onto the
-   * model that was serving the selected reply, not the one the source runs on today.
-   */
-  provider: string;
-  modelId: string;
-}
 
 /**
  * Per-request expansion context: `projectScanned` caps the miss-path force reconcile at
@@ -390,10 +338,6 @@ export interface TraceSessionIndex {
 }
 
 /** One Session's Trace files to import: each one's date directory, index and content. */
-export interface ImportedSession {
-  sessionId: string;
-  files: readonly { date: string; index: number; body: string }[];
-}
 
 /** TraceService wiring (the trace-file index is required: every listing/locating path serves from it — no directory walks). */
 /** One Session's classification result (see classify): its sidebar category + Workspace path ("" = unknown). */
@@ -976,8 +920,16 @@ export class TraceService implements Traces {
       streamed && unitRecords.size > 0
         ? [...unitRecords.keys()].sort((a, b) => a - b).flatMap((k) => unitRecords.get(k)!)
         : await this.expandMessages(projectId, windowRaw, ctx);
-    // The start shard was read for the window above, so its head is on hand.
-    const startMeta = shardMessages.get(start.pos)?.find(isSessionMeta);
+    // The start shard was read for the window above, so its head is on hand. A completed
+    // switch's session_update ahead of the window's start in that shard names the model the
+    // context from there on runs on (the next Task's task_begin can sit behind it, before the
+    // next file opens): the window would otherwise seed the model left behind.
+    const startShard = shardMessages.get(start.pos);
+    const startMeta = startShard?.find(isSessionMeta);
+    let switchedModel: { provider: string; model_id: string } | undefined;
+    for (const m of startShard?.slice(0, start.ordinal) ?? []) {
+      switchedModel = updatedModel(m) ?? switchedModel;
+    }
     return {
       messages: expanded,
       ...(before !== undefined ? { before } : {}),
@@ -985,10 +937,10 @@ export class TraceService implements Traces {
       units: windowUnits,
       ...(startMeta
         ? {
-            contextModel: {
-              provider: startMeta.payload.provider,
-              modelId: startMeta.payload.model_id,
-            },
+            contextModel:
+              switchedModel !== undefined
+                ? { provider: switchedModel.provider, modelId: switchedModel.model_id }
+                : { provider: startMeta.payload.provider, modelId: startMeta.payload.model_id },
             agentState: startMeta.payload.agent_state,
           }
         : {}),
@@ -1141,12 +1093,14 @@ export class TraceService implements Traces {
     for (let i = position.ordinal + 1; i < targetShard.length; i++) {
       const msg = targetShard[i]!;
       const p = msg.payload as { type?: string; status?: string };
-      // The next user Task and housekeeping compaction both belong after the selected reply —
-      // the next Task from its task_begin on, so the fork never ends on an unclosed one.
+      // The next user Task, housekeeping compaction and a model switch all belong after the
+      // selected reply — the next Task from its task_begin on, so the fork never ends on an
+      // unclosed one; a switch's session_update closes the context it copies.
       if (
         isTaskStartingUser(msg) ||
         isTaskBegin(msg) ||
-        (msg.type === "event_msg" && p.type === "compaction_begin")
+        (msg.type === "event_msg" && p.type === "compaction_begin") ||
+        isSessionUpdate(msg)
       ) {
         break;
       }
@@ -1175,7 +1129,8 @@ export class TraceService implements Traces {
     const firstMeta = shards.flat().find(isSessionMeta);
     if (!firstMeta) throw invalid("The source Trace has no session metadata.");
     // The fork's model is the target shard's: one shard is one model context, and a model
-    // switch opens the next context in a new shard headed by its own session_meta.
+    // switch's next context opens a new shard headed by its own session_meta (the cut stops
+    // at the switch's session_update, above).
     const targetMeta = targetShard.find(isSessionMeta) ?? firstMeta;
     const model = { provider: targetMeta.payload.provider, modelId: targetMeta.payload.model_id };
 
@@ -1949,9 +1904,12 @@ export class TraceService implements Traces {
       // created, and its timestamp has nothing to do with this turn (it also gets
       // rewritten verbatim at the start of a new file after compaction splits the file).
       if (messages[k]!.type === "session_meta") continue;
-      // Nor do Task records: the next Task's task_begin can sit at the end of this turn's
-      // file (behind a closing compaction), written when that next Task started.
+      // Nor do Task records, nor a completed switch's session_update: the next Task's
+      // task_begin can sit at the end of this turn's file (behind a closing compaction or
+      // switch), written when that next Task started, and the switch happens at a Task
+      // boundary, possibly hours after this turn ended.
       if (isTaskRecord(messages[k]!)) continue;
+      if (isSessionUpdate(messages[k]!)) continue;
       const ts = messages[k]!.timestamp;
       if (t.endTs === "" || ts > t.endTs) t.endTs = ts;
     }
