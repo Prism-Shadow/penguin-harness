@@ -6,7 +6,7 @@
  *   returns to the grid with the tile marked running, and the tile brings back the same frame;
  *   the window's close returns to the grid; "Open full screen" in the tile's menu opens the full
  *   page, whose exit comes back to the App Center. The App Center switch on the workbench's row (the Plugins
- *   tab's Workbenches sub-page) takes the tile off (the empty page offers Create with AI) and puts
+ *   tab's Workbenches sub-page) takes the tile off and puts
  *   it back.
  * - With three workbenches of a fresh account's Agent: a real pointer drag of one tile onto the
  *   middle of another rings the target while it hovers and makes a folder on release, which
@@ -79,7 +79,14 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await expect(toggle).toBeEnabled({ timeout: 30_000 });
 
   await page.goto(`${BASE}/apps`);
-  await expect(page.getByText("No apps from agents yet")).toBeVisible();
+  await expect(grid).toBeVisible();
+  await expect(tile).toHaveCount(0);
+  const { shortcuts } = await (
+    await page.request.get(`${BASE}/api/projects/default_project/app-center`)
+  ).json();
+  await expect(page.getByText("No apps from agents yet")).toBeVisible({
+    visible: shortcuts.length === 0,
+  });
   await expect(page.getByRole("button", { name: "Create with AI" })).toBeVisible();
 
   await openSupportRow(page);
@@ -134,7 +141,21 @@ test.beforeAll(async ({ browser }) => {
   await provisionAndLogin(seed.request, U, P);
   const projectId = (await (await seed.request.get(`${BASE}/api/projects`)).json()).projects[0]
     .projectId;
-  const base = `${BASE}/api/projects/${projectId}/agents/default_agent/workbenches`;
+  const project = `${BASE}/api/projects/${projectId}`;
+  const { shortcuts } = await (await seed.request.get(`${project}/app-center`)).json();
+  // This fixture tests the exact order of three apps. Fresh Projects can also ship workbenches.
+  for (const { agentId, workbenchId } of shortcuts) {
+    if (agentId === "default_agent" && APPS.some((title) => title.toLowerCase() === workbenchId))
+      continue;
+    const hidden = await seed.request.patch(
+      `${project}/agents/${agentId}/workbenches/${workbenchId}/app-center`,
+      {
+        data: { show: false },
+      },
+    );
+    expect(hidden.ok(), await hidden.text()).toBeTruthy();
+  }
+  const base = `${project}/agents/default_agent/workbenches`;
   for (const title of APPS) {
     const id = title.toLowerCase();
     const imported = await seed.request.post(`${base}/archive`, {
