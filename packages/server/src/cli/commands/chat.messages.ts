@@ -46,6 +46,9 @@ export interface ChatText {
   /** The banner's model when the chat names none and the Project's default model cannot be read. */
   chatProjectDefaultModel(): string;
 
+  /** The banner's model when the chat names none and the Project has no default model. */
+  chatNoDefaultModel(): string;
+
   /** `/goal` usage error (missing objective / malformed command). */
   goalUsage(): string;
 
@@ -130,6 +133,9 @@ export const chatEn: ChatText = {
 
   chatProjectDefaultModel: () => "the Project's default model",
 
+  chatNoDefaultModel: () =>
+    "none — the Project has no default model; pick one with /switch-model <provider> <model_id>",
+
   goalUsage: () => "Usage: /goal[:<budget>] <objective>  (e.g. /goal:500k fix all failing tests)",
 
   thinkingCurrent: (level) =>
@@ -204,6 +210,9 @@ export const chatZh: ChatText = {
   chatMessageKept: () => "消息没有发出：按回车键重新发送。",
 
   chatProjectDefaultModel: () => "Project 的默认模型",
+
+  chatNoDefaultModel: () =>
+    "未设置——Project 没有默认模型，请用 /switch-model <分组> <模型 id> 选一个",
 
   goalUsage: () => "用法：/goal[:<预算>] <目标>（例如 /goal:500k 修复所有失败的测试）",
 

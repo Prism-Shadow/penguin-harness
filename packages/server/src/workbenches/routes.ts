@@ -3,6 +3,9 @@
  *
  *   GET    /                       the Agent's workbenches, disabled ones included, and the
  *                                  Agent-wide switch (loads any that run and changed on disk)
+ *   GET    /?id=<id>               the same answer for that one workbench alone (none when there
+ *                                  is no such workbench): only it is loaded, so a page opened on
+ *                                  its own does not wait for the Agent's other workbenches
  *   GET    /?view=sidebar          the rows of the Agent's sidebar list: a shortcut for each
  *                                  workbench that runs, has a tab and is not hidden from the
  *                                  sidebar (manifests and load status only: nothing is compiled)
@@ -72,6 +75,7 @@ import { forwardToMachine } from "../machines/proxy.js";
 import { MachineSocketRelay } from "../machines/socket-relay.js";
 import type { Machines } from "../machines/service.js";
 import type { Workbenches } from "../mechanisms/workbenches.js";
+import type { VersionAuthor } from "./git-identity.js";
 import type { WorkbenchRequest, WorkbenchResponse } from "@prismshadow/penguin-library-workbench";
 import {
   parseAppCenterLayout,
@@ -88,7 +92,7 @@ import {
 import { migrateWorkbenches } from "./migrate.js";
 import { withUiRuntime } from "./page-html.js";
 import { etagMatches, isPageSdkName, PAGE_SDK_CONTENT_TYPE, pageSdkFile } from "./page-sdk.js";
-import { WorkbenchDisabled, contributedAppIcon, WorkbenchNotFound } from "./service.js";
+import { contributedAppIcon, WorkbenchNotFound } from "./service.js";
 import { workbenchManifest } from "./manifest.js";
 import { isWorkbenchId, readFolder, workbenchesDir } from "./store.js";
 
@@ -475,11 +479,28 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     return { projectId, agentId };
   };
+  /**
+   * The member a version a request records is by: their display name, when they set one.
+   * Accounts hold no email, so its email is the server's (../workbenches/git-identity.ts).
+   */
+  const by = (c: { var: AppEnv["Variables"] }): VersionAuthor | undefined => {
+    const name = c.var.user.displayName?.trim();
+    return name ? { name } : undefined;
+  };
   app.get("/", async (c) => {
     const { projectId, agentId } = scope(c);
     if (c.req.query("view") === "sidebar") {
       const apps = await deps.workbenches.sidebar(projectId, agentId);
       return c.json({ apps } satisfies WorkbenchSidebarResponse);
+    }
+    const only = c.req.query("id");
+    if (only !== undefined) {
+      const workbench = await deps.workbenches.one(projectId, agentId, only);
+      const enabled = await deps.workbenches.agentEnabled(projectId, agentId);
+      return c.json({
+        workbenches: workbench === null ? [] : [workbench],
+        enabled,
+      } satisfies WorkbenchesResponse);
     }
     const workbenches = await deps.workbenches.list(projectId, agentId);
     const enabled = await deps.workbenches.agentEnabled(projectId, agentId);
@@ -505,7 +526,7 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
   app.put("/:id/enabled", async (c) => {
     const { projectId, agentId, enabled } = await switchRequest(c);
     const workbench = await deps.workbenches
-      .setEnabled(projectId, agentId, c.req.param("id"), enabled)
+      .setEnabled(projectId, agentId, c.req.param("id"), enabled, by(c))
       .catch(notFound);
     return c.json({ workbench });
   });
@@ -562,7 +583,7 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
         });
       }
       await writeWorkbenchSource(dir, parsed.files);
-      return deps.workbenches.reloadIfEnabled(projectId, agentId, id).catch(notFound);
+      return deps.workbenches.reloadIfEnabled(projectId, agentId, id, by(c)).catch(notFound);
     });
     return c.json({ workbench } satisfies WorkbenchArchiveInstallResponse, 201);
   });
@@ -589,7 +610,7 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
   app.post("/:id/reload", async (c) => {
     const { projectId, agentId } = scope(c);
     const workbench = await deps.workbenches
-      .reload(projectId, agentId, c.req.param("id"))
+      .reload(projectId, agentId, c.req.param("id"), by(c))
       .catch(notFound);
     return c.json({ workbench });
   });
@@ -607,7 +628,7 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     if (typeof body.revision !== "string")
       throw new HttpError(400, "bad_request", "revision is required");
     const workbench = await deps.workbenches
-      .rollback(projectId, agentId, c.req.param("id"), body.revision)
+      .rollback(projectId, agentId, c.req.param("id"), body.revision, by(c))
       .catch(notFound);
     return c.json({ workbench });
   });
@@ -631,7 +652,7 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
     const body = await readJson(c);
     if (typeof body.show !== "boolean") throw badRequest("show must be true or false");
     const workbench = await deps.workbenches
-      .setAppCenter(projectId, agentId, c.req.param("id"), body.show)
+      .setAppCenter(projectId, agentId, c.req.param("id"), body.show, by(c))
       .catch(notFound);
     return c.json({ workbench } satisfies WorkbenchAppCenterResponse);
   });
@@ -645,7 +666,7 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
 
   app.delete("/:id", async (c) => {
     const { projectId, agentId } = scope(c);
-    await deps.workbenches.remove(projectId, agentId, c.req.param("id")).catch(notFound);
+    await deps.workbenches.remove(projectId, agentId, c.req.param("id"), by(c)).catch(notFound);
     return c.body(null, 204);
   });
 
@@ -700,18 +721,14 @@ export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
 
   // The same files for every workbench, but only under one that exists: a page of another
   // Project, or of a workbench since removed, gets the 404 its own files would, and one that
-  // is turned off the 409 its own files would.
+  // is turned off the 409 its own files would. Asked of that one folder, not of the listing:
+  // the listing loads every workbench of the Agent that runs.
   app.get("/:id/sdk/:file", async (c) => {
     const { projectId, agentId } = scope(c);
     const id = c.req.param("id");
     const name = c.req.param("file");
-    const missing = () =>
-      new HttpError(404, "not_found", "No such workbench, or no such file in its sdk/.");
-    if (!isPageSdkName(name)) throw missing();
-    const workbench = (await deps.workbenches.list(projectId, agentId)).find((w) => w.id === id);
-    if (workbench === undefined) throw missing();
-    if (workbench.enabled === false || !(await deps.workbenches.agentEnabled(projectId, agentId)))
-      throw new WorkbenchDisabled(id);
+    if (!isPageSdkName(name) || !(await deps.workbenches.exists(projectId, agentId, id)))
+      throw new HttpError(404, "not_found", "No such workbench, or no such file in its sdk/.");
     const { body, etag } = await pageSdkFile(name);
     const headers = { "content-type": PAGE_SDK_CONTENT_TYPE, "cache-control": "no-cache", etag };
     if (etagMatches(c.req.header("if-none-match"), etag)) return c.body(null, 304, headers);

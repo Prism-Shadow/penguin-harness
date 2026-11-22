@@ -1,8 +1,8 @@
 /**
- * browser_extensions: the Chromes paired to each user (the PenguinHarness Browser extension,
- * builtin-browser/extension-pairing.ts). A row holds the hash of the extension's long-lived
- * token, never the token; a revoked row stays, so a socket presenting its token is told it was
- * revoked (close 4003) rather than merely refused.
+ * browser_extensions: the Chromes paired to each user (the PenguinHarness Browser extension;
+ * plugins/browser-automation/src/server/extension-pairing.ts). A row holds the hash of the
+ * extension's long-lived token, never the token; a revoked row stays, so a socket presenting its
+ * token is told it was revoked (close 4003) rather than merely refused.
  */
 import type { DatabaseSync } from "node:sqlite";
 

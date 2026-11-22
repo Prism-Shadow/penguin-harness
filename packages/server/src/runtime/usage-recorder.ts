@@ -46,7 +46,12 @@ export class UsageRecorder implements UsageRecording {
   @Use() private readonly clock!: Clock;
   @Use() private readonly projects!: Projects;
 
-  /** Standalone usage (such as titles) is billed without metering the Session's active request. */
+  /**
+   * Standalone usage — a request beside the Session's own (its title, or a tool request through
+   * ProjectModelRequests) — never touches the Session's request bookkeeping: its `token_usage` is
+   * one row, and its failed `request_end` one 0-token row with the status, even while the Session's
+   * own request or compaction is in flight. `ctx.purpose` is written to the row as it is.
+   */
   async record(
     ctx: UsageContext,
     msg: AmspRecord,
@@ -77,20 +82,23 @@ export class UsageRecorder implements UsageRecording {
     const originSessionId =
       msg.origin && msg.origin.length > 0 ? msg.origin[msg.origin.length - 1]! : null;
     const requestSessionId = originSessionId ?? ctx.sessionId;
-    if (payload.type === "compaction_begin") this.compacting.add(requestSessionId);
-    else if (payload.type === "compaction_end") this.compacting.delete(requestSessionId);
-    if (
-      (payload.type === "request_begin" || payload.type === "request_end") &&
-      this.compacting.has(requestSessionId)
-    ) {
-      return;
+    const standalone = source === "standalone";
+    if (!standalone) {
+      if (payload.type === "compaction_begin") this.compacting.add(requestSessionId);
+      else if (payload.type === "compaction_end") this.compacting.delete(requestSessionId);
+      if (
+        (payload.type === "request_begin" || payload.type === "request_end") &&
+        this.compacting.has(requestSessionId)
+      ) {
+        return;
+      }
+      if (payload.type === "request_begin") {
+        this.requests.set(requestSessionId, false);
+        return;
+      }
     }
-    if (payload.type === "request_begin") {
-      this.requests.set(requestSessionId, false);
-      return;
-    }
-    const metered = this.requests.get(requestSessionId) === true;
-    if (payload.type === "request_end") this.requests.delete(requestSessionId);
+    const metered = !standalone && this.requests.get(requestSessionId) === true;
+    if (payload.type === "request_end" && !standalone) this.requests.delete(requestSessionId);
     // A request that outlived its Project's deletion (past the deletion's wait) is billed to
     // nothing: its row would outlive the Project, and count for a later one given its id.
     const billable = payload.type === "token_usage" || payload.type === "request_end";
@@ -113,6 +121,7 @@ export class UsageRecorder implements UsageRecording {
       originSessionId,
       provider: ref.provider,
       modelId: ref.modelId,
+      ...(ctx.purpose !== undefined ? { purpose: ctx.purpose } : {}),
     };
 
     if (payload.type === "token_usage" && payload.request) {

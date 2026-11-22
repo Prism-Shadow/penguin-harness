@@ -68,6 +68,7 @@ import { agentApiConcurrency } from "./steps/2026-10-14-agent-api-concurrency.js
 import { agentApiSessionSettings } from "./steps/2026-10-14-agent-api-session-settings.js";
 import { machinesAdoptedAt } from "./steps/2026-10-16-machines-adopted-at.js";
 import { userDrafts } from "./steps/2026-10-26-user-drafts.js";
+import { usageRecordsPurpose } from "./steps/2026-11-19-usage-records-purpose.js";
 import { pluginModuleRequests } from "./steps/2026-11-19-plugin-module-requests.js";
 import { pluginModulePreinstalls } from "./steps/2026-11-19-plugin-module-preinstalls.js";
 
@@ -103,6 +104,7 @@ export const MIGRATIONS: readonly Migration[] = [
   machinesAdoptedAt,
   modelTablesAdoption,
   userDrafts,
+  usageRecordsPurpose,
   pluginModuleRequests,
   pluginModulePreinstalls,
 ];

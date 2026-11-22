@@ -244,6 +244,34 @@ export class PluginModulesService implements PluginModules {
     }
   }
 
+  async askForPackage(
+    projectId: string,
+    pkg: string,
+    actor: ModuleActor,
+    agentId: string | null,
+  ): Promise<PluginModuleAction[]> {
+    const plugin = pkg.replace(/^@[^/]+\//, "");
+    const row = this.ledger.get(pkg);
+    if (row !== null && row.decision === "declined") return [{ plugin, action: "blocked" }];
+    if (row === null || row.decision !== null) {
+      this.ledger.upsert({
+        package: pkg,
+        plugin,
+        projectId,
+        agentId,
+        requestedBy: actor.userId,
+        requestedAt: this.now(),
+        decision: null,
+        decidedBy: null,
+        decidedAt: null,
+        via: null,
+      });
+      this.say(pkg, "requested", projectId, actor.userId, null);
+      this.announce(projectId);
+    }
+    return [{ plugin, action: "requested" }];
+  }
+
   async requests(): Promise<PluginModuleRequestsResponse> {
     const rows = this.ledger.list();
     const running = this.running();
@@ -277,6 +305,7 @@ export class PluginModulesService implements PluginModules {
         preinstalled: await isPreinstalled(row.package, bases),
         systemApp: await isSystemAppModule(row.package, bases),
         state: stateOf(row.package, running, closure).state,
+        onServer: !("error" in (await readPluginDeclaration(row.package, bases))),
       });
     }
     return { requests, pending: rows.filter((r) => r.decision === null).length };
@@ -318,6 +347,15 @@ export class PluginModulesService implements PluginModules {
           409,
           "project_gone",
           `The Project that asked for ${pkg} is gone: the request can only be declined.`,
+        );
+      }
+      // A package asked for before it was on this server (askForPackage) is installed there
+      // first, by the administrator's Plugins page; until then there is nothing to list.
+      if ("error" in (await readPluginDeclaration(pkg, this.bases()))) {
+        throw new HttpError(
+          409,
+          "plugin_not_on_server",
+          `${pkg} is not on this server yet: install it on the server first, then enable it.`,
         );
       }
       const took = await this.listHere(projectId, pkg);

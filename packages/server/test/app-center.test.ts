@@ -19,6 +19,8 @@
  * - Given a workbench whose last load failed, its shortcut reads failed, with the error its
  *   status file records when it records one.
  * - Given a user outside the Project, the list is refused.
+ * - Given a workbench a library plugin installed (its `.plugin.json` receipt), its shortcut names
+ *   that plugin; one written by hand names none.
  *
  * Where a build stands, with a load held inside the workbench's own create():
  * - Given a load under way, the shortcut reads building, even over a failed status file, and
@@ -90,6 +92,7 @@ const BUILDER = "builder";
 const GALLERY = "gallery";
 const BAD_ICONS = "badicons";
 const ICON_ROW = "iconrow";
+const RECEIPTS = "receipts";
 const DEFAULTED = "defaulted";
 
 const tab = (key: string, title: string, titleZh?: string) => ({
@@ -368,6 +371,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
   let owner: ReturnType<typeof apiClient>;
   let member: ReturnType<typeof apiClient>;
   let stranger: ReturnType<typeof apiClient>;
+  let preinstalled: Set<string>;
 
   beforeAll(async () => {
     t = await createTestApp();
@@ -376,6 +380,12 @@ describe("the App Center", { timeout: 30_000 }, () => {
     stranger = apiClient(t.app, (await provisionUser(t.app, "stranger")).cookie);
     const project = await owner.post("/api/projects", { projectId: PROJECT, name: "home" });
     expect(project.status, await project.text()).toBe(201);
+    // What the new Project's default Agent ships, read from its folder. Not through the App
+    // Center: listing it starts a watcher on each Agent's workbenches, so the fixtures written
+    // below on this Agent would load (and fail, having no index.ts) 300 ms after their last
+    // write. On a slow runner that happens before the first case, which expects them never built.
+    const shipped = path.join(agentStateDir(t.root, PROJECT, AGENT), "workbenches");
+    preinstalled = new Set((await fs.readdir(shipped)).map((id) => `${AGENT}/${id}`));
     const joined = await owner.post(`/api/projects/${PROJECT}/members`, { userId: "member" });
     expect(joined.status, await joined.text()).toBe(201);
     for (const [agentId, name] of [
@@ -385,6 +395,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
       [GALLERY, "Gallery"],
       [BAD_ICONS, "Bad icons"],
       [ICON_ROW, "Icon row"],
+      [RECEIPTS, "Receipts"],
       [DEFAULTED, "Defaulted"],
     ] as const) {
       const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId, name });
@@ -469,6 +480,26 @@ describe("the App Center", { timeout: 30_000 }, () => {
       const declared = packageJson({ appCenter: { show: true, icon } });
       await writeWorkbench(t.root, BAD_ICONS, id, declared, { [icon]: bytes });
     }
+    // The receipt a library install writes into the folder, naming the plugin it came from.
+    const receipt = JSON.stringify({
+      name: "installed",
+      plugin: "demo-plugin",
+      version: "2026.11.04.1",
+      files: ["package.json"],
+    });
+    await writeWorkbench(
+      t.root,
+      RECEIPTS,
+      "installed",
+      packageJson({ tabs: [tab("main", "Installed")], appCenter: { show: true } }),
+      { ".plugin.json": receipt },
+    );
+    await writeWorkbench(
+      t.root,
+      RECEIPTS,
+      "handmade",
+      packageJson({ tabs: [tab("main", "Handmade")], appCenter: { show: true } }),
+    );
   }, 30_000);
   afterAll(async () => {
     await t.cleanup();
@@ -493,7 +524,11 @@ describe("the App Center", { timeout: 30_000 }, () => {
   };
 
   it("lists one shortcut per shown workbench, Agents in list order and titles in order within one, and compiles nothing to do it", async () => {
-    const listed = (await shortcuts()).filter((s) => s.agentId === AGENT || s.agentId === LATER);
+    const listed = (await shortcuts()).filter(
+      (s) =>
+        (s.agentId === AGENT || s.agentId === LATER) &&
+        !preinstalled.has(`${s.agentId}/${s.workbenchId}`),
+    );
     const boardIcon = new RegExp(`^${iconRoute(AGENT, "board")}\\?rev=[0-9a-f]{12}$`);
     expect(listed).toEqual([
       {
@@ -570,6 +605,18 @@ describe("the App Center", { timeout: 30_000 }, () => {
     await expect(fs.stat(path.join(dir, ".build"))).rejects.toThrow();
   });
 
+  it("ships Image Studio as a bilingual shortcut on a new Project's default Agent", async () => {
+    expect(preinstalled.has(`${AGENT}/images`)).toBe(true);
+    expect(await shortcutOf(AGENT, "images")).toMatchObject({
+      title: "Image Studio",
+      titleZh: "图像工作室",
+      path: `/app/${PROJECT}/${AGENT}/images`,
+      tab: "main",
+      build: "ready",
+      icon: { url: expect.stringContaining(iconRoute(AGENT, "images")) },
+    });
+  });
+
   it.each(["hidden", "garbled"])(
     "gives %s no shortcut: it is declared off, or declares nothing readable",
     async (id) => {
@@ -610,6 +657,13 @@ describe("the App Center", { timeout: 30_000 }, () => {
 
   it("refuses the list to a user outside the Project", async () => {
     expect((await stranger.get(`/api/projects/${PROJECT}/app-center`)).status).toBe(404);
+  });
+
+  it("names the plugin that installed a workbench, and none for one written by hand", async () => {
+    expect((await shortcutOf(RECEIPTS, "installed"))?.plugin).toBe("demo-plugin");
+    const handmade = await shortcutOf(RECEIPTS, "handmade");
+    expect(handmade?.workbenchId).toBe("handmade");
+    expect(handmade).not.toHaveProperty("plugin");
   });
 
   it("reads building while a load is under way, over a failed status, and ready once it ends; the start is announced once", async () => {

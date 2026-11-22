@@ -13,7 +13,15 @@
  * sentence says what the status means for this plugin — the failure reason, the machines it runs
  * on, how many Agents are behind.
  */
-import { Badge, ICONS, StatusMark, type ToneName } from "@prismshadow/penguin-ui";
+import {
+  Badge,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  StatusMark,
+  type ToneName,
+} from "@prismshadow/penguin-ui";
 import type { ReactNode } from "react";
 import type { IconRef } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
@@ -52,8 +60,20 @@ const STATUS_TONE: Record<PluginStatus, ToneName | undefined> = {
   available: undefined,
 };
 
-/** A plugin's status as the UI package's mark: its glyph in its tone, its word, `hint` on hover. */
-export function PluginStatusMark({ status, hint }: { status: PluginStatus; hint: string }) {
+/**
+ * A plugin's status as the UI package's mark: its glyph in its tone, its word, `hint` on hover.
+ * `wordless` is the cover card's: the glyph alone, the word leading the hover sentence and
+ * staying the accessible text (the card shares its facts line with its controls).
+ */
+export function PluginStatusMark({
+  status,
+  hint,
+  wordless = false,
+}: {
+  status: PluginStatus;
+  hint: string;
+  wordless?: boolean;
+}) {
   const tone = STATUS_TONE[status];
   return (
     <StatusMark
@@ -61,8 +81,30 @@ export function PluginStatusMark({ status, hint }: { status: PluginStatus; hint:
       {...(tone !== undefined ? { tone } : {})}
       label={S.plugins.status[status]}
       hint={hint}
+      wordless={wordless}
       data-testid="plugin-status"
     />
+  );
+}
+
+/**
+ * How many Agents of this Project use a plugin, as the cover card draws it: the people glyph and
+ * the count, the sentence ("used by 2 agents") on hover and as the accessible text — the count
+ * alone does not say what it counts.
+ */
+export function PluginUsedByMark({ count }: { count: number }) {
+  const sentence = S.plugins.usedByAgents(count);
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center ${ICON_GAP.tight} tabular-nums`}
+      data-tooltip={sentence}
+      data-tooltip-content="text"
+      data-testid="plugin-used-by"
+    >
+      <GlyphIcon d={ICONS.users} size={ICON_SIZE.inlineGlyph} />
+      <span aria-hidden>{count}</span>
+      <span className="sr-only">{sentence}</span>
+    </span>
   );
 }
 
@@ -238,6 +280,16 @@ export function pluginTags(
     );
   }
   return tags;
+}
+
+/**
+ * What this build cannot run of a server module, as a sentence: why it is disabled, or which
+ * part of it is not in use; undefined for a row that runs whole.
+ */
+export function rowNote(row: PluginRow): string | undefined {
+  const mod = row.module;
+  if (mod?.unsatisfied === undefined) return undefined;
+  return mod.state === "disabled" ? mod.unsatisfied : S.plugins.runsPartly(mod.unsatisfied);
 }
 
 /** The icon a row is drawn with, when it has one: the library plugin's, else the index entry's. */

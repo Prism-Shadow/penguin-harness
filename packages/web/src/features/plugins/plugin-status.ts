@@ -196,14 +196,15 @@ export function libraryUsage(
   agents: ReadonlyArray<UsageAgent>,
   installed: InstalledMap,
 ): LibraryUsage {
-  const behind = agents
+  const targets = [...new Map(agents.map((agent) => [agent.agentId, agent])).values()];
+  const behind = targets
     .filter(
       (agent) =>
         agent.pluginUpdates.some((update) => update.name === plugin.name) &&
         pluginPresent(plugin, installed.get(agent.agentId)),
     )
     .map((agent) => agent.agentId);
-  const using = agents.filter(
+  const using = targets.filter(
     (agent) =>
       behind.includes(agent.agentId) || pluginComplete(plugin, installed.get(agent.agentId)),
   );

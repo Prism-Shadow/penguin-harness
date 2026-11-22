@@ -40,6 +40,7 @@ export const SURFACE_IDS = [
   "benchmark-detail",
   "settings",
   "settings-appearance",
+  "settings-storage",
   "desktop-window",
   "login",
 ] as const;
@@ -87,6 +88,12 @@ export const SURFACES: readonly Surface[] = [
     group: "system",
     route: "/chat/s-hooks-index",
     open: "settings.appearance",
+  },
+  {
+    id: "settings-storage",
+    group: "system",
+    route: "/chat/s-hooks-index",
+    open: "settings.storage",
   },
   // A page whose scroller fills the main column, so its scrollbar runs to the window's corner.
   { id: "desktop-window", group: "system", route: "/plugins", window: "win32" },

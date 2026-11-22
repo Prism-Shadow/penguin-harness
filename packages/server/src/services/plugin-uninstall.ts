@@ -47,6 +47,34 @@ const exists = (file: string): Promise<boolean> =>
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
+/** The parts of plugin `name` an Agent carries, by the records the header names; nothing is changed. */
+export async function pluginPartsOn(
+  deps: Pick<PluginUninstallDeps, "root" | "library">,
+  projectId: string,
+  agentId: string,
+  name: string,
+): Promise<{ workbenches: string[]; mcpServers: string[]; hook: boolean; skills: string[] }> {
+  const workbenches = (await listInstalledWorkbenches(deps.root, projectId, agentId))
+    .filter((w) => w.plugin === name)
+    .map((w) => w.name);
+  const mcpServers = (
+    await listInstalledMcpServers(deps.root, projectId, agentId).catch(
+      (): InstalledMcpServer[] => [],
+    )
+  )
+    .map((server) => server.entry)
+    .filter((entry) => entry.plugin === name)
+    .map((entry) => entry.name);
+  const hook = await exists(path.join(hooksDir(deps.root, projectId, agentId), name, "hooks.json"));
+  const skills: string[] = [];
+  for (const { name: skill } of deps.library.get(name)?.skills ?? []) {
+    if (await exists(path.join(skillsDir(deps.root, projectId, agentId), skill, "SKILL.md"))) {
+      skills.push(skill);
+    }
+  }
+  return { workbenches, mcpServers, hook, skills };
+}
+
 /**
  * Removes every part of plugin `name` from the Agent (see the file header), in order:
  * workbenches, MCP servers, the hook package, Skills. Null when the Agent has no part of it.
@@ -81,10 +109,9 @@ export async function uninstallAgentPlugin(
     }
   };
 
-  const workbenches = (await listInstalledWorkbenches(deps.root, projectId, agentId)).filter(
-    (w) => w.plugin === name,
-  );
-  for (const { name: id } of workbenches) {
+  // Named before any write, so a write that fails can say which parts it left.
+  const held = await pluginPartsOn(deps, projectId, agentId, name);
+  for (const id of held.workbenches) {
     const done = await attempt("workbench", [id], () =>
       deps.workbenches.remove(projectId, agentId, id).then(
         () => true,
@@ -98,17 +125,8 @@ export async function uninstallAgentPlugin(
     if (done) removed.workbenches.push(id);
   }
 
-  // Named before the write, so a write that fails can say which servers it left.
-  const servers = (
-    await listInstalledMcpServers(deps.root, projectId, agentId).catch(
-      (): InstalledMcpServer[] => [],
-    )
-  )
-    .map((server) => server.entry)
-    .filter((entry) => entry.plugin === name)
-    .map((entry) => entry.name);
-  if (servers.length > 0) {
-    await attempt("mcpServer", servers, async () => {
+  if (held.mcpServers.length > 0) {
+    await attempt("mcpServer", held.mcpServers, async () => {
       removed.mcpServers.push(
         ...(await uninstallPluginMcpServers(deps.root, projectId, agentId, name)),
       );
@@ -117,7 +135,7 @@ export async function uninstallAgentPlugin(
   }
 
   // A hook package is a folder holding hooks.json, as the hooks routes count one.
-  if (await exists(path.join(hooksDir(deps.root, projectId, agentId), name, "hooks.json"))) {
+  if (held.hook) {
     const done = await attempt("hook", [name], async () => {
       await removeHook(deps.root, projectId, agentId, name);
       return true;
@@ -125,12 +143,8 @@ export async function uninstallAgentPlugin(
     if (done) removed.hooks.push(name);
   }
 
-  const skills = deps.library.get(name)?.skills ?? [];
-  for (const { name: skill } of skills) {
-    // A Skill is a folder holding SKILL.md, as the listing counts one.
-    if (!(await exists(path.join(skillsDir(deps.root, projectId, agentId), skill, "SKILL.md")))) {
-      continue;
-    }
+  // A Skill is a folder holding SKILL.md, as the listing counts one.
+  for (const skill of held.skills) {
     const done = await attempt("skill", [skill], async () => {
       await removeSkill(deps.root, projectId, agentId, skill);
       return true;

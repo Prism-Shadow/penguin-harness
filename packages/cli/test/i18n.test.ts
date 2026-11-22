@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { browserEn, browserZh } from "@penguinharness/browser-automation/cli";
 import { getMessages, maskApiKey, resolveLanguage } from "@prismshadow/penguin-server/cli";
 import { bootBuiltinCommands } from "../src/cli-commands.js";
 
@@ -164,19 +165,21 @@ describe("getMessages", () => {
       );
       expect(m.org.ticketHead("2026-09-02-site", "review", false, "waiting")).toContain("waiting");
       expect(m.org.financeTotal("2026-09", "$1.0000")).toContain("2026-09");
-      // The built-in browser family: the error line keeps its code, the hint names the app.
-      expect(m.browser.execDesc.length).toBeGreaterThan(0);
-      expect(m.browser.errorLine("no_such_tab", "gone")).toContain("no_such_tab");
-      expect(m.browser.errorLine("no_such_tab", "gone")).toContain("gone");
+      // The built-in browser family (its CLI module's own group): the error line keeps its code,
+      // the hint names the app.
+      const browser = (lang === "zh" ? browserZh : browserEn).browser;
+      expect(browser.execDesc.length).toBeGreaterThan(0);
+      expect(browser.errorLine("no_such_tab", "gone")).toContain("no_such_tab");
+      expect(browser.errorLine("no_such_tab", "gone")).toContain("gone");
       for (const reason of [undefined, "not_desktop", "shell_unsupported", "no_window"]) {
-        expect(m.browser.unavailableHint(reason)).toContain("PenguinHarness");
+        expect(browser.unavailableHint(reason)).toContain("PenguinHarness");
       }
-      expect(m.browser.tabHead(12, "Orders", "https://a.example/", false)).toContain("12");
-      expect(m.browser.sourceNotFound("safari", ["chrome"])).toContain("safari");
-      expect(m.browser.elementsChanged(14)).toContain("14");
+      expect(browser.tabHead(12, "Orders", "https://a.example/", false)).toContain("12");
+      expect(browser.sourceNotFound("safari", ["chrome"])).toContain("safari");
+      expect(browser.elementsChanged(14)).toContain("14");
     }
-    expect(getMessages("zh").browser.unavailableHint(undefined)).not.toBe(
-      getMessages("en").browser.unavailableHint(undefined),
+    expect(browserZh.browser.unavailableHint(undefined)).not.toBe(
+      browserEn.browser.unavailableHint(undefined),
     );
     // Argument errors really are translated, not the English text twice.
     expect(getMessages("zh").usage.missingArgument("sessionId")).not.toBe(

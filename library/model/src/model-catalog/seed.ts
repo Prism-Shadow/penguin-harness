@@ -68,22 +68,6 @@ export function catalogGroupConnection(
 }
 
 /**
- * The default model of a new Project: DeepSeek V4.1 Flash, which the vendor serves under the
- * bare name `deepseek-flash` — the current generation of the Flash series, at the same price
- * and schedule as the V4 rows it replaces, and it reads images, so a new Project can take a
- * pasted screenshot without anyone having to notice why it could not. The bare id begins with
- * the `deepseek-` family, so MMSP routes it to DeepSeek's official client without a pin. A
- * Project's default is copied in at creation (the server's seed, and "Restore defaults") and
- * owned by it from then on, so this reaches new Projects alone; an existing one keeps whatever
- * it stored, and "Add new models" never touches the stored default. Its catalog row carries
- * `wasDefault`, as every former default's does.
- */
-export const PRESET_DEFAULT_MODEL: Readonly<ModelRef> = {
-  provider: "deepseek",
-  model_id: "deepseek-flash",
-};
-
-/**
  * `[providers.<id>]` for every built-in group with a catalogGroupConnection, in the catalog's
  * group order — what a new Project's file stores beside presetModelEntries' rows. A fresh
  * object on every call, so a caller may change it.

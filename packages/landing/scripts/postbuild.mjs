@@ -18,12 +18,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { notFoundShell, shellFor } from "./route-shell.mjs";
-import { absoluteUrl, blogRoutes, hubRoutes, pageRoutes } from "./site-routes.mjs";
+import { absoluteUrl, blogRoutes, hubRoutes, pageRoutes, rfcRoutes } from "./site-routes.mjs";
 
 const dist = join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 const shell = readFileSync(join(dist, "index.html"), "utf8");
 
-const routes = [...pageRoutes(), ...blogRoutes(), ...hubRoutes()];
+const routes = [...pageRoutes(), ...blogRoutes(), ...rfcRoutes(), ...hubRoutes()];
 for (const { route, meta } of routes) {
   // A page's own share card must ship with it: unfurlers fetch it by absolute URL, so a missing
   // file would only show up as a broken preview after the deploy.

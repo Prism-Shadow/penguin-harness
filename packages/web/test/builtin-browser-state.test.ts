@@ -1,5 +1,5 @@
 /**
- * The agent browser's state in a window (features/builtin-browser/browser-state.ts): the
+ * The agent browser's state in a window (plugins/browser-automation/src/web/browser-state.ts): the
  * built-in browser's tab registry, the pages this window hosts, the agent's activity, the
  * homepage and the browser's load — driven by the user channel's events and the window's own
  * actions (claim, close, activate, settings read or saved, a new tab asked for) — and the rule
@@ -57,7 +57,7 @@ import {
   wantsNewTabPage,
   type BrowserAction,
   type BrowserState,
-} from "../src/features/builtin-browser/browser-state";
+} from "../../../plugins/browser-automation/src/web/browser-state";
 
 function tab(id: number, over: Partial<BuiltinBrowserTab> = {}): BuiltinBrowserTab {
   return {

@@ -14,6 +14,9 @@
  *   gallery; without the web among them, ui and cli run whole in one job.
  * - Given a server edit, when planning CI, then the server suite runs in two Linux jobs, each half
  *   of its files with the coverage of its half.
+ * - Given a server edit, when planning CI, then a plugin built against the server's sources (its
+ *   tsconfig extends the server's, with no package.json edge) is checked too, and a plugin that is
+ *   not is left alone.
  * - Given a server edit, each server test job builds the CLI it invokes, while the CLI's own
  *   tests stay in their normal jobs; a CLI-only edit never creates server test jobs.
  * - Given a core edit, when planning CI, then the shard testing the desktop on macOS and Windows
@@ -398,6 +401,29 @@ describe("affected CI", { concurrency: false }, () => {
       assert.ok(!selected.has(name("web")), "only a packed app reads the web bundle");
       assert.ok(!selected.has(name("ui")), "nor the UI build that bundle copies");
     }
+  });
+
+  it("a server edit checks a plugin built against the server's sources, which no package.json names", () => {
+    write(
+      "plugins/server-reader/package.json",
+      JSON.stringify({
+        name: "@penguinharness/server-reader",
+        version: "1.0.0",
+        private: true,
+        scripts: { build: "node --version", test: "node --version", typecheck: "node --version" },
+      }),
+    );
+    write(
+      "plugins/server-reader/tsconfig.json",
+      '{\n  // in the server\'s program\n  "extends": "../../packages/server/tsconfig.json"\n}\n',
+    );
+    write("plugins/server-reader/src/index.js", "export const original = true;\n");
+    const withReader = commit();
+    write("packages/server/src/index.js", "changed\n");
+    commit();
+    const plan = planCI({ cwd, base: withReader });
+    assert.ok(plan.packages.includes("@penguinharness/server-reader"));
+    assert.ok(!plan.packages.includes("@penguinharness/sandbox-example"));
   });
 
   it("a server edit runs the server suite in two Linux jobs, each with the coverage of its half", () => {

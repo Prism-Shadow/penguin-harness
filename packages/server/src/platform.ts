@@ -50,6 +50,11 @@ import { PluginConfig, PluginConfigProvider } from "./plugin/config.js";
 import { PluginConfigAdmin, PluginConfigPage } from "./plugin/config-page.js";
 import { IndexSources, PluginIndexSettings, StoredIndexSources } from "./plugin/index-config.js";
 import { PluginCliCommandsProvider } from "./plugin/cli-commands.js";
+import { ToolModelBindings, ToolModelBindingsProvider } from "./services/tool-model-bindings.js";
+import {
+  ProjectModelRequests,
+  ProjectModelRequestsService,
+} from "./services/project-model-requests.js";
 import {
   CoreSessionLoaders,
   DefaultTitleGenerators,
@@ -113,6 +118,11 @@ import { AgentConfigService } from "./services/agent-config-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { AgentRoutes } from "./services/agent-routes.js";
 import { AgentService } from "./services/agent-service.js";
+import { DeletingFoldersService } from "./services/deleting-folders.js";
+import { RootDataLayout } from "./services/data-layout.js";
+import { DataLayout } from "./mechanisms/data-layout.js";
+import { DeletingFolders } from "./mechanisms/deleting-folders.js";
+import { SessionActivity } from "./runtime/session-activity.js";
 import { MemoryService } from "./services/memory-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
@@ -147,7 +157,8 @@ import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
 import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
-import { NpmPluginPackages } from "./plugin/install.js";
+import { AdminPluginRoutes } from "./http/routes/admin-plugins.js";
+import { NpmPluginPackages } from "./plugin/packages.js";
 import { PluginSourceSettings } from "./plugin/source-settings.js";
 import { PluginMirrorSettings } from "./plugin/mirror-settings.js";
 import { PluginLibraryModule } from "./plugin/library-module.js";
@@ -158,6 +169,7 @@ import { PluginModules } from "./mechanisms/plugins.js";
 import { PluginModulesService } from "./services/plugin-modules.js";
 import { PluginModuleRoutes } from "./http/routes/plugin-modules.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
+import { PluginMarketRoutes } from "./http/routes/plugin-market.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
 import { TerminalModule } from "./terminal/manager.js";
@@ -182,6 +194,7 @@ import {
 } from "@prismshadow/penguin-library-session";
 import { Workbenches } from "./mechanisms/workbenches.js";
 import { WorkbenchService } from "./workbenches/service.js";
+import { AgentStateHistoryModule } from "./workbenches/engines.js";
 import { WorkbenchRoutes } from "./workbenches/routes.js";
 import { ThemeRoutes } from "./http/routes/themes.js";
 import {
@@ -208,7 +221,6 @@ import { OrgCache } from "@prismshadow/penguin-library-organization";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
-import { BuiltinBrowserModule } from "./builtin-browser/module.js";
 import { AgentApiModule } from "./amsp/module.js";
 
 /**
@@ -301,6 +313,7 @@ export class Startup {
     ConsoleLog,
     SystemClock,
     ConfigPaths,
+    RootDataLayout,
   ],
   exports: [
     Config,
@@ -316,6 +329,7 @@ export class Startup {
     Log,
     Clock,
     Paths,
+    DataLayout,
   ],
 })
 export class RuntimeModule {}
@@ -397,6 +411,7 @@ export class ProjectsModule {}
     Sessions,
     SessionServiceIface,
     SessionEnv,
+    SessionActivity,
     ScheduleTaskRunner,
     ScheduleSessionCreator,
     MessagingTaskRunner,
@@ -485,11 +500,12 @@ export class TracesModule {}
     AgentConfigService,
     SnapshotService,
     AgentService,
+    DeletingFoldersService,
     MemoryService,
     BenchmarkService,
     AgentRoutes,
   ],
-  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks],
+  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks, DeletingFolders],
 })
 export class AgentsModule {}
 
@@ -550,7 +566,9 @@ export class CompanyModule {}
     PluginRegistryRoutes,
     NpmPluginPackages,
     InstalledPluginRoutes,
+    AdminPluginRoutes,
     PluginCliCommandsProvider,
+    PluginMarketRoutes,
     SuggestIdRoutes,
     LanguagesModule,
     LanguageRoutes,
@@ -559,11 +577,26 @@ export class CompanyModule {}
 })
 export class ApiModule {}
 
+/**
+ * Workbenches, and the Agent State history behind their versions: `AgentStateHistoryModule`
+ * owns the `engines` slot a plugin contributes a faster engine to (./workbenches/engines.ts).
+ */
 @Module({
-  children: [WorkbenchService, WorkbenchRoutes],
+  children: [AgentStateHistoryModule, WorkbenchService, WorkbenchRoutes],
   exports: [Workbenches],
 })
 export class WorkbenchesModule {}
+
+/**
+ * What a plugin's model tools stand on: the bindings plugins declare, and requests to a Project
+ * model outside a chat turn. A group of its own, above the Projects, Sessions and usage it reads
+ * and the machines its bindings travel to; no operation is named here — those are the plugins'.
+ */
+@Module({
+  children: [ToolModelBindingsProvider, ProjectModelRequestsService],
+  exports: [ToolModelBindings, ProjectModelRequests],
+})
+export class ModelToolsModule {}
 
 /**
  * The server's theme packs: the store under the data root and the routes over it. Its own group:
@@ -624,8 +657,8 @@ export class PluginModulesModule {}
     HistoryRoutes,
     HistoryLinesRoutes,
     WorkbenchesModule,
+    ModelToolsModule,
     ThemesModule,
-    BuiltinBrowserModule,
     AgentApiModule,
     Startup,
   ],

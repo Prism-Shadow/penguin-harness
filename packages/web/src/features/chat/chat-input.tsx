@@ -133,6 +133,7 @@ import {
 import { S } from "../../lib/strings";
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { formatBytes, humanizeTokens } from "../../lib/format";
+import { useDictation } from "./voice/dictation";
 import { fitTextarea } from "../../lib/textarea-fit";
 import { useLocale } from "../../state/locale";
 import { useAuth } from "../../state/auth";
@@ -625,6 +626,7 @@ export function ChatInput({
   initialGoal,
   goalPlugin = null,
   switches,
+  banner,
   onSkillsChange,
   onHandoff,
   initialText,
@@ -857,6 +859,8 @@ export function ChatInput({
    * so a goal engaged here grays the entries out and hides the chips.
    */
   switches?: ComposerSwitches;
+  /** A notice drawn as the composer card's top band (`ComposerBanner`): what Send waits for. */
+  banner?: ReactNode;
   /** Callback when selected skills change (check/prune; the clear after a successful send does not call back, same as onTextChange). */
   onSkillsChange?: (names: string[]) => void;
   /** Draft's initial text (restored on mount; paired with onTextChange for draft auto-caching). */
@@ -1037,6 +1041,7 @@ export function ChatInput({
     !running &&
     !compacting &&
     !busy &&
+    (!onChangeModel || models?.some((m) => sameModelRef(m, modelRef))) &&
     (goalOn
       ? text.trim().length > 0 &&
         attachments.length === 0 &&
@@ -1717,7 +1722,9 @@ export function ChatInput({
     }
     pendingModelRestored.current = true;
     if (staged || !onSwitchModel) return;
-    const restored = models.find((m) => sameModelRef(m, initialPendingModelRef));
+    const restored = models.find(
+      (m) => m.chatEligible !== false && sameModelRef(m, initialPendingModelRef),
+    );
     if (restored && !sameModelRef(restored, modelRef)) setPendingModel(restored);
   }, [models, initialPendingModelRef, modelRef, onSwitchModel, staged]);
 
@@ -1893,7 +1900,42 @@ export function ChatInput({
     });
   };
 
+  const dictation = useDictation({
+    disabled: busy,
+    insert: (spoken) => {
+      const el = textareaRef.current;
+      const current = el?.value ?? text;
+      const at = el?.selectionStart ?? current.length;
+      const end = el?.selectionEnd ?? at;
+      const separator =
+        at > 0 &&
+        /[\p{Script=Latin}\d]/u.test(current[at - 1]!) &&
+        /^[\p{Script=Latin}\d]/u.test(spoken)
+          ? " "
+          : "";
+      const after =
+        end < current.length &&
+        /[\p{Script=Latin}\d]$/u.test(spoken) &&
+        /^[\p{Script=Latin}\d]/u.test(current.slice(end))
+          ? " "
+          : "";
+      const next = current.slice(0, at) + separator + spoken + after + current.slice(end);
+      const pos = at + separator.length + spoken.length + after.length;
+      setText(next);
+      onTextChange?.(next);
+      setCaret(pos);
+      requestAnimationFrame(() => {
+        el?.focus();
+        el?.setSelectionRange(pos, pos);
+      });
+    },
+  });
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (dictation.active && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      return;
+    }
     if (slashOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -2439,6 +2481,7 @@ export function ChatInput({
           container breakpoints) — the card's width changes with the viewport and with the Files
           panel squeezing it, so viewport breakpoints wouldn't judge it accurately. */}
       <ComposerCard
+        banner={banner}
         attachments={
           // The staged images, then the staged files, as one row of tiles at the top of the
           // card: the same tiles the message shows once sent. A file's name is the picked
@@ -2693,8 +2736,10 @@ export function ChatInput({
         // Help text: shown only when the card is wide enough; it never competes for space on
         // phones, where the group scrolls instead.
         hint={S.chat.slashHint}
+        // While a dictation runs, its strip (cancel, time, level) stands in for the tools and the
+        // hint; the right group keeps every control, so Send stays where it was.
+        strip={dictation.strip}
         actions={
-          // Right group: status + model + the single action button; never shrinks.
           <>
             {/* Draft state (model still changeable = no session created yet) has no context usage to speak of: the ring isn't shown, it displays as usual once the session is created. */}
             {!onChangeModel && (
@@ -2741,6 +2786,8 @@ export function ChatInput({
                 {...(defaultModel !== undefined ? { defaultModel } : {})}
                 onChange={onChangeModel}
                 disabled={busy}
+                // A draft in a Project with no default model starts with none chosen.
+                emptyLabel={S.chat.chooseModel}
               />
             ) : models && onPickSessionModel && variant === "session" ? (
               <ModelCatalogSelect
@@ -2774,10 +2821,13 @@ export function ChatInput({
               channel is open then, so the alternative was a permanently disabled Send sitting
               where the only available action belonged. Idle keeps the ordinary send button.
               Merging the pair keeps the running-state row within a 320px viewport. */}
+            {/* The record button keeps this slot for the whole dictation, and Send holds still
+                  beside it, disabled until the text is in the draft. */}
+            {dictation.trigger}
             <SendButton
               action={stopAction ? "stop" : "send"}
               label={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
-              disabled={running ? !canMidRunSend : !canSend}
+              disabled={(!stopAction && dictation.active) || (running ? !canMidRunSend : !canSend)}
               onClick={() => (stopAction ? void onStop() : void send())}
             />
           </>

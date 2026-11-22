@@ -35,8 +35,9 @@
  * and MiMo-V2.6-Flash rows, SiliconFlow's GLM-5.3 Flash and Hy4 preview rows, and Gemini 3.7
  * Flash dropped from every group, Google rerouting the id to 3.8 Flash: 2026-10-10; and the
  * Atlas Cloud group, from its public catalog API and pricing page: 2026-10-11; Gemini 4 Argon
- * (Google, Penguin Go and OpenRouter): 2026-10-14; and the Runcrate group, from its catalog API:
- * 2026-11-02).
+ * (Google, Penguin Go and OpenRouter): 2026-10-14; the Runcrate group, from its catalog API:
+ * 2026-11-02; and Gemini 4 Neon (Google and OpenRouter), per MMSP 0.5.12's registry:
+ * 2026-11-19).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -78,9 +79,8 @@
  * an unpinned gateway id would be placed by its own spelling — `deepseek-ai/DeepSeek-V4` would
  * reach DeepSeek's official client aimed at a gateway, and `openai/gpt-5.6-sol` would throw
  * outright (no known family begins with "openai/"). Gateway protocols are pinned:
- * - `openai-responses` for every OpenRouter row: OpenRouter serves the Responses API for
- *   every upstream at the same base URL the rows already carry, and the group pins the same
- *   protocol so a user-added entry inherits it;
+ * - `openai-responses` for OpenRouter chat and hand-added models, with `openai-image`
+ *   pinned on its dedicated image endpoint;
  * - `openai-chat` for the other OpenAI-compatible gateway rows (the generic Chat Completions
  *   client — the bare "openai" spelling is a deprecated upstream alias, see
  *   canonicalClientType);
@@ -248,14 +248,29 @@ export interface ModelProviderInfo {
   connectDefault?: string;
 }
 
+/** Published standard rates for the text-to-image endpoint. Unknown cache rates stay absent. */
+export type ImageToolPricing =
+  | { unit: "usd_per_mtok"; input: number; output: number; thoughts: number; cached?: number }
+  | { unit: "usd_per_image"; output: number; highResolution?: number };
+
 /** A single built-in model's catalog entry (`modelId` is the upstream id; paired with `provider` it forms the catalog's unique key). */
 export interface ModelCatalogEntry {
+  /** Dedicated tool model, selected through project capabilities. */
+  capability?: "search" | "fetch" | "image" | "video" | "tts" | "stt";
   modelId: string;
   displayName: string;
   /** Provider id (one of MODEL_PROVIDERS). */
   provider: string;
   contextWindow?: number;
   pricing?: ModelPricing;
+  imagePricing?: ImageToolPricing;
+  /**
+   * A model for the tools plugins offer (an image, speech or web model, bound through a Project's
+   * `[tools]` table), not for conversation: the chat model pickers never offer it (ModelInfo's
+   * `chatEligible`). It has no context window, and its `pricing` prices the buckets MMSP folds the
+   * provider's billing units into (MMSP-RFC-0003 §3.2), so a bucket may be 0.
+   */
+  tool?: true;
   /**
    * Fraction off the list price the seller is currently running (0.5 = 50% off), applied to
    * every bucket. `pricing` stays the LIST price whatever promotion is live, so a lapsed
@@ -310,7 +325,8 @@ export interface ModelCatalogEntry {
    */
   retired?: true;
   /**
-   * This row is, or once was, the default model of new Projects (PRESET_DEFAULT_MODEL). Usage
+   * This row was the default model of new Projects (until 2026-11-20 they were seeded with one;
+   * now they start with none). Usage
    * recorded on it stays priced after a Project stops storing the row — "Restore defaults"
    * deletes every row that is not a preset, retired ones included, and a former default is
    * often most of an older Project's history: retainedCatalogPricing gives the cost path this
@@ -344,6 +360,7 @@ const QWEN_TOKEN_PLAN_BASE_URL =
 const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
+const TOKENDANCE_DEEPSEEK_BASE_URL = "https://tokendance.space/gateway/deepseek";
 /** TokenDance's Anthropic Messages base: the SDK appends /v1/messages itself, so no /v1 here. */
 const TOKENDANCE_MESSAGES_BASE_URL = "https://tokendance.space/gateway";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
@@ -503,8 +520,7 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://openrouter.ai/workspaces/default/keys",
     modelsUrl: "https://openrouter.ai/models",
     gatewayBaseUrl: OPENROUTER_BASE_URL,
-    // The whole group speaks the Responses API, which OpenRouter serves at the preset base
-    // URL below for every upstream — presets and user-added entries alike.
+    // Chat presets and hand-added models inherit Responses. Image presets pin the Images client.
     clientType: "openai-responses",
     // The catalog lists a fraction of what OpenRouter serves, so the group takes more.
     addable: true,
@@ -663,6 +679,14 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     clientType: VLLM_CLIENT_TYPE,
     // The served ids are the user's own, so this group keeps taking models added by hand.
     addable: true,
+  },
+  {
+    id: "jina",
+    label: "Jina AI",
+    envKey: "JINA_API_KEY",
+    envBaseUrlKey: "JINA_BASE_URL",
+    apiKeyUrl: "https://jina.ai/api-dashboard/",
+    modelsUrl: "https://jina.ai/reader/",
   },
   {
     id: "custom",
@@ -900,11 +924,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // their context windows are the listing's `top_provider.context_length`, as on the
   // mimo-v2.5 and step-3.7-flash rows.
   //
-  // Protocol: every row pins `openai-responses`. OpenRouter serves the Responses API at
-  // {base}/responses for every upstream, at the same https://openrouter.ai/api/v1 base URL
-  // the rows already carry, and the group pins the same protocol, which a new Project writes on
-  // `[providers.openrouter]`, so an entry added to it by hand follows it. The generic Responses client sends a text-only tool result as a plain
-  // string and replays reasoning items only where the upstream returned them.
+  // Chat presets inherit Responses from the group. Dedicated image presets pin their own
+  // client so MMSP sends the prompt to the Images endpoint at the same gateway base URL.
   //
   // Price buckets: cache_read stores the published input_cache_read
   // (falling back to the input price for the rows without one — the :free rows and the
@@ -1110,6 +1131,31 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.022, 0.66, 1.98),
     supportsVision: false,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // MMSP exposes the image endpoint as text-to-image, without a conversational context limit.
+    modelId: "google/gemini-nano-banana-2.1",
+    imagePricing: { unit: "usd_per_mtok", input: 1.5, thoughts: 7.5, output: 30 },
+    displayName: "Gemini Nano Banana 2.1",
+    provider: "openrouter",
+    capability: "image",
+    tool: true,
+    supportsVision: false,
+    clientType: "openai-image",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // MMSP 0.5.12's registry (models API, read 2026-11-19): OpenRouter quotes Google AI
+    // Studio's list rate with no discount, $3 input / $15 output / $0.15 cache hit. Implicit
+    // caching only, so cache_write records input. Text and image input.
+    modelId: "google/gemini-4-neon",
+    displayName: "Gemini 4 Neon",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.15, 3, 15),
+    supportsVision: true,
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
@@ -3167,6 +3213,29 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // -- Google Gemini (official USD pricing). Gemini 3.7 Flash left the group on 2026-10-10:
   // Google retires the id and reroutes it to 3.8 Flash, at the same price. --
   {
+    // The provider bills image output and thoughts at different rates.
+    modelId: "gemini-nano-banana-2.1",
+    imagePricing: { unit: "usd_per_mtok", input: 1.5, thoughts: 7.5, output: 30 },
+    displayName: "Gemini Nano Banana 2.1",
+    provider: "google",
+    capability: "image",
+    tool: true,
+    contextWindow: 131072,
+    supportsVision: true,
+  },
+  {
+    // MMSP 0.5.12's registry, from aistudio.google.com/docs/pricing and
+    // aistudio.google.com/docs/models/gemini-4-neon (read 2026-11-19): $3 input / $15 output /
+    // $0.15 cache hit, no promotion. Implicit caching only, so cache_write is the input price.
+    // Text, image, video and audio input.
+    modelId: "gemini-4-neon",
+    displayName: "Gemini 4 Neon",
+    provider: "google",
+    contextWindow: 1048576,
+    pricing: usd(0.15, 3, 15),
+    supportsVision: true,
+  },
+  {
     // ai.google.dev/gemini-api/docs/pricing#gemini-4-argon (2026-10-14): standard list
     // prices with a 50% introductory discount through 2026-11-30. Only implicit caching
     // is supported; cache_write is the ordinary input price.
@@ -3699,6 +3768,202 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "ant-messages",
     baseUrl: "https://api.atria-asi.ai",
   },
+  // --- Tool models: what plugins' tools bind (images, video, speech, transcription, web search
+  // and page fetching), kept out of the chat pickers (`tool`). Each is priced as MMSP's registry
+  // prices it (0.5.10, read 2026-11-19): MMSP folds the provider's billing units — an image's
+  // output tokens, a search, a second of audio, a character — into its token buckets
+  // (MMSP-RFC-0003 §3.2), so the bill is the reported usage times these rates. A row MMSP prices
+  // nowhere is unpriced. A video model's thinking is billed as output, at the output price: there
+  // is no separate thinking rate.
+  {
+    provider: "google",
+    modelId: "gemini-3.1-flash-lite-image",
+    displayName: "Gemini 3.1 Flash Lite Image",
+    supportsVision: true,
+    tool: true,
+  },
+  {
+    provider: "google",
+    modelId: "gemini-3.1-flash-image",
+    displayName: "Gemini 3.1 Flash Image",
+    supportsVision: true,
+    tool: true,
+  },
+  {
+    provider: "google",
+    modelId: "gemini-3.8-flash-tts",
+    displayName: "Gemini 3.8 Flash TTS",
+    supportsVision: false,
+    tool: true,
+  },
+  {
+    provider: "google",
+    modelId: "gemini-3.8-flash-lite-tts",
+    displayName: "Gemini 3.8 Flash Lite TTS",
+    supportsVision: false,
+    tool: true,
+  },
+  {
+    // $1.50 input and $12 per 1M output tokens (5,792 video tokens a second at 720p); thinking is
+    // billed as output, at the same $12, with no separate thinking rate.
+    provider: "google",
+    modelId: "gemini-omni-1.2-flash",
+    displayName: "Gemini Omni 1.2 Flash",
+    pricing: usd(1.5, 1.5, 12),
+    supportsVision: true,
+    tool: true,
+  },
+  {
+    // $5 text input, $1.25 cached, $30 per 1M image output tokens.
+    provider: "openai",
+    modelId: "gpt-image-2.5-flare",
+    displayName: "GPT Image 2.5 Flare",
+    pricing: usd(1.25, 5, 30),
+    supportsVision: false,
+    tool: true,
+  },
+  {
+    // ¥0.005 a search that returns results, counted as 1,000 prompt tokens.
+    provider: "deepseek",
+    modelId: "deepseek-search",
+    displayName: "DeepSeek Search",
+    pricing: cny(5, 5, 0),
+    supportsVision: false,
+    tool: true,
+  },
+  {
+    // ¥0.005 a fetch that returns Markdown, counted as 1,000 prompt tokens.
+    provider: "deepseek",
+    modelId: "deepseek-fetch",
+    displayName: "DeepSeek Fetch",
+    pricing: cny(5, 5, 0),
+    supportsVision: false,
+    tool: true,
+  },
+  {
+    // ¥3 per 10,000 billed characters (a Han character counts two): the characters are the prompt tokens.
+    provider: "deepseek",
+    modelId: "deepseek-tts",
+    displayName: "DeepSeek TTS",
+    pricing: cny(300, 300, 0),
+    supportsVision: false,
+    tool: true,
+  },
+  {
+    // ¥0.78 per hour of audio, by the second: the seconds are the prompt tokens.
+    provider: "deepseek",
+    modelId: "deepseek-asr",
+    displayName: "DeepSeek ASR",
+    pricing: cny(216.666667, 216.666667, 0),
+    supportsVision: false,
+    tool: true,
+  },
+  {
+    // $0.05 per 1M of the tokens Jina bills (Search on s.jina.ai).
+    provider: "jina",
+    modelId: "jina-search",
+    displayName: "Jina Search",
+    pricing: usd(0.05, 0.05, 0),
+    supportsVision: false,
+    tool: true,
+  },
+  {
+    // $0.05 per 1M of the tokens Jina bills (Reader on r.jina.ai).
+    provider: "jina",
+    modelId: "jina-fetch",
+    displayName: "Jina Reader",
+    pricing: usd(0.05, 0.05, 0),
+    supportsVision: false,
+    tool: true,
+  },
+  {
+    // $0.02 an image (1K, 4,096 output tokens), four times that for 2K.
+    provider: "openrouter",
+    modelId: "bytedance-seed/seedream-5-5",
+    displayName: "Seedream 5.5",
+    pricing: usd(0, 0, 4.790419),
+    supportsVision: false,
+    tool: true,
+    clientType: "openai-image",
+    baseUrl: "https://openrouter.ai/api/v1",
+  },
+  {
+    // $0.018 an image whatever its size.
+    provider: "openrouter",
+    modelId: "bytedance-seed/seedream-5-0-flash",
+    displayName: "Seedream 5.0 Flash",
+    pricing: usd(0, 0, 4.311377),
+    supportsVision: false,
+    tool: true,
+    clientType: "openai-image",
+    baseUrl: "https://openrouter.ai/api/v1",
+  },
+  {
+    // $10 per 1M bytes of input text.
+    provider: "openrouter",
+    modelId: "fish-audio/drama-3",
+    displayName: "Fish Audio Drama 3",
+    pricing: usd(10, 10, 0),
+    supportsVision: false,
+    tool: true,
+    clientType: "openai-speech",
+    baseUrl: "https://openrouter.ai/api/v1",
+  },
+  {
+    // $0.0001 a second of audio: the seconds, rounded up, are the prompt tokens.
+    provider: "openrouter",
+    modelId: "fish-audio/transcribe-1",
+    displayName: "Fish Audio Transcribe 1",
+    pricing: usd(100, 100, 0),
+    supportsVision: false,
+    tool: true,
+    clientType: "openai-transcription",
+    baseUrl: "https://openrouter.ai/api/v1",
+  },
+  {
+    // ¥0.005 a search that returns results, counted as 1,000 prompt tokens.
+    provider: "tokendance",
+    modelId: "deepseek-search",
+    displayName: "DeepSeek Search",
+    pricing: cny(5, 5, 0),
+    supportsVision: false,
+    tool: true,
+    clientType: "deepseek-webtool",
+    baseUrl: TOKENDANCE_DEEPSEEK_BASE_URL,
+  },
+  {
+    // ¥0.005 a fetch that returns Markdown, counted as 1,000 prompt tokens.
+    provider: "tokendance",
+    modelId: "deepseek-fetch",
+    displayName: "DeepSeek Fetch",
+    pricing: cny(5, 5, 0),
+    supportsVision: false,
+    tool: true,
+    clientType: "deepseek-webtool",
+    baseUrl: TOKENDANCE_DEEPSEEK_BASE_URL,
+  },
+  {
+    // ¥0.00011 a second of audio (TokenDance's items rate, MMSP 0.5.12's registry, read 2026-11-19).
+    provider: "tokendance",
+    modelId: "deepseek-asr",
+    displayName: "DeepSeek ASR",
+    pricing: cny(110, 110, 0),
+    supportsVision: false,
+    tool: true,
+    clientType: "deepseek-transcription",
+    baseUrl: TOKENDANCE_DEEPSEEK_BASE_URL,
+  },
+  {
+    // ¥0.22 an image, over the 16,384 output tokens of its default 2048x2048.
+    provider: "tokendance",
+    modelId: "seedream-5.0-lite",
+    displayName: "Seedream 5.0 Lite",
+    pricing: cny(0, 0, 13.427734),
+    supportsVision: false,
+    tool: true,
+    clientType: "openai-image",
+    baseUrl: "https://tokendance.space/gateway/v1",
+  },
 ];
 
 /** Looks up a catalog entry by (provider, upstream id) pair (**the sole catalog-matching entry point**); returns undefined if not in the catalog. */
@@ -3719,7 +3984,7 @@ export function providerInfo(providerId: string): ModelProviderInfo | undefined 
  * undefined when the group pins none — an unknown id (a user-defined group) included.
  *
  * Six groups pin: vLLM, whose models are served by the user's own vLLM adapter,
- * OpenRouter, whose models all speak the Responses API OpenRouter serves at its preset base
+ * OpenRouter, whose chat models speak the Responses API at its preset base
  * URL, and TokenDance, SiliconFlow, Atlas Cloud and Runcrate, whose models all speak Chat
  * Completions.
  *

@@ -1,4 +1,4 @@
-# PRFC-0023 Harness Meta: every data root carries the record of its harness
+# PRFC-0023 Harness Meta File
 
 [中文版](PRFC-0023-harness-meta.zh.md)
 
@@ -46,7 +46,7 @@ Absence narrows from every freshly installed machine to roots that were never pr
 
 ### Presence leaves the entry alone
 
-The record states what this root holds; which entry starts is decided by resolution, in [PRFC-0024](./PRFC-0024-cli-resolution.md#guide-level-explanation). A dev root carrying an install record still starts the dev way; the desktop shell still starts its server its own way.
+The record states what this root holds; which entry starts is decided by resolution, in [PRFC-0024](./PRFC-0024-cli-modules.md#guide-level-explanation). A dev root carrying an install record still starts the dev way; the desktop shell still starts its server its own way.
 
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -98,7 +98,7 @@ The two names predate this RFC and outlive it. Presence narrows the missing one 
 
 ### The record leaves the entry alone
 
-> However complete [harness meta](./PRFC-0023-harness-meta.md#guide-level-explanation) is, which entry starts the harness is still decided by [resolution](./PRFC-0024-cli-resolution.md#guide-level-explanation).
+> However complete [harness meta](./PRFC-0023-harness-meta.md#guide-level-explanation) is, which entry starts the harness is still decided by [resolution](./PRFC-0024-cli-modules.md#guide-level-explanation).
 
 A record that obligates a start path would make every channel's launcher a servant of the record and every dev root a hostage of its own installed image. The record states what a root holds; resolution decides what runs. Keeping that seam is what lets this RFC lay its floor.
 
