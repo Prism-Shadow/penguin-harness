@@ -1,13 +1,14 @@
 /**
  * 布局: a page frame with its header (the display title and its "?", the line under it, the way
  * back and the actions), the card padded and flush, the ruled section, the collapsible section
- * open and folded, the entity header, and the navigation list at both densities — all from the
- * package.
+ * open and folded, the entity header, the navigation list at both densities, and an app window's
+ * title bar with all three controls and with close alone — all from the package.
  */
 import { useState } from "react";
 import {
   AgentAvatar,
   AppShell,
+  AppWindowBar,
   Badge,
   Button,
   Card,
@@ -183,6 +184,41 @@ export function LayoutBoard() {
             ))}
           </div>
         </EntityHeader>
+      </BoardGroup>
+      <BoardGroup title={t.window} aside={t.windowHint}>
+        <div className="lib-stack lib-stack-wide">
+          <span className="lib-caption">{t.windowFull}</span>
+          <div className="lib-box">
+            <AppWindowBar
+              icon={<GlyphIcon d={ICONS.appWindow} size={ICON_SIZE.sectionMark} />}
+              title={t.windowTitle}
+              labels={{
+                minimize: t.windowMinimize,
+                fullScreen: t.windowFullScreen,
+                close: t.windowClose,
+              }}
+              onMinimize={() => {}}
+              onFullScreen={() => {}}
+              onClose={() => {}}
+            />
+            <Text variant="caption" className="block px-3 py-6 text-center">
+              {t.windowBody}
+            </Text>
+          </div>
+          <span className="lib-caption">{t.windowCloseOnly}</span>
+          <div className="lib-box">
+            <AppWindowBar
+              icon={<GlyphIcon d={ICONS.appWindow} size={ICON_SIZE.sectionMark} />}
+              title={t.windowTitle}
+              labels={{
+                minimize: t.windowMinimize,
+                fullScreen: t.windowFullScreen,
+                close: t.windowClose,
+              }}
+              onClose={() => {}}
+            />
+          </div>
+        </div>
       </BoardGroup>
       <BoardGroup title={t.nav} aside={t.navHint}>
         <div className="lib-stack lib-stack-wide">

@@ -773,6 +773,10 @@ export const en: Strings = {
         admin: "Enabled by the admin",
         approval: "Enabled: the admin approved a member's request",
       },
+      /** A module behind a system app: it always runs and offers no stop. */
+      systemApp: "System app, built in",
+      systemAppHint:
+        "It powers a system app in the App Center, so it always runs and can't be stopped",
       /** In place of a Project that was deleted, and of a requester that is no person. */
       projectGone: "Project deleted",
       system: "System",
@@ -1187,20 +1191,26 @@ export const en: Strings = {
     broken: "Failed to load",
     /** A tile whose app is still being built: it opens once the build is done. */
     building: "Building",
+    /** A tile whose app is running behind the grid, its window minimized. */
+    running: "Running",
     /** A tile's hint: its whole title and the Agent that owns it. */
     tileTip: (title: string, agent: string) => `${title}, from ${agent}`,
     buildingTip: (title: string, agent: string) =>
       `${title}, from ${agent}. Building; it opens once the build is done`,
     failedTip: (title: string, agent: string) =>
       `${title}, from ${agent}. Failed to load; its menu shows the error`,
+    runningTip: (title: string, agent: string) =>
+      `${title}, from ${agent}. Running; a click brings its window back`,
     /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
     tileName: (title: string, agent: string, state: string | null) =>
       state === null ? `${title}, ${agent}` : `${title}, ${agent}, ${state}`,
     systemTileName: (title: string) => `${title}, system app`,
     workbenchesEmptyTitle: "No apps from agents yet",
-    folderTip: (name: string, count: number) => `${name}, ${count} ${count === 1 ? "app" : "apps"}`,
-    folderName: (name: string, count: number) =>
-      `${name}, folder, ${count} ${count === 1 ? "app" : "apps"}`,
+    /** A folder's hint and accessible name: its apps, and how many of them are running. */
+    folderTip: (name: string, count: number, running: number) =>
+      `${name}, ${count} ${count === 1 ? "app" : "apps"}${running > 0 ? `, ${running} running` : ""}`,
+    folderName: (name: string, count: number, running: number) =>
+      `${name}, folder, ${count} ${count === 1 ? "app" : "apps"}${running > 0 ? `, ${running} running` : ""}`,
     /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
     newFolder: "New folder",
     /** The page header's button that opens the new-folder dialog. */
@@ -1243,6 +1253,7 @@ export const en: Strings = {
     /** A failed tile with no recorded message (an older status file). */
     errorUnknown: "No error message was recorded. Open the app to see how it loads.",
     /** The windowed app's title bar. */
+    windowMinimize: "Minimize",
     windowClose: "Close, back to the App Center",
     windowFullScreen: "Open full screen",
     /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
@@ -7091,6 +7102,8 @@ Scenarios:
         "This model ID cannot be routed: a vendor group routes a model by the vendor prefix its ID begins with (gpt-, claude-, gemini-, glm-, kimi-, deepseek-, minimax-). Add the model under a custom group and pick or detect its protocol.",
       unknown_skill: "This skill is not in the selected directory.",
       unknown_plugin: "This plugin is not in the plugin library.",
+      system_app_module_locked:
+        "This plugin powers a system app in the App Center, so it can't be stopped or removed.",
       goal_plugin_not_installed:
         "Goal mode needs the goal plugin — install it on this agent from the plugin library, and switch its hook package on.",
       prompt_hook_not_installed:

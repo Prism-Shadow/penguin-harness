@@ -32,8 +32,9 @@ const OrgProposalsPage = () => null;
  *   company-mode proposals page is drawn by the proposals page, inside company mode and from
  *   the root alike.
  * - The shell receives company's provider and the update badges' owner for the signed-in
- *   session, the five layers in their mount order, and the user event handlers of company, the
- *   built-in browser and schedules in their dispatch order.
+ *   session, the layers beside the columns in their mount order, the App Center's windows
+ *   over the page area, and the user event handlers of company, the built-in browser and
+ *   schedules in their dispatch order.
  * - The sidebar receives the Project switcher and the session list for development mode,
  *   company's mode with its switcher, channels, roadmaps and desks, the to-do dots on the
  *   anchors that still have a row (Agents, the App Center, the account and the drawer button; the
@@ -91,6 +92,7 @@ import { builtinBrowserUserEvents } from "../../../plugins/browser-automation/sr
 import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
 import { SettingsLayer } from "../src/features/settings/settings-layer";
 import { DockScope } from "../src/features/dock/dock-scope";
+import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
 import { PinnedBalanceBadge } from "../src/features/models/group-balance";
 import { ProjectSettingsLayer } from "../src/features/projects/project-settings-layer";
 import { DefaultModelsLayer } from "../src/features/models/default-models-layer";
@@ -334,8 +336,8 @@ describe("the booted shell slots", () => {
     expect(new Set(codes).size).toBe(2);
   });
 
-  it("mounts the layers in their order, the dock's scope last", () => {
-    expect(codeByOrder(layers)).toEqual([
+  it("mounts the layers beside the columns in their order, the dock's scope last", () => {
+    expect(codeByOrder(layers.filter((layer) => layer.data.area !== "page"))).toEqual([
       TerminalDockRuntime,
       ShortcutRuntime,
       SettingsLayer,
@@ -343,6 +345,12 @@ describe("the booted shell slots", () => {
       DefaultModelsLayer,
       BuiltinBrowserLayer,
       DockScope,
+    ]);
+  });
+
+  it("mounts the App Center's windows over the page area, so they outlive its page", () => {
+    expect(codeByOrder(layers.filter((layer) => layer.data.area === "page"))).toEqual([
+      AppCenterWindows,
     ]);
   });
 
