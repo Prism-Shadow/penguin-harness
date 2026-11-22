@@ -300,6 +300,51 @@ describe("integrity", () => {
     ]);
   });
 
+  it("audits a Target Trace for other hosts and forbidden files", () => {
+    const call = (name: string, args: Record<string, string>) =>
+      JSON.stringify({
+        type: "model_msg",
+        payload: { type: "tool_call", name, arguments: JSON.stringify(args) },
+      });
+    const clean = path.join(dir, "clean.jsonl");
+    writeFileSync(
+      clean,
+      [
+        call("exec_command", { cmd: "penguin browser open http://shop.example:7770/store/sales" }),
+        call("write_file", { content: '<svg xmlns="http://www.w3.org/2000/svg"/>' }),
+        call("exec_command", { cmd: "curl -s http://localhost:4512/api/builtin-browser/tabs" }),
+        JSON.stringify({
+          type: "model_msg",
+          payload: { type: "text", text: "https://example.org" },
+        }),
+      ].join("\n"),
+    );
+    expect(tool.traceAudit([clean], SITE, ["test.raw.json"])).toEqual({
+      calls: 3,
+      other_hosts: [],
+      local_hosts: ["localhost:4512"],
+      problems: [],
+    });
+
+    const leaked = path.join(dir, "leaked.jsonl");
+    writeFileSync(
+      leaked,
+      [
+        call("exec_command", {
+          cmd: 'curl -s "https://raw.githubusercontent.com/org/repo/main/config_files/test.raw.json"',
+        }),
+        call("read_file", { file_path: "C:\\Data\\Answers\\TEST.raw.json" }),
+      ].join("\n"),
+    );
+    const audit = tool.traceAudit([leaked], SITE, ["test.raw.json"]);
+    expect(audit.other_hosts).toEqual(["raw.githubusercontent.com"]);
+    expect(audit.problems).toEqual([
+      "exec_command call 1 reaches https://raw.githubusercontent.com",
+      "exec_command call 1 names forbidden test.raw.json",
+      "read_file call 2 names forbidden test.raw.json",
+    ]);
+  });
+
   it("refuses a runtime copy that differs from the shipped one", () => {
     tool.init(dir, SITE);
     expect(tool.verifyRuntime(dir)).toEqual({ problems: [] });

@@ -11,6 +11,8 @@
 //   node skillweaver.mjs index <apis-dir>               rewrite INDEX.md from the APIs and library.json
 //   node skillweaver.mjs fingerprint <dir>              one SHA-256 over every file under <dir>, and each file's
 //   node skillweaver.mjs state-diff <before> <after>    two State fingerprints: files changed outside run output
+//   node skillweaver.mjs trace-audit <trace>... --site <url> [--forbid <path>]...
+//                                                       a Target Trace reaching other hosts or forbidden files
 //   node skillweaver.mjs verify-runtime <apis-dir>      the runtime copy is byte-identical to the shipped one
 //
 // Every command prints one JSON object and exits 1 on a refusal.
@@ -341,6 +343,83 @@ export function stateDiff(beforeFile, afterFile) {
   };
 }
 
+// XML and SVG namespace identifiers look like URLs but are never fetched.
+const NAMESPACE_HOSTS = new Set(["www.w3.org"]);
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+function stringsIn(value, out = []) {
+  if (typeof value === "string") out.push(value);
+  else if (Array.isArray(value)) for (const v of value) stringsIn(v, out);
+  else if (value && typeof value === "object")
+    for (const v of Object.values(value)) stringsIn(v, out);
+  return out;
+}
+
+const normalizePath = (s) => s.replace(/\\+/g, "/").toLowerCase();
+
+/**
+ * Audit a Target's Trace after a cell: every tool call's arguments are searched for URLs whose
+ * origin is not the site's, and for any of the `forbidden` paths or names (the Benchmark, answer
+ * files the experiment keeps on the same machine). A host off this machine, or a forbidden name,
+ * is a problem: the cell may have read its answer elsewhere. Another port on this machine (the
+ * harness's own API, say) is listed under `local_hosts` for the report. It reads what the Target
+ * asked its tools to do; it does not stop anything, so the controller acts on its findings.
+ */
+export function traceAudit(traceFiles, siteUrl, forbidden = []) {
+  if (traceFiles.length === 0) throw new Error("trace-audit requires the Target's Trace files");
+  if (!siteUrl) throw new Error("trace-audit requires --site <url>");
+  const site = new URL(siteUrl).origin;
+  const needles = forbidden.map((f) => [f, normalizePath(f)]);
+  const hosts = new Set();
+  const localHosts = new Set();
+  const problems = [];
+  let calls = 0;
+  for (const file of traceFiles) {
+    for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      const record = JSON.parse(line);
+      const call = record?.payload;
+      if (record?.type !== "model_msg" || call?.type !== "tool_call") continue;
+      calls += 1;
+      let args = call.arguments;
+      if (typeof args === "string") {
+        try {
+          args = JSON.parse(args);
+        } catch {
+          // keep the raw text
+        }
+      }
+      const text = stringsIn(args).join("\n");
+      for (const m of text.matchAll(/https?:\/\/[^\s"'`<>()\\]+/gi)) {
+        let url;
+        try {
+          url = new URL(m[0]);
+        } catch {
+          continue;
+        }
+        if (url.origin === site || NAMESPACE_HOSTS.has(url.hostname)) continue;
+        if (LOOPBACK.has(url.hostname)) {
+          localHosts.add(url.host);
+          continue;
+        }
+        hosts.add(url.host);
+        problems.push(`${call.name ?? "tool"} call ${calls} reaches ${url.origin}`);
+      }
+      const flat = normalizePath(text);
+      for (const [raw, needle] of needles) {
+        if (flat.includes(needle))
+          problems.push(`${call.name ?? "tool"} call ${calls} names forbidden ${raw}`);
+      }
+    }
+  }
+  return {
+    calls,
+    other_hosts: [...hosts].sort(),
+    local_hosts: [...localHosts].sort(),
+    problems: [...new Set(problems)],
+  };
+}
+
 /** The runtime an API library carries must be the one this toolkit ships, byte for byte. */
 export function verifyRuntime(dir) {
   const shipped = readFileSync(path.join(HERE, RUNTIME));
@@ -408,6 +487,17 @@ async function main(argv) {
       return fingerprint(rest[0]);
     case "state-diff":
       return stateDiff(rest[0], rest[1]);
+    case "trace-audit": {
+      const files = [];
+      const forbid = [];
+      let site;
+      for (let i = 0; i < rest.length; i++) {
+        if (rest[i] === "--site") site = rest[++i];
+        else if (rest[i] === "--forbid") forbid.push(rest[++i]);
+        else files.push(rest[i]);
+      }
+      return traceAudit(files, site, forbid);
+    }
     case "verify-runtime":
       return verifyRuntime(rest[0]);
     default:
