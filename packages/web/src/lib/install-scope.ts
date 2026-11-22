@@ -271,6 +271,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.sidebarApps.folded",
+    scope: "browser",
+    why: "Whether the sidebar's app group is folded; one flag for every Agent, names nothing on the server.",
+  },
+  {
+    kind: "exact",
     key: "penguin.modelsGroupsFolded",
     scope: "browser",
     why: "Whether the models page's collapsible groups are folded; one flag, names nothing on the server.",

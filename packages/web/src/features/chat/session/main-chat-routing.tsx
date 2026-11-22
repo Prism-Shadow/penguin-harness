@@ -207,15 +207,6 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
    */
   const machineModels = useMachineModels(projectId, pageMachineId);
   const models = pageMachineId === null ? scope.models : machineModels;
-  // The tabs beside a conversation are its OWN Agent's, asked of the server that Agent's
-  // workflows live on: a Session on a machine runs a copy of the Agent there, and the workflows
-  // it built are in that copy. The current Agent is always one of this server's, so going by
-  // it listed the wrong Agent's workflows (or none) for every Session on a machine.
-  const workflowMachineId = draft
-    ? (resolvedDraftOwner?.machineId ?? null)
-    : selected === null
-      ? null
-      : machineForSession(selected.sessionId);
   // The docks' terminals belong to this conversation: they are created under its Session id,
   // start in its Workspace — its files are what a terminal opened here is for — on the machine
   // it runs on, and only its own are listed. While drafting there is no Session and DraftView
@@ -275,7 +266,6 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
     pageAgentId,
     pageMachineId,
     models,
-    workflowMachineId,
     activeModelRef,
   };
 }

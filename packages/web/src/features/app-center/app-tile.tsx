@@ -88,7 +88,8 @@ export function TileIcon({
   title,
   size = ICON_PX,
 }: {
-  shortcut: LocatedShortcut;
+  /** What draws it: the app's icon, else its letter tile in its id's colour, or a system glyph. */
+  shortcut: Pick<LocatedShortcut, "workbenchId" | "icon" | "system">;
   title: string;
   size?: number;
 }) {
@@ -362,7 +363,7 @@ export function FolderTile({
             }}
             className={`${TILE_BUTTON} ${lifted ? "opacity-40" : ""}`}
           >
-            {/* Both marks sit outside the square that clips the previews. */}
+            {/* The dot and the running bar sit outside the folder's square, which clips its previews. */}
             <span className="relative block">
               {/* The open folder unfolds from this square, its apps from their previews in it. */}
               <AppIconShape

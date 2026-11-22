@@ -4,14 +4,20 @@
  * state, because its readers live apart and outlast one another: the App Center page launches
  * apps and marks their tiles, the layer over the page area hosts their windows
  * (features/app-center/app-center-windows.tsx) and stays mounted when the viewer leaves the page,
- * and any other surface — the sidebar's app list — lists them and brings one back.
+ * and any other surface — the sidebar's app list — lists them, opens one and brings one back.
  *
  * Two faces:
  * - for any surface, `useRunningApps()` lists the current Project's running apps as rows, each
- *   saying whether its window is in front, and `useRestoreApp()` brings one's window back over
- *   the main area: the same live window, at the App Center's address (app-window-address.ts),
- *   so minimizing it again returns to the page it was restored from;
- * - for the App Center, which owns the windows, the records and the calls that change them.
+ *   saying whether its window is in front, and `useRestoreApp()` brings one's window to the front
+ *   over the main area — the same live window when it runs, a new one from the shortcut the
+ *   surface holds when it does not — at the App Center's address (app-window-address.ts), so
+ *   minimizing it returns to the page it was opened from;
+ * - for the App Center and the windows' host, the records and the calls that change them.
+ *
+ * An app ends when the viewer closes it, when its workbench is gone (its window learns it,
+ * app-center-windows.tsx), with its Project left, or with the app shell. An app a list stops
+ * showing keeps running: the App Center hides a workbench the sidebar may still open, and the
+ * sidebar lists one Agent's apps at a time.
  *
  * Nothing here is saved: a reload starts with no app running.
  */
@@ -41,6 +47,8 @@ export interface RunningApp {
   /** What `useRestoreApp()` takes: the App Center's key, as in `RunningAppRecord`. */
   key: string;
   agentId: string;
+  /** Its Agent's name, as the surface that opened the app knew it. */
+  agentName: string;
   workbenchId: string;
   /** The machine its Agent lives on; null for this server. */
   machineId: string | null;
@@ -90,6 +98,7 @@ export function useRunningApps(): readonly RunningApp[] {
         .map(({ key, shortcut }) => ({
           key,
           agentId: shortcut.agentId,
+          agentName: shortcut.agentName,
           workbenchId: shortcut.workbenchId,
           machineId: shortcut.machineId ?? null,
           title: localizedText(locale, shortcut.title, shortcut.titleZh),
@@ -102,23 +111,28 @@ export function useRunningApps(): readonly RunningApp[] {
 
 /**
  * Brings an app's window to the front over the main area, from wherever the viewer is: a running
- * app's comes back as it was left, one not running opens if the App Center lists it. The step is
- * a new history entry, so the window's minimize (or Back) returns to the page it came from.
+ * app's comes back as it was left; one not running starts from `shortcut`, or, without one, if
+ * the App Center lists it. From a page, the step is a new history entry that names the page, so
+ * the window's minimize (or Back) returns to it; from another window in front, that window's
+ * entry is replaced and keeps where it was opened over, so leaving one window for another never
+ * stacks windows up in history.
  */
-export function useRestoreApp(): (key: string) => void {
+export function useRestoreApp(): (key: string, shortcut?: RunningShortcut) => void {
   const navigate = useNavigate();
   const location = useLocation();
+  const projectId = useProject().currentProject?.projectId ?? null;
   const front = windowInFront(location);
   const here = location.pathname + location.search;
+  const state: unknown = location.state;
   return useCallback(
-    (key: string) => {
+    (key: string, shortcut?: RunningShortcut) => {
+      if (shortcut !== undefined && projectId !== null) launchApp({ key, projectId, shortcut });
       if (key === front) return;
-      void navigate(
-        { pathname: APP_CENTER_PATH, search: windowSearch(key) },
-        { state: windowEntryState(here) },
-      );
+      const to = { pathname: APP_CENTER_PATH, search: windowSearch(key) };
+      if (front !== null) void navigate(to, { replace: true, state });
+      else void navigate(to, { state: windowEntryState(here) });
     },
-    [navigate, front, here],
+    [navigate, projectId, front, here, state],
   );
 }
 
@@ -137,24 +151,30 @@ export function closeApp(key: string): void {
 }
 
 /**
- * Follows the App Center's list for `projectId`: an app of that Project the list no longer has
- * ends, and one it has takes the shortcut it gives now (a new title, icon or tab).
+ * Whether two shortcuts say the same thing. A list builds its shortcuts afresh on every render
+ * (a machine's tiles do), so an equal copy must not count as news: publishing it would render
+ * the list again, which would hand over another copy.
  */
-export function keepListedApps(
+function sameShortcut(a: RunningShortcut, b: RunningShortcut): boolean {
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * Follows a list of `projectId`'s apps: a running app the list has takes the shortcut it gives
+ * now (a new title, icon or build). One the list does not have runs on as it is: a list shows
+ * only some apps, so not being on it says nothing of the workbench.
+ */
+export function takeListedShortcuts(
   projectId: string,
   listed: ReadonlyMap<string, RunningShortcut>,
 ): void {
   let changed = false;
-  const next: RunningAppRecord[] = [];
-  for (const running of records) {
-    const shortcut = running.projectId === projectId ? listed.get(running.key) : running.shortcut;
-    if (shortcut === undefined) {
-      changed = true;
-      continue;
-    }
-    if (shortcut !== running.shortcut) changed = true;
-    next.push(shortcut === running.shortcut ? running : { ...running, shortcut });
-  }
+  const next = records.map((running) => {
+    const shortcut = running.projectId === projectId ? listed.get(running.key) : undefined;
+    if (shortcut === undefined || sameShortcut(shortcut, running.shortcut)) return running;
+    changed = true;
+    return { ...running, shortcut };
+  });
   if (changed) publish(next);
 }
 

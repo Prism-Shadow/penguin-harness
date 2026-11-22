@@ -19,6 +19,8 @@
  *   server says the workbench loaded; the news that a load started turns a tile to building.
  * - A failed tile still opens, and its menu shows the recorded error.
  * - "View in agent settings" opens the Agent's settings on the Workbenches sub-page.
+ * - A tile's checkable "Show in the sidebar" is the installation's sidebar setting, the row's
+ *   "Show in the sidebar": checked as the server says, a pick writes it, and the tile stays.
  * - Dragging a tile beside another reorders the grid, onto another makes a folder; the menu's
  *   forward and backward move one too. Each arrangement is stored as the viewer's layout, and a
  *   write the server refuses puts the grid back to what is stored.
@@ -446,6 +448,25 @@ it("opens the Agent's Workbenches sub-page from a tile's View in agent settings"
   await rightClick(tileButton(key("board")));
   await click(menuItem(en.appCenter.menu.viewInSettings));
   expect(whereIs(router)).toBe(`/agents/${AGENT_ID}?tab=workbenches`);
+});
+
+it("shows and hides a workbench in the sidebar from its tile's menu, and the tile stays", async () => {
+  const { server } = await open([workbench("board")]);
+  const sidebarItem = () =>
+    [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].find(
+      (row) => spoken(row) === en.appCenter.menu.showInSidebar,
+    )!;
+  await rightClick(tileButton(key("board")));
+  expect(sidebarItem().getAttribute("aria-checked")).toBe("true");
+
+  await click(sidebarItem());
+  await until(() => server.writes().some((w) => w.path.endsWith("/board/sidebar")));
+  expect(server.writes().find((w) => w.path.endsWith("/board/sidebar"))?.body).toEqual({
+    show: false,
+  });
+  await rightClick(tileButton(key("board")));
+  await until(() => sidebarItem().getAttribute("aria-checked") === "false");
+  expect(order()).toEqual([key("board")]);
 });
 
 it("does not open a building app, and turns it live when the server says it loaded", async () => {

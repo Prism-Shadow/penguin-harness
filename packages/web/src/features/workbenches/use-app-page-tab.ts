@@ -3,8 +3,10 @@
  * window both render it: the tab `tabKey` names, else the workbench's first; `null` when there is
  * no such page, `undefined` until the first answer; `off` when the workbench is listed but does
  * not run (its own switch or the Agent-wide one is off), so it serves no page and the view says
- * why. Only this workbench is read from the page's Agent (and only it is loaded, never the
- * Agent's other workbenches, which would hold the page back behind their compiles), and it is
+ * why. `pages` are all of the workbench's pages, for a view that switches between them; `gone`
+ * says the workbench itself is no more: the Agent answered without it, or the Agent is not found.
+ * Only this workbench is read from the page's Agent (and only it is loaded, never the Agent's
+ * other workbenches, which would hold the page back behind their compiles), and it is
  * read again whenever the server says a workbench of that Agent changed or went away. A read
  * that fails keeps the page already shown and reports why.
  *
@@ -13,7 +15,9 @@
  * stream of its own, or it would never notice its workbench being edited or removed.
  */
 import { useEffect, useState, type ReactNode } from "react";
+import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import { ApiError } from "../../api/client";
 import { openUserEvents } from "../../api/sse";
 import {
   appPageTab,
@@ -47,12 +51,21 @@ export function useAppPageTab({
   enabled = true,
 }: AppPageTabQuery): {
   tab: WorkbenchTab | null | undefined;
+  /** Every page of the workbench that runs, in its order: none until the first answer. */
+  pages: readonly WorkbenchTab[];
+  /** The workbench as its Agent's list last answered it; null until then, or when it lacks it. */
+  workbench: WorkbenchInfo | null;
   off: boolean;
+  /** The workbench is no more (its Agent's list lacks it, or the Agent is not found). */
+  gone: boolean;
   /** Why the list could not be read: its words, and 「[报告问题]」 for a failure. */
   failure: ReactNode;
 } {
   const [tab, setTab] = useState<WorkbenchTab | null | undefined>(undefined);
+  const [pages, setPages] = useState<readonly WorkbenchTab[]>([]);
+  const [workbench, setWorkbench] = useState<WorkbenchInfo | null>(null);
   const [off, setOff] = useState(false);
+  const [gone, setGone] = useState(false);
   const [failure, setFailure] = useState<ReactNode>(null);
 
   useEffect(() => {
@@ -66,13 +79,16 @@ export function useAppPageTab({
         const res = await api.getWorkbench(projectId, agentId, workbenchId, machineId);
         if (!alive) return;
         const running = runningWorkbenches(res);
-        setOff(
-          res.workbenches.some((w) => w.id === workbenchId) &&
-            !running.some((w) => w.id === workbenchId),
-        );
-        setTab(appPageTab(workbenchTabsOf(running, machineId), workbenchId, tabKey));
+        const listed = res.workbenches.find((w) => w.id === workbenchId) ?? null;
+        setWorkbench(listed);
+        setOff(listed !== null && !running.some((w) => w.id === workbenchId));
+        setGone(listed === null);
+        const tabs = workbenchTabsOf(running, machineId);
+        setPages(tabs.filter((t) => t.workbenchId === workbenchId));
+        setTab(appPageTab(tabs, workbenchId, tabKey));
         setFailure(null);
       } catch (err) {
+        if (alive && err instanceof ApiError && err.status === 404) setGone(true);
         if (alive) {
           setFailure(
             failureNode(err, {
@@ -109,5 +125,5 @@ export function useAppPageTab({
     };
   }, [enabled, ownEvents, projectId, agentId, workbenchId, tabKey, machineId]);
 
-  return { tab, off, failure };
+  return { tab, pages, workbench, off, gone, failure };
 }

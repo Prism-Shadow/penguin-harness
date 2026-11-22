@@ -157,6 +157,12 @@ export interface AppCenterShortcut {
   build: "ready" | "building" | "failed";
   /** With build "failed": the load error `.build/status.json` records. */
   error?: string;
+  /**
+   * Whether the installation is listed in its Agent's sidebar (`WorkbenchInfo.showInSidebar`):
+   * what a tile's checkable "Show in the sidebar" reads. Absent from a server that predates the
+   * setting, which the Web reads as "no switch to show".
+   */
+  showInSidebar?: boolean;
 }
 
 /**

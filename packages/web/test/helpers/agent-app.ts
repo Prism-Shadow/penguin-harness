@@ -122,6 +122,7 @@ import type {
   UsageErrorItem,
   UsageResponse,
   WorkbenchInfo,
+  WorkbenchSidebarResponse,
   WorkbenchVersion,
   VaultEntryInfo,
   VaultUpdateRequest,
@@ -333,6 +334,8 @@ export function agentServer(
     directory?: DirListResponse;
     chatDefaults?: ChatDefaultsDto;
     workbenches?: WorkbenchInfo[];
+    /** The workbenches of more of this server's Agents, by Agent id: their lists answer them. */
+    otherWorkbenches?: Record<string, WorkbenchInfo[]>;
     workbenchVersions?: WorkbenchVersion[];
     /**
      * What a zip upload to the workbench archive route installs (the fake reads no zip): a taken
@@ -433,6 +436,30 @@ export function agentServer(
     options.older
       ? w
       : { ...w, enabled: !switchedOff.has(w.id), showInSidebar: w.showInSidebar !== false };
+  /** The workbenches an Agent's sidebar lists: running, with a page, and not hidden from it. */
+  const sidebarOf = (list: readonly WorkbenchInfo[]) =>
+    list.filter((w) => !switchedOff.has(w.id) && w.tabs.length > 0 && w.showInSidebar !== false);
+  /** A workbench's shortcut, as the App Center's list and the sidebar's list give it. */
+  const shortcutOf = (agentId: string, agentName: string, w: WorkbenchInfo): AppCenterShortcut => {
+    const first = w.tabs[0];
+    const titleZh = w.appCenter?.titleZh ?? first?.titleZh;
+    const tab = w.appCenter?.tab ?? first?.key;
+    return {
+      agentId,
+      agentName,
+      workbenchId: w.id,
+      title: w.appCenter?.title ?? first?.title ?? w.name,
+      ...(titleZh !== undefined ? { titleZh } : {}),
+      path: `/app/${PROJECT_ID}/${agentId}/${w.id}${w.appCenter?.tab ? `/${w.appCenter.tab}` : ""}`,
+      ...(tab !== undefined ? { tab } : {}),
+      ...(building.has(w.id)
+        ? { build: "building" as const }
+        : w.error !== null
+          ? { build: "failed" as const, error: w.error }
+          : { build: "ready" as const }),
+      ...(options.older ? {} : { showInSidebar: w.showInSidebar !== false }),
+    };
+  };
   let vault: VaultEntryInfo[] = [{ key: "GITHUB_TOKEN", valueMasked: "gh****" }];
   let schedules: ScheduleItem[] = (options.schedules ?? [])
     .filter((s) => s.machineId === undefined)
@@ -1007,24 +1034,7 @@ export function agentServer(
       const shortcuts: AppCenterShortcut[] = workbenches
         // A workbench switched off, or every one while the Agent-wide switch is off, has no tile.
         .filter((w) => w.appCenter?.show === true && allOn && !switchedOff.has(w.id))
-        .map((w) => {
-          const first = w.tabs[0];
-          const titleZh = w.appCenter?.titleZh ?? first?.titleZh;
-          return {
-            agentId: AGENT_ID,
-            agentName: stored.config.name ?? AGENT_ID,
-            workbenchId: w.id,
-            title: w.appCenter?.title ?? first?.title ?? w.name,
-            ...(titleZh !== undefined ? { titleZh } : {}),
-            path: `/app/${PROJECT_ID}/${AGENT_ID}/${w.id}${w.appCenter?.tab ? `/${w.appCenter.tab}` : ""}`,
-            ...(w.appCenter?.tab !== undefined ? { tab: w.appCenter.tab } : {}),
-            ...(building.has(w.id)
-              ? { build: "building" as const }
-              : w.error !== null
-                ? { build: "failed" as const, error: w.error }
-                : { build: "ready" as const }),
-          };
-        });
+        .map((w) => shortcutOf(AGENT_ID, stored.config.name ?? AGENT_ID, w));
       return json({ shortcuts, layout: appCenterLayout } satisfies AppCenterResponse);
     }
     if (path === `/api/projects/${PROJECT_ID}/app-center/layout` && method === "PUT") {
@@ -1093,9 +1103,25 @@ export function agentServer(
       return json({ workbenches: workbenches.map(listed), enabled: allOn });
     }
     if (path === `${AGENT_PATH}/workbenches`) {
+      if (request.query.get("view") === "sidebar" && !options.older)
+        return json({
+          apps: sidebarOf(workbenches.filter(() => allOn)).map((w) =>
+            shortcutOf(AGENT_ID, stored.config.name ?? AGENT_ID, w),
+          ),
+        } satisfies WorkbenchSidebarResponse);
       return json(
         options.older ? { workbenches } : { workbenches: workbenches.map(listed), enabled: allOn },
       );
+    }
+    const otherList = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/workbenches$/.exec(path);
+    const others = otherList === null ? undefined : options.otherWorkbenches?.[otherList[1]!];
+    if (others !== undefined && method === "GET") {
+      const agentId = otherList![1]!;
+      if (request.query.get("view") === "sidebar")
+        return json({
+          apps: sidebarOf(others).map((w) => shortcutOf(agentId, agentId, w)),
+        } satisfies WorkbenchSidebarResponse);
+      return json({ workbenches: others.map(listed), enabled: true });
     }
     if (path === `${AGENT_PATH}/workbenches/archive` && method === "POST") {
       const incoming = options.importedWorkbench;

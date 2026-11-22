@@ -60,7 +60,7 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await expect(grid.getByRole("button", { name: /^Support, .+, Running$/ })).toBeVisible();
   await tile.click();
   await expect(appWindow.locator('iframe[data-e2e-kept="yes"]')).toBeVisible();
-  await appWindow.getByRole("button", { name: "Close, back to the App Center" }).click();
+  await appWindow.getByRole("button", { name: "Close", exact: true }).click();
   await expect(page).toHaveURL(`${BASE}/apps`);
   await expect(grid.getByRole("button", { name: /^Support, .+, Running$/ })).toHaveCount(0);
 
@@ -303,7 +303,7 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   // Browser Back navigates the app's pages. The host's close leaves the whole app in one step.
   await page.evaluate(() => history.back());
   await expect.poll(() => inside.locator("body").evaluate(() => location.hash)).toBe("#review");
-  await window.getByRole("button", { name: "Close, back to the App Center" }).click();
+  await window.getByRole("button", { name: "Close", exact: true }).click();
   await expect(panel.getByRole("button", { name: /^Gamma,/ })).toBeFocused();
 
   await page.keyboard.press("Escape");
