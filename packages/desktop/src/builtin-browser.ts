@@ -4,7 +4,7 @@
  * through each guest's `webContents.debugger` (a command that types first gives its guest the
  * window's keyboard focus), and cookie and storage writes on the guests' partition session. Mechanism only (see main.ts's header and packages/hmr/README.md): no page
  * scripts, no importers, no formatting. The tab registry, the page scripts, scan / exec /
- * click, import and history are the server platform's (packages/server/src/builtin-browser).
+ * click, import and history belong to the browser-automation plugin's server half (plugins/browser-automation/src/server).
  *
  * Electron-facing and untested, like main.ts and tray.ts; the rules it applies are the pure
  * builtin-browser-rules.ts beside it, which carries the tests, and

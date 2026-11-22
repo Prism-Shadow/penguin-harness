@@ -9,7 +9,7 @@
 - Start Date: 2026-09-02
 - PRFC PR: [Prism-Shadow/penguin-harness-design#107](https://github.com/Prism-Shadow/penguin-harness-design/pull/107)
 - Implementation PR: 已合并 [#383](https://github.com/Prism-Shadow/penguin-harness/pull/383)（插件平台）；在途 [#672](https://github.com/Prism-Shadow/penguin-harness/pull/672)（从 npm 安装）、[#727](https://github.com/Prism-Shadow/penguin-harness/pull/727)（内置插件打包）、[#614](https://github.com/Prism-Shadow/penguin-harness/pull/614)（Project 的插件表由平台加载）、[#450](https://github.com/Prism-Shadow/penguin-harness/pull/450)（插件表同步到机器、按机器的插件表）
-- 相关: PRFC-0001「Module」、PRFC-0002「HMR v1」、PRFC-0004「插件的作用域」、PRFC-0005「插件的版本」、PRFC-0010「插件的机器一致性与热加载」
+- 相关: PRFC-0001「Module」、PRFC-0002「Hot Module Replacement」、PRFC-0004「插件的作用域」、PRFC-0005「插件的版本」、PRFC-0010「插件的机器一致性与热加载」
 
 ## Summary
 [summary]: #summary

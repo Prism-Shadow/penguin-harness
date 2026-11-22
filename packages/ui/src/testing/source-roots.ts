@@ -144,6 +144,25 @@ export function unscannedRoots(scan: SourceScan): string[] {
     );
 }
 
+/**
+ * The web half of every plugin in the repository that has one (`plugins/<name>/src/web/`), keyed
+ * `plugin:<name>`: TypeScript the Web App compiles in, so every guard over the app's source scans
+ * it too. Only the directories that exist are named, so a repository with no web half adds no
+ * root (and no root that yields nothing).
+ */
+export function pluginWebRoots(repoRoot: string): Record<string, string> {
+  const plugins = join(repoRoot, "plugins");
+  if (!existsSync(plugins)) return {};
+  const roots: Record<string, string> = {};
+  for (const entry of readdirSync(plugins, { withFileTypes: true })) {
+    const web = join(plugins, entry.name, "src", "web");
+    if (entry.isDirectory() && existsSync(web) && statSync(web).isDirectory()) {
+      roots[`plugin:${entry.name}`] = web;
+    }
+  }
+  return roots;
+}
+
 /** The scanned file with this repo-relative id, or `undefined`. */
 export function findSourceFile(scan: SourceScan, id: string): SourceFile | undefined {
   return scan.files.find((file) => file.id === id);

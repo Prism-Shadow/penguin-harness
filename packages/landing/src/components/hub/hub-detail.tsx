@@ -48,7 +48,7 @@ const LIST: Record<HubKind, { path: string; title: () => string }> = {
 };
 
 /** The page's frame: the same width and padding while it loads as once it has. */
-const FRAME = "mx-auto max-w-6xl px-4 pt-6 pb-10 sm:px-6 sm:pt-8 sm:pb-12";
+export const FRAME = "mx-auto max-w-6xl px-4 pt-6 pb-10 sm:px-6 sm:pt-8 sm:pb-12";
 
 /**
  * The way back to the list, above the header: one fixed-height line, there from the first frame
@@ -255,19 +255,23 @@ export function HubReferences({ links }: { links: readonly string[] }) {
   if (links.length === 0) return null;
   return (
     <HubPanel title={S.hub.references} glyph="chainLink">
-      <ul className="flex flex-col gap-1.5 text-sm">
-        {links.map((href) => (
-          <li key={href} className="[overflow-wrap:anywhere]">
-            <ExternalLink
-              href={href}
-              className="text-brand-700 hover:underline dark:text-brand-300"
-            >
-              {href}
-            </ExternalLink>
-          </li>
-        ))}
-      </ul>
+      <ReferenceList links={links} />
     </HubPanel>
+  );
+}
+
+/** The references themselves, one link a line: the panel's body, or a ruled section's. */
+export function ReferenceList({ links }: { links: readonly string[] }) {
+  return (
+    <ul className="flex flex-col gap-1.5 text-sm">
+      {links.map((href) => (
+        <li key={href} className="[overflow-wrap:anywhere]">
+          <ExternalLink href={href} className="text-brand-700 hover:underline dark:text-brand-300">
+            {href}
+          </ExternalLink>
+        </li>
+      ))}
+    </ul>
   );
 }
 

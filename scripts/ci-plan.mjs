@@ -44,6 +44,23 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
       JSON.parse(readFileSync(`${project.path}/package.json`, "utf8")).scripts ?? {};
   }
   const byName = new Map(projects.map((project) => [project.name, project]));
+  // Packages built against the server's sources: their tsconfig extends the server's, whose
+  // paths reach its src/ (and the libraries') from source, with no package.json edge pnpm sees.
+  // browser-automation's server half is one; a server change has to test it.
+  const serverTsconfig = resolve(cwd, "packages/server/tsconfig.json");
+  const serverSourceReaders = projects
+    .filter((project) => {
+      let text;
+      try {
+        text = readFileSync(`${project.path}/tsconfig.json`, "utf8");
+      } catch {
+        return false;
+      }
+      // JSONC: read `extends` without parsing the comments a tsconfig may hold.
+      const extended = /"extends"\s*:\s*"([^"]+)"/.exec(text)?.[1];
+      return extended !== undefined && resolve(project.path, extended) === serverTsconfig;
+    })
+    .map((project) => project.name);
   let files = [];
   let reason = full ? "Full validation requested" : "Changed packages and their dependents";
   if (!full) {
@@ -136,6 +153,7 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
     const implicit = new Set();
     // Electron carries web/dist via a file mapping, not an npm dependency.
     if (affected.has(`${prefix}web`)) implicit.add(`${prefix}desktop`);
+    if (affected.has(`${prefix}server`)) for (const name of serverSourceReaders) implicit.add(name);
     // Landing imports gallery/UI helpers and docs navigation, and its tests read
     // core's builtin benchmark catalog.
     if (["core", "docs", "ui", "ui-gallery"].some((name) => affected.has(`${prefix}${name}`))) {
@@ -239,7 +257,7 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
     // `gallery`: the component library's browser layout checks run in the job that tests the
     // gallery, beside its unit suite, rather than lengthening browser-smoke.
     shard("rest", linuxRest, {
-      must_run: "sandbox-bwrap,sandbox-dsh",
+      must_run: "sandbox-bwrap,sandbox-dsh,agent-state-git",
       gallery: linuxRest.includes(`${prefix}ui-gallery`),
     }),
   ].filter((s) => s.packages.length);
@@ -272,7 +290,7 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
     shard("server", server, { build: serverBuild }),
     shard("rest", nativeRest, {
       smoke: nativeAffected.has(`${prefix}desktop`),
-      must_run: "sandbox-seatbelt,sandbox-dsh",
+      must_run: "sandbox-seatbelt,sandbox-dsh,agent-state-git",
     }),
     shard("sites", sites),
   ].filter((s) => s.packages.length);
@@ -284,7 +302,7 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
         tests: command(server, `exec vitest run --shard=${i + 1}/${WINDOWS_SERVER_SHARDS}`),
       }),
     ),
-    shard("rest", nativeRest, { must_run: "sandbox-dsh" }),
+    shard("rest", nativeRest, { must_run: "sandbox-dsh,agent-state-git" }),
     ...halves("sites", sites),
   ].filter((s) => s.packages.length);
   const types = selected.filter((p) => p.scripts.typecheck).map((p) => p.name);

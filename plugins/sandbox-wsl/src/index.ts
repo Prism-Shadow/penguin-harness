@@ -39,7 +39,6 @@ import type {
 } from "@prismshadow/penguin-core/plugin";
 import { readHost, readState } from "./host.js";
 import {
-  BASE_TITLES,
   Tasks,
   TASK_TITLES,
   check,
@@ -50,8 +49,11 @@ import {
   wslSettingsOf,
 } from "./tasks.js";
 import type { TaskKind, WslSettings } from "./tasks.js";
+import { wslReport } from "./report.js";
+import type { WslReport } from "./report.js";
 
 export { bwrapArgs, chdirRoots, linuxProgram, toLinuxPath } from "./profile.js";
+export { wslReport } from "./report.js";
 export {
   launchJob,
   parseMinirootfs,
@@ -64,7 +66,7 @@ export { Tasks, check, initialize, installWsl, remove } from "./tasks.js";
 export type { BaseImage, CheckLine, TaskKind, TaskOutcome } from "./tasks.js";
 export type { WslSettings } from "./tasks.js";
 
-/** The settings group this backend declares, drawn inside the Sandbox card. */
+/** The settings group this backend declares: its page in Settings. */
 export const WSL_GROUP = "sandbox-wsl";
 
 /** Where the launcher lives, beside this module in the built package. */
@@ -83,7 +85,7 @@ export interface WslInternals {
 async function unavailable(settings: WslSettings): Promise<string | null> {
   const state = readState();
   if (state === null) {
-    return "the sandbox distro is not initialized: open Settings → Plugins → Sandbox and use Initialize on the WSL card";
+    return "the sandbox distro is not initialized: open Settings → Plugins → Windows Sandbox and use Initialize there";
   }
   if (state.distro !== settings.distro) {
     return `the distro setting names ${settings.distro}, but ${state.distro} is the one initialized: initialize again`;
@@ -99,7 +101,7 @@ async function unavailable(settings: WslSettings): Promise<string | null> {
 
 /**
  * Loads the backend: on Windows only (elsewhere it declines — another backend serves), and only
- * once the distro exists. Until then it rejects with what to do, which the Sandbox card shows;
+ * once the distro exists. Until then it rejects with what to do, which the sandbox page shows;
  * a task that finishes on this backend's card loads it again.
  */
 export async function loadWslProvider(
@@ -144,9 +146,18 @@ export abstract class WslConfigReader {
   abstract get(name: string): Record<string, unknown>;
 }
 
+/** What the page reads of the sandbox: a reload of a refused backend once its distro is ready. */
+@Interface()
+export abstract class WslSandboxView {
+  abstract retryFailed(): Promise<void>;
+  abstract failures(): Array<{ name: string; reason: string }>;
+}
+
 /** The card's live half, in the consumer's own shape (see the settings page's contract). */
 export interface SettingsGroupStatus {
   notices(): Array<{ tone: "attention" | "muted" | "progress"; text: string; textZh?: string }>;
+  report(): WslReport;
+  saved(): Promise<void>;
   actions(): Array<{
     id: string;
     title: string;
@@ -173,7 +184,7 @@ const DONE_TITLES: Record<TaskKind, { en: string; zh: string }> = {
 };
 
 /**
- * The card: what this machine has (WSL, the distro, the last check), the button for the next
+ * The page: what this machine has (WSL, the distro, the last check), the button for the next
  * step, and the step a running task is on.
  */
 @Component({
@@ -183,10 +194,12 @@ const DONE_TITLES: Record<TaskKind, { en: string; zh: string }> = {
 })
 export class SandboxWslStatus {
   @Use() private readonly config!: WslConfigReader;
+  @Use() private readonly sandbox!: WslSandboxView;
   @Bind("sandbox-wsl.status") status!: SettingsGroupStatus;
 
   setup() {
     const config = this.config;
+    const sandbox = this.sandbox;
     const settings = () => wslSettingsOf(config.get(WSL_GROUP));
     const tasks = new Tasks();
     const windows = process.platform === "win32";
@@ -235,12 +248,13 @@ export class SandboxWslStatus {
     };
 
     this.status = {
+      // What a task is doing, or how the last one ended; everything else is the report's.
       notices: () => {
         if (!windows) return [];
         tasks.touchHost();
         const out: ReturnType<SettingsGroupStatus["notices"]> = [];
         const running = tasks.running;
-        if (running !== null) {
+        if (running !== null && running.kind !== "install") {
           const title = TASK_TITLES[running.kind];
           const secs = Math.round((Date.now() - running.startedAt) / 1000);
           out.push({
@@ -249,7 +263,6 @@ export class SandboxWslStatus {
             textZh: `${title.zh}（${secs} 秒）：${running.step.zh}`,
           });
         }
-        const host = tasks.host;
         const last = tasks.last;
         if (last !== null && running === null) {
           out.push({
@@ -258,64 +271,22 @@ export class SandboxWslStatus {
             textZh: `${DONE_TITLES[last.kind].zh}——${last.ok ? "完成" : "失败"}于 ${when(last.at)}：${last.message.zh}`,
           });
         }
-        if (host === null) {
-          out.push({
-            tone: "muted",
-            text: "Reading WSL on this machine…",
-            textZh: "正在读取本机的 WSL…",
-          });
-          return out;
-        }
-        if (host.wsl === "missing") {
-          const restart = last?.kind === "install" && last.restart === true;
-          out.push(
-            restart
-              ? {
-                  tone: "attention",
-                  text: "Restart Windows to finish installing WSL, then initialize the sandbox distro here.",
-                  textZh: "重启 Windows 以完成 WSL 安装，然后回到这里初始化沙盒发行版。",
-                }
-              : {
-                  tone: "attention",
-                  text: `WSL is not available on this machine${host.problem ? ` (${host.problem})` : ""}. Install it below: Windows asks for permission once, and may ask for a restart.`,
-                  textZh: `这台机器上没有可用的 WSL${host.problem ? `（${host.problem}）` : ""}。在下方安装：Windows 会请求一次授权，可能还需要重启。`,
-                },
-          );
-          return out;
-        }
-        const state = readState();
-        if (!initialized()) {
-          out.push({
-            tone: "attention",
-            text:
-              state !== null && state.distro !== settings().distro
-                ? `WSL ${host.version ?? ""} is installed, but the distro setting names ${settings().distro} while ${state.distro} was initialized. Initialize again below.`
-                : `WSL ${host.version ?? ""} is installed. Initialize the sandbox distro below: it downloads ${BASE_TITLES[settings().base]} (${settings().base === "ubuntu" ? "about 30 MB" : "a few MB"}), installs bubblewrap and the packages, and switches Windows interop off inside it.`,
-            textZh:
-              state !== null && state.distro !== settings().distro
-                ? `WSL ${host.version ?? ""} 已安装，但发行版设置为 ${settings().distro}，而初始化的是 ${state.distro}。请在下方重新初始化。`
-                : `WSL ${host.version ?? ""} 已安装。在下方初始化沙盒发行版：它会下载 ${BASE_TITLES[settings().base]}（${settings().base === "ubuntu" ? "约 30 MB" : "几 MB"}）、安装 bubblewrap 与软件包，并在其中关闭 Windows interop。`,
-          });
-          return out;
-        }
-        out.push({
-          tone: "muted",
-          text: `${state!.distro} (${BASE_TITLES[state!.base === "alpine" ? "alpine" : "ubuntu"]}${state!.version === "" ? "" : ` ${state!.version}`}) serves as user ${state!.user}; initialized ${when(Date.parse(state!.initializedAt))}; WSL ${host.version ?? ""}. Commands run in Linux: the Workspace is at its /mnt path, Windows programs cannot run.`,
-          textZh: `${state!.distro}（${BASE_TITLES[state!.base === "alpine" ? "alpine" : "ubuntu"]}${state!.version === "" ? "" : ` ${state!.version}`}）以用户 ${state!.user} 提供服务；初始化于 ${when(Date.parse(state!.initializedAt))}；WSL ${host.version ?? ""}。命令在 Linux 中执行：工作区位于其 /mnt 路径，Windows 程序无法运行。`,
-        });
-        const verdict = tasks.lastCheck;
-        if (verdict !== null && running === null) {
-          for (const line of verdict.lines) {
-            const mark = line.ok === true ? "✓" : line.ok === false ? "✗" : "·";
-            out.push({
-              tone: line.ok === false ? "attention" : "muted",
-              text: `${mark} ${line.name.en}${line.ok === false && line.detail ? ` — ${line.detail}` : ""}`,
-              textZh: `${mark} ${line.name.zh}${line.ok === false && line.detail ? `——${line.detail}` : ""}`,
-            });
-          }
-        }
         return out;
       },
+      report: () =>
+        wslReport({
+          platform: process.platform,
+          host: tasks.host,
+          running: tasks.running,
+          last: tasks.last,
+          state: windows ? readState() : null,
+          distro: settings().distro,
+          initialized: windows && tasks.host !== null && initialized(),
+          lastCheck: tasks.lastCheck,
+        }),
+      // A task that ended, or a save of this page, may have made the backend usable: the sandbox
+      // loads a refused one again.
+      saved: () => sandbox.retryFailed(),
       actions: () => {
         if (!windows || tasks.running !== null || tasks.host === null) return [];
         if (tasks.host.wsl === "missing") {
@@ -382,8 +353,8 @@ export class SandboxWslStatus {
         const title = TASK_TITLES[action as TaskKind];
         return {
           ok: true,
-          message: `${title.en}: its progress shows on the WSL card.`,
-          messageZh: `${title.zh}：进度显示在 WSL 卡片上。`,
+          message: `${title.en}: its progress shows on this page.`,
+          messageZh: `${title.zh}：进度显示在本页。`,
           settled,
         };
       },
@@ -413,12 +384,12 @@ export class SandboxWslStatus {
         id: "sandbox-wsl.provider",
         name: "penguin-wsl",
         dimensions: ["fs-write", "network", "mask-paths", "closed-temp"],
+        defaultFor: ["win32"],
       },
     ],
     "PluginConfigProvider.groups": [
       {
         id: "sandbox-wsl",
-        parent: "sandbox",
         title: "WSL",
         properties: {
           exposeWindowsDrives: {
@@ -499,7 +470,7 @@ export class SandboxWsl {
   setup() {
     const config = this.config;
     const settings = () => wslSettingsOf(config.get(WSL_GROUP));
-    // A loader: the service calls it again after this card's task ends or the Sandbox card is saved.
+    // A loader: the service calls it again after this page's task ends or the page is saved.
     this.provider = () => loadWslProvider(settings);
   }
 }

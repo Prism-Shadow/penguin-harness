@@ -82,6 +82,15 @@ function networkOf(policy: SandboxSettings): SessionSandbox["network"] {
  * (`ceiling`), each preset wider than them is marked `aboveCeiling`, by the comparison
  * `applySandboxPick` refuses a non-admin's pick with.
  */
+
+/**
+ * The refusal of a Session created with no model in a Project that has no default model: a new
+ * Project starts with none until its owner chooses one. Worded for every caller — the Web App,
+ * the CLI, the Agent API — so it names both ways out.
+ */
+export const NO_DEFAULT_MODEL_MESSAGE =
+  "This Project has no default model. Name the model for this Session (provider and model id), or set the Project's default model first: Default model settings on the Models page, or `penguin config model default --provider <group> --model-id <id>`.";
+
 export function sessionSandboxOf(
   policy: SandboxSettings,
   dimensions: readonly SandboxDimension[] = [],
@@ -844,11 +853,7 @@ export class SessionService {
       // The guard above leaves only "both omitted" here: fall back to the Project default.
       const def = await this.deps.projectConfig.getDefaultModelRef(args.projectId);
       if (def === undefined) {
-        throw new HttpError(
-          400,
-          "no_default_model",
-          "This Project has no default model yet. Add a model on the Models page and set it as the default first.",
-        );
+        throw new HttpError(400, "no_default_model", NO_DEFAULT_MODEL_MESSAGE);
       }
       modelId = def.model_id;
       provider = def.provider;

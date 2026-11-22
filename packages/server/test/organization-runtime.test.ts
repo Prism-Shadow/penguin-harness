@@ -577,6 +577,21 @@ describe("organization runtime", () => {
     });
   });
 
+  it("refuses an organization naming no model while the Project has no default, creating nothing", async () => {
+    await saveProjectConfig(root, P, { models: [{ provider: "custom", model_id: "m-bench" }] });
+    await expect(
+      service.create(P, { orgId: ORG, mission: "Build it" }, "alice"),
+    ).rejects.toMatchObject({ status: 400, code: "no_default_model" });
+    expect(await store.exists(P, ORG)).toBe(false);
+    expect(existingAgents.has(CEO)).toBe(false);
+    await service.create(
+      P,
+      { orgId: ORG, mission: "Build it", model: { provider: "custom", modelId: "m-bench" } },
+      "alice",
+    );
+    expect(await store.exists(P, ORG)).toBe(true);
+  });
+
   it("refuses a taken organization id and cleans up when the CEO cannot be created", async () => {
     await createOrg();
     await expect(createOrg()).rejects.toMatchObject({ status: 409, code: "org_exists" });

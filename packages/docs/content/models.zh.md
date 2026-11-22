@@ -135,7 +135,7 @@ TokenDance 分组还没有 key 时，所有分组上方会有一条横幅，推�
 
 ### 编辑或删除模型
 
-点击模型卡片，打开**模型配置**。修改字段，点击**确认**，再确认保存。在同一个弹窗里，你还可以**测试连通性**、**设为默认模型**、**设为视觉代理模型**或**删除模型**。
+点击模型卡片，打开**模型配置**。修改字段，点击**确认**，再确认保存。在同一个弹窗里，你还可以**测试连通性**、**设为默认模型**（对话模型）或**使用模型**（其他模型），以及**删除模型**。
 
 API key、base URL 与协议始终可见；上下文窗口、**最大输出长度**、价格、**支持视觉**和**快速模式**收在**详细配置**里，每次打开弹窗都默认折叠。模型交给分组的 API key 或 base URL，占位文字为「留空继承分组设置」，不附带分组的具体值。API key 无从兜底时，即模型自己没有 key、分组密钥借不到、服务端也没有设置对应的环境变量，占位文字为「请填写 API key」；客户端不带 key 也能调用的模型（vLLM、自建的 MMSP 服务器）则为「留空则不使用 API key」。
 
@@ -295,19 +295,22 @@ Penguin Go 在授权所用的 `PENGUIN_GO_ORIGIN` 上调用 `/api/me/by-key`，�
 
 ## 设置默认模型
 
-新对话使用 Project 的默认模型，除非你选了别的。新建 Project 的默认模型是 `deepseek-flash`（DeepSeek V4.1 Flash），它自己就能读图。
+新对话使用 Project 的默认模型，除非你选了别的。新建 Project 没有默认模型，要由你选定。打开这样的 Project 时，如果已经有对话模型配了 key（包括服务端环境变量里的 key），**默认模型设置**弹窗会自动打开；否则先出现引导，请你连接 TokenDance 或 Penguin Go，或者填写 key，设好之后**默认模型设置**弹窗随即打开。没有默认模型时，新对话的输入框顶部写着「还没有默认模型」，要等你为它选好模型。
 
-1. 点击模型的卡片，打开**模型配置**。
-2. 点击**设为默认模型**并确认。
+- 点击页头的**默认模型设置**，选择**默认对话模型**。每项选好即保存，弹窗标题旁的 **?** 里也写着这一点。
+- 也可以点击模型的卡片打开**模型配置**，点击**设为默认模型**并确认。设置默认模型的同时，也会保存弹窗里未保存的修改。
 
-模型表还没有默认模型时，第一个添加进来的模型会自动成为默认模型。设置默认模型的同时，也会保存弹窗里未保存的修改。
+模型表还没有默认模型时，第一个添加进来的模型会自动成为默认模型。
+
+**默认模型设置**弹窗里还有多模态各项使用的模型（文本生成、图像生成、图片理解、视频生成、语音识别、语音合成），以及字色较淡的工具一组（网页搜索、读取网页）。每个选择器只列出能做这件事的模型。项目设置的**多模态模型**页列出同样的各项。不能对话的模型（比如语音、搜索或图像模型）在模型配置里点击**使用模型**并确认，就用于它能做的全部各项，并列出用于哪些；全部用上之后，按钮变为**取消使用模型**。
+
+卡片上的**默认**标签标出默认对话模型；**使用中**标签标出被选用于某项多模态或工具的模型，悬停可以看到用于哪些。对话模型可以同时带这两个标签。视觉代理模型有它自己的标签。
 
 ### 设置视觉代理模型
 
 没有视觉的模型看不到图片。它用 `read_file` 读图时，由视觉代理模型替它描述图片。默认没有视觉代理模型。
 
-1. 找一个开启**支持视觉**的模型，打开它的**模型配置**。
-2. 点击**设为视觉代理模型**并确认。
+在**默认模型设置**弹窗或项目设置的**多模态模型**页为**图片理解**选择模型，这里只列出开启了**支持视觉**的模型。
 
 删除这个模型或关闭它的视觉后，视觉代理角色随之取消。对于 `vision = false` 的模型，比如 DeepSeek 分组里纯文本的 `deepseek-v4-pro`，对话中的图片会存到 Session 暂存区，并在文本里以文件路径的形式交给模型。`read_file` 读到图片时，会把图片交给视觉代理模型描述，而不是直接返回。参见[工具与审批](/tools)。
 
@@ -324,8 +327,11 @@ Penguin Go 在授权所用的 `PENGUIN_GO_ORIGIN` 上调用 `/api/me/by-key`，�
 
 PenguinHarness 依次向每个模型发送一个真实请求，这会消耗少量 API 配额，然后在每张卡片上显示：
 
-- 首个 Token 的延迟，单位毫秒：低于 1000 显示绿色，1000 到 3000 显示黄色，3000 以上显示红色；
-- 输出速率，单位 Token/秒：40 及以上显示绿色，15 及以上显示黄色，15 以下显示红色。
+- 对话模型显示首个 Token 的延迟，单位毫秒：低于 1000 显示绿色，1000 到 3000 显示黄色，3000 以上显示红色；
+- 对话模型还显示输出速率，单位 Token/秒：40 及以上显示绿色，15 及以上显示黄色，15 以下显示红色；
+- 不能对话的模型显示这次请求用了多久：语音识别转写一句简短的话，语音合成朗读一个词，搜索模型搜一次，网页读取模型读一个网页，图像模型画一张小图。
+
+视频模型不参与测速，卡片上写着**不测速**：生成视频要等几分钟，费用也高。本项目没有用到的、不能对话的模型同样不测速。
 
 测速进行中，同一个图标用来停止（**停止测速**）：正在测的那个模型测完后停止，不再发起后续请求，已有的结果保留。结果只留在当前页面，刷新后就消失。
 
@@ -354,10 +360,10 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 - 不属于预置的模型一律删除：你在任何分组里添加的模型，以及旧版本添加、后来被目录撤下的模型，退役条目也在内。你新建的分组连同其设置和 key 一并删除。
 - 内置分组的设置回到目录的 base URL 与协议：**Custom** 的 base URL 被清空，**vLLM** 的回到 `http://127.0.0.1:8000/v1`。
 - 促销折扣回到目录值。
-- 与新建 Project 一样，默认模型改为目录默认，不设视觉代理模型。
+- 与新建 Project 一样，不设默认模型，也不设视觉代理模型。
 - 内置分组和预置模型上的 API key 原样保留。内置分组没有分组密钥、组内带 key 的模型（包括要删除的）都用同一把 key，且这把 key 放到分组上仍能借给它们全部时，它移到分组上，模型上的副本随之删除。被删除模型上的其他 key 随模型一起删除。
 - Penguin Go 分组同样恢复，平台在预置之外添加的模型和平台的促销也会删除。用分组**已连接**菜单里的**同步模型**即可取回，见 [Penguin Go 分组](#penguin-go-分组)。
-- 被删除的模型如果现在或曾经是新建 Project 的默认模型（如 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`），它此前的用量照旧计价，目录为此保留了它的牌价。其他被删除模型的用量，成本中心报为未计价，与你手动删除模型后相同。
+- 被删除的模型如果曾是新建 Project 的默认模型（如 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`），它此前的用量照旧计价，目录为此保留了它的牌价。其他被删除模型的用量，成本中心报为未计价，与你手动删除模型后相同。
 
 两个操作都在服务端执行，即 `POST /api/projects/:id/models/sync-presets`，`mode` 为 `add` 或 `restore`（仅 owner 可用）。
 
@@ -370,6 +376,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 - `max` 是最深的档位。各客户端会把它映射到供应商支持的最深推理档位，没有这个档位时静默回退，所以选它不会失败。在 Gemini 和 MiniMax M3 上，它的档位和 `xhigh` 相同。
 - 对 MiniMax M3，`none` 直接映射为 `reasoning.effort = "none"`。
 - 在 Google 官方客户端上，Gemini 4 Argon 的 `none` 映射为 `low`，`xhigh` 和 `max` 映射为 `high`。`low`、`medium` 和 `high` 保持原值；省略档位时保留 Google 默认的 `medium`。
+- 在 Google 官方客户端上，Gemini 4 Neon 的 `none` 映射为 `low`，`max` 映射为 `xhigh`。`low`、`medium`、`high` 和 `xhigh` 保持原值。
 - DeepSeek V4 接受 `low`、`high` 和 `max`，`medium` 和 `xhigh` 会在它那边归并为 `high`。要 DeepSeek 最深的推理，请选 `max`。
 
 ### 在新对话中
@@ -487,7 +494,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 | tokendance | — | 推荐分组。OpenAI 兼容网关，预置 base URL `https://tokendance.space/gateway/v1`；模型 id 为裸名称，不带供应商前缀（如 `glm-5.3`、`kimi-k3`）；价格采用网关自己的人民币费率，目前有几项在打折 |
 | penguin-go | — | 预置的 MMSP 中转分组，base URL `https://go.penguin.ooo/api/v1`；分组标题栏可以为你连接取得 key，也可以在分组设置里填写。见 [Penguin Go 分组](#penguin-go-分组) |
 | opencode-go | — | OpenCode Go 订阅网关。每个模型各自固定协议：Chat Completions 或 Responses 走 `https://opencode.ai/zen/go/v1`，Anthropic Messages 走 `https://opencode.ai/zen/go`，Gemini generateContent 走 `https://opencode.ai/inference/go/google`。见 [OpenCode Go 分组](#opencode-go-分组) |
-| deepseek | `DEEPSEEK_API_KEY` | 默认模型所在的分组 |
+| deepseek | `DEEPSEEK_API_KEY` | DeepSeek 官方 |
 | openrouter | — | OpenAI 兼容网关，预置 base URL `https://openrouter.ai/api/v1` |
 | fireworks | — | Fireworks AI（OpenAI 兼容），预置 base URL `https://api.fireworks.ai/inference/v1`；API 模型 id 形如 `accounts/fireworks/models/<slug>` |
 | google | `GEMINI_API_KEY` | |
@@ -507,7 +514,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 
 OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / atlascloud / runcrate / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 MMSP 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom 和自建分组里自身或分组带 base URL 的条目同样如此，除非那正是其协议客户端自己的缺省端点；任何一层都不带时，读取其协议客户端的那对变量（见[设置 API key](#设置-api-key)）。vLLM 条目带 base URL 而没有 key 时则不带 key 发出请求，因为 vLLM 服务器只有用 key 启动时才校验 key。ModelScope 的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议；没有 key 的 ModelScope 条目同样会被拒绝。
 
-- OpenRouter 分组的预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。
+- OpenRouter 分组的对话预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。图像预置 `google/gemini-nano-banana-2.1` 是例外：它在同一个 base URL 上固定使用 Images 客户端（`client_type = "openai-image"`）。
 - 其他网关的预置模型使用 Chat Completions 客户端（`client_type = "openai-chat"`）。
 - ModelScope 像 Penguin Go 一样是聚合网关，但三条预置都使用 MMSP 通用 Responses 客户端（`client_type = "openai-responses"`）。
 - 无论哪种方式，网关都带 base URL，所以凭据规则完全一致。
@@ -556,7 +563,8 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 
 - `deepseek-flash` / `deepseek-v4-pro`
 - `MiniMax-M3.1-Flash` / `MiniMax-M3`
-- `gemini-4-argon` / `gemini-3.8-flash`
+- `gemini-4-neon` / `gemini-4-argon` / `gemini-3.8-flash`
+- `gemini-nano-banana-2.1` (Google) / `google/gemini-nano-banana-2.1` (OpenRouter)
 - `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5` / `claude-fable-5-1`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
 - `gpt-6.1-sol` / `gpt-6-astra` / `gpt-6-luna` / `gpt-5.6` / `gpt-5.5`
@@ -571,6 +579,8 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 列表并未穷尽所有模型。
 
 Google、Penguin Go 和 OpenRouter 分组均预置了 Gemini 4 Argon，支持图像输入，输入与输出共享 1,048,576 Token 的上下文窗口。Google 和 Penguin Go 使用 `gemini-4-argon`，OpenRouter 使用 `google/gemini-4-argon`。MMSP 的同步流最多支持 65,536 个输出 Token，包含思考；Google 的更长后台生成不在此接口范围内。
+
+Google 分组以 `gemini-4-neon`、OpenRouter 分组以 `google/gemini-4-neon` 预置了 Gemini 4 Neon，支持图像输入，上下文窗口为 1,048,576 Token。两者记录的牌价均为每百万 Token 输入 3 美元、输出 15 美元、缓存命中 0.15 美元，没有促销。
 
 - **DeepSeek 图像能力。** `deepseek-flash` 就是 V4.1 Flash，支持读图；`deepseek-v4-pro` 是 V4 Pro 0813 版本，仅支持文本。要发送图像，请使用 `deepseek-flash`。
 - **退役条目。** DeepSeek 仍然接受 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`，并都由 V4.1 Flash 承接。它们不再是预置条目，但目录把它们连同 TokenDance 的 `deepseek-v4-flash-vision-exp` 作为退役条目保留：仍带着其中某条的 Project 照旧显示它的名称，直到**恢复默认**把它连同其他非预置模型一起删除。退役条目不会被补进没有它的 Project，新建的 Project 也不会拿到。

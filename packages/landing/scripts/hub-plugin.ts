@@ -2,15 +2,18 @@
  * The Vite plugin behind the Plugins, Benchmarks and Leaderboards pages. It reads the source files
  * at build time (scripts/hub/) and serves them as modules:
  *
- * - `virtual:penguin-hub` — the lists' summaries, plus one loader per detail page;
+ * - `virtual:penguin-hub` — the lists' summaries and the market's curation, plus one loader per
+ *   detail page;
  * - `virtual:penguin-hub/<kind>/<id>` — one detail record, a chunk of its own, fetched when its
  *   page opens.
  *
- * A build clones penguin-harness-benchmark afresh; the dev server reads the cached clone and
- * reloads the page when a plugin's files change.
+ * A build clones penguin-harness-benchmark and fetches the published market document and plugin
+ * index afresh, before any module is read (hub/published.mjs); the dev server reuses the cached
+ * copies and reloads the page when a plugin's files change.
  */
 import type { Plugin } from "vite";
 import { loadHub, PLUGINS_DIR } from "./hub/hub.mjs";
+import { fetchPublished } from "./hub/published.mjs";
 
 const INDEX = "virtual:penguin-hub";
 const KINDS = ["plugin", "benchmark", "leaderboard"] as const;
@@ -28,6 +31,7 @@ function indexModule(hub: Hub): string {
   });
   return [
     `export const plugins = ${json(hub.index.plugins)};`,
+    `export const market = ${json(hub.index.market)};`,
     `export const benchmarks = ${json(hub.index.benchmarks)};`,
     `export const leaderboards = ${json(hub.index.leaderboards)};`,
     ...loaders,
@@ -42,6 +46,9 @@ export function hubData(): Plugin {
     name: "penguin:hub",
     configResolved(config) {
       refresh = config.command === "build";
+    },
+    async buildStart() {
+      await fetchPublished({ refresh });
     },
     resolveId(id) {
       return id === INDEX || id.startsWith(`${INDEX}/`) ? `\0${id}` : null;

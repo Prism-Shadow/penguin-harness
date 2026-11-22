@@ -22,5 +22,5 @@ The body carries the design repository's text. Where an RFC has pending revision
 
 ## Numbering
 
-Numbers and filenames carry over from the design repository unchanged. Two drafts share the number `0005` — PRFC-0005-mechanisms-not-implementations.md and PRFC-0005-plugin-versioning.md — two independent design lines that each took the number before either landed; they are distinct documents, not revisions of one another. The number `0013` is retired: the HMR RFC was drafted as PRFC-0013 and renumbered to PRFC-0002 before it landed.
+Numbers and filenames carry over from the design repository unchanged. The number `0013` is retired: the HMR RFC was drafted as PRFC-0013 and renumbered to PRFC-0002 before it landed.
 

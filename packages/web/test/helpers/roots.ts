@@ -21,6 +21,7 @@ import { expect } from "vitest";
 import {
   filesNamed,
   findSourceFile,
+  pluginWebRoots,
   scanSourceRoots,
   unscannedRoots,
   type SourceFile,
@@ -33,13 +34,35 @@ export type { SourceFile, SourceScan };
 export const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
 /**
- * Every root a guard scans. The gallery (`packages/ui-gallery/src`) joins when that package lands;
- * its chrome is deliberately unthemed, so each guard decides then whether it applies there.
+ * Every root a guard scans: the app, the shared UI package, and every plugin's web half the app
+ * compiles in (`plugin:<name>`, `plugins/<name>/src/web/`). The gallery (`packages/ui-gallery/src`)
+ * joins when that package lands; its chrome is deliberately unthemed, so each guard decides then
+ * whether it applies there.
  */
-export const SOURCE_ROOTS = {
+export const SOURCE_ROOTS: Readonly<Record<string, string>> = {
   web: fileURLToPath(new URL("../../src", import.meta.url)),
   ui: fileURLToPath(new URL("../../../ui/src", import.meta.url)),
-} as const;
+  ...pluginWebRoots(fileURLToPath(new URL("../../../../", import.meta.url))),
+};
+
+/** Whether the file is the app's: the web tree's own, or a plugin web half compiled into it. */
+export function isAppFile(file: SourceFile): boolean {
+  return file.root === "web" || file.root.startsWith("plugin:");
+}
+
+/**
+ * How a guard's lists name an app file: its path under `packages/web/src/` for the app's own,
+ * its repo path (`plugins/<name>/src/web/…`) for a plugin web half's.
+ */
+export function appKeyOf(id: string): string {
+  const web = "packages/web/src/";
+  return id.startsWith(web) ? id.slice(web.length) : id;
+}
+
+/** The repo-relative id of the app file a guard's list names (the inverse of {@link appKeyOf}). */
+export function appIdOf(key: string): string {
+  return key.startsWith("plugins/") ? key : `packages/web/src/${key}`;
+}
 
 /** `.ts`, `.tsx` and `.css` under every root. */
 export function scanSources(extensions?: readonly string[]): SourceScan {

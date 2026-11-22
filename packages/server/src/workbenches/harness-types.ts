@@ -129,7 +129,52 @@ check: \`const sdk = "../sdk/workbench.js"; await import(sdk)\`.
 snapshot: \`running\`, \`completed\` with the final \`text\`, or \`failed\` with an \`error\`.
 Persist the Session id with \`host.setState\`, then poll from GET requests until terminal. Do not
 mark a running snapshot failed because its text is empty. Store small reports in host state;
-keep uploaded files outside this watched source directory. Never edit state.json by hand.
+keep uploaded files in \`dataDir\` (below), never among the source. Never edit state.json by hand.
+
+## Choosing a model
+
+\`host.createSession({ model: { provider, modelId } })\` opens the Session on that model of the
+Project's catalog instead of its default. To let the user choose it, a page calls the page SDK's
+\`chooseChatModel(current?)\`: the app shows its own model picker and the call resolves
+\`{ provider, modelId, label }\`, or null when the user closes it. \`getChatModel(current?)\` names
+a model, the Project default when none is given. Both reject with \`WorkbenchHostUnavailable\` when
+the page is not shown in the app.
+
+## Your folders
+
+\`host.dataPaths(level?)\` returns \`{ dataDir, cacheDir, stateDir }\`: three folders outside this
+source folder, made by the time it returns. Read and write them with Node's own modules —
+\`import { readFile, writeFile, rename } from "node:fs/promises"\`, \`import path from "node:path"\`,
+\`import net from "node:net"\` are typed here, nothing to install — and serve what the page needs
+from your own routes. A write there reloads nothing and enters no version.
+
+- \`dataDir\`: files kept for good. \`cacheDir\`: files that can be made again, never exported.
+  \`stateDir\`: runtime-only files — Unix sockets, pipes, locks — never exported and kept across
+  restarts: unlink a stale socket before listening.
+- A Unix socket path holds at most 103 bytes, so listen on \`host.socketPath("dev.sock", level?)\`,
+  which throws naming the limit when the path would be longer, and on Windows answers a named pipe
+  (\`\\\\.\\pipe\\…\`), which is no file on disk.
+
+The level says who shares them:
+
+- \`"agent"\` (the default): this Agent's copy of the app. The Agent edits these files with its own
+  file tools, even in a sandbox: name a file's path (\`path.join(dataDir, …)\`) in the run's text.
+  The Agent export carries \`dataDir\` with the workbench's data; removing the workbench removes all
+  three. Documents the user edits and asks the Agent to change go here, and nothing private ever
+  goes anywhere else.
+- \`"server"\`: every copy of this app on this server, across its Projects and Agents — a model's
+  weights, a tool's binaries. \`"machine"\`: every PenguinHarness on this computer for this OS user —
+  a small local server one computer runs once. Never exported, never removed with a workbench.
+  Only an app installed from a plugin has them (a workbench made in place throws), and only your
+  handler writes them: the Agent's sandboxed commands may read but not write, so download and
+  start what lives there from the handler (\`fetch\`, or a child process it spawns). Put nothing
+  there that one Project must not see from another.
+
+The Agent may write the agent-level folders too, so never follow a link out of them: \`lstat\` a
+path the Agent could have written before reading or writing through it. Write a file whole (a
+temporary name beside it, then \`rename\`). Never put code in them. To notice the Agent's writes,
+\`stat\` the file on a timer while a page is connected and compare \`mtimeMs\` and \`size\`. A
+\`plugin.d.ts\` here without \`socketPath\` predates these members; delete \`.harness/\` to take them.
 
 ## A Session that only talks
 

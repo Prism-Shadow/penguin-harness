@@ -1,4 +1,4 @@
-# PRFC-0002 HMR v1：层只有 `/api/hmr`，只依赖 http 与 log
+# PRFC-0002 Hot Module Replacement
 
 [English](PRFC-0002-hmr.md)
 

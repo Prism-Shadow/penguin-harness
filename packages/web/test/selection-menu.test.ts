@@ -12,8 +12,7 @@
  *   as a blockquote (blank lines inside kept), and labelled on its chip by its first characters,
  *   cut by characters rather than UTF-16 units.
  * - Only an absolute web address counts as a link for the menu (normalized); a Workspace file,
- *   an anchor, a relative href or another scheme does not. The built-in browser is offered
- *   first only where it can open the link.
+ *   an anchor, a relative href or another scheme does not.
  * - On a link the menu shows the link's rows, adding the selection's after them when the
  *   selection rules take it; off a link it opens exactly as the selection rules say.
  */
@@ -24,7 +23,6 @@ import {
   excerptLabel,
   excerptReference,
   linkAnchor,
-  linkMenuItems,
   menuLinkHref,
   normalizeExcerpt,
   opensSelectionMenu,
@@ -192,16 +190,6 @@ describe("menuLinkHref", () => {
       expect(menuLinkHref(href)).toBeNull();
     }
     expect(menuLinkHref(null)).toBeNull();
-  });
-});
-
-describe("linkMenuItems", () => {
-  it("offers the built-in browser first where it can open the link", () => {
-    expect(linkMenuItems(true)).toEqual(["openInBuiltinBrowser", "openExternal", "copyLink"]);
-  });
-
-  it("leaves it out everywhere else", () => {
-    expect(linkMenuItems(false)).toEqual(["openExternal", "copyLink"]);
   });
 });
 

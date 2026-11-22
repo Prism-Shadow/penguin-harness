@@ -18,6 +18,8 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
         shortDescriptionZh: "让会话循环推进一个目标直到完成。",
         category: "office-productivity",
         icon: "icon.svg",
+        // Every new Agent gets goal mode: its hooks do nothing until a goal is started.
+        defaultInstall: true,
         quickStart: {
           prompt:
             "Write fizzbuzz.py in this Workspace that prints FizzBuzz for 1 to 30, run it, and check that every line of the output is right.",
