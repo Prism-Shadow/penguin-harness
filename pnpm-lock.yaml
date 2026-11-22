@@ -524,6 +524,9 @@ importers:
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide':
+        specifier: workspace:*
+        version: link:../../plugins/first-workbench-guide
       '@penguinharness/fridge-keeper':
         specifier: workspace:*
         version: link:../../plugins/fridge-keeper
@@ -736,6 +739,9 @@ importers:
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide':
+        specifier: workspace:*
+        version: link:../../plugins/first-workbench-guide
       '@penguinharness/fridge-keeper':
         specifier: workspace:*
         version: link:../../plugins/fridge-keeper
@@ -965,6 +971,9 @@ importers:
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide':
+        specifier: workspace:*
+        version: link:../../plugins/first-workbench-guide
       '@penguinharness/fridge-keeper':
         specifier: workspace:*
         version: link:../../plugins/fridge-keeper
@@ -1136,6 +1145,9 @@ importers:
       '@penguinharness/default-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide':
+        specifier: workspace:*
+        version: link:../../plugins/first-workbench-guide
       '@penguinharness/fridge-keeper':
         specifier: workspace:*
         version: link:../../plugins/fridge-keeper
@@ -1898,6 +1910,21 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
+
+  plugins/first-workbench-guide:
+    devDependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(ws@8.21.0)
+      esbuild:
+        specifier: ^0.28.1
+        version: 0.28.1
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   plugins/fridge-keeper:
     devDependencies:
@@ -3222,6 +3249,9 @@ packages:
 
   '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit':
     resolution: {directory: plugins/default-rsi-toolkit, type: directory}
+
+  '@penguinharness/first-workbench-guide@file:plugins/first-workbench-guide':
+    resolution: {directory: plugins/first-workbench-guide, type: directory}
 
   '@penguinharness/fridge-keeper@file:plugins/fridge-keeper':
     resolution: {directory: plugins/fridge-keeper, type: directory}
@@ -8093,6 +8123,8 @@ snapshots:
 
   '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit': {}
 
+  '@penguinharness/first-workbench-guide@file:plugins/first-workbench-guide': {}
+
   '@penguinharness/fridge-keeper@file:plugins/fridge-keeper': {}
 
   '@penguinharness/goal@file:plugins/goal': {}
@@ -8240,6 +8272,7 @@ snapshots:
       '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
@@ -8299,6 +8332,7 @@ snapshots:
       '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
@@ -8718,6 +8752,7 @@ snapshots:
       '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
@@ -8793,6 +8828,7 @@ snapshots:
       '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
@@ -8868,6 +8904,7 @@ snapshots:
       '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
+      '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
       '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
