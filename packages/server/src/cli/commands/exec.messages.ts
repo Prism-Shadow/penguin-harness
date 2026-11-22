@@ -30,6 +30,12 @@ export interface ExecText {
     candidates(packages: readonly string[]): string;
     /** The id is contributed by more than one plugin: only `<package>:<id>` is unambiguous. */
     collision(key: string, packages: readonly string[]): string;
+    /** A file a plugin command's option names could not be read: nothing was sent. */
+    fileUnreadable(file: string, reason: string): string;
+    /** A file the command handed back was saved here (one line per file, on stderr). */
+    fileSaved(file: string): string;
+    /** A file the command handed back could not be saved. */
+    fileUnsaved(name: string, reason: string): string;
   };
 }
 
@@ -58,6 +64,9 @@ export const execEn: ExecText = {
       `'${key}' is contributed by more than one plugin (${packages.join(
         ", ",
       )}); name it fully: penguin exec <package>:${key}.`,
+    fileUnreadable: (file, reason) => `Cannot read ${file}: ${reason}. Nothing was run.`,
+    fileSaved: (file) => `Saved ${file}`,
+    fileUnsaved: (name, reason) => `Could not save ${name}: ${reason}.`,
   },
 };
 
@@ -82,5 +91,8 @@ export const execZh: ExecText = {
         : `贡献命令的插件：${packages.join("、")}。`,
     collision: (key, packages) =>
       `'${key}' 被多个插件贡献（${packages.join("、")}），请写全：penguin exec <插件名>:${key}。`,
+    fileUnreadable: (file, reason) => `无法读取 ${file}：${reason}。命令未执行。`,
+    fileSaved: (file) => `已保存 ${file}`,
+    fileUnsaved: (name, reason) => `无法保存 ${name}：${reason}。`,
   },
 };

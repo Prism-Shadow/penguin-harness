@@ -110,6 +110,13 @@ in the PR body:
 
 - `plugins/sandbox-*` track their own line deliberately — leave them. The release stamps the
   tag's version on them when it publishes, as on every plugin.
+- An external built-in plugin (a `@penguinharness/*` package from another repository, pinned in
+  `packages/server`, `packages/cli` and `packages/desktop`; `plugins/README.md`) is not on the
+  release's line at all. The stamp and `check-plugin-versions.mjs` leave it alone and the release
+  publishes nothing for it; its version moves only through a pin-raising pull request (the three
+  pins, its `minimumReleaseAgeExclude` entry, `pnpm install`) after its own release is registered
+  in the plugin index. The build fetches its locked tarball, so a release run needs npm (or the
+  index's github channel) the way it needs the registry for the native dependencies.
 - A package created mid-cycle at whatever number its author typed is the other case. `packages/hmr`
   arrived from #656 at 0.2.9 and was pulled into lockstep at 0.2.12: it is `private: true` and never
   published, so nothing ships wrong either way, and a package inside `packages/*` sitting three

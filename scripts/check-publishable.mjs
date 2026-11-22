@@ -35,13 +35,15 @@ const root = path.resolve(import.meta.dirname, "..");
 const read = (file) => JSON.parse(readFileSync(file, "utf8"));
 
 /**
- * Every workspace package under `packages/` and `plugins/`, by npm name. Both, because the
- * dependency runs across them: `penguin-core` depends on the Agent plugins, so a plugin marked
- * private would ship core naming a version npm does not have. Names and private flags are read
- * from each manifest, never assumed from the directory.
+ * Every workspace package under `packages/`, `plugins/` and `library/`, by npm name. All three,
+ * because the dependency runs across them: `penguin-core` depends on the Agent plugins, so a
+ * plugin marked private would ship core naming a version npm does not have; and the `library/`
+ * packages are private by rule, so a published package (a plugin's CLI module included) that
+ * lists one as a runtime dependency instead of bundling it would 404 on install. Names and
+ * private flags are read from each manifest, never assumed from the directory.
  */
 const workspace = new Map();
-for (const group of ["packages", "plugins"]) {
+for (const group of ["packages", "plugins", "library"]) {
   for (const dir of readdirSync(path.join(root, group))) {
     const manifest = path.join(root, group, dir, "package.json");
     try {

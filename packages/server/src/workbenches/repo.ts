@@ -21,13 +21,39 @@
  *
  * Writes to one repository run one at a time in this process, whichever instance makes them.
  * Reads take no lock: objects never change once written, and the branch ref is replaced whole.
+ *
+ * What is cheap in-process always runs here: HEAD, the trees, whether a load changed anything,
+ * the history walk, creating the repository, and which names git refuses. The two steps whose
+ * cost grows with the files — writing one commit, and reading a version's blobs back — go to an
+ * ENGINE (`AgentStateEngine`, core's plugin contract). The built-in one below works through
+ * isomorphic-git; a plugin may contribute another (./engines.ts), and it is handed a step only
+ * from the folder size the engine says it is faster from (`fasterFrom`): a commit of at least
+ * that many files, a restore of at least that many. Everything smaller, and every removal (a few
+ * trees and a commit), stays built-in. An engine that cannot run at all is
+ * replaced by the built-in one for that step, with a log line; git refusing a write is not. Both
+ * write the same bytes, so the same input is the same commit under either.
+ *
+ * Who a version is by comes from ./git-identity.ts: the member who asked for it, else the
+ * server's Git identity, read the way git reads it.
  */
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { inflateSync } from "node:zlib";
 import git, { type TreeEntry } from "isomorphic-git";
+import type {
+  AgentStateCommit,
+  AgentStateEngine,
+  AgentStateFile,
+  AgentStateIdentity,
+} from "@prismshadow/penguin-core/plugin";
 import { removeLeftovers } from "./leftovers.js";
+import {
+  processIdentitySources,
+  versionIdentities,
+  type IdentitySources,
+  type VersionAuthor,
+} from "./git-identity.js";
 
 /** Versions a history lists at most. */
 export const HISTORY_LIMIT = 50;
@@ -35,10 +61,7 @@ export const HISTORY_LIMIT = 50;
 export const HISTORY_WALK = 2000;
 
 /** One file of a workbench's source: its `/`-separated path inside the folder and its bytes. */
-export interface SourceFile {
-  rel: string;
-  body: Uint8Array;
-}
+export type SourceFile = AgentStateFile;
 
 export interface RecordedVersion {
   /** The folder's tree id at that commit (12 hex): the revision the folder had then. */
@@ -49,7 +72,6 @@ export interface RecordedVersion {
   savedAt: string;
 }
 
-const AUTHOR = { name: "PenguinHarness", email: "penguin@localhost" };
 const SHORT = 12;
 const BRANCH = "main";
 const EXCLUDE = `# Written by PenguinHarness for git run by a person with --work-tree=agent_state:
@@ -193,64 +215,219 @@ const gitFs = {
 /** The write in progress per repository, across instances: the next one starts once it settles. */
 const writing = new Map<string, Promise<unknown>>();
 
+/** Whether an engine could not run at all (core's `AgentStateEngineUnavailable`). */
+const isUnavailable = (err: unknown): boolean =>
+  (err as { engineUnavailable?: unknown } | null)?.engineUnavailable === true;
+
+const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/** One tree entry as git stores it: mode `40000` is a tree, `160000` a submodule. */
+interface RawEntry {
+  mode: string;
+  name: string;
+  oid: string;
+}
+
+/** A tree's entries as git stores them: mode, name, the object's id (full hex). */
+function parseTree(tree: string, body: Uint8Array): RawEntry[] {
+  const bytes = Buffer.from(body.buffer, body.byteOffset, body.byteLength);
+  const out: RawEntry[] = [];
+  for (let at = 0; at < bytes.length;) {
+    const space = bytes.indexOf(0x20, at);
+    const nul = space === -1 ? -1 : bytes.indexOf(0, space);
+    if (nul === -1 || nul + 21 > bytes.length) throw new Error(`tree ${tree} is malformed`);
+    out.push({
+      mode: bytes.subarray(at, space).toString(),
+      name: bytes.subarray(space + 1, nul).toString("utf8"),
+      oid: bytes.subarray(nul + 1, nul + 21).toString("hex"),
+    });
+    at = nul + 21;
+  }
+  return out;
+}
+
+const isTreeMode = (mode: string): boolean => mode === "40000" || mode === "040000";
+
+/** isomorphic-git's stamp for one identity line (its zone is JavaScript's: minutes WEST of UTC). */
+const stamp = (who: AgentStateIdentity, when: AgentStateCommit["when"]) => ({
+  ...who,
+  timestamp: when.seconds,
+  timezoneOffset: 0 - when.offset,
+});
+
+/** Writes the files' blobs and trees; returns the top tree's id. */
+async function writeFiles(gitdir: string, files: readonly SourceFile[]): Promise<string> {
+  const repo = { fs: gitFs, gitdir };
+  const { here, dirs } = level(files);
+  const tree: TreeEntry[] = [];
+  for (const file of here) {
+    const oid = await git.writeBlob({ ...repo, blob: file.body });
+    tree.push({ mode: "100644", path: file.rel, oid, type: "blob" });
+  }
+  for (const [name, inner] of dirs) {
+    tree.push({ mode: "040000", path: name, oid: await writeFiles(gitdir, inner), type: "tree" });
+  }
+  return git.writeTree({ ...repo, tree });
+}
+
+/**
+ * The built-in engine: isomorphic-git through the whole-file filesystem above. It reads trees
+ * through the harness's own parser, so an entry git refuses is left out of what it rewrites.
+ */
+export const builtinEngine: AgentStateEngine = {
+  name: "isomorphic-git",
+
+  async commit(c) {
+    const repo = { fs: gitFs, gitdir: c.gitdir };
+    const read = async (tree: string): Promise<TreeEntry[]> => {
+      const { type, object } = await git.readObject({ ...repo, oid: tree, format: "content" });
+      if (type !== "tree") throw new Error(`${tree} is a ${type}, not a tree`);
+      return parseTree(tree, object as Uint8Array)
+        .filter((e) => !isGitName(e.name))
+        .map((e): TreeEntry => {
+          const isTree = isTreeMode(e.mode);
+          const kind = isTree ? "tree" : e.mode === "160000" ? "commit" : "blob";
+          return { mode: isTree ? "040000" : e.mode, path: e.name, oid: e.oid, type: kind };
+        });
+    };
+    /**
+     * A copy of `tree` whose entry at `segments` is `value` (null: removed), and of every tree on
+     * the way down; null when nothing is left in it, as git keeps no empty directory.
+     */
+    const splice = async (
+      tree: string | null,
+      segments: string[],
+      value: string | null,
+    ): Promise<string | null> => {
+      const [name = "", ...rest] = segments;
+      const entries = tree === null ? [] : await read(tree);
+      const existing = entries.find((e) => e.path === name);
+      const child =
+        rest.length === 0
+          ? value
+          : await splice(existing?.type === "tree" ? existing.oid : null, rest, value);
+      const kept = entries.filter((e) => e.path !== name);
+      const next: TreeEntry[] =
+        child === null ? kept : [...kept, { mode: "040000", path: name, oid: child, type: "tree" }];
+      return next.length === 0 ? null : git.writeTree({ ...repo, tree: next });
+    };
+    const tree = c.files === null ? null : await writeFiles(c.gitdir, c.files);
+    const root =
+      c.parent === null ? null : (await git.readCommit({ ...repo, oid: c.parent })).commit.tree;
+    const next =
+      (await splice(root, c.rel.split("/"), tree)) ?? (await git.writeTree({ ...repo, tree: [] }));
+    const commit = await git.writeCommit({
+      ...repo,
+      commit: {
+        message: c.message,
+        tree: next,
+        parent: c.parent === null ? [] : [c.parent],
+        author: stamp(c.author, c.when),
+        committer: stamp(c.committer, c.when),
+      },
+    });
+    // `.lock` is the name git itself stages a ref under and never reads as a branch.
+    const file = path.join(c.gitdir, c.ref);
+    await fs.promises.mkdir(path.dirname(file), { recursive: true });
+    await writeWhole(file, `${commit}\n`, `${file}.lock`);
+    return commit;
+  },
+
+  async readBlobs(gitdir, oids) {
+    const out: Uint8Array[] = [];
+    for (const oid of oids) out.push((await git.readBlob({ fs: gitFs, gitdir, oid })).blob);
+    return out;
+  },
+};
+
 export class AgentStateRepo {
   private readonly gitdir: string;
   private readonly now: () => Date;
   private readonly log: (line: string) => void;
   private readonly limit: number;
   private readonly walk: number;
+  private readonly identity: IdentitySources;
+  private readonly from: { commit: number; read: number };
+  private readonly onEngineUnavailable: (engine: AgentStateEngine) => void;
+  /** The engine that writes commits and reads versions back; the built-in one once another failed to run. */
+  private engine: AgentStateEngine;
   /** Refused tree entry names already logged by this instance. */
   private readonly skipped = new Set<string>();
 
-  /** `caps` lowers HISTORY_LIMIT and HISTORY_WALK (tests). */
+  /**
+   * `caps` lowers HISTORY_LIMIT and HISTORY_WALK (tests). `engine` is a contributed engine to use
+   * instead of the built-in one, from the sizes it is faster from (`engineFrom` overrides them, for
+   * the tests and the bench); `onEngineUnavailable` hears when it could not run. `identity` is
+   * where the server's Git identity is read from: the process's environment and home unless given.
+   */
   constructor(opts: {
     gitdir: string;
     now: () => Date;
     log: (line: string) => void;
     caps?: { versions?: number; commits?: number };
+    engine?: AgentStateEngine | null;
+    engineFrom?: { commit?: number; read?: number };
+    onEngineUnavailable?: (engine: AgentStateEngine) => void;
+    identity?: IdentitySources;
   }) {
     this.gitdir = path.resolve(opts.gitdir);
     this.now = opts.now;
     this.log = opts.log;
     this.limit = opts.caps?.versions ?? HISTORY_LIMIT;
     this.walk = opts.caps?.commits ?? HISTORY_WALK;
+    this.engine = opts.engine ?? builtinEngine;
+    this.from = {
+      commit: opts.engineFrom?.commit ?? this.engine.fasterFrom?.commit ?? 1,
+      read: opts.engineFrom?.read ?? this.engine.fasterFrom?.read ?? 1,
+    };
+    this.onEngineUnavailable = opts.onEngineUnavailable ?? (() => {});
+    this.identity = opts.identity ?? processIdentitySources();
   }
 
   /**
    * Writes `files` as the subtree at `rel` on top of HEAD and commits it, dated `at` (default:
-   * now; git keeps whole seconds); nothing when HEAD has exactly that tree there. Creates the
-   * repository on first use. A file under a name git refuses is left out, with a log line.
+   * now; git keeps whole seconds) and authored by `by` when a member asked for it; nothing when
+   * HEAD has exactly that tree there. Creates the repository on first use. A file under a name
+   * git refuses is left out, with a log line.
    */
   commitPath(
     rel: string,
     files: SourceFile[],
     subject: string,
-    opts: { at?: Date } = {},
+    opts: { at?: Date; by?: VersionAuthor } = {},
   ): Promise<{ commit: string; changed: boolean }> {
     const kept = files.filter((f) => !hasGitName(f.rel));
     if (kept.length < files.length) {
       const names = files.filter((f) => hasGitName(f.rel)).map((f) => f.rel);
       this.log(`${rel}: left out of history, git refuses the name: ${names.join(", ")}`);
     }
-    const blobs = kept.map((f) => ({ rel: f.rel, oid: blobOid(f.body) }));
-    return this.serial(async () => {
-      const head = (await this.head()) ?? (await this.create());
-      if (head.commit !== null && (await this.subtree(head.commit, rel)) === hashTree(blobs)) {
-        return { commit: head.commit.slice(0, SHORT), changed: false };
-      }
-      const tree = await this.writeFiles(kept);
-      const commit = await this.commit(head, rel, tree, subject, opts.at ?? this.now());
-      return { commit: commit.slice(0, SHORT), changed: true };
-    });
+    const tree = hashTree(kept.map((f) => ({ rel: f.rel, oid: blobOid(f.body) })));
+    // An empty folder is an empty subtree, which only the built-in engine writes.
+    const contributed = kept.length > 0 && kept.length >= this.from.commit;
+    return this.serial(() =>
+      this.withEngine(contributed, async (engine) => {
+        const head = (await this.head()) ?? (await this.create());
+        if (head.commit !== null && (await this.subtree(head.commit, rel)) === tree) {
+          return { commit: head.commit.slice(0, SHORT), changed: false };
+        }
+        const commit = await engine.commit(
+          this.commitOf(head, rel, kept, subject, opts.at ?? this.now(), opts.by),
+        );
+        return { commit: commit.slice(0, SHORT), changed: true };
+      }),
+    );
   }
 
-  /** Commits a tree without `rel`; nothing when HEAD lacks it (or there is no repository). */
-  removePath(rel: string, subject: string): Promise<void> {
+  /**
+   * Commits a tree without `rel`; nothing when HEAD lacks it (or there is no repository). A few
+   * trees and a commit: always the built-in engine's.
+   */
+  removePath(rel: string, subject: string, opts: { by?: VersionAuthor } = {}): Promise<void> {
     return this.serial(async () => {
       const head = await this.head();
       if (head === null || head.commit === null) return;
       if ((await this.subtree(head.commit, rel)) === null) return;
-      await this.commit(head, rel, null, subject, this.now());
+      await builtinEngine.commit(this.commitOf(head, rel, null, subject, this.now(), opts.by));
     });
   }
 
@@ -266,10 +443,20 @@ export class AgentStateRepo {
     }));
   }
 
-  /** The files of `rel` at the listed version whose tree id has this 12-hex prefix; null when not listed. */
+  /**
+   * The files of `rel` at the listed version whose tree id has this 12-hex prefix, in the order a
+   * depth-first walk of git's entry order meets them; null when not listed.
+   */
   async filesAt(rel: string, revision: string): Promise<SourceFile[] | null> {
     const version = (await this.versions(rel)).find((v) => v.tree.slice(0, SHORT) === revision);
-    return version === undefined ? null : this.readFiles(version.tree, "");
+    if (version === undefined) return null;
+    const listed = await this.listFiles(version.tree, "");
+    const oids = [...new Set(listed.map((f) => f.oid))];
+    const bodies = await this.withEngine(listed.length >= this.from.read, (engine) =>
+      engine.readBlobs(this.gitdir, oids),
+    );
+    const byOid = new Map(oids.map((oid, i) => [oid, bodies[i]!] as const));
+    return listed.map((f) => ({ rel: f.rel, body: byOid.get(f.oid)! }));
   }
 
   // ---- internals ------------------------------------------------------------------
@@ -282,6 +469,49 @@ export class AgentStateRepo {
       if (writing.get(this.gitdir) === settled) writing.delete(this.gitdir);
     });
     return run;
+  }
+
+  /**
+   * Runs one step with the contributed engine when `contributed` says it is worth it, else with
+   * the built-in one. When a contributed engine could not run at all, says so once and runs the
+   * whole step again with the built-in one, from what HEAD says by then.
+   */
+  private async withEngine<T>(
+    contributed: boolean,
+    step: (engine: AgentStateEngine) => Promise<T>,
+  ): Promise<T> {
+    const engine = this.engine;
+    if (!contributed || engine === builtinEngine) return step(builtinEngine);
+    try {
+      return await step(engine);
+    } catch (err) {
+      if (!isUnavailable(err)) throw err;
+      this.log(`${engine.name} could not run (${messageOf(err)}); the built-in engine takes over`);
+      this.engine = builtinEngine;
+      this.onEngineUnavailable(engine);
+      return step(builtinEngine);
+    }
+  }
+
+  /** One commit of `rel` on HEAD, stamped now (or `at`) and attributed per ./git-identity.ts. */
+  private commitOf(
+    head: { ref: string; commit: string | null },
+    rel: string,
+    files: SourceFile[] | null,
+    subject: string,
+    at: Date,
+    by: VersionAuthor | undefined,
+  ): AgentStateCommit {
+    return {
+      gitdir: this.gitdir,
+      ref: head.ref,
+      parent: head.commit,
+      rel,
+      files,
+      message: `${subject}\n`,
+      ...versionIdentities(this.gitdir, this.identity, by),
+      when: { seconds: Math.floor(at.getTime() / 1000), offset: 0 - at.getTimezoneOffset() },
+    };
   }
 
   private get repo() {
@@ -349,11 +579,32 @@ export class AgentStateRepo {
       throw err;
     }
     for (const name of rel.split("/")) {
-      const entry = (await this.entries(tree)).find((e) => e.path === name);
-      if (entry?.type !== "tree") return null;
+      const entry = (await this.entries(tree)).find((e) => e.name === name);
+      if (entry === undefined || !isTreeMode(entry.mode)) return null;
       tree = entry.oid;
     }
     return tree;
+  }
+
+  /** Every file under a tree, paths relative to it, depth first in git's entry order; submodules skipped. */
+  private async listFiles(
+    tree: string,
+    prefix: string,
+  ): Promise<Array<{ rel: string; oid: string }>> {
+    const out: Array<{ rel: string; oid: string }> = [];
+    for (const entry of await this.entries(tree)) {
+      const rel = `${prefix}${entry.name}`;
+      if (isTreeMode(entry.mode)) out.push(...(await this.listFiles(entry.oid, `${rel}/`)));
+      else if (entry.mode !== "160000") out.push({ rel, oid: entry.oid });
+    }
+    return out;
+  }
+
+  /** A tree's entries, read here (see entriesOf). */
+  private async entries(tree: string): Promise<RawEntry[]> {
+    const { type, object } = await git.readObject({ ...this.repo, oid: tree, format: "content" });
+    if (type !== "tree") throw new Error(`${tree} is a ${type}, not a tree`);
+    return this.entriesOf(tree, object as Uint8Array);
   }
 
   /**
@@ -361,106 +612,17 @@ export class AgentStateRepo {
    * entry name git refuses: such an entry (written by another tool, or by an older server) is
    * left out, logged once.
    */
-  private async entries(tree: string): Promise<TreeEntry[]> {
-    const { type, object } = await git.readObject({ ...this.repo, oid: tree, format: "content" });
-    if (type !== "tree") throw new Error(`${tree} is a ${type}, not a tree`);
-    const body = Buffer.from(object as Uint8Array);
-    const out: TreeEntry[] = [];
-    for (let at = 0; at < body.length;) {
-      const space = body.indexOf(0x20, at);
-      const nul = space === -1 ? -1 : body.indexOf(0, space);
-      if (nul === -1 || nul + 21 > body.length) throw new Error(`tree ${tree} is malformed`);
-      const mode = body.subarray(at, space).toString();
-      const name = body.subarray(space + 1, nul).toString("utf8");
-      const oid = body.subarray(nul + 1, nul + 21).toString("hex");
-      at = nul + 21;
-      if (isGitName(name)) {
-        if (!this.skipped.has(name)) {
-          this.skipped.add(name);
-          this.log(
-            `tree ${tree.slice(0, SHORT)} holds a name git refuses, left out: ${JSON.stringify(name)}`,
-          );
-        }
-        continue;
+  private entriesOf(tree: string, body: Uint8Array): RawEntry[] {
+    return parseTree(tree, body).filter((entry) => {
+      if (!isGitName(entry.name)) return true;
+      if (!this.skipped.has(entry.name)) {
+        this.skipped.add(entry.name);
+        this.log(
+          `tree ${tree.slice(0, SHORT)} holds a name git refuses, left out: ${JSON.stringify(entry.name)}`,
+        );
       }
-      const isTree = mode === "40000" || mode === "040000";
-      const kind = isTree ? "tree" : mode === "160000" ? "commit" : "blob";
-      out.push({ mode: isTree ? "040000" : mode, path: name, oid, type: kind });
-    }
-    return out;
-  }
-
-  /** Writes the files' blobs and trees; returns the top tree's id. */
-  private async writeFiles(files: readonly SourceFile[]): Promise<string> {
-    const { here, dirs } = level(files);
-    const tree: TreeEntry[] = [];
-    for (const file of here) {
-      const oid = await git.writeBlob({ ...this.repo, blob: file.body });
-      tree.push({ mode: "100644", path: file.rel, oid, type: "blob" });
-    }
-    for (const [name, inner] of dirs) {
-      tree.push({ mode: "040000", path: name, oid: await this.writeFiles(inner), type: "tree" });
-    }
-    return git.writeTree({ ...this.repo, tree });
-  }
-
-  /** Commits HEAD's tree with `tree` at `rel` (null: without it) and moves the branch to it. */
-  private async commit(
-    head: { ref: string; commit: string | null },
-    rel: string,
-    tree: string | null,
-    subject: string,
-    at: Date,
-  ): Promise<string> {
-    const root =
-      head.commit === null
-        ? null
-        : (await git.readCommit({ ...this.repo, oid: head.commit })).commit.tree;
-    const next =
-      (await this.splice(root, rel.split("/"), tree)) ??
-      (await git.writeTree({ ...this.repo, tree: [] }));
-    const stamp = {
-      ...AUTHOR,
-      timestamp: Math.floor(at.getTime() / 1000),
-      timezoneOffset: at.getTimezoneOffset(),
-    };
-    const commit = await git.writeCommit({
-      ...this.repo,
-      commit: {
-        message: `${subject}\n`,
-        tree: next,
-        parent: head.commit === null ? [] : [head.commit],
-        author: stamp,
-        committer: stamp,
-      },
+      return false;
     });
-    // `.lock` is the name git itself stages a ref under and never reads as a branch.
-    const file = path.join(this.gitdir, head.ref);
-    await fs.promises.mkdir(path.dirname(file), { recursive: true });
-    await writeWhole(file, `${commit}\n`, `${file}.lock`);
-    return commit;
-  }
-
-  /**
-   * Writes a copy of `tree` whose entry at `segments` is `value` (null: removed), and of every
-   * tree on the way down; null when nothing is left in it, as git keeps no empty directory.
-   */
-  private async splice(
-    tree: string | null,
-    segments: string[],
-    value: string | null,
-  ): Promise<string | null> {
-    const [name = "", ...rest] = segments;
-    const entries = tree === null ? [] : await this.entries(tree);
-    const existing = entries.find((e) => e.path === name);
-    const child =
-      rest.length === 0
-        ? value
-        : await this.splice(existing?.type === "tree" ? existing.oid : null, rest, value);
-    const kept = entries.filter((e) => e.path !== name);
-    const next: TreeEntry[] =
-      child === null ? kept : [...kept, { mode: "040000", path: name, oid: child, type: "tree" }];
-    return next.length === 0 ? null : git.writeTree({ ...this.repo, tree: next });
   }
 
   /**
@@ -491,19 +653,6 @@ export class AgentStateRepo {
     }
     if (out.length === 0 && current !== null && oldest !== null)
       out.push({ tree: current, ...oldest });
-    return out;
-  }
-
-  /** Every file under a tree, paths relative to it. */
-  private async readFiles(tree: string, prefix: string): Promise<SourceFile[]> {
-    const out: SourceFile[] = [];
-    for (const entry of await this.entries(tree)) {
-      const rel = `${prefix}${entry.path}`;
-      if (entry.type === "tree") out.push(...(await this.readFiles(entry.oid, `${rel}/`)));
-      else if (entry.type === "blob") {
-        out.push({ rel, body: (await git.readBlob({ ...this.repo, oid: entry.oid })).blob });
-      }
-    }
     return out;
   }
 }

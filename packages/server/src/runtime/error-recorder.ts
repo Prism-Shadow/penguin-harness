@@ -52,7 +52,7 @@
  * different error codes.
  */
 import { formatLocalDate } from "../internal/dates.js";
-import { HttpError } from "../http/errors.js";
+import { isHttpError } from "../http/errors.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
 import { ErrorLog, Errors } from "@prismshadow/penguin-library-observability";
@@ -90,7 +90,8 @@ export class ErrorRecorder implements Errors {
   /** Record an error (synchronous, fails silently; same-window duplicates are dropped outright, see file header). */
   record(args: ErrorRecordArgs): void {
     try {
-      const http = args.err instanceof HttpError ? args.err : null;
+      // Any copy of HttpError (a plugin bundles its own), as handleError answers it.
+      const http = isHttpError(args.err) ? args.err : null;
       const now = this.clock.now();
       const projectId = args.ctx?.projectId ?? null;
       const code = args.code ?? http?.code ?? "internal";

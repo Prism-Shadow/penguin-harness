@@ -2,10 +2,11 @@
  * The server package's CLI module: the five resource commands (agent/project/schedule/cost/config)
  * as @Component contributions to the CLI's `CliCommandsModule.commands` slot, the org command
  * as a contribution to this package's own `CompanyCommandsModule.commands` slot
- * (`bootCompanyCommands()`), the browser command as a contribution to the browser module's
- * own `commands` slot (`bootBrowserCommands()`), and the server-backed command code they
- * share (connection client, stored sign-in, table renderer, approval parsing, agent
- * listing, `--root` resolution, language persistence).
+ * (`bootCompanyCommands()`), the browser command as a CLI module (`browserCliModule`, booted
+ * by the CLI like a shipped plugin's), and the server-backed command code they share (approval
+ * parsing, agent listing, `--root` resolution, language persistence). The connection client,
+ * stored sign-in, terminal input and table renderer live in the CLI face
+ * (`@prismshadow/penguin-library-cli`) and are re-exported here.
  *
  * The CLI collects the contributions at boot (its generated table carries this package's
  * manifest) and imports the shared code back through this subpath; type-only DTO shapes the
@@ -43,6 +44,12 @@ export * from "./commands/project.js";
 export * from "./commands/schedule.js";
 export * from "./commands/config.js";
 export * from "./commands/org.js";
+export * from "./commands/browser.messages.js";
+export type {
+  ClientMessages,
+  ClientText,
+  CliHostMessages,
+} from "@prismshadow/penguin-library-cli/messages";
 
 // DTO shapes the CLI's own commands mention (type-only; nothing of the server loads at runtime).
 export type {
@@ -92,6 +99,8 @@ export type {
   OrganizationDetail,
   OrganizationsResponse,
   PluginCliCommandInfo,
+  PluginCliCommandInputFile,
+  PluginCliCommandOutputFile,
   PluginCliCommandRunRequest,
   PluginCliCommandRunResponse,
   PluginCliCommandsResponse,
