@@ -685,7 +685,14 @@ export function agentServer(
       return json({ items: errors.slice(0, 1), total: errors.length, rows: errors.length });
     }
     if (errors !== undefined && path === `/api/projects/${PROJECT_ID}/usage`) {
-      const bucket: UsageBucket = { total: 0, requests: 0, cost: null, hasUncosted: false };
+      const bucket: UsageBucket = {
+        total: 0,
+        requests: 0,
+        cost: null,
+        hasUncosted: false,
+        toolRequests: 0,
+        toolCost: null,
+      };
       return json({
         summary: { today: bucket, last7d: bucket, total: bucket },
         groupBy: "date",
@@ -694,6 +701,7 @@ export function agentServer(
         series: [],
         byAgentSeries: [],
         byModelSeries: [],
+        tools: [],
         agentIds: [],
         models: [],
         errors: {
