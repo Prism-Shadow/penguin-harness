@@ -1,4 +1,4 @@
-# PRFC-0021 发行通道：harness 抵达一台机器的共用词表
+# PRFC-0021 Penguin Distro Channels
 
 [English](PRFC-0021-distros.md)
 

@@ -23,9 +23,11 @@
  * `ui-library`, `ui-ledger`, `ui-empty` and `ui-run` (a section a pack may dress as a whole: the
  * start page, the model library, a ledger of figures, an empty state, the run indicator;
  * 2026-11-05), the twenty-fourth, `ui-avatar` (an Agent's default avatar, the mascot drawn in
- * every theme's style; 2026-11-04), and the twenty-fifth and twenty-sixth, `ui-segmented` (the
- * segmented control) and `ui-action` (the primary action that heads a navigation list), which let
- * a pack draw Material 3's button group and FAB (2026-11-17). This suite holds the source to it:
+ * every theme's style; 2026-11-04), the twenty-fifth, `ui-showcase` (the plugin market's
+ * covers, cover cards, selected carousel and product hero, which a pack may draw its own
+ * boxes on; 2026-11-17), and the twenty-sixth and twenty-seventh, `ui-segmented` (the segmented
+ * control) and `ui-action` (the primary action that heads a navigation list), which let a pack
+ * draw Material 3's button group and FAB (2026-11-17). This suite holds the source to it:
  *
  * - no `ui-*` class in markup, and no `.ui-*` selector in a stylesheet, outside the list — in the
  *   package, the web app and the gallery;
@@ -52,7 +54,9 @@
  *   state's art's `line` and `doodle`), wherever a `data-set` is written; a fold's phase, which
  *   the foundation's layout motion turns into a track, is one of the three it knows (`open`,
  *   `closing`, `settled`) wherever a `data-fold` is written; the run indicator's state is
- *   `running` and an empty state's form `page` or `slot`.
+ *   `running` and an empty state's form `page` or `slot`; a showcase host names its root part
+ *   (`card`, `cover`, `carousel`, `product-hero`), and the family's other parts are the ones its
+ *   anatomy lists, wherever a `data-part` is written.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -164,7 +168,8 @@ const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
   // SVG ones. The basic charts drawn from data (2026-10-19): the line chart's bare frame, the pie
   // and the scatter plot draw their own svg, and the horizontal bar chart is HTML rows of tracks
   // and bars, like the timeline's lanes. A weather widget's next hours, once a line chart of
-  // their own (2026-10-04), are the line chart's bare frame.
+  // their own (2026-10-04), are the line chart's bare frame. The usage bar (2026-11-19) is one
+  // HTML track of stacked bars, like a horizontal bar chart's row.
   "ui-chart": [
     "ChartFrame",
     "TokenDonut",
@@ -175,6 +180,7 @@ const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
     "HBarChart",
     "PieChart",
     "ScatterChart",
+    "UsageBar",
   ],
   // The dimmed backdrop (2026-09-30): a sibling behind a sheet, a drawer or a picker's phone
   // sheet, or the full-viewport overlay a modal, the command palette, the harness overlay and
@@ -229,6 +235,9 @@ const HOSTS: Readonly<Record<(typeof HOOKS)[number], readonly string[]>> = {
   "ui-run": ["RunStatus"],
   // An Agent's default avatar in every theme's style (2026-11-04): the one avatar component.
   "ui-avatar": ["AgentAvatar"],
+  // The plugin market's showcase (2026-11-17): a cover, a cover card, the selected carousel and a
+  // product page's hero, in the Web App and on the public sites.
+  "ui-showcase": ["Cover", "CoverCard", "ShowcaseCarousel", "ProductHero"],
   // The segmented control, and the primary action that heads a navigation list, on the pinned
   // sidebar and on the folded rail (2026-11-17).
   "ui-segmented": ["Segmented"],
@@ -260,6 +269,23 @@ const GLASS_KINDS = new Set(["tile", "navigation"]);
 const CHART_PARTS = new Set(["grid", "axis", "series", "area", "bar", "point", "label", "swatch"]);
 /** A glyph's one part (the duotone body under its line drawing), and its three sets. */
 const GLYPH_PARTS = new Set(["duo"]);
+/** The parts a showcase host's root names itself by. */
+const SHOWCASE_ROOTS = new Set(["card", "cover", "carousel", "product-hero"]);
+/**
+ * The showcase family's anatomy: the hosts' roots, a generated cover's drawing and its tile, and
+ * the product page's parts beside the hero.
+ */
+const SHOWCASE_PARTS = new Set([
+  ...SHOWCASE_ROOTS,
+  "art",
+  "tile",
+  "gallery",
+  "section",
+  "parts",
+  "prompt",
+  "columns",
+  "facts",
+]);
 /**
  * The sets a drawing made in every style at once is drawn in: a glyph's three, the spinner's
  * arc and scribble, and an empty state's art in the line set and as a doodle.
@@ -493,11 +519,23 @@ describe("style hooks", () => {
           }
         }
         // A chart's parts are written wherever a mark is drawn, inside the frame's svg or by a
-        // component that renders into it: every literal `data-part` is one the recipes style.
+        // component that renders into it, and the showcase family's wherever its modules draw
+        // them: every literal `data-part` is one the recipes style.
         const part = element.attributes.get("data-part");
-        if (typeof part === "string" && !CHART_PARTS.has(part) && !GLYPH_PARTS.has(part)) {
+        if (
+          typeof part === "string" &&
+          !CHART_PARTS.has(part) &&
+          !GLYPH_PARTS.has(part) &&
+          !SHOWCASE_PARTS.has(part)
+        ) {
           problems.push(
-            `${at} data-part="${part}" is not grid|axis|series|area|bar|point|label|swatch or duo`,
+            `${at} data-part="${part}" is not a chart's part (grid|axis|series|area|bar|point|label|swatch), duo, or a showcase part (${[...SHOWCASE_PARTS].join("|")})`,
+          );
+        }
+        // A showcase host's root says which of the family it is, as a literal.
+        if (names.has("ui-showcase") && (typeof part !== "string" || !SHOWCASE_ROOTS.has(part))) {
+          problems.push(
+            `${at} .ui-showcase needs data-part="card|cover|carousel|product-hero", has ${String(part)}`,
           );
         }
         const set = element.attributes.get("data-set");

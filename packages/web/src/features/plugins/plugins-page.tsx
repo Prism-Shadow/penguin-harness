@@ -1,15 +1,25 @@
 /**
- * The plugin market: every plugin as one card (plugin-card.tsx) — the library's plugins
+ * The plugin market: every plugin as one cover card (plugin-card.tsx) — the library's plugins
  * (Skills and/or a hook package, loaded by core from the @penguinharness/* packages and
  * installed on Agents) and the server modules a Project can ask for (the Agent Sandbox backends
- * and whatever the registry lists, installed on the server by an admin). Cards sit in
- * collapsible sections, by category unless the reader picks another grouping — status,
- * contents, or none — in the select beside the header's search box, which narrows the cards.
- * The grouping and which sections are folded are remembered per browser (plugin-groups.ts); the
- * search is not. Settings › Plugins can narrow the list to the plugins this build cannot fully
- * run, also per browser (incompatible-only.ts), and while it does a notice under the title says
- * so. Clicking a card opens its detail dialog (plugin-detail.tsx); the status rules are
- * plugin-status.ts.
+ * and whatever the registry lists, installed on the server by an admin). The catalogue opens
+ * directly on the search, filters and results. Cards and compact rows share their actions.
+ * - **The tabs**: "All", then one tab per section of the grouping (category unless the reader
+ *   picks status or contents; no grouping, no tabs). The tab is in the URL (`?tab=<section>`),
+ *   so a tab can be linked; one the grouping does not have reads as All. The grouping select and
+ *   the sort select stand at the tab row's end; both are remembered per browser
+ *   (plugin-groups.ts, plugin-market.ts), the search is not.
+ * - **The grid** is the tab's rows, narrowed by the search, in the chosen sort — the curation's
+ *   order, recency, use in this Project, the name, or installs while the curation carries
+ *   live popularity figures. A search that finds nothing here but something in another tab says so
+ *   and offers the "All" tab.
+ * - **The detail** is in the URL too (`?plugin=<name>`): opening one pushes a history entry, so
+ *   Back closes it; closing one a link opened replaces the entry. The plugin a link names shows
+ *   its detail even while the tab or the search hides its card.
+ *
+ * A filter chip beside the search box narrows the list to the plugins this build cannot fully
+ * run, per browser (incompatible-only.ts), and while it does a notice under the title says so.
+ * The status rules are plugin-status.ts.
  *
  * - A library plugin is installed per Agent, by any member, through its card's "manage
  *   installs" dialog, and uninstalled there by the Project owner; the update nudge appears when
@@ -37,13 +47,19 @@
  * card's status and "used by" are placeholders (plugin-card.tsx).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router";
-import type { AgentSummary, PluginItem, QuickStartItem } from "@prismshadow/penguin-server/api";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
+import type {
+  AgentSummary,
+  PluginHoldersResponse,
+  PluginItem,
+  QuickStartItem,
+} from "@prismshadow/penguin-server/api";
 import {
   Button,
-  CollapsibleSection,
+  ChoiceGroup,
   ConfirmModal,
-  EntityCardGrid,
+  CoverCardSkeleton,
+  ImpactList,
   GlyphIcon,
   ICONS,
   Notice,
@@ -51,9 +67,12 @@ import {
   PageHeader,
   SearchInput,
   Select,
-  Skeleton,
-  SkeletonCard,
+  ShowcaseGrid,
+  ShowcaseLayoutToggle,
+  useShowcaseLayout,
+  Tabs,
   TodoNotice,
+  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -84,24 +103,45 @@ import { usePluginRepair } from "./plugin-repair";
 import { samePluginTarget, viewedMachine } from "./viewed-machine";
 import { SettingsDialog } from "../settings";
 import { pickDefaultAgent } from "../ai-create";
+import { pluginPickItems } from "../agents";
 import { toneInk } from "../../lib/tone";
+import { appWindowPath } from "../../lib/app-center-path";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
-import type { InstallTarget } from "./plugin-card";
+import type { InstallTarget, PluginCardProps } from "./plugin-card";
+import { rowTitle } from "./plugin-marks";
+import {
+  ALL_TAB,
+  artOf,
+  availableSorts,
+  initialPluginsSort,
+  isSelected,
+  popularityOf,
+  sortRows,
+  storePluginsSort,
+  tabRows,
+  type PluginSort,
+} from "./plugin-market";
 import {
   INDEX_KEY,
   LIBRARY_KEY,
+  MARKET_KEY,
   installedPlugins,
   installedPluginsKey,
   pluginIndex,
   pluginLibrary,
+  pluginMarket,
 } from "./plugin-reads";
+import { notifyPluginsChanged } from "../../lib/project-change-events";
 import {
   agentInstalls,
+  readNewAgentInstalls,
   rereadInstalls,
   useAgentInstalls,
   type InstallsTarget,
 } from "./agent-installs";
 import { installOnAgent, toastWriteError, uninstallFromAgent } from "./agent-plugin-writes";
+import { toastInstall } from "../../lib/agent-plugin-install";
+import { useOnPluginModulesChanged, usePluginModuleRequests } from "../../lib/plugin-modules";
 import { StdioDisclosure, StdioInstallBody } from "./plugin-mcp";
 import { ImportPluginModal } from "./plugin-import-modal";
 import {
@@ -110,15 +150,11 @@ import {
 } from "../../lib/plugins-incompatible-only";
 import {
   PLUGIN_GROUP_BYS,
-  foldKey,
   groupRows,
-  initialFoldedGroups,
   initialPluginsGroupBy,
   moduleParts,
   pluginCategories,
   pluginRows,
-  rowMatches,
-  storeFoldedGroups,
   storePluginsGroupBy,
   type PluginGroupBy,
   type PluginRow,
@@ -147,6 +183,10 @@ const EVERY_VISIT = { minAgeMs: 0 };
 
 /** The picker's value for this server until its id is read: no machine id is empty. */
 const SELF_PENDING = "";
+
+/** The query naming the tab on show (absent: All), and the plugin whose detail is open. */
+const TAB_PARAM = "tab";
+const PLUGIN_PARAM = "plugin";
 
 /**
  * What updating EVERY outdated plugin on this page would write, grouped the way it is sent.
@@ -205,6 +245,11 @@ export function PluginsPage() {
   );
   const groups = library.value?.groups ?? null;
   const error = groups === null ? library.failure : null;
+  /** The same library as the Create agent dialog's picker rows, for 「新建空白 Agent」. */
+  const pickLibrary = useMemo(
+    () => (groups === null ? null : pluginPickItems(groups.flatMap((g) => g.plugins))),
+    [groups],
+  );
   // A return to the same Project is a new visit, not permission for an old reply: a write that
   // answers in a later visit is not taken (its Project's list is read again on entry anyway).
   const projectVisit = useRef({ projectId, generation: 0 });
@@ -249,30 +294,86 @@ export function PluginsPage() {
     received: number;
     total: number | null;
   } | null>(null);
+  /** The step that install has reached, as its stream says: the source tried, or the re-assembly. */
+  const [installStage, setInstallStage] = useState<{
+    specifier: string;
+    stage: api.InstallStage;
+  } | null>(null);
+  /** The last server install that failed, per specifier: said under its card with the next steps. */
+  const [installFailures, setInstallFailures] = useState<ReadonlyMap<string, string>>(new Map());
+  const failInstall = (specifier: string, why: string | null) =>
+    setInstallFailures((m) => {
+      const next = new Map(m);
+      if (why === null) next.delete(specifier);
+      else next.set(specifier, why);
+      return next;
+    });
+  /**
+   * A server uninstall waiting for its confirmation (05 「插件库」 「安装模型」): the package, its
+   * name, the machine in view, and who would lose it — null until the server has said.
+   */
+  const [pendingServerUninstall, setPendingServerUninstall] = useState<{
+    specifier: string;
+    name: string;
+    machineId: string;
+    holders: PluginHoldersResponse | null;
+    error: string | null;
+  } | null>(null);
+  const [serverUninstalling, setServerUninstalling] = useState(false);
   const isAdmin = user?.isAdmin === true;
   const isOwner = currentProject?.role === "owner";
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** The Settings page the dialog opens on: plugin sources from the header, the requests from their notice. */
+  const [settingsSection, setSettingsSection] = useState<"plugins" | "moduleRequests">("plugins");
+  /** The administrator's requests to run plugins' server modules on this server, for the notice. */
+  const moduleRequests = usePluginModuleRequests(null, isAdmin);
   /** The import dialog (admin) is open. */
   const [importOpen, setImportOpen] = useState(false);
   /** Free text over names, descriptions and keywords. */
   const [query, setQuery] = useState("");
-  /** Only the plugins this build cannot fully run: switched in Settings › Plugins. */
+  /** Only the plugins this build cannot fully run: the filter beside the search, kept per browser. */
   const incompatibleOnly = usePluginsIncompatibleOnly();
   const [groupBy, setGroupBy] = useState<PluginGroupBy>(() => initialPluginsGroupBy());
-  const [folded, setFolded] = useState<ReadonlySet<string>>(() => initialFoldedGroups());
+  const [layout, chooseLayout] = useShowcaseLayout("penguin.pluginsLayout");
+  const [sort, setSort] = useState<PluginSort>(() => initialPluginsSort());
 
   const chooseGroupBy = (by: PluginGroupBy) => {
     setGroupBy(by);
     storePluginsGroupBy(by);
   };
-  const toggleFold = (key: string) =>
-    setFolded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      storeFoldedGroups(next);
-      return next;
-    });
+  const chooseSort = (next: PluginSort) => {
+    setSort(next);
+    storePluginsSort(next);
+  };
+
+  /**
+   * The curation: what is selected, what may lead, and the art; null until it answers, and for
+   * good when it cannot (a server older than the market answers 404) — generated covers.
+   */
+  const market = useRead(pluginMarket, MARKET_KEY, () => api.getPluginMarket(), EVERY_VISIT).value;
+
+  // The tab and the open detail live in the URL. A tab switch replaces the entry; a detail
+  // opened here pushes one, so Back closes it, and closing it steps back; closing one a link
+  // opened replaces the entry instead.
+  const location = useLocation();
+  const [params, setParams] = useSearchParams();
+  const tabParam = params.get(TAB_PARAM);
+  const openName = params.get(PLUGIN_PARAM);
+  const openedHere = (location.state as { pluginDetail?: boolean } | null)?.pluginDetail === true;
+  const withParam = (name: string, value: string | null) => (prev: URLSearchParams) => {
+    const next = new URLSearchParams(prev);
+    if (value === null) next.delete(name);
+    else next.set(name, value);
+    return next;
+  };
+  const selectTab = (key: string) =>
+    setParams(withParam(TAB_PARAM, key === ALL_TAB ? null : key), { replace: true });
+  const openDetail = (name: string) =>
+    setParams(withParam(PLUGIN_PARAM, name), { state: { pluginDetail: true } });
+  const closeDetail = () => {
+    if (openedHere) void navigate(-1);
+    else setParams(withParam(PLUGIN_PARAM, null), { replace: true });
+  };
 
   const { machineIds, machineLabels } = useSessions();
   /** Every machine of the Project with its Agents, reachable or not (lib/machine-agent-lists.ts). */
@@ -342,6 +443,11 @@ export function PluginsPage() {
   const remote = useRead(installedPlugins, remoteKey, () =>
     api.getInstalledPlugins(projectId!, viewMachine!),
   );
+  // A module that changed on this server, or on a machine, changes what that server's rows say:
+  // its answer is read again (at once while it is in view).
+  useOnPluginModulesChanged((server) => {
+    if (projectId !== null) installedPlugins.invalidate(installedPluginsKey(projectId, server));
+  });
   const view: PluginView | undefined =
     viewMachine === undefined
       ? undefined
@@ -366,13 +472,18 @@ export function PluginsPage() {
 
   /**
    * A server module change waiting for its confirmation (null = none). Applying one
-   * re-assembles the App, which stops the agent runs in flight in EVERY Project — the same
-   * cost a hot push has — so it is said before it is done.
+   * re-assembles the App for every Project on the server; the runs in flight carry on, but it
+   * changes what the whole server runs, so it is said before it is done.
    */
   const [pendingApply, setPendingApply] = useState<{
     specifier: string;
     name: string;
     install: boolean;
+    /** The build ships it: the change enables or disables its module for this Project. */
+    shipped: boolean;
+    version?: string;
+    previousVersion?: string;
+    resourceOnly?: boolean;
     projectId: string;
     machineId: string;
   } | null>(null);
@@ -394,19 +505,27 @@ export function PluginsPage() {
     }
     const { specifier, install } = target;
     setPendingSpecifier(specifier);
+    if (install) failInstall(specifier, null);
     try {
       const next = install
         ? await api.installPluginStream(
             target.projectId,
-            specifier,
+            target.version ? `${specifier}@${target.version}` : specifier,
             target.machineId,
             // A download the user has navigated away from does not write this visit's state;
             // the request itself runs on.
             (received, total) => {
               if (isCurrentVisit()) setInstallProgress({ specifier, received, total });
             },
+            (stage) => {
+              if (!isCurrentVisit()) return;
+              setInstallStage({ specifier, stage });
+              // A download belongs to one source: the next step's words replace its percent.
+              setInstallProgress(null);
+            },
           )
         : await api.uninstallPlugin(target.projectId, specifier, target.machineId);
+      notifyPluginsChanged(target.projectId);
       // A write that answers in a later visit is not taken: that visit read the list itself.
       if (!isCurrentVisit()) return;
       if (target.machineId !== selfId) {
@@ -422,8 +541,19 @@ export function PluginsPage() {
         if (!isCurrentVisit()) return;
       }
       installedPlugins.accept(installedPluginsKey(target.projectId, null), next);
+      // What landed may carry Agent content: the library (and the registry's rows) are read
+      // again, so the card's install flow moves on to the Agents without a reload.
+      if (install && target.machineId === selfId) {
+        pluginLibrary.invalidate(LIBRARY_KEY);
+        pluginIndex.invalidate(INDEX_KEY);
+        void reloadAgents().catch(() => undefined);
+      }
       const row = next.plugins.find((p) => p.specifier === specifier);
-      if (install && row?.error !== undefined) {
+      if (install && next.loading === true) {
+        toastSuccess(S.plugins.installModel.loadingToast(specifier));
+      } else if (install && next.installed?.from === "offline") {
+        toastSuccess(S.plugins.installModel.offlineToast(specifier));
+      } else if (install && row?.error !== undefined) {
         toastFailure(
           toldFailure(S.plugins.deploymentFailedToast(specifier, row.error), {
             what: "a plugin failed to load after it was installed",
@@ -435,13 +565,110 @@ export function PluginsPage() {
         toastSuccess(install ? S.plugins.deploymentInstalledToast(specifier) : S.common.saved);
       }
     } catch (e) {
-      if (isCurrentVisit()) toastApiError(e);
+      // A failed install is said under its card, with the next steps; a failed removal toasts.
+      if (isCurrentVisit()) {
+        if (install) failInstall(specifier, apiErrorText(e));
+        else toastApiError(e);
+      }
     } finally {
       if (isCurrentVisit()) {
         setPendingSpecifier(null);
         setInstallProgress(null);
+        setInstallStage(null);
         setPendingApply(null);
       }
+    }
+  };
+
+  /**
+   * From the server (admin): asks who would lose it first, for the confirm, then uninstalls it from
+   * every Agent there and from the server itself (05 「插件库」 「安装模型」). A machine in view is
+   * asked through this server's tunnel, and its listing in this Project's table for that machine
+   * goes too, so the fleet sync does not put it back.
+   */
+  const askServerUninstall = (specifier: string, name: string) => {
+    if (projectId === null || viewMachine === undefined) return;
+    const machineId = viewMachine;
+    const server = machineId === selfId ? null : machineId;
+    setPendingServerUninstall({ specifier, name, machineId, holders: null, error: null });
+    api.getPluginHolders(specifier, server).then(
+      (holders) =>
+        setPendingServerUninstall((p) => (p?.specifier === specifier ? { ...p, holders } : p)),
+      (e: unknown) =>
+        setPendingServerUninstall((p) =>
+          p?.specifier === specifier ? { ...p, error: apiErrorText(e) } : p,
+        ),
+    );
+  };
+  const runServerUninstall = async () => {
+    const target = pendingServerUninstall;
+    if (target === null || projectId === null) return;
+    const server = target.machineId === selfId ? null : target.machineId;
+    setServerUninstalling(true);
+    setPendingSpecifier(target.specifier);
+    try {
+      if (server !== null) await api.uninstallPlugin(projectId, target.specifier, server);
+      const done = await api.uninstallPluginFromServer(target.specifier, server);
+      const failed = done.agents.flatMap((a) =>
+        (a.failed ?? []).map((f) =>
+          S.agentPlugins.failedPart(`${a.agentName} · ${f.name}`, f.error),
+        ),
+      );
+      if (failed.length > 0) {
+        toastError(
+          S.plugins.installModel.uninstalledPartly(target.name, failed.join(S.todo.listSeparator)),
+        );
+      } else {
+        toastSuccess(S.plugins.installModel.uninstalledToast(target.name, done.agents.length));
+      }
+      setPendingServerUninstall(null);
+    } catch (e) {
+      toastApiError(e);
+    } finally {
+      setServerUninstalling(false);
+      setPendingSpecifier(null);
+      // The server, its library and every Agent's installs moved.
+      reloadServerPlugins();
+      if (server !== null) {
+        installedPlugins.invalidate(installedPluginsKey(projectId, server));
+        reloadMachineAgents(server);
+      } else void reloadAgents();
+      for (const t of installsTargets) rereadInstalls(projectId, t.machineId, t.agentId);
+    }
+  };
+
+  /**
+   * The install flow's server step (plugin-install-flow.tsx), an admin's: the flow itself says what
+   * installing on the server does, so it runs without a second confirm — the same install a
+   * module's own confirm runs, the version a market entry names included (a shipped module is a
+   * list edit, not a download).
+   */
+  const installServer = (row: PluginRow) => {
+    if (row.module === undefined || projectId === null || viewMachine === undefined) return;
+    const release = row.module.shipped ? undefined : row.module.entry?.version;
+    void runDeploymentInstall({
+      specifier: row.module.specifier,
+      name: row.name,
+      install: true,
+      shipped: row.module.shipped,
+      ...(release !== undefined ? { version: release } : {}),
+      projectId,
+      machineId: viewMachine,
+    });
+  };
+
+  /**
+   * A member's server step: asks an admin to install the package on the server, recorded with the
+   * current Agent so the admin sees who asked and for which Agent.
+   */
+  const askAdmin = async (row: PluginRow) => {
+    if (projectId === null || row.module === undefined) return;
+    try {
+      await api.askPluginPackage(projectId, row.module.specifier, currentAgent?.agentId ?? null);
+      toastSuccess(S.plugins.installModel.requestedToast(row.name));
+    } catch (e) {
+      toastApiError(e);
+      throw e;
     }
   };
 
@@ -450,6 +677,7 @@ export function PluginsPage() {
    * Project's list are read again, each standing on screen until its answer lands.
    */
   const reloadServerPlugins = () => {
+    if (projectId) notifyPluginsChanged(projectId);
     pluginLibrary.invalidate(LIBRARY_KEY);
     pluginIndex.invalidate(INDEX_KEY);
     if (deploymentKey !== null) installedPlugins.invalidate(deploymentKey);
@@ -535,6 +763,21 @@ export function PluginsPage() {
     agentsLoading ||
     targets.some((t) => t.machine === null && unknown.has(t.key) && !unreadable.has(t.key));
 
+  /**
+   * A blank Agent was created from a card's install flow, on this server: its installs
+   * are read first and the Agent list after, so its row joins the list already reading Installed.
+   * A failed list read is said; the Agent exists either way.
+   */
+  const blankAgentCreated = async (agent: AgentSummary) => {
+    if (!projectId) return;
+    await readNewAgentInstalls(projectId, null, agent.agentId);
+    try {
+      await reloadAgents();
+    } catch (e) {
+      toastApiError(e);
+    }
+  };
+
   /** Reads one target's lists again (Set up wrote its vault): what its MCP servers wait for moved. */
   const refreshAgentMcp = (key: string) => {
     if (!projectId) return;
@@ -615,9 +858,12 @@ export function PluginsPage() {
           : `${agentDisplayName(target.agent)} ${S.chat.machineTag(target.machine.label)}`;
     try {
       if (on) {
-        await installOnAgent(where, [plugin.name]);
-        toastSuccess(
+        const done = await installOnAgent(where, [plugin.name]);
+        toastInstall(
           `${S.plugins.installedToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
+          plugin.name,
+          done.modules,
+          target?.machine?.label,
         );
       } else {
         // One request: the server takes every part apart. "Nothing of it is here" is the state
@@ -808,75 +1054,140 @@ export function PluginsPage() {
       );
     }
   }
-  const statusOf = (row: PluginRow): PluginStatus => pluginStatus(row, usages.get(row.key) ?? null);
+  /** How the library's server modules stand on the server in view: its own answer says. */
+  const moduleStates = (view?.remote ?? deployment)?.modules ?? [];
+  const statusOf = (row: PluginRow): PluginStatus =>
+    pluginStatus(
+      row,
+      usages.get(row.key) ?? null,
+      row.library?.modules === true
+        ? moduleStates.find((m) => m.plugin === row.library!.name)
+        : undefined,
+    );
   const unsatisfiedCount = rows.filter((row) => row.module?.unsatisfied !== undefined).length;
   const searching = query.trim() !== "" || incompatibleOnly;
-  const visible = rows.filter(
-    (row) => rowMatches(row, query) && (!incompatibleOnly || row.module?.unsatisfied !== undefined),
-  );
-  const sections = groupRows(visible, statusOf, groupBy, categories);
+  /** The list the tabs split: every row, or the incompatible ones while the filter is on. */
+  const listed = rows.filter((row) => !incompatibleOnly || row.module?.unsatisfied !== undefined);
+  // The tabs come from the whole list, not the search's matches, so typing never moves them.
+  const sections = groupBy === "none" ? [] : groupRows(listed, statusOf, groupBy, categories);
+  const tab = tabRows(sections, tabParam, listed, query);
+  const activeTab = tab.active;
+  /** The market's popularity figures (placeholders for now; see plugin-market.ts), or null. */
+  const popularity = popularityOf(market);
+  const sorts = availableSorts(popularity);
+  /** The sort on show: a stored "popular" reads as the curation's order while no figures exist. */
+  const shownSort = sorts.includes(sort) ? sort : "featured";
+  const visible = sortRows(tab.rows, shownSort, {
+    title: (row) => rowTitle(row, locale),
+    selected: market?.selected ?? [],
+    usedBy: (row) => usages.get(row.key)?.usedBy.length ?? 0,
+    popularity,
+  });
   const categoryTitle = (id: string) => categories.find((c) => c.id === id)?.title ?? id;
+  /** The row a link's `?plugin=` names; its detail opens even when its card is not in the grid. */
+  const openRow = openName === null ? undefined : rows.find((row) => row.name === openName);
 
+  const cardProps = (row: PluginRow): PluginCardProps => ({
+    marketCard: true,
+    layout: layout === "list" ? "row" : "cover",
+    currentAgentId: currentAgent?.agentId,
+    // The first row of that name, should two packages share one: one detail at a time.
+    detailOpen: row === openRow,
+    onDetailOpenChange: (open) => (open ? openDetail(row.name) : closeDetail()),
+    art: artOf(market, row),
+    selected: isSelected(market, row),
+    onOpenApp: (appId) => void navigate(appWindowPath(appId)),
+    row,
+    status: statusOf(row),
+    usage: usages.get(row.key) ?? null,
+    categoryTitle: categoryTitle(row.category),
+    // Outside its category's own tab, a card names its category.
+    showCategory: groupBy !== "category" || activeTab === ALL_TAB,
+    targets,
+    blankAgent: { library: pickLibrary, onCreated: blankAgentCreated },
+    installed,
+    unknown,
+    failed: unreadable,
+    pending:
+      (row.module !== undefined && modulesPending) || (row.library !== undefined && libraryPending),
+    canQuickStart: currentAgent !== null,
+    isAdmin,
+    isOwner,
+    projectId,
+    busy:
+      row.module !== undefined && pendingSpecifier === row.module.specifier && !serverUninstalling,
+    progress:
+      row.module !== undefined && installProgress?.specifier === row.module.specifier
+        ? installProgress
+        : null,
+    stage:
+      row.module !== undefined && installStage?.specifier === row.module.specifier
+        ? installStage.stage
+        : null,
+    failure: row.module !== undefined ? (installFailures.get(row.module.specifier) ?? null) : null,
+    onDismissFailure: () => {
+      if (row.module !== undefined) failInstall(row.module.specifier, null);
+    },
+    onOpenSources: () => setSettingsOpen(true),
+    onImportFile: () => setImportOpen(true),
+    onInstallServer: () => installServer(row),
+    onAskAdmin: () => askAdmin(row),
+    ...(isAdmin
+      ? {
+          onServerUninstall: () =>
+            askServerUninstall(row.module?.specifier ?? row.library?.package ?? row.name, row.name),
+        }
+      : {}),
+    blocked:
+      row.module !== undefined &&
+      (viewMachine === undefined ||
+        (pendingSpecifier !== null && pendingSpecifier !== row.module.specifier)),
+    onQuickStart: quickStartLibrary,
+    onToggleInstall: toggleInstall,
+    onUpdateOutdated: updateOutdated,
+    showPackageUpdates: viewingHere,
+    onModuleApply: (install, version) => {
+      if (row.module !== undefined && projectId !== null && viewMachine !== undefined) {
+        setPendingApply({
+          specifier: row.module.specifier,
+          name: row.name,
+          install,
+          shipped: row.module.shipped,
+          version,
+          ...(viewingHere && version && row.module.entry?.localInstall?.updateAvailable
+            ? {
+                previousVersion: row.module.entry.localInstall.version,
+                resourceOnly: row.module.entry.localInstall.libraryOnly,
+              }
+            : {}),
+          projectId,
+          machineId: viewMachine,
+        });
+      }
+    },
+    onRepair:
+      isAdmin && row.module?.unsatisfied !== undefined
+        ? () =>
+            repair({
+              specifier: row.module!.specifier,
+              disabled: row.module!.state === "disabled",
+              reason: row.module!.unsatisfied!,
+            })
+        : null,
+    onMcpChanged: refreshAgentMcp,
+  });
+  // Keyed by the package, not the row: a market row becomes a library row once the server has it,
+  // and the card (with its open install flow) must stay mounted through that.
   const card = (row: PluginRow) => (
     <PluginCard
-      framed={groupBy === "none"}
-      key={row.key}
-      row={row}
-      status={statusOf(row)}
-      usage={usages.get(row.key) ?? null}
-      categoryTitle={categoryTitle(row.category)}
-      showCategory={groupBy !== "category"}
-      targets={targets}
-      installed={installed}
-      unknown={unknown}
-      failed={unreadable}
-      pending={
-        (row.module !== undefined && modulesPending) ||
-        (row.library !== undefined && libraryPending)
-      }
-      canQuickStart={currentAgent !== null}
-      isAdmin={isAdmin}
-      isOwner={isOwner}
-      projectId={projectId}
-      busy={row.module !== undefined && pendingSpecifier === row.module.specifier}
-      progress={
-        row.module !== undefined && installProgress?.specifier === row.module.specifier
-          ? installProgress
-          : null
-      }
-      blocked={
-        row.module !== undefined &&
-        (viewMachine === undefined ||
-          (pendingSpecifier !== null && pendingSpecifier !== row.module.specifier))
-      }
-      onQuickStart={quickStartLibrary}
-      onDeletePlugin={null}
-      onToggleInstall={toggleInstall}
-      onUpdateOutdated={updateOutdated}
-      onModuleApply={(install) => {
-        if (row.module !== undefined && projectId !== null && viewMachine !== undefined) {
-          setPendingApply({
-            specifier: row.module.specifier,
-            name: row.name,
-            install,
-            projectId,
-            machineId: viewMachine,
-          });
-        }
-      }}
-      onRepair={
-        isAdmin && row.module?.unsatisfied !== undefined
-          ? () =>
-              repair({
-                specifier: row.module!.specifier,
-                disabled: row.module!.state === "disabled",
-                reason: row.module!.unsatisfied!,
-              })
-          : null
-      }
-      onMcpChanged={refreshAgentMcp}
+      key={row.module?.specifier ?? row.library?.package ?? row.key}
+      {...cardProps(row)}
     />
   );
+  const tabs = [
+    { key: ALL_TAB, label: S.plugins.tabAll },
+    ...sections.map((s) => ({ key: s.id, label: s.title })),
+  ];
 
   // The scrollbar gutter stays reserved: a search that shortens the page below the viewport
   // would otherwise take the scrollbar with it and shift everything sideways as it is typed.
@@ -892,8 +1203,8 @@ export function PluginsPage() {
           <PluginsHeaderActions
             query={query}
             onQuery={setQuery}
-            groupBy={groupBy}
-            onGroupBy={chooseGroupBy}
+            incompatibleOnly={incompatibleOnly}
+            onIncompatibleOnly={writePluginsIncompatibleOnly}
             isAdmin={isAdmin}
             machinePicker={
               otherMachines.length > 0 ? (
@@ -907,7 +1218,10 @@ export function PluginsPage() {
                 />
               ) : null
             }
-            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenSettings={() => {
+              setSettingsSection("plugins");
+              setSettingsOpen(true);
+            }}
             onImport={() => setImportOpen(true)}
           />
         }
@@ -960,11 +1274,18 @@ export function PluginsPage() {
           </Notice>
         )}
         <IncompatibleNotice filtered={incompatibleOnly} unsatisfied={unsatisfiedCount} />
+        <ModuleRequestsNotice
+          waiting={isAdmin ? (moduleRequests.value?.pending ?? 0) : 0}
+          onView={() => {
+            setSettingsSection("moduleRequests");
+            setSettingsOpen(true);
+          }}
+        />
       </PageHeader>
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        section="plugins"
+        section={settingsSection}
       />
       {isAdmin && projectId !== null && (
         <ImportPluginModal
@@ -976,6 +1297,35 @@ export function PluginsPage() {
         />
       )}
 
+      <div className="mb-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <PluginsListControls
+              groupBy={groupBy}
+              onGroupBy={(by) => {
+                chooseGroupBy(by);
+                // The tab on show belongs to the grouping it came from.
+                if (tabParam !== null) selectTab(ALL_TAB);
+              }}
+              sort={shownSort}
+              sorts={sorts}
+              onSort={chooseSort}
+              locale={locale}
+            />
+          </div>
+          <ShowcaseLayoutToggle
+            value={layout}
+            onChange={chooseLayout}
+            labels={{
+              group: S.plugins.layoutLabel,
+              cards: S.plugins.cardsLayout,
+              list: S.plugins.listLayout,
+            }}
+          />
+        </div>
+        {groupBy !== "none" && <Tabs items={tabs} active={activeTab} onChange={selectTab} />}
+      </div>
+
       {error ? (
         <div className="mt-2 flex items-center gap-3">
           <p className={`text-sm ${toneInk.danger}`}>{error}</p>
@@ -985,46 +1335,39 @@ export function PluginsPage() {
         </div>
       ) : groups === null ? (
         // The cards' own grid, so the placeholders stand in the columns the cards will take.
-        <EntityCardGrid>
-          {Array.from({ length: 4 }, (_, i) => (
-            <SkeletonCard key={i} className="p-4">
-              <Skeleton className="h-4 w-32" />
-              <Skeleton className="mt-2 h-4 w-3/4" />
-              <Skeleton className="mt-3 h-6 w-36" />
-            </SkeletonCard>
+        <ShowcaseGrid
+          layout={layout}
+          className="lg:[--showcase-column-min:12rem] xl:[--showcase-column-min:14rem]"
+          aria-busy
+        >
+          {Array.from({ length: 6 }, (_, i) => (
+            <CoverCardSkeleton key={i} />
           ))}
-        </EntityCardGrid>
+        </ShowcaseGrid>
+      ) : visible.length > 0 ? (
+        <ShowcaseGrid
+          layout={layout}
+          className="lg:[--showcase-column-min:12rem] xl:[--showcase-column-min:14rem]"
+        >
+          {visible.map(card)}
+        </ShowcaseGrid>
+      ) : tab.elsewhere > 0 ? (
+        <p className="flex flex-wrap items-center gap-x-2 px-1 text-sm text-fg-muted">
+          <span>{S.plugins.noMatchHere(tab.elsewhere)}</span>
+          <Button size="sm" variant="link" onClick={() => selectTab(ALL_TAB)}>
+            {S.plugins.showAllResults}
+          </Button>
+        </p>
       ) : (
-        <div className="space-y-3">
-          {groupBy === "none"
-            ? sections.map((section) => (
-                <EntityCardGrid key={section.id}>{section.rows.map(card)}</EntityCardGrid>
-              ))
-            : sections.map((section) => {
-                const key = foldKey(groupBy, section.id);
-                // A match folded away would read as a missing one, so a search opens every
-                // section it leaves; the remembered folds come back after.
-                const open = searching || !folded.has(key);
-                return (
-                  <CollapsibleSection
-                    key={key}
-                    title={section.title}
-                    meta={S.plugins.pluginCount(section.rows.length)}
-                    open={open}
-                    onOpenChange={() => toggleFold(key)}
-                  >
-                    <EntityCardGrid>{section.rows.map(card)}</EntityCardGrid>
-                  </CollapsibleSection>
-                );
-              })}
-          {sections.length === 0 && (
-            <p className="px-1 text-sm text-gray-400 dark:text-gray-500">
-              {searching && (indexPending > 0 || (registry.reading && index === null))
-                ? S.pluginRegistry.searchWhileDownloading
-                : S.plugins.noMatch}
-            </p>
-          )}
-        </div>
+        <p className="px-1 text-sm text-fg-muted">
+          {searching && (indexPending > 0 || (registry.reading && index === null))
+            ? S.pluginRegistry.searchWhileDownloading
+            : S.plugins.noMatch}
+        </p>
+      )}
+      {/* The plugin a link names, when its card is not in the grid: its dialogs alone. */}
+      {openRow !== undefined && !visible.includes(openRow) && (
+        <PluginCard key={`open:${openRow.key}`} {...cardProps(openRow)} surface="none" />
       )}
 
       {/* A server module change: what it does is said before it runs, and what it costs in
@@ -1034,21 +1377,81 @@ export function PluginsPage() {
           <ConfirmModal
             open
             title={
-              pendingApply.install
-                ? S.plugins.applyConfirmInstall(pendingApply.name)
-                : S.plugins.applyConfirmRemove(pendingApply.name)
+              pendingApply.previousVersion && pendingApply.version
+                ? S.plugins.updatePackageTo(pendingApply.version)
+                : pendingApply.shipped
+                  ? pendingApply.install
+                    ? S.plugins.installModel.enableTitle(pendingApply.name)
+                    : S.plugins.installModel.disableTitle(pendingApply.name)
+                  : pendingApply.install
+                    ? S.plugins.applyConfirmInstall(pendingApply.name)
+                    : S.plugins.applyConfirmRemove(pendingApply.name)
             }
             tone={pendingApply.install ? "primary" : "danger"}
-            {...(pendingApply.install ? { glyph: ICONS.download } : {})}
-            confirmLabel={pendingApply.install ? S.plugins.install : S.plugins.uninstall}
+            {...(pendingApply.install ? { glyph: ICONS.server } : {})}
+            confirmLabel={
+              pendingApply.previousVersion
+                ? S.skills.updateAction
+                : pendingApply.shipped
+                  ? pendingApply.install
+                    ? S.plugins.installModel.enableModule
+                    : S.plugins.installModel.disableModule
+                  : pendingApply.install
+                    ? S.plugins.installModel.installServer
+                    : S.plugins.uninstall
+            }
             cancelLabel={S.common.cancel}
             busy={pendingSpecifier !== null}
             onClose={() => setPendingApply(null)}
             onConfirm={() => void runDeploymentInstall(pendingApply)}
           >
-            <ModuleApplyBody install={pendingApply.install} name={pendingApply.name} />
+            {pendingApply.resourceOnly && pendingApply.previousVersion && pendingApply.version ? (
+              <p>
+                {S.plugins.packageUpdateBody(
+                  pendingApply.name,
+                  pendingApply.previousVersion,
+                  pendingApply.version,
+                )}
+              </p>
+            ) : (
+              <ModuleApplyBody
+                mode={
+                  pendingApply.shipped
+                    ? pendingApply.install
+                      ? "enable"
+                      : "disable"
+                    : pendingApply.install
+                      ? "install"
+                      : "remove"
+                }
+                name={
+                  pendingApply.version
+                    ? `${pendingApply.name} v${pendingApply.version}`
+                    : pendingApply.name
+                }
+              />
+            )}
           </ConfirmModal>
         )}
+      {/* From the server: it leaves every Agent first, which the confirm names before it runs. */}
+      {pendingServerUninstall !== null && (
+        <ConfirmModal
+          open
+          title={S.plugins.installModel.uninstallTitle(pendingServerUninstall.name)}
+          tone="danger"
+          confirmLabel={S.plugins.installModel.uninstallServer}
+          cancelLabel={S.common.cancel}
+          busy={serverUninstalling}
+          confirmDisabled={
+            pendingServerUninstall.holders === null ||
+            pendingServerUninstall.holders.shared.length > 0
+          }
+          onClose={() => setPendingServerUninstall(null)}
+          onConfirm={() => void runServerUninstall()}
+        >
+          <ServerUninstallBody target={pendingServerUninstall} />
+        </ConfirmModal>
+      )}
       {repairModal}
       {/* A library plugin's quick start on an Agent that lacks it: installing comes first, and is asked. */}
       {pendingQuickStart !== null && currentAgent && (
@@ -1119,8 +1522,8 @@ export function PluginsPage() {
  * The notice about incompatible plugins, one at a time. While the list holds only them it says
  * so and offers the whole list back: a filtered list that did not say so would read as plugins
  * gone missing. Otherwise, while this build cannot fully run some listed plugins, it counts them
- * and offers to show only those. Both actions flip the stored preference the Settings switch
- * shows.
+ * and offers to show only those. Both actions flip the stored preference the filter beside the
+ * search shows.
  */
 export function IncompatibleNotice({
   filtered,
@@ -1159,23 +1562,118 @@ export function IncompatibleNotice({
   );
 }
 
+/** The filter chip's value: the list narrowed to the plugins this build cannot fully run. */
+const INCOMPATIBLE = "incompatible";
+
+/**
+ * Each select's width beside the tabs, by language: wide enough for its longest option there
+ * (a select's menu is as wide as the select), and no wider, since every pixel it takes is one
+ * the tabs do not have.
+ */
+const CONTROL_WIDTH: Record<"zh" | "en", { groupBy: string; sort: string }> = {
+  zh: { groupBy: "sm:w-28", sort: "sm:w-36" },
+  en: { groupBy: "sm:w-40", sort: "sm:w-52" },
+};
+
+/**
+ * The tab row's end: the grouping select, whose options each say what they do ("Group by
+ * status") while its accessible name says what it groups, and beside it the sort select. Both on
+ * the small rung, each wide enough for its longest option in the UI language; on a phone they
+ * share their line, each taking half.
+ */
+export function PluginsListControls({
+  groupBy,
+  onGroupBy,
+  sort,
+  sorts,
+  onSort,
+  locale,
+}: {
+  groupBy: PluginGroupBy;
+  onGroupBy: (by: PluginGroupBy) => void;
+  sort: PluginSort;
+  /** The sorts on offer ("popular" only while the market sends popularity figures). */
+  sorts: readonly PluginSort[];
+  onSort: (sort: PluginSort) => void;
+  locale: "zh" | "en";
+}) {
+  const width = CONTROL_WIDTH[locale];
+  return (
+    <>
+      <div className={`min-w-0 flex-1 sm:flex-none ${width.groupBy}`}>
+        <Select
+          size="sm"
+          aria-label={S.plugins.groupByLabel}
+          value={groupBy}
+          onChange={(e) => onGroupBy(e.target.value as PluginGroupBy)}
+        >
+          {PLUGIN_GROUP_BYS.map((by) => (
+            <option key={by} value={by}>
+              {S.plugins.groupBy[by]}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div className={`min-w-0 flex-1 sm:flex-none ${width.sort}`}>
+        <Select
+          size="sm"
+          aria-label={S.plugins.sortLabel}
+          value={sort}
+          onChange={(e) => onSort(e.target.value as PluginSort)}
+        >
+          {sorts.map((key) => (
+            <option key={key} value={key}>
+              {S.plugins.sort[key]}
+            </option>
+          ))}
+        </Select>
+      </div>
+    </>
+  );
+}
+
+/**
+ * The administrator's notice beside the incompatible-plugins one, while members' requests to run a
+ * plugin's server module wait on this server: how many, and the way to the Settings dialog's
+ * module requests page, where they are decided. Nothing while none waits.
+ */
+export function ModuleRequestsNotice({
+  waiting,
+  onView,
+}: {
+  /** How many requests wait for a decision. */
+  waiting: number;
+  onView: () => void;
+}) {
+  if (waiting === 0) return null;
+  return (
+    <Notice
+      tone="attention"
+      className="mt-4"
+      action={{ label: S.plugins.moduleRequestsView, onClick: onView }}
+    >
+      {S.plugins.moduleRequestsNotice(waiting)}
+    </Notice>
+  );
+}
+
 /**
  * The page header's actions, in the Agents page header's look: every control on the small rung,
- * so the row is one height, at the header's gap. For everyone (a member narrows and regroups the
- * list too): the search box, and beside it the grouping select, whose options each say what they
- * do ("Group by status") while its accessible name says what it groups; it is wide enough for its
- * longest English option. Then, for an admin, the machine picker (which machine's plugins the rows
- * show, and which machine's own table an install or a removal edits), then
- * the pair the Agents page header has: Import plugin, the primary button, and Settings, the
- * secondary one, which opens the Settings dialog's Plugins page — each glyph before words that
- * always show. On a phone the search box and the select share the first line, the box taking what
- * the select leaves, and the admin's buttons wrap below them.
+ * so the row is one height, at the header's gap. For everyone (a member narrows the list too):
+ * the search box, and beside it the incompatible-only filter, a toggle chip that narrows the list
+ * as the search does. Then, for an admin, the machine picker (which machine's plugins the rows
+ * show, and which machine's own table an install or a removal edits), then the pair the Agents
+ * page header has: Import plugin, the primary button, and Settings, the secondary one, which opens
+ * the Settings dialog's Plugins page — each glyph before words that always show. On a phone the
+ * search box and the filter share the first line, the box taking what the filter leaves, and the
+ * admin's buttons wrap below them. The grouping and the sort stand at the tab row's end
+ * (`PluginsListControls`).
  */
 export function PluginsHeaderActions({
   query,
   onQuery,
-  groupBy,
-  onGroupBy,
+  incompatibleOnly,
+  onIncompatibleOnly,
   isAdmin,
   machinePicker,
   onOpenSettings,
@@ -1183,8 +1681,9 @@ export function PluginsHeaderActions({
 }: {
   query: string;
   onQuery: (query: string) => void;
-  groupBy: PluginGroupBy;
-  onGroupBy: (by: PluginGroupBy) => void;
+  /** Whether the list holds only the plugins this build cannot fully run. */
+  incompatibleOnly: boolean;
+  onIncompatibleOnly: (on: boolean) => void;
   isAdmin: boolean;
   /** The machine picker, when there is another machine to pick; null otherwise. */
   machinePicker: React.ReactNode;
@@ -1204,20 +1703,16 @@ export function PluginsHeaderActions({
             onChange={onQuery}
           />
         </div>
-        <div className="w-40 shrink-0">
-          <Select
-            size="sm"
-            aria-label={S.plugins.groupByLabel}
-            value={groupBy}
-            onChange={(e) => onGroupBy(e.target.value as PluginGroupBy)}
-          >
-            {PLUGIN_GROUP_BYS.map((by) => (
-              <option key={by} value={by}>
-                {S.plugins.groupBy[by]}
-              </option>
-            ))}
-          </Select>
-        </div>
+        <ChoiceGroup
+          shape="chip"
+          size="sm"
+          multiple
+          aria-label={S.plugins.filterLabel}
+          className="shrink-0"
+          options={[{ value: INCOMPATIBLE, label: S.plugins.incompatibleOnlyFilter }]}
+          value={incompatibleOnly ? [INCOMPATIBLE] : []}
+          onChange={(on) => onIncompatibleOnly(on.includes(INCOMPATIBLE))}
+        />
       </div>
       {isAdmin && (
         <>
@@ -1235,5 +1730,54 @@ export function PluginsHeaderActions({
         </>
       )}
     </>
+  );
+}
+
+/**
+ * The server-uninstall confirm's body: how many Agents lose the plugin and which (named up to five,
+ * the rest counted), and that their copies go with it — or why it cannot run (a Project's shared
+ * table lists it). While the holders are being asked for, a line says so and the button waits.
+ */
+function ServerUninstallBody({
+  target,
+}: {
+  target: {
+    name: string;
+    holders: PluginHoldersResponse | null;
+    error: string | null;
+  };
+}) {
+  const words = S.plugins.installModel;
+  const holders = target.holders;
+  if (target.error !== null) {
+    return <p className="text-sm">{target.error}</p>;
+  }
+  if (holders !== null && holders.shared.length > 0) {
+    return (
+      <p className="text-sm">
+        {words.sharedRefused(holders.shared.map((p) => p.projectName).join(S.todo.listSeparator))}
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2 text-sm">
+      {holders !== null && <p>{words.uninstallBody(target.name, holders.agents.length)}</p>}
+      <ImpactList
+        items={
+          holders === null
+            ? null
+            : holders.agents.map((a) => ({
+                key: `${a.projectId}/${a.agentId}`,
+                name: a.agentName,
+                where: a.projectName,
+              }))
+        }
+        more={words.moreAgents}
+        pending={words.holdersLoading}
+      />
+      {holders !== null && holders.agents.length > 0 && (
+        <p className="text-xs text-fg-muted">{words.uninstallCopies}</p>
+      )}
+    </div>
   );
 }

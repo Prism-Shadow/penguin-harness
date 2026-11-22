@@ -134,7 +134,9 @@ export default defineConfig({
     pageShells(),
     watchPackageSources(),
   ],
-  resolve: { dedupe: ["react", "react-dom"] },
+  resolve: {
+    dedupe: ["react", "react-dom", "@prismshadow/penguin-ui", "@prismshadow/penguin-web-plugin"],
+  },
   // The app's module classes use standard decorators; the dev server must lower them, as in
   // the app's own config.
   esbuild: { target: "es2022" },

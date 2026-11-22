@@ -20,7 +20,10 @@ import { S } from "../../lib/strings";
 
 /** A block of a model dialog below its identity fields. */
 export type ModelDialogSlot =
-  /** The row of model actions: the connectivity test (and, on a saved model, default / vision / remove). */
+  /**
+   * The row of model actions: the connectivity test (and, on a saved model, default, default for
+   * the multimodal operations it can serve, and remove).
+   */
   | "actions"
   | "apiKey"
   | "baseUrl"

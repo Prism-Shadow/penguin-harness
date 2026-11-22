@@ -4,6 +4,7 @@
  * Directory layout, default config, Project config read/write, Agent State load/init.
  */
 export * from "./paths.js";
+export * from "./reserved-names.js";
 export * from "./default-config.js";
 export * from "./kernel-history.js";
 export * from "./kernel-update.js";

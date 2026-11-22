@@ -1,0 +1,43 @@
+{
+  "name": "image-studio-workbench",
+  "version": "1.0.0",
+  "type": "module",
+  "penguin": {
+    "version": "2026.11.19.2",
+    "appCenter": {
+      "show": true,
+      "icon": "ui/icon.svg",
+      "title": "Image Studio",
+      "titleZh": "\u56fe\u50cf\u5de5\u4f5c\u5ba4"
+    },
+    "modules": [
+      {
+        "name": "Workbench",
+        "requires": {
+          "host": {
+            "iface": "@prismshadow/penguin-server#WorkbenchHost",
+            "from": "Host"
+          }
+        },
+        "provides": {
+          "main": "@prismshadow/penguin-server#WorkbenchMain"
+        },
+        "contributes": {
+          "WebModule.sessionTabs": [
+            {
+              "id": "images.main",
+              "key": "main",
+              "title": "Image Studio",
+              "titleZh": "\u56fe\u50cf\u5de5\u4f5c\u5ba4",
+              "renderer": {
+                "iframe": {
+                  "src": "ui/index.html"
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

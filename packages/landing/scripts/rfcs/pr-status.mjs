@@ -1,0 +1,441 @@
+/**
+ * Build-time GitHub PR status fetcher and daily cache for the RFC index (`request-for-comments`).
+ *
+ * Optimization contract:
+ * - Merged PRs (`status === "merged"` with `baseRefName === "main"`) are immutable and are never
+ *   queried again on subsequent refreshes.
+ * - Open/draft PRs are refreshed at most once every 24 hours (`MAX_AGE_MS = 24 * 60 * 60 * 1000`)
+ *   via a single batched GraphQL query that fetches all currently open `request-for-comments` PRs
+ *   together with any previously open/draft PRs from the cache (to detect transitions to `merged`
+ *   or `closed`).
+ * - When the build environment is offline or unauthenticated, the loader falls back to the cached
+ *   or committed snapshot (`src/lib/rfc-pr-status.json`).
+ */
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+export const REPO_OWNER = "Prism-Shadow";
+export const REPO_NAME = "penguin-harness";
+export const RFC_LABEL = "request-for-comments";
+export const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+export const SEED_FILE = join(HERE, "..", "..", "src", "lib", "rfc-pr-status.json");
+export const CACHE_FILE = join(
+  HERE,
+  "..",
+  "..",
+  "node_modules",
+  ".cache",
+  "penguin-rfcs",
+  "pr-status.json",
+);
+
+/** Canonical RFC titles for unmerged drafts retitled after their initial PR branch was opened. */
+const RFC_TITLE_OVERRIDES = {
+  "PRFC-0011-single-socket": {
+    title: "PRFC-0011 API Socket",
+    titleZh: "PRFC-0011 API Socket",
+  },
+};
+
+/** Map a GitHub GraphQL PullRequest state + isDraft flag to our normalized status. */
+export function normalizePrStatus(state, isDraft) {
+  if (state === "MERGED") return "merged";
+  if (state === "CLOSED") return "closed";
+  return isDraft ? "draft" : "open";
+}
+
+/** Extract `# H1` title from raw Markdown. */
+export function extractH1Title(raw) {
+  return raw?.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? undefined;
+}
+
+function parseSemverTuple(ver) {
+  const m =
+    /^v(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(
+      ver ?? "",
+    );
+  if (!m) return null;
+  const major = Number(m[1]);
+  const minor = Number(m[2]);
+  const patch = Number(m[3] ?? "0");
+  if (major === 0 && minor === 0 && patch === 0) return null;
+  return { major, minor, patch, pre: m[4] ?? "" };
+}
+
+function comparePreRelease(preA, preB) {
+  const partsA = preA.split(".");
+  const partsB = preB.split(".");
+  const len = Math.max(partsA.length, partsB.length);
+  for (let i = 0; i < len; i += 1) {
+    const idA = partsA[i];
+    const idB = partsB[i];
+    if (idA === undefined) return -1;
+    if (idB === undefined) return 1;
+    if (idA === idB) continue;
+    const numA = /^(?:0|[1-9]\d*)$/.test(idA);
+    const numB = /^(?:0|[1-9]\d*)$/.test(idB);
+    if (numA && numB) return Number(idA) - Number(idB);
+    if (numA) return -1;
+    if (numB) return 1;
+    return idA < idB ? -1 : 1;
+  }
+  return 0;
+}
+
+export function compareSemver(a, b) {
+  const ta = parseSemverTuple(a);
+  const tb = parseSemverTuple(b);
+  if (!ta && !tb) return 0;
+  if (!ta) return -1;
+  if (!tb) return 1;
+  const core = ta.major - tb.major || ta.minor - tb.minor || ta.patch - tb.patch;
+  if (core !== 0) return core;
+  if (!ta.pre && !tb.pre) return 0;
+  if (!ta.pre && tb.pre) return 1;
+  if (ta.pre && !tb.pre) return -1;
+  return comparePreRelease(ta.pre, tb.pre);
+}
+
+/** Extract the RFC revision version (e.g. `v1.0.0`) from raw RFC Markdown. */
+export function extractRfcVersion(raw) {
+  if (!raw) return undefined;
+  const candidates = [];
+  const revMatch = raw.match(
+    /^\s*>\s*(?:-\s*)?(?:\*\*Rev\*\*:|Rev:|\*\*修订\*\*：|修订：)\s*([^\s（(;；,，]+)/m,
+  );
+  if (revMatch?.[1] && parseSemverTuple(revMatch[1])) {
+    candidates.push(revMatch[1]);
+  }
+  const changesMatch = /^##\s+Changes\s*$/m.exec(raw);
+  if (changesMatch && changesMatch.index !== undefined) {
+    const afterChanges = raw.slice(changesMatch.index + changesMatch[0].length);
+    const nextSectionIdx = afterChanges.search(/\n##\s+/);
+    const changesBlock = nextSectionIdx >= 0 ? afterChanges.slice(0, nextSectionIdx) : afterChanges;
+    for (const m of changesBlock.matchAll(/^###\s+(\S+)\s*$/gm)) {
+      if (m[1] && parseSemverTuple(m[1])) {
+        candidates.push(m[1]);
+      }
+    }
+  }
+  if (candidates.length === 0) return undefined;
+  return candidates.sort(compareSemver).at(-1);
+}
+
+/** Execute a single GitHub GraphQL query via `gh api graphql`. */
+export function runGithubGraphql(query) {
+  const out = execFileSync("gh", ["api", "graphql", "-f", `query=${query}`], {
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const parsed = JSON.parse(out);
+  if (parsed.errors?.length) {
+    throw new Error(parsed.errors.map((e) => e.message).join("; "));
+  }
+  return parsed.data;
+}
+
+const PR_FIELDS = `
+  number
+  title
+  url
+  state
+  isDraft
+  baseRefName
+  headRefOid
+  files(first: 100) {
+    nodes {
+      path
+    }
+  }
+`;
+
+/**
+ * Fetch RFC H1 titles and revision versions for a list of `{ key, oid, path }` items in a single batched GraphQL query.
+ */
+function fetchBlobMetadata(items, graphql = runGithubGraphql) {
+  if (items.length === 0) return new Map();
+  const aliases = items
+    .map(
+      (item, idx) =>
+        `b_${idx}: object(expression: ${JSON.stringify(`${item.oid}:${item.path}`)}) { ... on Blob { text } }`,
+    )
+    .join("\n    ");
+  const query = `{
+  repository(owner: ${JSON.stringify(REPO_OWNER)}, name: ${JSON.stringify(REPO_NAME)}) {
+    ${aliases}
+  }
+}`;
+  const data = graphql(query);
+  const repo = data?.repository ?? {};
+  const result = new Map();
+  items.forEach((item, idx) => {
+    const text = repo[`b_${idx}`]?.text;
+    const h1 = extractH1Title(text);
+    const version = extractRfcVersion(text);
+    if (h1 || version) result.set(item.key, { title: h1, version });
+  });
+  return result;
+}
+
+/**
+ * Turn raw GraphQL PR nodes into `RfcPrRecord[]`, reusing cached `rfcs` metadata when `headRefOid`
+ * is unchanged and batch-fetching any new/changed RFC Markdown headers in a single GraphQL query.
+ */
+export function hydratePrRecords(nodes, cachedByNumber, graphql = runGithubGraphql) {
+  const blobRequests = [];
+  const pendingNodes = [];
+
+  for (const node of nodes) {
+    if (!node || typeof node.number !== "number") continue;
+    const status = normalizePrStatus(node.state, node.isDraft);
+    const cached = cachedByNumber.get(node.number);
+    const rfcPaths = (node.files?.nodes ?? [])
+      .map((f) => f.path)
+      .filter((p) => /^rfcs\/PRFC-\d+-.+\.md$/.test(p));
+
+    // Reuse cached RFC metadata if headRefOid matches and rfcs (with version) are already populated.
+    if (
+      cached &&
+      cached.headRefOid === node.headRefOid &&
+      cached.rfcs?.length > 0 &&
+      cached.rfcs.every((r) => typeof r.version === "string")
+    ) {
+      pendingNodes.push({
+        number: node.number,
+        title: node.title,
+        url: node.url,
+        status,
+        baseRefName: node.baseRefName,
+        headRefOid: node.headRefOid,
+        rfcs: cached.rfcs.map((r) => ({ ...r, ...RFC_TITLE_OVERRIDES[r.id] })),
+      });
+      continue;
+    }
+
+    const ids = [...new Set(rfcPaths.map((p) => p.slice(5).replace(/\.zh\.md$|\.md$/, "")))].sort();
+    for (const id of ids) {
+      const enPath = `rfcs/${id}.md`;
+      const zhPath = `rfcs/${id}.zh.md`;
+      if (rfcPaths.includes(enPath)) {
+        blobRequests.push({
+          key: `${node.number}:${id}:en`,
+          oid: node.headRefOid,
+          path: enPath,
+        });
+      }
+      if (rfcPaths.includes(zhPath)) {
+        blobRequests.push({
+          key: `${node.number}:${id}:zh`,
+          oid: node.headRefOid,
+          path: zhPath,
+        });
+      }
+    }
+    pendingNodes.push({
+      number: node.number,
+      title: node.title,
+      url: node.url,
+      status,
+      baseRefName: node.baseRefName,
+      headRefOid: node.headRefOid,
+      ids,
+    });
+  }
+
+  const metaByKey = fetchBlobMetadata(blobRequests, graphql);
+
+  return pendingNodes
+    .map((item) => {
+      if (item.rfcs) return item;
+      const rfcs = (item.ids ?? []).map((id) => {
+        const number = id.match(/^PRFC-\d+/)?.[0] ?? id;
+        const override = RFC_TITLE_OVERRIDES[id];
+        const enMeta = metaByKey.get(`${item.number}:${id}:en`);
+        const zhMeta = metaByKey.get(`${item.number}:${id}:zh`);
+        const title =
+          override?.title ?? enMeta?.title ?? `${number} ${id.replace(/^PRFC-\d+-/, "")}`;
+        const titleZh = override?.titleZh ?? zhMeta?.title;
+        const version = enMeta?.version ?? zhMeta?.version;
+        return {
+          id,
+          number,
+          title,
+          ...(titleZh ? { titleZh } : {}),
+          ...(version ? { version } : {}),
+        };
+      });
+      return {
+        number: item.number,
+        title: item.title,
+        url: item.url,
+        status: item.status,
+        baseRefName: item.baseRefName,
+        headRefOid: item.headRefOid,
+        rfcs,
+      };
+    })
+    .sort((a, b) => a.number - b.number);
+}
+
+/**
+ * Refresh the RFC PR status cache:
+ * - If `cache` is younger than `MAX_AGE_MS` (24 hours) and `!force`, returns `cache` with zero
+ *   network calls.
+ * - Otherwise, keeps all `merged` PRs as-is (never re-fetched) and executes ONE GraphQL query for:
+ *   1. All currently `OPEN` PRs labeled `request-for-comments`
+ *   2. Any previously `open` or `draft` PRs in the cache (to catch transitions to `merged`/`closed`).
+ * - When `seedAll` is true (or `cache` has no PRs yet), queries `[OPEN, MERGED, CLOSED]` labeled
+ *   `request-for-comments` in one call.
+ */
+export function refreshRfcPrStatusCache({
+  cache = null,
+  now = Date.now(),
+  force = false,
+  seedAll = false,
+  graphql = runGithubGraphql,
+} = {}) {
+  const hasCache = Boolean(cache && Array.isArray(cache.prs) && cache.prs.length > 0);
+  if (hasCache && !force && !seedAll && cache.updatedAt) {
+    const age = now - Date.parse(cache.updatedAt);
+    if (Number.isFinite(age) && age >= 0 && age < MAX_AGE_MS) {
+      return { cache, fetched: false };
+    }
+  }
+
+  const existingPrs = hasCache ? cache.prs : [];
+  const cachedByNumber = new Map(existingPrs.map((p) => [p.number, p]));
+
+  if (!hasCache || seedAll) {
+    const query = `{
+  repository(owner: ${JSON.stringify(REPO_OWNER)}, name: ${JSON.stringify(REPO_NAME)}) {
+    pullRequests(states: [OPEN, MERGED, CLOSED], labels: [${JSON.stringify(RFC_LABEL)}], first: 100, orderBy: {field: CREATED_AT, direction: ASC}) {
+      nodes { ${PR_FIELDS} }
+    }
+  }
+}`;
+    const data = graphql(query);
+    const nodes = data?.repository?.pullRequests?.nodes ?? [];
+    const prs = hydratePrRecords(nodes, cachedByNumber, graphql);
+    return {
+      cache: { updatedAt: new Date(now).toISOString(), prs },
+      fetched: true,
+    };
+  }
+
+  // Optimization: merged PRs are never re-fetched; closed PRs stay unless re-opened (covered by states: [OPEN]).
+  // Only query currently OPEN PRs + aliases for previously open/draft PRs.
+  const immutableMerged = existingPrs.filter((p) => p.status === "merged");
+  const immutableNumbers = new Set(immutableMerged.map((p) => p.number));
+  const previouslyOpen = existingPrs.filter(
+    (p) => (p.status === "open" || p.status === "draft") && !immutableNumbers.has(p.number),
+  );
+  const previousClosed = existingPrs.filter(
+    (p) => p.status === "closed" && !immutableNumbers.has(p.number),
+  );
+
+  const trackedAliases = previouslyOpen
+    .map((p) => `pr_${p.number}: pullRequest(number: ${p.number}) { ${PR_FIELDS} }`)
+    .join("\n    ");
+
+  const query = `{
+  repository(owner: ${JSON.stringify(REPO_OWNER)}, name: ${JSON.stringify(REPO_NAME)}) {
+    openPrs: pullRequests(states: [OPEN], labels: [${JSON.stringify(RFC_LABEL)}], first: 100, orderBy: {field: CREATED_AT, direction: ASC}) {
+      nodes { ${PR_FIELDS} }
+    }
+    mergedPrs: pullRequests(states: [MERGED], labels: [${JSON.stringify(RFC_LABEL)}], first: 100, orderBy: {field: CREATED_AT, direction: ASC}) {
+      nodes { ${PR_FIELDS} }
+    }
+    ${trackedAliases}
+  }
+}`;
+
+  const data = graphql(query);
+  const repo = data?.repository ?? {};
+  const byNumber = new Map();
+
+  for (const node of repo.openPrs?.nodes ?? []) {
+    if (node && !immutableNumbers.has(node.number)) {
+      byNumber.set(node.number, node);
+    }
+  }
+  for (const node of repo.mergedPrs?.nodes ?? []) {
+    if (node && !immutableNumbers.has(node.number) && !byNumber.has(node.number)) {
+      byNumber.set(node.number, node);
+    }
+  }
+  for (const p of previouslyOpen) {
+    const node = repo[`pr_${p.number}`];
+    if (node && !byNumber.has(node.number) && !immutableNumbers.has(node.number)) {
+      byNumber.set(node.number, node);
+    }
+  }
+
+  const refreshedRecords = hydratePrRecords([...byNumber.values()], cachedByNumber, graphql);
+  const refreshedNumbers = new Set(refreshedRecords.map((r) => r.number));
+  const keptClosed = previousClosed.filter((p) => !refreshedNumbers.has(p.number));
+
+  const prs = [...immutableMerged, ...keptClosed, ...refreshedRecords].sort(
+    (a, b) => a.number - b.number,
+  );
+  return {
+    cache: { updatedAt: new Date(now).toISOString(), prs },
+    fetched: true,
+  };
+}
+
+function readJsonIfExists(file) {
+  if (!existsSync(file)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(file, "utf8"));
+    return parsed && Array.isArray(parsed.prs) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Load the RFC PR status list at build time: reads the local cache (seeded from
+ * `src/lib/rfc-pr-status.json`), refreshes open PRs if the cache is older than 24 hours, and
+ * falls back to the cached/seed data when offline.
+ */
+export function loadRfcPrStatuses({
+  cacheFile = CACHE_FILE,
+  seedFile = SEED_FILE,
+  now = Date.now(),
+  force = false,
+  offline = false,
+  graphql = runGithubGraphql,
+} = {}) {
+  const seedNewer =
+    existsSync(seedFile) &&
+    existsSync(cacheFile) &&
+    statSync(seedFile).mtimeMs >= statSync(cacheFile).mtimeMs;
+  const cached = seedNewer
+    ? (readJsonIfExists(seedFile) ?? readJsonIfExists(cacheFile))
+    : (readJsonIfExists(cacheFile) ?? readJsonIfExists(seedFile));
+  if (offline) {
+    const offlineData = readJsonIfExists(seedFile) ?? readJsonIfExists(cacheFile);
+    return offlineData ?? { updatedAt: new Date(now).toISOString(), prs: [] };
+  }
+  try {
+    const { cache, fetched } = refreshRfcPrStatusCache({
+      cache: cached,
+      now,
+      force,
+      graphql,
+    });
+    if (fetched || !existsSync(cacheFile)) {
+      mkdirSync(dirname(cacheFile), { recursive: true });
+      writeFileSync(cacheFile, `${JSON.stringify(cache, null, 2)}\n`);
+    }
+    return cache;
+  } catch {
+    if (cached) return cached;
+    return { updatedAt: new Date(now).toISOString(), prs: [] };
+  }
+}

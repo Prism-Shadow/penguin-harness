@@ -1,5 +1,5 @@
 /**
- * The Browser panel (features/builtin-browser/browser-panel.tsx) while the agents drive the
+ * The Browser panel (plugins/browser-automation/src/web/browser-panel.tsx) while the agents drive the
  * user's own Chrome, rendered to static markup from the window's browser store (node env, no
  * DOM), its menu's Chrome row, and the backend switch against the fetch fake.
  *
@@ -28,11 +28,16 @@ import type {
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
 } from "@prismshadow/penguin-server/api";
-import { BuiltinBrowserPanel } from "../src/features/builtin-browser/browser-panel";
-import { ChromeStatusRow } from "../src/features/builtin-browser/chrome-status-row";
-import { switchBrowserBackend } from "../src/features/builtin-browser/browser-actions";
-import { browserState, dispatchBrowser } from "../src/features/builtin-browser/browser-store";
-import { S } from "../src/lib/strings";
+// The browser reaches the app's own helpers through the plugin face; this hands them over.
+import "../src/web-app/plugin-host";
+import { BuiltinBrowserPanel } from "../../../plugins/browser-automation/src/web/browser-panel";
+import { ChromeStatusRow } from "../../../plugins/browser-automation/src/web/chrome-status-row";
+import { switchBrowserBackend } from "../../../plugins/browser-automation/src/web/browser-actions";
+import {
+  browserState,
+  dispatchBrowser,
+} from "../../../plugins/browser-automation/src/web/browser-store";
+import { S as B } from "../../../plugins/browser-automation/src/web/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 
 /** Toasts raised during a test, by kind (the real store would leave its dismiss timers running). */
@@ -139,17 +144,17 @@ describe("the Chrome surface", () => {
     const html = panel();
     expect(html).toContain('data-standing="connected"');
     expect(html.split('data-testid="builtin-browser-tab"').length - 1).toBe(2);
-    expect(html).toContain(S.builtinBrowser.chromeTabCard);
+    expect(html).toContain(B.builtinBrowser.chromeTabCard);
     expect(html).toContain("https://www.amazon.com/your-orders");
-    expect(html).toContain(`>${S.builtinBrowser.showInChrome}<`);
+    expect(html).toContain(`>${B.builtinBrowser.showInChrome}<`);
     expect(html).not.toContain('data-testid="builtin-browser-viewport"');
   });
 
   it("says where the agents' pages will appear while Chrome holds none of them", () => {
     set(status("chrome", [CHROME]));
     const html = panel();
-    expect(html).toContain(S.builtinBrowser.chromeNoTabsTitle);
-    expect(html).not.toContain(S.builtinBrowser.showInChrome);
+    expect(html).toContain(B.builtinBrowser.chromeNoTabsTitle);
+    expect(html).not.toContain(B.builtinBrowser.showInChrome);
   });
 
   it("shows the pairing steps with this server's address while no Chrome is paired, on screen only", () => {
@@ -157,24 +162,24 @@ describe("the Chrome surface", () => {
     const html = panel();
     expect(html).toContain('data-standing="unpaired"');
     expect(textOf(html, "browser-pairing-server")).toBe(ORIGIN);
-    expect(html).toContain(S.builtinBrowser.pairStepInstall);
+    expect(html).toContain(B.builtinBrowser.pairStepInstall);
     expect(panel(false)).not.toContain("browser-pairing-server");
   });
 
   it("names the paired Chrome that is not connected, with the reconnect help", () => {
     set(status("chrome", [DISCONNECTED]));
     const html = panel();
-    expect(html).toContain(S.builtinBrowser.chromeDisconnectedTitle);
-    expect(html).toContain(S.builtinBrowser.chromeDisconnectedBody("Chrome 130 on macOS"));
-    expect(html).toContain(S.builtinBrowser.reconnectHelp);
+    expect(html).toContain(B.builtinBrowser.chromeDisconnectedTitle);
+    expect(html).toContain(B.builtinBrowser.chromeDisconnectedBody("Chrome 130 on macOS"));
+    expect(html).toContain(B.builtinBrowser.reconnectHelp);
     expect(html).not.toContain("browser-pairing-server");
   });
 
   it("says the admin switched Chrome connections off", () => {
     set(status("chrome", [DISABLED]));
     const html = panel();
-    expect(html).toContain(S.builtinBrowser.chromeDisabledTitle);
-    expect(html).toContain(S.builtinBrowser.chromeDisabledBody);
+    expect(html).toContain(B.builtinBrowser.chromeDisabledTitle);
+    expect(html).toContain(B.builtinBrowser.chromeDisabledBody);
   });
 
   /** The built-in backend chosen, in a window that cannot host it, beside the user's Chrome. */
@@ -189,26 +194,26 @@ describe("the Chrome surface", () => {
     (_name, chrome) => {
       cannotRun(chrome);
       const html = panel();
-      expect(html).toContain(S.builtinBrowser.unavailableTitle);
-      expect(html).toContain(`>${S.builtinBrowser.useChrome}<`);
-      expect(html).not.toContain(S.builtinBrowser.unavailablePairChrome);
+      expect(html).toContain(B.builtinBrowser.unavailableTitle);
+      expect(html).toContain(`>${B.builtinBrowser.useChrome}<`);
+      expect(html).not.toContain(B.builtinBrowser.unavailablePairChrome);
     },
   );
 
   it("offers no switch with no Chrome paired, and says where to pair one", () => {
     cannotRun(UNPAIRED);
     const html = panel();
-    expect(html).toContain(S.builtinBrowser.unavailableTitle);
-    expect(html).toContain(S.builtinBrowser.unavailablePairChrome);
-    expect(html).not.toContain(S.builtinBrowser.useChrome);
+    expect(html).toContain(B.builtinBrowser.unavailableTitle);
+    expect(html).toContain(B.builtinBrowser.unavailablePairChrome);
+    expect(html).not.toContain(B.builtinBrowser.useChrome);
   });
 
   it("offers neither while the admin's switch is off", () => {
     cannotRun(DISABLED);
     const html = panel();
-    expect(html).toContain(S.builtinBrowser.unavailableTitle);
-    expect(html).not.toContain(S.builtinBrowser.useChrome);
-    expect(html).not.toContain(S.builtinBrowser.unavailablePairChrome);
+    expect(html).toContain(B.builtinBrowser.unavailableTitle);
+    expect(html).not.toContain(B.builtinBrowser.useChrome);
+    expect(html).not.toContain(B.builtinBrowser.unavailablePairChrome);
   });
 });
 
@@ -219,9 +224,9 @@ describe("the Chrome surface's menu row", () => {
   const row = (info: BrowserBackendInfo, h = handlers()) => ChromeStatusRow({ info, ...h }) as Row;
 
   it("says how the user's Chrome stands, naming a connected one", () => {
-    expect(row(CHROME).props.label).toBe(S.builtinBrowser.chromeConnected("Chrome 130 on macOS"));
-    expect(row(UNPAIRED).props.label).toBe(S.builtinBrowser.chromeNotPaired);
-    expect(row(DISCONNECTED).props.label).toBe(S.builtinBrowser.chromeNotConnected);
+    expect(row(CHROME).props.label).toBe(B.builtinBrowser.chromeConnected("Chrome 130 on macOS"));
+    expect(row(UNPAIRED).props.label).toBe(B.builtinBrowser.chromeNotPaired);
+    expect(row(DISCONNECTED).props.label).toBe(B.builtinBrowser.chromeNotConnected);
   });
 
   it.each([
@@ -237,7 +242,7 @@ describe("the Chrome surface's menu row", () => {
 
   it("gives the row no action while the admin's switch is off", () => {
     const disabled = row(DISABLED);
-    expect(disabled.props.label).toBe(S.builtinBrowser.chromeDisabled);
+    expect(disabled.props.label).toBe(B.builtinBrowser.chromeDisabled);
     expect(disabled.props.onSelect).toBeUndefined();
   });
 });
@@ -247,7 +252,7 @@ describe("switching the backend", () => {
     set(status("builtin", [BUILTIN, CHROME]));
     const fetch = stubFetch(() => apiError(409, "action_in_flight"));
     expect(await switchBrowserBackend("chrome")).toBe(false);
-    expect(toasts).toEqual([`attention: ${S.builtinBrowser.switchRefused}`]);
+    expect(toasts).toEqual([`attention: ${B.builtinBrowser.switchRefused}`]);
     expect(browserState().backend).toBe("builtin");
     expect(fetch.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
       "PUT /api/builtin-browser/backend",
@@ -265,7 +270,7 @@ describe("switching the backend", () => {
     );
     expect(await switchBrowserBackend("chrome")).toBe(true);
     expect(fetch.requests[0]!.body).toEqual({ backend: "chrome" });
-    expect(toasts).toEqual([`success: ${S.builtinBrowser.switchedToChrome}`]);
+    expect(toasts).toEqual([`success: ${B.builtinBrowser.switchedToChrome}`]);
     expect(browserState().backend).toBe("chrome");
     expect(browserState().chrome.tabs.map((t) => t.id)).toEqual([1201]);
     expect(fetch.requests.map((r) => `${r.method} ${r.path}`)).toEqual([

@@ -260,11 +260,21 @@ try {
           env: { ...process.env, PENGUIN_BUILD_JS_ONLY: "1" },
         },
       );
-      if (res.status === 0) {
+      // The preinstalled plugins' server modules (the agent browser's among them) load from the
+      // builtin prefix beside the server's entry, as an installed server's do: stage it from the
+      // builds just made (scripts/stage-dev-plugins.mjs).
+      const staged =
+        res.status === 0
+          ? spawnSync(process.execPath, [path.join(ROOT, "scripts", "stage-dev-plugins.mjs")], {
+              cwd: ROOT,
+              stdio: "inherit",
+            })
+          : res;
+      if (staged.status === 0) {
         writeFileSync(BUILD_STAMP, String(Date.now()));
         refreshViteCache();
       }
-      exitCode = res.status ?? 1;
+      exitCode = staged.status ?? 1;
     }
   }
 } finally {

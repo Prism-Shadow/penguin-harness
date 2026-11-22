@@ -250,7 +250,10 @@ export function registerChatCommand(chat: Command, t: Messages): void {
       const projectDefault =
         pending !== null && pending.modelId === undefined
           ? await projectDefaultModel(client, projectId)
-          : null;
+          : undefined;
+      /** What stands for the Project's default when it is not a model: none, or unread. */
+      const noModelLabel = (): string =>
+        projectDefault === null ? t.chatNoDefaultModel() : t.chatProjectDefaultModel();
       /** The model the conversation is on, or will be created on, as /switch-model labels it. */
       const modelLabel = (): string => {
         if (session !== null) return formatModelLabel(session.provider, session.modelId);
@@ -259,7 +262,7 @@ export function registerChatCommand(chat: Command, t: Messages): void {
         }
         return projectDefault
           ? formatModelLabel(projectDefault.provider, projectDefault.modelId)
-          : t.chatProjectDefaultModel();
+          : noModelLabel();
       };
       const sessionThinkingLevel = (): string =>
         (session !== null ? session.thinkingLevel : pending?.thinkingLevel) ??
@@ -292,10 +295,7 @@ export function registerChatCommand(chat: Command, t: Messages): void {
           buildInfo().describe,
           session?.agentId ?? agentId,
           session?.workspace ?? pending?.workspace ?? "",
-          session?.modelId ??
-            pending?.modelId ??
-            projectDefault?.modelId ??
-            t.chatProjectDefaultModel(),
+          session?.modelId ?? pending?.modelId ?? projectDefault?.modelId ?? noModelLabel(),
           connectionLabel(client.conn),
         )}\n` +
           (session === null ? `${dim(t.chatNewConversation())}\n` : "") +

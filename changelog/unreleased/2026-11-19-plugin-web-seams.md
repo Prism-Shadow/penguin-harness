@@ -1,0 +1,18 @@
+# A shipped plugin's web half joins the Web App at build time, through slots
+
+- **Date:** 2026-11-19
+- **Type:** refactor
+- **Scope:** `web`, `web-plugin`, `server`, `library`, `ui`, `ui-gallery`
+- **PR:** [#1648](https://github.com/Prism-Shadow/penguin-harness/pull/1648)
+
+[中文版](2026-11-19-plugin-web-seams.zh.md)
+
+A plugin shipped with the build can now carry its own UI: a `./web` export pointing at TypeScript under its `src/web/`, compiled with the Web App, which boots its modules beside the app's own (penguin-harness-design [#489](https://github.com/Prism-Shadow/penguin-harness-design/pull/489)). The agent browser's web half reaches the app only that way now, through the new seams below, so it can move into its plugin unchanged. Nothing on screen changes.
+
+## Details
+
+- `gen:ifaces` of the Web App (`scripts/gen-web-table.mjs`) writes the generated list of the web halves among its dependencies (`src/plugin-web.gen.ts`, not committed; an uninstalled dependency is an error, and nested export conditions are read) and reads each one's `tsconfig.web.json` into the app's own interface table, which now covers `src/` only (`tsconfig.app.json`); typecheck and test also write `test/ifaces.json`, the table a suite boots its own modules against. `bootWeb()` boots every listed module as one more child of the root. Tailwind and the app's source guards (de-slop, control sizes, layers) scan `plugins/*/src/web`.
+- New private package `@prismshadow/penguin-web-plugin`: the only part of the app a web half imports. The app hands it its own `apiFetch`, `ApiError`, failure and toast helpers, Settings request, dock operations, date format and tone maps before it boots (`web-app/plugin-host.ts`); `defineStrings` gives a plugin's own zh and en tables that follow the language on screen, and their `apiErrors` are read after the app's own codes. `@prismshadow/penguin-web-plugin/testing` hands a plugin's own tests a stand-in host.
+- New slots: `SettingsModule.sections` (a Settings page among the app's own, by its order), `ChatModule.sessionHandovers` (what moves when a conversation takes a new id), `ChatModule.linkActions` (rows before the app's own in a web link's menu), `DockModule.scopeListeners` and `DockModule.layoutListeners`, `lead` on `DockModule.panels` data (first in an empty dock's picker), and `WebAppModule.serverModules`.
+- A web module that declares its server module in `WebAppModule.serverModules` is drawn only while `GET /api/contributions` lists that module in its new `modules` field (the server modules plugins run in this generation): its pages, page renderers, layers, dock panels, Settings pages, Session tabs, file renderers, sidebar sections, modes and badges, session-row entries and marks, and link rows. It may not contribute session providers or a sidebar section scope. After a re-assembly the server sends `contributions_changed` on every user channel, and the page re-reads on it and on `resync_required`; a failed read is retried with a growing wait, and until the first answer the page uses the list it last saw for that account (`penguin.serverModules.<user>`, install-scoped). The gallery answers as running every server module its web modules declare.
+- The agent browser contributes its two Settings pages, its link row, its draft-to-Session handover, its scope and full-screen listeners, and its picker lead through those slots; its strings, endpoint wrappers, start sites, import route and ring stylesheet moved into `features/builtin-browser/`. The gallery's mock coverage check now walks every `features/*/api.ts` and every web half's exported `api`, nothing listed by hand. A Settings key or a link-row label already taken by another contributor is dropped with a console warning.

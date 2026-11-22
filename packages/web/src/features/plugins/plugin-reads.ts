@@ -5,6 +5,8 @@
  * - `pluginLibrary`: this server's plugin library (`getPluginLibrary(null)`), under {@link LIBRARY_KEY}.
  * - `pluginIndex`: the registry, every module plugin the deployment could ask for, under
  *   {@link INDEX_KEY}.
+ * - `pluginMarket`: the market's curation — the selected plugins and the art — under
+ *   {@link MARKET_KEY}.
  * - `installedPlugins`: what a server runs of the module plugins and what the Project's tables
  *   list for it — this server's own (machine null) and a machine's when it is in view — under
  *   {@link installedPluginsKey}.
@@ -17,6 +19,7 @@ import type {
   InstalledPluginsResponse,
   PluginIndexResponse,
   PluginLibraryResponse,
+  PluginMarketResponse,
 } from "@prismshadow/penguin-server/api";
 import { createReadStore, readKey } from "../../lib/read-store";
 
@@ -27,6 +30,9 @@ export const LIBRARY_KEY = "library";
 
 export const pluginIndex = createReadStore<PluginIndexResponse>();
 export const INDEX_KEY = "index";
+
+export const pluginMarket = createReadStore<PluginMarketResponse>();
+export const MARKET_KEY = "market";
 
 export const installedPlugins = createReadStore<InstalledPluginsResponse>();
 
