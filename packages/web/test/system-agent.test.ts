@@ -236,7 +236,7 @@ describe("the system Agent's settings page", () => {
       "Plugins",
       "Machines",
       "Cost Center",
-      "Evaluation Center",
+      "Self-Evolution Workbench",
     ]);
     expect(hasButton(en.workbenches.importTitle)).toBe(false);
     expect(document.querySelector('[role="switch"], input[type="checkbox"]')).toBeNull();
@@ -247,7 +247,7 @@ describe("the system Agent's settings page", () => {
   it("lists a member the system apps they can open, without Machines", async () => {
     await openSystemPage("workbenches", { serverAdmin: false });
     await waitFor(() => appRows().length > 0);
-    expect(appRows()).toEqual(["Models", "Plugins", "Cost Center", "Evaluation Center"]);
+    expect(appRows()).toEqual(["Models", "Plugins", "Cost Center", "Self-Evolution Workbench"]);
   });
 });
 

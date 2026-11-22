@@ -246,7 +246,12 @@ describe("the booted page table", () => {
         icon: "server",
       },
       { key: "usage", title: en.nav.usage, titleZh: zh.nav.usage, icon: "barChart" },
-      { key: "benchmark", title: "Evaluation Center", titleZh: "评估中心", icon: "trophy" },
+      {
+        key: "benchmark",
+        title: "Self-Evolution Workbench",
+        titleZh: "自进化工作台",
+        icon: "trophy",
+      },
     ]);
     for (const app of apps) expect(glyphOf(app.icon)).not.toBe("");
     for (const app of apps) expect(navPagesOf(pages).some((p) => p.key === app.key)).toBe(false);

@@ -175,7 +175,8 @@ it("lists a server module's titled app page as a tile, and not one without a tit
     renderer: { iframe: { src: `/ui/${key}`, namespace: "backup" } },
     ...(title !== undefined ? { title } : {}),
     icon: "server",
-    app: { order: 60 },
+    // This contribution requests an earlier order than the first standard app.
+    app: { order: 1 },
   });
   const answer: ContributionsResponse = {
     pages: [page("backups", "Backups"), page("monitor")],
