@@ -940,9 +940,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   //
   // Discounts: what these rows record is what OpenRouter actually BILLS, so a gateway
   // promotion is stored at its discounted rate (unlike the direct-vendor rows, which keep the
-  // list price). The Gemini 3.x Flash rows are the exception: the promotion they sit on is
-  // Google's own dated launch discount rather than the gateway's, so they keep the list price
-  // and declare it in `discount`, exactly as their direct-vendor twins do. The endpoints API
+  // list price). Hy4 and the Gemini 3.x Flash rows instead retain their list prices and record
+  // the promotion separately in `discount`. The endpoints API
   // exposes the running promotion as `pricing.discount` on the default endpoint; rows sitting
   // on one say so and name the rate to restore, because a lapsed promotion silently doubles
   // the real cost — that is exactly how the gpt-5.6-terra and gpt-5.6-luna rows drifted 2x
@@ -1525,6 +1524,17 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "openrouter",
     contextWindow: 256000,
     pricing: usd(0.04, 0.2, 1.15),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    modelId: "tencent/hy4",
+    displayName: "Hy4",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.042, 0.834, 2.501),
+    discount: 0.5,
     supportsVision: true,
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
@@ -2246,6 +2256,17 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: cny(0.57, 2, 7),
     supportsVision: true,
     clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    modelId: "hy4",
+    displayName: "Hy4",
+    provider: "tokendance",
+    contextWindow: 1024000,
+    pricing: cny(0.3, 6, 18),
+    discount: 0.5,
+    supportsVision: true,
+    clientType: "openai-responses",
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {

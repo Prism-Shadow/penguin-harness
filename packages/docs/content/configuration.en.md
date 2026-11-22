@@ -137,6 +137,8 @@ Field notes:
 - `base_url`: a new Project stores each gateway's endpoint on its group, and a preset row stores one only where it differs from its group's (OpenCode Go's Anthropic Messages rows, custom's Atria Dawn). Nothing fills a missing one when a model is used: direct vendor rows have none and reach the vendor's default endpoint, or its `*_BASE_URL` variable.
 - `api_key`: when empty, the entry uses its group key, unless the entry's own `base_url` is on another origin than the group's (see [Group connections](#group-connections)). With neither, it uses the client's own environment variable only when no `base_url` resolves for it or the one that does is the client's default endpoint (see [Provider credential variables](#provider-credential-variables)); every other entry needs a key of its own or its group's.
 
+For Hy4, set `provider = "tokendance"` and `model_id = "hy4"`, or `provider = "openrouter"` and `model_id = "tencent/hy4"`. Both presets use `client_type = "openai-responses"`.
+
 ```toml
 default_model = { provider = "deepseek", model_id = "deepseek-flash" }
 

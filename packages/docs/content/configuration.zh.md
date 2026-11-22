@@ -138,6 +138,8 @@ client_type = "openai-image"
 - `base_url`：新建 Project 时，各网关的端点存在其分组上；预置条目只在与分组不同时才存自己的（OpenCode Go 的 Anthropic Messages 条目、custom 里的 Atria Dawn）。使用模型时不会补上缺少的值：直连厂商的条目没有 base URL，请求发往厂商的缺省端点，或它的 `*_BASE_URL` 变量。
 - `api_key`：为空时使用分组密钥，除非条目自己的 `base_url` 与分组的不同 origin（见[分组连接信息](#分组连接信息)）。两者都没有时，只有解析不出 `base_url`、或解析出的是客户端缺省端点时，才使用客户端自己的环境变量（见[供应商凭证变量](#供应商凭证变量)）；其余条目需要自己的或分组的 key。
 
+配置 Hy4 时，TokenDance 使用 `provider = "tokendance"` 和 `model_id = "hy4"`，OpenRouter 使用 `provider = "openrouter"` 和 `model_id = "tencent/hy4"`。这两条预设的协议均为 `openai-responses`。
+
 ```toml
 default_model = { provider = "deepseek", model_id = "deepseek-flash" }
 
