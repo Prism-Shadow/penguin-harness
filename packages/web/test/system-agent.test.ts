@@ -285,9 +285,9 @@ describe("the plugin market's manage-installs list", () => {
       moreAgents: [SYSTEM],
       machines: [{ ...GPU, library: [CHARTS] }],
     });
-    await mountAgentApp(h(PluginsPage), { route: "/plugins", at: "/plugins" });
-    await waitFor(() => hasButton(`${en.skills.manageInstall} charts`));
-    await click(button(`${en.skills.manageInstall} charts`));
+    await mountAgentApp(h(PluginsPage), { route: "/plugins", at: "/plugins?plugin=charts" });
+    await waitFor(() => hasButton(`${en.plugins.installModel.installAgent} charts`));
+    await click(button(`${en.plugins.installModel.installAgent} charts`));
     const rows = () =>
       [...topDialog().querySelectorAll("button")]
         .map((b) => b.getAttribute("aria-label") ?? "")
