@@ -176,6 +176,8 @@ export const en: Strings = {
   live: {
     open: "Open in Theme Packs",
     loading: "Loading the live demo…",
+    playDemo: "Play demo",
+    stopDemo: "Stop demo",
     evolutionFrame: "A self-evolution round in a conversation (live demo)",
   },
 

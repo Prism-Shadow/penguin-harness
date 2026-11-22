@@ -1,8 +1,7 @@
 /**
- * Given an autoplay frame, its window-bar button pauses typing and resumes the existing draft.
- * Given a running evolution, the button pauses emitted steps and navigation, then resumes to the curve.
- * Given reduced motion, or ordinary frames, no autoplay control is offered.
- * Given the AMSP player, the same control pauses and continues its streamed events.
+ * The homepage starts on the fresh project's new chat. Playing shows a single evolution round,
+ * stopping restores the start, and reduced motion waits for the same explicit choice.
+ * The AMSP player has independent pause and resume controls.
  */
 import { test, expect } from "@playwright/test";
 
@@ -15,7 +14,7 @@ async function openHero(page, lang = "zh") {
   }, lang);
   await page.clock.install({ time: new Date("2026-10-28T00:00:00Z") });
   await page.goto("/");
-  const iframe = page.locator('iframe[src*="autoplay=evolution"]');
+  const iframe = page.locator('iframe[src*="fresh=1"]');
   await iframe.scrollIntoViewIfNeeded();
   const frame = iframe.contentFrame();
   await expect(frame.locator(composer)).toBeVisible();
@@ -33,69 +32,42 @@ async function openHero(page, lang = "zh") {
   return { iframe, frame };
 }
 
-test("pauses typing and resumes the same prompt on a phone", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  const { frame } = await openHero(page);
-  await expect(frame.locator(composer)).not.toHaveValue("");
-  await page.getByRole("button", { name: "暂停", exact: true }).click();
-  await expect(page.getByRole("button", { name: "播放", exact: true })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  const draft = await frame.locator(composer).inputValue();
-  await page.clock.fastForward(30_000);
-  await expect(frame.locator(composer)).toHaveValue(draft);
-  await expect(frame.getByRole("table")).toHaveCount(0);
-  await page.getByRole("button", { name: "播放", exact: true }).click();
-  await expect(page.getByRole("button", { name: "暂停", exact: true })).toBeVisible();
-  for (
-    let step = 0;
-    step < 6 && (await frame.getByRole("button", { name: "停止", exact: true }).count()) === 0;
-    step++
-  )
-    await page.clock.runFor(1000);
-  await expect(frame.getByRole("button", { name: "停止", exact: true }).first()).toBeVisible();
-});
+for (const [lang, play, stop] of [
+  ["en", "Play demo", "Stop demo"],
+  ["zh", "播放演示", "停止演示"],
+]) {
+  test(`plays, stops and restarts a single evolution round (${lang})`, async ({ page }) => {
+    if (lang === "zh") await page.setViewportSize({ width: 390, height: 844 });
+    const { frame } = await openHero(page, lang);
+    await expect(frame.getByRole("dialog")).toBeVisible();
+    await page.clock.fastForward(30_000);
+    await expect(frame.locator(composer)).toHaveValue("");
+    await page.getByRole("button", { name: play, exact: true }).click();
+    await expect(frame.locator(composer)).not.toHaveValue("");
+    await page.getByRole("button", { name: stop, exact: true }).click();
+    await expect(frame.getByRole("dialog")).toBeVisible();
+    await expect(frame.locator(composer)).toHaveValue("");
+    await page.getByRole("button", { name: play, exact: true }).click();
+    const chart = frame.locator("main svg.ui-chart").first();
+    for (let step = 0; step < 40 && !(await chart.isVisible()); step++) {
+      await page.clock.runFor(1500);
+    }
+    await expect(chart).toBeVisible();
+    await page.clock.fastForward(15_000);
+    await expect(chart).toBeVisible();
+    await page.getByRole("button", { name: stop, exact: true }).click();
+    await expect(frame.locator(composer)).toHaveValue("");
+  });
+}
 
-test("pauses the stream, pauses between loops and resumes the next round", async ({ page }) => {
-  const { frame } = await openHero(page, "en");
-  await expect(frame.locator(composer)).not.toHaveValue("");
-  await page.clock.runFor(6500);
-  await expect(frame.getByRole("button", { name: "Stop", exact: true }).first()).toBeVisible();
-  await page.getByRole("button", { name: "Pause", exact: true }).click();
-  const before = await frame.locator("main .md-body").allTextContents();
-  await page.clock.fastForward(30_000);
-  await expect(frame.getByRole("heading", { name: "Docs QA v1", exact: true })).toHaveCount(0);
-  await expect(frame.getByRole("button", { name: "Stop", exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible();
-  expect(await frame.locator("main .md-body").allTextContents()).toEqual(before);
-  await page.getByRole("button", { name: "Play", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
-  for (
-    let step = 0;
-    step < 16 &&
-    (await frame.getByRole("heading", { name: "Docs QA v1", exact: true }).count()) === 0;
-    step++
-  )
-    await page.clock.runFor(2000);
-  await expect(frame.getByRole("heading", { name: "Docs QA v1", exact: true })).toBeVisible();
-  await expect(frame.locator('main svg.ui-chart [data-part="series"]').first()).toBeVisible();
-  await page.getByRole("button", { name: "Pause", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible();
-  await page.clock.fastForward(30_000);
-  await expect(frame.getByRole("heading", { name: "Docs QA v1", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Play", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
-  for (let step = 0; step < 10 && (await frame.locator(composer).count()) === 0; step++)
-    await page.clock.runFor(1000);
-  await expect(frame.locator(composer)).toBeVisible();
-});
-
-test("does not offer autoplay controls under reduced motion", async ({ page }) => {
+test("waits for explicit playback with reduced motion", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const { frame } = await openHero(page);
-  await expect(page.getByRole("button", { name: "暂停", exact: true })).toHaveCount(0);
   await page.clock.fastForward(30_000);
+  await expect(frame.locator(composer)).toHaveValue("");
+  await page.getByRole("button", { name: "播放演示", exact: true }).click();
+  await expect(frame.locator(composer)).not.toHaveValue("");
+  await page.getByRole("button", { name: "停止演示", exact: true }).click();
   await expect(frame.locator(composer)).toHaveValue("");
 });
 

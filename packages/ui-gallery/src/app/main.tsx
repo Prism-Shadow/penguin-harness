@@ -55,6 +55,7 @@ const store = getStore({
   signedIn: !params.signedOut,
   notices: params.notices === true,
   embedded: params.embedded === true,
+  freshProject: params.freshProject === true,
   evolutionDemo: params.autoplay === "evolution",
 });
 installFetchShim();
@@ -105,6 +106,7 @@ if (params.autoplay === "evolution") {
     rsiPrompt(params.lang),
     store.evolutionPlayback,
     () => store.clearEvolutionRounds(),
+    params.freshProject === true,
   );
   import.meta.hot?.dispose(dispose);
 }
