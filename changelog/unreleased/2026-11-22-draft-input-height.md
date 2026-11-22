@@ -3,6 +3,7 @@
 - **Date:** 2026-11-22
 - **Type:** feat
 - **Scope:** `web`, `ui`
+- **PR:** [#1696](https://github.com/Prism-Shadow/penguin-harness/pull/1696)
 
 [中文版](2026-11-22-draft-input-height.zh.md)
 
