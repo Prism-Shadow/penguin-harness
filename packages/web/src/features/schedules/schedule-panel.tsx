@@ -36,7 +36,7 @@ import {
   SearchInput,
   Segmented,
   SettingsEmpty,
-  SkeletonList,
+  Waiting,
   Switch,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
@@ -282,7 +282,7 @@ export function SchedulePanel({
           error !== null ? (
             <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
           ) : (
-            <SkeletonList rows={3} />
+            <Waiting rows={3} />
           )
         ) : items.length === 0 ? (
           <SettingsEmpty>{S.schedule.panelEmpty}</SettingsEmpty>

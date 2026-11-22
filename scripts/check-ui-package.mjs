@@ -290,7 +290,7 @@ try {
     EmptyState: h(lib.EmptyState, { title: "Nothing here", description: "Add one" }),
     ProgressBar: h(lib.ProgressBar, { value: 40, label: "Progress" }),
     Spinner: h(lib.Spinner, { label: "Loading" }),
-    Skeleton: h(lib.SkeletonList, { rows: 2 }),
+    Waiting: h(lib.Waiting, { rows: 2 }),
     Tabs: h(lib.Tabs, {
       items: [
         { key: "a", label: "A" },

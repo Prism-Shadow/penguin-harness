@@ -68,8 +68,9 @@ const POLICY: DeslopPolicy = {
   // reveal and layout rules in theme.css read their own tokens (`--ui-dur-enter`, …), which the
   // rule does not judge — it holds STATE transitions (hover, press, selection) to 120–200 ms.
   entranceMotion: [],
-  // Rule 6: the dot's live pulse, the skeleton's arrival pulse and the streaming caret.
-  pulseHomes: ["dot.tsx", "skeleton.tsx", "streaming-caret.tsx"],
+  // Rule 6: the dot's live pulse and the streaming caret. A placeholder block breathes in the
+  // theme sheet (`[data-skeleton]`), on the theme's live timing.
+  pulseHomes: ["dot.tsx", "streaming-caret.tsx"],
   // Rule 11: the one Spinner (K-redesign §5.1).
   spinnerHomes: ["components/icons/spinner/spinner.tsx"],
   // Rule 20: tokens only; hex colours in the avatar palettes (the letter tiles', the Agent
@@ -245,6 +246,14 @@ describe("the cleanliness rules over every pack folder (R1, R2, R5–R11)", () =
     expect(probe(`${x} .row { color: blue; } ${x}.dark .row { color: red; }`)).toEqual([]);
     expect(probe(`${x} .row:hover { transition: color 150ms; }`)).toEqual(["R11"]);
     expect(probe(`${x} .ui-live { animation-duration: 1s; }`)).toEqual([]);
+    // A wait's blocks are its drawing: a pack may mask, overlay and move them, and nothing else.
+    const wait = `${x} .ui-waiting [data-skeleton]`;
+    expect(probe(`${wait} { mask-image: url("w.svg"); animation: draw 2s; }`)).toEqual([]);
+    expect(probe(`${wait}::after { content: ""; border-right: 1px solid; }`)).toEqual([]);
+    expect(probe(`${x} .ui-waiting::before { content: ""; background: url("w.svg"); }`)).toEqual([
+      "R1",
+      "R5",
+    ]);
     expect(probe(`${x} { --ui-canvas: #fff; }`)).toEqual([]);
     expect(probe("@keyframes x-wobble { from { padding: 1px; } }")).toEqual([]);
   });
@@ -490,7 +499,7 @@ describe("the rule checks, on known shapes", () => {
     expect(tsx('<i className="ui-live animate-pulse" data-live="caret" />')).toEqual([]);
     expect(
       found(
-        "components/skeleton/skeleton.tsx",
+        "components/icons/dot/dot.tsx",
         'export const S = () => <i className="animate-pulse" />;',
       ),
     ).toEqual([]);

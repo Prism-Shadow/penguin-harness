@@ -23,7 +23,7 @@ import {
   ICONS,
   ICON_SIZE,
   Md,
-  SkeletonList,
+  Waiting,
   bodyWithoutFrontmatter,
   languageForFileName,
 } from "@prismshadow/penguin-ui";
@@ -197,7 +197,7 @@ export function ChatMemoryView({
             <p className="text-xs text-gray-500 dark:text-gray-400">{listedRow.description}</p>
           )}
           {!loaded || (!detail.failed && detail.content === null) ? (
-            <SkeletonList rows={3} />
+            <Waiting rows={3} />
           ) : detail.failed ? (
             <p className="text-xs text-gray-400 dark:text-gray-500">{detail.failure}</p>
           ) : isFile ? (
@@ -322,7 +322,7 @@ export function ChatMemoryView({
         <p className="px-3.5 py-2 text-xs text-gray-500 dark:text-gray-400">{listingError}</p>
       ) : scopes === null && groups.length === 0 ? (
         <div className="px-3.5 py-2">
-          <SkeletonList rows={3} />
+          <Waiting rows={3} />
         </div>
       ) : groups.every((g) => g.rows.length === 0 && g.orphanRows.length === 0) ? (
         <p className="px-3.5 py-2 text-xs text-gray-400 dark:text-gray-500">

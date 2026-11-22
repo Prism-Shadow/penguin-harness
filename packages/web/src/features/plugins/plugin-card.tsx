@@ -82,6 +82,8 @@ import * as api from "../../api/endpoints";
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
 import { cardBodyClick } from "../../lib/card-open";
+import { apiUrl } from "../../lib/server-context";
+import { locatedAppKey } from "../../lib/app-center-path";
 import { downloadArchive } from "../agents/archive-download";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName } from "../../state/project";
@@ -357,7 +359,9 @@ export function PluginCard(props: PluginCardProps) {
     setPendingUpdate(null);
   };
 
-  const archiveUrl = pluginArchiveUrl(row);
+  const archivePath = pluginArchiveUrl(row);
+  const archiveUrl =
+    archivePath && row.origin?.live !== false ? apiUrl(archivePath, row.origin?.machineId) : null;
   const exportPlugin = async (url: string) => {
     try {
       await downloadArchive(url, row.name);
@@ -376,11 +380,13 @@ export function PluginCard(props: PluginCardProps) {
   for (const workbench of openApp === undefined ? [] : (plugin?.workbenches ?? [])) {
     const on = targets.find(
       (t) =>
-        t.machine === null &&
+        t.machine?.live !== false &&
         installed.get(t.key)?.workbenches?.get(workbench.name)?.plugin === plugin!.name,
     );
     if (on === undefined) continue;
-    openWorkbench.set(workbench.name, () => openApp!(`${on.agent.agentId}/${workbench.name}`));
+    openWorkbench.set(workbench.name, () =>
+      openApp!(locatedAppKey(on.agent.agentId, workbench.name, on.machine?.machineId)),
+    );
   }
   const [firstOpen] = openWorkbench.values();
 
@@ -615,6 +621,7 @@ export function PluginCard(props: PluginCardProps) {
 
       {detailOpen && (
         <PluginDetailModal
+          machineId={row.origin?.machineId}
           row={row}
           head={{
             status: <PluginStatusMark status={status} hint={hint} />,
@@ -859,6 +866,7 @@ export function PluginCard(props: PluginCardProps) {
           version={badgeVersion}
           title={title}
           description={description}
+          origin={row.origin?.label}
           detailsLabel={title}
           cover={<PluginCover row={row} art={props.art ?? null} />}
           icon={

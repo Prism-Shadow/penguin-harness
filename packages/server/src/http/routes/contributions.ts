@@ -1,8 +1,9 @@
 /**
- * GET /api/contributions — the web slots' contributions, as data. What a pushed platform
- * or an installed plugin adds to the web app arrives here; the app merges it with its
- * own pages and renders what it has a renderer for. It also names the server modules plugins
- * run in this generation (`modules`), which is how the app knows to draw a plugin's web half.
+ * GET /api/contributions — the web slots' contributions, as data, and the start page's
+ * contributed counts (`startMetrics`, routes/start-page.ts). What a pushed platform or an
+ * installed plugin adds to the web app arrives here; the app merges it with its own pages and
+ * renders what it has a renderer for. It also names the server modules plugins run in this
+ * generation (`modules`), which is how the app knows to draw a plugin's web half.
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
@@ -22,6 +23,7 @@ import type {
 } from "../../api/types.js";
 import type { WorkbenchTabRenderer } from "@prismshadow/penguin-library-workbench";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import type { StartPage } from "./start-page.js";
 
 export interface ContributionsRouteDeps {
   web: WebShell;
@@ -93,6 +95,8 @@ export interface WebShellSlots {
 })
 export class WebModule {
   @Use() private readonly hmr!: Hmr;
+  /** The start page's counts ride the same answer (routes/start-page.ts). */
+  @Use() private readonly startPage!: StartPage;
   @Provide() web!: WebShell;
   @Bind("web.contributions") contributionsRoutes!: Hono<AppEnv>;
   setup({ contributions }: ClassCtx) {
@@ -110,6 +114,7 @@ export class WebModule {
       pageRemovals: collect<WebPageRemovalContribution>("pageRemovals"),
       agentTabs: collect("agentTabs"),
       sessionTabs: collect("sessionTabs"),
+      startMetrics: this.startPage.metrics(),
     };
     // The host is claimed per call: what the boot left out is recorded on it after this setup.
     const web: WebShell = {

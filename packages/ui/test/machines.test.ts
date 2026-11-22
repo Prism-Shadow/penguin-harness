@@ -84,7 +84,8 @@ describe("a job's stepper", () => {
 describe("the machines list", () => {
   it("stands placeholders in for the cards while it loads, then lists the cards before the empty state", () => {
     const loading = renderStatic(createElement(MachineList, { loading: true }));
-    expect(loading).toContain('aria-busy="true"');
+    expect(loading).toContain('role="status"');
+    expect(loading).toContain("data-skeleton");
     expect(textOf(loading)).toBe("");
 
     const read = renderStatic(
@@ -94,7 +95,7 @@ describe("the machines list", () => {
         createElement("article", null, "this server"),
       ),
     );
-    expect(read).not.toContain("aria-busy");
+    expect(read).not.toContain('role="status"');
     expect(textOf(read).indexOf("this server")).toBeLessThan(
       textOf(read).indexOf("No machines in use"),
     );
