@@ -101,7 +101,9 @@ describe("a plugin of Skills and hooks", () => {
   it("is installed once one Agent carries every part, and available while nobody does", () => {
     const whole = installs({ plan: "2026.10.04.1", run: "2026.10.09.1" }, { pair: "2026.10.04.1" });
     expect(statusOf(new Map([["a", whole]]), [agent("a"), agent("b")])).toBe("installed");
-    expect(libraryUsage(PAIR, [agent("a"), agent("b")], new Map([["a", whole]]))).toEqual({
+    expect(
+      libraryUsage(PAIR, [agent("a"), agent("b"), agent("a")], new Map([["a", whole]])),
+    ).toEqual({
       usedBy: ["a"],
       behind: [],
       lastSeen: [],

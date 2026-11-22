@@ -2,23 +2,33 @@ export { StdioDisclosure, McpServerMarks, McpSetUpModal, StdioInstallBody } from
 
 export {
   agentInstallable,
+  agentModuleMark,
   changedParts,
   installNeedsConfirm,
   pluginMcpState,
   stdioServers,
 } from "./plugin-status";
-export type { AgentInstalls } from "./plugin-status";
+export type { AgentInstalls, AgentModuleMark } from "./plugin-status";
 
 export { agentInstalls, installsKey, installsOf } from "./agent-installs";
 
-export { installOnAgent, toastWriteError, uninstallFromAgent } from "./agent-plugin-writes";
+export {
+  askModuleOnAgent,
+  installOnAgent,
+  toastModuleAsked,
+  toastWriteError,
+  uninstallFromAgent,
+} from "./agent-plugin-writes";
 export type { AgentTarget } from "./agent-plugin-writes";
 
-export { LIBRARY_KEY, pluginLibrary } from "./plugin-reads";
+export { LIBRARY_KEY, MARKET_KEY, pluginLibrary, pluginMarket } from "./plugin-reads";
+
+export { artOf, isSelected } from "./plugin-market";
 
 export { PluginDetailModal } from "./plugin-detail";
 
 export {
+  ModuleStatusMark,
   PluginStatusMark,
   PluginTag,
   pluginTags,

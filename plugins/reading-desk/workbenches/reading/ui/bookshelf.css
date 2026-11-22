@@ -1,0 +1,189 @@
+#library {
+  overflow: auto;
+  flex: 1;
+}
+.library-inner {
+  width: min(100%, 65rem);
+  margin-inline: auto;
+  padding: clamp(1.25rem, 4vw, 3rem) clamp(1rem, 4vw, 3rem) 4rem;
+}
+.shelf-heading {
+  font: 600 clamp(1.8rem, 4vw, 2.8rem)/1.1 var(--serif);
+  margin-bottom: 1.3rem;
+}
+.resume-book,
+.shelf-book {
+  text-align: start;
+  font: inherit;
+  width: 100%;
+  color: inherit;
+}
+.resume-book {
+  display: flex;
+  align-items: center;
+  position: relative;
+  gap: clamp(1.1rem, 4vw, 2.5rem);
+  padding: clamp(1.1rem, 3vw, 2rem);
+  border: 1px solid color-mix(in srgb, var(--leaf) 22%, var(--paper));
+  border-radius: var(--wb-radius, 0.65rem);
+  background: var(--pale);
+  white-space: normal;
+}
+.resume-book:hover,
+.resume-book:focus-visible {
+  border-color: var(--leaf);
+}
+.book-cover {
+  display: grid;
+  overflow: hidden;
+  position: relative;
+  place-items: center;
+  flex: none;
+  width: 2.65rem;
+  aspect-ratio: 3 / 4;
+  border-radius: 1px 3px 3px 1px;
+  background: #315a50;
+  color: #fff3d5;
+  isolation: isolate;
+}
+.book-cover[data-hue="1"] {
+  background: #855c47;
+}
+.book-cover[data-hue="2"] {
+  background: #43556e;
+}
+.book-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 9%;
+  border-left: 1px solid rgb(255 255 255 / 0.32);
+}
+.cover-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cover-letter {
+  display: grid;
+  place-items: center;
+  border-block: 1px solid rgb(255 255 255 / 0.42);
+  font: 500 1.05rem/1.5 var(--serif);
+  min-width: 44%;
+}
+.resume-book .book-cover {
+  width: clamp(4.2rem, 12vw, 7rem);
+}
+.resume-book .cover-letter {
+  font-size: clamp(1.8rem, 4vw, 2.7rem);
+}
+.resume-detail,
+.shelf-detail {
+  display: grid;
+  min-width: 0;
+  gap: 0.28rem;
+}
+.resume-label,
+.resume-chapter {
+  font-size: 0.86rem;
+  color: var(--leaf);
+}
+.resume-title {
+  font: 600 clamp(1.2rem, 3vw, 2.1rem)/1.25 var(--serif);
+  overflow-wrap: anywhere;
+  margin-bottom: 0.24rem;
+}
+.resume-excerpt {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font: 1rem/1.55 var(--serif);
+  color: var(--wb-muted);
+  overflow-wrap: anywhere;
+}
+.resume-arrow {
+  font-size: 1.4rem;
+  margin-inline-start: auto;
+  color: var(--leaf);
+}
+.shelf-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+  margin: 2rem 0 0.5rem;
+}
+.shelf-header h3 {
+  margin: 0;
+  font: 600 1.15rem var(--serif);
+}
+#book-count,
+.shelf-meta,
+.shelf-progress {
+  color: var(--wb-muted);
+  font: 400 0.8rem/1.4 var(--wb-font, sans-serif);
+}
+#book-count {
+  margin-inline-start: 0.3rem;
+}
+#book-search {
+  min-width: 0;
+  width: min(14rem, 100%);
+  color: var(--wb-fg);
+  background: var(--wb-canvas);
+}
+#books {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  column-gap: 1.75rem;
+}
+.shelf-book {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.85rem 0.2rem;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--wb-border);
+  border-radius: 0;
+  white-space: normal;
+}
+.shelf-book:hover,
+.shelf-book:focus-visible {
+  background: var(--pale);
+}
+.shelf-title {
+  font: 600 1rem/1.4 var(--serif);
+  overflow-wrap: anywhere;
+}
+.shelf-meta {
+  overflow-wrap: anywhere;
+}
+.shelf-progress {
+  margin-inline-start: auto;
+  display: grid;
+  justify-items: end;
+  gap: 0.22rem;
+  font-variant-numeric: tabular-nums;
+}
+.shelf-progress progress {
+  height: 4px;
+  width: 2.5rem;
+  accent-color: var(--leaf);
+}
+#search-empty {
+  margin-top: 1.4rem;
+  color: var(--wb-muted);
+}
+@media (max-width: 520px) {
+  .shelf-header {
+    margin-top: 1.5rem;
+  }
+  #book-search {
+    width: 100%;
+  }
+  .resume-arrow {
+    display: none;
+  }
+}

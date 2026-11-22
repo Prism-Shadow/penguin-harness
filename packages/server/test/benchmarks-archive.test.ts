@@ -218,6 +218,7 @@ describe("benchmark packages", () => {
       const metadata = {
         version: "0.1.0",
         title_zh: "报告写作",
+        data_url: "https://github.com/example/report-writing",
         last_update: "2026-10-30T12:00:00Z",
         author: { name: "Prism-Shadow" },
       };

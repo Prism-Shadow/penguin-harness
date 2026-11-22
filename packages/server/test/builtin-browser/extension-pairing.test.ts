@@ -19,7 +19,7 @@ import type {
   BrowserExtensionPairingResponse,
   BrowserExtensionsResponse,
 } from "../../src/api/types.js";
-import { PENGUIN_EXTENSION_ID } from "../../src/builtin-browser/extension-origin.js";
+import { browserPlugin, PENGUIN_EXTENSION_ID } from "./plugin.js";
 import { apiClient, createTestApp, provisionUser } from "../helpers.js";
 import type { TestApp } from "../helpers.js";
 
@@ -30,7 +30,7 @@ let clock: number;
 let cookie: string;
 beforeEach(async () => {
   clock = Date.parse("2026-10-02T09:00:00.000Z");
-  t = await createTestApp({ now: () => new Date(clock) });
+  t = await createTestApp({ plugins: browserPlugin(), now: () => new Date(clock) });
   cookie = (await provisionUser(t.app, "alice")).cookie;
 });
 afterEach(async () => {

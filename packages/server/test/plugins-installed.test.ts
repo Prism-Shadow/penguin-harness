@@ -16,7 +16,7 @@ import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { InstalledPluginsResponse, UsageErrorsPage } from "../src/api/types.js";
 import { PluginHost } from "../src/plugin/host.js";
-import { PluginInstallError } from "../src/plugin/install.js";
+import { installPluginChannel, PluginInstallError } from "../src/plugin/install.js";
 import { openPushSlip } from "../src/hmr/push-plugins.js";
 import { contentTable, decorators, lower, writeClassPackage } from "./plugin-fixtures.js";
 import type { ClassPackage } from "./plugin-fixtures.js";
@@ -538,14 +538,20 @@ describe("installed plugins", () => {
     await new Promise<void>((resolve) => serve.listen(0, "127.0.0.1", resolve));
     base = `http://127.0.0.1:${(serve.address() as AddressInfo).port}`;
     try {
+      // The registry check before the install gets the same 404, so the install never starts.
+      const notFound = async (_root: string, source: string) =>
+        npmSays(
+          `npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/${source}`,
+          "unavailable",
+        );
       t = await createTestApp({
         pluginPackages: {
-          install: async (_root, source) =>
-            npmSays(
-              `npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/${source}`,
-              "unavailable",
-            ),
+          check: notFound,
+          install: notFound,
           installFiles: async () => npmSays("not used", "other"),
+          installTarball: async () => npmSays("not used", "other"),
+          // The channel's URL is npm's to install, as on a machine that has npm.
+          installChannel: (root, channel, opts) => installPluginChannel(root, channel, opts),
           remove: async () => {},
         },
         config: {},
@@ -564,10 +570,17 @@ describe("installed plugins", () => {
       expect(res.headers.get("content-type")).toContain("text/event-stream");
       const events = parseSSE(await res.text());
       // The first event hands the work to npm (npm's own download is npm's to report); the
-      // last one carries the finished answer.
+      // last one carries the finished answer; between them the stream says each step — the
+      // registry check, then the index's channel — and the channel's download.
       expect(events[0]).toEqual({ event: "npm", data: "{}" });
       expect(events.at(-1)!.event).toBe("result");
-      expect(events).toHaveLength(2);
+      expect(events.filter((e) => e.event === "stage").map((e) => JSON.parse(e.data))).toEqual([
+        { stage: "checking" },
+        { stage: "installing", source: "channel" },
+      ]);
+      expect(events.slice(1, -1).every((e) => e.event === "stage" || e.event === "download")).toBe(
+        true,
+      );
       const result = JSON.parse(events.at(-1)!.data) as InstalledPluginsResponse;
       // A Skills-only package joins the library, not the Project's table.
       expect(result.installed).toMatchObject({
@@ -586,8 +599,11 @@ describe("installed plugins", () => {
     await t.cleanup();
     t = await createTestApp({
       pluginPackages: {
+        check: async () => {},
         install: async () => npmSays("npm error code EACCES\nnpm error permission denied", "other"),
         installFiles: async () => npmSays("not used", "other"),
+        installTarball: async () => npmSays("not used", "other"),
+        installChannel: async () => npmSays("not used", "other"),
         remove: async () => {},
       },
     });
@@ -596,8 +612,8 @@ describe("installed plugins", () => {
     const res = await postStream(cookie, "@acme/denied");
     expect(res.status).toBe(200); // the stream itself answers well
     const events = parseSSE(await res.text());
-    expect(events.map((e) => e.event)).toEqual(["npm", "error"]);
-    expect(JSON.parse(events[1]!.data)).toMatchObject({
+    expect(events.map((e) => e.event)).toEqual(["npm", "stage", "stage", "error"]);
+    expect(JSON.parse(events[3]!.data)).toMatchObject({
       status: 400,
       code: "plugin_install_failed",
       message: expect.stringContaining("npm: npm error code EACCES"),

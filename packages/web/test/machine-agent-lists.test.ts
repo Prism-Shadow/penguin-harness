@@ -3,7 +3,7 @@
  * Each machine's Agents (lib/machine-agent-lists.ts), as the Agents page, the plugin market and
  * the session list read them.
  *
- * One list across servers (`mixAgents`), as the Agents page and Manage installs show it:
+ * One list across servers (`mixAgents`), as the Agents page and Install on Agent show it:
  * - A machine's Agents fall where their creation puts them among this server's: no machine goes
  *   first.
  * - Agents created at the same moment go by id, then this server's first, then by machine name.

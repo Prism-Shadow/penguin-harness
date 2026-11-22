@@ -60,11 +60,11 @@ The **Report-writing agent** example creates an agent with the id `report-writer
 ## Create an agent manually
 
 1. On the **Agents** page, select **Create manually**. The **Create agent** dialog opens.
-2. Optional: when a machine is connected, in **Location**, select where the agent is created: **This server** or a machine. An agent created on a machine lives there: the plugins on offer come from that machine's library, the directory in step 7 is one on that machine, and the agent's settings open on that machine. Changing the location clears the plugins and the directory picked so far.
+2. Optional: when a machine is connected, in **Location**, select where the agent is created: **This server** or a machine. An agent created on a machine lives there: the plugins on offer come from that machine's library, the directory in step 7 is one on that machine, and the agent's settings open on that machine. Changing the location resets the plugins to that location's defaults and clears the directory picked so far.
 3. Optional: in **Name**, enter a name. An empty name uses the agent id.
 4. In **Agent id**, enter an id, or select **Generate with AI** beside the field to have the Project's default model derive one from the name, or from the description while the name is empty. An id is 2–64 characters long, starts with a lowercase letter, and uses only lowercase letters, digits and underscores. A proposal replaces what is in the box and stays editable. You cannot change the id later.
 5. Optional: fill in **Description**.
-6. Optional: in **Plugins**, select plugins from the plugin library to install on the new agent. Their Skills and hook packages are installed when the agent is created.
+6. Optional: in **Plugins**, select plugins from the plugin library to install on the new agent. Their Skills and hook packages are installed when the agent is created. **Goal Mode** and **Plan mode** start selected, since every new agent gets them; clear them to leave them out.
 7. Optional: in **Import Skills from a project directory**, select a directory. PenguinHarness reads the Skills under its `.agents/skills` and `.claude/skills` folders; select the ones to install. If a Skill from the directory has the same name as a Skill from a selected plugin, the directory's Skill is installed.
 8. Select **Create**. The new agent's settings open.
 
@@ -189,7 +189,7 @@ Tabs you have not customized are updated to the current built-in defaults. A tab
 > [!WARNING]
 > Restoring the default configuration cannot be undone.
 
-The agent's configuration is overwritten with the current defaults: the custom system prompt, tool list, model and compaction settings, and MCP servers are all replaced. Only the name, the description, the author and the Agent State version are kept. The MCP servers a plugin installed go too; **Manage installs** on the **Plugins** page puts them back.
+The agent's configuration is overwritten with the current defaults: the custom system prompt, tool list, model and compaction settings, and MCP servers are all replaced. Only the name, the description, the author and the Agent State version are kept. The MCP servers a plugin installed go too; **Install on Agent** on the **Plugins** page puts them back.
 
 ## System Prompt tab
 
@@ -280,7 +280,7 @@ Installing a plugin that carries MCP servers adds them to this list too; see [In
 
 A row may also show an icon for a server that cannot connect yet. A conversation skips that server, and its MCP connect row says why:
 
-- A key icon: the server needs setup, because the vault lacks keys its entry references. Point at it for their names. The Project owner adds them on the **Vault** tab, or with **Set up** in the plugin's **Manage installs** dialog.
+- A key icon: the server needs setup, because the vault lacks keys its entry references. Point at it for their names. The Project owner adds them on the **Vault** tab, or with **Set up** in the plugin's install flow, on its agents step.
 - A sign-in icon: the server signs in with OAuth, which this version does not support yet.
 
 ### Test MCP servers

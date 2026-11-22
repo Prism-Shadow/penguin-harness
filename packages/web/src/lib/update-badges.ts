@@ -49,16 +49,19 @@ export type BadgeSource =
   | { kind: "kernel" }
   | { kind: "plugins"; count: number }
   | { kind: "models"; count: number }
-  | { kind: "errors"; count: number };
+  | { kind: "errors"; count: number }
+  /** The administrator's: members' requests to run a plugin's server module, waiting. */
+  | { kind: "moduleRequests"; count: number };
 
 /**
  * What an anchor says. A single source speaks for itself; several make it `mixed`, because an
  * anchor leading to all of them must not claim to be one — naming one of five would point the
  * user down the wrong trail.
  *
- * `updatesOnly` splits the two combined wordings apart. Four of the five sources ARE updates
- * and can be summed up as "something can be updated"; unexpected errors are not an update by
- * any reading, so a mix containing them needs the wider "something is waiting for you".
+ * `updatesOnly` splits the two combined wordings apart. Four of the sources ARE updates and can
+ * be summed up as "something can be updated"; unexpected errors and the requests waiting for the
+ * administrator are not updates by any reading, so a mix containing them needs the wider
+ * "something is waiting for you".
  */
 export type UpdateBadgeNote =
   { kind: "none" } | BadgeSource | { kind: "mixed"; updatesOnly: boolean };
@@ -67,5 +70,8 @@ export type UpdateBadgeNote =
 export function badgeNote(sources: readonly BadgeSource[]): UpdateBadgeNote {
   if (sources.length === 0) return { kind: "none" };
   if (sources.length === 1) return sources[0]!;
-  return { kind: "mixed", updatesOnly: sources.every((s) => s.kind !== "errors") };
+  return {
+    kind: "mixed",
+    updatesOnly: sources.every((s) => s.kind !== "errors" && s.kind !== "moduleRequests"),
+  };
 }

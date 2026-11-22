@@ -93,6 +93,8 @@ export interface BenchmarkManifest {
   lastUpdate?: string;
   /** Package author and maintainer. */
   author?: { name: string; email?: string; homepage?: string };
+  /** The package's external data repository (`data_url`). */
+  dataUrl?: string;
   /** Where the package's tasks come from (a paper, an upstream repository): http(s) links. */
   references?: string[];
   /** A file that says neither `draft` nor `failed` is published. */
@@ -205,6 +207,13 @@ function authorOf(raw: unknown): BenchmarkManifest["author"] {
   return author;
 }
 
+function dataUrlOf(raw: unknown): string | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string" || !isWebLink(raw))
+    throw invalid(`"data_url" must be an http(s) link.`);
+  return raw;
+}
+
 function referencesOf(raw: unknown): string[] | undefined {
   if (raw === undefined) return undefined;
   if (!Array.isArray(raw) || !raw.every((link) => typeof link === "string" && isWebLink(link))) {
@@ -275,6 +284,7 @@ export function parseBenchmarkManifest(text: string, dirId: string): BenchmarkMa
   const origin = originOf(config.origin);
   const author = authorOf(config.author);
   const lastUpdate = lastUpdateOf(config.last_update);
+  const dataUrl = dataUrlOf(config.data_url);
   const references = referencesOf(config.references);
   const { title, description, runs, status } = config;
   const titleZh = config.title_zh;
@@ -288,6 +298,7 @@ export function parseBenchmarkManifest(text: string, dirId: string): BenchmarkMa
     ...(version !== undefined ? { version } : {}),
     ...(lastUpdate !== undefined ? { lastUpdate } : {}),
     ...(author !== undefined ? { author } : {}),
+    ...(dataUrl !== undefined ? { dataUrl } : {}),
     ...(references !== undefined ? { references } : {}),
     // The two states that make a Benchmark unusable are literal: "draft" while it is still being
     // built, "failed" when its calibration never produced a result to freeze. A file written
@@ -333,6 +344,7 @@ export function checkBenchmarkManifest(manifest: BenchmarkManifest): void {
   versionOf(manifest.version);
   lastUpdateOf(manifest.lastUpdate);
   authorOf(manifest.author);
+  dataUrlOf(manifest.dataUrl);
   referencesOf(manifest.references);
   if (!STATUSES.includes(manifest.status)) {
     throw invalid(`"status" must be one of ${STATUSES.join(", ")}.`);
@@ -360,6 +372,7 @@ function serializeBenchmarkManifest(manifest: BenchmarkManifest): string {
       : {}),
     ...(manifest.version !== undefined ? { version: manifest.version } : {}),
     ...(manifest.lastUpdate !== undefined ? { last_update: manifest.lastUpdate } : {}),
+    ...(manifest.dataUrl !== undefined ? { data_url: manifest.dataUrl } : {}),
     ...(manifest.references !== undefined ? { references: [...manifest.references] } : {}),
     status: manifest.status,
     ...(manifest.runs !== undefined ? { runs: manifest.runs } : {}),

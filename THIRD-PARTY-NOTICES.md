@@ -309,10 +309,11 @@ Email: mengfanqi@xiaomi.com
 
 ## GenericAgent — the built-in browser's page scripts
 
-Adapted into this repository's source, so present wherever the server ships: every release archive,
-the desktop application, and the `@prismshadow/penguin-server` npm package.
+Adapted into this repository's source, so present wherever the browser-automation plugin ships:
+every release archive, the desktop application, a hot push, and the
+`@penguinharness/browser-automation` npm package, which carries its own copy of this notice.
 
-The built-in browser's page scripts under `packages/server/src/builtin-browser/page-scripts/` (the
+The built-in browser's page scripts under `plugins/browser-automation/src/server/page-scripts/` (the
 DOM simplification that `penguin browser scan` returns, and the change monitor behind
 `penguin browser exec`) are ported from GenericAgent's `simphtml.py`; each ported file says so at
 its top. The `penguin browser` commands and the `browser-automation` skill follow GenericAgent's
@@ -345,3 +346,24 @@ SOFTWARE.
 ```
 
 Source: <https://github.com/lsdefine/genericagent>
+
+## agent-desktop — the computer-use plugin's Skill
+
+Adapted into this repository's source, so present in the `@penguinharness/computer-use` npm package
+(which carries its own `THIRD-PARTY-NOTICES.md`); not in any release archive, the desktop
+application or the builtin plugin prefix, which do not ship that plugin.
+
+`plugins/computer-use/skills/computer-use/SKILL.md` and its `reference/` files are adapted from the
+guides agent-desktop 1.3.1 bundles (`agent-desktop skills get desktop` and `skills get platform`);
+each file says so and how it was changed. The agent-desktop program itself is not redistributed:
+the plugin downloads it from the npm registry at run time and checks it against the digests pinned
+in `plugins/computer-use/src/pin.ts`.
+
+**License: Apache-2.0**, the same licence as this repository; its full text is
+[LICENSE](LICENSE). The upstream repository carries no `NOTICE` file.
+
+Source: <https://github.com/vercel-labs/agent-desktop>
+
+## PptxGenJS and JSZip — the Bento Slides PowerPoint exporter
+
+The Slides workbench includes the browser distribution of PptxGenJS 4.0.1 from its npm package. It includes JSZip. Their license notices ship beside the bundle in `plugins/use-bento-slides/workbenches/slides/ui/vendor/`.

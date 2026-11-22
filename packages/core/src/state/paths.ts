@@ -92,6 +92,14 @@ export function workspacesDir(root: string, projectId: string, agentId: string):
 }
 
 /**
+ * `<agentDir>/shared_env`, the Agent's reusable tool environments, one folder per environment.
+ * The system prompt tells the model to keep them here; no code creates the folder.
+ */
+export function sharedEnvDir(root: string, projectId: string, agentId: string): string {
+  return path.join(agentDir(root, projectId, agentId), "shared_env");
+}
+
+/**
  * `<agentDir>/scratchpad/<sessionId>`, one Session's private scratchpad directory. The single
  * Session-scoped storage root shared by every by-product bound to that Session: input images
  * saved as path lines, the goal-mode control file, and Environment's truncated-tool-output
