@@ -10,8 +10,21 @@
  * - `./observability` - the contracts module on its own.
  * - `./repos` (and per-file) - the errors and usage storing components.
  */
-export { ErrorLog, Errors, UsageStore, UsageRecording, UsageQueries, MESSAGE_MAX } from "./observability.js";
-export type { UsageContext, ErrorSource, ErrorKind, ErrorRecordArgs, ErrorSink } from "./observability.js";
+export {
+  ErrorLog,
+  Errors,
+  UsageStore,
+  UsageRecording,
+  UsageQueries,
+  MESSAGE_MAX,
+} from "./observability.js";
+export type {
+  UsageContext,
+  ErrorSource,
+  ErrorKind,
+  ErrorRecordArgs,
+  ErrorSink,
+} from "./observability.js";
 export type { UsageClock } from "./observability.js";
 export type {
   UsageGroupBy,
@@ -36,11 +49,7 @@ export type {
   UsageErrorItem,
 } from "./observability.js";
 export { UsageService } from "./usage-service.js";
-export type {
-  PricingRates,
-  TieredRates,
-  PricingLookup,
-} from "./usage-service.js";
+export type { PricingRates, TieredRates, PricingLookup } from "./usage-service.js";
 export {
   requestCostUsd,
   requestCostParts,

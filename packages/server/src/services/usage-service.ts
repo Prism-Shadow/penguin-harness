@@ -8,7 +8,11 @@
 import { Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
 import type { ProjectConfigStore } from "@prismshadow/penguin-library-project";
-import type { ErrorLog, UsageQueries, UsageStore } from "@prismshadow/penguin-library-observability";
+import type {
+  ErrorLog,
+  UsageQueries,
+  UsageStore,
+} from "@prismshadow/penguin-library-observability";
 import { UsageService } from "@prismshadow/penguin-library-observability/usage-service";
 
 export { UsageService } from "@prismshadow/penguin-library-observability/usage-service";

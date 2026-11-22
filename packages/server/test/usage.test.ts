@@ -54,7 +54,11 @@ import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usag
 import { UsageService } from "@prismshadow/penguin-library-observability/usage-service";
 import type { PricingRates } from "@prismshadow/penguin-library-observability/usage-service";
 import { openDatabase } from "@prismshadow/penguin-library-db";
-import { enumerateBuckets, enumerateTsBuckets, formatLocalDate } from "@prismshadow/penguin-library-observability/dates";
+import {
+  enumerateBuckets,
+  enumerateTsBuckets,
+  formatLocalDate,
+} from "@prismshadow/penguin-library-observability/dates";
 import { switchTimeZone } from "./helpers/time-zone.js";
 import type { DatabaseSync } from "node:sqlite";
 import { wire } from "@prismshadow/penguin-core/kernel";
