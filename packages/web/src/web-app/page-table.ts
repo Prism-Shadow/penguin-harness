@@ -11,6 +11,7 @@ import type { ComponentType } from "react";
 import { matchPath } from "react-router";
 import type { Contributed } from "@prismshadow/penguin-core/kernel";
 import type { RendererRef } from "@prismshadow/penguin-server/api";
+import { routeUnder } from "./route-under";
 
 /** One page as its feature declares it: the data half of a `pages` contribution. */
 export interface PageData {
@@ -25,7 +26,7 @@ export interface PageData {
   released: boolean;
   /** The page's place in the table, and so in the nav. */
   order: number;
-  /** A main-nav page's row: its name in English and in Chinese, and its glyph's name in the UI package's icon registry (`ICONS`). */
+  /** A main-nav page's row, or a system app's tile: its name in English and in Chinese, and its glyph's name in the UI package's icon registry (`ICONS`). */
   title?: string;
   titleZh?: string;
   icon?: string;
@@ -34,6 +35,12 @@ export interface PageData {
    * page (web-app/sidebar/nav-state.ts). One level only — see parentedPagesOf.
    */
   parent?: string;
+  /**
+   * Makes the page a system app of the system Agent: an App Center tile named and drawn by
+   * `title` / `titleZh` / `icon` that opens `path` as a page, shown to whom `admin` allows, placed
+   * by `order` among the system apps (lib/system-apps.ts). A page without a `title` is no app.
+   */
+  app?: { order: number };
 }
 
 /** A page with the component its feature bound, or the one a server-contributed page's renderer resolved to. */
@@ -47,6 +54,11 @@ export interface WebAppPage extends Omit<PageData, "nav"> {
   Component: ComponentType;
   /** The renderer a server-contributed page named; absent on the modules' own pages. */
   renderer?: RendererRef;
+  /**
+   * The web module whose server module this page waits for (lib/module-gate.ts): the table
+   * leaves it out while that module is not running. Absent on every other page.
+   */
+  gatedBy?: string;
 }
 
 /** A page the server contributed: the renderer it named stays beside the component, for the readers that key on it. */
@@ -90,43 +102,27 @@ export function parentedPagesOf(pages: readonly WebAppPage[]): readonly WebAppPa
  */
 export const HOME_PATHS: readonly string[] = ["/chat", "/org"];
 
-/** A route pattern's segments: "/benchmark/:benchmarkId" → ["benchmark", ":benchmarkId"]. */
-const segmentsOf = (path: string) => path.split("/").filter((s) => s !== "");
-
 /**
  * The table without the pages the given keys name, nor the pages whose route lies under one of
- * theirs — whose pattern starts with every non-splat segment of the removed page's pattern (a
- * trailing splat answers the rest of the URL), so removing
- * `benchmark` (/benchmark) takes `benchmark-detail` (/benchmark/:benchmarkId) with it but not
+ * theirs (route-under.ts: `/benchmark/:benchmarkId` lies under `/benchmark`, and a trailing splat
+ * answers the rest of the URL), so removing `benchmark` takes `benchmark-detail` with it but not
  * the other way round: what lives under a page's URL belongs to that page, and a removal names
- * the page a user sees, not the routes behind it. A page at "/" takes only itself. A page that
- * answers one of HOME_PATHS stays whatever names it. Keys naming no page are ignored; pages
- * under a removed one by `parent` are left to parentedPagesOf, which runs after this.
+ * the page a user sees, not the routes behind it. A page at "/" or at a bare splat (home, `*`)
+ * takes only itself. A page that answers one of HOME_PATHS stays whatever names it. Keys naming
+ * no page are ignored; pages under a removed one by `parent` are left to parentedPagesOf, which
+ * runs after this.
  */
 export function removedPagesOf(
   pages: readonly WebAppPage[],
   keys: readonly string[],
 ): readonly WebAppPage[] {
   if (keys.length === 0) return pages;
-  const removed = pages.filter((p) => keys.includes(p.key)).map((p) => segmentsOf(p.path));
+  const removed = pages.filter((p) => keys.includes(p.key)).map((p) => p.path);
   if (removed.length === 0) return pages;
-  // A page whose pattern ends in a splat (`/reports/*`) answers the rest of the URL — its own
-  // bare path included — so every page whose leading segments match it lies under it, however
-  // the pages under it name their parameters (`/reports/:reportId` goes with it). A pattern
-  // that is nothing but the splat (home, `*`) takes only itself: everything would match it,
-  // and the pages answering HOME_PATHS cannot be removed anyway.
-  const under = (path: readonly string[], root: readonly string[]) => {
-    if (root.length === 0) return false;
-    const splat = root[root.length - 1] === "*";
-    const stem = splat ? root.length - 1 : root.length;
-    if (stem === 0 || path.length < stem) return false;
-    return root.slice(0, stem).every((s, i) => s === path[i]);
-  };
   return pages.filter((p) => {
     if (HOME_PATHS.some((home) => matchPath(p.path, home) !== null)) return true;
     if (keys.includes(p.key)) return false;
-    const path = segmentsOf(p.path);
-    return !removed.some((root) => under(path, root));
+    return !removed.some((root) => routeUnder(p.path, root));
   });
 }
 

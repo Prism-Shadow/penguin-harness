@@ -37,9 +37,9 @@ import {
   SearchInput,
   Select,
   SettingsEmpty,
-  SkeletonList,
   Spinner,
-  toastError,
+  FailureText,
+  Waiting,
 } from "@prismshadow/penguin-ui";
 import { useStore } from "zustand/react";
 import { formatDateTime } from "../../lib/format";
@@ -65,6 +65,7 @@ import {
   type ArchiveTarget,
   type GroupRows,
 } from "./archived-sessions-state";
+import { toastApiError } from "../../lib/toast-api-error";
 
 /** How long typing in the search box rests before the page reads again. */
 const SEARCH_DEBOUNCE_MS = 250;
@@ -83,7 +84,9 @@ interface PendingDelete {
 export function ArchivedSessionsSection() {
   const { projects } = useProject();
   const [store] = useState<ArchiveStore>(() =>
-    createArchiveStore((reason) => toastError(S.archivedSessions.actionFailed(reason))),
+    createArchiveStore((reason, err) =>
+      toastApiError(err, { text: S.archivedSessions.actionFailed(reason) }),
+    ),
   );
   const state = useStore(store);
   const [q, setQ] = useState("");
@@ -219,14 +222,18 @@ export function ArchivedSessionsSection() {
 
       <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 pb-1">
         {state.groups === null ? (
-          <SkeletonList rows={4} />
+          <Waiting rows={4} />
         ) : state.groups.length === 0 ? (
           <SettingsEmpty>
-            {state.error !== null
-              ? S.archivedSessions.loadFailed(state.error)
-              : filtered
-                ? S.archivedSessions.noMatches
-                : S.archivedSessions.empty}
+            {state.error !== null ? (
+              <FailureText
+                failure={{ ...state.error, text: S.archivedSessions.loadFailed(state.error.text) }}
+              />
+            ) : filtered ? (
+              S.archivedSessions.noMatches
+            ) : (
+              S.archivedSessions.empty
+            )}
           </SettingsEmpty>
         ) : (
           <div className="space-y-6">
@@ -364,7 +371,7 @@ function ArchiveGroup({
         </button>
       </div>
       {rows === undefined || (rows.loading && shown.length === 0) ? (
-        <SkeletonList rows={Math.min(group.count, 3)} />
+        <Waiting rows={Math.min(group.count, 3)} />
       ) : (
         <ul className="divide-y divide-line-muted border-t border-line-muted">
           {shown.map((s) => (

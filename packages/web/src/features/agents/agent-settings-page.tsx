@@ -8,7 +8,8 @@
  * tools table + the MCP Server form, mcp-servers-section.tsx), Plugins (plugins-tab.tsx: four
  * sub-pages — the Agent's plugins, its Skills, its hook packages and its workbenches),
  * Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule (schedules-tab.tsx), API (api-tab.tsx:
- * the Agent's public API, kept by this server).
+ * the Agent's public API, kept by this server). The system Agent's page has only a read-only
+ * Overview and the Plugins tab's system apps (system-agent-settings.tsx).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
  * server-side).
  *
@@ -28,7 +29,7 @@
  * the Overview tab's first field changes it (agent-avatar-field.tsx), saved on its own the moment
  * a crop is confirmed rather than with the tab's Save.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import type {
@@ -55,7 +56,6 @@ import {
   PageFrame,
   PageHeader,
   Select,
-  Skeleton,
   Switch,
   Table,
   TableBody,
@@ -66,6 +66,7 @@ import {
   Tabs,
   Textarea,
   UpdateDot,
+  Waiting,
   toastSuccess,
   useFormDraft,
   type OptionMenuChoice,
@@ -73,7 +74,6 @@ import {
 
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { scopeKey, scoped, scopedValue, type Scoped } from "../../lib/project-scope";
 import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
@@ -98,6 +98,7 @@ import {
 } from "./tools-form";
 
 import { PluginsTab } from "./plugins-tab";
+import { SystemAgentApps, SystemAgentOverview } from "./system-agent-settings";
 import {
   PLUGIN_PARAM,
   SUBPAGE_TABS,
@@ -115,6 +116,7 @@ import { AgentExportDialog } from "./agent-export-dialog";
 import { AgentImportDialog } from "./agent-import-dialog";
 import { ThinkingLevelSelect, effectiveThinkingLevel } from "../model-picker";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 type TabKey =
   | "overview"
@@ -173,7 +175,6 @@ export function AgentSettingsPage() {
   // tab holds unsaved edits the app's leave guard asks before it happens, and the tab on screen
   // never runs ahead of the address it would leave.
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab: TabKey = resolveTabKey(searchParams.get("tab"), TABS, "overview", SUBPAGE_TABS);
   const subPage = resolvePluginsSubPage(searchParams.get("tab"));
   /** The machine the Agent lives on (`?machine=`); null for this server. */
   const machineId = machineInSearch(searchParams);
@@ -184,6 +185,10 @@ export function AgentSettingsPage() {
   const pageScope = scopeKey(projectId, agentId, machineId);
   const [dataRead, setDataRead] = useState<Scoped<AgentConfigResponse> | null>(null);
   const data = scopedValue(dataRead, pageScope);
+  /** The system Agent has only its read-only overview and its system apps (system-agent-settings.tsx). */
+  const system = data?.config.system === true;
+  const tabs = system ? TABS.filter((t) => t.key === "overview" || t.key === "plugins") : TABS;
+  const tab: TabKey = resolveTabKey(searchParams.get("tab"), tabs, "overview", SUBPAGE_TABS);
   const machines = useMachines();
   /** Whether that machine can be asked right now; null for this server, which always can. */
   const link = machineId === null ? null : machineLink(machines.state, machines.settled, machineId);
@@ -238,7 +243,7 @@ export function AgentSettingsPage() {
     [setSearchParams],
   );
   // Only the initial config load failure renders inline (the page can't show without it); saves/imports report via toast.
-  const [errorRead, setErrorRead] = useState<Scoped<string> | null>(null);
+  const [errorRead, setErrorRead] = useState<Scoped<ReactNode> | null>(null);
   const error = scopedValue(errorRead, pageScope);
 
   const load = useCallback(
@@ -255,7 +260,11 @@ export function AgentSettingsPage() {
       api
         .getAgentConfig(projectId, agentId, machineId)
         .then((res) => setDataRead(scoped(scope, res)))
-        .catch((e: unknown) => setErrorRead(scoped(scope, apiErrorText(e))));
+        .catch((e: unknown) =>
+          setErrorRead(
+            scoped(scope, failureNode(e, { what: "an Agent's settings could not be loaded" })),
+          ),
+        );
     },
     [projectId, agentId, machineId, reachable],
   );
@@ -356,11 +365,11 @@ export function AgentSettingsPage() {
     return <p className="p-6 text-sm text-red-600 dark:text-red-400">{error}</p>;
   }
   if (!data) {
+    // The page's own frame around the wait, so the header and the tabs land where it stood.
     return (
-      <div className="space-y-3 p-6">
-        <Skeleton className="h-6 w-64" />
-        <Skeleton className="h-32 w-full" />
-      </div>
+      <PageFrame width="sm">
+        <Waiting form="page" />
+      </PageFrame>
     );
   }
 
@@ -369,7 +378,7 @@ export function AgentSettingsPage() {
        this page's snapshot-import control used to grow the document from below the fold. */
     <PageFrame width="sm" className="no-scrollbar relative">
       <PageHeader
-        title={data.config.name ?? agentId}
+        title={system ? S.agent.systemName : (data.config.name ?? agentId)}
         media={<AgentAvatar id={agentId} size={AGENT_AVATAR_PREVIEW_PX} src={picture} />}
         back={{ label: S.agent.backToList, onClick: () => navigate("/agents") }}
         // The id is data: mono on the small rung. A block keeps its line box at its own
@@ -385,8 +394,8 @@ export function AgentSettingsPage() {
       {/* The kernel update action lives in the Overview tab's Kernel section, so the trail
           from the Agents list has to cross the tab strip to reach it. */}
       <Tabs
-        items={TABS.map((t) =>
-          t.key === "overview" && data.config.kernelOutdated
+        items={tabs.map((t) =>
+          t.key === "overview" && data.config.kernelOutdated && !system
             ? { ...t, badge: S.agent.kernelOutdatedHint }
             : t,
         )}
@@ -397,7 +406,8 @@ export function AgentSettingsPage() {
       />
       <AgentLocationContext.Provider value={machineId}>
         <div className="py-4">
-          {tab === "overview" && (
+          {tab === "overview" && system && <SystemAgentOverview data={data} />}
+          {tab === "overview" && !system && (
             <OverviewTab
               data={data}
               agentId={agentId}
@@ -420,7 +430,8 @@ export function AgentSettingsPage() {
               <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
             </div>
           )}
-          {tab === "plugins" && (
+          {tab === "plugins" && system && <SystemAgentApps />}
+          {tab === "plugins" && !system && (
             <PluginsTab
               key={`${projectId}:${machineId ?? ""}:${agentId}`}
               agentId={agentId}
@@ -930,6 +941,10 @@ function PromptTab({ data, onSave }: FormTabProps) {
   );
 }
 
+/** The bar that titles each section of the Runtime tab's card. */
+const runtimeSectionHeadClass =
+  "border-t border-b border-gray-200 bg-gray-50/80 px-3 py-2 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:bg-gray-900";
+
 function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: string }) {
   const machineId = useAgentLocation();
   const [projectThinking, setProjectThinking] = useState<string | null>(null);
@@ -949,8 +964,15 @@ function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: str
     };
   }, [projectId, machineId]);
   const cfg = data.config;
-  // The five numbers, the two menus and the prompt are one form: the menus sit inside it, so
-  // they save with it (a menu that stood alone in its row would write at once instead).
+  // A server that predates the tool rounds and the two texts reports none of them (a machine on
+  // an older server): their fields stay off rather than offering an edit it would drop.
+  const reported = {
+    maxRounds: cfg.compaction?.maxRounds !== undefined,
+    reminder: cfg.compaction?.reminder !== undefined,
+    handoffNote: cfg.compaction?.handoffNote !== undefined,
+  };
+  // The six numbers, the two menus and the three texts are one form: the menus sit inside it,
+  // so they save with it (a menu that stood alone in its row would write at once instead).
   const form = useFormDraft(runtimeDraftOf(cfg), { normalize: normalizeRuntime });
   const errors = runtimeErrors(form.draft, form.baseline);
   const [saving, setSaving] = useState(false);
@@ -958,7 +980,9 @@ function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: str
   /** A number box's inline error, judged only once it differs from the stored value. */
   const errorOf = (field: RuntimeNumberField): string | undefined => {
     const error = errors?.[field];
-    if (error === "invalid") return S.agent.numberInvalid;
+    if (error === "invalid") {
+      return field === "maxRounds" ? S.agent.maxRoundsInvalid : S.agent.numberInvalid;
+    }
     if (error === "cannotClear") return S.agent.numberCannotClear;
     return undefined;
   };
@@ -1034,11 +1058,9 @@ function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: str
           </div>
         </div>
 
-        <div className="border-t border-b border-gray-200 bg-gray-50/80 px-3 py-2 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:bg-gray-900">
-          {S.agent.compaction}
-        </div>
+        <div className={runtimeSectionHeadClass}>{S.agent.compaction}</div>
         <div className="p-3">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Input
               label={S.agent.maxContextLength}
               info={S.agent.maxContextLengthHint}
@@ -1070,12 +1092,24 @@ function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: str
               onChange={(mode) => form.patch({ mode })}
               options={compactionModeOptions}
             />
+            {reported.maxRounds && (
+              <Input
+                label={S.agent.maxRounds}
+                info={S.agent.maxRoundsInfo}
+                infoLabel={S.agent.maxRounds}
+                hint={S.agent.maxRoundsHint}
+                size="sm"
+                value={form.draft.maxRounds}
+                error={errorOf("maxRounds")}
+                onChange={(e) => setNumber("maxRounds", e.target.value)}
+                inputMode="numeric"
+                className="font-mono"
+              />
+            )}
           </div>
         </div>
 
-        <div className="border-t border-b border-gray-200 bg-gray-50/80 px-3 py-2 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:bg-gray-900">
-          {S.agent.compactionPrompt}
-        </div>
+        <div className={runtimeSectionHeadClass}>{S.agent.compactionPrompt}</div>
         <div className="p-3">
           <Textarea
             aria-label={S.agent.compactionPrompt}
@@ -1086,6 +1120,50 @@ function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: str
             onChange={(e) => form.patch({ prompt: e.target.value })}
           />
         </div>
+
+        {reported.reminder && (
+          <>
+            <div className={`flex items-center gap-1.5 ${runtimeSectionHeadClass}`}>
+              {S.agent.compactionReminder}
+              <InfoPopover label={S.agent.compactionReminder}>
+                {S.agent.compactionReminderInfo}
+              </InfoPopover>
+            </div>
+            <div className="p-3">
+              <Textarea
+                aria-label={S.agent.compactionReminder}
+                hint={S.agent.compactionReminderHint}
+                mono
+                size="sm"
+                rows={2}
+                value={form.draft.reminder}
+                onChange={(e) => form.patch({ reminder: e.target.value })}
+              />
+            </div>
+          </>
+        )}
+
+        {reported.handoffNote && (
+          <>
+            <div className={`flex items-center gap-1.5 ${runtimeSectionHeadClass}`}>
+              {S.agent.compactionHandoffNote}
+              <InfoPopover label={S.agent.compactionHandoffNote}>
+                {S.agent.compactionHandoffNoteInfo}
+              </InfoPopover>
+            </div>
+            <div className="p-3">
+              <Textarea
+                aria-label={S.agent.compactionHandoffNote}
+                hint={S.agent.compactionHandoffNoteHint}
+                mono
+                size="sm"
+                rows={4}
+                value={form.draft.handoffNote}
+                onChange={(e) => form.patch({ handoffNote: e.target.value })}
+              />
+            </div>
+          </>
+        )}
       </Card>
 
       <SaveRow

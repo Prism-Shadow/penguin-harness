@@ -1,11 +1,13 @@
 /**
  * An Agent's export: a zip of its directory as it is on disk. `<agentId>/agent_state/…` is the
- * State less what a snapshot leaves out and the parts left out; `<agentId>/traces/<date>/…` is
- * every file of the chosen Sessions, a subagent Session following its parent. The vault never
- * travels, and a vault value of 8 characters or more in a Trace becomes `[vault:<KEY>]`. Only
- * regular files travel. Past the import's caps the export is 413 `archive_too_large`, so every
+ * State less what a snapshot leaves out and the parts left out; `<agentId>/app/data/<id>/…` is
+ * each carried workbench's data folder, with its data (./agent-app-data.ts);
+ * `<agentId>/traces/<date>/…` is every file of the chosen Sessions, a subagent Session following
+ * its parent. The vault never travels, and a vault value of 8 characters or more in a Trace
+ * becomes `[vault:<KEY>]`. Only regular files travel. Past the import's caps the export is 413 `archive_too_large`, so every
  * export imports.
  */
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { zipSync } from "fflate";
@@ -14,12 +16,14 @@ import {
   loadAgentVault,
   parseTraceLines,
   tracesDir,
+  workbenchesDir,
 } from "@prismshadow/penguin-core";
 import type { AgentArchiveQuery } from "../api/types.js";
 import { HttpError, badRequest } from "../http/errors.js";
-import type { SessionIndex } from "../mechanisms/sessions.js";
-import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
-import { STATE_FILE } from "../workbenches/store.js";
+import type { SessionIndex } from "@prismshadow/penguin-library-session";
+import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-trace";
+import { isWorkbenchId, STATE_FILE } from "../workbenches/store.js";
+import { collectAppData } from "./agent-app-data.js";
 import { MAX_ENTRIES, MAX_PACKAGE_BYTES, MAX_UNPACKED_BYTES } from "./agent-zip.js";
 import { isGitEntry, isLeftOut } from "./snapshot-service.js";
 
@@ -30,7 +34,10 @@ export interface AgentExportDeps {
   sessions: Pick<SessionIndex, "listByAgent">;
 }
 
-/** The State folder of each part; `workbenchData` is each workbench's `state.json`. */
+/**
+ * The State folder of each part; `workbenchData` is each workbench's `state.json` and its data
+ * folder beside the State.
+ */
 const PART_DIRS: Record<string, string> = {
   skills: "skills",
   hooks: "hooks",
@@ -145,6 +152,14 @@ export async function exportAgent(
     }
   };
   await walk(agentStateDir(deps.root, projectId, agentId), "");
+  if (parts.workbenches && parts.workbenchData) {
+    const dir = workbenchesDir(deps.root, projectId, agentId);
+    const ids = (await fs.readdir(dir, { withFileTypes: true }).catch((): Dirent[] => []))
+      .filter((e) => e.isDirectory() && isWorkbenchId(e.name))
+      .map((e) => e.name);
+    const skip = (name: string) => isLeftOut(name) || isGitEntry(name);
+    await collectAppData(deps.root, projectId, agentId, ids, skip, add);
+  }
 
   // Longest first, so a value holding another is replaced whole; each in its JSON spelling too.
   const vault = chosen.length > 0 ? await loadAgentVault(deps.root, projectId, agentId) : {};

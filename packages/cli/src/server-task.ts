@@ -232,6 +232,8 @@ export async function watchTask(
   opts: WatchTaskOptions,
 ): Promise<WatchTaskResult> {
   const { t, renderer } = opts;
+  // The Session this run is of: a switch's handoff names it before any session_meta does.
+  renderer?.followSession(opts.sessionId);
   let aborted = false;
   let timedOut = false;
   let outcome: GoalOutcome | undefined;

@@ -101,6 +101,7 @@ mac:
   # every agent and nothing ever explains why. The server and the agents' shells run as
   # descendants of this app, so the one prompt the user answers covers all of them.
   extendInfo:
+    NSMicrophoneUsageDescription: PenguinHarness uses your microphone when you choose to dictate a chat message.
     NSDesktopFolderUsageDescription: PenguinHarness needs access to your Desktop when an agent's workspace is a folder on it.
     NSDocumentsFolderUsageDescription: PenguinHarness needs access to your Documents when an agent's workspace is a folder in it.
     NSDownloadsFolderUsageDescription: PenguinHarness needs access to your Downloads when an agent's workspace is a folder in it.

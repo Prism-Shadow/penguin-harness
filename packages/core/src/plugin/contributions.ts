@@ -98,6 +98,18 @@ function entriesOf(
   return out;
 }
 
+/**
+ * Every entry the modules a package's default export reaches contribute to `slot`, read off its
+ * table alone (nothing is imported), with where each was declared: what a host reads of a
+ * package it does not run, such as the seeds a built-in plugin ships for a system app.
+ */
+export function slotEntries(
+  table: PluginTable,
+  slot: string,
+): Array<{ at: string; entry: Record<string, unknown> }> {
+  return entriesOf(table, slot);
+}
+
 /** Whether `rel` names a path inside the package: relative, not `.`, never climbing out, on any platform's spelling. */
 function insidePackage(rel: string): boolean {
   const normal = path.posix.normalize(rel.replace(/\\/g, "/"));
@@ -153,9 +165,11 @@ function readCard(table: PluginTable, warnings: string[]): LibraryContributions[
         `${at}.icon must be the path of a ${ICON_EXTENSIONS_TEXT} file in the package; ignored`,
       );
   }
-  if (entry.preinstall !== undefined) {
-    if (typeof entry.preinstall === "boolean") card.preinstall = entry.preinstall;
-    else warnings.push(`${at}.preinstall must be true or false; ignored`);
+  for (const key of ["preinstall", "defaultInstall", "composerMode"] as const) {
+    const value = entry[key];
+    if (value === undefined) continue;
+    if (typeof value === "boolean") card[key] = value;
+    else warnings.push(`${at}.${key} must be true or false; ignored`);
   }
   const quickStart = readQuickStart(entry.quickStart, `${at}.quickStart`, warnings);
   if (quickStart !== undefined) card.quickStart = quickStart;

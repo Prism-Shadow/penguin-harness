@@ -21,9 +21,13 @@ import { TLSSocket } from "node:tls";
 import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
 import { parseCookieHeader, sessionCookies } from "../auth/middleware.js";
-import { acceptsOrigin, publicOrigin, sameOriginSite } from "../http/public-origin.js";
+import {
+  acceptsOrigin,
+  publicOrigin,
+  sameOriginSite,
+} from "@prismshadow/penguin-library-http/public-origin";
 import type { ServerHmrHost } from "../hmr/platform.js";
-import type { Auth } from "../mechanisms/identity.js";
+import type { Auth } from "@prismshadow/penguin-library-auth";
 import { API_SOCKET_PATH } from "../api/types.js";
 import { apiSocketRef } from "../socket/ref.js";
 import { API_SOCKET_DEFLATE, compressesApiSocket } from "../socket/compression.js";
@@ -146,4 +150,12 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
 function refuse(socket: Duplex, status: number, text: string): void {
   socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\n\r\n`);
   socket.destroy();
+}
+
+/**
+ * The upgrade paths this file serves: the contributed-endpoint seam (hmr/upgrade-seam.ts) never
+ * offers them to a generation, so no module can take a terminal's stream or the API socket.
+ */
+export function isRuntimeUpgradePath(pathname: string): boolean {
+  return pathname === API_SOCKET_PATH || STREAM_PATH.test(pathname);
 }

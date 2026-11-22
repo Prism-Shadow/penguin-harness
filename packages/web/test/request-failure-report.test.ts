@@ -16,10 +16,25 @@
  *   Error output; nothing else is asked of the person before submitting.
  * - Given a provider's message too long for a link, the link stays under the cap and says the
  *   message was cut; the copied report keeps it whole.
+ * - Given a refusal the conversation answered with a hand-off, the details the composer's notice
+ *   opens report the refusal and the hand-off, the model the refused request went to, when, and
+ *   the provider's message, a key in it redacted.
  */
 import { describe, expect, it } from "vitest";
+import {
+  compactionBegin,
+  compactionEnd,
+  requestBegin,
+  requestEnd,
+  sessionMeta,
+  userText,
+} from "@prismshadow/amsp";
+import type { AmspRecord } from "@prismshadow/amsp";
 import { ISSUE_FORM_URL, ISSUE_URL_CAP, buildReport } from "@prismshadow/penguin-ui";
 import type { ReportEnvironment } from "@prismshadow/penguin-ui";
+import { refusalHandoff } from "../src/lib/amsp/compaction-summary";
+import { createStreamModel, pushMessages } from "../src/lib/amsp/stream-model";
+import { handoffFailure } from "../src/features/chat/request-notice";
 import { requestFailureReport } from "../src/features/chat/request-failure-report";
 import type {
   RequestFailure,
@@ -133,5 +148,56 @@ describe("a failed request's report", () => {
     expect(output.startsWith("503 upstream overloaded")).toBe(true);
     expect(output).toContain("cut short");
     expect(report.markdown).toContain(long);
+  });
+
+  it("a hand-off's details report the refusal, the model and the provider's message, with a key in it redacted", () => {
+    const key = "sk-proj-Ab3dEf6hIj9kLm2nOp5q";
+    const refusal = `400 {"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 140211 tokens > 131072 maximum (key ${key})"}}`;
+    const at = (msg: AmspRecord): AmspRecord => ({ ...msg, timestamp: "2026-11-19T07:12:30.250Z" });
+    const m = createStreamModel();
+    pushMessages(
+      m,
+      [
+        sessionMeta({
+          session_id: "s1",
+          model_id: "claude-4-8",
+          provider: "custom",
+          model_context_window: 200000,
+          system_prompt: "",
+          agent_state: "/a",
+          workspace: WORKSPACE,
+          source: "user",
+        }),
+        userText("fix the links"),
+        requestBegin(),
+        requestEnd("retryable", {
+          errorCode: "rejected",
+          errorMessage: refusal,
+          attempt: 2,
+          retryInMs: 0,
+        }),
+        compactionBegin({ reason: "context", mode: "summarize", context: 140_000, turns: 9 }),
+        compactionEnd({
+          reason: "context",
+          mode: "summarize",
+          status: "completed",
+          errorCode: "rejected",
+          errorMessage: refusal,
+        }),
+      ].map(at),
+    );
+    const handoff = refusalHandoff(m.items);
+    expect(handoff).not.toBeNull();
+    const report = reportOf(handoffFailure(handoff!.item));
+    expect(report.markdown).toMatch(/- What happened: .*refused.*Trace hand-off note/);
+    expect(report.markdown).toContain("- Error code: rejected (status retryable)");
+    expect(report.markdown).toContain("- HTTP status: 400");
+    expect(report.markdown).toContain("- Provider: custom");
+    expect(report.markdown).toContain("- Model: claude-4-8");
+    expect(report.markdown).toContain("- Time (UTC): 2026-11-19T07:12:30Z");
+    expect(report.markdown).toContain("prompt is too long: 140211 tokens > 131072 maximum");
+    for (const shared of [report.markdown, decodeURIComponent(report.issueUrl)]) {
+      expect(shared).not.toContain(key);
+    }
   });
 });

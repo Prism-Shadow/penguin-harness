@@ -71,15 +71,20 @@ const IMAGE_VALUE = /\burl\(|image-set\(|gradient\(/;
 const SHAPE_VALUE = /\b(?:shape|path|polygon)\(/;
 /**
  * R1's homes: what floats (the frosted layer, and a toast — a notice in the toast stack's live
- * region), the edge of what a person presses or wrote (the control edge), the start page's brand
- * block, an empty state's art slot, and the gradients that carry a state or the data's shape.
+ * region), the edge of what a person presses or wrote (the control edge, and the two controls
+ * with hooks of their own: a segmented control and a navigation list's primary action), the
+ * start page's brand block, an empty state's art slot, a wait's placeholder blocks (the drawing
+ * that stands in for what is coming), and the gradients that carry a state or the data's shape.
  */
 const DECORATION_HOMES = [
   /\.ui-glass\b/,
   /\[aria-live\][^,]*\s\.ui-notice\b/,
   /\.ui-edge\b/,
+  /\.ui-segmented\b/,
+  /\.ui-action\b/,
   /\.ui-start\b.*\[data-slot="brand"\]/,
   /\.ui-empty\b.*\[data-slot="art"\]/,
+  /\.ui-waiting\b.*\[data-skeleton\]/,
   GRADIENT_RECIPES,
 ];
 
@@ -90,6 +95,7 @@ const PSEUDO_HOMES = [
   /\.ui-underline-nav\b/,
   /\.ui-stream\b/,
   /\.ui-activity\b.*\[data-slot="progress"\]/,
+  /\.ui-waiting\b.*\[data-skeleton\]/,
 ];
 const PSEUDO = /::?(?:before|after)\b/;
 
@@ -108,9 +114,14 @@ const OUTLINE = /^outline(?:-(?:style|width|color))?$/;
 /** R9: what a chart mark may set. */
 const CHART_PROPERTIES = /^(?:stroke(?:-[a-z-]+)?|fill|fill-opacity|opacity|rx|ry)$/;
 
-/** R11: the homes of motion. */
+/** R11: the homes of motion — the live signals, a stream, a running step and a wait. */
 const MOTION = /^(?:animation|transition)(?:-[a-z-]+)?$/;
-const MOTION_HOMES = [/\.ui-live\b/, /\.ui-stream\b/, /\.ui-activity\[data-state="running"\]/];
+const MOTION_HOMES = [
+  /\.ui-live\b/,
+  /\.ui-stream\b/,
+  /\.ui-activity\[data-state="running"\]/,
+  /\.ui-waiting\b/,
+];
 
 const none = (value: string) => /^(?:none|0|0px)$/.test(value.trim());
 const custom = (d: CssDeclaration) => d.name.startsWith("--");

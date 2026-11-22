@@ -1,11 +1,12 @@
 /**
  * The hub's records, from the build's `virtual:penguin-hub` module: the summaries every list
- * page reads, and a loader per detail page, each a chunk of its own.
+ * page reads, the market's curation, and a loader per detail page, each a chunk of its own.
  */
 import * as hub from "virtual:penguin-hub";
 import type {
   BenchmarkDetail,
   BenchmarkSummary,
+  HubMarket,
   LeaderboardDetail,
   LeaderboardSummary,
   PluginDetail,
@@ -15,6 +16,7 @@ import type {
 type Loaders<T> = Record<string, () => Promise<{ default: T }>>;
 
 export const plugins = hub.plugins as PluginSummary[];
+export const market = hub.market as HubMarket;
 export const benchmarks = hub.benchmarks as BenchmarkSummary[];
 export const leaderboards = hub.leaderboards as LeaderboardSummary[];
 

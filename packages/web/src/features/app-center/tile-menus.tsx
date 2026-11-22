@@ -4,7 +4,9 @@
  * keyboard (Shift+F10, the ContextMenu key) and touch (press and hold) reach all of it: "Move
  * to…" opens the new-folder dialog with the app picked, puts it into a folder or makes a new
  * folder with another app, and forward / backward step an item through the grid or its folder.
- * The empty space's menu opens the new-folder dialog too.
+ * The empty space's menu opens the new-folder dialog too. A system app's menu has only the rows
+ * that open and arrange it: it opens as its page, has no build to fail, belongs to no Agent's
+ * settings and is never removed from the grid.
  *
  * "Move to…" opens a second page in the same menu rather than a submenu, which a phone has no
  * room for: Back returns to the first page, and focus moves to the first row of whichever page
@@ -45,6 +47,8 @@ export interface GridActions {
   /** Shows a new arrangement and stores it. */
   arrange: (next: GridItem[]) => void;
   open: (app: GridApp) => void;
+  /** The app is running, its window minimized: Open brings that window back, even mid-build. */
+  isRunning: (app: GridApp) => boolean;
   openFullScreen: (app: GridApp) => void;
   showError: (app: GridApp) => void;
   viewInSettings: (app: GridApp) => void;
@@ -124,6 +128,8 @@ export function AppMenu({
   const { grid } = actions;
   const building = app.shortcut.build === "building";
   const holder = folderOf(grid, app.id);
+  /** A system app opens as its page and is never removed: its menu only opens and arranges it. */
+  const system = app.shortcut.system !== undefined;
 
   if (page === "move") {
     const folders = grid.filter(
@@ -182,15 +188,17 @@ export function AppMenu({
       <MenuItem
         glyph={ICONS.appWindow}
         label={S.appCenter.menu.open}
-        disabled={building}
+        disabled={(building && !actions.isRunning(app)) || app.shortcut.unavailable}
         onSelect={act(close, () => actions.open(app))}
       />
-      <MenuItem
-        glyph={ICONS.cornersOut}
-        label={S.appCenter.menu.openFullScreen}
-        disabled={building}
-        onSelect={act(close, () => actions.openFullScreen(app))}
-      />
+      {!system && (
+        <MenuItem
+          glyph={ICONS.cornersOut}
+          label={S.appCenter.menu.openFullScreen}
+          disabled={building || app.shortcut.unavailable}
+          onSelect={act(close, () => actions.openFullScreen(app))}
+        />
+      )}
       <MenuSeparator />
       <MenuItem
         glyph={ICONS.folder}
@@ -206,24 +214,30 @@ export function AppMenu({
           onSelect={act(close, () => actions.arrange(takeOutOfFolder(grid, app.id)))}
         />
       )}
-      <MenuSeparator />
-      {app.shortcut.build === "failed" && (
-        <MenuItem
-          glyph={ICONS.alertCircle}
-          label={S.appCenter.menu.showError}
-          onSelect={act(close, () => actions.showError(app))}
-        />
+      {!system && (
+        <>
+          <MenuSeparator />
+          {app.shortcut.build === "failed" && (
+            <MenuItem
+              glyph={ICONS.alertCircle}
+              label={S.appCenter.menu.showError}
+              onSelect={act(close, () => actions.showError(app))}
+            />
+          )}
+          <MenuItem
+            glyph={ICONS.gear}
+            label={S.appCenter.menu.viewInSettings}
+            disabled={app.shortcut.unavailable}
+            onSelect={act(close, () => actions.viewInSettings(app))}
+          />
+          <MenuItem
+            glyph={ICONS.eyeOff}
+            label={S.appCenter.menu.removeFromAppCenter}
+            disabled={app.shortcut.unavailable}
+            onSelect={act(close, () => actions.removeFromAppCenter(app))}
+          />
+        </>
       )}
-      <MenuItem
-        glyph={ICONS.gear}
-        label={S.appCenter.menu.viewInSettings}
-        onSelect={act(close, () => actions.viewInSettings(app))}
-      />
-      <MenuItem
-        glyph={ICONS.eyeOff}
-        label={S.appCenter.menu.removeFromAppCenter}
-        onSelect={act(close, () => actions.removeFromAppCenter(app))}
-      />
       {actions.customized && (
         <>
           <MenuSeparator />

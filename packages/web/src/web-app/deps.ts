@@ -18,10 +18,14 @@ export interface WebAppSessionProvider {
   Component: ComponentType<{ children: ReactNode }>;
 }
 
-/** A contributed layer: an overlay or a headless runtime, mounted once beside every page. */
+/**
+ * A contributed layer, mounted once: an overlay or a headless runtime beside the columns
+ * (`"shell"`), or surfaces over the page area that outlive the page (`"page"`).
+ */
 export interface WebAppLayer {
   id: string;
   Component: ComponentType;
+  area: "shell" | "page";
 }
 
 export interface WebAppDeps {

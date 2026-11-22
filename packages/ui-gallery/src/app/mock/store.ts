@@ -9,6 +9,7 @@
  * language, and re-creatable for tests. Nothing here touches the DOM.
  */
 import type { ServerEvent, SessionInfo } from "@prismshadow/penguin-server/api";
+import type { VoicePolishSettings } from "../../../../web/src/api/tool-types";
 import { buildFixtures, DEFAULT_MODEL } from "./fixtures";
 import type { DemoFixtures } from "./fixtures";
 import { harnessTranscript, orgDeskTranscript } from "./harness-transcript";
@@ -115,6 +116,12 @@ interface Live {
 
 export class DemoStore {
   readonly f: DemoFixtures;
+  /** Transcript editing's switch and instructions (the multimodal tools plugin's settings). */
+  voicePolish: VoicePolishSettings = {
+    enabled: false,
+    prompt: "Edit the transcript.",
+    defaultPrompt: "Edit the transcript.",
+  };
   readonly lang: Lang;
   /** Signed in as the fixtures' admin, or nobody. */
   signedIn: boolean;
@@ -124,15 +131,13 @@ export class DemoStore {
   private created = 0;
 
   constructor(
-    lang: Lang,
+    private readonly init: StoreInit,
     now: number,
-    signedIn: boolean,
-    notices = false,
-    private readonly evolutionDemo = false,
   ) {
+    const { lang, signedIn, embedded, evolutionDemo, notices } = init;
     this.lang = lang;
     this.signedIn = signedIn;
-    this.f = buildFixtures(lang, now);
+    this.f = buildFixtures(lang, now, embedded);
     if (evolutionDemo) {
       this.f.chatDefaults.agentId = IDS.agents.general;
       this.f.chatDefaults.workspace = RSI_WORKSPACE;
@@ -432,7 +437,7 @@ export class DemoStore {
     if (row.status !== "idle") return false;
     const firstTurn = live.transcript.history.length === 0;
     live.evolution =
-      this.evolutionDemo &&
+      this.init.evolutionDemo &&
       firstTurn &&
       row.agentId === IDS.agents.general &&
       text === rsiPrompt(this.lang);
@@ -578,32 +583,19 @@ interface StoreInit {
   signedIn: boolean;
   /** Raise the notices a conversation can carry (notices.ts). */
   notices?: boolean;
+  /** The public site embeds a working Project. Gallery boards also exercise maintenance states. */
+  embedded?: boolean;
   evolutionDemo?: boolean;
 }
 
 /** The store the frame's language and sign-in state ask for; created once per document. */
-export function getStore(init?: StoreInit): DemoStore {
-  if (current === null) {
-    current = new DemoStore(
-      init?.lang ?? "en",
-      Date.now(),
-      init?.signedIn ?? true,
-      init?.notices ?? false,
-      init?.evolutionDemo ?? false,
-    );
-  }
-  return current;
+export function getStore(init: StoreInit = { lang: "en", signedIn: true }): DemoStore {
+  return (current ??= new DemoStore(init, Date.now()));
 }
 
 /** A fresh store (tests, and a frame that re-seeds itself). */
 export function resetStore(init: StoreInit & { now?: number }): DemoStore {
   current?.dispose();
-  current = new DemoStore(
-    init.lang,
-    init.now ?? Date.now(),
-    init.signedIn,
-    init.notices ?? false,
-    init.evolutionDemo ?? false,
-  );
+  current = new DemoStore(init, init.now ?? Date.now());
   return current;
 }

@@ -10,10 +10,17 @@
  *   GET    /api/plugins/registry/icon?name=…              # one listed entry's icon, as an image
  *   GET    /api/plugins/registry/readme?name=…            # one listed entry's long-form readme
  *   GET    /api/plugins/registry/archive?name=…           # one listed package on this server, as a zip
- *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library (any member)
+ *   GET    /api/projects/:p/agents/:a/plugins             # the Agent's installed parts, and how the library's server modules stand here (any member)
+ *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library, their server modules with them (any member)
  *   DELETE /api/projects/:p/agents/:a/plugins/:name       # uninstall all of one plugin (owner only)
  *   GET    /api/projects/:p/agents/:a/mcp-servers         # the Agent's MCP servers: target, provenance, what keeps each from connecting (any member)
  *   DELETE /api/projects/:p/agents/:a/mcp-servers/:name   # remove one MCP server entry, whoever added it (any member)
+ * A plugin that also ships server modules brings them along (PRFC-0031, services/plugin-modules.ts):
+ * after the Agent part is written, its modules are listed in this server's own table, or asked of
+ * the administrator — unless `skipModules`, which the Web App sends to a machine whose plugin list
+ * the hub owns. That step can re-assemble the App, so it is the install's last; what answers after
+ * it only reads files and the module statuses, which survive the swap.
+ *
  * Installing a plugin writes each of its skills to agent_state/skills/<name>/, its hook
  * package to agent_state/hooks/<plugin>/ (hooks.json + scripts) and its MCP servers into the
  * Agent's `tools.mcpServers` (each entry carrying the plugin's name); reinstalling overwrites
@@ -29,8 +36,9 @@
  * hooks. The library is what this build carries; the registry is what the deployment can
  * fetch. Both are deployment-global (no Project check); only installing touches an Agent.
  *
- * The registry merges two sources: the index embedded in this package (the sandbox backends
- * the workspace ships) and the one published by the index repository. The published document
+ * The registry merges two sources: the index embedded in this package (the workspace's
+ * server-module plugins: the sandbox backends and the market-only ones) and the one published by
+ * the index repository. The published document
  * is cached, a failure to reach it is reported alongside the entries rather than emptying the
  * page, and a listing waits for it only briefly before answering without it — see
  * plugin/registry.ts for the three rules.
@@ -68,7 +76,8 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 import type { Config, Hmr } from "../../hmr/capabilities.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { ModuleActor, PluginModules } from "../../mechanisms/plugins.js";
+import type { Access } from "@prismshadow/penguin-library-project";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
@@ -83,15 +92,16 @@ import {
   localPluginDisplay,
   mergeIndexes,
   withoutIcon,
-  NIGHTLY_INDEX_URL,
 } from "../../plugin/registry.js";
+import { indexMirrorRules } from "../../plugin/mirror-settings.js";
+import { offlineArchives, type OfflineArchive } from "../../plugin/offline-archives.js";
 import type {
   CachedRegistry,
   IndexDocumentEntry,
   IndexSnapshot,
-  PluginProxyRule,
   PluginRegistry,
 } from "../../plugin/registry.js";
+import { IndexSources } from "../../plugin/index-config.js";
 import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../../plugin/loader.js";
 import type { PluginBase } from "../../plugin/loader.js";
 import { installedPackageDir, pluginsPrefix, prefixDependencies } from "../../plugin/install.js";
@@ -103,6 +113,7 @@ import {
 import { migrateWorkbenches } from "../../workbenches/migrate.js";
 import type { PluginLibrary } from "../../plugin/library-module.js";
 import { uninstallAgentPlugin } from "../../services/plugin-uninstall.js";
+import { refuseSystemAgentInstall } from "../../services/system-agent.js";
 
 /** What these route groups reach — bound by their component below. */
 export interface PluginsRouteDeps {
@@ -113,6 +124,8 @@ export interface PluginsRouteDeps {
   library: PluginLibrary;
   /** An uninstall removes the plugin's workbenches the way a single removal does. */
   workbenches: Pick<Workbenches, "remove">;
+  /** A plugin's server modules, brought along by an install (PRFC-0031); absent in tests that build these routes alone. */
+  modules?: PluginModules;
 }
 import { errorBody, HttpError } from "../errors.js";
 import { iconRef, iconResponse } from "../icon-response.js";
@@ -209,6 +222,13 @@ export function pluginLibraryRoutes(library: PluginLibrary): Hono<AppEnv> {
 /** /api/projects/:p/agents/:a/plugins: install is a Project-member operation. */
 export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
+  const actorOf = (c: { var: AppEnv["Variables"] }): ModuleActor => ({
+    userId: c.var.user.userId,
+    isAdmin: c.var.user.isAdmin,
+  });
+  /** How the library's server modules stand here for the Project, when this server knows them. */
+  const modulesOf = async (projectId: string, viewer: ModuleActor) =>
+    deps.modules !== undefined ? { modules: await deps.modules.status(projectId, viewer) } : {};
   app.get("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
@@ -228,6 +248,7 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
       hooks: hooks.map((h) => toHookItem(h, agentHookIconRoute(projectId, agentId, h.name))),
       mcpServers: servers.map(toAgentMcpServerItem),
       workbenches,
+      ...(await modulesOf(projectId, actorOf(c))),
     } satisfies AgentPluginsInstallResponse);
   });
 
@@ -236,8 +257,11 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
-    const names = optionalStringArray(await readJson(c), "names") ?? [];
+    await refuseSystemAgentInstall(deps.agentConfigService, projectId, agentId);
+    const body = await readJson(c);
+    const names = optionalStringArray(body, "names") ?? [];
     if (names.length === 0) throw badRequest("names must be a non-empty array.");
+    const skipModules = body.skipModules === true;
     // Verify every name up front before writing anything: an unknown name, or an MCP server
     // name the Agent already has from someone else, rejects the whole request rather than
     // leaving a half-installed state.
@@ -256,6 +280,13 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     // re-reads them on its next idle access, so the plugin works from the next Task. MCP
     // servers, like the rest of system_config.yaml, join at the next model context.
     deps.manager.invalidateAgentRuntimes(projectId, agentId);
+    // LAST of what needs this generation: the server modules may re-assemble the App. What
+    // follows reads files and module statuses only, which survive the swap.
+    const actor = actorOf(c);
+    const moduleActions =
+      deps.modules !== undefined && !skipModules
+        ? await deps.modules.ensure(projectId, names, actor, "install", agentId)
+        : [];
     const [skills, hooks, servers, workbenches] = await Promise.all([
       listInstalledSkills(root, projectId, agentId),
       listInstalledHooks(root, projectId, agentId),
@@ -268,6 +299,8 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
         skills: skills.map((s) => toSkillItem(s, agentSkillIconRoute(projectId, agentId, s.name))),
         hooks: hooks.map((h) => toHookItem(h, agentHookIconRoute(projectId, agentId, h.name))),
         mcpServers: servers.map(toAgentMcpServerItem),
+        ...(await modulesOf(projectId, actor)),
+        ...(deps.modules !== undefined ? { moduleActions } : {}),
       } satisfies AgentPluginsInstallResponse,
       201,
     );
@@ -369,6 +402,7 @@ export class PluginRoutes {
   @Use() private readonly manager!: ManagerIface;
   @Use() private readonly library!: PluginLibrary;
   @Use() private readonly workbenches!: Workbenches;
+  @Use() private readonly pluginModules!: PluginModules;
   @Bind("PluginRoutes.library") libraryRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-plugins") pluginRoutes!: Hono<AppEnv>;
   @Bind("PluginRoutes.agent-hooks") hookRoutes!: Hono<AppEnv>;
@@ -381,6 +415,7 @@ export class PluginRoutes {
       manager: this.manager,
       library: this.library,
       workbenches: this.workbenches,
+      modules: this.pluginModules,
     };
     this.libraryRoutes = pluginLibraryRoutes(this.library);
     this.pluginRoutes = agentPluginsRoutes(deps);
@@ -391,12 +426,11 @@ export class PluginRoutes {
 
 export interface PluginRoutesOptions {
   /**
-   * The published index to read, or null for builtin entries only (see ServerConfig).
-   * Undefined = unset, which reads the index repository's published document.
+   * The published index sources to read, or null for builtin entries only (see IndexSources).
+   * Read per listing: the sources are the plugin-index settings group, whose document a save
+   * changes without a restart.
    */
-  indexUrl?: string | null;
-  /** The deployment's proxy rules for the published index, tried after its own URL. */
-  proxy?: PluginProxyRule[];
+  indexUrl?: () => readonly string[];
   /** Where packages are on this machine (plugin/loader.ts's pluginBases): for the builtin readmes, and for every listed package's own display fields (localPluginDisplay). */
   bases?: () => readonly PluginBase[];
   /** Overrides the resolved source list entirely; tests pass registries directly. */
@@ -404,10 +438,12 @@ export interface PluginRoutesOptions {
   fetchImpl?: typeof fetch;
   /** The published index as the previous App last fetched it (see PluginRegistryRoutes.park). */
   seed?: IndexSnapshot | null;
-  /** Receives the published index's cache, so its document can be parked. */
-  onCache?: (cache: CachedRegistry) => void;
+  /** Receives the published index's cache and the URL it reads, so its document can be parked with its source. */
+  onCache?: (cache: CachedRegistry, url: string) => void;
   /** This server's plugin prefix (`<root>/plugins`), whose server modules from a link or a zip the listing adds; none without it. */
   prefix?: () => string | null;
+  /** The offline archives the build carries (plugin/offline-archives.ts): a listed entry with one says so. */
+  offline?: () => readonly OfflineArchive[];
 }
 
 /**
@@ -449,8 +485,18 @@ async function prefixEntries(
 
 export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
-  // Built once per App, so the cache outlives a request rather than being rebuilt per page load.
-  const registries = options.registries ?? resolveRegistries(options);
+  // The sources are read per listing, from the plugin-index settings group; the registries
+  // for the list as last read are kept until the list changes, so the caches (and the park)
+  // outlive a listing that changes nothing and a save rebuilds them without a restart.
+  let current: { urls: string; registries: readonly PluginRegistry[] } | null = null;
+  const registries = (): readonly PluginRegistry[] => {
+    if (options.registries !== undefined) return options.registries;
+    const urls = (options.indexUrl?.() ?? []).join(" ");
+    if (current === null || current.urls !== urls) {
+      current = { urls, registries: resolveRegistries(options) };
+    }
+    return current.registries;
+  };
   const bases = options.bases ?? (() => []);
   const prefix = options.prefix ?? (() => null);
 
@@ -461,7 +507,7 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
    * own join on a later read, once the cache has them.
    */
   const listing = async () => {
-    const { entries, failures, pending } = await mergeIndexes(registries, {
+    const { entries, failures, pending } = await mergeIndexes(registries(), {
       waitForNetwork: false,
     });
     const own = await prefixEntries(prefix(), new Set(entries.map((e) => e.name)));
@@ -480,7 +526,7 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
     here: readonly PluginBase[],
   ): Promise<{ entry: PluginIndexEntry; icon?: IconImage }> => {
     const { icon: rowIcon, ...row } = entry;
-    const { icon: ownIcon, ...display } = await localPluginDisplay(entry.name, here);
+    const { icon: ownIcon, ...display } = await localPluginDisplay(entry.name, here, entry);
     const icon = ownIcon ?? (rowIcon !== undefined ? indexRowIcon(rowIcon) : undefined);
     const route = `/api/plugins/registry/icon?name=${encodeURIComponent(entry.name)}`;
     return {
@@ -492,9 +538,22 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
   app.get("/", async (c) => {
     const { entries, failures, pending } = await listing();
     const here = bases();
-    const plugins = (await Promise.all(entries.map((entry) => described(entry, here)))).map(
-      (d) => d.entry,
-    );
+    // An entry the build carries an offline archive of installs without a registry, and says
+    // what it carries before it is on this server (05 「安装从不卡住」).
+    const archives = options.offline?.() ?? [];
+    const plugins = (await Promise.all(entries.map((entry) => described(entry, here)))).map((d) => {
+      const archive = archives.find((a) => a.name === d.entry.name);
+      return archive === undefined
+        ? d.entry
+        : {
+            ...d.entry,
+            offline: {
+              version: archive.version,
+              library: archive.library,
+              modules: archive.modules,
+            },
+          };
+    });
     const body: PluginIndexResponse = { plugins, failures, pending };
     return c.json(body);
   });
@@ -525,7 +584,7 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
     }
     // First source that has one. Only the builtin registry carries readmes today: the shared
     // index format has no readme location, so a remote source has none to offer.
-    for (const registry of registries) {
+    for (const registry of registries()) {
       const readme = await registry.readme(name).catch(() => null);
       if (readme !== null) {
         const body: PluginReadmeResponse = { name, readme };
@@ -575,23 +634,36 @@ function indexRowIcon(svg: string): IconImage | undefined {
 
 function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
   const builtin = builtinPluginRegistry(options.bases);
-  // Undefined and null part ways here: a runtime that predates the setting publishes nothing
-  // and gets the default index, while `off` resolves to null and means builtin entries only.
-  const url = options.indexUrl === undefined ? NIGHTLY_INDEX_URL : options.indexUrl;
-  if (url === null) return [builtin];
+  // The sources are read per listing, from the plugin-index settings group: a save changes
+  // the list without a restart. Empty = builtin entries only (the switch off); a single URL
+  // is the one-element list. Each address is its own registry, so the listing reports a down
+  // source by its URL and the merge lets the earlier source win a name. The park carries one
+  // snapshot — the first configured source's, the primary published index — so the seed and
+  // the parking hook ride that one; a further source starts its own cache cold.
+  const urls = options.indexUrl?.() ?? [];
+  if (urls.length === 0) return [builtin];
   // The parked document goes through the remote rule too: it was fetched by a previous App,
-  // which may not have dropped the icons.
+  // which may not have dropped the icons. The park carries one snapshot — the first
+  // configured source's, the primary published index — named by the URL it was fetched
+  // from, and it seeds only that URL's registry: a saved change of the sources must not
+  // hand the old source's entries to the new one. A further source starts its own cache
+  // cold and answers its first fetch like any first page load.
   const seed = options.seed ?? null;
-  const cache = cachedRegistry(
-    httpPluginRegistry([url, ...pluginProxyMirrors(url, options.proxy ?? [])], {
-      fetchImpl: options.fetchImpl ?? fetch,
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const mirrors = indexMirrorRules();
+  const remote = urls.map((url, i) =>
+    cachedRegistry(httpPluginRegistry([url, ...pluginProxyMirrors(url, mirrors)], { fetchImpl }), {
+      // Only a snapshot the same URL fetched seeds this registry: a parked document without
+      // its URL (a v1 park, before snapshots named their source) seeds nothing, since which
+      // source it came from is unknown.
+      seed:
+        i === 0 && seed !== null && seed.url === url
+          ? { at: seed.at, entries: seed.entries.map(withoutIcon) }
+          : null,
     }),
-    {
-      seed: seed === null ? null : { at: seed.at, entries: seed.entries.map(withoutIcon) },
-    },
   );
-  options.onCache?.(cache);
-  return [builtin, cache];
+  if (remote.length > 0) options.onCache?.(remote[0]!, urls[0]!);
+  return [builtin, ...remote];
 }
 
 /**
@@ -612,32 +684,42 @@ function resolveRegistries(options: PluginRoutesOptions): PluginRegistry[] {
     ],
   },
   context: {
-    version: 1,
-    schema: { "index?": { at: "number", entries: "unknown[]" } },
+    version: 2,
+    schema: { "index?": { at: "number", entries: "unknown[]", "url?": "string" } },
   },
 })
 export class PluginRegistryRoutes {
   @Use() private readonly config!: Config;
   @Use() private readonly hmr!: Hmr;
+  @Use() private readonly sources!: IndexSources;
   @Bind("PluginRegistryRoutes.routes") routes!: Hono<AppEnv>;
   private cache: CachedRegistry | null = null;
+  private cacheUrl: string | null = null;
+  /** v1 parked without the snapshot's source URL; v2 names it. A v1 snapshot seeds nothing —
+   * which source it came from is unknown, so handing it to a configured source is unsafe. */
+  migrations = { 1: () => null };
   setup(_ctx: ClassCtx, context: Json) {
     const parked = (context as { index?: IndexSnapshot } | null)?.index;
     this.routes = pluginRegistryRoutes({
-      indexUrl: this.config.pluginIndexUrl,
-      proxy: this.config.pluginProxy ?? [],
+      indexUrl: () => this.sources.urls(),
       // Read per request: a push moves the shipped prefix to a new assets directory.
       bases: () => pluginBases(this.config.root, this.hmr.assetsDir()),
       prefix: () => pluginsPrefix(this.config.root),
+      offline: () => offlineArchives(pluginBases(this.config.root, this.hmr.assetsDir())),
       seed: parked ?? null,
-      onCache: (cache) => {
+      onCache: (cache, url) => {
         this.cache = cache;
+        this.cacheUrl = url;
       },
     });
   }
 
   park(): Json {
     const index = this.cache?.snapshot() ?? null;
-    return index === null ? null : ({ index } as unknown as Json);
+    if (index === null) return null;
+    // The snapshot names the source it was fetched from (cachedRegistry stamps it), so a
+    // successor seeds only the same URL's registry — a saved change of the sources starts
+    // the new one cold.
+    return { index } as unknown as Json;
   }
 }

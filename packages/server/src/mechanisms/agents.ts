@@ -38,6 +38,10 @@ import type {
 export abstract class AgentConfig {
   abstract exists(projectId: string, agentId: string): Promise<boolean>;
   abstract requireExists(projectId: string, agentId: string): Promise<void>;
+  /** Whether the Agent is the Project's system Agent (core state/system-agent.ts). */
+  abstract isSystemAgent(projectId: string, agentId: string): Promise<boolean>;
+  /** Whether the Agent is built in, and so never deleted: the system Agent counts only as itself. */
+  abstract isBuiltinAgent(projectId: string, agentId: string): Promise<boolean>;
   abstract readCardMeta(
     projectId: string,
     agentId: string,
@@ -48,6 +52,7 @@ export abstract class AgentConfig {
     toolCount: number;
     version: number;
     kernelOutdated: boolean;
+    system?: true;
   }>;
   abstract getConfig(projectId: string, agentId: string): Promise<AgentConfigView>;
   abstract updateConfig(

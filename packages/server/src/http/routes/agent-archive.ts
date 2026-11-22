@@ -6,7 +6,8 @@
  * An import under a free id creates the Agent, which any member may; a taken id is 409
  * `agent_exists` unless `overwrite=1`, which is the owner's and takes a backup first. Either way
  * the State is swapped in by the snapshot import, then the package's Sessions land, those this
- * install already has skipped.
+ * install already has skipped. The system Agent is neither exported nor overwritten (409
+ * `builtin_agent_locked`).
  */
 import { Hono } from "hono";
 import { agentDir, isValidId } from "@prismshadow/penguin-core";
@@ -14,12 +15,13 @@ import type { AgentArchiveImportResponse, AgentArchiveQuery } from "../../api/ty
 import type { AppEnv } from "../../auth/middleware.js";
 import { formatLocalDate } from "../../internal/dates.js";
 import type { AgentConfig, AgentLifecycle, Snapshots } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
-import type { Traces } from "../../mechanisms/traces.js";
+import type { Access } from "@prismshadow/penguin-library-project";
+import type { Traces } from "@prismshadow/penguin-library-trace";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import { exportAgent } from "../../services/agent-export.js";
 import type { AgentExportDeps } from "../../services/agent-export.js";
 import { isZip, readPackageTraces, zipTopDirectory } from "../../services/agent-zip.js";
+import { refuseSystemAgentChange } from "../../services/system-agent.js";
 import { migrateWorkbenches } from "../../workbenches/migrate.js";
 import { ensureWorkbenchLinkTarget } from "../../workbenches/migrate-state.js";
 import { HttpError } from "../errors.js";
@@ -44,6 +46,7 @@ export function agentArchiveRoutes(deps: AgentArchiveRouteDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfig.requireExists(projectId, agentId);
+    await refuseSystemAgentChange(deps.agentConfig, projectId, agentId, "export");
     // Workbenches still in an older layout move into agent_state/ first, so the package has them.
     await migrateWorkbenches(agentDir(deps.root, projectId, agentId));
     const zip = await exportAgent(deps, projectId, agentId, c.req.query() as AgentArchiveQuery);
@@ -92,6 +95,7 @@ export function agentArchiveRoutes(deps: AgentArchiveRouteDeps): Hono<AppEnv> {
       }
       deps.access.requireProjectOwner(userId, projectId);
       await deps.agentConfig.requireExists(projectId, agentId);
+      await refuseSystemAgentChange(deps.agentConfig, projectId, agentId, "overwrite");
       const dir = agentDir(deps.root, projectId, agentId);
       // The workbenches live inside agent_state/. Ones still in an older layout move in first, so
       // the backup taken before the swap holds them and the package's cannot take their ids; then

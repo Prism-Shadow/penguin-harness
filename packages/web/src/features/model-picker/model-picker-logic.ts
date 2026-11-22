@@ -52,6 +52,8 @@ export interface PickerVisibility {
   defaultModel?: ModelRefValue | null;
   /** The models page's stored group order (loadModelGroupOrder); empty = catalog order. */
   groupOrder?: readonly string[];
+  /** A tool binding's picker: its tool models are listed (visibleChatModels' `tools`). */
+  tools?: boolean;
 }
 
 /** Visible rows regrouped by provider; groups with nothing visible are left off the rail. */
@@ -67,7 +69,7 @@ function regroup<T extends ModelCredentialRowLike>(
 /** The rail: every group holding a visible model, in the user's group order. */
 export function pickerGroups<T extends ModelCredentialRowLike>(
   models: T[],
-  { showAll, selected, defaultModel, groupOrder }: PickerVisibility,
+  { showAll, selected, defaultModel, groupOrder, tools }: PickerVisibility,
 ): PickerGroup<T>[] {
   return regroup(
     visibleChatModels(models, {
@@ -76,6 +78,7 @@ export function pickerGroups<T extends ModelCredentialRowLike>(
       selected: selected ?? null,
       defaultModel: defaultModel ?? null,
       ...(groupOrder !== undefined ? { groupOrder } : {}),
+      ...(tools ? { tools } : {}),
     }),
     groupOrder,
   );
@@ -88,7 +91,16 @@ export function pickerGroups<T extends ModelCredentialRowLike>(
  */
 export function hiddenModelCount<T extends ModelCredentialRowLike>(
   models: T[],
-  { showAll, selected, defaultModel, groupOrder, query }: PickerVisibility & { query: string },
+  {
+    showAll,
+    selected,
+    defaultModel,
+    groupOrder,
+    query,
+    tools,
+  }: PickerVisibility & {
+    query: string;
+  },
 ): number {
   if (showAll) return 0;
   const opts = {
@@ -96,6 +108,7 @@ export function hiddenModelCount<T extends ModelCredentialRowLike>(
     selected: selected ?? null,
     defaultModel: defaultModel ?? null,
     ...(groupOrder !== undefined ? { groupOrder } : {}),
+    ...(tools ? { tools } : {}),
   };
   return (
     visibleChatModels(models, { ...opts, showAll: true }).length -
@@ -127,13 +140,16 @@ export function initialGroupId<T extends ModelCredentialRowLike>(
  * chat with.
  */
 export function pickerRowTags(
-  m: Pick<ModelInfo, "provider" | "modelId" | "vision" | "fastMode" | "pricing" | "discount">,
+  m: Pick<
+    ModelInfo,
+    "provider" | "modelId" | "vision" | "fastMode" | "pricing" | "discount" | "chatEligible"
+  >,
   defaultModel: ModelRefValue | null | undefined,
   now: Date = new Date(),
 ): ModelTag[] {
   return modelTags({
     isDefault: sameModelRef(m, defaultModel),
-    vision: m.vision !== false,
+    vision: m.vision !== false && m.chatEligible !== false,
     fastMode: m.fastMode === true,
     free: isFreeModel(m.pricing),
     discount: discountedPrice(
@@ -194,7 +210,16 @@ function atWordBoundary(f: string, q: string): boolean {
  */
 export function searchPickerGroups<T extends ModelCredentialRowLike>(
   models: T[],
-  { showAll, selected, defaultModel, groupOrder, query }: PickerVisibility & { query: string },
+  {
+    showAll,
+    selected,
+    defaultModel,
+    groupOrder,
+    query,
+    tools,
+  }: PickerVisibility & {
+    query: string;
+  },
 ): PickerGroup<T>[] {
   const visible = visibleChatModels(models, {
     showAll,
@@ -202,6 +227,7 @@ export function searchPickerGroups<T extends ModelCredentialRowLike>(
     selected: selected ?? null,
     defaultModel: defaultModel ?? null,
     ...(groupOrder !== undefined ? { groupOrder } : {}),
+    ...(tools ? { tools } : {}),
   });
   const ranked = regroup(visible, groupOrder).map((g, order) => {
     const rows = g.rows

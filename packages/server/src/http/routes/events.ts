@@ -10,7 +10,8 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Channels } from "../../hmr/capabilities.js";
 import { LiveStreams } from "../../auth/live-streams.js";
-import { Auth } from "../../mechanisms/identity.js";
+import { Auth } from "@prismshadow/penguin-library-auth";
+import { userChannelKey } from "../user-channel.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface EventsRouteDeps {
@@ -21,10 +22,9 @@ export interface EventsRouteDeps {
   auth: Auth;
 }
 
-/** The user channel's key in ChannelHub. */
-export function userChannelKey(userId: string): string {
-  return `user:${userId}`;
-}
+// The user channel's key lives in its own module (the plugin face exports it); re-exported for
+// the services and routes that name it beside the stream.
+export { userChannelKey };
 
 export function eventsRoutes(deps: EventsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();

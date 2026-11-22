@@ -17,6 +17,8 @@ import { S } from "../../lib/strings";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { NEW_CHAT_ICON, glyphOf } from "../../lib/nav-icons";
+import { APP_CENTER_PATH } from "../../lib/app-center-path";
+import { useOnSystemApp } from "../../lib/system-apps";
 import { navChildKeysFor, navKeysFor } from "./nav-state";
 import { navPagesOf, pageTitle, useWebAppPages } from "../index";
 import { useUpdateBadges } from "../../lib/use-update-badges";
@@ -50,6 +52,8 @@ import { DRAFT_SESSION_ID, useNewChat } from "../../features/chat";
 export function CollapsedRail({ onExpand }: { onExpand?: () => void }) {
   const { user } = useAuth();
   const navPages = navPagesOf(useWebAppPages());
+  /** On a system app's page the App Center's entry is lit (lib/system-apps.ts). */
+  const onSystemApp = useOnSystemApp();
   const { locale } = useLocale();
   const childKeys = navChildKeysFor(navPages, user?.isAdmin === true);
   const navigate = useNavigate();
@@ -252,6 +256,7 @@ export function CollapsedRail({ onExpand }: { onExpand?: () => void }) {
           glyph={NEW_CHAT_ICON}
           active={activeSessionId === DRAFT_SESSION_ID}
           onClick={newChat}
+          primary
         />
       )}
       {/* 3 onward. Page entries. Four sit on a badge trail — Agents (an outdated kernel),
@@ -269,9 +274,10 @@ export function CollapsedRail({ onExpand }: { onExpand?: () => void }) {
             disabled={item.to === null}
             active={
               item.to !== null &&
-              [item.to, ...(item.childPaths ?? [])].some((to) =>
+              ([item.to, ...(item.childPaths ?? [])].some((to) =>
                 isCurrentPath(to, location.pathname),
-              )
+              ) ||
+                (item.to === APP_CENTER_PATH && onSystemApp))
             }
             renderLink={renderRouterLink}
             {...(item.note !== null ? { badge: <UpdateDot /> } : {})}

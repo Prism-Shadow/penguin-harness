@@ -1,4 +1,4 @@
-import { Fold, GroupHeader, ICONS, ICON_SIZE, SkeletonList } from "@prismshadow/penguin-ui";
+import { Fold, GroupHeader, ICONS, ICON_SIZE, Waiting } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { Icon } from "../../components/ui/group-list";
@@ -32,7 +32,7 @@ export function renderMainGroupByWorkspace(scope: MainSidebarState) {
     onNavigate,
   } = scope;
   return groupMode !== "workspace" ? null : loading && sessions.length === 0 ? (
-    <SkeletonList rows={5} />
+    <Waiting rows={5} />
   ) : orderedWorkspaceGroups.length === 0 && !searching ? (
     <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">{S.chat.noSessions}</p>
   ) : (
@@ -79,46 +79,56 @@ export function renderMainGroupByWorkspace(scope: MainSidebarState) {
             {...(qualifiedPath !== null ? { title: qualifiedPath } : {})}
             actions={
               <>
-                <GroupPinButton pinned={pinned} onToggle={() => togglePin(group.key)} />
-                {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = temporary workspace); the Agent is the Project's new-chat default, like any other new chat */}
-                <button
-                  type="button"
-                  data-tooltip={S.chat.newSessionInWorkspace}
-                  aria-label={S.chat.newSessionInWorkspace}
-                  onClick={() =>
-                    newChat({
-                      workspace: fullPath ?? "",
-                      // The machine travels with the path: this group's rows live on it,
-                      // and the same path here is a different directory (or none).
-                      ...(group.machineId ? { machineId: group.machineId } : {}),
-                    })
-                  }
-                  className={GROUP_ACTION_CLASS}
-                >
-                  <Icon d={ICONS.plus} size={ICON_SIZE.groupHeaderAction} />
-                </button>
-                {/* A group that is one directory (not the merged temporary group), whether
+                {pinned && <GroupPinButton pinned onToggle={() => togglePin(group.key)} />}
+                <div className="flex h-7 shrink-0 items-center">
+                  <div
+                    data-workspace-actions
+                    className="hidden items-center gap-1 group-hover/header:flex group-focus-within/header:flex has-[[aria-expanded=true]]:flex [@media(hover:none)]:flex"
+                  >
+                    {!pinned && (
+                      <GroupPinButton pinned={false} onToggle={() => togglePin(group.key)} />
+                    )}
+                    {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = temporary workspace); the Agent is the Project's new-chat default, like any other new chat */}
+                    <button
+                      type="button"
+                      data-tooltip={S.chat.newSessionInWorkspace}
+                      aria-label={S.chat.newSessionInWorkspace}
+                      onClick={() =>
+                        newChat({
+                          workspace: fullPath ?? "",
+                          // The machine travels with the path: this group's rows live on it,
+                          // and the same path here is a different directory (or none).
+                          ...(group.machineId ? { machineId: group.machineId } : {}),
+                        })
+                      }
+                      className={GROUP_ACTION_CLASS}
+                    >
+                      <Icon d={ICONS.plus} size={ICON_SIZE.groupHeaderAction} />
+                    </button>
+                    {/* A group that is one directory (not the merged temporary group), whether
                               it was added by hand or formed by its conversations, here or on a
                               machine: the overflow right of the "+" — browse its files, rename it
                               (naming an unregistered group registers it), and delete it, which
                               archives its active conversations. The count the confirm names is
                               the group's whole active share, never the search-filtered rows. */}
-                {fullPath !== null && (
-                  <GroupOverflowMenu
-                    target={{ path: fullPath, machineId: group.machineId }}
-                    host={{ newChat, ...(onNavigate ? { onNavigate } : {}) }}
-                    onRename={() => openRenameWorkspace(fullPath, group.machineId)}
-                    onDelete={() =>
-                      setDeletingWorkspace({
-                        path: fullPath,
-                        machineId: group.machineId,
-                        label: group.label,
-                        key: group.key,
-                        count: Math.max(counts?.totals.active ?? 0, group.sessions.length),
-                      })
-                    }
-                  />
-                )}
+                    {fullPath !== null && (
+                      <GroupOverflowMenu
+                        target={{ path: fullPath, machineId: group.machineId }}
+                        host={{ newChat, ...(onNavigate ? { onNavigate } : {}) }}
+                        onRename={() => openRenameWorkspace(fullPath, group.machineId)}
+                        onDelete={() =>
+                          setDeletingWorkspace({
+                            path: fullPath,
+                            machineId: group.machineId,
+                            label: group.label,
+                            key: group.key,
+                            count: Math.max(counts?.totals.active ?? 0, group.sessions.length),
+                          })
+                        }
+                      />
+                    )}
+                  </div>
+                </div>
               </>
             }
           />

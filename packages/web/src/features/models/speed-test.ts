@@ -9,7 +9,16 @@ export interface SpeedResult {
   ttftMs?: number;
   /** Output tokens per second over the streaming window. */
   tps?: number;
+  /** The whole request, ms: the reading for a model that is not chatted with. */
+  latencyMs?: number;
   message?: string;
+  /** The group test left this model out, and why, in the reader's words. */
+  skipped?: string;
+}
+
+/** A latency for a card: milliseconds under a second, else seconds to one decimal. */
+export function formatLatency(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
 export type SpeedTone = "green" | "yellow" | "red";

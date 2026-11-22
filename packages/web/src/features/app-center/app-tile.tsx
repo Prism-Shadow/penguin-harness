@@ -6,13 +6,21 @@
  * - An app tile opens the app. While the app builds, its icon is dimmed under a turning ring and
  *   it does not open (its menu's open rows are disabled too); it turns live by itself when the
  *   build ends. An app whose last load failed is the dimmed tile with a warning mark: it still
- *   opens, and its menu shows the error.
+ *   opens, and its menu shows the error. A system app's tile is always ready; its hint says it is
+ *   a system app instead of naming an Agent.
+ * - An app that is running behind the grid (its window minimized) has a short bar under its
+ *   icon, as a taskbar marks a running app, and its name and hint say so; a click brings its
+ *   window back, even while it builds. A folder holding one has the same bar, and says how many.
+ *   A system app never runs: it opens as its own page, not in a window.
  * - A folder tile shows the first four of its apps' icons in a 2×2 square and opens the folder.
- * - What a drag would do is marked here: a line in the gap beside the tile, or a ring around the
- *   icon it would go into. Neither moves anything. The tile's `data-drop` names the mark it wears.
+ * - What a drag would do is marked here: a line in the gap beside the tile, or an outline around
+ *   the icon it would go into. Neither moves anything. The tile's `data-drop` names the mark it
+ *   wears.
  *
  * A state never changes a tile's box: the ring and the marks are laid over the icon's square,
- * which is the same 56 px in every state.
+ * which is the same 56 px in every state. App and folder icons share the app icon shape
+ * (`AppIconShape`), whose corner scales with the icon, so a folder's previews are the outline of
+ * the icons they grow into when it opens.
  *
  * Icons are images (`ImageIcon`) from the URL the server serves them at under a sandboxing
  * policy, never markup put into the page. An icon that fails to load falls back to the letter
@@ -21,7 +29,10 @@
 import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import {
+  APP_ICON_PX,
+  AppIconShape,
   ContextMenu,
+  GlyphAppIcon,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
@@ -29,12 +40,12 @@ import {
   InstallRing,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { toneInk } from "../../lib/tone";
+import { toneDot, toneInk } from "../../lib/tone";
 import { skillTileColor } from "../skills";
-import type { GridApp, GridFolder, Side } from "./arrangement";
+import type { GridApp, GridFolder, LocatedShortcut, Side } from "./arrangement";
 
 /** Edge of a tile's icon, in px: the phone home screen's size, large enough to read a glyph in. */
-export const ICON_PX = 56;
+const ICON_PX = APP_ICON_PX;
 /** The install ring sits just outside the icon's square. */
 const RING_PX = ICON_PX + 12;
 /** A folder's square holds up to four icons, two by two, with this inset and gap (px). */
@@ -62,30 +73,35 @@ export interface TileDragProps {
 /**
  * The app's own icon — an image from the URL the server serves it at (`ImageIcon`: an `<img>`, or
  * a mask in the text colour for a monochrome SVG) — else, and whenever that image fails to load,
- * a square in the id's colour with the title's first letter.
+ * a square in the id's colour with the title's first letter. Either is cut to the app icon shape
+ * at its size, so a small icon is the same outline as a full one. A system app wears its page's
+ * glyph on the same shape (the UI package's `GlyphAppIcon`).
  */
 export function TileIcon({
   shortcut,
   title,
   size = ICON_PX,
 }: {
-  shortcut: AppCenterShortcut;
+  shortcut: LocatedShortcut;
   title: string;
   size?: number;
 }) {
-  const round = size >= ICON_PX ? "rounded-xl" : "rounded-md";
+  if (shortcut.system !== undefined) return <GlyphAppIcon d={shortcut.system.glyph} size={size} />;
   const letter = (
     <span
       aria-hidden
-      style={{ width: size, height: size }}
-      className={`flex shrink-0 items-center justify-center font-semibold ${round} ${
+      className={`flex size-full items-center justify-center font-semibold ${
         size >= ICON_PX ? "text-2xl" : "text-xs"
       } ${skillTileColor(shortcut.workbenchId)}`}
     >
       {[...title][0]?.toUpperCase() ?? "?"}
     </span>
   );
-  return <ImageIcon icon={shortcut.icon ?? null} size={size} fallback={letter} className={round} />;
+  return (
+    <AppIconShape aria-hidden size={size}>
+      <ImageIcon icon={shortcut.icon ?? null} size={size} fallback={letter} />
+    </AppIconShape>
+  );
 }
 
 /** The line in the gap beside a tile, where the dragged one would land. */
@@ -100,15 +116,19 @@ function DropLine({ side }: { side: Side }) {
   );
 }
 
-/** The ring around an icon square that the dragged app would go into. */
-function IntoRing() {
+/** The bar under an icon whose app (or one of whose apps) is running; the tile says it in words. */
+function RunningMark() {
   return (
     <span
       aria-hidden
-      className="pointer-events-none absolute -inset-1 rounded-2xl ring-2 ring-accent"
+      data-running=""
+      className={`pointer-events-none absolute -bottom-2 left-1/2 h-[3px] w-3.5 -translate-x-1/2 rounded-full ${toneDot.busy}`}
     />
   );
 }
+
+/** An outline follows the icon's shape and stays visible outside its clipped fill. */
+const DROP_OUTLINE = "outline-2 outline-offset-4 outline-accent";
 
 /**
  * A tile is pressed and held for its menu on touch, so neither the text selection nor the
@@ -117,41 +137,73 @@ function IntoRing() {
 const TILE_BUTTON =
   "flex w-full select-none flex-col items-center gap-2 rounded-lg p-2 text-center transition-colors duration-150 [-webkit-touch-callout:none] hover:bg-fg/5 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none";
 
-/** The name under the icon: two lines at most, then an ellipsis. */
-function TileName({ children }: { children: ReactNode }) {
+/**
+ * The name under the icon: two lines at most, then an ellipsis. Inside an open folder it has no
+ * preview to travel from, so it fades in as the folder unfolds.
+ */
+function TileName({ fade = false, children }: { fade?: boolean; children: ReactNode }) {
   return (
-    <span className="line-clamp-2 w-full break-words text-sm leading-snug text-fg">{children}</span>
+    <span
+      data-unfold-fade={fade || undefined}
+      className="line-clamp-2 w-full break-words text-sm leading-snug text-fg"
+    >
+      {children}
+    </span>
   );
 }
 
 export function AppTile({
   app,
+  inFolder,
   title,
   drag,
   mark,
   lifted,
+  running,
   menuItems,
   onOpen,
 }: {
   app: GridApp;
+  /** In an open folder, where its icon travels from the folder's preview of it. */
+  inFolder: boolean;
   /** The title in the reader's language. */
   title: string;
   drag: TileDragProps;
   mark: TileMark;
   /** This tile is the one being dragged. */
   lifted: boolean;
+  /** The app is running, its window minimized: a click brings that window back. */
+  running: boolean;
   menuItems: (close: () => void) => ReactNode;
   onOpen: () => void;
 }) {
   const { shortcut } = app;
+  const owner = [shortcut.agentName, shortcut.machineLabel].filter(Boolean).join(" · ");
   const building = shortcut.build === "building";
   const failed = shortcut.build === "failed";
-  const state = building ? S.appCenter.building : failed ? S.appCenter.broken : null;
-  const tip = building
-    ? S.appCenter.buildingTip(title, shortcut.agentName)
-    : failed
-      ? S.appCenter.failedTip(title, shortcut.agentName)
-      : S.appCenter.tileTip(title, shortcut.agentName);
+  /**
+   * Whether a click does nothing: an app out of reach never opens, and a building one opens only
+   * when it is already running, with a window to bring back.
+   */
+  const closed = shortcut.unavailable === true || (building && !running);
+  const state = running
+    ? S.appCenter.running
+    : building
+      ? S.appCenter.building
+      : failed
+        ? S.appCenter.broken
+        : null;
+  // A system app is always ready, and the platform's rather than an Agent's: it says so instead.
+  const system = shortcut.system !== undefined;
+  const tip = system
+    ? S.appCenter.systemTileName(title)
+    : running
+      ? S.appCenter.runningTip(title, owner)
+      : building
+        ? S.appCenter.buildingTip(title, owner)
+        : failed
+          ? S.appCenter.failedTip(title, owner)
+          : S.appCenter.tileTip(title, owner);
   return (
     <li
       className="relative"
@@ -167,20 +219,26 @@ export function AppTile({
             ref={target.ref}
             {...target.props}
             type="button"
-            aria-label={S.appCenter.tileName(title, shortcut.agentName, state)}
-            aria-disabled={building || undefined}
+            aria-label={
+              system ? S.appCenter.systemTileName(title) : S.appCenter.tileName(title, owner, state)
+            }
+            aria-disabled={closed || undefined}
             data-tooltip={tip}
             data-tooltip-extra
             onClick={() => {
               // A press-and-hold that opened the menu must not also open the app.
               if (target.consumeLongPressClick()) return;
-              if (!building) onOpen();
+              if (!closed) onOpen();
             }}
-            className={`${TILE_BUTTON} ${building ? "cursor-default" : ""} ${
-              failed ? "opacity-60" : ""
+            className={`${TILE_BUTTON} ${closed ? "cursor-default" : ""} ${
+              failed || shortcut.unavailable ? "opacity-60" : ""
             } ${lifted ? "opacity-40" : ""}`}
           >
-            <span className="relative block" style={{ width: ICON_PX, height: ICON_PX }}>
+            <AppIconShape
+              clip={false}
+              data-unfold-art={inFolder ? app.id : undefined}
+              className={`relative ${mark === "into" ? DROP_OUTLINE : ""}`}
+            >
               <span className={`block ${building ? "opacity-50" : ""}`}>
                 <TileIcon shortcut={shortcut} title={title} />
               </span>
@@ -198,9 +256,17 @@ export function AppTile({
                   <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.rowLead} />
                 </span>
               )}
-              {mark === "into" && <IntoRing />}
-            </span>
-            <TileName>{title}</TileName>
+              {running && <RunningMark />}
+            </AppIconShape>
+            <TileName fade={inFolder}>{title}</TileName>
+            {shortcut.machineLabel && (
+              <span
+                data-unfold-fade={inFolder || undefined}
+                className="max-w-full truncate text-xs text-fg-muted"
+              >
+                {shortcut.machineLabel}
+              </span>
+            )}
           </button>
         )}
       </ContextMenu>
@@ -208,21 +274,29 @@ export function AppTile({
   );
 }
 
+export const folderTriggerId = (id: string) => `app-center-trigger-${id}`;
+export const folderPanelId = (id: string) => `app-center-folder-${id}`;
+
 export function FolderTile({
   folder,
+  expanded,
   titleOf,
   drag,
   mark,
   lifted,
+  running,
   menuItems,
   onOpen,
 }: {
   folder: GridFolder;
+  expanded: boolean;
   /** An app's title in the reader's language. */
   titleOf: (shortcut: AppCenterShortcut) => string;
   drag: TileDragProps;
   mark: TileMark;
   lifted: boolean;
+  /** How many of its apps are running, their windows minimized. */
+  running: number;
   menuItems: (close: () => void) => ReactNode;
   onOpen: () => void;
 }) {
@@ -236,9 +310,11 @@ export function FolderTile({
             ref={target.ref}
             {...target.props}
             type="button"
-            aria-haspopup="dialog"
-            aria-label={S.appCenter.folderName(folder.name, count)}
-            data-tooltip={S.appCenter.folderTip(folder.name, count)}
+            id={folderTriggerId(folder.id)}
+            aria-expanded={expanded}
+            aria-controls={expanded ? folderPanelId(folder.id) : undefined}
+            aria-label={S.appCenter.folderName(folder.name, count, running)}
+            data-tooltip={S.appCenter.folderTip(folder.name, count, running)}
             data-tooltip-extra
             onClick={() => {
               if (target.consumeLongPressClick()) return;
@@ -246,24 +322,25 @@ export function FolderTile({
             }}
             className={`${TILE_BUTTON} ${lifted ? "opacity-40" : ""}`}
           >
-            <span
-              className="relative grid grid-cols-2 content-start rounded-xl bg-fg/10"
-              style={{
-                width: ICON_PX,
-                height: ICON_PX,
-                padding: FOLDER_INSET_PX,
-                gap: FOLDER_GAP_PX,
-              }}
-            >
-              {folder.apps.slice(0, 4).map((app) => (
-                <TileIcon
-                  key={app.id}
-                  shortcut={app.shortcut}
-                  title={titleOf(app.shortcut)}
-                  size={MINI_PX}
-                />
-              ))}
-              {mark === "into" && <IntoRing />}
+            {/* The running bar sits outside the folder's square, which clips its previews. */}
+            <span className="relative block">
+              {/* The open folder unfolds from this square, its apps from their previews in it. */}
+              <AppIconShape
+                data-unfold-from
+                className={`relative grid grid-cols-2 content-start bg-fg/10 ${mark === "into" ? DROP_OUTLINE : ""}`}
+                style={{ padding: FOLDER_INSET_PX, gap: FOLDER_GAP_PX }}
+              >
+                {folder.apps.slice(0, 4).map((app) => (
+                  <span key={app.id} data-unfold-source={app.id} className="flex">
+                    <TileIcon
+                      shortcut={app.shortcut}
+                      title={titleOf(app.shortcut)}
+                      size={MINI_PX}
+                    />
+                  </span>
+                ))}
+              </AppIconShape>
+              {running > 0 && <RunningMark />}
             </span>
             <TileName>{folder.name}</TileName>
           </button>

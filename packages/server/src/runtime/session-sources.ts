@@ -12,10 +12,12 @@
  * Session's index row (`readRecordedSource`), which a head read does not have. An absent entry
  * means "unknown": the list path resolves it from the Trace once per process lifetime.
  */
-import type { SessionCategory, SessionSource } from "../api/types.js";
-import type { SessionRow } from "../db/repos/sessions.js";
+import type { SessionSource } from "../api/types.js";
+import type { SessionCategory } from "@prismshadow/penguin-library-trace";
+import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { Component } from "@prismshadow/penguin-core/kernel";
-import type { SessionOrigins } from "../mechanisms/sessions.js";
+import type { SessionOrigins } from "@prismshadow/penguin-library-session";
+import type { ListingView } from "./listing-view.js";
 
 /**
  * What a Session's Trace head records as its source: one of the sources, or `null` for a head
@@ -69,25 +71,9 @@ export const BACKGROUND_SOURCES: ReadonlySet<SessionSource> = new Set([
   "workbench",
 ]);
 
-/**
- * The request header a server that adopted this one as a machine sends with every call it makes
- * here (its `/server/<id>` proxy and its own calls): the time it adopted this server, ISO.
- */
-export const ADOPTED_AT_HEADER = "x-penguin-adopted-at";
-
-/**
- * Who is reading a list, as far as the listing rule cares: a server that adopted this one as a
- * machine at `adoptedAt` (read from {@link ADOPTED_AT_HEADER}), or anyone else (`{}`).
- */
-export interface ListingView {
-  adoptedAt?: string;
-}
-
-/** The view a request asks for: its adoption time when the header carries a valid one. */
-export function listingViewOf(header: string | undefined): ListingView {
-  if (header === undefined || !Number.isFinite(Date.parse(header))) return {};
-  return { adoptedAt: header };
-}
+// Who is reading a list, and the header a request says so with: their own module.
+export { ADOPTED_AT_HEADER, listingViewOf } from "./listing-view.js";
+export type { ListingView } from "./listing-view.js";
 
 /**
  * A Session's source as the reader sees it. To a server that adopted this one, a Session created

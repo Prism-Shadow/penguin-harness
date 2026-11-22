@@ -14,14 +14,19 @@
 import { act, createElement, Fragment, useSyncExternalStore } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
-import { BuiltinBrowserLayer } from "../src/features/builtin-browser/browser-layer";
-import { BuiltinBrowserPanel } from "../src/features/builtin-browser/browser-panel";
+// The browser reaches the app's own helpers through the plugin face; this hands them over.
+import "../src/web-app/plugin-host";
+import { BuiltinBrowserLayer } from "../../../plugins/browser-automation/src/web/browser-layer";
+import { BuiltinBrowserPanel } from "../../../plugins/browser-automation/src/web/browser-panel";
 import {
   adoptBrowserSession,
   openBrowserTab,
-} from "../src/features/builtin-browser/browser-actions";
-import { browserState, dispatchBrowser } from "../src/features/builtin-browser/browser-store";
-import { guestKey } from "../src/features/builtin-browser/browser-state";
+} from "../../../plugins/browser-automation/src/web/browser-actions";
+import {
+  browserState,
+  dispatchBrowser,
+} from "../../../plugins/browser-automation/src/web/browser-store";
+import { guestKey } from "../../../plugins/browser-automation/src/web/browser-state";
 import {
   dockVersion,
   isTabShown,

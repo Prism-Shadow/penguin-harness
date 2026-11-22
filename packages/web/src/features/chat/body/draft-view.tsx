@@ -38,9 +38,18 @@
  * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
  * always survive.
  */
-import { browserState, adoptBrowserSession } from "../../builtin-browser";
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { handOverSession } from "../session-handover";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { useLocation, useNavigate } from "react-router";
+import { ComposerBanner, Notice } from "@prismshadow/penguin-ui";
 import type {
   AgentModelConfigDto,
   AgentSummary,
@@ -59,6 +68,7 @@ import { S } from "../../../lib/strings";
 import { UNCONFINED, draftSandboxAfter, type PermissionPick } from "../../../lib/permission-level";
 
 import { apiErrorText } from "../../../lib/api-error";
+import { failureNode } from "../../../lib/failure";
 import { rememberSessionMachine } from "../../../lib/session-machines";
 import { cachedMachineAgents, rememberMachineAgents } from "../../../lib/machine-cache";
 import { machineLink, remoteAgentsEmpty, type MachineLink } from "../../../lib/machine-link";
@@ -66,10 +76,18 @@ import { machineLink, remoteAgentsEmpty, type MachineLink } from "../../../lib/m
 import { useMachines } from "../../../state/machines";
 import { useAuth } from "../../../state/auth";
 import { useProject } from "../../../state/project";
+import { isConversationAgent } from "../../../lib/builtin-agents";
 import { useSessions } from "../../../state/sessions";
 import { ChatInput } from "../chat-input";
 import type { ComposerControl } from "../chat-input";
 import { goalPluginGate } from "../goal-plugin-gate";
+import {
+  offered,
+  promptHooksField,
+  saveSessionPromptModes,
+  usePromptModes,
+  type ComposerSwitches,
+} from "../prompt-modes";
 import { discardUnstartedSession } from "../unstarted-session";
 import { APPROVAL_MODES } from "../approval-mode";
 import { adoptDockScope, currentDockScope, setDockConversation } from "../../dock";
@@ -93,8 +111,9 @@ import { effectiveThinkingLevel } from "../../model-picker";
 import { useAgentSkills } from "../use-agent-skills";
 import { WorkspaceSelect } from "../../workspace";
 import { FilesPanelToggle } from "../dock-toggles";
-import { sameModelRef } from "../../models";
+import { defaultChatModel, sameModelRef } from "../../models";
 import { toastApiError } from "../../../lib/toast-api-error";
+import { requestDefaultModels } from "../../../lib/default-models-request";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
@@ -154,7 +173,7 @@ export function DraftView({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { agents: localAgents, setCurrentAgentId } = useProject();
+  const { agents: localAgents, setCurrentAgentId, currentProject } = useProject();
   /**
    * Agents on the machine the workspace is on. They are per-server: a Session created on
    * another machine can only name an Agent that exists THERE, so offering this machine's
@@ -163,7 +182,7 @@ export function DraftView({
    */
   const [remoteAgents, setRemoteAgents] = useState<AgentSummary[]>([]);
   /** Why a connected machine's list may be empty: still asking, or its answer was a failure. */
-  const [remoteAgentsFailure, setRemoteAgentsFailure] = useState<string | null>(null);
+  const [remoteAgentsFailure, setRemoteAgentsFailure] = useState<ReactNode>(null);
   const { add, remove } = useSessions();
   // The draft key includes a user dimension (#68 cross-account leakage). RequireAuth
   // guarantees the user is logged in here; on the off chance there's no user (the
@@ -205,8 +224,11 @@ export function DraftView({
   const [workspaceMachine, setWorkspaceMachine] = useState<string | null>(
     cached.workspace === undefined ? null : (cached.machineId ?? null),
   );
-  /** The Agents actually offerable for this draft: the target machine's, or this one's. */
-  const agents = workspaceMachine === null ? localAgents : remoteAgents;
+  /** The Agents actually offerable for this draft: the target machine's, or this one's — never the system Agent, which holds no conversation. */
+  const agents = useMemo(
+    () => (workspaceMachine === null ? localAgents : remoteAgents).filter(isConversationAgent),
+    [workspaceMachine, localAgents, remoteAgents],
+  );
   /**
    * The workspace's machine as the Machines page sees it — connected, coming back, stopped —
    * from the one live account of the machines, so this composer and that page never disagree:
@@ -235,7 +257,11 @@ export function DraftView({
   // chat-defaults response carries, so the button shows what the Session would start with.
   const [sandboxPick, setSandboxPick] = useState<Partial<SessionSandbox>>(cached.sandbox ?? {});
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(cached.modelRef ?? null);
+  const [promptHooks, setPromptHooks] = useState<string[]>(cached.promptHooks ?? []);
   const textRef = useRef(cached.text ?? "");
+  // A restored prompt can match an example. Typing only clears that match once.
+  const [exampleText, setExampleText] = useState<string | null>(cached.text ?? null);
+  const requestedExample = useRef<string | null>(null);
   /**
    * The text came from a "Create with AI" surface rather than a keyboard (`aiPrefill`,
    * draft-cache.ts): it seeded this draft and dies with it. The mark rides in the cache so a
@@ -404,15 +430,17 @@ export function DraftView({
     }
   }, [chatDefaults, stateWorkspace, cached.workspace, cached.approvalMode]);
 
-  // Model fallback: once config is ready, if nothing is selected or the selection is no longer valid, fall back to the project default → the first model (always as a paired reference).
+  const chatModels = useMemo(
+    () => models?.models.filter((m) => m.chatEligible !== false) ?? [],
+    [models],
+  );
+  const modelInfo = chatModels.find((m) => sameModelRef(m, modelRef));
+  // A cached choice or an older Project default can name a model intended only for tools.
   useEffect(() => {
-    if (!models) return;
-    if (modelRef && models.models.some((m) => sameModelRef(m, modelRef))) return;
-    const first = models.models[0];
-    setModelRef(
-      models.defaultModel ?? (first ? { provider: first.provider, modelId: first.modelId } : null),
-    );
-  }, [models, modelRef]);
+    if (!models || modelInfo) return;
+    const next = defaultChatModel(models.models, models.defaultModel);
+    setModelRef(next ? { provider: next.provider, modelId: next.modelId } : null);
+  }, [models, modelRef, modelInfo]);
 
   /**
    * Live reseed: the project-settings dialog saved new defaults in THIS tab while the
@@ -505,6 +533,18 @@ export function DraftView({
    */
   const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
   const resolvedAgentId = selectedAgent?.agentId ?? null;
+  // The composer's switches the draft's Agent offers, and the ones on (prompt-modes.ts).
+  const promptModes = usePromptModes(projectId, resolvedAgentId, workspaceMachine);
+  const switches = useMemo<ComposerSwitches>(
+    () => ({
+      modes: promptModes.modes,
+      on: offered(promptHooks, promptModes.modes),
+      onChange: setPromptHooks,
+      offers: promptModes.offers,
+      install: promptModes.install,
+    }),
+    [promptModes, promptHooks],
+  );
   useEffect(() => {
     setAgentThinkingLevel(null);
     if (!resolvedAgentId) return;
@@ -580,6 +620,7 @@ export function DraftView({
     if (workspaceMachine !== null) data.machineId = workspaceMachine;
     if (agentId) data.agentId = agentId;
     if (modelRef) data.modelRef = modelRef;
+    if (promptHooks.length > 0) data.promptHooks = promptHooks;
     if (skillsRef.current.length > 0) data.skills = skillsRef.current;
     // Carried through every write, so a reload finds the prefill still marked as composed
     // rather than resuming it as if it had been typed here.
@@ -598,6 +639,7 @@ export function DraftView({
     approvalMode,
     sandboxPick,
     modelRef,
+    promptHooks,
   ]);
 
   // The timer and unmount cleanup read persistNow via a ref to always get the **latest version**: a stale closure would write back outdated options.
@@ -611,6 +653,8 @@ export function DraftView({
   const onTextChange = useCallback(
     (text: string) => {
       textRef.current = text;
+      const acceptedExample = text === requestedExample.current;
+      setExampleText((previous) => (acceptedExample || text === previous ? text : null));
       // Editing an AI-composed prefill makes it the user's own text — an ordinary draft, kept
       // when the page is left and parkable like any other (see aiPrefillRef).
       aiPrefillRef.current = false;
@@ -733,7 +777,13 @@ export function DraftView({
         rememberMachineAgents(projectId, workspaceMachine, answered);
         if (!cancelled) setRemoteAgents(answered);
       } catch (err) {
-        if (!cancelled) setRemoteAgentsFailure(apiErrorText(err));
+        if (cancelled) return;
+        setRemoteAgentsFailure(
+          failureNode(err, {
+            text: S.machines.composer.failed(apiErrorText(err)),
+            what: "a machine's Agents could not be listed",
+          }),
+        );
       }
     })();
     return () => {
@@ -777,29 +827,31 @@ export function DraftView({
   // failure, so the input area keeps the draft and can resend.
   const onSend = useCallback(
     async (input: TaskInputPart[], goal: { budget: number } | null = null): Promise<boolean> => {
-      if (!agentId || sendingRef.current) return false;
+      if (!agentId || !modelInfo || sendingRef.current) return false;
       sendingRef.current = true;
-      const browserScope = browserState().scope;
       // The draft's own docks, named now: the send takes round trips, and the user may be on
-      // another conversation by the time it has a Session to hand them to.
+      // another conversation by the time it has a Session to hand them to. It is also the scope
+      // whatever other modules keep for the draft hands over from (`ChatModule.sessionHandovers`).
       const dockScope = currentDockScope();
       let createdId: string | null = null;
       try {
         const body: SessionCreateRequest = { approvalMode };
         if (Object.keys(sandboxPick).length > 0) body.sandbox = sandboxPick;
-        // Model reference is submitted as a pair (provider + modelId; falls back to the Project default when not set).
-        if (modelRef) {
-          body.modelId = modelRef.modelId;
-          body.provider = modelRef.provider;
-        }
+        body.modelId = modelInfo.modelId;
+        body.provider = modelInfo.provider;
         if (workspace.trim()) body.workspace = workspace.trim();
         // Created ON the machine that owns the workspace: that server runs the agent in it.
         const created = await api.createSession(projectId, agentId, body, workspaceMachine);
         createdId = created.session.sessionId;
-        // The first task can use the draft's pages as soon as it starts.
-        await adoptBrowserSession(browserScope, createdId);
-        const res = await api.postTask(createdId, { input, ...(goal ? { goal } : {}) });
-        await adoptBrowserSession(createdId, res.sessionId);
+        // The first task can use what the draft holds (its browser pages) as soon as it starts.
+        await handOverSession(dockScope, createdId);
+        const res = await api.postTask(createdId, {
+          input,
+          ...(goal ? { goal } : promptHooksField(switches.on)),
+        });
+        await handOverSession(createdId, res.sessionId);
+        // The switches hold for the conversation, so the new Session keeps them on.
+        if (userId) saveSessionPromptModes(userId, res.sessionId, switches.on);
         // postTask answers with the CURRENT id: a Session with no Trace whose process
         // restarted in between self-heals into a new one. Everything recorded a moment ago
         // under the id we created is then about a Session that no longer answers to it, and
@@ -830,7 +882,7 @@ export function DraftView({
         // discard it — out of the list first, then off the server (unstarted-session.ts says why
         // in that order) — or every resend would pile up another empty Session in the sidebar.
         if (createdId) {
-          await adoptBrowserSession(createdId, browserScope);
+          await handOverSession(createdId, dockScope);
           void discardUnstartedSession(createdId, { remove, deleteSession: api.deleteSession });
         }
         toastApiError(e, modelRef ? { modelId: modelRef.modelId } : {});
@@ -845,11 +897,14 @@ export function DraftView({
       approvalMode,
       sandboxPick,
       modelRef,
+      modelInfo,
       workspace,
       // The machine can change while the path does not: a temporary workspace there after a
       // temporary one here is "" both times, and a send that kept the old machine would create
       // the Session on this server.
       workspaceMachine,
+      switches,
+      userId,
       add,
       remove,
       discardDraft,
@@ -872,6 +927,7 @@ export function DraftView({
   const ownComposerRef = useRef<ComposerControl | null>(null);
   const composerRef = pageComposerRef ?? ownComposerRef;
   const fillComposer = useCallback((prompt: string, skills: readonly string[]) => {
+    requestedExample.current = prompt;
     composerRef.current?.fillPrompt(prompt, skills);
   }, []);
   const readComposerText = useCallback(() => textRef.current, []);
@@ -881,8 +937,6 @@ export function DraftView({
     if (resolvedAgentId && workspaceMachine === null) setCurrentAgentId(resolvedAgentId);
   }, [resolvedAgentId, workspaceMachine, onAgentChange, setCurrentAgentId]);
 
-  // Capability info for the currently selected model (vision/context window) switches instantly with the selection (matched by paired reference).
-  const modelInfo = models?.models.find((m) => sameModelRef(m, modelRef));
   // Goal mode's plugin check, against the Agent the Session will be created for, on the server
   // that holds it: nothing is created for a goal that cannot start (goal-plugin-gate.ts).
   const goalPlugin = useMemo(
@@ -892,17 +946,44 @@ export function DraftView({
   const contextWindow = modelInfo?.contextWindow;
   const vision = modelInfo?.vision !== false;
 
+  // No default model, and none chosen for this chat: Send waits for one (ChatInput's canSend),
+  // and the composer's top band says so, with the way to the Default model settings dialog for
+  // the owner (a member is told whom to ask).
+  const noDefaultBanner = models &&
+    chatModels.length > 0 &&
+    !models.defaultModel &&
+    modelRef === null && (
+      <ComposerBanner
+        {...(currentProject?.role === "owner"
+          ? { action: { label: S.defaultModels.composerAction, onClick: requestDefaultModels } }
+          : {})}
+      >
+        {currentProject?.role === "owner"
+          ? S.defaultModels.composerNone
+          : S.defaultModels.composerNoneMember}
+      </ComposerBanner>
+    );
+
   // The composer and the ownership pills under it, which the dashboard sets between its brand
   // and its examples.
   const composer = (
     <>
+      {models && chatModels.length === 0 && (
+        <Notice
+          tone="attention"
+          role="status"
+          action={{ label: S.project.goToModels, onClick: () => navigate("/models") }}
+        >
+          {S.project.noChatModels}
+        </Notice>
+      )}
       <ChatInput
         status="idle"
         controlRef={composerRef}
         onSend={onSend}
         onStop={async () => undefined}
         modelRef={modelRef}
-        models={models?.models ?? []}
+        models={chatModels}
         onChangeModel={setModelRef}
         thinkingLevel={thinkingLevel}
         onChangeThinkingLevel={onChangeThinkingLevel}
@@ -924,6 +1005,8 @@ export function DraftView({
         {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
         {...(cached.goal === true ? { initialGoal: true } : {})}
         goalPlugin={goalPlugin}
+        switches={switches}
+        {...(noDefaultBanner ? { banner: noDefaultBanner } : {})}
         onSkillsChange={onSkillsChange}
         initialText={cached.text ?? ""}
         onTextChange={onTextChange}
@@ -935,7 +1018,11 @@ export function DraftView({
           agents={agents}
           selected={selectedAgent}
           onSelect={selectAgent}
-          empty={remoteAgentsEmpty(remoteLink, remoteAgentsFailure)}
+          empty={
+            remoteLink === "connected" && remoteAgentsFailure !== null
+              ? remoteAgentsFailure
+              : remoteAgentsEmpty(remoteLink, null)
+          }
           machineId={workspaceMachine}
         />
         <WorkspaceSelect
@@ -974,6 +1061,7 @@ export function DraftView({
           composer={composer}
           skillsLoaded={skillsLoaded}
           fill={fillComposer}
+          exampleText={exampleText}
           readComposerText={readComposerText}
         />
       </div>

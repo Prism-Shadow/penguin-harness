@@ -78,7 +78,6 @@ import { CostPartsRows, ElapsedSplitRows, StatHint } from "../../components/ui/s
 import { readHistory } from "../../lib/history/history-read";
 import { HistoryFileLoading } from "../chat/history-loading";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import {
   computeTps,
   formatAverage,
@@ -115,6 +114,7 @@ import { ROUND_NAV_MIN_ROUNDS, RoundNavButton } from "./trace-round-nav";
 import { TraceToolbar } from "./trace-toolbar";
 import { levelChangeText, thinkingLevelChanges } from "./trace-levels";
 import type { LevelChanges } from "./trace-levels";
+import { failureNode } from "../../lib/failure";
 
 /**
  * Badge text for a round row, or null when the round is not a compaction turn.
@@ -152,7 +152,7 @@ interface TaskTimeline {
  */
 export type RoundEntry =
   | (RoundRange & { status: "loaded"; rows: AmspRecord[] })
-  | (RoundRange & { status: "failed"; error: string });
+  | (RoundRange & { status: "failed"; error: ReactNode });
 
 /** How long the target message row stays pinned highlighted after a bar-click jump (milliseconds). */
 const PIN_MS = 2500;
@@ -281,7 +281,7 @@ export function TraceFileView({
   const [file, setFile] = useState<FileState>(EMPTY_FILE);
   const [rounds, setRounds] = useState<ReadonlyMap<number, RoundEntry>>(new Map());
   const [shownRounds, setShownRounds] = useState(TRACE_ROUNDS_PAGE);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   /** The file being made whole on this server first (a Session on a machine): since when, and how far. */
   const [fetching, setFetching] = useState<{
     since: number;
@@ -356,7 +356,7 @@ export function TraceFileView({
         .catch((err: unknown) => {
           if (signal.cancelled) return;
           setFetching(null);
-          setError(apiErrorText(err));
+          setError(failureNode(err, { what: "a Trace file's analysis could not be read" }));
         });
     };
     const since = Date.now();
@@ -373,10 +373,10 @@ export function TraceFileView({
         onFilled: () => {
           if (!signal.cancelled) readAnalysis();
         },
-        onError: (message) => {
+        onError: (message, cause) => {
           if (signal.cancelled) return;
           setFetching(null);
-          setError(message);
+          setError(failureNode(cause, { text: message, what: "a Trace file could not be read" }));
         },
       },
     );
@@ -416,7 +416,13 @@ export function TraceFileView({
         { signal },
       )
         .then((events) => land({ ...range, status: "loaded", rows: events.filter(isMainSession) }))
-        .catch((err: unknown) => land({ ...range, status: "failed", error: apiErrorText(err) }));
+        .catch((err: unknown) =>
+          land({
+            ...range,
+            status: "failed",
+            error: failureNode(err, { what: "a round of a Trace file could not be read" }),
+          }),
+        );
     }
   }, [analysis, expanded, shownRounds, rounds, projectId, agentId, sessionId, index]);
 
@@ -600,7 +606,7 @@ export function TraceFileBody({
   /** How many of the newest round rows are drawn. */
   shownRounds: number;
   /** A read that failed: with an analysis on screen, what is drawn is the last read that succeeded. */
-  error: string | null;
+  error: ReactNode;
   highlight: TraceHighlight | null;
   pinnedRow: string | null;
   onHighlight: (h: TraceHighlight | null) => void;

@@ -113,7 +113,9 @@ export function draftOf(entry: PluginConfigEntry): Draft {
       field.type === "number"
         ? String(v)
         : field.type === "list"
-          ? (Array.isArray(v) ? v : []).join("\n")
+          ? Array.isArray(v)
+            ? [...(v as string[])]
+            : []
           : v;
   }
   return out;
@@ -133,20 +135,26 @@ export function typedDraftOf(entry: PluginConfigEntry): Draft {
 
 /** What a field's saved value is compared with, in the terms a save sends. */
 export function baselineOf(field: PluginConfigField, stored: unknown): unknown {
-  return field.type === "table" ? tableValueOf(field, tableDraftOf(field, stored)) : stored;
+  if (field.type === "table") return tableValueOf(field, tableDraftOf(field, stored));
+  if (field.type === "list") return Array.isArray(stored) ? stored : [];
+  return stored;
 }
 
-/** The value a draft sends for a field: a number parsed from its box, a list split into lines, everything else as is. */
+/** The value a draft sends for a field: a number parsed from its box, a list trimmed into entries, everything else as is. */
 export function valueOf(field: PluginConfigField, draft: unknown): unknown {
   if (field.type === "table") {
     return draft === undefined ? null : tableValueOf(field, draft as TableDraft);
   }
   if (field.type === "list") {
-    const lines = (typeof draft === "string" ? draft : "")
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line !== "");
-    return lines.length === 0 ? null : lines;
+    const raw = Array.isArray(draft) ? draft : typeof draft === "string" ? draft.split("\n") : [];
+    return [
+      ...new Set(
+        raw
+          .filter((line): line is string => typeof line === "string")
+          .map((line) => line.trim())
+          .filter((line) => line !== ""),
+      ),
+    ];
   }
   if (field.type !== "number") return draft ?? null;
   const text = typeof draft === "string" ? draft.trim() : "";

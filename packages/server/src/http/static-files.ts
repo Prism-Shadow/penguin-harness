@@ -1,7 +1,9 @@
 /**
- * Serving a file a package ships for an iframe: a workflow's `ui/` (workflows/routes.ts) and an
- * installed plugin's `ui/` (http/routes/plugin-ui.ts). One content-type table and one set of
- * response headers, so the two documents the app frames are served alike.
+ * Serving the files a package ships for an iframe page: a server module's route hands a path
+ * under its own `ui/` folder here (PRFC-0036: a plugin's page is an iframe of its own files,
+ * served by its own route). One content-type table and one set of response headers, so every
+ * framed document is served alike. A code plugin reaches both functions through
+ * `@prismshadow/penguin-server/plugin`.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -34,16 +36,17 @@ export function isSafeRelPath(rel: string): boolean {
 }
 
 /**
- * The file `rel` names under `dir`, or null: `rel` must be a safe relative path, the file must
- * exist and be a regular file, and — symlinks resolved on both sides — it must still lie
- * inside `dir`, so a link inside the directory cannot hand out a file outside it.
+ * The file `rel` names under `dir`, or null: `rel` must be a safe relative path, and the file must
+ * exist, be a regular file and be reached through no link — resolved, it is exactly `rel` under
+ * the resolved `dir`, so neither a link out of the folder nor one inside it hands out a file.
+ * `dir` itself may lie below a link (a package in a linked prefix).
  */
 export async function containedFile(dir: string, rel: string): Promise<string | null> {
   if (!isSafeRelPath(rel)) return null;
   try {
     const root = await fs.realpath(dir);
     const file = await fs.realpath(path.join(dir, rel));
-    if (!file.startsWith(root + path.sep)) return null;
+    if (file !== path.join(root, rel)) return null;
     return (await fs.stat(file)).isFile() ? file : null;
   } catch {
     return null;

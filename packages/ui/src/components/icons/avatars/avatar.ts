@@ -16,11 +16,11 @@
  * contract a component may spell a colour of its own.
  */
 
-/** FNV-1a 32-bit string hash. */
-function hashStr(s: string): number {
+/** FNV-1a 32-bit hash of a stable key: what an avatar derives its looks from. */
+export function avatarHash(key: string): number {
   let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
   return h >>> 0;
@@ -28,7 +28,7 @@ function hashStr(s: string): number {
 
 /** Deterministic hue (0-359) for a stable key (an agent id, a provider id). */
 export function avatarHue(key: string): number {
-  return hashStr(key) % 360;
+  return avatarHash(key) % 360;
 }
 
 /** A letter tile's colours: the translucent tint, and the initial's ink per mode and as one value. */

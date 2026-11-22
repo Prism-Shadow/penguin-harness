@@ -89,7 +89,7 @@ jobs:
           ref: ${{ inputs.ref || '' }}
       - uses: ./.github/actions/setup
       - name: CI selection and gate regressions
-        run: node --test scripts/test/ci-plan.test.mjs scripts/test/ci-gate.test.mjs
+        run: node --test scripts/test/ci-plan.test.mjs scripts/test/ci-gate.test.mjs scripts/test/offline-archives.test.mjs scripts/test/build-plugins.test.mjs
       - name: Code style (Prettier)
         run: pnpm format:check
 
@@ -138,6 +138,7 @@ jobs:
           fetch-depth: 0
       - name: Changed plugins carry a new version
         run: node scripts/check-plugin-versions.mjs '${{ github.event.pull_request.base.sha }}'
+      # No plugin-tree .test.mjs suites remain. Restore their strict runner when suites return.
 
   # The npm publishing path, walked without publishing. CI used to prove only that the sources
   # typecheck and the tests pass, and the release workflow built a different, narrower set -- so a
@@ -158,6 +159,11 @@ jobs:
       # tag, because the release's OIDC exchange cannot create a name npm has never seen.
       - name: A published package depends on nothing private, and names that need a first publish
         run: node scripts/check-publishable.mjs --registry
+      # The external built-in plugins (plugins/README.md): server, CLI and desktop pin one exact
+      # version of each, and the lock's sha512 of it is the one the plugin index registers. An
+      # index this runner cannot read leaves a warning rather than a failure.
+      - name: External built-in plugins are pinned alike and registered
+        run: node scripts/check-external-plugins.mjs --index
       # The release's npm job stamps the tag's version into every package it publishes (and into the
       # server's embedded plugin index) before it builds and tests. Stamp the same way here, with
       # the repo's own version, so a test that only fails on the stamped tree fails on the pull
@@ -168,6 +174,12 @@ jobs:
         run: pnpm --filter '@prismshadow/penguin-cli...' --filter '@prismshadow/penguin-web...' build
       - name: Stamped version and plugin-registry regressions
         run: bash scripts/release-npm.sh test-smoke
+      # The plugins that carry their own version, packed as the release packs them for its
+      # GitHub Release and npm (scripts/pack-own-plugins.mjs), on the tree stamped above, which
+      # must have left their versions alone: built and packed twice, one set of bytes. --registry
+      # warns when npm already has the version with other bytes.
+      - name: Pack the plugins that carry their own version
+        run: node scripts/pack-own-plugins.mjs --build --registry
       # The release stages two things into the package directories before it publishes: the root
       # LICENSE, and the built web assets as the server's web-dist/. Neither exists in the repo, and
       # npm silently skips a `files` entry that is not on disk -- so packing without them proves the

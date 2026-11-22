@@ -2,9 +2,10 @@
  * End-to-end tests for the App Center (/apps), against the real server (locale en).
  *
  * - The admin's default Project lists the shipped Support workbench as a tile with its own icon,
- *   served by the icon route. A click opens it windowed over the grid, and the window's close
- *   returns to the grid; "Open full screen" in the tile's menu opens the full page, whose exit
- *   comes back to the App Center. The App Center switch on the workbench's row (the Plugins
+ *   served by the icon route. A click opens it windowed over the grid; the window's minimize
+ *   returns to the grid with the tile marked running, and the tile brings back the same frame;
+ *   the window's close returns to the grid; "Open full screen" in the tile's menu opens the full
+ *   page, whose exit comes back to the App Center. The App Center switch on the workbench's row (the Plugins
  *   tab's Workbenches sub-page) takes the tile off (the empty page offers Create with AI) and puts
  *   it back.
  * - With three workbenches of a fresh account's Agent: a real pointer drag of one tile onto the
@@ -13,6 +14,8 @@
  *   reload; restoring the default order asks first and then clears it.
  * - The header's New folder makes a folder of the apps checked in its dialog, under the name
  *   typed there, at the first checked app's place.
+ * - A system app's tile opens its own page, where the nav keeps the App Center lit, Benchmark
+ *   detail pages included.
  */
 import { test, expect } from "@playwright/test";
 import { ADMIN_ID, ADMIN_PASSWORD, login, provisionAndLogin } from "./auth.mjs";
@@ -47,8 +50,18 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await expect(page).toHaveURL(/\/apps\?app=penguin_support%2Fsupport$/);
   const appWindow = page.getByRole("region", { name: "Support" });
   await expect(appWindow.locator("iframe")).toBeVisible();
+  // Minimized, the app keeps running: the frame it comes back with is the same element.
+  await appWindow.locator("iframe").evaluate((frame) => {
+    frame.dataset.e2eKept = "yes";
+  });
+  await appWindow.getByRole("button", { name: "Minimize" }).click();
+  await expect(page).toHaveURL(`${BASE}/apps`);
+  await expect(grid.getByRole("button", { name: /^Support, .+, Running$/ })).toBeVisible();
+  await tile.click();
+  await expect(appWindow.locator('iframe[data-e2e-kept="yes"]')).toBeVisible();
   await appWindow.getByRole("button", { name: "Close, back to the App Center" }).click();
   await expect(page).toHaveURL(`${BASE}/apps`);
+  await expect(grid.getByRole("button", { name: /^Support, .+, Running$/ })).toHaveCount(0);
 
   await tile.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Open full screen" }).click();
@@ -65,7 +78,7 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await expect(toggle).toBeEnabled({ timeout: 30_000 });
 
   await page.goto(`${BASE}/apps`);
-  await expect(page.getByText("The App Center is empty")).toBeVisible();
+  await expect(page.getByText("No apps from agents yet")).toBeVisible();
   await expect(page.getByRole("button", { name: "Create with AI" })).toBeVisible();
 
   await openSupportRow(page);
@@ -138,17 +151,83 @@ test.beforeAll(async ({ browser }) => {
   await seed.close();
 });
 
+test("an installed game's canvas captures the mouse on click only when its tab opts in", async ({
+  playwright,
+}) => {
+  // Chromium's headless window has no native pointer to capture. On display-less Linux
+  // this case can be run under xvfb-run.
+  test.skip(
+    process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY,
+    "Native pointer capture requires a window",
+  );
+  const browser = await playwright.chromium.launch({ headless: false });
+  try {
+    const page = await browser.newPage();
+    await provisionAndLogin(page.request, "pointergame", P);
+    await setAccountPrefs(page.request, { lang: "en" });
+    const projectId = (await (await page.request.get(`${BASE}/api/projects`)).json()).projects[0]
+      .projectId;
+    const base = `${BASE}/api/projects/${projectId}/agents/default_agent/workbenches`;
+    const gameHtml = `<!doctype html><canvas tabindex="0" width="400" height="200" aria-label="Game"></canvas>
+    <script>
+      const canvas = document.querySelector("canvas");
+      canvas.onclick = async () => {
+        try {
+          await canvas.requestPointerLock();
+          canvas.dataset.result = document.pointerLockElement === canvas ? "captured" : "released";
+        } catch (error) { canvas.dataset.result = error.name; canvas.title = error.message; }
+      };
+    </script>`;
+    for (const [name, optIn] of [
+      ["Board", false],
+      ["Game", true],
+    ]) {
+      const pkg = manifest(name);
+      const renderer = pkg.penguin.modules[0].contributes["WebModule.sessionTabs"][0].renderer;
+      if (optIn) renderer.iframe.pointerLock = true;
+      const id = pkg.name;
+      const imported = await page.request.post(`${base}/archive`, {
+        data: {
+          dataBase64: zip({
+            [`${id}/package.json`]: JSON.stringify(pkg),
+            [`${id}/index.ts`]: INDEX,
+            [`${id}/ui/index.html`]: gameHtml,
+          }).toString("base64"),
+          overwrite: true,
+        },
+      });
+      expect(imported.ok(), await imported.text()).toBeTruthy();
+      await page.goto(`${BASE}/apps`);
+      await page.getByRole("button", { name: new RegExp(`^${name},`) }).click();
+      const frame = page.getByRole("region", { name }).frameLocator("iframe");
+      const canvas = frame.locator("canvas");
+      expect(await canvas.evaluate(() => document.pointerLockElement)).toBeNull();
+      await page.bringToFront();
+      await canvas.focus();
+      await canvas.click();
+      await expect(canvas).toHaveAttribute("data-result", optIn ? "captured" : "SecurityError");
+      if (optIn) {
+        await canvas.evaluate(() => document.exitPointerLock());
+        await expect.poll(() => canvas.evaluate(() => document.pointerLockElement)).toBeNull();
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
 test("tiles drag into a folder, step through the menu, keep their order, and restore after asking", async ({
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
-  await setAccountPrefs(page.request, { lang: "en" });
+  await setAccountPrefs(page.request, { lang: "en", themeId: "doodle" });
   await page.goto(`${BASE}/apps`);
   const grid = page.getByRole("list", { name: "App Center" });
   const tile = (name) => grid.getByRole("button", { name: new RegExp(`^${name},`) });
   const names = () =>
     grid
-      .locator(":scope > li")
+      // The workbenches' tiles and folders: the system apps lead the grid untouched.
+      .locator(':scope > li:not([data-app^="system_agent/"])')
       .evaluateAll((items) =>
         items.map((li) => li.querySelector(":scope > button > span:last-child")?.textContent ?? ""),
       );
@@ -173,11 +252,58 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   await expect.poll(names).toEqual(["New folder", "Beta"]);
 
   const folder = grid.getByRole("button", { name: /^New folder, folder, 2 apps/ });
+  // Inspect the two ends of the actual CSS transitions without racing the display refresh.
+  const slow = await page.addStyleTag({
+    content:
+      "[data-unfold-surface][data-layout-motion], [data-unfold-surface] [data-layout-motion] { transition-duration: 2s; }",
+  });
   await folder.click();
-  const panel = page.getByRole("dialog", { name: "New folder" });
+  const panel = page.getByRole("region", { name: "New folder" });
+  const positions = await panel.evaluate((node) => {
+    const animations = node.getAnimations({ subtree: true });
+    for (const part of animations) {
+      part.pause();
+      part.currentTime = 0;
+    }
+    const trigger = document.querySelector(`[aria-controls="${node.id}"]`);
+    const bounds = (el) => {
+      const { x, y, width } = el.getBoundingClientRect();
+      const radius =
+        (parseFloat(getComputedStyle(el).borderTopLeftRadius) * width) / el.offsetWidth;
+      return [x, y, width, radius].map(Math.round);
+    };
+    const pairs = [...trigger.querySelectorAll("[data-unfold-source]")].map((mini) => {
+      const slot = [...node.querySelectorAll("[data-unfold-art]")].find(
+        (el) => el.dataset.unfoldArt === mini.dataset.unfoldSource,
+      );
+      return [
+        bounds(mini.querySelector("[data-app-icon-shape]")),
+        bounds(slot.firstElementChild.querySelector("[data-app-icon-shape]")),
+      ];
+    });
+    for (const part of animations) part.finish();
+    return pairs;
+  });
+  for (const [preview, icon] of positions) {
+    expect(icon).toEqual(preview);
+    // The projected corner matches the preview and leaves a straight side on the 20px tile.
+    expect(icon[3]).toBeLessThanOrEqual(icon[2] / 4);
+  }
+  await slow.evaluate((style) => style.remove());
   await expect(panel.getByRole("button", { name: /^Alpha,/ })).toBeVisible();
   await expect(panel.getByRole("button", { name: /^Gamma,/ })).toBeVisible();
+  await panel.getByRole("button", { name: /^Gamma,/ }).click();
+  const window = page.getByRole("region", { name: "Gamma" });
+  await expect(window.frameLocator("iframe").getByRole("heading", { name: "Gamma" })).toBeVisible();
+  await window.getByRole("button", { name: "Close, back to the App Center" }).click();
+  await expect(panel).toBeVisible();
+
   await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await expect(folder).toBeFocused();
+  await folder.press("Enter");
+  await page.goBack();
+  await expect(folder).toHaveAttribute("aria-expanded", "false");
   await expect(panel).toBeHidden();
 
   // The folder moves one step backward from its menu.
@@ -217,7 +343,8 @@ test("the header's New folder makes a folder of the checked apps at the first on
   const grid = page.getByRole("list", { name: "App Center" });
   const names = () =>
     grid
-      .locator(":scope > li")
+      // The workbenches' tiles and folders: the system apps lead the grid untouched.
+      .locator(':scope > li:not([data-app^="system_agent/"])')
       .evaluateAll((items) =>
         items.map((li) => li.querySelector(":scope > button > span:last-child")?.textContent ?? ""),
       );
@@ -238,4 +365,18 @@ test("the header's New folder makes a folder of the checked apps at the first on
   // Kept with the account.
   await page.reload();
   await expect.poll(names).toEqual(["Alpha", "Pair"]);
+});
+
+test("a system app's tile opens its page, where the App Center stays lit", async ({ page }) => {
+  await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
+  await setAccountPrefs(page.request, { lang: "en" });
+  await page.goto(`${BASE}/apps`);
+  const grid = page.getByRole("list", { name: "App Center" });
+  await grid.getByRole("button", { name: "Evaluation Center, system app" }).click();
+  await expect(page).toHaveURL(`${BASE}/benchmark`);
+  const appCenter = page.locator("aside").first().getByRole("link", { name: "App Center" });
+  await expect(appCenter).toHaveAttribute("aria-current", "page");
+  // A Benchmark's own page lies under the Evaluation Center's.
+  await page.goto(`${BASE}/benchmark/no-such-benchmark`);
+  await expect(appCenter).toHaveAttribute("aria-current", "page");
 });

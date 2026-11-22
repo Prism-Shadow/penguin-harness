@@ -118,7 +118,6 @@ export function useMainSidebarRenderRows(scope: ReturnType<typeof useMainSidebar
             // "active right now"). CLI-adopted and subagent rows are not
             // driven by this server, so theirs stays at createdAt.
             lastActive={formatRelativeShort(s.lastActiveAt, locale)}
-            locale={locale}
             {...(withAgentHint ? { agentHint: agentNameById.get(s.agentId) ?? s.agentId } : {})}
             {...drag}
             onOpen={openSession}

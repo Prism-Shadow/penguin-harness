@@ -10,42 +10,48 @@
  * Also handles Project create / list / delete, member authorization, and initial
  * Project provisioning at signup.
  */
-import fs from "node:fs/promises";
-import {
-  DEFAULT_PROJECT_ID,
-  projectDir,
-  provisionProjectAgents,
-  provisionProjectBenchmarks,
-  type BuiltinBenchmark,
-} from "@prismshadow/penguin-core";
-import type { MemberInfo, ProjectRole, ProjectSummary } from "../api/types.js";
-import { HttpError } from "../http/errors.js";
-import type { ProjectRow } from "../db/repos/projects.js";
-import type { UserRow } from "../db/repos/users.js";
-import type { SessionManager } from "../runtime/session-manager.js";
-import {
-  PROJECT_ID_MAX_LENGTH,
-  PROJECT_SUFFIX_PATTERN,
-  SEMANTIC_ID_PATTERN,
-  SEMANTIC_ID_RULE,
-} from "./ids.js";
-import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
-import type { Config, Paths } from "../hmr/capabilities.js";
 import type {
+  ProjectRole,
   Access,
   AgentIndex,
   Members,
   ProjectConfigStore,
   ProjectLifecycle,
   Projects,
-} from "../mechanisms/projects.js";
-import type { Users } from "../mechanisms/identity.js";
-import type { Schedules, SessionIndex } from "../mechanisms/sessions.js";
-import type { ErrorLog, UsageStore } from "../mechanisms/observability.js";
-import type { TraceIndex } from "../mechanisms/traces.js";
-import type { OrgCache } from "../mechanisms/organization.js";
-import type { AgentApi } from "../mechanisms/agent-api.js";
-import type { UserDraftsStore } from "../mechanisms/account-data.js";
+} from "@prismshadow/penguin-library-project";
+import type { Users, UserDraftsStore } from "@prismshadow/penguin-library-auth";
+import fs from "node:fs/promises";
+import {
+  DEFAULT_PROJECT_ID,
+  projectDir,
+  projectRunDir,
+  ROOT_FOLDER_NAMES,
+  provisionProjectAgents,
+  provisionProjectBenchmarks,
+  type BuiltinBenchmark,
+} from "@prismshadow/penguin-core";
+import type { MemberInfo, ProjectSummary } from "../api/types.js";
+import { HttpError } from "../http/errors.js";
+import type { ProjectRow } from "@prismshadow/penguin-library-project/repos/projects";
+import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
+import type { SessionManager } from "../runtime/session-manager.js";
+import { removeBelow } from "../workbenches/data-dirs.js";
+import {
+  isNewSemanticId,
+  NEW_ID_RULE,
+  PROJECT_ID_MAX_LENGTH,
+  PROJECT_SUFFIX_PATTERN,
+  SEMANTIC_ID_RULE,
+} from "./ids.js";
+import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
+import type { Config, Paths } from "../hmr/capabilities.js";
+import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-session";
+import type { ErrorLog, UsageStore } from "@prismshadow/penguin-library-observability";
+import type { TraceIndex } from "@prismshadow/penguin-library-trace";
+import type { OrgCache } from "@prismshadow/penguin-library-organization";
+import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
+import type { PluginModules } from "../mechanisms/plugins.js";
+import type { AppSeeds } from "./app-seeds.js";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;
@@ -86,6 +92,10 @@ export class ProjectService implements ProjectLifecycle {
   /** Users' unsent drafts of the Project and of its Sessions: nowhere left to send them. */
   @Use() private readonly drafts!: UserDraftsStore;
   @Use() private readonly benchmarkSeeds!: BuiltinBenchmarkSeeds;
+  /** The preinstalled built-in modules a new Project lists (PRFC-0030). */
+  @Use() private readonly pluginModules!: PluginModules;
+  /** The seeds built-in plugins ship for their system apps' data, written once at creation. */
+  @Use() private readonly appSeeds!: AppSeeds;
 
   // Access control lives in ProjectAccess (services/project-access.ts); these delegate so
   // in-package callers keep one entry point.
@@ -118,15 +128,26 @@ export class ProjectService implements ProjectLifecycle {
    * lowercase letters, digits, and underscores only — the hyphen is a reserved
    * separator, usernames never contain a hyphen, so the first hyphen is the
    * ownership boundary and the prefix can never be crafted from another username;
-   * an admin's id contains no hyphen (occupying no user's namespace).
+   * an admin's id contains no hyphen (occupying no user's namespace). Then the preinstalled
+   * built-in modules are listed in the Project's own plugin table (PRFC-0030), which may
+   * re-assemble the App: nothing after it reads this generation's state. Last, the seeds built-in
+   * plugins ship for their system apps' data are written for the built-in packages that table now
+   * lists (services/app-seeds.ts), from the data root alone.
    */
   async createProject(owner: UserRow, projectId: string, name?: string): Promise<ProjectSummary> {
     if (owner.isAdmin) {
-      if (!SEMANTIC_ID_PATTERN.test(projectId)) {
+      if (!isNewSemanticId(projectId)) {
         throw new HttpError(
           400,
           "invalid_project_id",
-          `Project id must be 2–64 characters: ${SEMANTIC_ID_RULE} (the hyphen is reserved as the user namespace separator).`,
+          `Project id must be 2–64 characters: ${SEMANTIC_ID_RULE}; ${NEW_ID_RULE} (the hyphen is reserved as the user namespace separator).`,
+        );
+      }
+      if (ROOT_FOLDER_NAMES.includes(projectId)) {
+        throw new HttpError(
+          400,
+          "invalid_project_id",
+          `Project id ${projectId} is the name of a folder the data root keeps for itself (${ROOT_FOLDER_NAMES.join(", ")}); choose another.`,
         );
       }
     } else {
@@ -178,6 +199,10 @@ export class ProjectService implements ProjectLifecycle {
         .catch(() => {});
       throw err;
     }
+    await this.pluginModules.preinstall(projectId);
+    // Last, with the Project in place and its preinstalled modules listed: never a reason to roll
+    // it back (services/app-seeds.ts).
+    await this.appSeeds.seedProject(projectId);
     return {
       projectId,
       name: displayName,
@@ -231,6 +256,10 @@ export class ProjectService implements ProjectLifecycle {
     // Presets written just now bring their promotions, once the row they reference exists; a
     // Project that kept its own models keeps its own pricing.
     if (seeded) await this.projectConfig.seedPresetPromotions(projectId);
+    // Adopted, it is a new Project here: it lists the preinstalled modules (PRFC-0030), then gets
+    // the system apps' seeds of the built-in packages its table lists, where their names are free.
+    await this.pluginModules.preinstall(projectId);
+    await this.appSeeds.seedProject(projectId);
   }
 
   /**
@@ -308,6 +337,9 @@ export class ProjectService implements ProjectLifecycle {
     this.orgCache.deleteProject(projectId);
     this.traceIndex.removeProject(projectId);
     await fs.rm(projectDir(this.root, projectId), { recursive: true, force: true });
+    // Its workbenches' runtime files (sockets, locks) sit apart, at a short path (core's runDir).
+    // A link where a level belongs is left alone rather than followed; the deletion stands.
+    await removeBelow(this.root, projectRunDir(this.root, projectId)).catch(() => undefined);
   }
 
   // —— Member authorization ——

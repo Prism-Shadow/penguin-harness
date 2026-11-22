@@ -23,20 +23,24 @@
  * (a gzipped tarball over https) — and what npm actually installed is verified after the
  * fact against the sha512 the entry pins (installPluginChannel) — npm stays the first source;
  * the channel is where an npm-missing name can still come from.
+ *
+ * npm is looked for before every operation, and when it is found it does all of it, as above.
+ * A machine with no npm at all — the desktop app's server runs under Electron's utilityProcess,
+ * with no npm beside it — still installs a package that needs nothing npm does (no dependencies,
+ * no install scripts): direct-install.ts fetches, verifies and places it, and records it in the
+ * prefix's package.json the way npm would. Which of the two runs is packages.ts's choice.
  */
 import { execFile } from "node:child_process";
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path, { relative } from "node:path";
 import { promisify } from "node:util";
-import { Component } from "@prismshadow/penguin-core/kernel";
 // `which` is CommonJS exporting the function itself (module.exports = which, plus
 // which.sync): the default import IS the function, and the sync form is what the
 // candidates check uses — a path answer or null, never a thrown ENOENT.
 import which from "which";
-import type { PluginPackages } from "../mechanisms/plugins.js";
 import type { IndexChannel } from "./registry.js";
 const execFileAsync = promisify(execFile);
 
@@ -44,6 +48,19 @@ const execFileAsync = promisify(execFile);
 const INSTALL_TIMEOUT_MS = 180_000;
 /** One address's npm window: a dead address costs this, not a hang. */
 const CHANNEL_TIMEOUT_MS = 15_000;
+/** npm's own per-request window and retries (see `install`). */
+const FETCH_TIMEOUT_MS = 60_000;
+/**
+ * The pre-check's per-request window (see `checkPluginSource`); without npm, each registry
+ * address's window for the same question (direct-install.ts checkFromRegistry).
+ */
+export const CHECK_FETCH_TIMEOUT_MS = 10_000;
+/**
+ * The pre-check's kill window, a little above its request window. It is what actually bounds a
+ * registry that drops packets: npm's fetch timeout does not cover the TCP connect, which the
+ * operating system holds for minutes.
+ */
+const CHECK_TIMEOUT_MS = 12_000;
 /**
  * The asset address npm last installed from and whose install verified for each channel URL,
  * tried first next time. Memory, not a speed test: the walk still tries one address at a time
@@ -59,9 +76,9 @@ export function pluginsPrefix(root: string): string {
 }
 
 /** `<prefix>/archives`: the tarballs packed from uploaded zips, which the prefix's manifest names. */
-const ARCHIVES_DIR = "archives";
+export const ARCHIVES_DIR = "archives";
 /** `<prefix>/.staging`: where an uploaded package is unpacked and packed; emptied after each install. */
-const STAGING_DIR = ".staging";
+export const STAGING_DIR = ".staging";
 
 /** A bare package name, scoped or not — the same rule loader.ts resolves by. */
 const PACKAGE_NAME = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
@@ -70,22 +87,43 @@ export class PluginInstallError extends Error {
   /**
    * Why npm failed, when the failure came from npm: "unavailable" — npm answered that the
    * package (or the requested version of it) does not exist on the registry, the one outcome
-   * a published-index channel may stand in for; "other" — everything else (a refusing
-   * registry, a dependency that will not resolve, a failed lifecycle script), where the
-   * channel is not the answer and the failure is reported as is. Undefined on errors that
-   * did not come from npm at all.
+   * a published-index channel may stand in for; "unreachable" — the registry (or a proxy on
+   * the way) did not answer: refused, unresolved, reset or timed out, including npm killed at
+   * its window, or a proxy answered that it could not reach the registry; "missing" — there is
+   * no npm on this machine at all; "other" — everything else (a refusing registry, a dependency
+   * that will not resolve, a failed lifecycle script), where no fallback is the answer and the
+   * failure is reported as is. Undefined on errors that did not come from npm at all. An install
+   * made without npm (direct-install.ts) sets it the same way: a name or version the registry
+   * does not have is "unavailable".
    */
-  reason?: "unavailable" | "other";
+  reason?: "unavailable" | "unreachable" | "missing" | "other";
+  /** The registry address npm named in its failure, when it named one. */
+  registry?: string;
+  /** npm's own words, when this failure goes on to say what the fallbacks after npm said. */
+  npmSaid?: string;
+  /** What a fallback after npm said (an offline archive, an index channel), worth the reader's eye. */
+  fallback?: string;
+  /**
+   * The failure came from an install made without npm (direct-install.ts), not from npm: the
+   * route then reports it in its own words instead of as npm's.
+   */
+  withoutNpm?: true;
 }
 
 /** A package npm put in the prefix: its name and the version it settled on. */
 export interface InstalledPackage {
   name: string;
   version: string | null;
+  /**
+   * Set by an install from the registry or a release channel made without npm
+   * (direct-install.ts): no script of the package ran. The install route reads it for its
+   * refusal's wording and keeps it out of its answer.
+   */
+  withoutNpm?: true;
 }
 
 /** The prefix, created with a package.json of its own when it is not there yet. */
-async function ensurePrefix(root: string): Promise<string> {
+export async function ensurePrefix(root: string): Promise<string> {
   const prefix = pluginsPrefix(root);
   await fs.mkdir(prefix, { recursive: true });
   // An npm prefix needs a package.json of its own, or npm walks up and installs into whatever
@@ -133,8 +171,18 @@ export function setNpmRegistry(url: string | undefined): void {
   npmRegistry = url;
 }
 
+/** The registry the installer's npm runs are pointed at, or null when npm's own configuration answers. */
+export function currentNpmRegistry(): string | null {
+  return npmRegistry ?? process.env.npm_config_registry ?? null;
+}
+
+/** The registry the settings group names; undefined when it names none (npm's own configuration answers). */
+export function configuredNpmRegistry(): string | undefined {
+  return npmRegistry;
+}
+
 /**
- * How to run npm, resolved once per process: an ordered list of spawnable commands, built by
+ * How to run npm, resolved once found: an ordered list of spawnable commands, built by
  * asking the file system what is really here rather than assuming where npm lives. The shape
  * mirrors cross-spawn's (the resolver every npm-spawning tool sits on): locate first, spawn
  * second, and never guess an extension or a layout.
@@ -207,27 +255,58 @@ const npmCandidates = (): { candidates: readonly NpmCommand[]; notes: readonly s
   return { candidates, notes };
 };
 
-let npmCommandCache: Promise<NpmCommand> | null = null;
-function npmCommand(): Promise<NpmCommand> {
-  // Resolved once: the chosen npm does not move under a running process.
-  npmCommandCache ??= (async () => {
-    const { candidates, notes } = npmCandidates();
-    const [candidate] = candidates;
-    if (candidate !== undefined) return candidate;
-    throw new PluginInstallError(
-      `npm, the installer of plugins, is not on this machine (${notes.join("; ")})`,
-    );
-  })();
-  return npmCommandCache;
+/**
+ * The npm found, kept once found: the chosen npm does not move under a running process. A
+ * search that found none is not kept — it costs two existence checks, and npm installed after
+ * the process started (into a directory already on its PATH) is then found by the next
+ * operation without a restart.
+ */
+let npmCommandCache: NpmCommand | null = null;
+
+/** Where npm was looked for and not found, as the sentences an error names. */
+export type NpmSearch = { found: true } | { found: false; notes: readonly string[] };
+
+/** Whether this machine has npm now (see npmCandidates), and where it was looked for if not. */
+export function locateNpm(): NpmSearch {
+  if (npmCommandCache !== null) return { found: true };
+  const { candidates, notes } = npmCandidates();
+  const [candidate] = candidates;
+  if (candidate === undefined) return { found: false, notes };
+  npmCommandCache = candidate;
+  return { found: true };
 }
 
-async function npm(
+function npmCommand(): NpmCommand {
+  const search = locateNpm();
+  if (!search.found) {
+    const missing = new PluginInstallError(
+      `npm, which this install needs, is not on this machine (${search.notes.join("; ")}). Install Node.js, which includes npm (https://nodejs.org), then restart PenguinHarness so it finds npm.`,
+    );
+    missing.reason = "missing";
+    throw missing;
+  }
+  return npmCommandCache!;
+}
+
+/**
+ * One npm run in the prefix: its stdout, or a PluginInstallError in npm's own words. The
+ * installer's functions take it as a parameter so a caller can stand in for npm; `npm` below
+ * is the real one.
+ */
+export type NpmRun = (
+  prefix: string,
+  args: readonly string[],
+  cwd?: string,
+  window?: number,
+) => Promise<string>;
+
+export async function npm(
   prefix: string,
   args: readonly string[],
   cwd = prefix,
   window = INSTALL_TIMEOUT_MS,
 ): Promise<string> {
-  const command = await npmCommand();
+  const command = npmCommand();
   try {
     const { stdout } = await execFileAsync(command.file, [...command.argv, ...args], {
       cwd,
@@ -237,11 +316,24 @@ async function npm(
     });
     return stdout;
   } catch (err) {
-    const error = err as Error & { code?: string; stderr?: string };
-    const failure = new PluginInstallError(npmReason(error.stderr, error));
-    failure.reason = npmFailureKind(error.stderr);
+    const error = err as Error & { code?: string; stderr?: string; killed?: boolean };
+    const killed = error.killed === true;
+    const failure = new PluginInstallError(
+      killed
+        ? `npm did not finish within ${Math.round(window / 1000)} s`
+        : npmReason(error.stderr, error),
+    );
+    failure.reason = killed ? "unreachable" : npmFailureKind(error.stderr);
+    const registry = npmRegistryNamed(error.stderr);
+    if (registry !== undefined) failure.registry = registry;
     throw failure;
   }
+}
+
+/** The registry origin npm named in its failure (`GET https://host/...`), if it named one. */
+export function npmRegistryNamed(stderr: string | undefined): string | undefined {
+  const url = /\b(?:GET|PUT|POST)\s+(https?:\/\/[^\s/]+)/.exec(stderr ?? "")?.[1];
+  return url;
 }
 
 /**
@@ -252,8 +344,23 @@ async function npm(
  * a failed lifecycle script — is "other", and stays a failure. This reads the raw stderr, so
  * it runs before npmReason strips the `code E404` line the answer lives on.
  */
-export function npmFailureKind(stderr: string | undefined): "unavailable" | "other" {
-  return /npm error code (E404|ETARGET)\b/m.test(stderr ?? "") ? "unavailable" : "other";
+export function npmFailureKind(
+  stderr: string | undefined,
+): "unavailable" | "unreachable" | "other" {
+  const text = stderr ?? "";
+  if (/npm (?:error|ERR!) code (E404|ETARGET)\b/m.test(text)) return "unavailable";
+  // What a registry that cannot be reached looks like to npm: the connection refused, reset or
+  // timed out, the name unresolved, or the fetch timed out (`--fetch-timeout`) — or an http(s)
+  // proxy on the way answering 502 or 504 because it could not reach the registry either.
+  if (
+    /npm (?:error|ERR!) (?:code|errno) (ETIMEDOUT|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ERR_SOCKET_TIMEOUT|EPROXY|E502|E504)\b/m.test(
+      text,
+    ) ||
+    /network (?:request|timeout) .*(?:failed|timed out)|ERR_SOCKET_TIMEOUT/m.test(text)
+  ) {
+    return "unreachable";
+  }
+  return "other";
 }
 
 // `--install-links=false` on EVERY install: it is what makes npm reify a `file:` directory
@@ -261,17 +368,54 @@ export function npmFailureKind(stderr: string | undefined): "unavailable" | "oth
 // other way). Every install carries the flag — a plain install that dropped it would silently
 // replace an existing link with a frozen copy — and no config file is relied on: the same
 // command behaves the same whatever npm version ships with the runtime.
-const install = (prefix: string, spec: string) =>
-  npm(prefix, [
+// `--fetch-timeout` and `--fetch-retries` bound how long one registry that does not answer can
+// hold an install: npm's own defaults (five minutes, two retries) outlast the install's window,
+// so a dead registry would read as npm killed rather than as the registry not answering.
+const install = (prefix: string, spec: string, run: NpmRun = npm) =>
+  run(prefix, [
     ...(npmRegistry !== undefined ? [`--registry=${npmRegistry}`] : []),
     "install",
     "--no-audit",
     "--no-fund",
     "--omit=dev",
     "--install-links=false",
+    `--fetch-timeout=${FETCH_TIMEOUT_MS}`,
+    "--fetch-retries=1",
     "--",
     spec,
   ]);
+
+/**
+ * Asks the registry whether it has a version of a name (`name`, `name@range`) before that name
+ * is installed: `npm view`, so npm's own configuration, the `--registry` the install passes and
+ * any proxy apply exactly as they will to the install. The answer is bounded by a short window
+ * (CHECK_TIMEOUT_MS) and no retry, so a registry that does not answer, or does not have the
+ * name, fails within seconds rather than within the install's window; one that has it hands
+ * over to the install, whose tarballs may legitimately take longer. A failure is npm's, with
+ * npm's reason (npmFailureKind).
+ */
+export async function checkPluginSource(
+  root: string,
+  spec: string,
+  run: NpmRun = npm,
+): Promise<void> {
+  const prefix = await ensurePrefix(root);
+  await run(
+    prefix,
+    [
+      ...(npmRegistry !== undefined ? [`--registry=${npmRegistry}`] : []),
+      "view",
+      "--json",
+      `--fetch-timeout=${CHECK_FETCH_TIMEOUT_MS}`,
+      "--fetch-retries=0",
+      "--",
+      spec,
+      "version",
+    ],
+    prefix,
+    CHECK_TIMEOUT_MS,
+  );
+}
 
 /**
  * Installs (or upgrades) one package into the root's plugin prefix. Returns the version npm
@@ -280,9 +424,10 @@ const install = (prefix: string, spec: string) =>
 export async function installPluginPackage(
   root: string,
   specifier: string,
+  run: NpmRun = npm,
 ): Promise<string | null> {
   const prefix = await ensurePrefix(root);
-  await install(prefix, specifier);
+  await install(prefix, specifier, run);
   const name = packageName(specifier);
   return name === null ? null : readInstalledVersion(prefix, name);
 }
@@ -294,10 +439,14 @@ export async function installPluginPackage(
  * package.json; a link installed again changes nothing there, and is then found by what npm
  * recorded for it. The caller has validated the source; this only runs npm on it.
  */
-export async function installPluginSource(root: string, source: string): Promise<InstalledPackage> {
+export async function installPluginSource(
+  root: string,
+  source: string,
+  run: NpmRun = npm,
+): Promise<InstalledPackage> {
   const prefix = await ensurePrefix(root);
   const before = await prefixDependencies(prefix);
-  await install(prefix, source);
+  await install(prefix, source, run);
   const after = await prefixDependencies(prefix);
   const name = source.includes(":")
     ? (changedDependency(before, after) ?? recordedFor(source, after))
@@ -344,6 +493,7 @@ function recordedFor(source: string, deps: Readonly<Record<string, string>>): st
 export async function installPluginFiles(
   root: string,
   files: ReadonlyMap<string, Uint8Array>,
+  run: NpmRun = npm,
 ): Promise<InstalledPackage> {
   const prefix = await ensurePrefix(root);
   const staging = path.join(prefix, STAGING_DIR, randomUUID());
@@ -359,7 +509,7 @@ export async function installPluginFiles(
     }
     const archives = path.join(prefix, ARCHIVES_DIR);
     await fs.mkdir(archives, { recursive: true });
-    const packed = await npm(
+    const packed = await run(
       prefix,
       ["pack", "--ignore-scripts", "--json", "--pack-destination", archives],
       dir,
@@ -368,13 +518,46 @@ export async function installPluginFiles(
     // root's path goes through: given an absolute path, npm records it relative to the prefix's
     // real path, which climbs to the filesystem root wherever a symlink sits on the way (macOS's
     // temp directory, a data root on a linked disk).
-    await install(prefix, `./${ARCHIVES_DIR}/${packedFileName(packed)}`);
+    await install(prefix, `./${ARCHIVES_DIR}/${packedFileName(packed)}`, run);
     const name = await readPackageName(path.join(dir, "package.json"));
     await pruneArchives(prefix);
     return { name, version: await readInstalledVersion(prefix, name) };
   } finally {
     await fs.rm(staging, { recursive: true, force: true });
   }
+}
+
+/**
+ * Installs a package tarball already on this machine — an offline archive the build carried
+ * (plugin/offline-archives.ts), verified by the caller — the way an uploaded zip's tarball is
+ * installed: copied into `<prefix>/archives/` and installed from there, so npm records it as a
+ * `file:archives/<tarball>` dependency it can reconcile on every later install.
+ */
+export async function installPluginTarball(
+  root: string,
+  file: string,
+  name: string,
+  run: NpmRun = npm,
+): Promise<InstalledPackage> {
+  const prefix = await ensurePrefix(root);
+  const archives = path.join(prefix, ARCHIVES_DIR);
+  await fs.mkdir(archives, { recursive: true });
+  const base = path.basename(file);
+  await fs.copyFile(file, path.join(archives, base));
+  await install(prefix, `./${ARCHIVES_DIR}/${base}`, run);
+  await pruneArchives(prefix);
+  return { name, version: await readInstalledVersion(prefix, name) };
+}
+
+/** Packs a package directory into `into` as `npm publish` would (`npm pack --ignore-scripts`); answers the tarball's path. */
+export async function packPackageDirectory(dir: string, into: string): Promise<string> {
+  const packed = await npm(
+    into,
+    ["pack", "--ignore-scripts", "--json", "--pack-destination", into],
+    dir,
+    60_000,
+  );
+  return path.join(into, packedFileName(packed));
 }
 
 /**
@@ -487,7 +670,7 @@ async function readPackageName(manifest: string): Promise<string> {
  * Deletes the tarballs in `<prefix>/archives/` that no dependency of the prefix names any more
  * — the previous version's after a replacement, a removed package's after an uninstall.
  */
-async function pruneArchives(prefix: string): Promise<void> {
+export async function pruneArchives(prefix: string): Promise<void> {
   const archives = path.join(prefix, ARCHIVES_DIR);
   let names: string[];
   try {
@@ -512,7 +695,11 @@ async function pruneArchives(prefix: string): Promise<void> {
  * reconciles the tree with that manifest. A specifier that was never installed is not an
  * error, and a prefix that was never created has nothing to uninstall from.
  */
-export async function removePluginPackage(root: string, specifier: string): Promise<void> {
+export async function removePluginPackage(
+  root: string,
+  specifier: string,
+  run: NpmRun = npm,
+): Promise<void> {
   const prefix = pluginsPrefix(root);
   const name = packageName(specifier);
   if (name === null) return;
@@ -521,12 +708,12 @@ export async function removePluginPackage(root: string, specifier: string): Prom
   } catch {
     return;
   }
-  await npm(prefix, ["uninstall", "--no-audit", "--no-fund", "--", name]);
+  await run(prefix, ["uninstall", "--no-audit", "--no-fund", "--", name]);
   await pruneArchives(prefix);
 }
 
 /** The bare or scoped name of a specifier, without any version range; null for a non-name. */
-function packageName(specifier: string): string | null {
+export function packageName(specifier: string): string | null {
   const at = specifier.lastIndexOf("@");
   const name = at > 0 ? specifier.slice(0, at) : specifier;
   if (name === "" || name.includes("..") || path.isAbsolute(name)) return null;
@@ -621,7 +808,7 @@ async function installedRecord(
 }
 
 /** Whether two integrity digests agree, compared the way a hash check compares. */
-function sameDigest(actual: string, expected: string): boolean {
+export function sameDigest(actual: string, expected: string): boolean {
   return (
     actual.length === expected.length && timingSafeEqual(Buffer.from(actual), Buffer.from(expected))
   );
@@ -646,11 +833,14 @@ export async function installPluginChannel(
   root: string,
   channel: IndexChannel,
   {
-    install: run = (prefix, spec) => runNpmInstallSpec(prefix, spec, timeoutMs),
-    uninstall: remove = (prefix, name) => runNpmUninstall(prefix, name),
+    npm: runNpm = npm,
+    install: run = (prefix, spec) => runNpmInstallSpec(prefix, spec, timeoutMs, runNpm),
+    uninstall: remove = (prefix, name) => runNpmUninstall(prefix, name, runNpm),
     onProgress = undefined,
     timeoutMs = CHANNEL_TIMEOUT_MS,
   }: {
+    /** The npm the default install and uninstall run; the real one unless a caller stands in. */
+    npm?: NpmRun;
     install?: (prefix: string, spec: string) => Promise<void>;
     /** What takes a refused install out of the prefix; npm's uninstall by default. */
     uninstall?: (prefix: string, name: string) => Promise<void>;
@@ -727,8 +917,13 @@ export async function installPluginChannel(
 }
 
 /** npm's own install of one spec, with the address's window on it. */
-async function runNpmInstallSpec(prefix: string, spec: string, timeoutMs: number): Promise<void> {
-  await npm(
+async function runNpmInstallSpec(
+  prefix: string,
+  spec: string,
+  timeoutMs: number,
+  run: NpmRun,
+): Promise<void> {
+  await run(
     prefix,
     [
       ...(npmRegistry !== undefined ? [`--registry=${npmRegistry}`] : []),
@@ -745,9 +940,9 @@ async function runNpmInstallSpec(prefix: string, spec: string, timeoutMs: number
 }
 
 /** npm's uninstall of a refused install, best effort — a clean prefix for the next address. */
-async function runNpmUninstall(prefix: string, name: string): Promise<void> {
+async function runNpmUninstall(prefix: string, name: string, run: NpmRun): Promise<void> {
   try {
-    await npm(
+    await run(
       prefix,
       ["uninstall", "--no-audit", "--no-fund", "--", name],
       prefix,
@@ -759,7 +954,7 @@ async function runNpmUninstall(prefix: string, name: string): Promise<void> {
 }
 
 /** The digest half of an npm integrity string (`sha512-<base64>`); null for another shape. */
-function digestOf(integrity: string): string | null {
+export function digestOf(integrity: string): string | null {
   const match = /^sha512-([A-Za-z0-9+/]+={0,2})$/.exec(integrity);
   return match === null ? null : match[1]!;
 }
@@ -767,25 +962,4 @@ function digestOf(integrity: string): string | null {
 /** The digest half of the entry's pinned integrity; null when the pin is not even readable. */
 function pinnedDigest(integrity: string): string | null {
   return digestOf(integrity);
-}
-
-/**
- * The installer as a node, so a test stands in for npm instead of running it: the routes reach
- * the prefix only through this.
- */
-@Component()
-export class NpmPluginPackages implements PluginPackages {
-  /** By name or by link (see installPluginSource). */
-  install(root: string, source: string): Promise<InstalledPackage> {
-    return installPluginSource(root, source);
-  }
-
-  /** An uploaded package's files (see installPluginFiles). */
-  installFiles(root: string, files: Record<string, Uint8Array>): Promise<InstalledPackage> {
-    return installPluginFiles(root, new Map(Object.entries(files)));
-  }
-
-  remove(root: string, name: string): Promise<void> {
-    return removePluginPackage(root, name);
-  }
 }

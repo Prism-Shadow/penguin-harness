@@ -61,6 +61,7 @@ import {
   resolveSessionRef,
   ServerClient,
   listAgentSessions,
+  terminalInput,
 } from "@prismshadow/penguin-server/cli";
 import type { TaskCreateResponse } from "@prismshadow/penguin-server/api";
 import { StreamRenderer, dim, renderHistory } from "../render.js";
@@ -249,7 +250,10 @@ export function registerChatCommand(chat: Command, t: Messages): void {
       const projectDefault =
         pending !== null && pending.modelId === undefined
           ? await projectDefaultModel(client, projectId)
-          : null;
+          : undefined;
+      /** What stands for the Project's default when it is not a model: none, or unread. */
+      const noModelLabel = (): string =>
+        projectDefault === null ? t.chatNoDefaultModel() : t.chatProjectDefaultModel();
       /** The model the conversation is on, or will be created on, as /switch-model labels it. */
       const modelLabel = (): string => {
         if (session !== null) return formatModelLabel(session.provider, session.modelId);
@@ -258,7 +262,7 @@ export function registerChatCommand(chat: Command, t: Messages): void {
         }
         return projectDefault
           ? formatModelLabel(projectDefault.provider, projectDefault.modelId)
-          : t.chatProjectDefaultModel();
+          : noModelLabel();
       };
       const sessionThinkingLevel = (): string =>
         (session !== null ? session.thinkingLevel : pending?.thinkingLevel) ??
@@ -291,10 +295,7 @@ export function registerChatCommand(chat: Command, t: Messages): void {
           buildInfo().describe,
           session?.agentId ?? agentId,
           session?.workspace ?? pending?.workspace ?? "",
-          session?.modelId ??
-            pending?.modelId ??
-            projectDefault?.modelId ??
-            t.chatProjectDefaultModel(),
+          session?.modelId ?? pending?.modelId ?? projectDefault?.modelId ?? noModelLabel(),
           connectionLabel(client.conn),
         )}\n` +
           (session === null ? `${dim(t.chatNewConversation())}\n` : "") +
@@ -317,14 +318,18 @@ export function registerChatCommand(chat: Command, t: Messages): void {
       }
 
       // TTY: raw mode + bracketed paste + PasteFilter; non-TTY (pipe/test): read stdin directly.
-      const isTTY = Boolean(process.stdin.isTTY);
+      // The keys come from stdin, or from the console itself where the runtime was given no
+      // stdin (the desktop app's launchers on Windows, the server CLI's console-input.ts).
+      const input = terminalInput();
+      const stdin = input.stream;
+      const isTTY = Boolean(stdin.isTTY);
       let pasteFilter: PasteFilter | null = null;
-      let inputStream: NodeJS.ReadableStream = process.stdin;
+      let inputStream: NodeJS.ReadableStream = stdin;
       if (isTTY) {
-        process.stdin.setRawMode(true);
+        stdin.setRawMode(true);
         out.write("\x1b[?2004h");
         pasteFilter = new PasteFilter();
-        process.stdin.pipe(pasteFilter);
+        stdin.pipe(pasteFilter);
         inputStream = pasteFilter;
       }
 
@@ -386,17 +391,23 @@ export function registerChatCommand(chat: Command, t: Messages): void {
           /* ignore */
         }
         try {
-          process.stdin.setRawMode(false);
+          stdin.setRawMode(false);
         } catch {
           /* ignore */
         }
         try {
-          if (pasteFilter) process.stdin.unpipe(pasteFilter);
+          if (pasteFilter) stdin.unpipe(pasteFilter);
         } catch {
           /* ignore */
         }
         try {
-          process.stdin.pause();
+          stdin.pause();
+        } catch {
+          /* ignore */
+        }
+        // A console input opened for the chat would keep the process alive: closed here.
+        try {
+          input.release();
         } catch {
           /* ignore */
         }

@@ -102,10 +102,10 @@ describe("sandbox settings group", () => {
     apps.push(t);
     const entries = await list();
     const sandbox = entries.find((e) => e.name === "sandbox")!;
-    // The sandbox's group is ordered ahead of the rest; the server's own Plugin sources
-    // group (order 1) follows it and leads nothing.
-    expect(entries[0]).toBe(sandbox);
-    expect(entries[1]?.name).toBe("plugin-sources");
+    // The Plugin Sources card leads the page (order 0) with its two child entries (1–2);
+    // the sandbox's group follows them.
+    expect(entries[0]?.name).toBe("plugin-sources");
+    expect(entries[3]).toBe(sandbox);
     // Nothing saved: the switch reads off, and the default preset is the shipped one.
     expect(sandbox.values).toEqual({
       enabled: false,
@@ -230,7 +230,7 @@ describe("sandbox settings group", () => {
     expect(sandbox.currentSettings().mode).toBe("read-only");
   });
 
-  it("names a failed backend with its reason and the ones meant for another platform, and warns when the saved mode cannot be enforced", async () => {
+  it("lists each backend with where it stands and its plugin's page, and warns when the saved mode cannot be enforced", async () => {
     const host = new PluginHost();
     host.use({
       specifier: "wrong-platform",
@@ -283,7 +283,29 @@ describe("sandbox settings group", () => {
         "attention",
         "This deployment has no usable sandbox backend: until one for this platform is installed from the Plugins page, every mode but Full access refuses every agent command and hook script. other-platform is installed, but for another platform.",
       ],
-      ["attention", "wrong-backend is not in use: 'bwrap' is missing"],
+    ]);
+    // Each backend on a line of its own, linked to the page of the plugin that registered it:
+    // the failed one with its reason folded under it, the other platform's not applicable.
+    const report = entries.find((e) => e.name === "sandbox")!.report!;
+    expect(report.recheck).toBe("check");
+    expect(report.checks).toEqual([
+      {
+        id: "wrong-backend",
+        label: "wrong-backend",
+        page: "plugin:wrong-platform",
+        state: "action",
+        text: "Installed, not in use",
+        textZh: "已安装，未启用",
+        details: "'bwrap' is missing",
+      },
+      {
+        id: "other-platform",
+        label: "other-platform",
+        page: "plugin:wrong-platform",
+        state: "na",
+        text: "For another platform",
+        textZh: "适用于其他平台",
+      },
     ]);
   });
 

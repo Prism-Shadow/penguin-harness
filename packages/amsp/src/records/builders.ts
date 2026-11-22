@@ -34,6 +34,7 @@ import type {
   Role,
   SessionMetaMessage,
   SessionMetaPayload,
+  SessionUpdatePayload,
   StopReason,
   StreamEventType,
   SubagentPayload,
@@ -252,6 +253,13 @@ export function taskBegin(): AmspRecord<TaskBeginPayload> {
 /** Task end event: closes the Task the last `task_begin` opened (see TaskBeginPayload). */
 export function taskEnd(): AmspRecord<TaskEndPayload> {
   return event({ type: "task_end" });
+}
+
+/** Session update event: the new value of each Session-level setting that changed (produced by the Session; see SessionUpdatePayload). */
+export function sessionUpdate(
+  update: Omit<SessionUpdatePayload, "type">,
+): AmspRecord<SessionUpdatePayload> {
+  return event({ type: "session_update", ...update });
 }
 
 /**

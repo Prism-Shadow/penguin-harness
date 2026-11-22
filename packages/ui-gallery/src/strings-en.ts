@@ -187,6 +187,12 @@ export const en: GalleryStrings = {
         "The settings dialog on its Appearance page: theme, mode, accent, the five text sizes and the font pairing — where theme switching lives.",
       how: "The account menu at the bottom of the sidebar › Settings › Appearance.",
     },
+    "settings-storage": {
+      title: "Storage",
+      description:
+        "The settings dialog on its Storage page: what the data root holds with its usage bar by category, the breakdowns by Project and by folder, and the review dialogs that clean up temporary files and old chats.",
+      how: "The account menu at the bottom of the sidebar › Settings › Storage.",
+    },
     "desktop-window": {
       title: "Desktop window",
       description:
@@ -349,6 +355,9 @@ export const en: GalleryStrings = {
     iconRegistry: (icons, files) => `${icons} icons from ${files} files`,
     duplicateNames: "One path, several names",
     iconMarks: "Marks drawn as components",
+    appIcons: "App icons",
+    appIconsAside:
+      "A system app: its page's glyph on the app icon's shape, the same shape at every size",
     durations: "Durations × easings",
     reducedNote: "Reduced motion: every change shows its end state at once.",
     liveSignal: "Live signals",
@@ -420,7 +429,13 @@ export const en: GalleryStrings = {
       "ui-glyph":
         "an icon each theme draws its own way: line (Primer), duotone line (Frost) or pixel art (Console)",
       "ui-avatar":
-        "an agent's default avatar each theme draws its own way: one smiling ball penguin, on a rounded square (Primer), a circle (Frost, Doodle) or in pixel art (Console)",
+        "an agent's default avatar each theme draws its own way: one small egg-shaped penguin drawn in a thin brown line, on a rounded square (Primer), a circle (Frost), a cookie (Doodle) or in pixel art (Console)",
+      "ui-showcase":
+        "a cover-led showcase: a cover card, the selected carousel, a product page's hero",
+      "ui-segmented": "a segmented control: one choice among a few options side by side",
+      "ui-action": "the primary action that heads a navigation list: New chat",
+      "ui-waiting":
+        "a waiting state: the placeholder a page, a tab or a list shows once a read is slow",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],
@@ -479,7 +494,7 @@ export const en: GalleryStrings = {
       buttons: {
         title: "Buttons",
         description:
-          "Five variants, five sizes and the icon button; disabled and loading; links, inline glyph actions and keyboard hints; the floating ball that drags to an edge and tucks away.",
+          "Five variants, five sizes and the icon button; disabled and loading; links, inline glyph actions, the inline icon button and keyboard hints; the dictation button and the microphone level; the floating ball that drags to an edge and tucks away.",
       },
       inputs: {
         title: "Inputs and forms",
@@ -504,7 +519,7 @@ export const en: GalleryStrings = {
       dialogs: {
         title: "Dialogs",
         description:
-          "Modal, confirmation, paged dialog, drawer, bottom sheet, lightbox and command palette.",
+          "Modal, confirmation, paged dialog, drawer, bottom sheet, lightbox, command palette, and the surface that unfolds from its trigger.",
       },
       tooltips: {
         title: "Tooltips",
@@ -527,7 +542,7 @@ export const en: GalleryStrings = {
       },
       loading: {
         title: "Loading",
-        description: "The spinner, the skeletons, the progress bar and the transfer row.",
+        description: "The spinner, the waiting state, the progress bar and the transfer row.",
       },
       streaming: {
         title: "Streaming",
@@ -537,12 +552,12 @@ export const en: GalleryStrings = {
       charts: {
         title: "Charts",
         description:
-          "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them — the donut, the ring gauge, the legend, cost trend and token bars, requests and success rate, the sparkline, the Trace timeline.",
+          "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them — the donut, the ring gauge, the legend, cost trend and token bars, requests and success rate, the sparkline, the Trace timeline and the usage bar.",
       },
       avatars: {
         title: "Avatars",
         description:
-          "The user avatar at its sizes; the agent avatar in every theme's drawing across its colours; a stack of them.",
+          "The user avatar at its sizes; the agent avatar in every theme's drawing across its colours; a stack of them; the app icon shape.",
       },
       site: {
         title: "Public site",
@@ -567,12 +582,22 @@ export const en: GalleryStrings = {
       data: {
         title: "Data",
         description:
-          "Tables, entity cards and fact rows, list rows with their loading and empty states, label/value pairs and the log view.",
+          "Tables, entity cards and fact rows, list rows with their loading and empty states, label/value pairs, the log view and the review-before-delete list.",
       },
       machines: {
         title: "Machines",
         description:
           "The Machines page's parts: the status pill in every state, the machine card and its list, the dialog toolbar and the add dialog.",
+      },
+      models: {
+        title: "Models",
+        description:
+          "The Project's default-models dialog (chat, multimodal and tool groups, each row saying why it is empty when nothing can serve it), and the guide shown before any model has a key.",
+      },
+      status: {
+        title: "Status page",
+        description:
+          "A plugin settings page's parts: the version element in every state (installed, preparing, failed, not installed, not supported here), the checklist's four row states with a row's own action and folded details, and the status strip with its summary pill and primary action.",
       },
       retry: {
         title: "Retry",
@@ -582,12 +607,17 @@ export const en: GalleryStrings = {
       report: {
         title: "Report a problem",
         description:
-          "The Report entry of a serious error: the notice a crashed part of the page shows, an error toast and a could-not-load notice with the entry, and the report dialog.",
+          "The Report entry every failure offers: the notice a crashed part of the page shows, an error toast, an inline failure and a could-not-load notice with the entry, and the report dialog.",
       },
       attachments: {
         title: "Attachments",
         description:
           "Images and files attached in a conversation: staged in the composer, in the message once sent, in a steer's chip, at phone width, with long names and when an image fails to load.",
+      },
+      showcase: {
+        title: "Showcase",
+        description:
+          "The plugin market's shared modules: the generated cover in every hue and motif, a picture loading, loaded and failing, cover cards, the selected carousel and a product page's parts.",
       },
       packs: {
         title: "Theme packs",
@@ -653,6 +683,29 @@ export const en: GalleryStrings = {
       ballShow: "Show the exit button",
       ballReadout: (side: "left" | "right", percent: number, tucked: boolean, presses: number) =>
         `${side} edge, ${percent}% down${tucked ? ", tucked" : ""} · pressed ${presses === 1 ? "once" : `${presses} times`}`,
+      inlineIcon: "Inline icon button",
+      inlineIconHint:
+        "A small glyph action in a line of text: faint at rest, filled in on hover. The label is the accessible name and the tooltip; it is disabled while busy.",
+      inlineReplyStats: "1.2k tokens · 4.8 s",
+      inlineRead: "Read aloud",
+      inlineFork: "Fork from here",
+      inlineBusy: "Preparing",
+      record: "Dictation button",
+      recordHint:
+        "It sits just before Send and keeps its place for the whole recording: the microphone at rest, a press to finish while recording, a spinner while it transcribes.",
+      recordIdle: "Dictate",
+      recordRecording: "Finish recording",
+      recordWaiting: "Transcribing",
+      meter: "Microphone level",
+      meterHint:
+        "The readout while recording: the elapsed time and the recent levels, one bar per reading. Under reduced motion words replace the moving bars; with no level to read it only says the recording is running.",
+      meterLevel: "Microphone level",
+      meterQuiet: "Quiet",
+      meterSound: "Sound detected",
+      meterRecording: "Recording",
+      meterLive: "Speaking",
+      meterReduced: "Reduced motion",
+      meterUnavailable: "No level",
     },
     inputs: {
       basics: "Inputs",
@@ -899,6 +952,8 @@ export const en: GalleryStrings = {
       pages: { general: "General", appearance: "Appearance", account: "Profile" },
       pageBody: "The current page's settings go here.",
       pageRow: (n: number) => `Setting ${n}`,
+      /** A rail row's accessible name while its count shows. */
+      pageWaiting: (page: string, n: number) => `${page}, ${n} waiting`,
       appearanceInfo: "Theme, accent and density apply to this browser only.",
       drawer: "Drawer",
       openDrawer: "Open a drawer",
@@ -917,6 +972,12 @@ export const en: GalleryStrings = {
       palettePlaceholder: "Type to filter commands…",
       paletteEmpty: "No matching commands",
       paletteHint: "↑↓ to select · Enter to run · Esc to close",
+      unfold: "Unfolding surface",
+      unfoldAside:
+        "Grows in place out of the icon that opens it, with no backdrop; the back arrow, Esc or a press outside folds it back into that icon. Inside a scroll area it stays within the visible part",
+      unfoldBack: "Back",
+      unfoldFolders: ["Work", "Study", "Play"],
+      unfoldItem: (n: number) => `App ${n}`,
     },
     tooltips: {
       attribute: "The data-tooltip attribute",
@@ -995,7 +1056,7 @@ export const en: GalleryStrings = {
       pillText: "3 updates",
       statusMarks: "Status marks",
       statusMarksHint:
-        "The glyph carries the tone; the word stays in muted ink, never coloured. Hover says what the status means for this thing. A status that asks nothing of the reader takes no tone: its glyph recedes.",
+        "The glyph carries the tone; the word stays in muted ink, never coloured. Hover says what the status means for this thing. A status that asks nothing of the reader takes no tone: its glyph recedes. Where there is no room for the word (a cover card's facts line) the glyph stands alone; the word leads the hover sentence and is still read out to assistive technology.",
       statusMarkSamples: {
         success: "Installed",
         attention: "Update",
@@ -1028,9 +1089,21 @@ export const en: GalleryStrings = {
     loading: {
       spinner: "Spinner",
       sizes: "Three sizes",
-      skeleton: "Skeletons",
-      list: "List",
-      card: "Card",
+      waiting: "Waiting state",
+      waitingHint: (ms: number) =>
+        `Appears only once a read takes longer than ${ms} ms, and holds its place before that`,
+      waitingRows: "List",
+      waitingPage: "Page",
+      waitingCards: "The caller's own shapes (cards)",
+      waitingThemes: "Every theme",
+      waitingThemesHint: "The same placeholders, each theme drawing its own",
+      waitingThemeFrame: (theme: string) => `The waiting state in ${theme}`,
+      waitingReplay: "Quick and slow",
+      waitingReplayHint: "Replay: both regions start reading at once",
+      waitingQuick: (ms: number) => `Answers within ${ms} ms: no waiting state`,
+      waitingSlow: (ms: number) =>
+        `Answers after ${ms} ms: the waiting state appears once the delay is over`,
+      waitingContent: "The content has arrived, in the place the waiting state held.",
       progress: "Progress bar",
       progressHint: "Three heights; still while indeterminate",
       progressLabel: "Download progress",
@@ -1058,6 +1131,26 @@ export const en: GalleryStrings = {
       transferRetryNow: "Retry now",
     },
     streaming: {
+      standard: "Standard",
+      expanded: "Expanded",
+      compact: "Compact",
+      finish: "Finish run",
+      restart: "Run again",
+      finished: "Run complete",
+      activity: "Live steps",
+      running: "Running",
+      thinking: "Thinking",
+      plan: "I’ll read the meeting notes and collect the action items.",
+      read: "Read meeting notes",
+      navigation: {
+        previous: "Previous step",
+        next: "Next step",
+        latest: "Latest step",
+        waiting: "View pending step",
+        elapsed: "Total time",
+        stepWords: ["Step ", ""],
+        jump: "Go to step",
+      },
       reply: "Assistant reply",
       output: "Tool output",
       receiving: "Receiving…",
@@ -1072,6 +1165,23 @@ export const en: GalleryStrings = {
       reduced: "reduced motion is on, so the reply shows as it arrives",
     },
     charts: {
+      usageBar: {
+        title: "Usage bar",
+        hint: "One total stacked by its parts: widths follow the values, a sliver stays visible and a zero is not drawn; the parts are identities, so palette slots, and the neutral for Other. The thin size sits in list rows, scaled to the largest row.",
+        label: "Storage used",
+        used: (size: string) => `${size} used`,
+        empty: "Not measured yet",
+        kinds: {
+          traces: "Traces",
+          agentState: "Agent State",
+          workspaces: "Temporary workspaces",
+          scratchpads: "Scratchpads",
+          caches: "Caches",
+          logs: "Logs",
+          plugins: "Plugins",
+          other: "Other",
+        },
+      },
       parts: {
         primitives: "Primitives",
         primitivesHint:
@@ -1157,12 +1267,14 @@ export const en: GalleryStrings = {
       legendHitRate: "Cache hit rate",
       legendParts: ["System prompt", "Tool definitions", "Messages", "Tool results"],
       trend: "Cost trend",
-      trendHint: "Fourteen days of cost as a line; hover a day.",
+      trendHint:
+        "Fourteen days of cost as a line; hover a day, or press Tab and step through the days with the arrow keys.",
       tokens: "Token usage",
       tokensHint:
-        "Daily tokens stacked by kind, with the cache-hit-rate curve over them; hover a legend entry to highlight one.",
+        "Daily tokens stacked by kind, with the cache-hit-rate curve over them; the curve breaks on the day with no cache traffic. Hover a legend entry to highlight one.",
       requests: "Requests and success rate",
-      requestsHint: "Daily requests stacked by agent, each with its success-rate line.",
+      requestsHint:
+        "Daily requests stacked by agent, each with its success-rate line. The second agent's line breaks on the days it was idle, and its one day between them is a point.",
       agents: ["docs-expert", "release-notes"],
       activity: "Activity sparkline",
       activityHint:
@@ -1235,10 +1347,24 @@ export const en: GalleryStrings = {
     avatars: {
       user: "User avatar",
       agent: "Agent avatar",
-      agentAside: "The active theme's drawing for twelve agents, one in each colour",
+      agentAside:
+        "The active theme's drawing for twelve agents, one in each colour, wearing the accessories in turn",
+      wear: "What an agent wears",
+      wearAside:
+        "One of eight, picked by the agent's id like its colour, and painted in the colour opposite its own",
+      accessories: {
+        none: "Nothing",
+        scarf: "Scarf",
+        beanie: "Beanie",
+        cap: "Cap",
+        headphones: "Headphones",
+        sprout: "Sprout",
+        bow: "Bow",
+        glasses: "Glasses",
+      },
       variants: "Every theme's drawing",
       variantsAside:
-        "One smiling ball penguin, drawn once per theme; the colour follows the agent alone",
+        "One small egg-shaped penguin, drawn once per theme; the colour and the accessory follow the agent alone",
       sizeCaption: (px) => `${px}px`,
       picture: "An agent's own picture",
       pictureAside:
@@ -1246,6 +1372,11 @@ export const en: GalleryStrings = {
       pictureBroken: "Fails to load",
       stack: "Avatar stack",
       stackShown: (shown, total) => `${shown} of ${total} shown`,
+      appIcon: "App icon shape",
+      appIconAside:
+        "One rounded square for every app and folder; its corner scales with the icon, so a small icon is the same shape as a large one. Switch the theme to see each theme's corner",
+      appIconLetter: "Letter tile",
+      appIconFolder: "Folder",
       userNames: ["admin", "Demo admin"],
       agents: [
         { id: "docs-expert", name: "Docs Expert" },
@@ -1254,6 +1385,9 @@ export const en: GalleryStrings = {
       ],
     },
     site: {
+      showcase: "Plugin market",
+      showcaseHint:
+        "The plugin market's cover card, selected carousel and product hero on the sites' palette, as the landing page's /plugins shows them.",
       nav: "Navigation bar",
       navHint:
         "Shared by the three sites: More ends the row and holds AMSP and Theme Packs; it opens on hover or a press, and reads as current while one of them is. The phone menu lists the two set in under More.",
@@ -1378,6 +1512,13 @@ export const en: GalleryStrings = {
       crumbs: "Path strip",
       crumbsHint:
         "When the path does not fit, its leading parts fold into one “…”; the file name gives way last",
+      narrow: "Narrow tree pane",
+      narrowHint:
+        "With no room for its search box, the box folds into a magnifier that opens it across the header row; an empty box folds back on Esc or blur",
+      narrowFolded: "Folded",
+      narrowQuery: "Holding a query: stays open",
+      refresh: "Refresh",
+      upload: "Upload",
       menu: "File menu",
       menuFile: "File",
       menuFolder: "Folder",
@@ -1882,11 +2023,21 @@ export const en: GalleryStrings = {
       copyId: "Copy id",
       entityAction: "Open a session",
       entityTags: ["review", "read-only"],
+      shell: "App window",
+      shellHint:
+        "The sidebar's end edge drags its width, following the pointer as it moves; once focused, the arrow keys step it, and a double click puts back the theme's own width. Folded to the rail and out again, it keeps the width it was dragged to.",
+      shellResize: "Resize sidebar",
+      shellProject: "Default project",
+      shellFold: "Collapse sidebar",
+      shellUnfold: "Expand sidebar",
+      shellBody: "The page sits here, and gives way as the sidebar widens.",
       nav: "Navigation list",
       navHint:
         "The current row takes the solid fill and is the current page; a glyph is decoration beside a label that already says it. A dialog's rail scrolls sideways on a phone.",
       navLabel: "Agent settings",
-      navRail: "A rail: glyph, label and a trailing count; the last row has nowhere to go yet",
+      navRail:
+        "A rail: its primary action first, then glyph, label and a trailing count; the last row has nowhere to go yet",
+      navPrimary: "New chat",
       navDense: "Dense, inside a panel",
       navRows: {
         overview: "Overview",
@@ -1895,8 +2046,49 @@ export const en: GalleryStrings = {
         vault: "Vault",
         billing: "Billing",
       },
+      window: "Window title bar",
+      windowHint:
+        "A window that holds one app: its icon and name, then minimize, full screen and close at the end. Minimize only hides the window and the app keeps running; close ends it. A window that cannot minimize or go full screen leaves those buttons out.",
+      windowFull: "All three controls",
+      windowCloseOnly: "Close only",
+      windowTitle: "Daily to-dos",
+      windowBody: "The app's page goes here.",
+      windowMinimize: "Minimize",
+      windowFullScreen: "Open full screen",
+      windowClose: "Close",
     },
     data: {
+      reviewList: {
+        title: "Review before delete",
+        hint: "Grouped by kind: the header gives the count, the size and Select all, with one muted line under it on what removing the group costs; one line per item, and an item that cannot be chosen has its box disabled, its reason on hover.",
+        agent: "Writer",
+        orphan: "Scratchpads of deleted chats",
+        idle: "Scratchpads of idle chats",
+        idleNote:
+          "Images and files attached in these chats stop showing, and a continued chat can no longer find its plans and attachments.",
+        caches: "Agent caches",
+        cachesNote: "The Agent installs them again the next time it needs them.",
+        chats: "Chats",
+        inUse: "In use",
+        running: "Running",
+        archived: "Archived",
+        titles: [
+          "Quarterly report draft",
+          "Competitor research",
+          "Release notes 0.2.13",
+          "Fix the login form validation",
+          "Sort the user interviews",
+        ],
+        ago: (days: number) =>
+          days === 0 ? "today" : days === 1 ? "1 day ago" : `${days} days ago`,
+        chosen: (n: number, size: string) => `${n} selected, ${size}`,
+        labels: {
+          selectAll: "Select all",
+          deselectAll: "Deselect all",
+          count: (n: number) => (n === 1 ? "1 item" : `${n} items`),
+          select: (title: string) => `Select ${title}`,
+        },
+      },
       table: "Table",
       tableHint:
         "One header style: the small rung, medium weight, muted ink and a rule; a table on its own is framed, its header on the muted surface.",
@@ -1997,13 +2189,27 @@ export const en: GalleryStrings = {
       cardBuiltin: "Built in",
       cardInstall: "Install",
       cardUpdate: "Update",
-      cardManage: "Manage installs",
+      cardManage: "Install on Agent",
       cardUninstall: "Uninstall",
       cardActionName: (verb, title) => `${verb} ${title}`,
       metaLine: "Facts line",
       metaLineHint:
         "A thing's facts on one line, a middle dot between each; when they do not fit the last one truncates, the rest keep their width, and the line never wraps.",
       metaLineUsedBy: "used by 12 agents, 3 of them on other machines as last seen",
+      impactList: "Impact list in a confirm",
+      impactListHint:
+        "A destructive action's confirm says what it reaches first: one line per thing, its name and where it lives in quieter ink, five at most, the rest counted on one line; while it is being asked for, one waiting line.",
+      impactPending: "Looking for the Agents that have it…",
+      impactMore: (n: number) => `${n} more ${n === 1 ? "Agent" : "Agents"}`,
+      impactItems: [
+        ["Notes helper", "PenguinHarness demo"],
+        ["Researcher", "PenguinHarness demo"],
+        ["Support", "Mia's Project"],
+        ["Translator", "Mia's Project"],
+        ["Reviewer", "Team space"],
+        ["Scheduler", "Team space"],
+        ["Archivist", "Team space"],
+      ] as Array<[name: string, where: string]>,
       factRows: "Fact rows in a detail",
       factRowsHint:
         "One thing a row: a glyph, the name, a few quiet facts and the marks at the end; the last fact takes the remaining width and truncates, the marks keep theirs. A missing part is in muted ink throughout.",
@@ -2033,6 +2239,84 @@ export const en: GalleryStrings = {
       listEmpty: "With nothing in it",
       listEmptyText: "This agent has no hook packages yet.",
       memoryFromPlugin: "Written by the Continual learning plugin",
+    },
+    models: {
+      dialog: "Default model settings dialog",
+      dialogHint:
+        "One picker per row, listing only the models that can serve it; a row nothing can serve says why and where to go. The tool group reads quieter.",
+      openDialog: "Open Default model settings",
+      guide: "Connect guide",
+      guideHint:
+        "Shown first while no model has a key; once one is connected or a key is set, the default-models dialog takes its place.",
+      openGuide: "Open the guide",
+      title: "Default model settings",
+      intro:
+        "New chats, the multimodal tools and voice use these models by default. Each one is saved as you pick it.",
+      chat: "Chat",
+      multimodal: "Multimodal",
+      tools: "Tools",
+      chatModel: "Default chat model",
+      chatHint: "Used for new chats",
+      t2t: "Text generation",
+      i2t: "Image understanding",
+      t2i: "Image generation",
+      t2v: "Video generation",
+      s2t: "Speech recognition",
+      t2s: "Speech synthesis",
+      search: "Web search",
+      fetch: "Fetch a web page",
+      empty: "Connect a provider that offers this kind of model",
+      emptyAction: "Go to Models",
+      unset: "Not set",
+      done: "Done",
+      guideTitle: "Connect a model provider first",
+      guideBody:
+        "This Project has no model it can use yet: no model has an API key. Connect a provider, or add a key on the Models page, then choose the default models.",
+      tokendance: "One wallet for many providers' models, no keys to type",
+      penguinGo: "PenguinHarness's own model service",
+      connect: "Connect",
+      keyText: "Already have an API key from a provider?",
+      keyAction: "Add an API key",
+      later: "Later",
+    },
+    status: {
+      versions: "Version element",
+      versionsHint:
+        "Name | version | platform as one segmented capsule; the state is a mark and a word, never red text; preparing shows a progress bar.",
+      checks: "Checklist",
+      checksHint:
+        "Each state has its own shape and says itself on hover; the row that needs a hand carries its button, a tool's own words fold under it.",
+      strip: "Status strip",
+      stripHint:
+        "The version element and the summary pill lead, the primary actions sit on the other end and wrap when there is no room.",
+      checksTitle: "Checks",
+      recheck: "Check again",
+      display: "Display",
+      accessibility: "Accessibility",
+      accessibilityText: "Session bus unreachable: start the server inside the desktop session",
+      windowManager: "Window manager",
+      windowManagerText: "No window is open to check it with",
+      automation: "Automation",
+      openSettings: "Open System Settings",
+      details: "Details",
+      downloading: "Downloading, 6.4 of 16.0 MB",
+      verifying: "Checking the download",
+      failedWhy: "The registry refused the download: 404",
+      unsupportedWhy: "agent-desktop runs on macOS, Windows and Linux, on x64 and arm64",
+      retry: "Retry",
+      install: "Install",
+      summary: "Needs action",
+      summaryHint: "One check still needs a hand",
+      exportLogs: "Export logs",
+      versionState: {
+        installed: "Installed",
+        preparing: "Preparing",
+        failed: "Install failed",
+        missing: "Not installed",
+        unsupported: "Not supported here",
+        unknown: "State unknown",
+      },
+      checkState: { ok: "OK", action: "Needs action", unknown: "Unknown", na: "Not applicable" },
     },
     machines: {
       pills: "Status pills",
@@ -2200,14 +2484,23 @@ export const en: GalleryStrings = {
         'A part of the page that crashed while rendering leaves no blank: one line in the shape of "[Aborted]", with Reload and Report. The report holds the error, its stack and the component stack, personal paths taken out.',
       toast: "Error toast",
       toastHint:
-        "Only a serious error (a 500 the server did not name, an exception nobody expected) offers Report on its toast, which then stays longer; an expected error (validation, permission, offline) looks as it always did.",
-      fireSerious: "Serious error",
-      fireExpected: "Expected error",
+        "A failure's toast carries Report and stays longer; a refusal (a failed check, a name taken, no permission) reads as before, without it.",
+      fireSerious: "A failure",
+      fireExpected: "A refusal",
       seriousText: "Internal server error",
       expectedText: "You do not have access to this Project",
       loadFailed: "Could not load",
       loadFailedHint:
-        "The could-not-load notice adds Report beside Retry when the failure is a serious error.",
+        "A could-not-load notice carries Report beside Retry; one that was refused does not.",
+      inline: "Inline failures",
+      inlineHint:
+        "An inline failure in a form or a panel carries Report after its words; an input error does not.",
+      inlineLine: "The machine gpu-box did not answer",
+      inlineNotice: "Could not read the earlier Traces: internal server error",
+      inlineName: "Name",
+      inlineSaveFailed: "Could not save: internal server error",
+      inlineRefused: "That name is already taken",
+      inlineTold: "Failed at the “Connect” step",
       loadTitle: "Could not load the message history",
       retry: "Retry",
       dialog: "Report dialog",
@@ -2244,6 +2537,120 @@ export const en: GalleryStrings = {
       time: "14:05",
       copy: "Copy message",
       placeholder: "Type a message…",
+    },
+    showcase: {
+      generated: "Generated covers",
+      generatedHint:
+        "Every hue with every motif: a shipped plugin's own icon on the tile, the product's logo in the corner.",
+      logoOnly: "Without an icon",
+      logoOnlyHint:
+        "A plugin with no icon of its own: the product's logo takes the tile and is not repeated in the corner; one per motif.",
+      states: "States",
+      statesHint:
+        "A picture on its way lays its own tone down first and no generated drawing; one that loads fades in over it; one that fails gives way to the generated cover.",
+      loading: "Loading: the picture's tone",
+      loaded: "Loaded",
+      fallback: "Failed: the generated cover",
+      layoutLabel: "Layout",
+      cardView: "Card view",
+      listView: "List view",
+      cards: "Cover cards",
+      cardsHint:
+        "Short words, overlong words with the machine it came from, a card with tags, facts and two controls, one with none of them, the Web App market's card with its version chip and a bar of two one-line text actions (the second one disabled, its reason on hover), and the placeholder while a list is read. The icons at the top end switch every grid on this board between cards and the list.",
+      marketCaption:
+        "The Web App market's cards: in the list each is one row — its icon tile, the title over the description, then the install action (Install, or how many Agents have it) and Quick start on the same row — two rows abreast wherever two fit.",
+      shortTitle: "Goal Mode",
+      shortDescription: "Loop the session on an objective until it is done.",
+      longTitle:
+        "Agent Company: setup, the employee protocol and the CEO, HR, finance, research and mirror playbooks",
+      origin: "Lab GPU box",
+      longDescription:
+        "Run a Project's agents as a company: create the organization with the user one question at a time, then the employee protocol every desk and ticket session follows, plus the CEO, HR and finance playbooks.",
+      fullTitle: "PenguinHarness Q&A Assistant",
+      fullDescription: "Product questions, sourced answers and a support workbench.",
+      plainTitle: "Data Analysis",
+      plainDescription: "Read a table, clean it, chart it and write up what it shows.",
+      barTitle: "Bento Slides",
+      barDescription: "From one sentence to a deck ready to present.",
+      barInstall: "Install",
+      barInstalledOn: (n: number) => `Installed on ${n} ${n === 1 ? "Agent" : "Agents"}`,
+      barQuickHint: "Install it on this agent first",
+      tagSelected: "Selected",
+      tagCategory: "Office Productivity",
+      tagBuiltin: "built in",
+      installed: "Installed",
+      installedHint: "An agent in this Project has it",
+      quickStart: "Quick start",
+      manage: "Install on Agent",
+      carousel: "Selected carousel",
+      carouselHint:
+        "Three slides. It turns every 7 seconds and holds while the pointer is over it; keyboard focus or a picked thumbnail stops it until Play. Under the system's reduced-motion setting it never turns by itself, and the button reads Play.",
+      carouselLabel: "Selected plugins",
+      carouselControlsCaption:
+        "Controls alone (the public site's featured plugin): the slide on show and its place in the count, no thumbnail rail, so no other cover loads until its slide comes up",
+      eyebrow: "Selected",
+      carouselLabels: {
+        previous: "Previous",
+        next: "Next",
+        pause: "Pause rotation",
+        play: "Play rotation",
+        position: (index: number, count: number) => `${index} of ${count}`,
+      },
+      viewDetails: "View details",
+      slides: [
+        {
+          title: "PenguinHarness Q&A Assistant",
+          tagline: "Product questions, sourced answers and a support workbench.",
+          description:
+            "Answers questions about PenguinHarness and cites the documentation or the source for every claim; its support workbench works through a list of questions one conversation at a time.",
+        },
+        {
+          title: "Bento Slides",
+          tagline: "From one sentence to a deck ready to present.",
+          description:
+            "Create or edit .bento.html decks: from scratch, from source material, or by improving an existing file. The document is JSON, so an agent can keep editing it.",
+        },
+        {
+          title: "Goal Mode",
+          tagline: "Loop the session on an objective until it is done.",
+          description:
+            "Re-injects the objective every round and checks the goal file, until the goal is complete, blocked, or out of token budget.",
+        },
+      ],
+      product: "Product page",
+      productHint:
+        "A plugin's detail as a product page: the hero beside its cover, the screenshots, the sections beside a column of facts, what it installs, and the quick start's prompt.",
+      openApp: "Open",
+      screenshots: "Screenshots",
+      shotAnswer: "Answers carry their sources; each opens the original file.",
+      shotDeck: "A deck introducing an app built from one request.",
+      about: "About",
+      aboutBody:
+        "Answers questions about PenguinHarness: installing it, configuring it, models and plugins. Every claim carries the document or the source it rests on, one click from the original file. The support workbench lines up the questions waiting for an answer, and opens, answers and closes them one at a time.",
+      installs: "What it installs",
+      parts: [
+        {
+          name: "penguin-support",
+          kind: "Skill",
+          description:
+            "Answers product questions from the documentation and the source, with citations.",
+        },
+        {
+          name: "Support workbench",
+          kind: "Workbench",
+          description: "The question list, the conversation and the answer in one window.",
+        },
+      ],
+      prompt: "I've just installed PenguinHarness. How do I give an agent an MCP server?",
+      promptNote: "Selects penguin-support",
+      send: "Start a chat",
+      facts: {
+        version: "Version",
+        category: "Category",
+        author: "Author",
+        license: "License",
+        package: "Package",
+      },
     },
   },
 };

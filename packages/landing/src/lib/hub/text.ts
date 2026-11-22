@@ -12,6 +12,9 @@ export const pick = (locale: SiteLocale, en: string, zh: string | undefined): st
 export const titleOf = (locale: SiteLocale, item: { title: string; titleZh?: string }): string =>
   pick(locale, item.title, item.titleZh);
 
+/** A source's text for a part that draws plain strings: its `backticked` code names unmarked. */
+export const plainText = (text: string): string => text.replace(/`([^`\n]+)`/g, "$1");
+
 /** A calendar date in the reader's language, from an ISO 8601 time. */
 export function formatDay(iso: string, locale: SiteLocale): string {
   const date = new Date(iso);

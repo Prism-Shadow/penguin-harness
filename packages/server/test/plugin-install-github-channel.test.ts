@@ -25,6 +25,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   installPluginChannel,
   npmFailureKind,
+  npmRegistryNamed,
   PluginInstallError,
   pluginsPrefix,
 } from "../src/plugin/install.js";
@@ -94,6 +95,25 @@ describe("npmFailureKind", () => {
     expect(
       npmFailureKind("npm error code ETARGET\nnpm error Not Found - no match for ^3.0.0"),
     ).toBe("unavailable");
+  });
+
+  it("calls a registry that did not answer unreachable, and names it", () => {
+    for (const stderr of [
+      "npm error code ETIMEDOUT\nnpm error network request to https://registry.npmjs.org/x failed, reason: connect ETIMEDOUT",
+      "npm error code ENOTFOUND\nnpm error network request to https://registry.npmmirror.com/x failed, reason: getaddrinfo ENOTFOUND",
+      "npm error code ERR_SOCKET_TIMEOUT\nnpm error network Socket timeout",
+      "npm error code ECONNRESET\nnpm error network aborted",
+      // An http(s) proxy that could not reach the registry either.
+      "npm error code E502\nnpm error 502 Bad Gateway - GET http://10.255.255.1:4873/x",
+    ]) {
+      expect(npmFailureKind(stderr), stderr).toBe("unreachable");
+    }
+    expect(
+      npmRegistryNamed(
+        "npm error 404 Not Found - GET https://registry.npmmirror.com/@acme%2fx - Not found",
+      ),
+    ).toBe("https://registry.npmmirror.com");
+    expect(npmRegistryNamed("npm error code EACCES")).toBeUndefined();
   });
 
   it("calls every other npm failure other", () => {
@@ -325,7 +345,7 @@ describe("indexChannelLookup", () => {
   it("answers an entry's channel from the published index, fetched once per TTL", async () => {
     const fetchImpl = vi.fn(async () => Response.json(index));
     let time = 0;
-    const lookup = indexChannelLookup("https://registry.example/index.json", {
+    const lookup = indexChannelLookup(() => ["https://registry.example/index.json"], {
       fetchImpl: fetchImpl as unknown as typeof fetch,
       now: () => time,
     });
@@ -338,7 +358,7 @@ describe("indexChannelLookup", () => {
   });
 
   it("answers no channel when the index is down, so npm's failure stands", async () => {
-    const lookup = indexChannelLookup("https://registry.example/index.json", {
+    const lookup = indexChannelLookup(() => ["https://registry.example/index.json"], {
       fetchImpl: (async () => {
         throw new TypeError("fetch failed");
       }) as unknown as typeof fetch,
@@ -346,8 +366,75 @@ describe("indexChannelLookup", () => {
     expect(await lookup("@penguinharness/language-typst")).toEqual({ channel: null, fault: null });
   });
 
+  it("the first source to register a name provides it; a later source's same-name rows add nothing", async () => {
+    // The second source lists the same package newer, with its own channel and integrity:
+    // the first registration wins whole, so neither its rows nor its channel reach the pool.
+    const later = [
+      {
+        ...entry(),
+        version: "0.0.3",
+        channels: [
+          {
+            kind: "github" as const,
+            url: "https://github.com/o/later/releases/download/v0.0.3/x.tgz",
+          },
+        ],
+      },
+      { ...entry(), name: "@penguinharness/second-only" },
+    ];
+    const fetchImpl = vi.fn(async (input: unknown) =>
+      String(input).startsWith("https://first.example/")
+        ? Response.json([entry()])
+        : Response.json(later),
+    );
+    let time = 0;
+    const lookup = indexChannelLookup(
+      () => ["https://first.example/index.json", "https://second.example/index.json"],
+      { fetchImpl: fetchImpl as unknown as typeof fetch, now: () => time },
+    );
+    expect(await lookup("@penguinharness/language-typst")).toEqual({ channel, fault: null });
+    // A version only the later source carries is not in the merged pool: the first
+    // registration's rows are the package's rows.
+    const miss = await lookup("@penguinharness/language-typst", "0.0.3");
+    expect(miss.channel).toBeNull();
+    expect(miss.fault).toMatch(/no version of it matches 0\.0\.3/);
+    // A package the first source does not list comes from the second: its channel names the
+    // entry that declares it.
+    expect(await lookup("@penguinharness/second-only")).toEqual({
+      channel: { ...channel, name: "@penguinharness/second-only" },
+      fault: null,
+    });
+  });
+
+  it("the owning source's own several versions all stay in the pool", async () => {
+    // The first source lists two versions of the package; the second lists the name newer.
+    // Every version the first registration carries answers, and "newest" stays inside it.
+    const older = { ...entry(), version: "0.0.1" };
+    const later = [{ ...entry(), version: "9.9.9" }];
+    const fetchImpl = vi.fn(async (input: unknown) =>
+      String(input).startsWith("https://first.example/")
+        ? Response.json([older, entry()])
+        : Response.json(later),
+    );
+    let time = 0;
+    const lookup = indexChannelLookup(
+      () => ["https://first.example/index.json", "https://second.example/index.json"],
+      { fetchImpl: fetchImpl as unknown as typeof fetch, now: () => time },
+    );
+    // No version: the owning source's newest row — the later source's 9.9.9 never joins.
+    expect(await lookup("@penguinharness/language-typst")).toEqual({
+      channel: { ...channel, version: "0.0.2" },
+      fault: null,
+    });
+    // A pinned older version resolves inside the owning source's rows.
+    expect(await lookup("@penguinharness/language-typst", "0.0.1")).toEqual({
+      channel: { ...channel, version: "0.0.1" },
+      fault: null,
+    });
+  });
+
   it("answers no channel when no published index is configured", async () => {
-    const lookup = indexChannelLookup(null);
+    const lookup = indexChannelLookup(() => []);
     expect(await lookup("@penguinharness/language-typst")).toEqual({ channel: null, fault: null });
   });
 });

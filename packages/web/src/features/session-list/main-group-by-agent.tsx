@@ -1,11 +1,4 @@
-import {
-  AgentAvatar,
-  Fold,
-  GroupHeader,
-  ICONS,
-  ICON_SIZE,
-  SkeletonList,
-} from "@prismshadow/penguin-ui";
+import { AgentAvatar, Fold, GroupHeader, ICONS, ICON_SIZE, Waiting } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { agentDisplayName } from "../../state/project";
 import { Icon } from "../../components/ui/group-list";
@@ -39,7 +32,7 @@ export function renderMainGroupByAgent(scope: MainSidebarState) {
   } = scope;
   return groupMode === "agent" ? (
     loading && agents.length === 0 ? (
-      <SkeletonList rows={5} />
+      <Waiting rows={5} />
     ) : (
       // While searching: every group renders (paging bypassed), zero-match groups
       // hide, and the rest are forced open — a hit inside a collapsed group would

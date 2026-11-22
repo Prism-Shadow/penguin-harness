@@ -3,7 +3,8 @@
  *
  *   penguin agent ls [--project-id <id>] [--json] [--server <url>]
  *   penguin agent create --agent-id <id> [--name <s>] [--description <s>] [--author <a>]
- *                        [--plugins <a,b>] [--project-id <id>] [--json] [--server <url>]
+ *                        [--plugins <a,b>] [--no-default-plugins] [--project-id <id>] [--json]
+ *                        [--server <url>]
  *   penguin agent export <agent-id> … / penguin agent import <source> …   (./agent-archive.ts)
  *   penguin agent api status  --agent-id <id> [--project-id <id>] [--json] [--server <url>]
  *   penguin agent api enable  --agent-id <id> [--open | --no-open] [--approve <mode>] …
@@ -16,7 +17,9 @@
  *
  * `create` mirrors the Web dialog's fields: id (required), display name, description,
  * and library plugins to seed (comma-separated names; unknown names are rejected by the
- * server before anything is created). It also says who is creating the agent: `--author`
+ * server before anything is created). The server adds the library's default-install plugins
+ * (goal and plan) to them unless `--no-default-plugins` is given, which sends
+ * `defaultPlugins: false`. It also says who is creating the agent: `--author`
  * when given, else `agent` inside a Session (PENGUIN_SESSION_ID set, so the command is an
  * agent's), else nothing, which the server records as `user`.
  *
@@ -48,12 +51,14 @@ import type {
   AgentApiKeyCreateResponse,
   AgentAuthor,
   AgentApiResponse,
-  AgentApiSettings,
-  AgentApiUpdateRequest,
   AgentCreateResponse,
   AgentSummary,
   ServerSettingsResponse,
 } from "../../api/types.js";
+import type {
+  AgentApiSettings,
+  AgentApiUpdateRequest,
+} from "@prismshadow/penguin-library-agent-api";
 import { resolveApprovalMode } from "../approval.js";
 import { ApiError, resolveProjectId, ServerClient } from "../client.js";
 import { resolveConnection } from "../connection.js";
@@ -362,6 +367,7 @@ export function registerAgentCommand(agent: Command, t: Messages): void {
     .option("--description <text>", t.agent.createDescription)
     .option("--author <author>", t.agent.createAuthor)
     .option("--plugins <names>", t.agent.createPlugins)
+    .option("--no-default-plugins", t.agent.createNoDefaultPlugins)
     .option("--project-id <id>", t.common.projectId)
     .option("--json", t.common.json)
     .option("--server <url>", t.common.server)
@@ -391,6 +397,8 @@ export function registerAgentCommand(agent: Command, t: Messages): void {
           ...(opts.description !== undefined ? { description: String(opts.description) } : {}),
           ...(author !== undefined ? { author } : {}),
           ...(plugins !== undefined && plugins.length > 0 ? { plugins } : {}),
+          // commander reads `--no-default-plugins` as defaultPlugins: false (true otherwise).
+          ...(opts.defaultPlugins === false ? { defaultPlugins: false } : {}),
         },
       );
       if (opts.json === true) {
