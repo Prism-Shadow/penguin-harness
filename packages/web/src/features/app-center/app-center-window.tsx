@@ -1,16 +1,17 @@
 /**
  * An app opened from the App Center, windowed: it takes the App Center's area — the sidebar and
- * the rest of the app stay — in a window of the area's `WindowStack` over the grid, which stays
- * mounted underneath with its scroll. The title bar names the app and carries two flat buttons:
- * open it full screen (the full page, whose exit comes back to this window), and close, which
- * returns to the grid.
+ * the rest of the app stay — in a window over the grid, which stays mounted underneath with its
+ * scroll. The title bar (the UI package's `AppWindowBar`) names the app and carries three flat
+ * buttons: minimize, which hides the window and keeps the app running; open it full screen (the
+ * full page, whose exit comes back to this window); and close, which ends the app. Where the
+ * window lives and what minimize keeps is app-center-windows.tsx's.
  *
  * The page itself is the same frame the chat's workbench tabs and the full page show, read the
  * same way (useAppPageTab): it follows the workbench as it reloads, and a workbench removed under
  * it closes the window.
  */
+import { AppWindowBar, ICON_SIZE } from "@prismshadow/penguin-ui";
 import type { LocatedShortcut } from "./arrangement";
-import { GlyphIcon, ICONS, ICON_SIZE, IconButton } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { useAppPageTab, WorkbenchFrame } from "../workbenches";
 import { TileIcon } from "./app-tile";
@@ -22,12 +23,14 @@ export function AppCenterWindow({
   projectId,
   shortcut,
   title,
+  onMinimize,
   onClose,
   onFullScreen,
 }: {
   projectId: string;
   shortcut: LocatedShortcut;
   title: string;
+  onMinimize: () => void;
   onClose: () => void;
   onFullScreen: () => void;
 }) {
@@ -41,21 +44,18 @@ export function AppCenterWindow({
   });
   return (
     <section aria-label={title} className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-1.5">
-        <TileIcon shortcut={shortcut} title={title} size={BAR_ICON_PX} />
-        <h1 className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{title}</h1>
-        <IconButton
-          variant="ghost"
-          size="sm"
-          label={S.appCenter.windowFullScreen}
-          onClick={onFullScreen}
-        >
-          <GlyphIcon d={ICONS.cornersOut} size={ICON_SIZE.iconButton} />
-        </IconButton>
-        <IconButton variant="ghost" size="sm" label={S.appCenter.windowClose} onClick={onClose}>
-          <GlyphIcon d={ICONS.cross} size={ICON_SIZE.iconButton} />
-        </IconButton>
-      </div>
+      <AppWindowBar
+        icon={<TileIcon shortcut={shortcut} title={title} size={BAR_ICON_PX} />}
+        title={title}
+        labels={{
+          minimize: S.appCenter.windowMinimize,
+          fullScreen: S.appCenter.windowFullScreen,
+          close: S.appCenter.windowClose,
+        }}
+        onMinimize={onMinimize}
+        onFullScreen={onFullScreen}
+        onClose={onClose}
+      />
       <div className="relative min-h-0 flex-1">
         {tab ? (
           <WorkbenchFrame

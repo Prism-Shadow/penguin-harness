@@ -205,7 +205,12 @@ let serverModules: readonly Contributed[] = [];
 /** The fixture's layer as the shell mounts it (behind its gate), rendered. */
 function fixtureLayer(): string {
   const mounted = layersOf(
-    layers.map((c) => ({ id: c.id, from: c.from, Component: c.code as ComponentType })),
+    layers.map((c) => ({
+      id: c.id,
+      from: c.from,
+      Component: c.code as ComponentType,
+      area: "shell",
+    })),
     gatesOf(serverModules),
   ).find((layer) => layer.id === "fixture.layer");
   return renderToStaticMarkup(createElement(mounted!.Component));

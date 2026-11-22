@@ -2,9 +2,10 @@
  * End-to-end tests for the App Center (/apps), against the real server (locale en).
  *
  * - The admin's default Project lists the shipped Support workbench as a tile with its own icon,
- *   served by the icon route. A click opens it windowed over the grid, and the window's close
- *   returns to the grid; "Open full screen" in the tile's menu opens the full page, whose exit
- *   comes back to the App Center. The App Center switch on the workbench's row (the Plugins
+ *   served by the icon route. A click opens it windowed over the grid; the window's minimize
+ *   returns to the grid with the tile marked running, and the tile brings back the same frame;
+ *   the window's close returns to the grid; "Open full screen" in the tile's menu opens the full
+ *   page, whose exit comes back to the App Center. The App Center switch on the workbench's row (the Plugins
  *   tab's Workbenches sub-page) takes the tile off (the empty page offers Create with AI) and puts
  *   it back.
  * - With three workbenches of a fresh account's Agent: a real pointer drag of one tile onto the
@@ -48,8 +49,18 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await expect(page).toHaveURL(/\/apps\?app=penguin_support%2Fsupport$/);
   const appWindow = page.getByRole("region", { name: "Support" });
   await expect(appWindow.locator("iframe")).toBeVisible();
+  // Minimized, the app keeps running: the frame it comes back with is the same element.
+  await appWindow.locator("iframe").evaluate((frame) => {
+    frame.dataset.e2eKept = "yes";
+  });
+  await appWindow.getByRole("button", { name: "Minimize" }).click();
+  await expect(page).toHaveURL(`${BASE}/apps`);
+  await expect(grid.getByRole("button", { name: /^Support, .+, Running$/ })).toBeVisible();
+  await tile.click();
+  await expect(appWindow.locator('iframe[data-e2e-kept="yes"]')).toBeVisible();
   await appWindow.getByRole("button", { name: "Close, back to the App Center" }).click();
   await expect(page).toHaveURL(`${BASE}/apps`);
+  await expect(grid.getByRole("button", { name: /^Support, .+, Running$/ })).toHaveCount(0);
 
   await tile.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Open full screen" }).click();

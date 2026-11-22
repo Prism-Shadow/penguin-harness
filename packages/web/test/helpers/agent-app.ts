@@ -1377,11 +1377,14 @@ export async function mountAgentApp(
     route = "/agents/:agentId",
     at,
     extra = [],
+    layers = [],
   }: {
     route?: string;
     at: string;
     /** More pages beside the one under test, at their own routes (where it navigates to). */
     extra?: Array<{ path: string; element: ReactElement }>;
+    /** What the shell mounts beside every page, as its layers are: kept across navigation. */
+    layers?: ReactElement[];
   },
 ) {
   const router = createMemoryRouter(
@@ -1398,7 +1401,7 @@ export async function mountAgentApp(
             h(
               ProjectProvider,
               null,
-              h(MachinesProvider, null, h(SessionsProvider, null, h(Outlet))),
+              h(MachinesProvider, null, h(SessionsProvider, null, h(Outlet), ...layers)),
             ),
           ),
         ),
