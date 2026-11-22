@@ -227,7 +227,21 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
     await fs.writeFile(path.join(disk, "ui/app.js"), "local edit");
     const reload = await admin.post(`${agent}/workbenches/support/reload`);
     expect(await reload.json()).toMatchObject({ workbench: { error: null } });
-    expect((await admin.post(`${agent}/plugins`, { names: ["penguin-support"] })).status).toBe(201);
+    // A list request can compile the current revision while the update is in progress.
+    // Let it do so with the old types still present, as a file watcher can on a slower disk.
+    const originalRm = fs.rm.bind(fs);
+    const rm = vi.spyOn(fs, "rm").mockImplementation(async (target, options) => {
+      if (target === path.join(disk, ".harness")) await admin.get(`${agent}/workbenches`);
+      await originalRm(target, options);
+    });
+    try {
+      expect((await admin.post(`${agent}/plugins`, { names: ["penguin-support"] })).status).toBe(
+        201,
+      );
+    } finally {
+      rm.mockRestore();
+    }
+
     expect(await (await admin.get(`${agent}/workbenches`)).json()).toMatchObject({
       workbenches: [{ error: null }],
     });

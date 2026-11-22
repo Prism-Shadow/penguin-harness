@@ -151,6 +151,9 @@ export async function installPluginWorkbenches(
         files: [...new Set([...(previous?.files ?? []), ...Object.keys(workbench.files)])],
       } satisfies Receipt),
     );
+    // A reader can load the new source as soon as it is published. Drop the old authoring
+    // types first so a compile against the previous contract cannot be cached for the new revision.
+    await fs.rm(path.join(dir, ".harness"), { recursive: true, force: true });
     for (const [rel, content] of Object.entries(workbench.files)) {
       // Refuse symlink parents: an editable workbench must not redirect an update outside its folder.
       let parent = dir;
@@ -173,9 +176,6 @@ export async function installPluginWorkbenches(
         await fs.rm(path.join(dir, rel), { force: true });
       }
     }
-    // A library update replaces the authored source, so check it against this host's types
-    // on its next load. Hand-authored workbenches keep their authoring contract unchanged.
-    await fs.rm(path.join(dir, ".harness"), { recursive: true, force: true });
     await atomicWriteFile(
       path.join(dir, receiptFile),
       JSON.stringify({
