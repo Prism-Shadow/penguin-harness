@@ -1,7 +1,7 @@
 ---
 name: skillweaver-rsi-toolkit
 description: Run SkillWeaver (Zheng et al. 2025) on an agent - let it explore a website on its own, propose skills worth having, practise them, and hone the successful ones into tested, reusable API scripts in a skill library, then freeze the library and measure it on a published Benchmark of tasks on that site. Use when asked to make an agent better at a website by learning skills or APIs from self-directed practice.
-version: 2026.11.22.2
+version: 2026.11.22.3
 ---
 
 # SkillWeaver
@@ -86,10 +86,12 @@ With a `benchmark_id`, every measurement is a full case × `runs` matrix through
 
 A measured cell must answer from the website and the State under test, nothing else. These checks run around every measurement cell, and a cell that fails one is **contaminated**: keep its records, leave it out of the scores, and rerun that case and run number. A rerun is the same cell launched again; nothing else in the matrix is repeated.
 
-- **Before each matrix**, move `STATE/scratchpad/` into `OUT/` (`<phase>-scratchpad-before/`): it is run output, not learned State, and files an earlier run left there must not reach a measured cell. Keep every file that holds the Benchmark's answers (its source data, a copy of the rubrics) off this machine, or name each one in `--forbid` below.
+- **Before each matrix**, move `STATE/scratchpad/` and the Target agent's own `scratchpad/` beside its State (where `penguin run` keeps per-session scratch files) into `OUT/` (`<phase>-scratchpad-before/`): they are run output, not learned State, and files an earlier run left there must not reach a measured cell. Keep every file that holds the Benchmark's answers (its source data, a copy of the rubrics) off this machine, or name each one in `--forbid` below.
+- **A cell ends** when its Target session is idle and none of the background tasks it started is still running; only then take the after-cell checks, score it, or launch the next cell.
 - **Before and after each cell**, save `TOOL fingerprint STATE` and run `TOOL state-diff <before> <after>`. Every `penguin run` writes its own Workspace, scratch files, Traces and Workspace memory scope into the State, and `state-diff` allows those. Any other added, removed or changed file, `memory/user/` included, would reach every later cell: the cell is contaminated, and before the next cell restore those files from the measured version's snapshot and check with `state-diff` against the fingerprint taken before the matrix. If they cannot be restored, stop.
-- **After each cell**, run `TOOL trace-audit <the cell's Trace files> --site <site_url> --forbid <BENCHMARK>` (add `--forbid` for every answer file named above). A host off this machine or a forbidden name in the Target's tool calls makes the cell contaminated. `local_hosts` (another port on this machine, such as the harness's own API) is reported as a broken instruction and does not void the cell.
+- **After each cell**, run `TOOL trace-audit <the cell's Trace files> --site <site_url> --forbid <BENCHMARK>` (add `--forbid` for every answer file named above and for the State's `traces/` directory, which holds earlier cells' Traces). A host off this machine or a forbidden name in the Target's tool calls makes the cell contaminated. `local_hosts` (another port on this machine, such as the harness's own API) is reported as a broken instruction and does not void the cell.
 - Review the Target Trace for direct access to the website outside `penguin browser` or its registered API scripts; a cell with such access is contaminated.
+- Before rerunning a contaminated cell, move both scratchpads into `OUT/` again and remove from this machine every answer copy its Trace shows it fetched or wrote, wherever it put it.
 - A cell contaminated three times scores 0 for that run, and the report names it. Report every contaminated attempt, its reason and its cost.
 
 ### The same site for both measurements
