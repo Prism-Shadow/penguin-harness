@@ -24,7 +24,7 @@ import {
   type BuiltinBenchmark,
 } from "./builtin-benchmarks.js";
 import { EXAMPLE_BENCHMARK_ID, writeExampleBenchmark } from "./example-benchmark.js";
-import { benchmarksDir } from "./benchmark-dirs.js";
+import { resolveBenchmarksDir } from "./benchmark-dirs.js";
 import { placeFolder, type PlaceFolderOptions } from "./place-folder.js";
 
 async function exists(p: string): Promise<boolean> {
@@ -68,7 +68,7 @@ export async function provisionProjectBenchmarks(
   projectId: string,
   builtins?: readonly BuiltinBenchmark[],
 ): Promise<void> {
-  const dir = benchmarksDir(root, projectId);
+  const dir = await resolveBenchmarksDir(root, projectId);
   // The folders of an app's data are this user's alone, as the workbench host makes them.
   await fs.mkdir(dir, { recursive: true, mode: 0o700 });
   const seeds: BenchmarkSeed[] = [
