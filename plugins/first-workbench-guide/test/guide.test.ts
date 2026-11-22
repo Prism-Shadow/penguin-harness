@@ -53,7 +53,10 @@ describe("first workbench conversation", () => {
       "s1",
       [{ text: expect.stringContaining(first.request) }],
     ]);
-    expect((await call()).body).toMatchObject({ phase: "chatting" });
+    expect((await call()).body).toMatchObject({
+      phase: "chatting",
+      boardId: expect.stringMatching(/^checklist-(?:[a-f0-9]{6}-){4}[a-f0-9]{6}$/),
+    });
     host.sessionResult.mockResolvedValue({
       status: "completed",
       text: "Compare the two counts.",

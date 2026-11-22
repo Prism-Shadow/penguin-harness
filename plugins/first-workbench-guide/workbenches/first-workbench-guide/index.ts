@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { WorkbenchPackage, WorkbenchResponse } from "@prismshadow/penguin-server/plugin";
 
 type Model = { provider: string; modelId: string };
@@ -135,7 +135,10 @@ export default {
                     const model = { provider: input.model.provider, modelId: input.model.modelId };
                     const session = await host.createSession({ model, approvalMode: "deny-all" });
                     guide = {
-                      boardId: "checklist-" + randomUUID(),
+                      // npm redacts UUIDs in pack --json, whose filename the plugin importer uses.
+                      boardId:
+                        "checklist-" +
+                        Array.from({ length: 5 }, () => randomBytes(3).toString("hex")).join("-"),
                       model,
                       request: input.request.trim(),
                       lang: input.lang === "zh" ? "zh" : "en",
