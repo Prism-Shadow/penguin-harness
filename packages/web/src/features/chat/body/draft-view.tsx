@@ -978,6 +978,7 @@ export function DraftView({
         </Notice>
       )}
       <ChatInput
+        resizableDraft
         status="idle"
         controlRef={composerRef}
         onSend={onSend}
