@@ -1,4 +1,4 @@
-# PRFC-0020 Agent Workbench：应用命名、插件分发与产品支持
+# PRFC-0020 Agent Workbench
 
 [English](PRFC-0020-agent-workbench.md)
 

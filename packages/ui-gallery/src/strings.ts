@@ -218,6 +218,12 @@ export const zh = {
         "设置对话框停在「外观」页：主题、明暗、强调色、五档字号与字体组合——主题切换就在这里。",
       how: "侧栏底部的账户菜单 › 设置 › 外观。",
     },
+    "settings-storage": {
+      title: "存储空间",
+      description:
+        "设置对话框停在「存储空间」页：数据根的空间占用与按分类的用量条，按 Project 与按文件夹的明细，以及清理临时文件与旧对话的审阅弹窗。",
+      how: "侧栏底部的账户菜单 › 设置 › 存储空间。",
+    },
     "desktop-window": {
       title: "桌面窗口",
       description:
@@ -451,6 +457,7 @@ export const zh = {
         "按主题换画法的图标：朴素为线性画法，白领为线性画法衬淡色块（双色调），极客为像素画",
       "ui-avatar":
         "按主题换画法的智能体缺省头像：同一只细棕线勾勒的蛋形小企鹅，朴素为圆角方块，白领为圆形，卡通为饼干形，极客为像素画",
+      "ui-showcase": "封面陈列：封面卡片、精选轮播与产品页首屏",
       "ui-segmented": "分段控件：并排的几个选项里选一个",
       "ui-action": "导航列表打头的主操作：新建对话",
       "ui-waiting": "等待状态：页面、标签页或列表等待数据时，读取变慢才出现的占位",
@@ -512,7 +519,7 @@ export const zh = {
       buttons: {
         title: "按钮",
         description:
-          "五种变体、五档尺寸与图标按钮，禁用与加载中，链接、行内图形操作与键盘提示，以及可拖到边缘、可收起的悬浮球。",
+          "五种变体、五档尺寸与图标按钮，禁用与加载中，链接、行内图形操作、行内图标按钮与键盘提示，语音输入按钮与麦克风音量，以及可拖到边缘、可收起的悬浮球。",
       },
       inputs: {
         title: "输入与表单",
@@ -534,7 +541,8 @@ export const zh = {
       },
       dialogs: {
         title: "对话框",
-        description: "模态对话框、确认框、分页对话框、抽屉、底部面板、图片放大与命令面板。",
+        description:
+          "模态对话框、确认框、分页对话框、抽屉、底部面板、图片放大、命令面板，以及从触发它的图标原地展开的面板。",
       },
       tooltips: {
         title: "悬停提示",
@@ -558,11 +566,12 @@ export const zh = {
       charts: {
         title: "图表",
         description:
-          "统计图的基础：所有图表共用的绘图原语、当前主题的图表令牌，以及建立在它们之上的每一种图表——环形图、环形仪表、图例、趋势与用量柱、请求与成功率、迷你折线、轨迹时间线。",
+          "统计图的基础：所有图表共用的绘图原语、当前主题的图表令牌，以及建立在它们之上的每一种图表——环形图、环形仪表、图例、趋势与用量柱、请求与成功率、迷你折线、轨迹时间线与用量条。",
       },
       avatars: {
         title: "头像",
-        description: "用户头像的各个尺寸；智能体头像在每套主题下的画法与整套颜色；头像组。",
+        description:
+          "用户头像的各个尺寸；智能体头像在每套主题下的画法与整套颜色；头像组；应用图标的形状。",
       },
       site: {
         title: "公开站点",
@@ -585,12 +594,23 @@ export const zh = {
       },
       data: {
         title: "数据",
-        description: "表格、条目卡片与事实行、列表行及其加载与空状态、键值对与日志。",
+        description:
+          "表格、条目卡片与事实行、列表行及其加载与空状态、键值对与日志，以及先审阅、再删除的列表。",
       },
       machines: {
         title: "机器",
         description:
           "机器管理页的组件：每种状态的状态胶囊、机器卡片与列表、详情工具栏与添加对话框。",
+      },
+      models: {
+        title: "模型",
+        description:
+          "项目默认模型的完整弹窗（对话、多模态与工具三组，没有候选时写明原因），以及还没有任何 key 时的连接引导。",
+      },
+      status: {
+        title: "状态页",
+        description:
+          "插件设置页的部件：版本元素的每种状态（已安装、准备中、安装失败、未安装、此机器不支持）、检查清单的四种状态及其行内操作与折叠详情，以及带汇总胶囊与主要操作的状态行。",
       },
       retry: {
         title: "重试",
@@ -606,6 +626,11 @@ export const zh = {
         title: "附件",
         description:
           "对话里附加的图片与文件：输入框里待发送的、发出后消息里的、插话小块里的，以及窄屏、长文件名与加载失败。",
+      },
+      showcase: {
+        title: "封面陈列",
+        description:
+          "插件市场共用的陈列模块：各色调与底纹的生成封面，图片加载中、已加载与加载失败，封面卡片、精选轮播与产品页的各个部分。",
       },
       packs: {
         title: "主题包",
@@ -667,6 +692,29 @@ export const zh = {
       ballShow: "显示退出按钮",
       ballReadout: (side: "left" | "right", percent: number, tucked: boolean, presses: number) =>
         `${side === "left" ? "左缘" : "右缘"}，高度 ${percent}%${tucked ? "，已收起" : ""} · 点击 ${presses} 次`,
+      inlineIcon: "行内图标按钮",
+      inlineIconHint:
+        "文字行里的小图标操作：静止时是淡色图形，悬停时填底。名称即无障碍名称与悬停提示；忙碌时禁用。",
+      inlineReplyStats: "1.2k Token · 4.8 秒",
+      inlineRead: "朗读回复",
+      inlineFork: "从这里分叉",
+      inlineBusy: "正在准备",
+      record: "语音输入按钮",
+      recordHint:
+        "排在发送按钮左侧，整个录音过程都不挪位：空闲是麦克风，录音中按一下完成，转写时转圈等待。",
+      recordIdle: "语音输入",
+      recordRecording: "完成录音",
+      recordWaiting: "正在转写",
+      meter: "麦克风音量",
+      meterHint:
+        "录音时的读数：时长与最近的音量，一次读数一根条。减少动态效果时以文字代替跳动的条；读不到音量时只说明正在录音。",
+      meterLevel: "麦克风音量",
+      meterQuiet: "安静",
+      meterSound: "收到声音",
+      meterRecording: "正在录音",
+      meterLive: "说话中",
+      meterReduced: "减少动态效果",
+      meterUnavailable: "读不到音量",
     },
     inputs: {
       basics: "文本框",
@@ -894,6 +942,8 @@ export const zh = {
       pages: { general: "通用", appearance: "外观", account: "个人资料" },
       pageBody: "当前页的设置项放在这里。",
       pageRow: (n: number) => `第 ${n} 项设置`,
+      /** A rail row's accessible name while its count shows. */
+      pageWaiting: (page: string, n: number) => `${page}，${n} 项待处理`,
       appearanceInfo: "主题、强调色与密度只作用于这个浏览器。",
       drawer: "抽屉",
       openDrawer: "打开抽屉",
@@ -912,6 +962,12 @@ export const zh = {
       palettePlaceholder: "输入以筛选命令…",
       paletteEmpty: "没有匹配的命令",
       paletteHint: "↑↓ 选择 · Enter 执行 · Esc 关闭",
+      unfold: "原地展开的面板",
+      unfoldAside:
+        "从触发它的图标原地展开，没有遮罩；返回箭头、Esc 或点击面板以外的地方会收回到原图标。在滚动区域里，面板始终留在可见范围之内",
+      unfoldBack: "返回",
+      unfoldFolders: ["工作", "学习", "娱乐"] as readonly string[],
+      unfoldItem: (n: number) => `应用 ${n}`,
     },
     tooltips: {
       attribute: "data-tooltip 属性",
@@ -989,7 +1045,7 @@ export const zh = {
       pillText: "3 个可更新",
       statusMarks: "状态标记",
       statusMarksHint:
-        "图形带语气，文字保持次要墨色、不着色；悬停说明状态对这一项意味着什么。不需要处理的状态不带语气，图形退为浅色。",
+        "图形带语气，文字保持次要墨色、不着色；悬停说明状态对这一项意味着什么。不需要处理的状态不带语气，图形退为浅色。容不下文字时（封面卡片的信息行）只留图形，文字移到悬停说明之首，并照常读给辅助技术。",
       statusMarkSamples: {
         success: "已安装",
         attention: "可更新",
@@ -1059,6 +1115,26 @@ export const zh = {
       transferRetryNow: "立即重试",
     },
     streaming: {
+      standard: "标准",
+      expanded: "展开",
+      compact: "紧凑",
+      finish: "结束运行",
+      restart: "重新运行",
+      finished: "运行完毕",
+      activity: "运行步骤",
+      running: "运行中",
+      thinking: "思考",
+      plan: "先读会议记录，再整理待办事项。",
+      read: "读取会议记录",
+      navigation: {
+        previous: "上一步",
+        next: "下一步",
+        latest: "最新步骤",
+        waiting: "查看待处理步骤",
+        elapsed: "总耗时",
+        stepWords: ["第 ", " 步"] as readonly [before: string, after: string],
+        jump: "跳转到步骤",
+      },
       reply: "助手回答",
       output: "工具输出",
       receiving: "正在接收…",
@@ -1073,6 +1149,23 @@ export const zh = {
       reduced: "已开启减少动态效果，回答到达即显示",
     },
     charts: {
+      usageBar: {
+        title: "用量条",
+        hint: "一个总量按部分堆叠：宽度按数值，过小的部分保留一条细缝，为 0 的不画；分类是身份，取色槽，「其他」取中性色。细的一档用在列表行里，按最大的一行定比例。",
+        label: "空间占用",
+        used: (size: string) => `已用 ${size}`,
+        empty: "尚未测量",
+        kinds: {
+          traces: "轨迹",
+          agentState: "Agent State",
+          workspaces: "临时工作区",
+          scratchpads: "草稿区",
+          caches: "缓存",
+          logs: "日志",
+          plugins: "插件",
+          other: "其他",
+        },
+      },
       parts: {
         primitives: "绘图原语",
         primitivesHint:
@@ -1249,6 +1342,11 @@ export const zh = {
       pictureBroken: "图片读不出来",
       stack: "头像组",
       stackShown: (shown: number, total: number) => `共 ${total} 个，显示 ${shown} 个`,
+      appIcon: "应用图标的形状",
+      appIconAside:
+        "所有应用与分组共用一个圆角方形；圆角随图标缩放，小图标与大图标是同一个形状。切换主题可看到各主题的圆角",
+      appIconLetter: "首字母方块",
+      appIconFolder: "分组",
       userNames: ["admin", "演示管理员"] as readonly string[],
       agents: [
         { id: "docs-expert", name: "Docs Expert" },
@@ -1257,6 +1355,9 @@ export const zh = {
       ] as readonly { id: string; name: string }[],
     },
     site: {
+      showcase: "插件市场",
+      showcaseHint:
+        "插件市场的封面卡片、精选轮播与产品页首屏，用站点自己的配色，与落地页的 /plugins 一致。",
       nav: "导航栏",
       navHint:
         "三站共用：行末的「更多」收着 AMSP 与主题包，悬停或按下展开，其中一页是当前页时「更多」标为当前页；手机菜单把这两页缩进列在「更多」之下。",
@@ -1873,6 +1974,14 @@ export const zh = {
       copyId: "复制 ID",
       entityAction: "打开会话",
       entityTags: ["审查", "只读"],
+      shell: "应用窗口",
+      shellHint:
+        "侧栏右缘可以拖动改变宽度，拖动中即时跟手；聚焦后左右方向键微调，双击复原为主题自身的宽度。收起为图标栏再展开，回到拖好的宽度。",
+      shellResize: "调整侧栏宽度",
+      shellProject: "默认项目",
+      shellFold: "收起侧栏",
+      shellUnfold: "展开侧栏",
+      shellBody: "页面在这里，侧栏变宽时它让出位置。",
       nav: "导航列表",
       navHint:
         "当前行用实色填充，并标为当前页；图标只是装饰，旁边的标签已经说明了它。对话框的侧栏在手机上横向滚动。",
@@ -1889,6 +1998,36 @@ export const zh = {
       },
     },
     data: {
+      reviewList: {
+        title: "先审阅、再删除的列表",
+        hint: "按类别分组，组头写条数、大小与全选，组头下以淡色一行写明删除的后果；每个条目一行，不能勾选的行禁用勾选框，悬停说明原因。",
+        agent: "写作助手",
+        orphan: "已删除对话的草稿区",
+        idle: "闲置对话的草稿区",
+        idleNote:
+          "删除后这些对话里附带的图片与文件不再显示，继续对话时模型也找不到它的计划与附件。",
+        caches: "Agent 缓存",
+        cachesNote: "Agent 下次需要时会重新安装。",
+        chats: "对话",
+        inUse: "正在使用",
+        running: "正在运行",
+        archived: "已归档",
+        titles: [
+          "季度报告草稿",
+          "竞品调研",
+          "发布说明 0.2.13",
+          "修复登录页的表单校验",
+          "整理用户访谈",
+        ],
+        ago: (days: number) => (days === 0 ? "今天" : `${days} 天前`),
+        chosen: (n: number, size: string) => `已选 ${n} 项，${size}`,
+        labels: {
+          selectAll: "全选",
+          deselectAll: "取消全选",
+          count: (n: number) => `${n} 项`,
+          select: (title: string) => `选择「${title}」`,
+        },
+      },
       table: "表格",
       tableHint:
         "表头只有一种：小号字阶、中等字重、次要墨色与一条分隔线；独立的表格自带边框，表头在次级表面上。",
@@ -1983,13 +2122,27 @@ export const zh = {
       cardBuiltin: "内置",
       cardInstall: "安装",
       cardUpdate: "更新",
-      cardManage: "管理安装",
+      cardManage: "安装到 Agent",
       cardUninstall: "卸载",
       cardActionName: (verb: string, title: string) => `${verb} ${title}`,
       metaLine: "事实行",
       metaLineHint:
         "条目的几项事实排成一行，之间用间隔点；放不下时最后一项截断，其余保持原宽，从不换行。",
       metaLineUsedBy: "有 12 个 Agent 在用，其中 3 个在其他机器上，上次连上时的数据",
+      impactList: "确认里的影响清单",
+      impactListHint:
+        "危险操作的确认先说清它会波及什么：逐行列出名称与所在位置（次要墨色），最多五行，其余合计一行；询问期间显示一行等待说明。",
+      impactPending: "正在查找装有它的 Agent…",
+      impactMore: (n: number) => `还有 ${n} 个 Agent`,
+      impactItems: [
+        ["笔记助手", "PenguinHarness 演示"],
+        ["研究员", "PenguinHarness 演示"],
+        ["客服", "Mia 的 Project"],
+        ["翻译", "Mia 的 Project"],
+        ["审阅", "团队空间"],
+        ["排程", "团队空间"],
+        ["归档", "团队空间"],
+      ] as Array<[name: string, where: string]>,
       factRows: "详情里的事实行",
       factRowsHint:
         "每行一项：图形、名称、几项次要事实与行尾标记；最后一项事实占据剩余宽度并截断，标记保持原宽。缺失的部件整行用次要墨色。",
@@ -2017,6 +2170,80 @@ export const zh = {
       listEmpty: "没有内容时",
       listEmptyText: "这个 Agent 还没有钩子包。",
       memoryFromPlugin: "由插件 Continual learning 写入",
+    },
+    models: {
+      dialog: "默认模型设置弹窗",
+      dialogHint:
+        "每行一个选择器，只列出能承担该项的模型；没有候选时写明原因并给出去处。工具一组较淡。",
+      openDialog: "打开「默认模型设置」",
+      guide: "连接引导",
+      guideHint: "还没有任何模型有 key 时先出现它；连接或填好 key 后换成「默认模型设置」弹窗。",
+      openGuide: "打开引导",
+      title: "默认模型设置",
+      intro: "新对话、多模态工具与语音交互默认使用这些模型。每项选好即保存。",
+      chat: "对话",
+      multimodal: "多模态",
+      tools: "工具",
+      chatModel: "默认对话模型",
+      chatHint: "新建对话时使用",
+      t2t: "文本生成",
+      i2t: "图片理解",
+      t2i: "图像生成",
+      t2v: "视频生成",
+      s2t: "语音识别",
+      t2s: "语音合成",
+      search: "网页搜索",
+      fetch: "读取网页",
+      empty: "连接一个提供这类模型的供应商",
+      emptyAction: "前往模型库",
+      unset: "未指定",
+      done: "完成",
+      guideTitle: "先连接一个模型供应商",
+      guideBody:
+        "这个 Project 还没有可用的模型：没有任何模型配置了 API key。连接一个供应商，或在模型库里填写 key，之后再选择默认模型。",
+      tokendance: "一个钱包使用多家模型，无需逐个填写密钥",
+      penguinGo: "PenguinHarness 自带的模型服务",
+      connect: "连接",
+      keyText: "已有某家供应商的 API key？",
+      keyAction: "填写 API key",
+      later: "稍后",
+    },
+    status: {
+      versions: "版本元素",
+      versionsHint: "名称 | 版本 | 平台一枚分段胶囊，状态是图形加文字，不用红字；准备中有进度条。",
+      checks: "检查清单",
+      checksHint:
+        "四种状态各有形状，悬停说出状态；需要动手的那一行带它的按钮，工具原话折叠在行下。",
+      strip: "状态行",
+      stripHint: "版本元素与汇总胶囊在前，主要操作在另一端，放不下时换行。",
+      checksTitle: "检查",
+      recheck: "重新检查",
+      display: "显示",
+      accessibility: "无障碍",
+      accessibilityText: "会话总线不可达：请在桌面会话中启动服务端",
+      windowManager: "窗口管理器",
+      windowManagerText: "没有打开的窗口可供检查",
+      automation: "自动化权限",
+      openSettings: "打开系统设置",
+      details: "详情",
+      downloading: "下载中，6.4 / 16.0 MB",
+      verifying: "校验下载内容",
+      failedWhy: "registry 拒绝了下载：404",
+      unsupportedWhy: "agent-desktop 只支持 x64 与 arm64 上的 macOS、Windows 与 Linux",
+      retry: "重试",
+      install: "安装",
+      summary: "需要处理",
+      summaryHint: "还有一项检查需要处理",
+      exportLogs: "导出日志",
+      versionState: {
+        installed: "已安装",
+        preparing: "准备中",
+        failed: "安装失败",
+        missing: "未安装",
+        unsupported: "此机器不支持",
+        unknown: "状态未知",
+      },
+      checkState: { ok: "通过", action: "需要处理", unknown: "未知", na: "不适用" },
     },
     machines: {
       pills: "状态胶囊",
@@ -2224,6 +2451,115 @@ export const zh = {
       time: "14:05",
       copy: "复制消息",
       placeholder: "输入消息…",
+    },
+    showcase: {
+      generated: "生成封面",
+      generatedHint: "每种色调配每种底纹：图块上是一个内置插件自己的图标，角上是产品标志。",
+      logoOnly: "没有图标",
+      logoOnlyHint: "插件没有自己的图标时，产品标志占据中间的图块，角上不再重复；四种底纹各一。",
+      states: "状态",
+      statesHint:
+        "图片在途时先铺它主色的底，不画生成封面；加载完成后图片淡入；加载失败时换成生成封面。",
+      loading: "加载中：主色的底",
+      loaded: "已加载",
+      fallback: "加载失败：生成封面",
+      layoutLabel: "布局",
+      cardView: "卡片视图",
+      listView: "列表视图",
+      cards: "封面卡片",
+      cardsHint:
+        "短文字、带来源机器的超长文字、带标签与信息行和两个操作的卡片、什么都不带的卡片、Web App 市场的卡片（版本标签与两个单行文字操作的操作条，第二个不可用，悬停说明原因），以及列表读取中的占位。右上角的图标把本板的各个网格在卡片与列表之间切换。",
+      marketCaption:
+        "Web App 市场的卡片：列表里每张一行——图标块、名称与其下的描述，同一行末是安装操作（「安装」或几个 Agent 已装）与「快速调用」——放得下两行时并排两行。",
+      shortTitle: "目标模式",
+      shortDescription: "让会话循环推进一个目标直到完成。",
+      longTitle: "智能体公司：组织、员工协议、CEO、人事、财务、科研与镜像公司的完整操作手册",
+      origin: "实验室 GPU 机",
+      longDescription:
+        "把 Project 里的 Agent 组织成一家公司：先与用户一问一答地创建组织，再是每个工位会话与工单会话都遵循的员工协议，以及 CEO、人事与财务的操作手册。",
+      fullTitle: "PenguinHarness 问答助手",
+      fullDescription: "产品问答、来源引用与客服工作台。",
+      plainTitle: "数据分析",
+      plainDescription: "读表、清洗、作图，并写出结论。",
+      barTitle: "Bento 幻灯片",
+      barDescription: "一句话生成可直接演示的幻灯片。",
+      barInstall: "安装",
+      barInstalledOn: (n: number) => `${n} 个 Agent 已装`,
+      barQuickHint: "请先为当前智能体安装",
+      tagSelected: "精选",
+      tagCategory: "办公效率",
+      tagBuiltin: "内置",
+      installed: "已安装",
+      installedHint: "本 Project 有 Agent 装有它",
+      quickStart: "快速开始",
+      manage: "安装到 Agent",
+      carousel: "精选轮播",
+      carouselHint:
+        "三页。每 7 秒换页，指针悬停时暂停；键盘焦点进入或点选缩略图后停止，直到按「继续轮播」。系统设置减少动态效果时不自动换页，按钮显示「继续轮播」。",
+      carouselLabel: "精选插件",
+      carouselControlsCaption:
+        "只有控件（公开站点的精选插件）：只显示当前一页和它在几页中的位置，没有缩略图栏，其余封面轮到才加载",
+      eyebrow: "精选",
+      carouselLabels: {
+        previous: "上一个",
+        next: "下一个",
+        pause: "暂停轮播",
+        play: "继续轮播",
+        position: (index: number, count: number) => `第 ${index} 个，共 ${count} 个`,
+      },
+      viewDetails: "查看详情",
+      slides: [
+        {
+          title: "PenguinHarness 问答助手",
+          tagline: "产品问答、来源引用与客服工作台。",
+          description:
+            "回答关于 PenguinHarness 的问题，每个结论都引用文档或源码；附带一个客服工作台，按问题列表逐条处理对话。",
+        },
+        {
+          title: "Bento 幻灯片",
+          tagline: "从一句话到一套能直接放映的幻灯片。",
+          description:
+            "新建或修改 .bento.html 演示文稿：从零开始、从素材生成，或改进已有文件；文档本身是 JSON，便于 Agent 反复编辑。",
+        },
+        {
+          title: "目标模式",
+          tagline: "让会话循环推进一个目标直到完成。",
+          description: "每一轮重新注入目标并检查目标文件，直到完成、受阻或用完 Token 预算。",
+        },
+      ] as readonly { title: string; tagline: string; description: string }[],
+      product: "产品页",
+      productHint:
+        "插件详情按产品页排版：封面旁的首屏、截图、正文各节与一栏事实、包含内容，以及快速开始的提示词。",
+      openApp: "打开",
+      screenshots: "截图",
+      shotAnswer: "回答附带来源，点开即是原文件。",
+      shotDeck: "一句话生成的应用介绍幻灯片。",
+      about: "介绍",
+      aboutBody:
+        "回答关于 PenguinHarness 的问题：安装、配置、模型与插件。每个结论都附带它依据的文档或源码，点开即是原文件。客服工作台把待处理的问题排成一列，逐条打开对话、回答并标记完成。",
+      installs: "包含内容",
+      parts: [
+        {
+          name: "penguin-support",
+          kind: "Skill",
+          description: "按文档与源码回答产品问题，并给出引用。",
+        },
+        {
+          name: "客服工作台",
+          kind: "Workbench",
+          description: "问题列表、对话与回答在同一个窗口里。",
+        },
+      ] as readonly { name: string; kind: string; description: string }[],
+      prompt: "我刚装好 PenguinHarness，怎样给 Agent 配置一个 MCP 服务器？",
+      promptNote: "会预先选中 penguin-support",
+      send: "开始对话",
+      facts: {
+        version: "版本",
+        category: "类别",
+        author: "作者",
+        license: "许可证",
+        package: "包名",
+      },
     },
   },
 };

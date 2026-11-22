@@ -59,6 +59,9 @@
  * |                    | shows its own; hosts: `GlyphIcon`, `GlyphMark`           |                                                       |
  * | `ui-avatar`        | an Agent's default avatar drawn in every theme's style;  | direct children `data-variant="flat" \| "soft" \| "pixel"`, one drawing each (agent-avatar-variants.tsx); an Agent's own picture is an `<img>` host with none |
  * |                    | the theme's CSS shows its own; host: `AgentAvatar`       |                                                       |
+ * | `ui-showcase`      | a cover-led showcase: a cover card, the selected         | a host's root names itself in `data-part="card" \| "cover" \| "carousel" \| "product-hero"`; a generated cover's drawing is a `data-part="art"` holding its `"tile"`; a cover carries its hue in `data-hue` and `data-state="generated" \| "loading" \| "loaded"`; the product page's other parts stand beside the hero, outside every host, and name themselves `"gallery" \| "section" \| "parts" \| "prompt" \| "columns" \| "facts"` |
+ * |                    | carousel, a product hero; hosts: `Cover`, `CoverCard`,   |                                                       |
+ * |                    | `ShowcaseCarousel`, `ProductHero`                        |                                                       |
  * | `ui-segmented`     | a segmented control: one choice among a few options laid | its options are direct children `<button>`, each saying whether it is on in `aria-pressed="true" \| "false"` |
  * |                    | side by side; host: `Segmented`                          |                                                       |
  * | `ui-action`        | the primary action that heads a navigation list (New     | on the row itself, a `<button>` or an `<a>`; while its page is the one open it is `[aria-current="page"]` |
@@ -303,6 +306,16 @@
  * with no drawings, in the flat tile's rounded square: a pack that treats the avatar's box treats
  * both alike.
  *
+ * `ui-showcase` (2026-11-17) is the plugin market's showcase family, the same modules in the Web
+ * App and on the public sites: a cover, a cover card, the selected carousel and a product page's
+ * hero. Its look is a component sheet (showcase.css) that names no token; the two host sheets
+ * serve it in a layer — theme.css in `ui-base`, site.css in `components` — so a pack's recipe in
+ * `ui-theme` overrides it as it overrides the foundation. The host writes the class and names its
+ * parts in `data-part`, and nothing else: the foundation draws nothing for the hook, and no
+ * built-in pack writes a recipe yet. A pack that draws its own boxes (Doodle's pen line) may draw
+ * a card's, the carousel's, the hero's and a cover's edge; it never changes what a cover shows,
+ * and never adds words or marks.
+ *
  * `ui-segmented` and `ui-action` (2026-11-17) name two controls a pack could not reach: they are
  * hooks of their own, and not two more hosts of `ui-edge`, so a pack written before them — a copy
  * of Doodle's first edition among them — draws both exactly as it did. `ui-segmented` is the
@@ -350,6 +363,7 @@ export const HOOKS = [
   "ui-empty",
   "ui-run",
   "ui-avatar",
+  "ui-showcase",
   "ui-segmented",
   "ui-action",
   "ui-waiting",

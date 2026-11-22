@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The import dialog (features/builtin-browser/import-dialog.tsx) over a faked API, in both
+ * The import dialog (plugins/browser-automation/src/web/import-dialog.tsx) over a faked API, in both
  * languages.
  *
  * - Given an import that skipped cookies, the outcome gives every reason its own line with its
@@ -17,8 +17,11 @@ import type {
   BuiltinBrowserImportSource,
   BuiltinBrowserImportSourcesResponse,
 } from "@prismshadow/penguin-server/api";
-import { ImportDialog } from "../src/features/builtin-browser/import-dialog";
-import { S, setActiveStrings, zh } from "../src/lib/strings";
+// The browser reaches the app's own helpers through the plugin face; this hands them over.
+import "../src/web-app/plugin-host";
+import { ImportDialog } from "../../../plugins/browser-automation/src/web/import-dialog";
+import { setActiveStrings, zh } from "../src/lib/strings";
+import { S as B } from "../../../plugins/browser-automation/src/web/strings";
 import { en } from "../src/lib/strings-en";
 import { click, mount, unmountAll, waitFor } from "./helpers/dom";
 
@@ -26,7 +29,7 @@ const api = vi.hoisted(() => ({
   getBuiltinBrowserImportSources: vi.fn(),
   importIntoBuiltinBrowser: vi.fn(),
 }));
-vi.mock("../src/api/endpoints", () => api);
+vi.mock("../../../plugins/browser-automation/src/web/api", () => api);
 
 const HAN = /\p{Script=Han}/u;
 
@@ -81,7 +84,7 @@ function setAgent(agent: string): void {
 async function openWith(res: BuiltinBrowserImportSourcesResponse): Promise<void> {
   api.getBuiltinBrowserImportSources.mockResolvedValue(res);
   await mount(h(ImportDialog, { open: true, onClose: () => {} }));
-  await waitFor(() => button(S.builtinBrowser.importRun) !== undefined);
+  await waitFor(() => button(B.builtinBrowser.importRun) !== undefined);
 }
 
 function button(text: string): HTMLButtonElement | undefined {
@@ -117,7 +120,7 @@ describe.each([
     setActiveStrings(dict);
     api.importIntoBuiltinBrowser.mockResolvedValue(reported);
     await openWith({ sources: [diskChrome, extension] });
-    await click(button(S.builtinBrowser.importRun)!);
+    await click(button(B.builtinBrowser.importRun)!);
     await waitFor(() => document.body.querySelector("li") !== null);
 
     const lines = [...document.body.querySelectorAll("li")].map((li) => li.textContent ?? "");
@@ -129,18 +132,18 @@ describe.each([
     const dialog = document.body.textContent ?? "";
     for (const line of lines) expect(HAN.test(line)).toBe(locale === "zh");
     if (locale === "en") expect(HAN.test(dialog)).toBe(false);
-    expect(dialog).toContain(S.builtinBrowser.importAppBoundAdvice("connected"));
+    expect(dialog).toContain(B.builtinBrowser.importAppBoundAdvice("connected"));
 
-    await click(button(S.builtinBrowser.importUseExtension)!);
+    await click(button(B.builtinBrowser.importUseExtension)!);
     expect(control(extension.profileName).checked).toBe(true);
-    expect(control(S.builtinBrowser.importHistory).disabled).toBe(true);
+    expect(control(B.builtinBrowser.importHistory).disabled).toBe(true);
     api.importIntoBuiltinBrowser.mockResolvedValue({
       sourceId: "chrome-extension",
       browserName: "Chrome",
       cookies: { found: 2481, imported: 2315, skipped: 166, failed: 0, skips: [] },
       notes: [],
     } satisfies BuiltinBrowserImportResult);
-    await click(button(S.builtinBrowser.importRun)!);
+    await click(button(B.builtinBrowser.importRun)!);
     expect(api.importIntoBuiltinBrowser).toHaveBeenLastCalledWith(
       expect.objectContaining({ sourceId: "chrome-extension", cookies: true, history: false }),
     );
@@ -150,13 +153,13 @@ describe.each([
     setActiveStrings(dict);
     setAgent(WINDOWS);
     await openWith({ sources: [diskChrome], extension: "extension_not_paired" });
-    expect(document.body.textContent).toContain(S.builtinBrowser.importAppBoundHint("not_paired"));
+    expect(document.body.textContent).toContain(B.builtinBrowser.importAppBoundHint("not_paired"));
     await unmountAll();
 
     setAgent(LINUX);
     await openWith({ sources: [diskChrome], extension: "extension_not_paired" });
     expect(document.body.textContent).not.toContain(
-      S.builtinBrowser.importAppBoundHint("not_paired"),
+      B.builtinBrowser.importAppBoundHint("not_paired"),
     );
   });
 });

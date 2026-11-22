@@ -86,13 +86,13 @@ export async function createServerSession(
 
 /**
  * The Project's default model (`defaultModel` of GET models): what a Session created without a
- * model runs on. A read only — nothing is created. Null when the Project has none, or when it
- * cannot be read; the caller then names it generically.
+ * model runs on. A read only — nothing is created. Null when the Project has none (a new Project
+ * starts with none); undefined when it cannot be read, and the caller then names it generically.
  */
 export async function projectDefaultModel(
   client: ServerClient,
   projectId: string,
-): Promise<ModelRefDto | null> {
+): Promise<ModelRefDto | null | undefined> {
   try {
     const res = await client.request<ModelsResponse>(
       "GET",
@@ -100,7 +100,7 @@ export async function projectDefaultModel(
     );
     return res.defaultModel ?? null;
   } catch {
-    return null;
+    return undefined;
   }
 }
 

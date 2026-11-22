@@ -14,7 +14,7 @@ import path from "node:path";
 import * as tar from "tar";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { gzipSync } from "node:zlib";
-import { agentDir, agentStateDir } from "@prismshadow/penguin-core";
+import { agentDir, agentStateDir, workbenchesDir } from "@prismshadow/penguin-core";
 import type { Workbenches } from "../src/mechanisms/workbenches.js";
 import { AgentStateRepo, agentStateRepoDir, isGitName } from "../src/workbenches/repo.js";
 
@@ -200,6 +200,13 @@ describe("agent export/import", () => {
   });
 
   it("while an import runs, a request for the Agent's workbenches waits for it to end", async () => {
+    // Only the order is asked about. The listing loads every workbench that runs, and a new
+    // Project's default Agent carries its preinstalled plugins' workbenches, each a TypeScript
+    // compile; without them the listing still has to wait for the import.
+    await fs.rm(workbenchesDir(t.root, projectId, "default_agent"), {
+      recursive: true,
+      force: true,
+    });
     const archive = await exported();
     const real = t.deps.snapshots.importArchive.bind(t.deps.snapshots);
     let swapping!: () => void;

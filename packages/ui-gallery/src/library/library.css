@@ -206,3 +206,9 @@ html[data-framed] body {
   font-family: var(--ui-font-mono);
   font-size: var(--ui-text-small-size);
 }
+
+/* The showcase board's cover still on its way: its lazy picture is held out of layout, so the
+   browser never fetches it and the cover keeps its loading field. */
+.lib-cover-held .showcase-cover > img {
+  display: none;
+}

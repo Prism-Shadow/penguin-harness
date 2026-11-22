@@ -5,7 +5,7 @@
  * dialog (features/machines/ssh-host-dialog.tsx) — the manual Benchmark form
  * (features/benchmark/create-benchmark-modal.tsx), the chat's shortcut editor
  * (features/chat/shortcuts-folder.tsx) and the built-in browser's homepage
- * (features/builtin-browser/homepage-dialog.tsx).
+ * (plugins/browser-automation/src/web/homepage-dialog.tsx).
  *
  * - The verb waits for what it needs: a new ssh host's name and address, a malformed value — or a
  *   name the page already has — said under its field as it is typed; a change to a configured
@@ -23,8 +23,11 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createElement as h, Fragment, type ReactElement } from "react";
 
+// The browser reaches the app's own helpers through the plugin face; this hands them over.
+import "../src/web-app/plugin-host";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
+import { en as browserEn } from "../../../plugins/browser-automation/src/web/strings";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
 import type {
   MachineInfo,
@@ -35,7 +38,7 @@ import { AddMachineDialog } from "../src/features/machines/add-machine-dialog";
 import { SshHostDialog } from "../src/features/machines/ssh-host-dialog";
 import { CreateBenchmarkModal } from "../src/features/benchmark/create-benchmark-modal";
 import { ShortcutsFolder } from "../src/features/chat/shortcuts-folder";
-import { HomepageDialog } from "../src/features/builtin-browser/homepage-dialog";
+import { HomepageDialog } from "../../../plugins/browser-automation/src/web/homepage-dialog";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import {
   button,
@@ -316,7 +319,7 @@ describe("record dialogs", () => {
   });
 
   describe("the homepage", () => {
-    const bb = en.builtinBrowser;
+    const bb = browserEn.builtinBrowser;
 
     it("waits for an entry that opens another page than the saved one, and asks before Esc drops it", async () => {
       stubFetch(() => apiError(404, "not_found"));

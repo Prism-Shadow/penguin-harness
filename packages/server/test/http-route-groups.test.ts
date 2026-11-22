@@ -165,7 +165,10 @@ describe("a route group's auth flag", () => {
 
 describe("a web contribution", () => {
   it("keeps the server's id and from over data fields of the same name", () => {
-    const web = wire(WebModule, {});
+    // An empty resource registry: no plugin host, so no plugin modules run.
+    const web = wire(WebModule, {
+      hmr: { resources: { register: () => () => {}, claim: () => undefined } },
+    });
     web.setup({
       contributions: {
         pages: [

@@ -10,10 +10,12 @@
  *
  * The list is purely for "finding a model": grouped by vendor (group header = logo + vendor
  * name + count + the collapse chevron), with one card per model within a group — the card
- * shows only the display name + status badges (default / vision / fast / free / discount), while
- * context, pricing, and key status are folded into a single line of small text. Clicking a card opens the config dialog
- * (credentials, context, pricing, vision toggle, plus set as default / set as vision model /
- * delete). The group header's right side holds the group's actions in a fixed order
+ * shows only the display name + status badges (default / in use / vision / fast / free /
+ * discount), while context, pricing, and key status are folded into a single line of small text.
+ * Clicking a card opens the config dialog (credentials, context, pricing, vision toggle, plus set
+ * as default for a chat model, use or stop using for a tool model — default-models.tsx — and
+ * delete). The header's Default model settings opens every default at
+ * once (default-models-layer.tsx). The group header's right side holds the group's actions in a fixed order
  * (group-header.ts): its balance (one menu: pin, refresh, when it was read), the connection
  * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
  * Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
@@ -63,6 +65,7 @@ import {
   type DragEvent as ReactDragEvent,
   type ReactNode,
 } from "react";
+import { useSearchParams } from "react-router";
 
 import type {
   CredentialInfo,
@@ -161,7 +164,7 @@ import {
   loadModelGroupOrder,
   saveModelGroupOrder,
 } from "../../lib/model-group-order";
-import { TAG_TONE, modelTags } from "../../lib/model-tags";
+import { TAG_TONE, inUseTag, modelTags } from "../../lib/model-tags";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -211,6 +214,10 @@ import {
   type ProviderConnections,
 } from "./connection";
 
+import { useToolBindings } from "../../state/use-tool-bindings";
+import { notifyModelsChanged, requestDefaultModels } from "../../lib/default-models-request";
+import { usageTargets, type UsageTarget } from "./default-models";
+import { CONNECT_PARAM } from "./connect-link";
 import { ProviderSettingsDialog } from "./provider-settings-dialog";
 import { GroupSettingsControl } from "./group-settings-menu";
 import {
@@ -222,7 +229,7 @@ import {
   type ModelGroupSort,
 } from "./model-sort";
 
-import { tpsTone, ttftTone, type SpeedResult, type SpeedTone } from "./speed-test";
+import { formatLatency, tpsTone, ttftTone, type SpeedResult, type SpeedTone } from "./speed-test";
 
 import { toneInk } from "../../lib/tone";
 import { KeyAuthDialog, type KeyAuthTexts } from "./key-auth-dialog";
@@ -405,6 +412,8 @@ interface DetectOutcome {
 
 /** Local edit state for one model row (string-typed for form use; parsed uniformly on save). */
 export interface RowState {
+  /** False for a tool model (GET /models): an image, speech or web model, never a chat candidate. */
+  chatEligible?: boolean;
   /**
    * Vendor id (entry field, i.e. group membership): a value not in the catalog list is a
    * user-defined group, kept **verbatim** — an operation that only edits the key,
@@ -681,6 +690,7 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
     provider: m.provider,
     modelId: m.modelId,
     original: { provider: m.provider, modelId: m.modelId },
+    ...(m.chatEligible === false ? { chatEligible: false } : {}),
     vision: m.vision !== false,
     contextWindow: m.contextWindow !== undefined ? String(m.contextWindow) : "",
     maxTokens: m.maxTokens !== undefined ? String(m.maxTokens) : "",
@@ -944,6 +954,11 @@ export function ModelsPage() {
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);
   // Vision model used for read_file's proxy reads (describes images for session models with vision=false).
   const [visionModel, setVisionModel] = useState<ModelRefDto | undefined>(undefined);
+  /** The plugins' tool bindings, read again whenever the table changes (it changes the candidates). */
+  const toolBindings = useToolBindings(rows ? projectId : null, null, { refreshKey: rows });
+  /** The bindings a row can serve, each marked when it is chosen for it (default-models.tsx). */
+  const usageOf = (row: RowState | undefined): UsageTarget[] =>
+    row ? usageTargets(rowRef(row), toolBindings.bindings, locale) : [];
   /** Edit target: paired reference of an existing row. */
   const [editing, setEditing] = useState<ModelRefDto | null>(null);
   /**
@@ -1052,12 +1067,17 @@ export function ModelsPage() {
   const hourTick = useHourTick();
 
   /** Takes in a table the server answered with: the rows, the groups' connections, the two refs. */
-  const adopt = useCallback((res: ModelsResponse) => {
-    setRows(res.models.map(toRow));
-    setProviders(res.providers ?? {});
-    setDefaultModel(res.defaultModel);
-    setVisionModel(res.visionModel);
-  }, []);
+  const adopt = useCallback(
+    (res: ModelsResponse) => {
+      setRows(res.models.map(toRow));
+      setProviders(res.providers ?? {});
+      setDefaultModel(res.defaultModel);
+      setVisionModel(res.visionModel);
+      // The first-run guide is waiting for a key, or the dialog for the new rows.
+      if (projectId) notifyModelsChanged(projectId);
+    },
+    [projectId],
+  );
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -1089,6 +1109,37 @@ export function ModelsPage() {
   }, [load]);
 
   /**
+   * A tool model's "Use model": the model is chosen for every binding it can serve and is not
+   * chosen for yet, one by one, and one toast names the ones it took. A refused write is its own
+   * toast; the rest still go. Resolves with whether any landed, which closes the dialog.
+   */
+  const useModel = async (ref: ModelRefDto): Promise<boolean> => {
+    const row = rows?.find((r) => sameModelRef(rowRef(r), ref));
+    if (!row) return false;
+    const taken: string[] = [];
+    for (const target of usageOf(row).filter((t) => !t.current)) {
+      if (await toolBindings.bind(target.key, ref)) taken.push(target.title);
+    }
+    if (taken.length > 0) toastSuccess(S.models.used(taken));
+    return taken.length > 0;
+  };
+
+  /**
+   * A tool model's "Stop using model": each binding it is chosen for is unbound, and one toast
+   * names them. A refused write is its own toast; the rest still go.
+   */
+  const stopUsingModel = async (ref: ModelRefDto): Promise<boolean> => {
+    const row = rows?.find((r) => sameModelRef(rowRef(r), ref));
+    if (!row) return false;
+    const removed: string[] = [];
+    for (const target of usageOf(row).filter((t) => t.current)) {
+      if (await toolBindings.bind(target.key, null)) removed.push(target.title);
+    }
+    if (removed.length > 0) toastSuccess(S.models.stoppedUsing(removed));
+    return removed.length > 0;
+  };
+
+  /**
    * Writes the whole table (the dialog's Save / Add, set default, set vision model, delete).
    * Resolves with whether it landed. On failure the table on screen stays as the server last
    * answered — nothing that was not written shows as if it had been — and the error is a toast;
@@ -1097,9 +1148,13 @@ export function ModelsPage() {
   const persist = async (
     nextRows: RowState[],
     nextDefault: ModelRefDto | undefined,
-    nextVision: ModelRefDto | undefined,
-    /** Success toast text (defaults to "saved"); on failure this function shows an error toast instead. */
-    successText?: string,
+    /** The vision model to store; undefined keeps the stored one (if its row is still there), null clears it. */
+    nextVision: ModelRefDto | null | undefined,
+    /**
+     * Success toast text (defaults to "saved"; null shows none, for a caller that reports the
+     * outcome itself); on failure this function shows an error toast instead.
+     */
+    successText?: string | null,
     /** Group connections written in the same request (an import writes its group's once). */
     providerUpdates?: Record<string, ProviderConnectionUpdate>,
   ): Promise<boolean> => {
@@ -1109,7 +1164,9 @@ export function ModelsPage() {
     const effectiveVision =
       nextVision && nextRows.some((r) => sameModelRef(rowRef(r), nextVision) && r.vision)
         ? nextVision
-        : undefined;
+        : nextVision === null
+          ? null
+          : undefined;
     // Each row's blank fields are judged against its group as this request will leave it.
     const groupAfter = (id: string) =>
       providerUpdates?.[id] !== undefined
@@ -1121,7 +1178,7 @@ export function ModelsPage() {
       };
       if (providerUpdates !== undefined) body.providers = providerUpdates;
       if (nextDefault) body.defaultModel = nextDefault;
-      if (effectiveVision) body.visionModel = effectiveVision;
+      if (effectiveVision !== undefined) body.visionModel = effectiveVision;
       const res = await api.putModels(projectId, body);
       adopt(res);
       // Default model changed: drop the stored draft's model selection so the draft chat
@@ -1129,7 +1186,7 @@ export function ModelsPage() {
       if (userId && res.defaultModel && !sameModelRef(res.defaultModel, defaultModel)) {
         clearDraftModelRef(userId, projectId);
       }
-      toastSuccess(successText ?? S.common.saved);
+      if (successText !== null) toastSuccess(successText ?? S.common.saved);
       return true;
     } catch (e) {
       toastApiError(e);
@@ -1161,12 +1218,34 @@ export function ModelsPage() {
   /** Non-empty search query: groups are filtered to matches and force-opened while it lasts. */
   const searching = query.trim() !== "";
 
+  /**
+   * The default a newly stored group key offers. A Project with a default is asked whether to
+   * switch; one with none gets the whole Default model settings dialog instead, which lists the models the
+   * key just made usable beside every other default.
+   */
+  const offerDefault = (offer: DefaultModelOffer) => {
+    if (offer.current === undefined) requestDefaultModels();
+    else setDefaultOffer(offer);
+  };
+
   /** The end of a connect dialog's dismissal: the question its key's offer asks, then a clean slate. */
   const endConnect = () => {
-    if (landedOffer.current !== undefined) setDefaultOffer(landedOffer.current);
+    if (landedOffer.current !== undefined) offerDefault(landedOffer.current);
     keyLanded.current = false;
     landedOffer.current = undefined;
   };
+
+  // The first-run guide's 「连接」: open on the provider's connect flow once, then drop the
+  // parameter so a reload or a Back does not start it again.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const connectAsked = searchParams.get(CONNECT_PARAM);
+  useEffect(() => {
+    if (connectAsked === null || rows === null) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete(CONNECT_PARAM);
+    setSearchParams(next, { replace: true });
+    if (isOwner && providerInfo(connectAsked)?.bridgeAuth !== undefined) setOauthFor(connectAsked);
+  }, [connectAsked, rows, isOwner, searchParams, setSearchParams]);
 
   /**
    * What the two catalog actions (preset-sync.tsx) run against: this Project's saved table, the
@@ -1202,6 +1281,21 @@ export function ModelsPage() {
   };
 
   /**
+   * Why the group speed test leaves a model out, in the reader's words; undefined when it tests
+   * it. A tool model is probed with the request of a binding that accepts it (a short recording
+   * for speech recognition, a sentence to speak, a search, a page to read, a small picture), so
+   * one nothing in the Project uses has no probe, and a video model's would take minutes and
+   * cost the most of any.
+   */
+  const speedSkipReason = (row: RowState): string | undefined => {
+    if (row.chatEligible !== false) return undefined;
+    const jobs = usageOf(row);
+    if (jobs.length === 0) return S.models.speedSkipUnused;
+    if (jobs.every((job) => job.key === "t2v")) return S.models.speedSkipVideo;
+    return undefined;
+  };
+
+  /**
    * Group speed test: one real request per model, strictly sequential (concurrent probes
    * trip provider rate limits), each result written to the card as it lands. The
    * confirmation dialog (speedFor) has already warned about quota by the time this runs.
@@ -1217,6 +1311,11 @@ export function ModelsPage() {
       for (const row of targets) {
         if (speedStopRef.current) break;
         const key = refMapKey(row.provider, row.modelId);
+        const skipped = speedSkipReason(row);
+        if (skipped !== undefined) {
+          setSpeedResults((prev) => new Map(prev).set(key, { ok: false, skipped }));
+          continue;
+        }
         setSpeedResults((prev) => new Map(prev).set(key, "pending"));
         try {
           const res = await api.testModel(projectId, {
@@ -1728,6 +1827,9 @@ export function ModelsPage() {
                       speed={speedResults.get(refMapKey(row.provider, row.modelId))}
                       usedTokens={usedTokens.get(refMapKey(row.provider, row.modelId))}
                       hourTick={hourTick}
+                      inUse={usageOf(row)
+                        .filter((target) => target.current)
+                        .map((target) => target.title)}
                       onOpen={() => {
                         setEditingMovedToCustom(false);
                         setEditing(rowRef(row));
@@ -1762,14 +1864,14 @@ export function ModelsPage() {
       {/* The header holds search, the owner-only catalog pair — "Add new models" and "Restore
           defaults" — and the pair of create buttons: the AI path and the group form, offered side
           by side (per-model entry points still live in each group header); on narrow screens the
-          actions wrap to their own line and the search box shrinks flexibly, fixed width at >=sm.
+          search takes its own row and the actions wrap below it, with a fixed search width at >=sm.
           A member reads why nothing here is editable behind the title's "?". */}
       <PageHeader
         title={S.models.title}
         info={isOwner ? undefined : S.models.readOnlyHint}
         actions={
           <>
-            <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+            <div className="w-full shrink-0 sm:w-56">
               <Input
                 size="sm"
                 value={query}
@@ -1777,6 +1879,10 @@ export function ModelsPage() {
                 placeholder={S.models.searchPlaceholder}
               />
             </div>
+            {/* Every default at once: chat, the multimodal operations and the tools. */}
+            <Button size="sm" onClick={requestDefaultModels}>
+              {S.defaultModels.title}
+            </Button>
             {/* "Add new models" appears only while new presets are actually waiting, and the
                 accent says so — adding nothing is a no-op, and a permanent button spent the
                 header's width on one. That is also why the dot is gone: it marked this button as
@@ -1934,7 +2040,7 @@ export function ModelsPage() {
           onSaved={(res) => {
             adopt(res);
             setSettingsFor(null);
-            if (res.defaultOffer !== undefined) setDefaultOffer(res.defaultOffer);
+            if (res.defaultOffer !== undefined) offerDefault(res.defaultOffer);
           }}
         />
       )}
@@ -2133,13 +2239,19 @@ export function ModelsPage() {
           canEdit={isOwner}
           isDefault={editingRow !== undefined && sameModelRef(rowRef(editingRow), defaultModel)}
           isVisionModel={editingRow !== undefined && sameModelRef(rowRef(editingRow), visionModel)}
+          usage={usageOf(editingRow)}
+          usageBusy={toolBindings.busy}
           onClose={closeModelDialog}
           // The dialog stays open, its draft intact, until the write answers; it closes only
           // once the table holds what it sent.
           onSubmit={async (next, action) => {
             const isNew = addingTo !== null;
             let ok: boolean;
-            if (action === "remove") {
+            if (action === "use") {
+              ok = await useModel(rowRef(next));
+            } else if (action === "stopUsing") {
+              ok = await stopUsingModel(rowRef(next));
+            } else if (action === "remove") {
               // Filter by the **identity as loaded**: rows / pointers are both keyed by the
               // paired reference as loaded. If the user edited identity fields before
               // deleting, next's current reference wouldn't match any row -> nothing gets
@@ -2608,6 +2720,7 @@ export function ModelCard({
   usedTokens,
   hourTick,
   onOpen,
+  inUse,
   onMoveToCustom,
 }: {
   row: RowState;
@@ -2622,6 +2735,8 @@ export function ModelCard({
   /** Bumped on the hour (see useHourTick): the cue to re-read a time-of-day price. */
   hourTick: number;
   onOpen: () => void;
+  /** The bindings this model is chosen for, by name: its In use tag and the tag's hover. */
+  inUse?: readonly string[];
   /** Opens the config dialog with this row already moved to the custom group; absent for a member, who cannot write the config. */
   onMoveToCustom?: () => void;
 }) {
@@ -2671,7 +2786,9 @@ export function ModelCard({
    */
   const tags = modelTags({
     isDefault,
-    vision: row.vision,
+    ...(inUse !== undefined ? { inUse } : {}),
+    // A tool model's image input is no chat capability: no "vision" tag on it.
+    vision: row.vision && row.chatEligible !== false,
     isVisionModel,
     fastMode: row.fastMode,
     free: isFreeModel(row),
@@ -2707,6 +2824,24 @@ export function ModelCard({
   const speedBadges =
     speed === "pending" ? (
       <span className="shrink-0 text-xs text-gray-400">{S.models.speedPending}</span>
+    ) : speed?.skipped !== undefined ? (
+      <span
+        className="shrink-0 text-xs text-fg-subtle"
+        data-tooltip={speed.skipped}
+        data-tooltip-extra
+      >
+        {S.models.speedSkipped}
+      </span>
+    ) : speed?.ok && row.chatEligible === false && speed.latencyMs !== undefined ? (
+      // A tool model is not chatted with: one reading, how long its request took, in the plain
+      // ink (what is fast differs by job, so no colour grades it).
+      <span
+        className="flex shrink-0 items-center gap-1 text-xs font-medium text-fg-muted"
+        data-tooltip={S.models.latencyTitle}
+      >
+        <GlyphIcon d={ICONS.clock} size={11} />
+        {formatLatency(speed.latencyMs)}
+      </span>
     ) : speed ? (
       speed.ok ? (
         <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium">
@@ -2837,7 +2972,7 @@ export function ModelCard({
 // Config dialog (shared by editing an existing model / adding a custom model)
 // ---------------------------------------------------------------------------
 
-type DialogAction = "save" | "setDefault" | "setVisionModel" | "remove";
+type DialogAction = "save" | "setDefault" | "setVisionModel" | "use" | "stopUsing" | "remove";
 
 /**
  * Confirmation text per action (S is a live runtime binding, must be read at render time, not
@@ -2849,12 +2984,20 @@ const CONFIRM_TITLE: Record<DialogAction, () => string> = {
   save: () => S.models.confirmCancelPromotionTitle,
   setDefault: () => S.models.confirmDefaultTitle,
   setVisionModel: () => S.models.confirmVisionModelTitle,
+  use: () => S.models.useModel,
+  // Never asked (it only takes the model off its own assignments); kept for the record's shape.
+  stopUsing: () => S.models.stopUsing,
   remove: () => S.models.confirmDeleteTitle,
 };
-const CONFIRM_BODY: Record<DialogAction, (name: string, promotionPct: number) => string> = {
+const CONFIRM_BODY: Record<
+  DialogAction,
+  (name: string, promotionPct: number, operations: readonly string[]) => string
+> = {
   save: (n, pct) => S.models.confirmCancelPromotion(n, pct),
   setDefault: (n) => S.models.confirmDefault(n),
   setVisionModel: (n) => S.models.confirmVisionModel(n),
+  use: (n, _pct, operations) => S.models.confirmUse(n, operations),
+  stopUsing: (_n, _pct, operations) => S.models.stopUsingHint(operations),
   remove: (n) => S.models.confirmDelete(n),
 };
 
@@ -2879,6 +3022,8 @@ function ModelDialog({
   canEdit,
   isDefault,
   isVisionModel,
+  usage,
+  usageBusy,
   onClose,
   onSubmit,
 }: {
@@ -2897,6 +3042,10 @@ function ModelDialog({
   canEdit: boolean;
   isDefault: boolean;
   isVisionModel: boolean;
+  /** The bindings the saved model can serve (default-models.tsx), each marked when it is chosen. */
+  usage: readonly UsageTarget[];
+  /** A binding write is in flight. */
+  usageBusy: boolean;
   onClose: () => void;
   /** Writes the row; resolves with whether it landed (the host closes the dialog when it did). */
   onSubmit: (row: RowState, action: DialogAction) => Promise<boolean>;
@@ -3389,6 +3538,11 @@ function ModelDialog({
    * opened to make (that move is where it opened, so closing asks nothing about it).
    */
   const changed = draft.dirty || movedToCustom;
+  /** The bindings it can serve and is not chosen for yet: what a tool model's "Use model" takes. */
+  const pendingUse = usage.filter((target) => !target.current);
+  /** The ones it is chosen for: what "Stop using model" takes it off, and its In use tag. */
+  const heldUse = usage.filter((target) => target.current);
+  const inUseMark = inUseTag(heldUse.map((target) => target.title));
   // Errors show once there is something to save; an empty model id is marked by its asterisk.
   const shownErrors: FieldErrors =
     changed && form.modelId.trim() === ""
@@ -3699,30 +3853,51 @@ function ModelDialog({
    */
   const slots: Record<ModelDialogSlot, ReactNode> = {
     // Model-level actions: test connectivity (for a new model, fill in the id and key to verify
-    // before saving) / set default / set as vision proxy model / remove.
+    // before saving) / set as the default model, or use and stop using a tool model / remove.
+    // Each job one by one, a chat model's included, is the Default model settings dialog's.
     actions: canEdit && (
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" disabled={testing || !form.modelId.trim()} onClick={() => void runTest()}>
           {testing ? S.models.testing : S.models.testConnection}
         </Button>
-        {/* Setting the default or the vision model writes the draft with it, so those two wait
-            for it to be valid, like Save; removing writes nothing of the draft. */}
-        {!isNew && !isDefault && (
-          <Button size="sm" disabled={saving || !valid} onClick={() => setConfirming("setDefault")}>
-            {S.models.setDefault}
-          </Button>
-        )}
-        {!isNew && form.vision && !isVisionModel && (
-          <Button
-            size="sm"
-            title={S.models.visionModelHint}
-            data-tooltip-extra
-            disabled={saving || !valid}
-            onClick={() => setConfirming("setVisionModel")}
-          >
-            {S.models.setVisionModel}
-          </Button>
-        )}
+        {/* One button beside the test. A chat model becomes the default chat model: that writes
+            the draft with it, so it waits for the draft to be valid, like Save. A tool model
+            cannot hold a chat: "Use model" chooses it for every binding it can serve while one
+            is still another model's (asked first), and once it holds them all "Stop using model"
+            takes it off them (at once: it only takes this model off its own assignments). A
+            binding names the saved model, so those wait while the draft holds unsaved edits. */}
+        {!isNew &&
+          (form.chatEligible !== false ? (
+            !isDefault && (
+              <Button
+                size="sm"
+                disabled={saving || !valid}
+                onClick={() => setConfirming("setDefault")}
+              >
+                {S.models.setDefault}
+              </Button>
+            )
+          ) : pendingUse.length > 0 ? (
+            <Button
+              size="sm"
+              title={S.models.useHint(pendingUse.map((t) => t.title))}
+              disabled={saving || changed || usageBusy}
+              onClick={() => setConfirming("use")}
+            >
+              {S.models.useModel}
+            </Button>
+          ) : (
+            heldUse.length > 0 && (
+              <Button
+                size="sm"
+                title={S.models.stopUsingHint(heldUse.map((t) => t.title))}
+                disabled={saving || changed || usageBusy}
+                onClick={() => void submit("stopUsing")}
+              >
+                {S.models.stopUsing}
+              </Button>
+            )
+          ))}
         {!isNew && (
           <>
             <span className="min-w-0 flex-1" />
@@ -4137,10 +4312,20 @@ function ModelDialog({
                   {form.modelId}
                 </span>
               )}
-              {(isDefault || form.vision || isVisionModel) && (
+              {(isDefault ||
+                inUseMark ||
+                (form.vision && form.chatEligible !== false) ||
+                isVisionModel) && (
                 <span className="flex flex-wrap items-center gap-1 pt-0.5">
                   {isDefault && <Pill tone={TAG_TONE.status}>{S.models.default}</Pill>}
-                  {form.vision && <Pill tone={TAG_TONE.capability}>{S.models.visionBadge}</Pill>}
+                  {inUseMark && (
+                    <Pill tone={inUseMark.tone} tooltip={inUseMark.title}>
+                      {inUseMark.label}
+                    </Pill>
+                  )}
+                  {form.vision && form.chatEligible !== false && (
+                    <Pill tone={TAG_TONE.capability}>{S.models.visionBadge}</Pill>
+                  )}
                   {isVisionModel && (
                     <Pill tone={TAG_TONE.capability}>{S.models.visionModelBadge}</Pill>
                   )}
@@ -4254,7 +4439,11 @@ function ModelDialog({
           cancelLabel={S.common.cancel}
         >
           <p className="text-sm text-gray-700 dark:text-gray-300">
-            {CONFIRM_BODY[confirming](modelLabel, Math.round((promotion ?? 0) * 100))}
+            {CONFIRM_BODY[confirming](
+              modelLabel,
+              Math.round((promotion ?? 0) * 100),
+              pendingUse.map((target) => target.title),
+            )}
           </p>
         </ConfirmModal>
       )}

@@ -7,10 +7,14 @@
  * `@penguinharness/x` are one row.
  *
  * Groups default to the plugin's category; the page can group by status or by what a plugin
- * carries instead, or not group at all, and the search box narrows the rows. The grouping and
- * which groups are folded are remembered per browser (`penguin.pluginsGroupBy`,
- * `penguin.pluginsGroupsFolded`); the search is not.
+ * carries instead, or not group at all, and the search box narrows the rows. The market shows
+ * each group as a tab (plugin-market.ts). The grouping is remembered per browser
+ * (`penguin.pluginsGroupBy`); the search is not.
  */
+import {
+  PLUGIN_CATEGORIES,
+  type PluginCategory,
+} from "@prismshadow/penguin-core/plugin-categories";
 import type {
   InstalledPluginsResponse,
   PluginGroupItem,
@@ -181,7 +185,7 @@ export function pluginRows(
       byPackage.set(plugin.package, row);
     }
   }
-  const known = new Set([...groups.map((g) => g.id), SANDBOX_CATEGORY]);
+  const known = new Set([...PLUGIN_CATEGORIES, ...groups].map((category) => category.id));
   for (const part of modules) {
     const both = byPackage.get(part.specifier);
     if (both !== undefined) {
@@ -198,28 +202,27 @@ export function pluginRows(
   return rows;
 }
 
-/** The category of the sandbox backends, which no library plugin needs to fill. */
-export const SANDBOX_CATEGORY = "sandbox";
 const OTHER_CATEGORY = "other";
 
-/**
- * The categories in display order with their titles in the UI language: the library's, in the
- * order the server sends them, then Agent Sandbox, then Other last.
- */
+/** Official market order, including categories that only remote packages fill. A newer library
+ * can supply additional categories or localized titles. Other stays last. */
 export function pluginCategories(
   groups: readonly PluginGroupItem[],
   locale: "zh" | "en",
 ): { id: string; title: string }[] {
-  const title = (id: string, fallback: string) => {
-    const group = groups.find((g) => g.id === id);
-    return group === undefined ? fallback : localizedText(locale, group.title, group.titleZh);
-  };
+  const categories = new Map<string, PluginCategory>();
+  for (const category of [...PLUGIN_CATEGORIES, ...groups]) categories.set(category.id, category);
+  const other = categories.get(OTHER_CATEGORY);
+  categories.delete(OTHER_CATEGORY);
   return [
-    ...groups
-      .filter((g) => g.id !== SANDBOX_CATEGORY && g.id !== OTHER_CATEGORY)
-      .map((g) => ({ id: g.id, title: localizedText(locale, g.title, g.titleZh) })),
-    { id: SANDBOX_CATEGORY, title: title(SANDBOX_CATEGORY, S.plugins.sandboxCategory) },
-    { id: OTHER_CATEGORY, title: title(OTHER_CATEGORY, S.plugins.otherCategory) },
+    ...Array.from(categories.values(), (category) => ({
+      id: category.id,
+      title: localizedText(locale, category.title, category.titleZh),
+    })),
+    {
+      id: OTHER_CATEGORY,
+      title: other ? localizedText(locale, other.title, other.titleZh) : S.plugins.otherCategory,
+    },
   ];
 }
 
@@ -227,9 +230,22 @@ export function pluginCategories(
 export const PLUGIN_KINDS = ["skills", "hooks", "mcp", "workbenches", "modules"] as const;
 export type PluginKind = (typeof PLUGIN_KINDS)[number];
 
-/** The one kind a row is grouped under: a server module first, then Skills, then hooks, then MCP servers. */
+/**
+ * The index keywords that say what a package carries before it is on the server, in the order
+ * a row takes the first it has: an index row lists no contributions, so these are how a
+ * workbench plugin listed by the index shows under Workbenches before anyone installs it.
+ */
+const KEYWORD_KINDS = ["workbenches", "skills", "hooks", "mcp"] as const;
+
+/**
+ * The one kind a row is grouped under: a server module first — unless it has no library part
+ * and its index keywords name what it carries — then workbenches, Skills, hooks, MCP servers.
+ */
 export function primaryKind(row: PluginRow): PluginKind {
-  if (row.module !== undefined) return "modules";
+  if (row.module !== undefined) {
+    const keywords = row.library === undefined ? (row.module.entry?.keywords ?? []) : [];
+    return KEYWORD_KINDS.find((kind) => keywords.includes(kind)) ?? "modules";
+  }
   const plugin = row.library;
   if ((plugin?.workbenches?.length ?? 0) > 0) return "workbenches";
   if ((plugin?.skills.length ?? 0) > 0) return "skills";
@@ -317,7 +333,6 @@ export interface PluginsPageStorage {
 }
 
 export const PLUGINS_GROUP_BY_KEY = "penguin.pluginsGroupBy";
-export const PLUGINS_GROUPS_FOLDED_KEY = "penguin.pluginsGroupsFolded";
 
 /**
  * The grouping this browser last chose; category when nothing usable is stored, or storage
@@ -336,32 +351,6 @@ export function initialPluginsGroupBy(storage?: PluginsPageStorage): PluginGroup
 export function storePluginsGroupBy(by: PluginGroupBy, storage?: PluginsPageStorage): void {
   try {
     (storage ?? localStorage).setItem(PLUGINS_GROUP_BY_KEY, by);
-  } catch {
-    /* best-effort persistence */
-  }
-}
-
-/** A section's fold key: the grouping and the section, so a status section never folds a category. */
-export const foldKey = (by: PluginGroupBy, id: string): string => `${by}:${id}`;
-
-/** The sections this browser folded, as fold keys; none when nothing usable is stored. */
-export function initialFoldedGroups(storage?: PluginsPageStorage): Set<string> {
-  try {
-    const parsed: unknown = JSON.parse(
-      (storage ?? localStorage).getItem(PLUGINS_GROUPS_FOLDED_KEY) ?? "[]",
-    );
-    return new Set(
-      Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === "string") : [],
-    );
-  } catch {
-    return new Set();
-  }
-}
-
-/** Remembers the folded sections (best-effort, like the grouping). */
-export function storeFoldedGroups(folded: ReadonlySet<string>, storage?: PluginsPageStorage): void {
-  try {
-    (storage ?? localStorage).setItem(PLUGINS_GROUPS_FOLDED_KEY, JSON.stringify([...folded]));
   } catch {
     /* best-effort persistence */
   }

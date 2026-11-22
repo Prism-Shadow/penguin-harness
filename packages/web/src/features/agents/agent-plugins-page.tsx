@@ -13,6 +13,12 @@
  *   ship a Skill, a hook package, an MCP server or a workbench; a package of server modules alone
  *   is the Plugins page's.
  *
+ * A plugin the Agent carries that also ships server modules reads how its module stands on the
+ * Agent's server, from the same answer as the Agent's lists (`modules`), with what the viewer can
+ * do about it (features/plugins/plugin-status.ts `agentModuleMark`): on its row while the module
+ * does not run there, and always on its detail's line. An available plugin says nothing of it:
+ * its install is what brings the module along.
+ *
  * Inside a section the rows are in name order, one per plugin. A section the search leaves empty is
  * not drawn; nothing installed says so above Available, and a library with nothing for an Agent
  * beside nothing installed is one sentence. While the first read is out, placeholder rows stand
@@ -31,6 +37,7 @@ import type { AgentPluginsInstallResponse, PluginGroupItem } from "@prismshadow/
 import { CollapsibleSection, SettingsEmpty, Waiting } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import {
+  agentModuleMark,
   installsOf,
   pluginCategories,
   pluginRows,
@@ -41,7 +48,7 @@ import {
   type PluginRow,
 } from "../plugins";
 import { agentPluginTitle, useAgentPluginActions } from "./agent-plugin-actions";
-import { AgentPluginRow } from "./agent-plugin-row";
+import { AgentPluginRow, type AgentModule } from "./agent-plugin-row";
 import { AgentPluginDetail } from "./agent-plugin-detail";
 import type { PluginsSubPage } from "./plugins-subpages";
 
@@ -53,6 +60,7 @@ export function AgentPluginsPage({
   agentName,
   machineLabel,
   isOwner,
+  isAdmin,
   locale,
   library,
   installed,
@@ -71,6 +79,8 @@ export function AgentPluginsPage({
   /** The ssh alias of the machine the Agent lives on; undefined on this server. */
   machineLabel: string | undefined;
   isOwner: boolean;
+  /** The viewer is the server's administrator. */
+  isAdmin: boolean;
   locale: "zh" | "en";
   /** The library of the server the Agent lives on, by category; null until the first read. */
   library: readonly PluginGroupItem[] | null;
@@ -135,6 +145,15 @@ export function AgentPluginsPage({
   ];
   const shown = sections.filter((section) => section.entries.length > 0);
 
+  /** The server module of a plugin the Agent carries, when the plugin ships one and the server says. */
+  const moduleOf = (entry: AgentPluginGroup): AgentModule | undefined => {
+    if (entry.plugin?.modules !== true || entry.status === "available") return undefined;
+    const status = installed?.modules?.find((m) => m.plugin === entry.name);
+    if (status === undefined) return undefined;
+    const onMachine = target.machineId !== null;
+    return { status, mark: agentModuleMark(status, { isAdmin, onMachine }), onMachine };
+  };
+
   const rowOf = (entry: AgentPluginGroup) => (
     <AgentPluginRow
       key={entry.name}
@@ -146,6 +165,7 @@ export function AgentPluginsPage({
       installs={installs}
       isOwner={isOwner}
       actions={actions}
+      module={moduleOf(entry)}
       marked={entry.name === marked}
       onOpen={() => onOpen(entry.name)}
     />
@@ -204,6 +224,7 @@ export function AgentPluginsPage({
           isOwner={isOwner}
           locale={locale}
           actions={actions}
+          module={moduleOf(open)}
           onClose={onClose}
           onManage={onManage}
           onReload={onReload}

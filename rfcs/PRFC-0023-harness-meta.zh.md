@@ -1,4 +1,4 @@
-# PRFC-0023 Harness Meta：每个数据根都带着自己那份 harness 记录
+# PRFC-0023 Harness Meta File
 
 [English](PRFC-0023-harness-meta.md)
 
@@ -46,7 +46,7 @@ HMR 层落地时定下一条判据：缺记录与坏记录是两件不同的事�
 
 ### 常在不管入口
 
-记录只陈述这个根持有什么；从哪个入口启动由 resolution 决定，见 [PRFC-0024](./PRFC-0024-cli-resolution.zh.md#guide-level-explanation)。dev 根带着安装记录，照旧以 dev 的方式启动；桌面外壳照旧以自己的方式起 server。
+记录只陈述这个根持有什么；从哪个入口启动由 resolution 决定，见 [PRFC-0024](./PRFC-0024-cli-modules.zh.md#guide-level-explanation)。dev 根带着安装记录，照旧以 dev 的方式启动；桌面外壳照旧以自己的方式起 server。
 
 ## Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -98,7 +98,7 @@ HMR 层落地时定下一条判据：缺记录与坏记录是两件不同的事�
 
 ### 记录不决定入口
 
-> 无论 [harness meta](./PRFC-0023-harness-meta.zh.md#guide-level-explanation) 多完整，从哪个入口启动 harness 都由 [resolution](./PRFC-0024-cli-resolution.zh.md#guide-level-explanation) 决定。
+> 无论 [harness meta](./PRFC-0023-harness-meta.zh.md#guide-level-explanation) 多完整，从哪个入口启动 harness 都由 [resolution](./PRFC-0024-cli-modules.zh.md#guide-level-explanation) 决定。
 
 一份会强令启动路径的记录，会让每条通道的 launcher 沦为记录的仆人，让每个 dev 根被自己安装的镜像扣为人质。记录陈述根持有什么，resolution 决定运行什么；保住这条缝，本 RFC 才能铺自己的底线。
 

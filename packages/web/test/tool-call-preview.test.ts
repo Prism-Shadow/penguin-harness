@@ -19,8 +19,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  headerSubtitle,
-  headerSubtitlePath,
+  toolHeaderDetails,
   isBackgroundCall,
   isDetachedCall,
   pendingFilePayload,
@@ -28,6 +27,11 @@ import {
   shortenPath,
   showsBackgroundAction,
 } from "../src/features/chat/tool-call-card";
+
+const headerSubtitle = (...args: Parameters<typeof toolHeaderDetails>) =>
+  toolHeaderDetails(...args).subtitle;
+const headerSubtitlePath = (...args: Parameters<typeof toolHeaderDetails>) =>
+  toolHeaderDetails(...args).subtitleFull;
 
 describe("previewArguments", () => {
   it("renders exec_command as $ <cmd>", () => {
@@ -131,6 +135,13 @@ describe("headerSubtitle", () => {
     );
     expect(headerSubtitle("write_file", '{"file_path":"out.md"}')).toBe("out.md");
     expect(headerSubtitle("search", '{"q":"x"}')).toBeNull();
+  });
+
+  it("does not read another tool's description argument as its subtitle", () => {
+    // An MCP tool's `description` is its payload (an issue's body), not a line about the call.
+    expect(
+      headerSubtitle("create_issue", '{"title":"Bug","description":"Steps to reproduce"}'),
+    ).toBeNull();
   });
 
   it("folds a multi-line description to one line", () => {

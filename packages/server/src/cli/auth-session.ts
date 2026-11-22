@@ -18,37 +18,16 @@ import fs from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
+import { sessionFile, type StoredSession } from "@prismshadow/penguin-library-cli/stored-sign-in";
 import { writeSecretFile } from "../secret-file.js";
 
-/** Where a login is remembered, beside the data root it belongs to. */
-export function sessionFile(root: string): string {
-  return path.join(root, "cli-session.json");
-}
-
-/** A remembered login. `expiresAt` is the server's, so `status` can say it has run out. */
-export interface StoredSession {
-  server: string;
-  userId: string;
-  token: string;
-  expiresAt?: string;
-}
-
-export function readSession(root: string): StoredSession | null {
-  try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(sessionFile(root), "utf8"));
-    if (parsed === null || typeof parsed !== "object") return null;
-    const row = parsed as Record<string, unknown>;
-    if (typeof row.server !== "string" || typeof row.token !== "string") return null;
-    return {
-      server: row.server,
-      userId: typeof row.userId === "string" ? row.userId : "admin",
-      token: row.token,
-      ...(typeof row.expiresAt === "string" ? { expiresAt: row.expiresAt } : {}),
-    };
-  } catch {
-    return null;
-  }
-}
+// The reader lives in the CLI face, where the client reads it for its one sign-in retry; the
+// writer below stays with the commands that sign in.
+export {
+  readSession,
+  sessionFile,
+  type StoredSession,
+} from "@prismshadow/penguin-library-cli/stored-sign-in";
 
 export function writeSession(root: string, session: StoredSession): void {
   const file = sessionFile(root);
@@ -177,13 +156,17 @@ export function promptLine(
  * Falls back to a plain read when the input is not a TTY, so a password can be piped in — the
  * echo is the only thing being suppressed, not the ability to script. `stdin` as for
  * `promptLine`.
+ *
+ * Echo goes off BEFORE the prompt is shown. libuv applies raw mode with `tcsetattr(TCSADRAIN)`,
+ * which on macOS takes effect only once the terminal has read what is still queued for it — the
+ * prompt, had it been written first — and reading the prompt is what tells the person (or a
+ * test) to type. Keys typed in that window were echoed by the terminal, password included.
  */
 export function promptPassword(
   prompt: string,
   stdin: NodeJS.ReadStream = process.stdin,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    process.stderr.write(prompt);
     const raw = stdin.isTTY === true;
     let value = "";
     const done = (out: string) => {
@@ -216,6 +199,7 @@ export function promptPassword(
       }
     };
     if (raw) stdin.setRawMode(true);
+    process.stderr.write(prompt);
     stdin.resume();
     stdin.on("data", onData);
   });

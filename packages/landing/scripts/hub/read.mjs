@@ -65,7 +65,7 @@ function stringList(value) {
 }
 
 /** `{ name, homepage? }` from an RFC author table or npm's `author` (a string or `{ name, url }`). */
-function readAuthor(value) {
+export function readAuthor(value) {
   if (typeof value === "string") {
     const match = /^([^<(]+?)\s*(?:<[^>]*>)?\s*(?:\(([^)]+)\))?$/.exec(value.trim());
     const name = match?.[1]?.trim();
@@ -87,10 +87,41 @@ function frontmatter(text) {
   return parsed && typeof parsed === "object" ? parsed : {};
 }
 
+/** A dated version, `YYYY.MM.DD.N` (the UTC day, then that day's sequence number). */
+const DATED_VERSION = /^(\d{4})\.(0[1-9]|1[0-2])\.(0[1-9]|[12]\d|3[01])\.\d+$/;
+
+/**
+ * The newest day among `versions`, as an ISO date (`YYYY-MM-DD`); undefined when none of them is
+ * a dated version. A plain semver (`1.0.0`, a hook package's `1`) says nothing about when.
+ */
+function newestDay(versions) {
+  let newest;
+  for (const version of versions) {
+    const match = typeof version === "string" ? DATED_VERSION.exec(version) : null;
+    if (!match) continue;
+    const day = `${match[1]}-${match[2]}-${match[3]}`;
+    if (newest === undefined || day > newest) newest = day;
+  }
+  return newest;
+}
+
+/** A Workbench's own `penguin.version`, from the package.json in its folder. */
+function workbenchVersion(dir, workbench) {
+  if (typeof workbench.path !== "string") return undefined;
+  const file = join(dir, workbench.path, "package.json");
+  if (!existsSync(file)) return undefined;
+  try {
+    return JSON.parse(readText(file))?.penguin?.version;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Every plugin package under `pluginsDir` (one directory per package): its npm fields from
  * `package.json`, and what it declares for the library — card, Skills, hook package, Workbenches —
- * from its built `ifaces.json` (plugin-table.mjs).
+ * from its built `ifaces.json` (plugin-table.mjs). `updated` is the newest day among its parts'
+ * dated versions (`newestDay`), absent when none is dated.
  */
 export function readPlugins(pluginsDir) {
   const plugins = [];
@@ -106,6 +137,17 @@ export function readPlugins(pluginsDir) {
     if (description === undefined) fail(file, "a description is required");
     const { card = {}, skills, hooks = {}, workbenches } = readLibraryEntries(dir);
     const quickStart = card.quickStart;
+    const skillFiles = skills
+      .filter((skill) => typeof skill.path === "string")
+      .map((skill) => ({ name: skill.name, skillFile: join(dir, skill.path, "SKILL.md") }))
+      .filter(({ skillFile }) => existsSync(skillFile))
+      .map(({ name, skillFile }) => ({ name, meta: frontmatter(readText(skillFile)) }));
+    // The only ordering signal besides curation: when the plugin's parts last changed.
+    const updated = newestDay([
+      ...skillFiles.map(({ meta }) => meta.version),
+      hooks.version,
+      ...workbenches.map((workbench) => workbenchVersion(dir, workbench)),
+    ]);
     plugins.push({
       id,
       packageName,
@@ -130,18 +172,11 @@ export function readPlugins(pluginsDir) {
               skills: stringList(quickStart.skills),
             }
           : undefined,
-      skills: skills
-        .filter((skill) => typeof skill.path === "string")
-        .map((skill) => ({ name: skill.name, skillFile: join(dir, skill.path, "SKILL.md") }))
-        .filter(({ skillFile }) => existsSync(skillFile))
-        .map(({ name, skillFile }) => {
-          const meta = frontmatter(readText(skillFile));
-          return {
-            name: optionalString(meta.name) ?? name,
-            description: optionalString(meta.short_description) ?? optionalString(meta.description),
-            descriptionZh: optionalString(meta.short_description_zh),
-          };
-        }),
+      skills: skillFiles.map(({ name, meta }) => ({
+        name: optionalString(meta.name) ?? name,
+        description: optionalString(meta.short_description) ?? optionalString(meta.description),
+        descriptionZh: optionalString(meta.short_description_zh),
+      })),
       hooks: Object.keys(hooks).filter(
         (key) => HOOK_POINTS.includes(key) && Array.isArray(hooks[key]),
       ),
@@ -150,6 +185,7 @@ export function readPlugins(pluginsDir) {
         .filter((name) => typeof name === "string"),
       readme: optionalText(join(dir, "README.md")),
       sourceUrl: `${PLUGINS_SOURCE}/${dirName}`,
+      ...(updated !== undefined ? { updated } : {}),
     });
   }
   return plugins;

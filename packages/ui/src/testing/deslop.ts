@@ -1177,10 +1177,18 @@ const cssTransitionCheck: Check = (analysis, policy) =>
               .map((p) => p.trim())
               .filter((p) => p !== "none" && !p.startsWith("var("))
           : [];
+    // Only the two opt-in shared-element recipes may project their final box and artwork.
+    const layout = inPolicy(analysis.file, policy.layoutMotion ?? []);
+    const sharedBounds = layout && rule.selector === '[data-layout-motion="shared-bounds"]';
+    const sharedArtwork = layout && rule.selector === '[data-layout-motion="shared-artwork"]';
     const refused = refusedTransitionProperties(
-      properties,
+      properties.filter(
+        (property) =>
+          !(sharedBounds && property === "clip-path") &&
+          !(sharedArtwork && property === "transform"),
+      ),
       inPolicy(analysis.file, policy.transformMotion),
-      inPolicy(analysis.file, policy.layoutMotion ?? []),
+      layout,
     );
     return refused.length > 0
       ? [{ line: decl.line, found: `${decl.name}: ${refused.join(", ")}` }]

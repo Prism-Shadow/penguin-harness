@@ -410,6 +410,16 @@ describe("the rule checks, on known shapes", () => {
       "1:transition: height",
     ]);
     expect(found("theme.css", layout)).toEqual([]);
+    const projections =
+      '[data-layout-motion="shared-bounds"] { transition-property: clip-path; }\n[data-layout-motion="shared-artwork"] { transition-property: transform; }';
+    expect(found("theme.css", projections)).toEqual([]);
+    expect(found("x.css", projections)).toEqual([
+      "1:transition-property: clip-path",
+      "1:transition-property: transform",
+    ]);
+    expect(found("theme.css", ".other { transition-property: clip-path, transform; }")).toEqual([
+      "1:transition-property: clip-path, transform",
+    ]);
     expect(found("theme.css", ".a { transition-property: width, border-radius; }")).toEqual([
       "1:transition-property: border-radius",
     ]);
