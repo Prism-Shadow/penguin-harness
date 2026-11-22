@@ -92,7 +92,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 ## 认证与账号
 
-登录、登出、账号认领，以及当前用户的密码、资料、偏好设置和已归档对话。
+登录、登出、账号认领，以及当前用户的密码、资料、偏好设置、已归档对话和存储空间。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -113,6 +113,12 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | GET | `/api/me/archived-sessions` | 一个分组中的已归档 Session：`?projectId=&workspace=&limit=&before=&q=&source=` → `{sessions, hasMore}` |
 | POST | `/api/me/archived-sessions/unarchive` | 批量取消归档：`{sessionIds}` 或 `{filter}` → `{done, missing}` |
 | POST | `/api/me/archived-sessions/delete` | 批量删除：`{sessionIds}` 或 `{filter}` → `{done, missing}` |
+| GET | `/api/me/storage` | [设置 › 存储空间](/settings#存储空间)的数字：按分类的字节数，按 Project 与 Agent 分项，管理员另有整个数据根 |
+| POST | `/api/me/storage/refresh` | 重新测量；应答同 `GET /api/me/storage` |
+| GET | `/api/me/storage/cleanup` | 此刻可以安全删除的条目：`?olderThanDays=` → `{measuredAt, olderThanDays, items}` |
+| POST | `/api/me/storage/cleanup` | 删除所选的条目：`{items, olderThanDays}` → `{removed, bytes, skipped}` |
+| GET | `/api/me/storage/sessions` | 按大小与时间列出的会话：`?projectId=&agentId=&listing=&olderThanDays=&sort=` → `{sessions, total, totalBytes, truncated}` |
+| POST | `/api/me/storage/reveal` | 在文件管理器中显示 Project 的文件夹或数据根：`{projectId?}`，应答 `204` |
 
 - `GET /api/auth/claim` 用于兑换首次登录链接或桌面 shell 的一次性 token。链接无效或已被使用时，会改为重定向到 `/login?claimFailed=…`，Web App 会在那里说明如何获取一条有效链接。
 - `GET /api/install` 无需身份验证。`installId` 是一个不透明的 id，存储在 `<root>/install-id`，在数据根目录首次使用时生成。Web App 将它与本地保存的 id 比对，不一致时清空浏览器端引用服务器实体的 UI 状态，这样替换数据根目录后就不会残留旧的 Workspace、草稿和置顶项。返回 `null` 表示服务器无法确立 id，此时客户端不得改动任何状态。
@@ -126,6 +132,13 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
   - `GET /api/me/archived-sessions/groups` 返回 `{groups: [{projectId, projectName, workspace, count, latest}], total, asOf}`，每个 Project 的每个 Workspace 一组。`workspace` 是 Workspace 路径，合并的临时 Workspace 记为 `temp`。`latest` 是组内最新的 `lastActiveAt`，分组按它从新到旧排列。`total` 是各组计数之和，`asOf` 是服务端取这些计数的时刻。`servers=here` 只返回本服务端的分组、不询问任何机器，`servers=machines` 只返回机器上的分组；Web App 分两次询问，一台不应答的机器因此不会拖住本服务端的分组。
   - `GET /api/me/archived-sessions` 按最近活动从新到旧分页读取一个分组。`projectId`、`workspace` 和 `limit`（1–100）必填，`before=<lastActiveAt>,<sessionId>` 与 Session 列表一样从已持有的最后一行之后继续。没有标题的行带上其 Trace 的首轮标题。
   - 两个批量路由接受 `{sessionIds: [...]}`（1–500 个 id）或 `{filter: {q?, source?, projectId?, workspace?, until?, exclude?}}`（代表过滤条件匹配的全部已归档 Session），返回 `{done, missing}`。过滤条件的 `until` 是某次分组响应的 `asOf`：此时批量操作只作用于那一刻已归档、此后没有活动的 Session，计数之后才归档、新开或运行过的 Session 不受影响。`exclude`（1–500 个 id）把这些 Session 排除在外，即**全选**之后又取消勾选的行。每个 Session 都走与 `PATCH` 或 `DELETE /api/sessions/:id` 相同的路径，每个 Session 一个事件。取消归档时 `done` 只计原本已归档的 Session；删除则删除点名的每一个 Session，无论是否已归档，运行中的先中止，但按过滤条件删除时会跳过运行中的 Session，也不计入 `done`。`missing` 列出不存在或调用者无权访问的 id；过滤形式不会产生 `missing`。
+- `/api/me/storage` 及其子路由为[设置 › 存储空间](/settings#存储空间)与 [`penguin storage`](/cli#penguin-storage) 提供数据。它们由预装的 `storage` 插件的服务端模块提供，没有任何 Project 运行该模块的服务器对它们答 `404`。它们只测量本服务器的数据根，不含已连接的机器。
+  - 数字在后台逐个单元测量——每个 Project 的文件夹一个单元，服务器自己的条目一个单元——只保存在内存中。`GET /api/me/storage` 对从未测量过的单元开始测量并立即应答：`measuring` 表示还有测量在进行，`measuredAt` 是所含单元中最早的测量时刻，在每个单元都测量过之前为 `null`。`POST /api/me/storage/refresh` 重新测量全部单元，正在进行的测量直接沿用。两者的应答都带 `reveal`，即调用者能否显示文件夹（`POST /api/me/storage/reveal`）。
+  - `categories` 给出 `traces`、`agentState`、`workspaces`、`scratchpads`、`caches`、`logs`、`plugins` 与 `other` 的字节数，每个字节恰好计入其中一类。`bytes` 与 `categories` 是调用者拥有或参与的 Project 之和，`projects` 逐个列出这些 Project 及其 Agent。管理员另有 `server`：整个数据根的 `bytes` 与 `categories`、以 `otherProjects: {count, bytes}` 合计的其不能进入的 Project，以及 `entries` 中顶层每个非 Project 条目。
+  - `GET /api/me/storage/cleanup` 先测量（数字不到一分钟的除外），再列出 `items`。每项带不透明的 `id`、`kind`（`scratchpad`、`workspace`、`agentCache` 或 `serverCache`）、`reason`（`orphan` 或 `idle`）、大小，以及缺省是否勾选（`selected`）。会话的草稿区在两种情况下列出：会话已不在且文件夹一天内没有改动；或会话未在使用、最近活动早于 `olderThanDays` 天（1–3650，缺省 7）。临时工作区只在没有任何 Project 的会话以它或其中的文件夹为 Workspace、且一天内没有改动时列出。Agent 的 `shared_env/<名称>/` 在它的会话都未在使用时列出，数据根的 `.cache/<名称>/` 只对管理员列出。
+  - `POST /api/me/storage/cleanup` 需要本人登录：本地 API 令牌答 `403` `human_required`，与其他只能由本人进行的写操作相同。它逐条重新判定，并在同一步里把通过的文件夹移开，之后才开始的 Task 不会写进正在删除的文件夹；内容在后台删除，删完后重新测量。`skipped` 逐条写明留下的条目与原因：`in_use`、`gone`（调用者无权清理的条目也这样答）或 `failed`。成员只能清理自己可进入的 Project，管理员可以清理数据根上的一切。
+  - `GET /api/me/storage/sessions` 列出调用者的 Project 中属于某个列表的会话（子 Agent 会话随其父会话），按大小降序或按最近活动升序（`sort=size|age`），至多 500 条。`listing` 为 `all`、`active` 或 `archived`，`olderThanDays` 只留最近活动早于该天数的会话。每行的 `traceBytes` 是其 Trace 文件的大小，`scratchpadBytes` 是最近一次测量看到的草稿区大小，`running` 标出在使用中的会话。删除用 `POST /api/me/archived-sessions/delete` 与 `{sessionIds}`。
+  - `POST /api/me/storage/reveal` 只在桌面应用自己的窗口中可用，同 Workspace 文件的 reveal；只有管理员可以显示数据根。
 
 ## 用户管理（仅管理员）
 
@@ -151,8 +164,8 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | GET | `/api/admin/settings/proxy-probe` | 可达性探测的目标：`{targets: [{provider, url}]}`。不发起任何请求 |
 | POST | `/api/admin/settings/proxy-probe/:provider` | 经服务器的出站链路探测其中一个目标，不发送任何凭证：`{probe: {provider, url, outcome, ms, status?}}` |
 | GET | `/api/admin/plugin-config` | 模块声明的每个设置分组，沙盒的排在最前：`{plugins: [{name, configuration, values, parent?, notices?}]}`。见[插件设置](#插件设置) |
-| PUT | `/api/admin/plugin-config` | 保存一个分组的值：`{name, values}`。返回全部分组，与 GET 相同 |
-| POST | `/api/admin/plugin-config/action` | 执行某个分组的一个动作：`{name, action}`。返回执行结果，以及执行后的全部分组 |
+| PUT | `/api/admin/plugin-config` | 保存一个分组的值：`{name, values}`。返回全部分组，与 GET 相同。需要人的登录：本机 API token 得到 `403` `human_required` |
+| POST | `/api/admin/plugin-config/action` | 执行某个分组的一个动作：`{name, action}`。返回执行结果，以及执行后的全部分组。与 PUT 一样需要人的登录 |
 
 只要有 HTTP 响应返回，探测的 `outcome` 就是 `reachable`，否则为 `timeout`、`dns`、`refused`、`tls` 或 `network`。`:provider` 不在目标列表里时返回 `404` `probe_target_not_found`。
 
@@ -700,11 +713,11 @@ interface AgentApiKeyInfo {
 | GET | `/api/cli/commands` | 每条插件命令，连同所属包：`{commands: [{package, key, summary, access, files?}]}`——`key` 是命令路径（`a.b.c` 等价于 `penguin a b c ARGS`），`summary` 每种语言一行，`access` 为 `admin` 或 `member`，`files` 列出终端读取并发送其文件的选项（`read`），以及终端保存交回文件所用的选项（`write`） |
 | POST | `/api/cli/commands/run` | 将 `args` 对一个包中调用方可运行的命令解析，应答它们打印的内容、退出码与交回的文件 |
 
-运行请求是 `{package, args, language, prog, projectId?, sessionId?, files?}`：`package` 是列表所示名称的插件包，`args` 是本应跟在程序名之后的参数，`language`（`"en"` 或 `"zh"`）用于 summary 与命令自己的输出，`prog` 是用法行打印的程序名（`penguin`，或 `penguin exec <插件>`）。`projectId` 与 `sessionId` 是调用方上下文：server 校验调用方能看到该 Project（否则 `404`）、该 Session 属于这个 Project（否则 `404 session_not_found`），成员命令必须有 Project（否则 `400 project_required`）。`files` 是 `[{value, name, data}]`，终端为 `read` 选项读取的每个文件一项，按选项值原样为键，字节为 base64；它们计入请求体上限。应答是 `{exitCode, stdout, stderr, files?}`，其中 `files` 为 `[{name, mimeType?, data}]`——只含文件名，总计至多 64 MiB。
+运行请求是 `{package, args, language, prog, projectId?, sessionId?, files?}`：`package` 是列表所示名称的插件包，`args` 是本应跟在程序名之后的参数，`language`（`"en"` 或 `"zh"`）用于 summary 与命令自己的输出，`prog` 是用法行打印的程序名（`penguin`，或 `penguin exec <插件>`）。`projectId` 与 `sessionId` 是调用方上下文：server 校验调用方能看到该 Project（否则 `404`）、该 Session 属于这个 Project（否则 `404 session_not_found`），成员命令必须有 Project（否则 `400 project_required`）。声明 `requiresProjectListing` 的命令只在该 Project 为本机列出了其插件时运行（否则 `403 plugin_not_enabled`）。声明 `tokenCaller: "session-driver"` 的命令，对本机 API token 以所指 Session（子 Agent 的 Session 取其根 Session）中正在进行的运行的发起者——一位已登录的人——的身份运行，并改为检查此人对该 Project 的访问权，而不是 token 的：没有 `sessionId` 答 `403 session_required`；没有运行在进行、运行不是已登录的人发起的（token、无人署名的定时任务、Agent API、公司模式、目标模式）、运行被他人插话过，或驱动者不能打开该 Project，答 `403 driver_unknown`。人自己的登录从不被替换，其余命令一律把 token 视为管理员。Session 由调用方指明，因此 Agent 可以借用它所指明的 Project 中另一个 Session 里正在进行的运行的发起者——在每个 Session 有自己的凭据之前，这是已知的局限。`files` 是 `[{value, name, data}]`，终端为 `read` 选项读取的每个文件一项，按选项值原样为键，字节为 base64；它们计入请求体上限。应答是 `{exitCode, stdout, stderr, files?}`，其中 `files` 为 `[{name, mimeType?, data}]`——只含文件名，总计至多 64 MiB。
 
 每次运行都只用被点名包的命令新建一个命令程序：每条命令位于其 key 定位的节点上、以所请求语言的 summary 作描述，`args` 对这个程序解析。无参数时打印该包的帮助并以 0 退出；用法错误按 commander 的原样报出、带 commander 自己的退出码；命令自身失败以退出码 1 返回、消息在 stderr 上。输出是缓冲的，不作流式传输：命令通过 context 写下的一切，以及程序为帮助与用法错误打印的一切，在运行结束时随应答一次到达。一次运行不会波及 server——失败的命令不影响 server 与它的其他路由。
 
-错误：调用者非管理员时 `403` `admin_required`，请求体形状不符时 `400` `bad_request`，没有该名称的插件贡献 CLI 命令时 `404` `unknown_package`。
+错误：调用者非管理员时 `403` `admin_required`，以及上述 `403` `plugin_not_enabled`、`session_required` 与 `driver_unknown`，请求体形状不符时 `400` `bad_request`，没有该名称的插件贡献 CLI 命令时 `404` `unknown_package`。
 
 CLI 自己就按这份列表分派：首个词不属于 CLI 自有命令时，与列表中的 key 比对，恰有一个包命中即运行，两个及以上命中则逐候选报出一行 `penguin exec <包>:<id> …`——见 [penguin exec](/cli#penguin-exec)。
 

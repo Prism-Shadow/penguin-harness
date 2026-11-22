@@ -371,6 +371,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
   let owner: ReturnType<typeof apiClient>;
   let member: ReturnType<typeof apiClient>;
   let stranger: ReturnType<typeof apiClient>;
+  let preinstalled: Set<string>;
 
   beforeAll(async () => {
     t = await createTestApp();
@@ -379,6 +380,12 @@ describe("the App Center", { timeout: 30_000 }, () => {
     stranger = apiClient(t.app, (await provisionUser(t.app, "stranger")).cookie);
     const project = await owner.post("/api/projects", { projectId: PROJECT, name: "home" });
     expect(project.status, await project.text()).toBe(201);
+    // What the new Project's default Agent ships, read from its folder. Not through the App
+    // Center: listing it starts a watcher on each Agent's workbenches, so the fixtures written
+    // below on this Agent would load (and fail, having no index.ts) 300 ms after their last
+    // write. On a slow runner that happens before the first case, which expects them never built.
+    const shipped = path.join(agentStateDir(t.root, PROJECT, AGENT), "workbenches");
+    preinstalled = new Set((await fs.readdir(shipped)).map((id) => `${AGENT}/${id}`));
     const joined = await owner.post(`/api/projects/${PROJECT}/members`, { userId: "member" });
     expect(joined.status, await joined.text()).toBe(201);
     for (const [agentId, name] of [
@@ -517,7 +524,11 @@ describe("the App Center", { timeout: 30_000 }, () => {
   };
 
   it("lists one shortcut per shown workbench, Agents in list order and titles in order within one, and compiles nothing to do it", async () => {
-    const listed = (await shortcuts()).filter((s) => s.agentId === AGENT || s.agentId === LATER);
+    const listed = (await shortcuts()).filter(
+      (s) =>
+        (s.agentId === AGENT || s.agentId === LATER) &&
+        !preinstalled.has(`${s.agentId}/${s.workbenchId}`),
+    );
     const boardIcon = new RegExp(`^${iconRoute(AGENT, "board")}\\?rev=[0-9a-f]{12}$`);
     expect(listed).toEqual([
       {
@@ -592,6 +603,18 @@ describe("the App Center", { timeout: 30_000 }, () => {
     // A workbench never loaded gains no build.
     const dir = path.join(agentStateDir(t.root, PROJECT, AGENT), "workbenches", "board");
     await expect(fs.stat(path.join(dir, ".build"))).rejects.toThrow();
+  });
+
+  it("ships Image Studio as a bilingual shortcut on a new Project's default Agent", async () => {
+    expect(preinstalled.has(`${AGENT}/images`)).toBe(true);
+    expect(await shortcutOf(AGENT, "images")).toMatchObject({
+      title: "Image Studio",
+      titleZh: "图像工作室",
+      path: `/app/${PROJECT}/${AGENT}/images`,
+      tab: "main",
+      build: "ready",
+      icon: { url: expect.stringContaining(iconRoute(AGENT, "images")) },
+    });
   });
 
   it.each(["hidden", "garbled"])(

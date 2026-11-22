@@ -13,6 +13,7 @@
     "repository": "https://github.com/Prism-Shadow/penguin-harness",
     "keywords": ["linux", "bubblewrap", "network-isolation", "path-masking"],
     "categories": ["sandbox"],
+    "sandboxDefaultFor": ["linux"],
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <path d=\"M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z\" />\n  <circle cx=\"10.4\" cy=\"10.3\" r=\"1.7\" />\n  <circle cx=\"14.2\" cy=\"12.3\" r=\"1.1\" />\n  <circle cx=\"11.3\" cy=\"14.9\" r=\"0.8\" />\n</svg>\n"
   },
   {
@@ -29,6 +30,7 @@
     "repository": "https://github.com/Prism-Shadow/penguin-harness",
     "keywords": ["macos", "seatbelt", "network-isolation", "path-masking"],
     "categories": ["sandbox"],
+    "sandboxDefaultFor": ["darwin"],
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <path d=\"M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z\" />\n  <path d=\"M8.6 15.4l6.8-6.8\" />\n  <rect x=\"10.4\" y=\"10.4\" width=\"3.2\" height=\"3.2\" rx=\"0.6\" />\n</svg>\n"
   },
   {
@@ -45,6 +47,7 @@
     "repository": "https://github.com/Prism-Shadow/penguin-harness",
     "keywords": ["windows", "wsl", "bubblewrap", "network-isolation", "path-masking"],
     "categories": ["sandbox"],
+    "sandboxDefaultFor": ["win32"],
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <path d=\"M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z\" />\n  <rect x=\"8.8\" y=\"8.6\" width=\"6.4\" height=\"6.4\" rx=\"0.8\" />\n  <path d=\"M12 8.6v6.4M8.8 11.8h6.4\" />\n</svg>\n"
   },
   {
@@ -61,6 +64,7 @@
     "repository": "https://github.com/Prism-Shadow/penguin-harness",
     "keywords": ["linux", "macos", "windows", "dsh", "filesystem-only"],
     "categories": ["sandbox"],
+    "sandboxDefaultFor": ["linux"],
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <path d=\"M12 3l7 3v5.2c0 4.4-3 8.2-7 9.8-4-1.6-7-5.4-7-9.8V6l7-3z\" />\n  <path d=\"M10.6 13.2l2.8-2.8\" />\n  <path d=\"M11.4 9.7l.8-.8a1.9 1.9 0 0 1 2.7 2.7l-.8.8\" />\n  <path d=\"M12.6 13.9l-.8.8a1.9 1.9 0 0 1-2.7-2.7l.8-.8\" />\n</svg>\n"
   },
   {
@@ -77,5 +81,21 @@
     "repository": "https://github.com/Prism-Shadow/penguin-harness",
     "keywords": ["git", "dugite", "agent-state", "workbench-history"],
     "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <circle cx=\"6\" cy=\"5.5\" r=\"2\" />\n  <circle cx=\"6\" cy=\"18.5\" r=\"2\" />\n  <circle cx=\"18\" cy=\"9\" r=\"2\" />\n  <path d=\"M6 7.5v9\" />\n  <path d=\"M18 11c0 3.5-4 4.5-10.3 6.3\" />\n</svg>\n"
+  },
+  {
+    "name": "@penguinharness/computer-use",
+    "title": "Computer Use",
+    "titleZh": "电脑操作",
+    "version": "0.1.0",
+    "description": "Computer use for PenguinHarness: Agents see and operate desktop apps on macOS, Windows and Linux through their accessibility trees, with agent-desktop.",
+    "descriptionZh": "让 Agent 用 penguin computer 看见并操作这台电脑上的桌面应用：经各操作系统的无障碍树（macOS、Windows 与 Linux）读取窗口、点击、输入、选择与等待，底层是 vercel-labs 的 agent-desktop。缺省只放行观察与语义操作；物理输入、剪贴板与通知读取由管理员开启，从不操作 PenguinHarness 自身。",
+    "shortDescription": "See and operate desktop apps through their accessibility trees.",
+    "shortDescriptionZh": "经无障碍树查看并操作桌面应用。",
+    "authors": ["Prism Shadow"],
+    "license": "Apache-2.0",
+    "repository": "https://github.com/Prism-Shadow/penguin-harness",
+    "keywords": ["computer-use", "desktop-automation", "accessibility", "agent-desktop"],
+    "categories": ["office-productivity"],
+    "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <rect x=\"3\" y=\"4\" width=\"18\" height=\"12\" rx=\"1.6\" />\n  <path d=\"M9 20h6M12 16v4\" />\n  <path d=\"m10 7.5 1.6 5 .9-2 2-.9z\" />\n</svg>\n"
   }
 ]

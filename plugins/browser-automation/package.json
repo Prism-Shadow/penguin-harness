@@ -1,11 +1,14 @@
 {
   "name": "@penguinharness/browser-automation",
   "version": "0.2.18",
+  "type": "module",
   "description": "Drive the agent browser from the shell with penguin browser — the desktop app's built-in browser or the user's own Chrome, whichever the user chose — to read pages as simplified HTML or text, act with JavaScript and trusted clicks and typing, and extract structured data such as orders or search results, signed in with the user's own accounts.",
   "keywords": [
     "penguin-plugin",
     "penguinharness",
-    "skills"
+    "skills",
+    "browser",
+    "browser-automation"
   ],
   "license": "Apache-2.0",
   "author": {
@@ -17,23 +20,56 @@
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
     "directory": "plugins/browser-automation"
   },
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    },
+    "./web": "./src/web/index.ts",
+    "./cli": "./src/cli/index.ts",
+    "./package.json": "./package.json"
+  },
   "files": [
-    "icon.svg",
+    "dist/index.js",
     "skills",
-    "hooks",
+    "icon.svg",
     "ifaces.json",
+    "cli-ifaces.json",
+    "THIRD-PARTY-NOTICES.md",
     "LICENSE"
   ],
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.server.json --sources src --out ifaces.json && node ../../scripts/gen-ifaces.mjs --project tsconfig.cli.json --sources src/cli --out cli-ifaces.json && tsup"
   },
   "devDependencies": {
     "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-library-auth": "workspace:*",
+    "@prismshadow/penguin-library-cli": "workspace:*",
+    "@prismshadow/penguin-library-db": "workspace:*",
+    "@prismshadow/penguin-library-machine": "workspace:*",
+    "@prismshadow/penguin-library-setting": "workspace:*",
+    "@prismshadow/penguin-ui": "workspace:*",
+    "@prismshadow/penguin-web-plugin": "workspace:*",
     "@prismshadow/skills": "workspace:*",
-    "vitest": "^4.1.12"
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/ws": "^8.18.1",
+    "commander": "^13.0.0",
+    "hono": "^4.13.11",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.12",
+    "ws": "^8.18.3"
   }
 }

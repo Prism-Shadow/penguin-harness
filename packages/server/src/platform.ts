@@ -118,6 +118,11 @@ import { AgentConfigService } from "./services/agent-config-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { AgentRoutes } from "./services/agent-routes.js";
 import { AgentService } from "./services/agent-service.js";
+import { DeletingFoldersService } from "./services/deleting-folders.js";
+import { RootDataLayout } from "./services/data-layout.js";
+import { DataLayout } from "./mechanisms/data-layout.js";
+import { DeletingFolders } from "./mechanisms/deleting-folders.js";
+import { SessionActivity } from "./runtime/session-activity.js";
 import { MemoryService } from "./services/memory-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
@@ -152,11 +157,13 @@ import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
 import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
+import { AdminPluginRoutes } from "./http/routes/admin-plugins.js";
 import { NpmPluginPackages } from "./plugin/packages.js";
 import { PluginSourceSettings } from "./plugin/source-settings.js";
 import { PluginMirrorSettings } from "./plugin/mirror-settings.js";
 import { PluginLibraryModule } from "./plugin/library-module.js";
 import { PluginModuleRequestsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-requests";
+import { PluginModulePreinstallsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-preinstalls";
 import { PluginModules } from "./mechanisms/plugins.js";
 import { PluginModulesService } from "./services/plugin-modules.js";
 import { PluginModuleRoutes } from "./http/routes/plugin-modules.js";
@@ -213,7 +220,6 @@ import { OrgCache } from "@prismshadow/penguin-library-organization";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
-import { BuiltinBrowserModule } from "./builtin-browser/module.js";
 import { AgentApiModule } from "./amsp/module.js";
 
 /**
@@ -306,6 +312,7 @@ export class Startup {
     ConsoleLog,
     SystemClock,
     ConfigPaths,
+    RootDataLayout,
   ],
   exports: [
     Config,
@@ -321,6 +328,7 @@ export class Startup {
     Log,
     Clock,
     Paths,
+    DataLayout,
   ],
 })
 export class RuntimeModule {}
@@ -402,6 +410,7 @@ export class ProjectsModule {}
     Sessions,
     SessionServiceIface,
     SessionEnv,
+    SessionActivity,
     ScheduleTaskRunner,
     ScheduleSessionCreator,
     MessagingTaskRunner,
@@ -490,11 +499,12 @@ export class TracesModule {}
     AgentConfigService,
     SnapshotService,
     AgentService,
+    DeletingFoldersService,
     MemoryService,
     BenchmarkService,
     AgentRoutes,
   ],
-  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks],
+  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks, DeletingFolders],
 })
 export class AgentsModule {}
 
@@ -555,6 +565,7 @@ export class CompanyModule {}
     PluginRegistryRoutes,
     NpmPluginPackages,
     InstalledPluginRoutes,
+    AdminPluginRoutes,
     PluginCliCommandsProvider,
     PluginMarketRoutes,
     SuggestIdRoutes,
@@ -598,12 +609,18 @@ export class ThemesModule {}
 
 /**
  * A library plugin's server modules, brought along by an install on an Agent (PRFC-0031): the
- * ledger of requests and decisions, the service that applies the rule, and the member's and the
- * administrator's routes. Its own group: the Agent service and the installed-plugins routes
+ * ledger of requests and decisions, the record of preinstalled modules handled per Project
+ * (PRFC-0030), the service that applies the rule, and the member's and the administrator's
+ * routes. Its own group: the Agent service and the installed-plugins routes
  * reach it as `PluginModules`, and nothing else reads the ledger.
  */
 @Module({
-  children: [PluginModuleRequestsRepo, PluginModulesService, PluginModuleRoutes],
+  children: [
+    PluginModuleRequestsRepo,
+    PluginModulePreinstallsRepo,
+    PluginModulesService,
+    PluginModuleRoutes,
+  ],
   exports: [PluginModules],
 })
 export class PluginModulesModule {}
@@ -640,7 +657,6 @@ export class PluginModulesModule {}
     WorkbenchesModule,
     ModelToolsModule,
     ThemesModule,
-    BuiltinBrowserModule,
     AgentApiModule,
     Startup,
   ],

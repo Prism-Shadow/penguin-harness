@@ -33,6 +33,7 @@ import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { Machines } from "../../machines/service.js";
 import { ModelBalances } from "../../services/model-balance.js";
 import { toolBindingKeyFault } from "../../services/tool-binding-key.js";
+import type { ToolModelBindings } from "../../services/tool-model-bindings.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface ModelsRouteDeps {
@@ -45,6 +46,8 @@ export interface ModelsRouteDeps {
   projectConfigService: ProjectConfigStore;
   access: Access;
   sessionsRepo: SessionIndex;
+  /** The plugins' bindings: the request the connection test sends a tool model (absent: the chat probe for every model). */
+  toolModelBindings?: Pick<ToolModelBindings, "testRequest">;
 }
 
 /**
@@ -273,7 +276,8 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
     req.defaultModel = parseRef(body.defaultModel, "defaultModel");
   }
   if (body.visionModel !== undefined) {
-    req.visionModel = parseRef(body.visionModel, "visionModel");
+    // null clears it (a model stops being the Project's image understanding).
+    req.visionModel = body.visionModel === null ? null : parseRef(body.visionModel, "visionModel");
   }
   if (body.toolModels !== undefined) {
     const table = body.toolModels;
@@ -442,7 +446,14 @@ export function modelsRoutes(deps: ModelsRouteDeps): Hono<AppEnv> {
       if (typeof body.fastMode !== "boolean") throw badRequest("fastMode must be a boolean.");
       req.fastMode = body.fastMode;
     }
-    return c.json(await deps.projectConfigService.testModel(projectId, req));
+    const bindings = deps.toolModelBindings;
+    return c.json(
+      await deps.projectConfigService.testModel(
+        projectId,
+        req,
+        bindings !== undefined ? (model) => bindings.testRequest(model) : undefined,
+      ),
+    );
   });
 
   // Protocol auto-detection (owner): probes which generic protocol client the base URL

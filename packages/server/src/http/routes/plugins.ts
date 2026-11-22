@@ -36,8 +36,9 @@
  * hooks. The library is what this build carries; the registry is what the deployment can
  * fetch. Both are deployment-global (no Project check); only installing touches an Agent.
  *
- * The registry merges two sources: the index embedded in this package (the sandbox backends
- * the workspace ships) and the one published by the index repository. The published document
+ * The registry merges two sources: the index embedded in this package (the workspace's
+ * server-module plugins: the sandbox backends and the market-only ones) and the one published by
+ * the index repository. The published document
  * is cached, a failure to reach it is reported alongside the entries rather than emptying the
  * page, and a listing waits for it only briefly before answering without it — see
  * plugin/registry.ts for the three rules.
@@ -93,6 +94,7 @@ import {
   withoutIcon,
 } from "../../plugin/registry.js";
 import { indexMirrorRules } from "../../plugin/mirror-settings.js";
+import { offlineArchives, type OfflineArchive } from "../../plugin/offline-archives.js";
 import type {
   CachedRegistry,
   IndexDocumentEntry,
@@ -438,6 +440,8 @@ export interface PluginRoutesOptions {
   onCache?: (cache: CachedRegistry, url: string) => void;
   /** This server's plugin prefix (`<root>/plugins`), whose server modules from a link or a zip the listing adds; none without it. */
   prefix?: () => string | null;
+  /** The offline archives the build carries (plugin/offline-archives.ts): a listed entry with one says so. */
+  offline?: () => readonly OfflineArchive[];
 }
 
 /**
@@ -532,9 +536,22 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
   app.get("/", async (c) => {
     const { entries, failures, pending } = await listing();
     const here = bases();
-    const plugins = (await Promise.all(entries.map((entry) => described(entry, here)))).map(
-      (d) => d.entry,
-    );
+    // An entry the build carries an offline archive of installs without a registry, and says
+    // what it carries before it is on this server (05 「安装从不卡住」).
+    const archives = options.offline?.() ?? [];
+    const plugins = (await Promise.all(entries.map((entry) => described(entry, here)))).map((d) => {
+      const archive = archives.find((a) => a.name === d.entry.name);
+      return archive === undefined
+        ? d.entry
+        : {
+            ...d.entry,
+            offline: {
+              version: archive.version,
+              library: archive.library,
+              modules: archive.modules,
+            },
+          };
+    });
     const body: PluginIndexResponse = { plugins, failures, pending };
     return c.json(body);
   });
@@ -686,6 +703,7 @@ export class PluginRegistryRoutes {
       // Read per request: a push moves the shipped prefix to a new assets directory.
       bases: () => pluginBases(this.config.root, this.hmr.assetsDir()),
       prefix: () => pluginsPrefix(this.config.root),
+      offline: () => offlineArchives(pluginBases(this.config.root, this.hmr.assetsDir())),
       seed: parked ?? null,
       onCache: (cache, url) => {
         this.cache = cache;

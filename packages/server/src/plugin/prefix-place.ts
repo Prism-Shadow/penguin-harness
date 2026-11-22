@@ -49,7 +49,7 @@ export const KEPT_MARKER = "KEPT.txt";
 /** A failure of an install made without npm, in its own words (the route does not call it npm's). */
 export function refusal(
   message: string,
-  reason: "unavailable" | "other" = "other",
+  reason: "unavailable" | "unreachable" | "other" = "other",
 ): PluginInstallError {
   const error = new PluginInstallError(message);
   error.reason = reason;

@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/cli", "../../packages/server/src/*.d.ts"]
+}

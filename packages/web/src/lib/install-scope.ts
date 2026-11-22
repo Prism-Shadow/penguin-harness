@@ -132,6 +132,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     why: "Which theme renders the app (the key lives in @prismshadow/penguin-ui/boot); pure appearance.",
   },
   {
+    kind: "family",
+    key: "penguin.serverModules.",
+    scope: "install",
+    why: "The plugin server modules this server ran when this browser last asked, per account (web-app/running-modules.ts); they are this data root's plugins, so another root's list is stale.",
+  },
+  {
     kind: "exact",
     key: "penguin.themePacks",
     scope: "install",
@@ -396,6 +402,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.machineSessions.",
     scope: "install",
     why: "The Sessions each machine was last seen holding, shown until its connection is held again. Project id and machine id in the key, Session ids in the value — a new root knows none of them.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.modelOnboardingDismissed",
+    scope: "install",
+    why: "The Projects whose first-run model guide was closed in this browser — Project ids of this root.",
   },
   {
     kind: "exact",

@@ -13,6 +13,11 @@
  * A declaration is dropped, with a warning naming it, when no loaded plugin package is behind its
  * module, when its key is not a binding key, or when an earlier one in load order already
  * declared the key: a key is one line of the file, so it has one name and one rule.
+ *
+ * A code half may also name its connection test: the request the models page's "Test connection"
+ * sends a model the binding accepts, since a tool model refuses the chat probe (a speech
+ * recognizer takes no text). Which request a model gets is the first declaring binding's, in load
+ * order, that accepts it; a model no such binding accepts gets the chat probe.
  */
 import { Hono } from "hono";
 import { Bind, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
@@ -24,6 +29,7 @@ import type {
 } from "@prismshadow/penguin-library-project";
 import type { ToolModelBindingView } from "@prismshadow/penguin-library-model";
 import type { ModelRefDto } from "@prismshadow/penguin-library-agent-api";
+import type { ProjectModelRequest } from "@prismshadow/penguin-core";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Hmr } from "../hmr/capabilities.js";
 import { HttpError } from "../http/errors.js";
@@ -65,10 +71,27 @@ export interface ToolModelCandidate {
   output?: string[];
 }
 
+/** A connection test request: the messages and config sent, and how long the test waits between events. */
+export type ToolModelTestRequest = Pick<
+  ProjectModelRequest,
+  "messages" | "config" | "idleTimeoutMs"
+>;
+
+/** A model as the connection test names it: the draft's pair, its client type and its vision mark. */
+export type ToolModelTestSubject = Pick<
+  ToolModelCandidate,
+  "provider" | "modelId" | "clientType" | "vision"
+>;
+
 /** The code half one binding binds. */
 export interface ToolModelBindingCode {
   /** Whether a configured model can serve this binding: what the picker offers and a write takes. */
   accepts(model: ToolModelCandidate): boolean;
+  /**
+   * The cheapest request a model this binding accepts takes, which the connection test sends it.
+   * Absent: such a model is tested with the chat probe (a short text prompt).
+   */
+  testRequest?(): ToolModelTestRequest;
 }
 
 export interface ToolModelBindingsSlots {
@@ -96,6 +119,12 @@ export abstract class ToolModelBindings {
     key: string,
     model: ModelRefDto | null,
   ): Promise<ToolModelBindingView[]>;
+  /**
+   * The request the connection test sends this model: the test request of the first binding, in
+   * load order, that declares one and accepts the model; undefined when none does (the chat probe).
+   * The model need not be configured yet — a draft is tested before it is saved.
+   */
+  abstract testRequest(model: ToolModelTestSubject): ToolModelTestRequest | undefined;
 }
 
 /** One declaration as the provider keeps it: attributed to its package, validated. */
@@ -148,6 +177,18 @@ function accepts(binding: DeclaredBinding, model: ToolModelCandidate): boolean {
       `[tool-model-bindings] '${binding.package}' binding '${binding.key}' failed to judge a model: ${err instanceof Error ? err.message : String(err)}`,
     );
     return false;
+  }
+}
+
+/** A binding's test request; a code half that throws declares none for this call. */
+function testRequestOf(binding: DeclaredBinding): ToolModelTestRequest | undefined {
+  try {
+    return binding.code.testRequest?.();
+  } catch (err) {
+    console.warn(
+      `[tool-model-bindings] '${binding.package}' binding '${binding.key}' failed to build its test request: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return undefined;
   }
 }
 
@@ -211,6 +252,18 @@ export function toolModelBindingsOver(
       }
       await projectConfig.setToolModel(projectId, key, model);
       return list(projectId);
+    },
+    testRequest: (model) => {
+      const candidate: ToolModelCandidate = {
+        ...model,
+        ...modelModalities(model.modelId, model.clientType),
+      };
+      for (const binding of declared()) {
+        if (binding.code.testRequest === undefined || !accepts(binding, candidate)) continue;
+        const request = testRequestOf(binding);
+        if (request !== undefined) return request;
+      }
+      return undefined;
     },
   };
 }

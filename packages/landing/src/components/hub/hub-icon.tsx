@@ -41,25 +41,31 @@ export function HubTile({
   );
 }
 
-/** A tag under a page title: a short fact, its glyph, and a tone when the fact has one. */
+/**
+ * A tag under a page title: a short fact, its glyph, and a tone when the fact has one. `fit` lets
+ * it shrink to the room it is given and end in an ellipsis (a ranking row's narrow tag line); give
+ * it a `title` then, so the whole fact is a hover away.
+ */
 export function HubTag({
   tone = "slate",
   glyph,
   title,
+  fit = false,
   children,
 }: {
   tone?: HubTone;
   glyph?: SiteGlyphName;
   title?: string;
+  fit?: boolean;
   children: ReactNode;
 }) {
   return (
     <span
       title={title}
-      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${TONE_TAG[tone]}`}
+      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${fit ? "max-w-full min-w-0" : ""} ${TONE_TAG[tone]}`}
     >
       {glyph && <SiteGlyph name={glyph} className="h-3.5 w-3.5 shrink-0" />}
-      {children}
+      {fit ? <span className="truncate">{children}</span> : children}
     </span>
   );
 }

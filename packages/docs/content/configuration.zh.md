@@ -104,7 +104,16 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 
 ### 模型条目
 
-Gemini 4 Argon 在 `google` 和 `penguin-go` 分组使用 `model_id = "gemini-4-argon"`，在 `openrouter` 分组使用 `model_id = "google/gemini-4-argon"`。预置条目分别使用 Google 官方 Interactions 客户端、MMSP HTTP 和 OpenRouter Responses。已有 Project 可在模型库页面点击**同步新增模型**补齐这些条目。
+Gemini 4 Argon 在 `google` 和 `penguin-go` 分组使用 `model_id = "gemini-4-argon"`，在 `openrouter` 分组使用 `model_id = "google/gemini-4-argon"`。预置条目分别使用 Google 官方 Interactions 客户端、MMSP HTTP 和 OpenRouter Responses。Gemini 4 Neon 在 `google` 分组使用 `model_id = "gemini-4-neon"`，在 `openrouter` 分组使用 `model_id = "google/gemini-4-neon"`，分别使用 Google 官方 Interactions 客户端和 OpenRouter Responses。已有 Project 可在模型库页面点击**同步新增模型**补齐这些条目。
+
+协议与所在分组不同的条目会在自身存储 `client_type`。例如 OpenRouter 的图像预置固定使用 Images 客户端，而分组使用 Responses：
+
+```toml
+[[models]]
+provider = "openrouter"
+model_id = "google/gemini-nano-banana-2.1"
+client_type = "openai-image"
+```
 
 | 键 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -204,7 +213,7 @@ deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分�
 
 `[plugins]` 表列出 Project 要求的[服务端插件](/skills#服务端插件)，供所有机器共用，在**插件市场**页面只读；页面安装与移除写入所看机器的 `[plugins.<machineId>]` 表。每个键是一个包名，值是形如 Cargo `[dependencies]` 的要求：
 
-插件页不提供会移除共用表与其他机器条目的整包 Delete plugin。Manage installs 仍管理 Agent 副本，模块 Remove 只写所看机器自己的表。前一次 Project 访问的响应（包括离开后再回到同一 Project）不会替换当前模块快照。
+插件页不提供会移除共用表与其他机器条目的整包 Delete plugin。「安装到 Agent」仍管理 Agent 副本，模块 Remove 只写所看机器自己的表。前一次 Project 访问的响应（包括离开后再回到同一 Project）不会替换当前模块快照。
 
 ```toml
 [plugins]
@@ -457,7 +466,7 @@ harness 填入以下占位符：
 - 最后，配置会打上当前 `kernel_version` 的标记。
 - 匹配是**保守**的：只有哈希与某一已记录代一致的标签页才算旧默认值。代太老、不在记录之内的标签页，会当作自定义内容保留。
 
-**还原为默认配置**的工作方式类似 Skill 更新：用当前默认值覆盖配置，只保留 `name`、`description`、`author` 和 `version`。其余全部替换，包括自定义系统提示词、工具列表、模型与压缩设置，以及 MCP Server，插件安装的也不例外（在**插件市场**页面用**管理安装**可以把它们装回来）。当内核更新的保守匹配留下旧字段时，用它做一次彻底刷新。
+**还原为默认配置**的工作方式类似 Skill 更新：用当前默认值覆盖配置，只保留 `name`、`description`、`author` 和 `version`。其余全部替换，包括自定义系统提示词、工具列表、模型与压缩设置，以及 MCP Server，插件安装的也不例外（在**插件市场**页面用**安装到 Agent** 可以把它们装回来）。当内核更新的保守匹配留下旧字段时，用它做一次彻底刷新。
 
 面向开发者的说明：
 

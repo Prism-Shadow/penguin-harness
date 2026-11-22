@@ -187,6 +187,12 @@ export const en: GalleryStrings = {
         "The settings dialog on its Appearance page: theme, mode, accent, the five text sizes and the font pairing — where theme switching lives.",
       how: "The account menu at the bottom of the sidebar › Settings › Appearance.",
     },
+    "settings-storage": {
+      title: "Storage",
+      description:
+        "The settings dialog on its Storage page: what the data root holds with its usage bar by category, the breakdowns by Project and by folder, and the review dialogs that clean up temporary files and old chats.",
+      how: "The account menu at the bottom of the sidebar › Settings › Storage.",
+    },
     "desktop-window": {
       title: "Desktop window",
       description:
@@ -483,7 +489,7 @@ export const en: GalleryStrings = {
       buttons: {
         title: "Buttons",
         description:
-          "Five variants, five sizes and the icon button; disabled and loading; links, inline glyph actions and keyboard hints; the floating ball that drags to an edge and tucks away.",
+          "Five variants, five sizes and the icon button; disabled and loading; links, inline glyph actions, the inline icon button and keyboard hints; the dictation button and the microphone level; the floating ball that drags to an edge and tucks away.",
       },
       inputs: {
         title: "Inputs and forms",
@@ -541,7 +547,7 @@ export const en: GalleryStrings = {
       charts: {
         title: "Charts",
         description:
-          "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them — the donut, the ring gauge, the legend, cost trend and token bars, requests and success rate, the sparkline, the Trace timeline.",
+          "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them — the donut, the ring gauge, the legend, cost trend and token bars, requests and success rate, the sparkline, the Trace timeline and the usage bar.",
       },
       avatars: {
         title: "Avatars",
@@ -571,12 +577,22 @@ export const en: GalleryStrings = {
       data: {
         title: "Data",
         description:
-          "Tables, entity cards and fact rows, list rows with their loading and empty states, label/value pairs and the log view.",
+          "Tables, entity cards and fact rows, list rows with their loading and empty states, label/value pairs, the log view and the review-before-delete list.",
       },
       machines: {
         title: "Machines",
         description:
           "The Machines page's parts: the status pill in every state, the machine card and its list, the dialog toolbar and the add dialog.",
+      },
+      models: {
+        title: "Models",
+        description:
+          "The Project's default-models dialog (chat, multimodal and tool groups, each row saying why it is empty when nothing can serve it), and the guide shown before any model has a key.",
+      },
+      status: {
+        title: "Status page",
+        description:
+          "A plugin settings page's parts: the version element in every state (installed, preparing, failed, not installed, not supported here), the checklist's four row states with a row's own action and folded details, and the status strip with its summary pill and primary action.",
       },
       retry: {
         title: "Retry",
@@ -662,6 +678,29 @@ export const en: GalleryStrings = {
       ballShow: "Show the exit button",
       ballReadout: (side: "left" | "right", percent: number, tucked: boolean, presses: number) =>
         `${side} edge, ${percent}% down${tucked ? ", tucked" : ""} · pressed ${presses === 1 ? "once" : `${presses} times`}`,
+      inlineIcon: "Inline icon button",
+      inlineIconHint:
+        "A small glyph action in a line of text: faint at rest, filled in on hover. The label is the accessible name and the tooltip; it is disabled while busy.",
+      inlineReplyStats: "1.2k tokens · 4.8 s",
+      inlineRead: "Read aloud",
+      inlineFork: "Fork from here",
+      inlineBusy: "Preparing",
+      record: "Dictation button",
+      recordHint:
+        "It sits just before Send and keeps its place for the whole recording: the microphone at rest, a press to finish while recording, a spinner while it transcribes.",
+      recordIdle: "Dictate",
+      recordRecording: "Finish recording",
+      recordWaiting: "Transcribing",
+      meter: "Microphone level",
+      meterHint:
+        "The readout while recording: the elapsed time and the recent levels, one bar per reading. Under reduced motion words replace the moving bars; with no level to read it only says the recording is running.",
+      meterLevel: "Microphone level",
+      meterQuiet: "Quiet",
+      meterSound: "Sound detected",
+      meterRecording: "Recording",
+      meterLive: "Speaking",
+      meterReduced: "Reduced motion",
+      meterUnavailable: "No level",
     },
     inputs: {
       basics: "Inputs",
@@ -908,6 +947,8 @@ export const en: GalleryStrings = {
       pages: { general: "General", appearance: "Appearance", account: "Profile" },
       pageBody: "The current page's settings go here.",
       pageRow: (n: number) => `Setting ${n}`,
+      /** A rail row's accessible name while its count shows. */
+      pageWaiting: (page: string, n: number) => `${page}, ${n} waiting`,
       appearanceInfo: "Theme, accent and density apply to this browser only.",
       drawer: "Drawer",
       openDrawer: "Open a drawer",
@@ -1107,6 +1148,23 @@ export const en: GalleryStrings = {
       reduced: "reduced motion is on, so the reply shows as it arrives",
     },
     charts: {
+      usageBar: {
+        title: "Usage bar",
+        hint: "One total stacked by its parts: widths follow the values, a sliver stays visible and a zero is not drawn; the parts are identities, so palette slots, and the neutral for Other. The thin size sits in list rows, scaled to the largest row.",
+        label: "Storage used",
+        used: (size: string) => `${size} used`,
+        empty: "Not measured yet",
+        kinds: {
+          traces: "Traces",
+          agentState: "Agent State",
+          workspaces: "Temporary workspaces",
+          scratchpads: "Scratchpads",
+          caches: "Caches",
+          logs: "Logs",
+          plugins: "Plugins",
+          other: "Other",
+        },
+      },
       parts: {
         primitives: "Primitives",
         primitivesHint:
@@ -1973,6 +2031,37 @@ export const en: GalleryStrings = {
       },
     },
     data: {
+      reviewList: {
+        title: "Review before delete",
+        hint: "Grouped by kind: the header gives the count, the size and Select all, with one muted line under it on what removing the group costs; one line per item, and an item that cannot be chosen has its box disabled, its reason on hover.",
+        agent: "Writer",
+        orphan: "Scratchpads of deleted chats",
+        idle: "Scratchpads of idle chats",
+        idleNote:
+          "Images and files attached in these chats stop showing, and a continued chat can no longer find its plans and attachments.",
+        caches: "Agent caches",
+        cachesNote: "The Agent installs them again the next time it needs them.",
+        chats: "Chats",
+        inUse: "In use",
+        running: "Running",
+        archived: "Archived",
+        titles: [
+          "Quarterly report draft",
+          "Competitor research",
+          "Release notes 0.2.13",
+          "Fix the login form validation",
+          "Sort the user interviews",
+        ],
+        ago: (days: number) =>
+          days === 0 ? "today" : days === 1 ? "1 day ago" : `${days} days ago`,
+        chosen: (n: number, size: string) => `${n} selected, ${size}`,
+        labels: {
+          selectAll: "Select all",
+          deselectAll: "Deselect all",
+          count: (n: number) => (n === 1 ? "1 item" : `${n} items`),
+          select: (title: string) => `Select ${title}`,
+        },
+      },
       table: "Table",
       tableHint:
         "One header style: the small rung, medium weight, muted ink and a rule; a table on its own is framed, its header on the muted surface.",
@@ -2073,13 +2162,27 @@ export const en: GalleryStrings = {
       cardBuiltin: "Built in",
       cardInstall: "Install",
       cardUpdate: "Update",
-      cardManage: "Manage installs",
+      cardManage: "Install on Agent",
       cardUninstall: "Uninstall",
       cardActionName: (verb, title) => `${verb} ${title}`,
       metaLine: "Facts line",
       metaLineHint:
         "A thing's facts on one line, a middle dot between each; when they do not fit the last one truncates, the rest keep their width, and the line never wraps.",
       metaLineUsedBy: "used by 12 agents, 3 of them on other machines as last seen",
+      impactList: "Impact list in a confirm",
+      impactListHint:
+        "A destructive action's confirm says what it reaches first: one line per thing, its name and where it lives in quieter ink, five at most, the rest counted on one line; while it is being asked for, one waiting line.",
+      impactPending: "Looking for the Agents that have it…",
+      impactMore: (n: number) => `${n} more ${n === 1 ? "Agent" : "Agents"}`,
+      impactItems: [
+        ["Notes helper", "PenguinHarness demo"],
+        ["Researcher", "PenguinHarness demo"],
+        ["Support", "Mia's Project"],
+        ["Translator", "Mia's Project"],
+        ["Reviewer", "Team space"],
+        ["Scheduler", "Team space"],
+        ["Archivist", "Team space"],
+      ] as Array<[name: string, where: string]>,
       factRows: "Fact rows in a detail",
       factRowsHint:
         "One thing a row: a glyph, the name, a few quiet facts and the marks at the end; the last fact takes the remaining width and truncates, the marks keep theirs. A missing part is in muted ink throughout.",
@@ -2109,6 +2212,84 @@ export const en: GalleryStrings = {
       listEmpty: "With nothing in it",
       listEmptyText: "This agent has no hook packages yet.",
       memoryFromPlugin: "Written by the Continual learning plugin",
+    },
+    models: {
+      dialog: "Default model settings dialog",
+      dialogHint:
+        "One picker per row, listing only the models that can serve it; a row nothing can serve says why and where to go. The tool group reads quieter.",
+      openDialog: "Open Default model settings",
+      guide: "Connect guide",
+      guideHint:
+        "Shown first while no model has a key; once one is connected or a key is set, the default-models dialog takes its place.",
+      openGuide: "Open the guide",
+      title: "Default model settings",
+      intro:
+        "New chats, the multimodal tools and voice use these models by default. Each one is saved as you pick it.",
+      chat: "Chat",
+      multimodal: "Multimodal",
+      tools: "Tools",
+      chatModel: "Default chat model",
+      chatHint: "Used for new chats",
+      t2t: "Text generation",
+      i2t: "Image understanding",
+      t2i: "Image generation",
+      t2v: "Video generation",
+      s2t: "Speech recognition",
+      t2s: "Speech synthesis",
+      search: "Web search",
+      fetch: "Fetch a web page",
+      empty: "Connect a provider that offers this kind of model",
+      emptyAction: "Go to Models",
+      unset: "Not set",
+      done: "Done",
+      guideTitle: "Connect a model provider first",
+      guideBody:
+        "This Project has no model it can use yet: no model has an API key. Connect a provider, or add a key on the Models page, then choose the default models.",
+      tokendance: "One wallet for many providers' models, no keys to type",
+      penguinGo: "PenguinHarness's own model service",
+      connect: "Connect",
+      keyText: "Already have an API key from a provider?",
+      keyAction: "Add an API key",
+      later: "Later",
+    },
+    status: {
+      versions: "Version element",
+      versionsHint:
+        "Name | version | platform as one segmented capsule; the state is a mark and a word, never red text; preparing shows a progress bar.",
+      checks: "Checklist",
+      checksHint:
+        "Each state has its own shape and says itself on hover; the row that needs a hand carries its button, a tool's own words fold under it.",
+      strip: "Status strip",
+      stripHint:
+        "The version element and the summary pill lead, the primary actions sit on the other end and wrap when there is no room.",
+      checksTitle: "Checks",
+      recheck: "Check again",
+      display: "Display",
+      accessibility: "Accessibility",
+      accessibilityText: "Session bus unreachable: start the server inside the desktop session",
+      windowManager: "Window manager",
+      windowManagerText: "No window is open to check it with",
+      automation: "Automation",
+      openSettings: "Open System Settings",
+      details: "Details",
+      downloading: "Downloading, 6.4 of 16.0 MB",
+      verifying: "Checking the download",
+      failedWhy: "The registry refused the download: 404",
+      unsupportedWhy: "agent-desktop runs on macOS, Windows and Linux, on x64 and arm64",
+      retry: "Retry",
+      install: "Install",
+      summary: "Needs action",
+      summaryHint: "One check still needs a hand",
+      exportLogs: "Export logs",
+      versionState: {
+        installed: "Installed",
+        preparing: "Preparing",
+        failed: "Install failed",
+        missing: "Not installed",
+        unsupported: "Not supported here",
+        unknown: "State unknown",
+      },
+      checkState: { ok: "OK", action: "Needs action", unknown: "Unknown", na: "Not applicable" },
     },
     machines: {
       pills: "Status pills",
@@ -2373,7 +2554,7 @@ export const en: GalleryStrings = {
       installed: "Installed",
       installedHint: "An agent in this Project has it",
       quickStart: "Quick start",
-      manage: "Manage installs",
+      manage: "Install on Agent",
       carousel: "Selected carousel",
       carouselHint:
         "Three slides. It turns every 7 seconds and holds while the pointer is over it; keyboard focus or a picked thumbnail stops it until Play. Under the system's reduced-motion setting it never turns by itself, and the button reads Play.",

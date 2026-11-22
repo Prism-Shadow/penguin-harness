@@ -4,12 +4,14 @@
  * - The shared index format is validated whole: a flat array of per-version entries in order;
  *   a non-array or one malformed entry fails the document, naming the source or the position
  *   (unlike a plugin list's per-entry tolerance).
- * - The builtin catalogue lists the server modules that live in plugins/ (the sandbox backends
- *   in their category, agent-state-git in none), each named,
+ * - The builtin catalogue lists the server modules that live in plugins/ — the sandbox backends
+ *   (in their category) and agent-state-git (in none) the build ships, and the market-only ones it
+ *   does not (computer-use, in the category its card names) — each named,
  *   versioned, titled, described and licensed as the package names itself, described in both
  *   languages as its own card contribution describes it and drawn with its icon.svg (both of which
- *   it publishes), and serves each one's own shipped README.md; a listed package not on this
- *   machine, a name it does not list and a remote registry have no readme.
+ *   it publishes), repeats the platforms each declares itself the default backend for (what the
+ *   host offers, in index order), and serves each one's own shipped README.md; a listed package
+ *   not on this machine, a name it does not list and a remote registry have no readme.
  * - A package on this machine describes itself in the listing over what its row says (its card
  *   and its icon); one with neither, and a row whose package is not here, stay as the index wrote
  *   them. An icon is named by the URL the registry serves it at — the embedded row's SVG or the
@@ -53,6 +55,7 @@ import {
   newestPerName,
   NIGHTLY_INDEX_URL,
   parsePluginIndex,
+  sandboxDefaultsFor,
   selectIndexChannel,
 } from "../src/plugin/registry.js";
 import { indexUrlsOf } from "../src/plugin/index-config.js";
@@ -329,6 +332,15 @@ for (const dir of readdirSync(PLUGINS_DIR)) {
 const GENERATOR = fileURLToPath(new URL("../../../scripts/gen-ifaces.mjs", import.meta.url));
 type Card = NonNullable<LibraryContributions["card"]>;
 
+/** The platforms a package's sandbox providers declare it the default backend for, in order. */
+function defaultsDeclared(table: NonNullable<ReturnType<typeof readPluginTable>>): string[] {
+  return Object.values(table.manifests).flatMap((manifest) =>
+    (manifest.contributes["SandboxModule.providers"] ?? []).flatMap(
+      (provider) => (provider as { defaultFor?: string[] }).defaultFor ?? [],
+    ),
+  );
+}
+
 /**
  * The server modules' cards as their builds write them: the generator each `build` runs, over
  * the package's own compiler options with its entry alone as the root (its tests are not part of
@@ -337,9 +349,11 @@ type Card = NonNullable<LibraryContributions["card"]>;
  * from the source as it is, so a stale table cannot pass. Two at a time: each is a TypeScript
  * program of its own, beside the suite's other workers.
  */
-async function moduleCards(dirs: readonly string[]): Promise<Map<string, Card>> {
+async function moduleCards(
+  dirs: readonly string[],
+): Promise<Map<string, Card & { defaultFor: string[] }>> {
   const out = await mkdtemp(path.join(tmpdir(), "penguin-sandbox-tables-"));
-  const cards = new Map<string, Card>();
+  const cards = new Map<string, Card & { defaultFor: string[] }>();
   const generate = async (dir: string) => {
     const at = path.join(out, dir);
     await mkdir(at, { recursive: true });
@@ -360,7 +374,11 @@ async function moduleCards(dirs: readonly string[]): Promise<Map<string, Card>> 
       path.join(at, "ifaces.json"),
     ]);
     const warnings: string[] = [];
-    cards.set(dir, libraryContributions(readPluginTable(at)!, warnings).card ?? {});
+    const table = readPluginTable(at)!;
+    cards.set(dir, {
+      ...(libraryContributions(table, warnings).card ?? {}),
+      defaultFor: defaultsDeclared(table),
+    });
     expect(warnings, dir).toEqual([]);
   };
   try {
@@ -451,7 +469,7 @@ describe("plugin readmes", () => {
 });
 
 describe("the builtin catalogue and the packages it lists", () => {
-  let cards: Map<string, Card>;
+  let cards: Map<string, Card & { defaultFor: string[] }>;
   beforeAll(async () => {
     const index = await builtinPluginRegistry().index();
     cards = await moduleCards(index.map((entry) => packages.get(entry.name)!.dir));
@@ -465,10 +483,11 @@ describe("the builtin catalogue and the packages it lists", () => {
     for (const entry of index) {
       const pkg = packages.get(entry.name);
       expect(pkg, `${entry.name} is listed but is no package in plugins/`).toBeDefined();
-      // A sandbox backend sits in its category; any other server module in none (Other).
-      expect(entry.categories, entry.name).toEqual(
-        pkg!.dir.startsWith("sandbox-") ? ["sandbox"] : undefined,
-      );
+      // A sandbox backend sits in its category; another server module in the one its card names,
+      // or in none (Other), as the card test below checks.
+      if (pkg!.dir.startsWith("sandbox-")) {
+        expect(entry.categories, entry.name).toEqual(["sandbox"]);
+      }
       expect(pkg!.manifest.version, entry.name).toBe(entry.version);
       expect(pkg!.manifest.description, entry.name).toBe(entry.description);
       expect(pkg!.manifest.license, entry.name).toBe(entry.license);
@@ -499,6 +518,28 @@ describe("the builtin catalogue and the packages it lists", () => {
       expect(manifest.files, entry.name).toContain("icon.svg");
       expect(manifest.files, entry.name).toContain("ifaces.json");
     }
+  });
+
+  /**
+   * The host names no backend: the platforms a backend is the default for are its package's own
+   * declaration, which its row repeats, and the host reads them from the index.
+   */
+  it("repeats the platforms each backend declares itself the default for, and offers them in index order", async () => {
+    const index = await builtinPluginRegistry().index();
+    for (const entry of index) {
+      const declared = cards.get(packages.get(entry.name)!.dir)!.defaultFor;
+      expect(entry.sandboxDefaultFor ?? [], entry.name).toEqual(declared);
+    }
+    for (const platform of ["linux", "darwin", "win32"]) {
+      const offered = sandboxDefaultsFor(platform, index);
+      expect(offered.length, platform).toBeGreaterThan(0);
+      expect(offered).toEqual(
+        index.filter((e) => e.sandboxDefaultFor?.includes(platform)).map((e) => e.name),
+      );
+    }
+    expect(sandboxDefaultsFor("aix", index)).toEqual([]);
+    // A row that declares nothing is the default for no platform.
+    expect(sandboxDefaultsFor("linux", [{ name: "@acme/backend" }])).toEqual([]);
   });
 
   it("serves each package's own README.md, which the package ships", async () => {

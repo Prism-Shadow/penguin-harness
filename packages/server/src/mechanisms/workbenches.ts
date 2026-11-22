@@ -104,6 +104,8 @@ export abstract class WorkbenchHost {
    */
   abstract createSession(opts?: {
     agentId?: string;
+    /** Choose a project model for this Session. Omit it to use the Project default. */
+    model?: { provider: string; modelId: string };
     /**
      * `allow-all` (the default) runs every tool call, as a scheduled run does. `deny-all`
      * denies every tool call in the Session: the mode for a Session that only talks, so
@@ -170,6 +172,16 @@ export abstract class WorkbenchHost {
 export abstract class Workbenches {
   /** Every workbench of the Agent, disabled ones included; the ones that run are loaded when stale. */
   abstract list(projectId: string, agentId: string): Promise<WorkbenchInfo[]>;
+  /**
+   * One workbench as {@link list} gives it, loaded when it runs and is stale; null when the
+   * Agent has no such workbench. The Agent's other workbenches are neither read nor loaded, so
+   * a page opened on its own waits for its own compile alone.
+   */
+  abstract one(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<WorkbenchInfo | null>;
   /** The Agent-wide switch: false while `.disabled` sits beside the workbench folders. */
   abstract agentEnabled(projectId: string, agentId: string): Promise<boolean>;
   /**
@@ -247,6 +259,12 @@ export abstract class Workbenches {
     workbenchId: string,
     rel: string,
   ): Promise<WorkbenchUiRuntimeFile | null>;
+  /**
+   * Whether the Agent has this workbench, read from its folder after any import has ended: false
+   * when it has none, a 409 `WorkbenchDisabled` when it does not run. Loads nothing, so a route
+   * that serves the same files under every workbench never compiles the Agent's others.
+   */
+  abstract exists(projectId: string, agentId: string, workbenchId: string): Promise<boolean>;
   /**
    * The workbench's plugin icon (`.svg` markup or `.png` bytes base64-encoded), from its
    * `package.json#penguin.icon`; null when it ships none or the read refuses it. The PWA

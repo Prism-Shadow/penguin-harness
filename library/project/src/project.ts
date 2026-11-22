@@ -7,6 +7,7 @@ import type {
   ModelRef,
   PluginTables,
   ProjectConfig,
+  ProjectModelRequest,
   AmspRecord,
   ToolCallPayload,
   ThinkingLevelName,
@@ -17,6 +18,18 @@ import type { MemberRow } from "./repos/members.js";
 import type { AgentRow } from "./repos/agents.js";
 
 import type { UserRow } from "@prismshadow/penguin-library-auth";
+
+/**
+ * Which request the connection test sends a model instead of the chat probe — a tool model's own
+ * test, named by the binding that accepts it — or undefined for the chat probe. Handed the draft:
+ * its pair, the client type it resolves to and its vision mark.
+ */
+export type ModelTestRequestSource = (model: {
+  provider: string;
+  modelId: string;
+  clientType?: string;
+  vision?: boolean;
+}) => Pick<ProjectModelRequest, "messages" | "config" | "idleTimeoutMs"> | undefined;
 
 /**
  * What a command-policy hit does: `deny` refuses the call outright; `ask` puts it to a person
@@ -283,6 +296,14 @@ export type ServerEvent =
    */
   | { type: "plugin_modules_changed" }
   /**
+   * The App re-assembled itself (a plugin was installed, removed, enabled or disabled), so what
+   * `GET /api/contributions` answers may have changed — the plugin server modules it lists in
+   * `modules` among it, which decide whether a plugin's web half is drawn. Every signed-in tab
+   * re-reads it. Published once the new App answers. No payload; on the user channel of
+   * everyone online.
+   */
+  | { type: "contributions_changed" }
+  /**
    * A Session now exists. On the user channel for every creation — the CLI, another tab,
    * a schedule, an agent spawning a child — so the list learns about rows it did not make;
    * and on the parent Session's channel for a subagent, which no list shows. `source` is what
@@ -498,7 +519,12 @@ export abstract class ProjectConfigStore {
     projectId: string,
     req: ModelVisionDetectRequest,
   ): Promise<ModelVisionDetectResponse>;
-  abstract testModel(projectId: string, req: ModelTestRequest): Promise<ModelTestResponse>;
+  /** The connection test; `testRequestFor` names a tool model's own request (ModelTestRequestSource). */
+  abstract testModel(
+    projectId: string,
+    req: ModelTestRequest,
+    testRequestFor?: ModelTestRequestSource,
+  ): Promise<ModelTestResponse>;
   abstract detectProtocol(
     projectId: string,
     req: ModelProtocolDetectRequest,

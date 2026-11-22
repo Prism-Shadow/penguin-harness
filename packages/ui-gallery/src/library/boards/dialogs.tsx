@@ -12,6 +12,7 @@ import {
   Button,
   CommandPalette,
   ConfirmModal,
+  Count,
   Drawer,
   ImageIcon,
   Input,
@@ -138,7 +139,13 @@ export function DialogsBoard() {
       key: "app",
       label: t.pagedGroups.app,
       items: [
-        { key: "general", label: t.pages.general },
+        // A page with something waiting carries a count on its rail row.
+        {
+          key: "general",
+          label: t.pages.general,
+          badge: <Count n={2} />,
+          ariaLabel: t.pageWaiting(t.pages.general, 2),
+        },
         { key: "appearance", label: t.pages.appearance, info: t.appearanceInfo },
       ],
     },

@@ -9,7 +9,7 @@
  *   keys, the API tab's Try it, and the admin's `agentApiEnabled` (http/routes/agent-api.ts,
  *   amsp/try-route.ts, http/routes/admin-settings.ts);
  * - the person's own browser — choosing the agent browser's backend, minting a pairing code
- *   (builtin-browser/routes.ts).
+ *   (the browser-automation plugin's routes, plugins/browser-automation/src/server/routes.ts).
  *
  * This narrows the credential the harness hands an Agent; it is not a boundary. A process that
  * runs as the data root's OS user outside the sandbox can mint a sign-in of its own

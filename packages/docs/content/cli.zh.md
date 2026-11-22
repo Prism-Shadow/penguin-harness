@@ -693,6 +693,20 @@ note: No visible change on the page.
 
 CLI 自己还有三种：命令写错时的 `invalid_argument`、文件读写失败时的 `io_error`，以及连不上服务器时的 `request_failed`。
 
+## penguin storage
+
+数据根占用了多少空间，以及清理：shell 里的[设置 › 存储空间](/settings#存储空间)，是服务器 `/api/me/storage` 路由之上的瘦客户端。调用者看到的与页面给他看的相同：成员看到自己可进入的 Project，管理员看到整个数据根。这条命令与页面一起由预装的 `storage` 插件提供。
+
+```bash
+penguin storage [--refresh]                                  # 已用空间，按分类、Project、Agent，管理员另有服务端条目
+penguin storage clean [--older-than <天数>] [--all] [--yes]  # 审阅现在可以删除的内容；--yes 删除
+```
+
+- 服务器在后台测量。命令会等正在进行的测量结束，所以不会打印一块空磁盘。`--refresh` 先重新测量。
+- 不加 `--yes` 时 `clean` 只列出不删除。它打印页面显示的审阅结果，用 `x` 标出删除会带走的项：页面缺省勾选的项（已删除对话的草稿区、孤立的临时工作区、服务端缓存），加 `--all` 则是全部，含闲置对话的草稿区与 Agent 的工具环境。`--older-than` 是闲置天数，1–3650，缺省 7。
+- 加 `--yes` 时，每一项在删除时都重新判定，与页面相同；最后一行写明删除了几项、释放了多少空间、几项因正在使用或已不在而跳过。删除需要本人登录：Agent 的 shell 持有的本地 API 令牌会被拒绝（`human_required`），所以先用 [`penguin auth login`](#penguin-auth-login) 登录，或在页面上清理。
+- `--json` 把应答打印成一行 JSON（`clean` 只列出时是审阅结果加上 `chosen`，即 `--yes` 会删除的 id），`--server` 与其他命令相同。服务器上没有任何 Project 运行该插件的模块时，两者都以 `storage_unavailable` 失败。
+
 ## 审批模式（--approve）
 
 | 模式 | 行为 |
@@ -810,7 +824,7 @@ penguin exec sandbox.wsl.restart --prod
 penguin exec @penguinharness/sandbox-wsl:sandbox.wsl.restart   # id 撞名时
 ```
 
-插件标为 `access: "member"` 的命令，Project 的任何成员都能运行，不限管理员。一次运行带上调用方的 Project 与 Session：在 Agent 的 shell 里取其 `PENGUIN_PROJECT_ID` 与 `PENGUIN_SESSION_ID`；在 Agent 之外，这类命令缺省为 `default_project`。命令还可以声明指名本地文件的选项：每个 `read` 选项所指的文件由 CLI 相对当前目录读取、随运行发送，读不到即在发送任何内容之前停止。命令交回的文件保存到 `write` 选项所指的目录，缺省为当前目录，从不覆盖已有文件（改存为 `name-1.ext`），每个保存的路径都打印到 stderr。
+插件标为 `access: "member"` 的命令，Project 的任何成员都能运行，不限管理员。一次运行带上调用方的 Project 与 Session：在 Agent 的 shell 里取其 `PENGUIN_PROJECT_ID` 与 `PENGUIN_SESSION_ID`；在 Agent 之外，这类命令缺省为 `default_project`。命令还可以声明指名本地文件的选项：每个 `read` 选项所指的文件由 CLI 相对当前目录读取、随运行发送，读不到即在发送任何内容之前停止。命令交回的文件保存到 `write` 选项所指的目录，缺省为当前目录，从不覆盖已有文件（改存为 `name-1.ext`），每个保存的路径都打印到 stderr。命令还可以只在 Project 启用了其插件时运行，也可以要求 Agent 的调用为该 Agent 所在 Session 此刻正在处理其消息的人运行，而不是为本机 API token 所代表的管理员运行；这类命令拒绝以 token 发出、却没有指明 Session 的调用（`session_required`），以及 Session 中没有已登录的人发起的运行正在进行的调用（`driver_unknown`）。
 
 ## penguin server / penguin web
 

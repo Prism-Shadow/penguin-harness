@@ -13,6 +13,7 @@ export const mainPanelDefinition = {
   label: () => S.terminal.shellEntry,
   glyph: NAV_ICONS.terminal,
   order: 15,
+  lead: true,
   defaultPosition: "bottom",
   shortcut: "terminal.toggle",
   offered: terminalPanelOffered,

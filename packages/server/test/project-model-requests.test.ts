@@ -14,6 +14,8 @@
  * - Given the reader stops after the first event, the row says `aborted`.
  * - Given a Session of another Project, or a model the Project does not configure, nothing is
  *   sent and nothing is recorded.
+ * - The Cost Center lists these requests by purpose with their count and cost, and leaves their
+ *   Tokens out of its Token figures.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Hono } from "hono";
@@ -23,7 +25,7 @@ import type { UniEvent } from "@prismshadow/mmsp";
 import { PluginHost } from "../src/plugin/host.js";
 import type { ProjectModelRequests } from "../src/services/project-model-requests.js";
 import type { AppEnv } from "../src/auth/middleware.js";
-import type { SessionCreateResponse } from "../src/api/types.js";
+import type { SessionCreateResponse, UsageResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin, type TestApp } from "./helpers.js";
 import { startMmspServer, textReply, type MmspServer } from "./fixtures/mmsp-server.js";
 
@@ -226,5 +228,29 @@ describe("requests to a Project model outside a chat turn", () => {
     ).toEqual({ error: "HttpError", status: 400 });
     expect(mmsp.requests.length).toBe(sentBefore);
     expect(rows().length).toBe(rowsBefore);
+  });
+
+  it("the Cost Center lists the tool requests by purpose, counting their requests and cost but not their Tokens", async () => {
+    const recorded = rows();
+    const usage = (await (
+      await api.get(`/api/projects/${PROJECT}/usage?groupBy=date`)
+    ).json()) as UsageResponse;
+    // Every request above was a tool request: no chat turn has run in this Project.
+    expect(usage.summary.total).toMatchObject({
+      total: 0,
+      requests: recorded.length,
+      toolRequests: recorded.length,
+    });
+    expect(usage.summary.total.toolCost).toBeGreaterThan(0);
+    expect(usage.summary.total.toolCost).toBeCloseTo(usage.summary.total.cost!, 12);
+    expect(usage.tools).toHaveLength(1);
+    expect(usage.tools[0]).toMatchObject({
+      purpose: "@acme/tools:t2t",
+      requests: recorded.length,
+      hasUncosted: false,
+    });
+    expect(usage.tools[0]!.cost).toBeCloseTo(usage.summary.total.toolCost!, 12);
+    // The Session-less request is no Agent's.
+    expect(usage.agentIds).toEqual(["default_agent"]);
   });
 });
