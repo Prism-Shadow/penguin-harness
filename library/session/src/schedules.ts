@@ -40,12 +40,7 @@ import {
   type ScheduleConfigSource,
 } from "./schedule-store.js";
 import type { ScheduleDefinition } from "./schedule-file.js";
-import {
-  latestSlotAt,
-  nextSlotAfter,
-  parseScheduleFile,
-  slotInWindow,
-} from "./schedule-file.js";
+import { latestSlotAt, nextSlotAfter, parseScheduleFile, slotInWindow } from "./schedule-file.js";
 import { scheduleStatus } from "./schedules-status.js";
 
 // ---------------------------------------------------------------------------
@@ -434,5 +429,3 @@ export function projectScheduleRoutes(deps: SchedulesRouteDeps): Hono<AppEnv> {
 
   return app;
 }
-
-
