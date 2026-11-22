@@ -41,8 +41,11 @@ describe("a module behind a system app", () => {
   beforeEach(async () => {
     t = await createTestApp({
       pluginPackages: {
+        check: () => Promise.reject(new Error("not used")),
         install: () => Promise.reject(new Error("not used")),
         installFiles: () => Promise.reject(new Error("not used")),
+        installTarball: () => Promise.reject(new Error("not used")),
+        installChannel: () => Promise.reject(new Error("not used")),
         remove: async () => {},
       },
     });
