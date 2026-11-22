@@ -37,10 +37,7 @@ import {
   MessagingTaskRunner,
   QQScan,
 } from "@prismshadow/penguin-library-messaging/bridge";
-import {
-  DefaultMessagingTuning,
-  MessagingModule,
-} from "./runtime/messaging/module.js";
+import { DefaultMessagingTuning, MessagingModule } from "./runtime/messaging/module.js";
 import { MessagingAccountsModule } from "./runtime/messaging/module.js";
 import { FeishuSdkProvider } from "@prismshadow/penguin-library-messaging/feishu-connector";
 import { TelegramTransportProvider } from "@prismshadow/penguin-library-messaging/telegram-connector";
@@ -117,7 +114,7 @@ import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
 import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
 import { AgentConfigServiceProvider } from "./services/agent-config-service.js";
-import { SnapshotService } from "./services/snapshot-service.js";
+import { SnapshotServiceProvider } from "./services/snapshot-service.js";
 import { AgentRoutes } from "./services/agent-routes.js";
 import { AgentService } from "./services/agent-service.js";
 import { DeletingFoldersService } from "./services/deleting-folders.js";
@@ -512,7 +509,7 @@ export class TracesModule {}
 @Module({
   children: [
     AgentConfigServiceProvider,
-    SnapshotService,
+    SnapshotServiceProvider,
     AgentService,
     DeletingFoldersService,
     MemoryServiceProvider,

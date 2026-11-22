@@ -104,3 +104,22 @@ export abstract class Memory {
     filePath: string,
   ): Promise<void>;
 }
+
+/** A package an import swaps in: a zip of the Agent's directory, or a `.tar.gz` snapshot. */
+export interface AgentPackage {
+  bytes: Buffer<ArrayBufferLike>;
+  /** Given the package's `traces/` once its State is in place, before the staging goes. */
+  landTraces?: (dir: string) => Promise<void>;
+}
+
+/** Snapshots: the mechanism SnapshotService implements. */
+@Interface()
+export abstract class Snapshots {
+  abstract currentVersion(projectId: string, agentId: string): Promise<number>;
+  abstract importArchive(
+    projectId: string,
+    agentId: string,
+    pkg: AgentPackage,
+    opts: { preSnapshot: boolean },
+  ): Promise<{ version: number; backup?: string }>;
+}

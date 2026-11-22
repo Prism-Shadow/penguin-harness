@@ -44,6 +44,12 @@
         "../../library/agent/src/agent-export.ts"
       ],
       "@prismshadow/penguin-library-agent/agent-zip": ["../../library/agent/src/agent-zip.ts"],
+      "@prismshadow/penguin-library-agent/partial-config": [
+        "../../library/agent/src/partial-config.ts"
+      ],
+      "@prismshadow/penguin-library-agent/snapshot-service": [
+        "../../library/agent/src/snapshot-service.ts"
+      ],
       "@prismshadow/penguin-library-agent/agent-avatar": [
         "../../library/agent/src/agent-avatar.ts"
       ],

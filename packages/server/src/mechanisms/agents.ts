@@ -1,8 +1,8 @@
 /**
  * The agents mechanisms: what a node may require, declared apart from what implements it.
- * The agent domain's two mechanisms (AgentConfig, Memory) moved to the agent domain library
- * (services+http+cli restack S3) and are re-exported here unchanged; the snapshot and
- * lifecycle mechanisms stay with their server-side services.
+ * The agent domain's mechanisms (AgentConfig, Memory, Snapshots) moved to the agent domain
+ * library (services+http+cli restack S3 and S9d) and are re-exported here unchanged; the
+ * lifecycle mechanism stays with its server-side service.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AgentDeletionInfo } from "../api/types.js";
@@ -15,24 +15,10 @@ export type {
 } from "@prismshadow/penguin-library-benchmark/types";
 export { AgentConfig, Memory } from "@prismshadow/penguin-library-agent/contract";
 
-/** A package an import swaps in: a zip of the Agent's directory, or a `.tar.gz` snapshot. */
-export interface AgentPackage {
-  bytes: Buffer<ArrayBufferLike>;
-  /** Given the package's `traces/` once its State is in place, before the staging goes. */
-  landTraces?: (dir: string) => Promise<void>;
-}
-
-/** Snapshots: the mechanism SnapshotService implements. */
-@Interface()
-export abstract class Snapshots {
-  abstract currentVersion(projectId: string, agentId: string): Promise<number>;
-  abstract importArchive(
-    projectId: string,
-    agentId: string,
-    pkg: AgentPackage,
-    opts: { preSnapshot: boolean },
-  ): Promise<{ version: number; backup?: string }>;
-}
+/** The snapshot mechanism and its package vocabulary moved to the agent domain library
+ * (services+http+cli restack S9d); re-exported here so the server's import paths keep one site. */
+export { Snapshots } from "@prismshadow/penguin-library-agent/contract";
+export type { AgentPackage } from "@prismshadow/penguin-library-agent/contract";
 
 /** AgentLifecycle: the mechanism AgentService implements. */
 @Interface()
