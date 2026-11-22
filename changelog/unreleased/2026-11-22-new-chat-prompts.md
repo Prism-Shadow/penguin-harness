@@ -3,6 +3,7 @@
 - **Date:** 2026-11-22
 - **Type:** feature
 - **Scope:** `web`, `ui`
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1697
 
 [中文版](2026-11-22-new-chat-prompts.zh.md)
 
