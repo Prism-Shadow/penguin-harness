@@ -19,7 +19,7 @@
  *   its rule, said under the field as it is typed.
  * - A hire writes at once, the employee's name with it; a new Agent whose picked plugin runs a
  *   stdio MCP server asks first, showing the command it runs on this server, and the question's
- *   own Hire hires.
+ *   own Hire hires. Every Agent of the Project but the system Agent can be hired as it is.
  * - An employee's name is written by its Save alone, once it differs from the stored one, and
  *   Esc asks before a typed name is dropped.
  * - Restore default on an employee's picture asks first, since it deletes the picture: cancelled,
@@ -490,12 +490,18 @@ const LIBRARY = {
   ],
 };
 
-/** The org routes a personnel dialog writes, inside the shell the company surfaces sit in. */
-function companyServer(): FakeFetch {
+/** The Project's system Agent, which no organization can hire. */
+const SYSTEM_AGENT = { agentId: "system_agent", name: "System", system: true };
+
+/**
+ * The org routes a personnel dialog writes, inside the shell the company surfaces sit in. The
+ * Project's Agents are `agents`, none by default.
+ */
+function companyServer(agents: object[] = []): FakeFetch {
   return stubFetch((req) => {
     if (req.path === "/api/me") return json(ADMIN_ME);
     if (req.path === "/api/projects") return json({ projects: [PROJECT] });
-    if (req.path === "/api/projects/p1/agents") return json({ agents: [] });
+    if (req.path === "/api/projects/p1/agents") return json({ agents });
     if (req.path === "/api/plugins") return json(LIBRARY);
     if (req.path === `${ORG}/employees` && req.method === "POST") {
       return json({ ...EMPLOYEE, ...(req.body as { title: string }) });
@@ -585,6 +591,31 @@ describe("hiring", () => {
     [...document.querySelectorAll<HTMLInputElement>("input")].filter((f) =>
       [...(f.labels ?? [])].some((l) => l.textContent?.startsWith(en.company.chart.employeeName)),
     )[1]!;
+
+  it("offers every Agent but the system Agent to hire as it is", async () => {
+    const network = companyServer([SYSTEM_AGENT, { agentId: "scout", name: "Scout" }]);
+    await mountInCompany(
+      h(HireDialog, {
+        open: true,
+        projectId: "p1",
+        orgId: "acme",
+        manager: CEO,
+        employees: [CEO],
+        onClose: () => {},
+        onHired: () => {},
+      }),
+    );
+    await waitFor(() => network.requests.some((r) => r.path === "/api/projects/p1/agents"));
+    await click(button(en.company.chart.hireExisting));
+    // The Agent field's listbox, opened from its trigger once the list has landed.
+    await waitFor(() => hasButton("Scout (scout)"));
+    await click(button("Scout (scout)"));
+    const options = () =>
+      [...document.querySelectorAll('[role="listbox"] [role="option"]')].map((o) =>
+        o.textContent?.trim(),
+      );
+    expect(options()).toEqual(["Scout (scout)"]);
+  });
 
   it("hires at once, the employee's name with it, when nothing picked runs a command here", async () => {
     const { network, onHired } = await openHire();

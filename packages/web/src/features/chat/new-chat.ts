@@ -12,6 +12,7 @@
  */
 import type { AgentSummary, ChatDefaultsDto } from "@prismshadow/penguin-server/api";
 import { pickDefaultAgent } from "../ai-create";
+import { isConversationAgent } from "../../lib/builtin-agents";
 import {
   clearDraft,
   draftKey,
@@ -33,7 +34,11 @@ export function newChatAgentId(
   defaults: ChatDefaultsDto,
 ): string | null {
   const preferred = defaults.agentId;
-  if (preferred !== undefined && agents.some((a) => a.agentId === preferred)) return preferred;
+  if (
+    preferred !== undefined &&
+    agents.some((a) => a.agentId === preferred && isConversationAgent(a))
+  )
+    return preferred;
   return pickDefaultAgent(agents)?.agentId ?? null;
 }
 

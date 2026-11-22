@@ -77,6 +77,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { isConversationAgent } from "../../lib/builtin-agents";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
@@ -687,9 +688,9 @@ export function PluginsPage() {
    * one list in the Agents page's order, keyed so that two servers' Agents of one id stay two
    * (lib/agent-location.ts). A machine out of reach keeps its Agents as it last listed them —
    * its rows held, its installs counted as last seen — so a machine that blinks changes no row
-   * and no count.
+   * and no count. The system Agent takes no plugin and is never one of them.
    */
-  const placed = mixAgents(agents, machineLists);
+  const placed = mixAgents(agents, machineLists).filter((row) => isConversationAgent(row.agent));
   const targets: InstallTarget[] = placed.map(({ agent, on }) =>
     on === null
       ? { key: agent.agentId, agent, machine: null }

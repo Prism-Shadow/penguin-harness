@@ -578,13 +578,15 @@ export function agentServer(
     }
     const agentsPath = `/api/projects/${PROJECT_ID}/agents`;
     if (request.path === agentsPath && request.method === "GET") {
-      // Created on the machine after everything here, one day apart in list order.
+      // Created on the machine after everything here, one day apart in list order. A machine's
+      // `system_agent` is its own system Agent, as every server provisions one.
       return json({
         agents: machine.agents.map((id, i) => ({
           ...summaryOf(id),
           ...avatarFields(machine.machineId, id),
           name: id,
           createdAt: `2026-10-${String(i + 1).padStart(2, "0")}T00:00:00Z`,
+          ...(id === "system_agent" ? { system: true } : {}),
         })),
       });
     }

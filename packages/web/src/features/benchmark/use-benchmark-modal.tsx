@@ -56,6 +56,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { isConversationAgent } from "../../lib/builtin-agents";
 import { formatScore } from "../../lib/format";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -282,7 +283,7 @@ export function UseBenchmarkModal({
     onClose();
   };
 
-  const agentOptions = agents.map((a) => (
+  const agentOptions = agents.filter(isConversationAgent).map((a) => (
     <option key={a.agentId} value={a.agentId}>
       {agentDisplayName(a)}
     </option>
