@@ -3,12 +3,30 @@
  * Agent's has. The other tabs configure a runtime that never runs, and its identity is the
  * platform's, so the overview only reads — its name and description from the dictionary, never
  * from its file — with no save, picture, export, replace or kernel action. The Plugins tab keeps
- * only its Workbenches sub-page, where the system apps it owns are listed, read-only.
+ * only its Workbenches sub-page, where the system apps it owns (lib/system-apps.ts) are listed
+ * read-only: each its glyph, name, the 「系统应用」 tag and Open, which goes to its page. There is
+ * no switch, no import and no "More" menu: a system app is the platform's, not the Agent's.
  */
 import type { ReactNode } from "react";
+import { useNavigate } from "react-router";
 import type { AgentConfigResponse } from "@prismshadow/penguin-server/api";
-import { CopyButton, HelpFold, SettingsList } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  CopyButton,
+  GlyphAppIcon,
+  HelpFold,
+  ListRow,
+  Pill,
+  SettingsList,
+} from "@prismshadow/penguin-ui";
+import { glyphOf } from "../../lib/nav-icons";
+import { localizedText } from "../../lib/skill-use";
 import { S } from "../../lib/strings";
+import { useSystemApps } from "../../lib/system-apps";
+import { useLocale } from "../../state/locale";
+
+/** Edge of a row's mark, in px: the tile every settings row leads with. */
+const MARK_PX = 36;
 
 /** A label over its value, the overview's read-only shape. */
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -54,11 +72,34 @@ export function SystemAgentOverview({ data }: { data: AgentConfigResponse }) {
  * with the system apps as read-only rows.
  */
 export function SystemAgentApps() {
+  const apps = useSystemApps();
+  const { locale } = useLocale();
+  const navigate = useNavigate();
   return (
     <div className="space-y-4">
       <HelpFold label={S.agentPlugins.subPages.workbenches}>{S.agent.systemAppsDesc}</HelpFold>
       <SettingsList label={S.agentPlugins.subPages.workbenches} empty={S.agent.systemAppsEmpty}>
-        {[]}
+        {apps.map((app) => {
+          const title = localizedText(locale, app.title, app.titleZh);
+          return (
+            <ListRow
+              key={app.key}
+              as="li"
+              leading={<GlyphAppIcon d={glyphOf(app.icon)} size={MARK_PX} />}
+              title={title}
+              titleTrail={<Pill>{S.agent.systemAppTag}</Pill>}
+              trailing={
+                <Button
+                  size="sm"
+                  aria-label={`${S.appCenter.menu.open} ${title}`}
+                  onClick={() => void navigate(app.path)}
+                >
+                  {S.workbenches.openAction}
+                </Button>
+              }
+            />
+          );
+        })}
       </SettingsList>
     </div>
   );
