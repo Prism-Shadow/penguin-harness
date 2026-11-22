@@ -6,6 +6,9 @@ import type { ElidedBody } from "@prismshadow/penguin-core/interfaces";
 
 import { Interface } from "@prismshadow/penguin-core/kernel";
 
+import type { SessionStatus } from "@prismshadow/penguin-library-session";
+import type { ErrorDetails } from "@prismshadow/penguin-library-http/errors";
+
 import type { TraceFileRow, TraceSessionRow } from "./repos/trace-index.js";
 import type {
   AbortPayload,
@@ -126,7 +129,6 @@ export interface HistoryStub {
   length: number;
   record: HistoryMessage;
 }
-
 
 export interface SessionContextParts {
   systemPrompt: number;
@@ -318,6 +320,305 @@ export interface MessageCursor {
   fileIndex: number;
   ordinal: number;
 }
+
+/**
+ * Live in-progress tail of a running Session, carried by `MessagesResponse.live`.
+ *
+ * Contract (see runtime/live-tail.ts and the GET /messages route): the server captures
+ * `cursor` and `fragments` atomically — in one synchronous tick, before starting the
+ * trace read — while the Session is running/compacting.
+ *   - `cursor`: the Session channel's most recently assigned SSE event id
+ *     (`<epoch>-<seq>`); every event published up to and including this id is already
+ *     reflected in `fragments`.
+ *   - `fragments`: one synthetic `partial_* start` AmspRecord per open streaming
+ *     fragment, whose payload carries the full accumulated content so far (text/thinking
+ *     prefix, tool-call name + accumulated arguments, tool-output prefix + images), with
+ *     the original `origin` chain preserved.
+ *
+ * Client usage (the bundled Web App's connect-first flow): after applying `messages`,
+ * when the cursor's epoch matches the epoch of the SSE events seen on the current
+ * connection, drop every buffered **partial** event with seq <= cursor (its content is
+ * already inside `fragments`), feed `fragments` through the normal reducer path, then
+ * replay the rest of the buffer. Buffered **complete** messages are never dropped by the
+ * cursor — the regular overlap dedup decides for them — so nothing is lost even when a
+ * complete message's trace append is still in flight at read time.
+ *
+ * The run form (`live=run` on a full or tail read, for a client that shows a run under way
+ * the way it was streamed — the CLI chat): `live` is attached whether or not the Session
+ * runs, and adds `status` and `records`, captured in the same tick as `cursor`. `messages`
+ * then ends before the current run's first record (a window that begins inside the run, at its
+ * input or a later goal round, holds none of it) and holds no held inputs while a run is under
+ * way (they are in `records`); a run that began after the cursor, while the read was in
+ * flight, is cut at its first record as well. Client usage: subscribe first, read
+ * second; render `messages`, then `records`, then the stream's frames — dropping, within
+ * the cursor's epoch, every record frame and `task_state` with seq <= cursor (they are in
+ * `messages`, `records` and `status`) and handling every other server event. No overlap
+ * dedup is needed.
+ */
+export interface MessagesLiveTail {
+  cursor: string;
+  fragments: AmspRecord[];
+  /** Run form only: the Session's status at the cursor. */
+  status?: SessionStatus;
+  /**
+   * Run form only: the current run's records (one Task with the Tasks a stop hook or a goal
+   * loop continues it with, or one compaction outside a Task) in the order they were published, each streamed fragment's deltas folded into its `start`
+   * (which carries the content accumulated so far), its `stop` and complete message kept as
+   * published — the run's stream, deltas folded. Empty while idle.
+   */
+  records?: AmspRecord[];
+  /** Run form only: how many of the run's oldest records the server no longer holds (its byte cap); absent when none. */
+  omitted?: number;
+}
+
+/**
+ * Pagination envelope of a windowed `GET /messages` (`tailLimit` / `before` requests
+ * only; the parameterless full read never carries it). A window is a run of whole
+ * message-bearing units — one unit = one Task in the Web reducer's sense, opened by a
+ * main-session user prompt — cut so that no pairing (tool_call/output), compaction span
+ * or steering group ever splits across windows. Besides the unit count, a window stops
+ * before the unit that would take its serialized messages past 4 MiB, but always holds at
+ * least one unit; such a window carries `before` like any other, with fewer units than
+ * asked for.
+ */
+export interface MessagesPageInfo {
+  /**
+   * Cursor of this window's first unit (`<shardIndex>:<ordinal>`): pass it back as
+   * `before=` to fetch the previous window. Stable across requests and compaction —
+   * rotation opens a NEW shard and closed shards are immutable. Absent = this window
+   * reaches the very beginning of the transcript (no older history).
+   */
+  before?: string;
+  /**
+   * Outline turns (the Web conversation outline's entry rule) opened BEFORE this
+   * window: the client offsets its global "round N" numbering by this, so a partial
+   * window never mis-numbers. 0 when the window starts at the beginning.
+   */
+  earlierTurns: number;
+  /**
+   * How many units (Tasks) the window holds, as the window was cut: the same boundaries the
+   * cut is made at (message-window.ts `scanMessages`), so a client that pages until it has N
+   * Tasks on screen counts what `tailLimit` / `limit` count — a prompt with its images, or two
+   * sends merged into one, is one. At most the `tailLimit` / `limit` asked for; fewer when the
+   * byte budget cut the window short or the history begins inside it.
+   */
+  units: number;
+  /**
+   * Cumulative stats accrued before this window, seeded into the client's stats
+   * tracker so header chips and per-turn cumulative rows equal a full load:
+   * finished-Task elapsed, subagent token totals, and the last main-session
+   * session/context token readings.
+   */
+  prior: {
+    subagentTokens: number;
+    elapsedMs: number;
+    /**
+     * Model-API time and tool wall time accrued before this window, the breakdown of
+     * `elapsedMs` the chat header shows under it. Seeded together with their total: seeding
+     * one alone would put a full elapsed time beside components covering only the window.
+     * The two may overlap and do not partition `elapsedMs` (see `TraceTaskStats.toolMs`).
+     */
+    apiMs: number;
+    toolMs: number;
+    sessionTokens: number;
+    contextTokens: number;
+  };
+  /**
+   * The model of the context this window starts in — what the `session_meta` heading that
+   * context's Trace file names, or the model a completed switch's `session_update` ahead of the
+   * window's start in that file names (the next file not opened yet). A Session can switch
+   * models between contexts, and a window that starts partway into one does not hold that
+   * record: the client seeds it, so the Tasks ahead of the window's first `session_meta` have
+   * their model, and a switch further down the window is told from a plain rotation. Absent
+   * when the Session has no Trace yet.
+   */
+  contextModel?: { provider: string; modelId: string };
+  /**
+   * Agent State directory recorded by the starting context's `session_meta`. Seeds memory
+   * change detection when that record falls before the window. Absent without a Trace.
+   */
+  agentState?: string;
+}
+
+/** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
+export interface MessagesResponse {
+  /**
+   * On windowed requests, images are served by reference: in every record that carries a
+   * `tracePosition`, an inline PNG / JPEG / GIF / WebP `data:` URL — a user `image_url`, or
+   * an entry of a tool output's `images` — is replaced by
+   * `/api/sessions/<sessionId>/trace-image?file=<fileIndex>&ordinal=<ordinal>[&i=<k>]`
+   * (`i` = the index into `images`), an immutable, access-checked image response. Expanded
+   * subagent messages, held inputs not yet in the Trace, other image types and the
+   * parameterless full read keep their data URLs.
+   */
+  messages: HistoryMessage[];
+  /**
+   * Present only while the Session is running/compacting: the in-progress stream tail
+   * (open streaming fragments + the channel cursor they cover), so a client joining
+   * mid-stream can render the currently streaming message. Omitted when idle. On
+   * windowed requests it rides TAIL pages only — a `before` page is immutable history
+   * and never carries it.
+   */
+  live?: MessagesLiveTail;
+  /**
+   * Present exactly on windowed requests (`tailLimit` / `before`): `messages` is then
+   * the requested window (subagent pointers inside it expanded as usual) rather than
+   * the full transcript. See MessagesPageInfo.
+   */
+  page?: MessagesPageInfo;
+}
+
+// ---------------------------------------------------------------------------
+// History streams (a remote Session's history, newest first, cached on the hub)
+// ---------------------------------------------------------------------------
+//
+// Two legs, both stream calls over the API socket with `x-flow: credit`:
+//   - machine leg, `GET /api/sessions/:id/history-lines` (served by every server; the hub
+//     calls it over its machine socket): the window's envelope and layout, then the Trace
+//     lines the hub does not hold, whole lines only, newest first;
+//   - web leg, `GET /api/sessions/:id/history` and `…/trace-body?ref=` (every server): the
+//     window as whole-record lines with progress, bulky bodies elided.
+
+/** One Trace file the window or the fill reads, as the machine sees it now. */
+export interface HistoryFileFact {
+  k: HistoryFileKey;
+  /**
+   * The file's identity: the inode (decimal, see HistoryHave.ino), the device (a hint, never
+   * compared), the birth time (0 where the platform keeps none: it then reads the change time,
+   * which every append moves). A held copy is the same file while `sameHistoryFile`
+   * (history-wire.ts) says so; its content is checked by its runs' anchors.
+   */
+  ino: string;
+  dev?: string;
+  birthtimeMs: number;
+  size: number;
+  /** Record count by the tolerant reader's rule (blank and unparseable lines are no record). */
+  records: number;
+  /** A rotated shard: it never changes again, and a whole copy is good for good. */
+  final: boolean;
+  /** The hub's `have` for this file did not validate: drop the copy, the lines come from scratch. */
+  reset?: true;
+}
+
+/** The machine leg's first event, `window`. */
+export interface HistoryLinesWindow {
+  /** What `/messages` answers beside the records, captured before any file is read. */
+  envelope: {
+    page?: MessagesPageInfo;
+    live?: MessagesLiveTail;
+    pendingInputs: AmspRecord[];
+    serverNowMs: number;
+    status: SessionStatus;
+  };
+  /** Every Trace file of the Session and its descendants; a file the hub holds that is absent here is gone. */
+  files: HistoryFileFact[];
+  layout: HistorySegment[];
+  stubs: HistoryStub[];
+  /** Bytes (of `text`) and lines this stream will send in each phase. */
+  totals: Record<"window" | "heavy" | "fill", { bytes: number; lines: number }>;
+}
+
+/** `lines`: whole lines of file `k` from byte `off`; `ord` = records before `off`. */
+export interface HistoryLinesFrame {
+  k: HistoryFileKey;
+  off: number;
+  ord: number;
+  text: string;
+  /** `text` is base64 (bytes that are not valid UTF-8). */
+  b64?: true;
+}
+
+/** `part`: a piece of one line of file `k`, in order; `ord` = records before that line. */
+export interface HistoryPartFrame {
+  k: HistoryFileKey;
+  /** The first byte of the line this part belongs to. */
+  line: number;
+  off: number;
+  ord: number;
+  text: string;
+  last: boolean;
+  b64?: true;
+}
+
+/**
+ * `window-part`: a piece of the `window` event's JSON text, for a window larger than one frame
+ * (FRAME_TEXT_BUDGET). The pieces come in order before anything else; joined, their texts are
+ * the `HistoryLinesWindow` JSON, and the piece with `last` completes it.
+ */
+export interface HistoryWindowPart {
+  text: string;
+  last: boolean;
+}
+
+/**
+ * Event names of the machine leg (`history-lines`), in order: `window` (or its `window-part`s),
+ * the window's light `lines`/`part`s (with the rest of one the hub held in part), `ready` (the
+ * hub can assemble the window), the rest of every other line the hub held in part, the heavy
+ * lines and the fill, `done`. `ping` beats from the start,
+ * planning included; `error` (HistoryStreamError) ends a stream that cannot be served, such as a
+ * `body` ref into no line of the Session. Every event's data is at most FRAME_TEXT_BUDGET of text
+ * plus its JSON envelope.
+ */
+export type HistoryLinesEvent =
+  "window" | "window-part" | "lines" | "part" | "ready" | "done" | "error" | "ping";
+
+/** The web leg's `progress` event: at most every 250 ms, and only when a number changed. */
+export interface HistoryProgress {
+  phase: "window" | "heavy" | "fill";
+  /** The machine the bytes come from; null for this server's own Session. */
+  machineId: string | null;
+  doneBytes: number;
+  totalBytes: number;
+  doneLines: number;
+  totalLines: number;
+  /**
+   * The hub waits on the machine: `not_connected` (out of reach, the hub reconnects) and
+   * `retrying` (connected and silent, the hub asks again), each with its attempt and the time of
+   * the next; or `slow` — connected and beating, but the machine has sent nothing else for a
+   * minute (a route stuck over there): nothing is retried, `attempt` and `nextAt` are 0, and the
+   * stream goes on. Null again once bytes move.
+   */
+  waiting: null | {
+    reason: "not_connected" | "retrying" | "slow";
+    attempt: number;
+    nextAt: number;
+  };
+}
+
+/** The web leg's `page` event: what the window holds beside its records. */
+export interface HistoryPage {
+  windowId: string;
+  /** Records the window carries. */
+  count: number;
+  /** Bytes of their lines. */
+  bytes: number;
+  page?: MessagesPageInfo;
+  live?: MessagesLiveTail;
+  serverNowMs: number | null;
+}
+
+/**
+ * The web leg's `records` event (whole lines, each one `HistoryMessage` JSON, `offset` counting
+ * the window's text so far) and `part` event (a piece of one record longer than a frame, with
+ * `last` ending it).
+ */
+export interface HistoryRecords {
+  windowId: string;
+  offset: number;
+  text: string;
+  last?: boolean;
+}
+
+/** The web leg's `error` event: terminal; the reader stops and shows it. */
+export interface HistoryStreamError {
+  code: string;
+  message: string;
+  details?: ErrorDetails;
+}
+
+/** Event names of the web leg (`history`, `trace-body`); `ping` is the beat. */
+export type HistoryStreamEvent =
+  "progress" | "page" | "records" | "part" | "done" | "filled" | "error" | "ping";
 
 /** From packages/server (api/types.ts): the trace DTOs' own vocabulary (spans, cost parts,
  * category counts, window stats). */

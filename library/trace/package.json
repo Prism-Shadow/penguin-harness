@@ -99,6 +99,18 @@
     "./repos": {
       "types": "./dist/repos/index.d.ts",
       "import": "./dist/repos/index.js"
+    },
+    "./session-history": {
+      "types": "./dist/session-history.d.ts",
+      "import": "./dist/session-history.js"
+    },
+    "./history-lines": {
+      "types": "./dist/history-lines.d.ts",
+      "import": "./dist/history-lines.js"
+    },
+    "./history-stream": {
+      "types": "./dist/history-stream.d.ts",
+      "import": "./dist/history-stream.js"
     }
   },
   "scripts": {
@@ -112,7 +124,8 @@
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-library-session": "workspace:*",
     "@prismshadow/penguin-library-http": "workspace:*",
-    "@prismshadow/penguin-library-model": "workspace:*"
+    "@prismshadow/penguin-library-model": "workspace:*",
+    "hono": "^4.13.11"
   },
   "devDependencies": {
     "tsup": "^8.3.0",
