@@ -172,10 +172,8 @@ export function applySandboxPick(
   return { ...rest, mode, ...(network === "open" ? {} : { network }) };
 }
 
-
 /** Stands in for the organization map when company mode is not wired in (tests, older assemblies). */
 const EMPTY_ORG_IDS: ReadonlyMap<string, string> = new Map();
-
 
 /**
  * The order a Session list is served in: `created` (the default) is newest creation first;

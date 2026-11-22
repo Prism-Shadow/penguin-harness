@@ -206,5 +206,3 @@ export class TitleGenerator implements TitleNotifier {
     this.deps.notifyProjectUsers?.(ctx.projectId, event);
   }
 }
-
-

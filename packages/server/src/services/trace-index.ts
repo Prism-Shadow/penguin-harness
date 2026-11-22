@@ -24,7 +24,11 @@ export class TraceIndexServiceProvider {
 
   setup() {
     // The index's ports are decorator-injected fields; the server binds them by hand here.
-    this.service = Object.assign(new TraceIndexService(), { paths: this.paths, repo: this.repo, sources: this.sources });
+    this.service = Object.assign(new TraceIndexService(), {
+      paths: this.paths,
+      repo: this.repo,
+      sources: this.sources,
+    });
     this.index = this.service;
   }
 }
