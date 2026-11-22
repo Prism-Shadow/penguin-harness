@@ -193,7 +193,8 @@ test("the sidebar's row opens the app's window over the conversation, minimize k
 
   await appWindow(page).getByRole("button", { name: "最小化", exact: true }).click();
   await expect(page).toHaveURL(`${BASE}/chat/${sessionId}`);
-  await expect(page.getByText(REPLY)).toBeVisible();
+  // Exact: the Trace dock's row for the reply previews the same text.
+  await expect(page.getByText(REPLY, { exact: true })).toBeVisible();
   await expect(row(page)).toHaveAttribute("aria-label", "Window demo，运行中");
 
   await row(page).click();
