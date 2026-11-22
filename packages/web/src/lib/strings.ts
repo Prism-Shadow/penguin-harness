@@ -4276,7 +4276,6 @@ export const zh = {
     /** The same mark on its own, for a row that is attributed to a machine rather than named after one. */
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "在此工作区新建对话",
-    draftSubtitle: "最全面的 Agent 自进化平台",
     /** The start page's dashboard (features/chat/start-dashboard.tsx): three counts beside the brand, and the examples block under the composer. */
     start: {
       /** What each count counts; the label and the number open the page that lists it. Short: the three share the brand's line. */
@@ -4288,27 +4287,10 @@ export const zh = {
       shuffle: "换一组示例",
       examplesTitle: "示例与快捷指令",
     },
-    /** Collapsed group names for the start page's examples (bookmark style; only one open at a time). */
-    exampleFolders: {
-      apps: "一句话生成 AI 应用",
-      webapps: "网页与小游戏",
-      evolve: "评测与优化智能体",
-      schedules: "定时任务",
-    },
-    /** Second tooltip line on an example row: the click fills the composer, it does not send. */
-    exampleFillHint: "点击填入输入框，可修改后自行发送",
-    /** The examples block's last folder: prompts the user wrote and saved, stored per user on the server. */
     shortcuts: {
       retry: "重新加载我的快捷指令",
       manage: "管理快捷指令",
-      folder: "我的快捷指令",
       new: "新建快捷指令",
-      /**
-       * Tooltip on the new-shortcut row. Unconditional, and worded to hold either way: the
-       * editor opens on whatever the composer holds, which is a blank draft when it holds
-       * nothing — saving what was just typed is the path this folder exists to shorten.
-       */
-      newFromComposer: "以输入框中的内容作为起点",
       createTitle: "新建快捷指令",
       editTitle: "编辑快捷指令",
       titleLabel: "名称",

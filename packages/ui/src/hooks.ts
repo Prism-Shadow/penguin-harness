@@ -78,7 +78,7 @@
  * |                    | `FormPickerTrigger`, `Checkbox`, `CheckboxBox`, `Radio`, |                                                       |
  * |                    | `RadioDisc`, `Switch`, `MessageBubble`, `AgentSelect`,   |                                                       |
  * |                    | `WorkspaceSelect`                                        |                                                       |
- * | `ui-start`         | the start page (/chat/new) as a whole; host:             | descendants carry `data-slot="brand" \| "title" \| "tagline" \| "version" \| "counts" \| "count" \| "composer" \| "examples" \| "folders" \| "folder" \| "rows" \| "row"`, a count's number `"figure"` and a row's closing chevron `"go"`; the open folder is `aria-expanded="true"` |
+ * | `ui-start`         | the start page (/chat/new) as a whole; host:             | descendants carry `data-slot="brand" \| "title" \| "version" \| "counts" \| "count" \| "composer" \| "examples" \| "suggestion" \| "saved-prompt"`, a count's number `"figure"`; a chosen prompt uses `aria-current="true"` |
  * |                    | `StartDashboard`                                         |                                                       |
  * | `ui-library`       | the model library's groups and their model cards; host:  | descendants carry `data-slot="group" \| "head" \| "cards" \| "card" \| "name" \| "count" \| "tags" \| "meta" \| "price" \| "state"` (a group's head holds its `name` and `count`, a card its `name`), the bar folding the rest of the groups away `"fold"` and Add group `"add"`; a pinned group `data-pinned="true"` |
  * |                    | `ModelsPage`                                             |                                                       |
@@ -283,8 +283,7 @@
  * accessible name; a pack arranges and fills what is there, decorates only an empty state's art
  * slot and the start page's brand block, and never adds content, marks or boxes. A slot is
  * written wherever its part is drawn, which is not always in the host's own module: the start
- * page's folder rows are `example-folder-row.tsx`'s and its composer slot is the composer card's
- * own `data-slot`. No built-in pack writes a section recipe but Doodle's empty-state art. The run
+ * page's composer card writes its own `data-slot`. No built-in pack writes a section recipe but Doodle's empty-state art. The run
  * indicator is drawn only while a turn runs — a compaction is the stream's banner, and a settled
  * conversation shows nothing — so `running` is the one state it writes.
  *

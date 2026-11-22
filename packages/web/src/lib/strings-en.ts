@@ -4078,7 +4078,6 @@ export const en: Strings = {
     onMachine: (name: string, machine: string) => `${name} [SSH: ${machine}]`,
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "New chat in this workspace",
-    draftSubtitle: "The most comprehensive agent self-evolution platform",
     start: {
       metrics: {
         agents: "Agents",
@@ -4088,21 +4087,10 @@ export const en: Strings = {
       shuffle: "Shuffle suggestions",
       examplesTitle: "Examples and shortcuts",
     },
-    /** Folder names for the start page's collapsible examples (bookmark-style: exactly one open at a time). */
-    exampleFolders: {
-      apps: "Build an AI app from one sentence",
-      webapps: "Web pages and mini games",
-      evolve: "Evaluate and optimize agents",
-      schedules: "Scheduled tasks",
-    },
-    /** Second tooltip line on an example row: the click fills the composer, it does not send. */
-    exampleFillHint: "Click to fill the composer — edit it if you like, then send",
     shortcuts: {
       retry: "Reload my shortcuts",
       manage: "Manage shortcuts",
-      folder: "My shortcuts",
       new: "New shortcut",
-      newFromComposer: "Starts from whatever is in the composer",
       createTitle: "New shortcut",
       editTitle: "Edit shortcut",
       titleLabel: "Name",
