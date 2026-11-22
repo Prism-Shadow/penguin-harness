@@ -50,7 +50,6 @@ for (const shared of [true, false]) {
       busy: false,
       blocked: false,
       onQuickStart: vi.fn(),
-      onDeletePlugin: null,
       onToggleInstall: vi.fn(),
       onUpdateOutdated: vi.fn(),
       onModuleApply: vi.fn(),
@@ -63,7 +62,8 @@ for (const shared of [true, false]) {
     const buttons = [...document.querySelectorAll("button")];
     expect(buttons.some((b) => b.textContent?.includes(en.plugins.deletePlugin))).toBe(false);
     const removes = buttons.filter(
-      (b) => b.getAttribute("aria-label") === `${en.plugins.uninstall} mixed`,
+      // Shipped with the build: its server module is disabled for this Project, never uninstalled.
+      (b) => b.getAttribute("aria-label") === `${en.plugins.installModel.disableModule} mixed`,
     );
     expect(removes.length).toBeGreaterThan(0);
     expect(removes.every((b) => b.disabled === shared)).toBe(true);

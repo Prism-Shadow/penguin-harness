@@ -8,6 +8,7 @@
  *   <agentStateDir>/workbenches/<id>/.harness/      the types it was written against (harness-types.ts)
  *   <agentStateDir>/workbenches/<id>/.build/        its emitted code, per revision (compile.ts)
  *   <agentStateDir>/workbenches/<id>/.disabled      present: this workbench is switched off
+ *   <agentStateDir>/workbenches/<id>/.hidden-from-sidebar  present: not in its Agent's sidebar
  *   <agentStateDir>/workbenches/.disabled           present: every workbench of the Agent is
  *
  * The folder's source is every file except `state.json` (the state is the workbench's data,
@@ -33,23 +34,45 @@ export const UI_DIR = "ui";
  */
 export const DISABLED_MARKER = ".disabled";
 
-/** Whether `dir` (a workbench's folder, or the folder of all of them) holds the off marker. */
-export async function isSwitchedOff(dir: string): Promise<boolean> {
-  return fs.lstat(path.join(dir, DISABLED_MARKER)).then(
+/**
+ * An empty file in a workbench's folder that keeps it off its Agent's sidebar list. It belongs to
+ * this installation, not to the source: a dot entry like {@link DISABLED_MARKER}, so every member
+ * of the Project sees the same list, a plugin update or an archive import keeps it, and it goes
+ * with the folder.
+ */
+export const HIDDEN_FROM_SIDEBAR = ".hidden-from-sidebar";
+
+/**
+ * Whether `dir` (a workbench's folder, or the folder of all of them) holds the off marker, or the
+ * named marker ({@link HIDDEN_FROM_SIDEBAR}).
+ */
+export async function isSwitchedOff(dir: string, marker = DISABLED_MARKER): Promise<boolean> {
+  return fs.lstat(path.join(dir, marker)).then(
     () => true,
     () => false,
   );
 }
 
-/** Removes the off marker from `dir`, or writes it there (creating `dir` when it is missing). */
-export async function writeSwitch(dir: string, on: boolean): Promise<void> {
-  const marker = path.join(dir, DISABLED_MARKER);
+/**
+ * Removes the off marker (or the named one) from `dir` when `on`, or writes it there, creating
+ * `dir` when it is missing; one already there is left as it is.
+ */
+export async function writeSwitch(
+  dir: string,
+  on: boolean,
+  markerName = DISABLED_MARKER,
+): Promise<void> {
+  const marker = path.join(dir, markerName);
   if (on) {
     await fs.rm(marker, { force: true });
     return;
   }
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(marker, "");
+  try {
+    await fs.writeFile(marker, "", { flag: "wx" });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+  }
 }
 
 export interface WorkbenchFolder {

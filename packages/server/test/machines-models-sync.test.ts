@@ -9,7 +9,8 @@
  * later, by the machine, as an auth error.
  *
  * The groups' connections (`[providers.<id>]`) travel in the same PUT: our values, keys in
- * plaintext, merged into theirs per field — a field we do not hold is left alone there.
+ * plaintext, merged into theirs per field — a field we do not hold is left alone there. The
+ * tool-model bindings (`[tools]`) travel in it too, as a whole table: the machine's follow ours.
  *
  * An entry the machine refuses by name is left out and the rest of the table still lands, with
  * no pointer to it; one of our built-in models refused as not addable is marked as such, since
@@ -657,6 +658,38 @@ describe("syncModelsToMachine, against a running server", () => {
       expect(config.models.find((m) => m.model_id === "deepseek-v4-flash")?.api_key).toBe(
         "sk-ours-0123456789",
       );
+    } finally {
+      server.close();
+      await machine.cleanup();
+    }
+  });
+  it("hands the machine our tool-model bindings, and theirs that we do not hold are unbound", async () => {
+    const machine = await createTestApp();
+    const { server, port } = await listening(machine.app.fetch);
+    try {
+      const login = await post(port, "/api/auth/login", {
+        userId: "admin",
+        password: machine.adminPassword,
+      });
+      const cookie = login.setCookie.map((line) => line.split(";")[0]?.trim() ?? "").join("; ");
+      const image = { provider: "deepseek", model_id: "deepseek-v4-flash" };
+      const sync = (toolModels: LocalModels["toolModels"]) =>
+        syncModelsToMachine({
+          api: machineApi(new http.Agent(), port, cookie),
+          projects: ["tools_project"],
+          loadLocal: async () => ({ models: [local()], ...(toolModels ? { toolModels } : {}) }),
+        });
+
+      expect(await sync({ t2i: image, t2s: image })).toMatchObject({ kind: "synced" });
+      expect(await machine.deps.projectConfigService.getToolModels("tools_project")).toEqual({
+        t2i: { provider: "deepseek", modelId: "deepseek-v4-flash" },
+        t2s: { provider: "deepseek", modelId: "deepseek-v4-flash" },
+      });
+
+      expect(await sync({ t2i: image })).toMatchObject({ kind: "synced" });
+      expect(await machine.deps.projectConfigService.getToolModels("tools_project")).toEqual({
+        t2i: { provider: "deepseek", modelId: "deepseek-v4-flash" },
+      });
     } finally {
       server.close();
       await machine.cleanup();

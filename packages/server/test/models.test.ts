@@ -18,7 +18,8 @@
  *   `client_type = "openai"` reads as openai-chat; a file written before MMSP's names and group
  *   connections is rewritten once on its first read into the shape a new Project is written in
  *   (OpenCode Go's and Penguin Go's included), then served from the cache; a model the catalog
- *   dropped still loads and stays usable; one model_id under two providers is two rows.
+ *   dropped still loads and stays usable; one model_id under two providers is two rows; a
+ *   catalog tool model (image, speech, web) reads as not chat-eligible.
  * - PUT persists a custom model's vision flag and max_tokens (clearing and rejecting bad values),
  *   falls back to OPENAI_API_KEY for the openai protocol, requires a provider, refuses an id a
  *   vendor group cannot route when the request introduces it (unless its group names a
@@ -213,10 +214,8 @@ describe("models preset & catalog enrichment", () => {
     const res = await api.get(url());
     expect(res.status).toBe(200);
     const body = (await res.json()) as ModelsResponse;
-    expect(body.defaultModel).toEqual({
-      provider: "deepseek",
-      modelId: "deepseek-flash",
-    });
+    // No default model: the owner chooses one (the Web App's first-run guide).
+    expect(body.defaultModel).toBeUndefined();
     expect(body.models.map(pairKey)).toEqual(catalogPairs);
     // A retired catalog row is kept only for the Projects that already carry it, so a new
     // Project gets none of them.
@@ -306,7 +305,7 @@ describe("models preset & catalog enrichment", () => {
     expect(sonnet.clientType).toBeUndefined();
     expect(sonnet.effective).toMatchObject({ baseUrlSource: "none", clientTypeSource: "none" });
     expect(pick(body, "deepseek", "deepseek-v4-pro").envKey).toBe("DEEPSEEK_API_KEY");
-    expect(pick(body, "deepseek", "deepseek-flash").isDefault).toBe(true);
+    expect(body.models.some((m) => m.isDefault)).toBe(false);
 
     // A catalog row on a promotion is preset at its LIST price like every other row, and the
     // promotion is seeded beside it in web.db: the rows reporting a discount are exactly the
@@ -971,6 +970,13 @@ describe("models preset & catalog enrichment", () => {
     const again = (await (await api.get(url())).json()) as ModelsResponse;
     expect(again.models.map(pairKey).sort()).toEqual(body.models.map(pairKey).sort());
   });
+
+  it("a preset tool model (image, speech, web) reads as not chat-eligible, and every chat preset as eligible", async () => {
+    const body = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(body, "deepseek", "deepseek-search").chatEligible).toBe(false);
+    expect(pick(body, "openai", "gpt-image-2.5-flare").chatEligible).toBe(false);
+    expect(pick(body, "deepseek", "deepseek-v4-pro").chatEligible).toBeUndefined();
+  });
 });
 
 describe("default_project presets", () => {
@@ -989,7 +995,7 @@ describe("default_project presets", () => {
     await t.cleanup();
   });
 
-  it("when the seeded admin adopts default_project, the preset models and the default model are filled in (no prior .project_config.toml)", async () => {
+  it("when the seeded admin adopts default_project, the preset models are filled in and no default model is (no prior .project_config.toml)", async () => {
     // The default_project shared by admin seeding and the CLI (the dir already exists, so writeInitialConfig is skipped).
     t = await createTestApp();
     const { cookie } = await loginAdmin(t.app);
@@ -997,10 +1003,8 @@ describe("default_project presets", () => {
     const res = await api.get("/api/projects/default_project/models");
     expect(res.status).toBe(200);
     const body = (await res.json()) as ModelsResponse;
-    expect(body.defaultModel).toEqual({
-      provider: "deepseek",
-      modelId: "deepseek-flash",
-    });
+    // No default model: the owner chooses one (the Web App's first-run guide).
+    expect(body.defaultModel).toBeUndefined();
     expect(body.models.map(pairKey)).toEqual(catalogPairs);
     // The built-in groups' tables come with them, as in a new Project.
     expect(Object.keys(body.providers).sort()).toEqual(Object.keys(presetProviderTable()).sort());
@@ -1009,11 +1013,20 @@ describe("default_project presets", () => {
       presetPromotions().length,
     );
 
-    // The point of presets is "works out of the box": creating a Session should succeed without passing a model ref.
-    const created = await api.post(
-      "/api/projects/default_project/agents/default_agent/sessions",
-      {},
+    // A Session that names no model waits for a default: refused, saying how to set one; once
+    // the owner chooses one, it runs on it.
+    const sessions = "/api/projects/default_project/agents/default_agent/sessions";
+    const refused = await api.post(sessions, {});
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as { error: { code: string } }).error.code).toBe(
+      "no_default_model",
     );
+    const chosen = await api.put("/api/projects/default_project/models/default", {
+      provider: "deepseek",
+      modelId: "deepseek-flash",
+    });
+    expect(chosen.status).toBe(200);
+    const created = await api.post(sessions, {});
     expect(created.status).toBe(201);
     const { session } = (await created.json()) as SessionCreateResponse;
     expect(session.provider).toBe("deepseek");
@@ -1042,10 +1055,14 @@ describe("default_project presets", () => {
       baseUrl: "https://or-proxy.example/v1",
       apiKeyMasked: "sk-o…0018",
     });
-    // Its models follow its endpoint and carry the protocol it lacks; other groups get theirs.
+    // Its models follow its endpoint and carry the protocol it lacks (a row that pins its own, an
+    // image or speech model on OpenRouter, keeps it); other groups get theirs.
     for (const row of body.models.filter((m) => m.provider === "openrouter")) {
       expect(row.credential, row.modelId).toBeUndefined();
-      expect(row.clientType, row.modelId).toBe(catalogGroupConnection("openrouter")!.client_type);
+      expect(row.clientType, row.modelId).toBe(
+        catalogEntryFor("openrouter", row.modelId)?.clientType ??
+          catalogGroupConnection("openrouter")!.client_type,
+      );
       expect(row.effective.baseUrl, row.modelId).toBe("https://or-proxy.example/v1");
     }
     expect(body.providers.tokendance).toBeDefined();
@@ -1231,6 +1248,19 @@ describe("model-reference rekeying and the connectivity test", () => {
     const again = (await (await api.get(url())).json()) as ModelsResponse;
     expect(again.models[0]!.credential?.apiKeyMasked).toBe("sk-s…1234");
     expect(again.defaultModel).toEqual({ provider: "custom", modelId: "new-id" });
+  });
+
+  it("an omitted vision model stays, and a null one is cleared while its row stays", async () => {
+    const vision = { provider: "custom", modelId: "reader" };
+    const models = [{ provider: "custom", modelId: "reader", contextWindow: 4096 }];
+    expect((await api.put(url(), { visionModel: vision, models })).status).toBe(200);
+    const kept = (await (await api.put(url(), { models })).json()) as ModelsResponse;
+    expect(kept.visionModel).toEqual(vision);
+    const cleared = await api.put(url(), { visionModel: null, models });
+    expect(cleared.status).toBe(200);
+    const body = (await cleared.json()) as ModelsResponse;
+    expect(body.visionModel).toBeUndefined();
+    expect(body.models.map(pairKey)).toEqual(["custom\0reader"]);
   });
 
   it("a group change is a rekey too: the credential migrates with it; envKey resolves by client, not by group (PRN-021)", async () => {

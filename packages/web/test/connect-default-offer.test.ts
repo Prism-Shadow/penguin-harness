@@ -11,8 +11,8 @@
  * - When the owner switches, the offered model is written through the default route, the list
  *   marks it, and a notice says it saved.
  * - When the owner keeps the current default, nothing is written and the list is unchanged.
- * - Given the Project had no default, the question asks whether to set one, and setting it
- *   writes the offered model.
+ * - Given the Project had no default, nothing is asked and nothing written: the choice goes to
+ *   the 「默认模型」 dialog, which lists the models the key made usable beside every other default.
  * - Given the server offers nothing, no question appears.
  * - Given TokenDance's connect flow writes the key with an offer, the question waits until the
  *   dialog's outcome is dismissed; Penguin Go's flow does the same.
@@ -28,6 +28,7 @@ import type {
   ProjectSummary,
 } from "@prismshadow/penguin-server/api";
 import { Toaster, toastStore } from "@prismshadow/penguin-ui";
+import { onDefaultModelsRequest } from "../src/lib/default-models-request";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { ModelsPage } from "../src/features/models/models-page";
@@ -261,18 +262,21 @@ describe("the question after a connect offered a default model", () => {
     expect(defaults()).toEqual(["DeepSeek Flash"]);
   });
 
-  it("asks to set a default when the Project had none, and setting it writes the offered model", async () => {
-    const server = await openModelsPage(undefined);
-    await saveTokenDanceKey();
-    const question = en.models.connectDefaultOfferUnset("TokenDance", "DeepSeek V4.1 Flash");
-    await waitFor(() => shows(question));
+  it("hands the choice to the Default models dialog when the Project had no default, writing nothing", async () => {
+    const asked = vi.fn();
+    const stop = onDefaultModelsRequest(asked);
+    try {
+      const server = await openModelsPage(undefined);
+      await saveTokenDanceKey();
+      await waitFor(() => asked.mock.calls.length > 0);
 
-    expect(dialogButtons()).toEqual([en.models.connectDefaultNotNow, en.models.connectDefaultSet]);
-
-    await pressInDialog(en.models.connectDefaultSet);
-    await waitFor(() => server.writes().length === 1);
-
-    expect(server.writes()).toEqual([TOKENDANCE]);
+      expect(shows(en.models.connectDefaultOfferUnset("TokenDance", "DeepSeek V4.1 Flash"))).toBe(
+        false,
+      );
+      expect(server.writes()).toEqual([]);
+    } finally {
+      stop();
+    }
   });
 
   it("asks nothing when the server offers nothing", async () => {

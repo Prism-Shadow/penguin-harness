@@ -26,7 +26,7 @@ export const TAG_TONE = {
 } as const satisfies Record<string, ToneName>;
 
 export interface ModelTag {
-  key: "default" | "vision" | "visionModel" | "fastMode" | "free" | "discount";
+  key: "default" | "inUse" | "vision" | "visionModel" | "fastMode" | "free" | "discount";
   label: string;
   /** Hover text, for a mark whose word needs a sentence behind it (a discount's terms). */
   title?: string;
@@ -41,10 +41,16 @@ const toneOf = (group: MarkGroup) => ({ tone: TAG_TONE[group] });
 
 /** What a list knows about one model, from which its marks follow. */
 export interface ModelTagFacts {
-  /** The Project's default model. */
+  /** The Project's default chat model. */
   isDefault: boolean;
   /** Accepts image input (the effective annotation: unset counts as supported). */
   vision: boolean;
+  /**
+   * The bindings this model is chosen for (text generation, speech recognition, web search …),
+   * by name; absent or empty when none. Only the models page knows them: its In use mark names
+   * them on hover.
+   */
+  inUse?: readonly string[];
   /** The Project's vision proxy for read_file. Only the models page shows it. */
   isVisionModel?: boolean;
   /** Fast mode (premium serving tier) is on for this entry. */
@@ -55,15 +61,27 @@ export interface ModelTagFacts {
   discount?: DiscountedPrice | undefined;
 }
 
+/** The In use mark, when the model is chosen for some binding: its hover names them. */
+export function inUseTag(jobs: readonly string[] | undefined): ModelTag | undefined {
+  if (jobs === undefined || jobs.length === 0) return undefined;
+  return {
+    key: "inUse",
+    label: S.models.inUse,
+    title: S.models.usedFor(jobs),
+    ...toneOf("status"),
+  };
+}
+
 /**
  * Every mark `facts` earns, in a fixed order rather than by which happen to be true, so the eye
- * can learn where to look: what this Project chose (default, vision proxy) before what the
+ * can learn where to look: what this Project chose (default, in use, vision proxy) before what the
  * model is (vision, fast, free) before what it costs today (the discount).
  */
 export function modelTags(facts: ModelTagFacts): ModelTag[] {
   const { discount } = facts;
   const tags: Array<ModelTag | false | undefined> = [
     facts.isDefault && { key: "default", label: S.models.default, ...toneOf("status") },
+    inUseTag(facts.inUse),
     facts.vision && { key: "vision", label: S.models.visionBadge, ...toneOf("capability") },
     facts.isVisionModel && {
       key: "visionModel",

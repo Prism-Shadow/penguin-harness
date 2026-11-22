@@ -21,12 +21,58 @@
  * A lone row reads "More info" (`UiStrings.moreInfo`) and borrows its subject from `label`.
  * Several stacked into an FAQ take `title` instead and say what each one holds, because a column
  * of identical "More info" rows tells a reader nothing about which one answers their question.
+ *
+ * `HelpFoldToggle` is the trigger alone, for a fold whose trigger sits at the end of a row and
+ * whose panel opens under the whole row (a checklist's details); the caller renders the panel
+ * the same way — in the DOM, `hidden` while collapsed, under the id it passes. In a list whose
+ * folds all read alike ("Details") the caller names each trigger for its row (`name`, "Details:
+ * Accessibility"), the visible title still the name's prefix.
  */
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
 import { ICON_GAP, ICON_SIZE } from "../../../icon-scale";
 import { useUiStrings } from "../../../strings";
 import { Chevron } from "../../icons/chevron/chevron";
+
+/** A fold's trigger: the collapse chevron and its words, naming the panel it controls. */
+export function HelpFoldToggle({
+  open,
+  onToggle,
+  panelId,
+  label,
+  title,
+  name,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  /** The id of the panel it opens, which the caller renders. */
+  panelId: string;
+  /** Without a title: what the fold explains, folded into its accessible name ("More info: Vault"). */
+  label?: string;
+  /** The words on screen; absent, the generic "More info". Alone, a title is the accessible name. */
+  title?: string;
+  /** The accessible name in full, when it says more than the title; the title must be its prefix. */
+  name?: string;
+}) {
+  const strings = useUiStrings();
+  // The visible text stays a prefix of the name, so "label in name" holds and a voice-control
+  // user can still say what they see.
+  const accessible =
+    name ?? (title === undefined && label !== undefined ? strings.moreInfoAbout(label) : undefined);
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      aria-controls={panelId}
+      {...(accessible !== undefined ? { "aria-label": accessible } : {})}
+      onClick={onToggle}
+      className={`flex items-center ${ICON_GAP.tight} rounded-sm text-xs text-fg-muted transition-colors duration-150 hover:text-fg`}
+    >
+      <Chevron open={open} size={ICON_SIZE.chevronDense} />
+      {title ?? strings.moreInfo}
+    </button>
+  );
+}
 
 export function HelpFold({
   children,
@@ -57,26 +103,17 @@ export function HelpFold({
   flush?: boolean;
   className?: string;
 }) {
-  const strings = useUiStrings();
   const [open, setOpen] = useState(false);
   const panelId = useId();
   return (
     <div className={className}>
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={panelId}
-        // The visible text is a prefix of the accessible name, so "label in name" holds and a
-        // voice-control user can still say what they see.
-        {...(title === undefined && label !== undefined
-          ? { "aria-label": strings.moreInfoAbout(label) }
-          : {})}
-        onClick={() => setOpen((v) => !v)}
-        className={`flex items-center ${ICON_GAP.tight} rounded-sm text-xs text-fg-muted transition-colors duration-150 hover:text-fg`}
-      >
-        <Chevron open={open} size={ICON_SIZE.chevronDense} />
-        {title ?? strings.moreInfo}
-      </button>
+      <HelpFoldToggle
+        open={open}
+        onToggle={() => setOpen((v) => !v)}
+        panelId={panelId}
+        {...(label !== undefined ? { label } : {})}
+        {...(title !== undefined ? { title } : {})}
+      />
       {/* pl-4.5 = the chevron's 12px plus the row's gap, so the body lines up under the label. */}
       <div
         id={panelId}

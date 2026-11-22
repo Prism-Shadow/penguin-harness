@@ -356,6 +356,12 @@ export class FakeServer {
    * path below that prefix, its query and its body. The default is what a server outside the
    * desktop app answers.
    */
+  /**
+   * What `GET /api/contributions` answers: the plugin server modules running now, none by default.
+   * A server older than plugin modules answers no `modules` at all.
+   */
+  contributions: Json = { modules: [] };
+
   builtinBrowser: (req: { method: string; path: string; query: URLSearchParams; body?: Json }) => {
     status?: number;
     body?: unknown;
@@ -1941,6 +1947,8 @@ export class FakeServer {
     }
     const viaToken = authorization !== undefined;
 
+    if (apiPath === "/api/contributions" && method === "GET") return this.json(this.contributions);
+
     if (apiPath.startsWith("/api/builtin-browser/")) {
       const answer = this.builtinBrowser({
         method,
@@ -2050,6 +2058,10 @@ export class FakeServer {
         if (this.failSessionCreates > 0) {
           this.failSessionCreates -= 1;
           return this.error(503, "server_unavailable", "The server is restarting.");
+        }
+        // The server's rule: a Session that names no model runs on the Project's default.
+        if (typeof body?.modelId !== "string" && this.defaultModel === null) {
+          return this.error(400, "no_default_model", "This Project has no default model.");
         }
         const s = this.addSession({
           projectId: decodeURIComponent(m[1]!),

@@ -25,6 +25,8 @@
  *   sibling files, so they are copied in again here — the set scripts/far-side-scripts.mjs
  *   names, the one the server build and the hot push take too. Only the ~4 KB scripts
  *   travel: the far side downloads the release itself.
+ * - `dist/market-covers/` — the built-in plugins' market covers, which the server also reads
+ *   beside its own module (scripts/market-covers.mjs), copied in for the same reason.
  *
  * Run from anywhere (after tsup); all paths derive from this file's location.
  */
@@ -72,6 +74,12 @@ for (const { name, from } of FAR_SIDE_SCRIPTS) {
   }
   fs.copyFileSync(src, path.join(distDir, name));
 }
+// The built-in plugins' market covers, beside the one-file server bundle for the same reason
+// (scripts/market-covers.mjs): the server reads them next to its own module.
+const { copyMarketCovers } = await import(
+  pathToFileURL(path.join(repoRoot, "scripts", "market-covers.mjs")).href
+);
+copyMarketCovers(repoRoot, distDir);
 
 const iconSrc = path.join(pkgDir, "build", "icon.png");
 if (!fs.existsSync(iconSrc)) {
@@ -124,7 +132,7 @@ if (hostBinding(ptyFiles) === undefined) {
 // The compiler plugin interfaces and workflows are checked with, beside the server bundle for the same reason
 // node-pty is: the bundle has no node_modules of its own, and the server resolves
 // `typescript` from the program that is running.
-const { typescriptPayload } = await import(
+const { nodeTypesPayload, typescriptPayload } = await import(
   pathToFileURL(path.resolve(pkgDir, "..", "..", "scripts", "typescript-payload.mjs")).href
 );
 const tsDest = path.join(pkgDir, "dist", "node_modules", "typescript");
@@ -132,6 +140,15 @@ fs.rmSync(tsDest, { recursive: true, force: true });
 for (const { rel, abs } of typescriptPayload(path.resolve(pkgDir, "..", "server"))) {
   fs.mkdirSync(path.dirname(path.join(tsDest, rel)), { recursive: true });
   fs.copyFileSync(abs, path.join(tsDest, rel));
+}
+// And the Node declarations a workbench's server code is checked with, beside the compiler.
+for (const name of ["@types/node", "undici-types"]) {
+  fs.rmSync(path.join(pkgDir, "dist", "node_modules", name), { recursive: true, force: true });
+}
+for (const { rel, abs } of nodeTypesPayload(path.resolve(pkgDir, "..", "server"))) {
+  const dest = path.join(pkgDir, "dist", "node_modules", rel);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(abs, dest);
 }
 
 const { posixLauncherScript, windowsLauncherScript } = await import(

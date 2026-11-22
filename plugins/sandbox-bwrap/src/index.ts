@@ -32,11 +32,10 @@
  * matters for a deployment.
  */
 import { execFile, spawnSync } from "node:child_process";
-import { accessSync, constants, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
-import { Bind, Component, Interface, Use } from "@prismshadow/penguin-core/plugin";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/plugin";
 import type {
   ConfinedArgv,
   Plugin,
@@ -45,64 +44,19 @@ import type {
   SandboxProviderSource,
 } from "@prismshadow/penguin-core/plugin";
 
-/** Default probe budget; a probe that hangs must not hang the first spawn forever. */
-const PROBE_TIMEOUT_MS = 5_000;
+import {
+  BWRAP_GROUP,
+  BwrapConfigReader,
+  PROBE_TIMEOUT_MS,
+  bwrapSettingsOf,
+  vendoredRunner,
+} from "./settings.js";
+import type { BwrapSettings } from "./settings.js";
+import { SandboxBwrapStatus } from "./status.js";
 
-/** This backend's own settings, as it reads them from its group. */
-export interface BwrapSettings {
-  /** The bwrap program: a path or a command on PATH. */
-  runner: string;
-  /** How long the first check that the runner works may take. */
-  probeTimeoutMs: number;
-}
-
-/**
- * The bwrap this plugin SHIPS for the host it is running on, or "" when it carries none.
- *
- * A deployment must not depend on the distribution having bubblewrap — most do not install it,
- * and an operator who has to run `apt install bubblewrap` before the sandbox works is an
- * operator whose sandbox is off. The binary lives beside the built module
- * (`vendor/<platform>-<arch>/bin/bwrap`, see scripts/vendor-bwrap.mjs) and finds its own
- * libcap through an `$ORIGIN/../lib` rpath, which is what lets a backend that only rewrites an
- * argv use it: there is no environment to set.
- */
-export function vendoredRunner(
-  platform: NodeJS.Platform = process.platform,
-  arch: string = process.arch,
-  runnable: (p: string) => boolean = executable,
-): string {
-  const candidate = fileURLToPath(
-    new URL(`../vendor/${platform}-${arch}/bin/bwrap`, import.meta.url),
-  );
-  return runnable(candidate) ? candidate : "";
-}
-
-/** Present AND executable: a package installer may drop the exec bit, and then it is not ours to run. */
-function executable(target: string): boolean {
-  try {
-    accessSync(target, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Its group's stored document (defaults merged) as settings; anything unusable falls back. */
-export function bwrapSettingsOf(
-  doc: Record<string, unknown>,
-  vendored: string = vendoredRunner(),
-): BwrapSettings {
-  const runner = typeof doc.runner === "string" ? doc.runner.trim() : "";
-  const seconds = doc.probeTimeoutSeconds;
-  return {
-    // What a deployment names wins; then the one shipped here; and only then a host's own.
-    runner: runner !== "" ? runner : vendored !== "" ? vendored : "bwrap",
-    probeTimeoutMs:
-      typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0
-        ? seconds * 1000
-        : PROBE_TIMEOUT_MS,
-  };
-}
+export { BWRAP_GROUP, BwrapConfigReader, bwrapSettingsOf, vendoredRunner } from "./settings.js";
+export type { BwrapSettings } from "./settings.js";
+export { BwrapSandboxView, SandboxBwrapStatus, bwrapReport, standingOf } from "./status.js";
 
 /** Test seams: inject the probe verdict, and the settings the provider reads at each confine. */
 export interface PenguinBwrapInternals {
@@ -110,18 +64,6 @@ export interface PenguinBwrapInternals {
   runner?: string;
   settings?: () => BwrapSettings;
 }
-
-/**
- * What this backend requires of plugin configuration: to read the group it declares. The
- * interface is the consumer's own, so the package depends on no harness type.
- */
-@Interface()
-export abstract class BwrapConfigReader {
-  abstract get(name: string): Record<string, unknown>;
-}
-
-/** The settings group this backend declares (its contribution id), drawn inside the Sandbox card. */
-export const BWRAP_GROUP = "sandbox-bwrap";
 
 /**
  * The writable roots a policy grants, canonical and deduplicated: the workspace and the
@@ -212,7 +154,7 @@ function probeAsync(timeoutMs: number, runner: string): Promise<string | null> {
  * A backend mounted without being able to serve would be routed policies and fail every command;
  * one that declined without a reason would leave nobody able to tell why. The sandbox service
  * records the rejection and the settings page shows it, and loads it again after the next save
- * of the sandbox card. The confine-time probe stays, for a runner changed while mounted.
+ * of its page. The confine-time probe stays, for a runner changed while mounted.
  */
 export async function loadPenguinBwrapProvider(
   internals: PenguinBwrapInternals & { platform?: NodeJS.Platform } = {},
@@ -311,12 +253,14 @@ export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}
         id: "sandbox-bwrap.provider",
         name: "penguin-bwrap",
         dimensions: ["fs-write", "network", "mask-paths", "closed-temp"],
+        // A default backend on Linux, beside sandbox-dsh: where both load, this one serves
+        // every policy, since it implements more.
+        defaultFor: ["linux"],
       },
     ],
     "PluginConfigProvider.groups": [
       {
         id: "sandbox-bwrap",
-        parent: "sandbox",
         title: "Bubblewrap",
         properties: {
           runner: {
@@ -353,7 +297,7 @@ export class SandboxBwrap {
 
   setup() {
     const config = this.config;
-    // A loader, not a load: after a save of the sandbox card the service calls it again if the
+    // A loader, not a load: after a save of this backend's page the service calls it again if the
     // check failed, so a corrected program mounts the backend without a restart.
     this.provider = () =>
       loadPenguinBwrapProvider({
@@ -362,5 +306,5 @@ export class SandboxBwrap {
   }
 }
 
-const plugin: Plugin = { modules: [SandboxBwrap] };
+const plugin: Plugin = { modules: [SandboxBwrap, SandboxBwrapStatus] };
 export default plugin;

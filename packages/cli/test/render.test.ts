@@ -14,6 +14,7 @@ import {
   toolCallOutput,
   tokenUsage,
   sessionMeta,
+  sessionUpdate,
   taskBegin,
   taskEnd,
   userText,
@@ -483,6 +484,22 @@ describe("StreamRenderer", () => {
     r.handle(partialText("delta", "hello"));
     r.handle(partialText("stop", ""));
     expect(stripAnsi(text())).toBe("hello\n");
+  });
+
+  it("prints nothing for a switch's session_update, and the next Task's clock starts at that Task, not at the switch", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    // A switch made elsewhere (another client watching the Session), an hour before the next Task.
+    r.handle(
+      at("2026-11-19T08:00:00.000Z", sessionUpdate({ provider: "openai", model_id: "b-2" })),
+    );
+    expect(stripAnsi(text())).toBe("");
+    r.handle(at("2026-11-19T09:00:00.000Z", taskBegin()));
+    r.handle(at("2026-11-19T09:00:01.000Z", requestBegin()));
+    r.handle(at("2026-11-19T09:00:02.000Z", usage(4000, 4000)));
+    r.handle(at("2026-11-19T09:00:03.000Z", requestEnd("completed")));
+    r.endTask(999);
+    expect(stripAnsi(text())).toBe("[stats] context 4k (+4k) · tokens 4k (+4k) · 3s (+3s)\n");
   });
 
   it("does not print token_usage per turn; endTask prints [stats] line with per-task deltas", () => {

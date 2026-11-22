@@ -34,6 +34,7 @@ import { formatFrontmatter } from "@prismshadow/skills";
 import { collectVaultRefs, resolveMCPServer } from "../environment/mcp/config.js";
 import type { HookCommand, QuickStart } from "./library.js";
 import { libraryContributions } from "./contributions.js";
+import { shipsServerModules } from "./kinds.js";
 import type { LibraryContributions, PluginMcpServer } from "./contributions.js";
 import { readPluginIcon } from "./icon.js";
 import type { IconImage } from "./icon.js";
@@ -124,6 +125,8 @@ export interface LibraryPlugin {
   category?: string;
   /** Whether default_agent gets this plugin at creation (the card's `preinstall`, default true; always false for an installed package — the operator chose it for the server, not for every new Project). */
   preinstall: boolean;
+  /** Whether every new Agent gets this plugin (the card's `defaultInstall`, default false; always false for an installed package, as `preinstall` is). */
+  defaultInstall: boolean;
   /** The package's npm `author`, `homepage`, `repository` URL and `license`, for the detail dialog (each optional). */
   author?: string;
   homepage?: string;
@@ -140,6 +143,11 @@ export interface LibraryPlugin {
   mcpServers: PluginMcpServer[];
   /** The demo the Plugins page's quick start pre-fills (the card's `quickStart`, optional). */
   quickStart?: QuickStart;
+  /**
+   * Whether the package also ships server modules (./kinds.ts): a hybrid plugin, whose install on
+   * an Agent also asks for its modules to run on the Agent's server (PRFC-0031).
+   */
+  modules: boolean;
 }
 
 /** Reads one root: a shipped plugin that will not read throws; an installed one is left out (null) with a warning. */
@@ -442,6 +450,7 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
     version: manifest.version,
     ...(card.category !== undefined ? { category: card.category } : {}),
     preinstall: !root.installed && card.preinstall !== false,
+    defaultInstall: !root.installed && card.defaultInstall === true,
     ...(manifest.author !== undefined ? { author: manifest.author } : {}),
     ...(manifest.homepage !== undefined ? { homepage: manifest.homepage } : {}),
     ...(manifest.repository !== undefined ? { repository: manifest.repository } : {}),
@@ -459,6 +468,8 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
     ...(workbenches.length > 0 ? { workbenches } : {}),
     mcpServers,
     ...(quickStart !== undefined ? { quickStart } : {}),
+    // From the table already read and the entry's existence: no extra read of any Skill.
+    modules: shipsServerModules(dir, table),
   };
 }
 
@@ -503,6 +514,11 @@ export function loadLibraryPlugins(): LibraryPlugin[] {
 /** The plugins default_agent installs at initialization: every library plugin except those whose card sets `preinstall: false`. */
 export function loadPreinstalledPlugins(): LibraryPlugin[] {
   return loadLibraryPlugins().filter((plugin) => plugin.preinstall);
+}
+
+/** The plugins every new Agent gets at creation: those whose card sets `defaultInstall: true`. */
+export function loadDefaultInstallPlugins(): LibraryPlugin[] {
+  return loadLibraryPlugins().filter((plugin) => plugin.defaultInstall);
 }
 
 /** Reads a single library plugin by name; undefined when the library has no such plugin (names are looked up, never joined into a path). */

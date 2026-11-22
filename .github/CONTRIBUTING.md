@@ -66,7 +66,9 @@ the test suites at once. What a plugin declares (its card, its skills, its hook 
 MCP servers) lives in its `src/index.ts` and reaches the loader through the `ifaces.json` the
 plugin's `build` writes: `pnpm -r build` builds every plugin and `pnpm dev` builds the content
 plugins first, and after changing a declaration you run that plugin's `build` again. A plugin's
-own version is its npm version (`package.json`, bumped by the release); the date versions
+own version is its npm version (`package.json`, bumped by the release); a plugin listed in
+`scripts/lib/own-version-plugins.mjs` (Computer Use) carries its own version instead, which you
+raise in its `package.json` whenever anything it is built or packed from changes. The date versions
 (`YYYY.MM.DD.N`) sit on the parts an install writes into an Agent. Any change under
 `skills/<name>/` must raise that skill's `version` in its SKILL.md frontmatter, and any change
 to the hook scripts or to the commands of the hooks contribution in `src/index.ts` must raise
@@ -227,7 +229,7 @@ pnpm test:e2e                                        # core live-model e2e, need
   repository is created public on the first push.
 - **Release prep bumps the repo version**: the same `release: X.Y.Z` PR that renames
   `changelog/unreleased/` also bumps the root and every workspace `package.json`
-  (`packages/*` and `plugins/*`)
+  (`packages/*` and `plugins/*`, except the plugins that carry their own version)
   `version`, plus core's `VERSION` constant (`packages/core/src/index.ts`), to the release
   version. The release workflow refuses a tag push whose version does not match the
   repo's, so a forgotten bump fails before anything is published (v0.2.1 was tagged with a

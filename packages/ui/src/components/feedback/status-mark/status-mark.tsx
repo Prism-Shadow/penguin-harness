@@ -8,7 +8,11 @@
  *
  * The hint is the hover sentence: what the status means for this thing (why it failed, how many
  * are behind). It says what the word does not, so it is a marked hint and opens over the word.
- * The word is always on screen, so colour is never the only carrier.
+ * The word is on screen, so colour is never the only carrier.
+ *
+ * `wordless` is for a facts line with no room for the word (a cover card's, which shares its
+ * line with the card's controls): the glyph stands alone, its shape and tone saying the state,
+ * and the word leads the tooltip and is the mark's text for assistive technology.
  *
  * Props only: the glyph, the tone and every word are the caller's. Rest props land on the mark's
  * own element (a `data-testid`, an id).
@@ -37,14 +41,30 @@ export interface StatusMarkProps extends HTMLAttributes<HTMLSpanElement> {
   label: string;
   /** The sentence on hover: what the status means for this thing. */
   hint?: string;
+  /** The glyph alone on screen; the word leads the tooltip and stays the accessible text. */
+  wordless?: boolean;
 }
 
-export function StatusMark({ glyph, tone, label, hint, className = "", ...rest }: StatusMarkProps) {
+export function StatusMark({
+  glyph,
+  tone,
+  label,
+  hint,
+  wordless = false,
+  className = "",
+  ...rest
+}: StatusMarkProps) {
+  // Without the word on screen the tooltip has to say it: it names the mark, then means it.
+  const tooltip = wordless ? (hint === undefined ? label : `${label} · ${hint}`) : hint;
   return (
     <span
       className={`inline-flex shrink-0 items-center ${ICON_GAP.tight} ${className}`}
-      {...(hint !== undefined
-        ? { "data-tooltip": hint, "data-tooltip-content": "text", "data-tooltip-extra": true }
+      {...(tooltip !== undefined
+        ? {
+            "data-tooltip": tooltip,
+            "data-tooltip-content": "text",
+            ...(wordless ? {} : { "data-tooltip-extra": true }),
+          }
         : {})}
       {...rest}
     >
@@ -53,7 +73,7 @@ export function StatusMark({ glyph, tone, label, hint, className = "", ...rest }
         size={ICON_SIZE.inlineGlyph}
         className={tone === undefined ? "text-fg-subtle" : INK[tone]}
       />
-      <span>{label}</span>
+      <span className={wordless ? "sr-only" : undefined}>{label}</span>
     </span>
   );
 }

@@ -30,18 +30,21 @@
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { OWN_VERSION } from "./lib/own-version-plugins.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const read = (file) => JSON.parse(readFileSync(file, "utf8"));
 
 /**
- * Every workspace package under `packages/` and `plugins/`, by npm name. Both, because the
- * dependency runs across them: `penguin-core` depends on the Agent plugins, so a plugin marked
- * private would ship core naming a version npm does not have. Names and private flags are read
- * from each manifest, never assumed from the directory.
+ * Every workspace package under `packages/`, `plugins/` and `library/`, by npm name. All three,
+ * because the dependency runs across them: `penguin-core` depends on the Agent plugins, so a
+ * plugin marked private would ship core naming a version npm does not have; and the `library/`
+ * packages are private by rule, so a published package (a plugin's CLI module included) that
+ * lists one as a runtime dependency instead of bundling it would 404 on install. Names and
+ * private flags are read from each manifest, never assumed from the directory.
  */
 const workspace = new Map();
-for (const group of ["packages", "plugins"]) {
+for (const group of ["packages", "plugins", "library"]) {
   for (const dir of readdirSync(path.join(root, group))) {
     const manifest = path.join(root, group, dir, "package.json");
     try {
@@ -80,21 +83,32 @@ console.log(
 
 if (!process.argv.includes("--registry")) process.exit(0);
 
-// Everything the release publishes: every non-private package above. The release loops
-// `plugins/*/` and skips the private ones by the same flag.
+// Everything the release's npm chain publishes: every non-private package above. The release
+// loops `plugins/*/` and skips the private ones by the same flag. A plugin that carries its own
+// version (scripts/lib/own-version-plugins.mjs) is not in the chain: its own job publishes the
+// tarball the Release carries, and only once trusted publishing is set up for it, so a name npm
+// has not seen yet is reported here but fails nothing.
 const names = [...workspace.entries()]
-  .filter(([, p]) => !p.private)
+  .filter(([name, p]) => !p.private && !OWN_VERSION.has(name))
   .map(([name]) => name)
   .sort();
-
-const missing = [];
-for (const name of names) {
+const unseen = (name) => {
   try {
     execFileSync("npm", ["view", name, "name"], { stdio: ["ignore", "ignore", "ignore"] });
+    return false;
   } catch {
-    missing.push(name);
+    return true;
   }
+};
+const ownUnseen = [...OWN_VERSION.keys()].filter(unseen);
+if (ownUnseen.length > 0) {
+  console.log(
+    `own-version plugins not on npm yet (a first publish by hand, then trusted publishing and ` +
+      `the NPM_TRUSTED_PUBLISHING variable, before a release publishes them): ${ownUnseen.join(", ")}`,
+  );
 }
+
+const missing = names.filter(unseen);
 
 if (missing.length > 0) {
   const list = missing.join(", ");

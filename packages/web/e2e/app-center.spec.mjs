@@ -149,11 +149,76 @@ test.beforeAll(async ({ browser }) => {
   await seed.close();
 });
 
+test("an installed game's canvas captures the mouse on click only when its tab opts in", async ({
+  playwright,
+}) => {
+  // Chromium's headless window has no native pointer to capture. On display-less Linux
+  // this case can be run under xvfb-run.
+  test.skip(
+    process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY,
+    "Native pointer capture requires a window",
+  );
+  const browser = await playwright.chromium.launch({ headless: false });
+  try {
+    const page = await browser.newPage();
+    await provisionAndLogin(page.request, "pointergame", P);
+    await setAccountPrefs(page.request, { lang: "en" });
+    const projectId = (await (await page.request.get(`${BASE}/api/projects`)).json()).projects[0]
+      .projectId;
+    const base = `${BASE}/api/projects/${projectId}/agents/default_agent/workbenches`;
+    const gameHtml = `<!doctype html><canvas tabindex="0" width="400" height="200" aria-label="Game"></canvas>
+    <script>
+      const canvas = document.querySelector("canvas");
+      canvas.onclick = async () => {
+        try {
+          await canvas.requestPointerLock();
+          canvas.dataset.result = document.pointerLockElement === canvas ? "captured" : "released";
+        } catch (error) { canvas.dataset.result = error.name; canvas.title = error.message; }
+      };
+    </script>`;
+    for (const [name, optIn] of [
+      ["Board", false],
+      ["Game", true],
+    ]) {
+      const pkg = manifest(name);
+      const renderer = pkg.penguin.modules[0].contributes["WebModule.sessionTabs"][0].renderer;
+      if (optIn) renderer.iframe.pointerLock = true;
+      const id = pkg.name;
+      const imported = await page.request.post(`${base}/archive`, {
+        data: {
+          dataBase64: zip({
+            [`${id}/package.json`]: JSON.stringify(pkg),
+            [`${id}/index.ts`]: INDEX,
+            [`${id}/ui/index.html`]: gameHtml,
+          }).toString("base64"),
+          overwrite: true,
+        },
+      });
+      expect(imported.ok(), await imported.text()).toBeTruthy();
+      await page.goto(`${BASE}/apps`);
+      await page.getByRole("button", { name: new RegExp(`^${name},`) }).click();
+      const frame = page.getByRole("region", { name }).frameLocator("iframe");
+      const canvas = frame.locator("canvas");
+      expect(await canvas.evaluate(() => document.pointerLockElement)).toBeNull();
+      await page.bringToFront();
+      await canvas.focus();
+      await canvas.click();
+      await expect(canvas).toHaveAttribute("data-result", optIn ? "captured" : "SecurityError");
+      if (optIn) {
+        await canvas.evaluate(() => document.exitPointerLock());
+        await expect.poll(() => canvas.evaluate(() => document.pointerLockElement)).toBeNull();
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
 test("tiles drag into a folder, step through the menu, keep their order, and restore after asking", async ({
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
-  await setAccountPrefs(page.request, { lang: "en" });
+  await setAccountPrefs(page.request, { lang: "en", themeId: "doodle" });
   await page.goto(`${BASE}/apps`);
   const grid = page.getByRole("list", { name: "App Center" });
   const tile = (name) => grid.getByRole("button", { name: new RegExp(`^${name},`) });
@@ -184,11 +249,58 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   await expect.poll(names).toEqual(["New folder", "Beta"]);
 
   const folder = grid.getByRole("button", { name: /^New folder, folder, 2 apps/ });
+  // Inspect the two ends of the actual CSS transitions without racing the display refresh.
+  const slow = await page.addStyleTag({
+    content:
+      "[data-unfold-surface][data-layout-motion], [data-unfold-surface] [data-layout-motion] { transition-duration: 2s; }",
+  });
   await folder.click();
-  const panel = page.getByRole("dialog", { name: "New folder" });
+  const panel = page.getByRole("region", { name: "New folder" });
+  const positions = await panel.evaluate((node) => {
+    const animations = node.getAnimations({ subtree: true });
+    for (const part of animations) {
+      part.pause();
+      part.currentTime = 0;
+    }
+    const trigger = document.querySelector(`[aria-controls="${node.id}"]`);
+    const bounds = (el) => {
+      const { x, y, width } = el.getBoundingClientRect();
+      const radius =
+        (parseFloat(getComputedStyle(el).borderTopLeftRadius) * width) / el.offsetWidth;
+      return [x, y, width, radius].map(Math.round);
+    };
+    const pairs = [...trigger.querySelectorAll("[data-unfold-source]")].map((mini) => {
+      const slot = [...node.querySelectorAll("[data-unfold-art]")].find(
+        (el) => el.dataset.unfoldArt === mini.dataset.unfoldSource,
+      );
+      return [
+        bounds(mini.querySelector("[data-app-icon-shape]")),
+        bounds(slot.firstElementChild.querySelector("[data-app-icon-shape]")),
+      ];
+    });
+    for (const part of animations) part.finish();
+    return pairs;
+  });
+  for (const [preview, icon] of positions) {
+    expect(icon).toEqual(preview);
+    // The projected corner matches the preview and leaves a straight side on the 20px tile.
+    expect(icon[3]).toBeLessThanOrEqual(icon[2] / 4);
+  }
+  await slow.evaluate((style) => style.remove());
   await expect(panel.getByRole("button", { name: /^Alpha,/ })).toBeVisible();
   await expect(panel.getByRole("button", { name: /^Gamma,/ })).toBeVisible();
+  await panel.getByRole("button", { name: /^Gamma,/ }).click();
+  const window = page.getByRole("region", { name: "Gamma" });
+  await expect(window.frameLocator("iframe").getByRole("heading", { name: "Gamma" })).toBeVisible();
+  await window.getByRole("button", { name: "Close, back to the App Center" }).click();
+  await expect(panel).toBeVisible();
+
   await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await expect(folder).toBeFocused();
+  await folder.press("Enter");
+  await page.goBack();
+  await expect(folder).toHaveAttribute("aria-expanded", "false");
   await expect(panel).toBeHidden();
 
   // The folder moves one step backward from its menu.
