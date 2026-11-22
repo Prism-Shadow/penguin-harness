@@ -30,7 +30,7 @@ import {
   useMarkdownReader,
 } from "../../content/markdown-reader/markdown-reader";
 import { bodyWithoutFrontmatter } from "../../content/prose/frontmatter";
-import { SkeletonList } from "../../feedback/skeleton/skeleton";
+import { Waiting } from "../../feedback/waiting/waiting";
 import { FileTree } from "../file-tree/file-tree";
 import type { TreeToggle } from "../file-tree/file-tree";
 import type { FileTreeRow } from "../file-tree/tree-rows";
@@ -240,10 +240,10 @@ export function FileBrowser<Row extends FileTreeRow>({
       // Nothing open yet. While the listing is still in flight there is nothing to open
       // either, so the pane waits with the tree rather than announcing an empty browser; a
       // listing that failed is done waiting, and the host's empty text says what happened.
-      if (treeLoading && treeError === null) return <SkeletonList rows={8} />;
+      if (treeLoading && treeError === null) return <Waiting rows={8} />;
       return <p className="text-sm text-fg-subtle">{emptyPreview}</p>;
     }
-    if (preview.loading === true) return <SkeletonList rows={8} />;
+    if (preview.loading === true) return <Waiting rows={8} />;
     if (preview.error !== undefined) {
       return <p className="text-sm text-tone-danger-fg">{preview.error}</p>;
     }
@@ -297,7 +297,7 @@ export function FileBrowser<Row extends FileTreeRow>({
           {/* A `tree` with no `treeitem` in it is not one: while the listing is in flight, or
               when it failed or held nothing, the aside carries the skeleton or the error and
               no tree at all. */}
-          {rows.length === 0 && treeLoading && treeError === null && <SkeletonList rows={3} />}
+          {rows.length === 0 && treeLoading && treeError === null && <Waiting rows={3} />}
           {rows.length > 0 && (
             <FileTree
               rows={rows}

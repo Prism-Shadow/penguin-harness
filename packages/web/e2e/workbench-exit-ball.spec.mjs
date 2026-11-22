@@ -4,6 +4,7 @@
  * The drag is a real mouse travelling over the workbench's iframe, which is what the ball's
  * shield exists for.
  *
+ * - The exit and its tucked handle stay opaque and legible against a white workbench.
  * - The ball rests in the bottom-right corner. Dragged across the page to its left half, it does
  *   not exit and comes to rest against the left edge; a reload keeps it there.
  * - Hovering the ball shows its tuck button; a click puts the ball away into a handle on the left
@@ -12,6 +13,7 @@
  *   window.
  */
 import { test, expect } from "@playwright/test";
+import { WHITE, contrastRatio, parseColor } from "../../ui/src/testing/color.ts";
 import { ADMIN_ID, ADMIN_PASSWORD, login } from "./auth.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
 
@@ -20,6 +22,21 @@ const FULL_PAGE = `${BASE}/app/default_project/penguin_support/support`;
 
 async function openFullPage(page) {
   await expect(page.locator("iframe")).toBeVisible({ timeout: 30_000 });
+}
+
+async function expectReadableExit(control) {
+  await expect(control).toHaveCSS("opacity", "1");
+  const paint = await control.evaluate((node) => {
+    const { color, backgroundColor } = getComputedStyle(node);
+    return { color, backgroundColor };
+  });
+  const fill = parseColor(paint.backgroundColor);
+  expect(fill.a, "opaque over the workbench").toBe(1);
+  expect(contrastRatio(WHITE, fill), "control against a white page").toBeGreaterThanOrEqual(3);
+  expect(
+    contrastRatio(parseColor(paint.color), fill),
+    "glyph against its fill",
+  ).toBeGreaterThanOrEqual(4.5);
 }
 
 test("the exit ball drags to the other edge, tucks away and comes back, and still exits", async ({
@@ -33,6 +50,7 @@ test("the exit ball drags to the other edge, tucks away and comes back, and stil
   const ball = page.getByRole("button", { name: "Exit full screen", exact: true });
   const handle = page.getByRole("button", { name: "Show the exit button", exact: true });
 
+  await expectReadableExit(ball);
   const resting = await ball.boundingBox();
   expect(resting.x + resting.width).toBeGreaterThan(width - 40);
   expect(resting.y + resting.height).toBeGreaterThan(height - 40);
@@ -63,8 +81,9 @@ test("the exit ball drags to the other edge, tucks away and comes back, and stil
   await openFullPage(page);
   await expect(handle).toBeVisible();
   await expect(ball).toHaveCount(0);
+  await expectReadableExit(handle);
 
-  await page.keyboard.press("Control+Shift+KeyP");
+  await page.keyboard.press("ControlOrMeta+Shift+KeyP");
   await expect(page.getByPlaceholder("Type to filter commands…")).toBeVisible();
   await expect(
     page.getByRole("option", { name: "Exit full screen (back to the app window)", exact: true }),

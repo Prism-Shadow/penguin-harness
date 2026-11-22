@@ -4433,6 +4433,12 @@ export interface PluginModuleRequest {
    * lists it in every Project. Absent from a server older than PRFC-0030.
    */
   preinstalled?: boolean;
+  /**
+   * A preinstalled module behind a system app of the App Center: it always runs. A stop of it,
+   * and any plugin-table write that would unlist it, answers 409 `system_app_module_locked`.
+   * Absent from a server older than that rule.
+   */
+  systemApp?: boolean;
   state: PluginModuleState;
   /**
    * The package is on this server (installed, linked or shipped). False for a member's request of
@@ -6783,6 +6789,26 @@ export type WebPageRemovalData = {
 /** A page removal as GET /api/contributions answers it. */
 export type WebPageRemovalContribution = WebContribution & WebPageRemovalData;
 
+/**
+ * The data of one `StartPageModule.metrics` contribution: a count on the start page, fixed when
+ * its package was built. `key` names the count; `title` / `titleZh` are its label in English and
+ * Chinese and `icon` its glyph (a name in the web UI's icon registry); `order` places it among
+ * the contributed counts, which follow the start page's own; `app` is the page key of the system
+ * app a click opens (absent: the count opens nothing).
+ */
+export type StartMetricData = {
+  key: string;
+  title: string;
+  titleZh?: string;
+  icon?: string;
+  order: number;
+  value: number;
+  app?: string;
+};
+
+/** A start-page count as GET /api/contributions answers it. */
+export type StartMetricContribution = WebContribution & StartMetricData;
+
 export interface ContributionsResponse {
   pages: WebPageContribution[];
   fileRenderers: WebFileRendererContribution[];
@@ -6796,6 +6822,8 @@ export interface ContributionsResponse {
    * platform's own modules always run and are not listed. Absent from a server older than it.
    */
   modules?: string[];
+  /** The start page's contributed counts; this server always sends the list, an older one none. */
+  startMetrics?: StartMetricContribution[];
 }
 
 /** One command a plugin contributes to the CLI, as GET /api/cli/commands lists it. */

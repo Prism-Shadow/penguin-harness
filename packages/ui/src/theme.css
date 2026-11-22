@@ -11,7 +11,7 @@
  * from the `--ui-*` token contract (tokens.ts) to Tailwind utilities, the base rules that read
  * tokens, the motion rules behind the `data-presence` / `data-backdrop` / `data-reveal` /
  * `data-layout-motion` / `data-fold` attributes, the activity family's ink ease as a run
- * settles, the activity marks' turn and squeeze, the depth ladder the `ui-tree` recipes measure
+ * settles, the activity marks' turn and squeeze, a wait's delay and its blocks' breathing, the depth ladder the `ui-tree` recipes measure
  * with, which icon set a `ui-glyph` (and which drawing the spinner and an empty state) shows
  * until a theme says, the chart marks' fill from their `--_paint`, (animations.css) the entrance
  * and exit classes the components name, and (window-band.css) the desktop window's title band
@@ -461,9 +461,9 @@
     animation: var(--ui-page-enter) var(--ui-page-duration) ease-in-out both;
   }
 
-  /* The neutral page pair a theme may name for --ui-page-enter / --ui-page-exit. A theme's own
-     page motion is a keyframe in its pack's recipes (Frost's frost, Console's dissolve, Doodle's
-     hop), so an exported pack carries it. */
+  /* The neutral page pair a pack may name for --ui-page-enter / --ui-page-exit. No built-in
+     theme moves a page (each sets --ui-page-duration to 0); a pack's own page motion is a
+     keyframe in its recipes, so an exported pack carries it. */
   @keyframes ui-page-fade-in {
     from {
       opacity: 0;
@@ -478,6 +478,33 @@
     }
     to {
       opacity: 0;
+    }
+  }
+
+  /* The waiting state (`Waiting`, the `ui-waiting` hook). While `pending` the host is laid out but
+     not drawn, so it holds its space from the first frame and a load that answers inside the delay
+     never shows it; once `shown` it comes in on the theme's entrance, opacity only, since a
+     placeholder has nowhere to come from. The placeholder blocks breathe on the theme's live
+     timing, inside a wait or on their own: that is the wait Primer and Frost show. A pack draws
+     its own wait inside the blocks of a `ui-waiting` host (Console types its lines behind a
+     cursor, Doodle scribbles them) and keeps each block's box. */
+  .ui-waiting[data-state="pending"] {
+    visibility: hidden;
+  }
+  .ui-waiting[data-state="shown"] {
+    animation: ui-waiting-in var(--ui-dur-enter) var(--ui-ease-enter) backwards;
+  }
+  [data-skeleton] {
+    animation: ui-skeleton-breathe 2s var(--ui-live-timing) infinite;
+  }
+  @keyframes ui-waiting-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes ui-skeleton-breathe {
+    50% {
+      opacity: 0.5;
     }
   }
 
@@ -630,6 +657,14 @@
 :root[data-motion="reduced"] :is(.hourglass-turn, .compact-squeeze) {
   animation: none;
 }
+/* A wait still waits its delay before it shows — the delay is not motion — and then is simply
+   there, its blocks still: a pack's drawing at rest, which a recipe makes the finished one
+   (Console's lines whole with no cursor, Doodle's strokes drawn). */
+:root[data-motion="reduced"] :is(.ui-waiting, [data-skeleton]),
+:root[data-motion="reduced"] .ui-waiting [data-skeleton]::before,
+:root[data-motion="reduced"] .ui-waiting [data-skeleton]::after {
+  animation: none;
+}
 /* The `ui-activity` recipes animate the running row (Frost's halo), a slot inside it (Frost's
    label highlight) and a slot's pseudo-elements (Console's block bar), so all three are named:
    each holds its declared, unanimated state instead — a still halo, plain ink, one fill. */
@@ -673,6 +708,11 @@
   :is(.hourglass-turn, .compact-squeeze) {
     animation: none;
   }
+  :is(.ui-waiting, [data-skeleton]),
+  .ui-waiting [data-skeleton]::before,
+  .ui-waiting [data-skeleton]::after {
+    animation: none;
+  }
   :is(.ui-activity, .ui-activity *),
   :is(.ui-activity, .ui-activity *)::before,
   :is(.ui-activity, .ui-activity *)::after {
@@ -710,6 +750,29 @@
      surface. Scroll containers and overhanging handles keep their own positioning and overflow. */
   [data-clip-surface] {
     overflow: hidden;
+  }
+
+  /* A floated exit sits on another page's colours. Cap accent lightness even in dark
+     mode, with a light rim for dark artwork and a two-tone keyboard focus outline. */
+  .launcher-accent {
+    --launcher-fill: color-mix(in srgb, var(--ui-accent) 43%, black);
+    background-color: var(--launcher-fill);
+    border-color: rgb(255 255 255 / 82%);
+    color: white;
+  }
+  @supports (color: oklch(from red l c h)) {
+    .launcher-accent {
+      --launcher-fill: oklch(from var(--ui-accent) clamp(0.28, calc(l * 0.84), 0.46) c h);
+    }
+  }
+  .launcher-accent:hover,
+  .launcher-accent:active {
+    background-color: color-mix(in srgb, var(--launcher-fill) 82%, black);
+  }
+  .launcher-accent:focus-visible {
+    outline: 2px solid white;
+    outline-offset: 0;
+    box-shadow: 0 0 0 4px var(--launcher-fill);
   }
 
   .ui-eyebrow {

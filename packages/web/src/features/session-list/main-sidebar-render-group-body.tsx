@@ -1,5 +1,5 @@
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
-import { MoreRow, SkeletonList } from "@prismshadow/penguin-ui";
+import { MoreRow, Waiting } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { SIDEBAR_PAGE_SIZE, cutAtWatermark, revealPlan } from "../../lib/session-grouping";
 import { orderSessionRows } from "../../lib/session-order";
@@ -95,7 +95,7 @@ export function useMainSidebarRenderGroupBody(scope: ReturnType<typeof useMainSi
             // The same window the chat pane's skeleton covers: the Agent groups render as
             // soon as the Agents arrive, but the session pages are still being fetched —
             // "no Sessions yet" is not the honest answer until they land.
-            <SkeletonList rows={2} />
+            <Waiting rows={2} />
           ) : awaitingRows ? null : (
             <p className="px-2.5 py-1 text-xs text-gray-400 dark:text-gray-600">
               {S.chat.noSessions}

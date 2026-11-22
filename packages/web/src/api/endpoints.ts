@@ -2140,8 +2140,15 @@ export const uninstallAgentPlugin = (
     { method: "DELETE", server: machineId },
   );
 
-/** Plugin index (available to any logged-in user): the merged index of every configured registry. */
-export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/registry");
+/**
+ * Plugin index (available to any logged-in user): the merged index of every configured registry;
+ * with `machineId`, THAT machine's (its own sources), its icons re-rooted onto it.
+ */
+export const getPluginIndex = (machineId: string | null = null) =>
+  apiFetch<PluginIndexResponse>("/api/plugins/registry", { server: machineId }).then((r) => ({
+    ...r,
+    plugins: iconsOn(r.plugins, machineId),
+  }));
 
 /** The market's curation (any logged-in user): the selected plugins, which may lead, and the art. */
 export const getPluginMarket = () => apiFetch<PluginMarketResponse>("/api/plugins/market");
@@ -2183,9 +2190,11 @@ export const themePackFileUrl = (id: string, file: string, v: string): string =>
     .map(encodeURIComponent)
     .join("/")}?v=${encodeURIComponent(v)}`;
 
-/** An index entry's README.md, read from the package on this server; `readme` is null when the package is not here or has none. */
-export const getPluginReadme = (name: string) =>
-  apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`);
+/** An index entry's README.md, read from the package on this server (or on `machineId`); `readme` is null when the package is not there or has none. */
+export const getPluginReadme = (name: string, machineId: string | null = null) =>
+  apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`, {
+    server: machineId,
+  });
 
 export const getAgentSkills = (projectId: string, agentId: string, machineId: string | null) =>
   apiFetch<AgentSkillsResponse>(

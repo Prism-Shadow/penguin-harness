@@ -21,7 +21,7 @@ import {
   HelpFold,
   NoticeStrip,
   SettingsEmpty,
-  SkeletonList,
+  Waiting,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -145,8 +145,10 @@ export function VaultTab({
       {toggleCard}
       {alertStrip}
 
+      {/* The switch, the table and the prompt arrive in one answer; until then the tab's one
+          wait stands under the description, and nothing does once the read has failed. */}
       {entries === null ? (
-        <SkeletonList rows={4} />
+        error === null && <Waiting rows={4} />
       ) : entries.length === 0 ? (
         <SettingsEmpty>{S.vault.empty}</SettingsEmpty>
       ) : (

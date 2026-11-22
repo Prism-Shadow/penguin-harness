@@ -1,4 +1,4 @@
-import { Fold, GroupHeader, ICONS, ICON_SIZE, SkeletonList } from "@prismshadow/penguin-ui";
+import { Fold, GroupHeader, ICONS, ICON_SIZE, Waiting } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { Icon } from "../../components/ui/group-list";
@@ -32,7 +32,7 @@ export function renderMainGroupByWorkspace(scope: MainSidebarState) {
     onNavigate,
   } = scope;
   return groupMode !== "workspace" ? null : loading && sessions.length === 0 ? (
-    <SkeletonList rows={5} />
+    <Waiting rows={5} />
   ) : orderedWorkspaceGroups.length === 0 && !searching ? (
     <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">{S.chat.noSessions}</p>
   ) : (

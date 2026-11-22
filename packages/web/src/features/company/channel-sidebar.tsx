@@ -28,7 +28,7 @@ import {
   PlusIcon,
   RailDivider,
   RailItem,
-  SkeletonList,
+  Waiting,
   Text,
   railItemClass,
   toastSuccess,
@@ -256,7 +256,7 @@ export function ChannelSidebar({
             </Button>
           </div>
         ) : (
-          <SkeletonList rows={3} />
+          <Waiting rows={3} />
         )
       ) : (
         <>

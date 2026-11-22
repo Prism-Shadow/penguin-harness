@@ -86,6 +86,7 @@ export type {
   PluginCliCommands,
   PluginCliCommandsSlots,
 } from "./cli-commands.js";
+export type { SystemAppData, SystemApps, SystemAppsSlots } from "./system-app-modules.js";
 export type {
   DeclaredBinding,
   ToolModelBindingCode,
@@ -102,3 +103,37 @@ export type {
   ProjectModelRequests,
   ProjectModelScope,
 } from "../services/project-model-requests.js";
+
+// What a system app a plugin provides needs of the host (PRFC-0036): its own folders in a
+// Project, Agent tasks started as a person, the read views, the files it serves its page from,
+// the archive guards, and the slots of a Project's creation, the semantic ids and the start page.
+export type { AppData, AppDataPaths } from "../services/app-data.js";
+export type {
+  AgentTasks,
+  AgentTaskStart,
+  AgentTaskState,
+  AgentTaskStatus,
+} from "../services/agent-tasks.js";
+export type { AgentSkills } from "../services/agent-skills.js";
+export type { AppSeedData, AppSeeds, AppSeedsSlots } from "../services/app-seeds.js";
+export type {
+  SemanticIdKindData,
+  SemanticIdKinds,
+  SemanticIdKindsSlots,
+  SemanticIdKindSource,
+} from "../services/semantic-id-kinds.js";
+export type { StartPage, StartPageSlots } from "../http/routes/start-page.js";
+export type { ProjectMachines, ProjectModels } from "./views.js";
+export type { MachineApi } from "../machines/machine-api.js";
+export type { WorkspaceFiles } from "../mechanisms/workspace.js";
+export { containedFile, isSafeRelPath, uiFileResponse } from "../http/static-files.js";
+export {
+  MAX_ARCHIVE_BYTES,
+  MAX_ARCHIVE_FILES,
+  MAX_FILE_BYTES,
+  MAX_TOTAL_BYTES,
+  assertSafeEntryPath,
+  unzipBounded,
+} from "../services/skill-import-limits.js";
+export type { UnzipLimits } from "../services/skill-import-limits.js";
+export { CONTROL_CHARACTER, assertDistinctPaths, specialEntries } from "../services/zip-entries.js";
