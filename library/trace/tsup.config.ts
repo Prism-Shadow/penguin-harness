@@ -21,6 +21,7 @@ export default defineConfig({
     "src/history-wire.ts",
     "src/history-layout.ts",
     "src/message-window.ts",
+    "src/routes.ts",
     "src/context-breakdown.ts",
     "src/session-history.ts",
     "src/history-lines.ts",

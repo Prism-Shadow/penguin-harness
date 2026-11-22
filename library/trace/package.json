@@ -88,6 +88,10 @@
       "types": "./dist/message-window.d.ts",
       "import": "./dist/message-window.js"
     },
+    "./routes": {
+      "types": "./dist/routes.d.ts",
+      "import": "./dist/routes.js"
+    },
     "./context-breakdown": {
       "types": "./dist/context-breakdown.d.ts",
       "import": "./dist/context-breakdown.js"

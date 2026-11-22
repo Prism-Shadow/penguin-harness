@@ -329,6 +329,7 @@
       "@prismshadow/penguin-library-trace/history-layout": ["../../library/trace/src/history-layout.ts"],
       "@prismshadow/penguin-library-trace/message-window": ["../../library/trace/src/message-window.ts"],
       "@prismshadow/penguin-library-trace/context-breakdown": ["../../library/trace/src/context-breakdown.ts"],
+      "@prismshadow/penguin-library-trace/routes": ["../../library/trace/src/routes.ts"],
       "@prismshadow/penguin-library-trace/session-history": ["../../library/trace/src/session-history.ts"],
       "@prismshadow/penguin-library-trace/history-lines": ["../../library/trace/src/history-lines.ts"],
       "@prismshadow/penguin-library-trace/history-stream": ["../../library/trace/src/history-stream.ts"],
