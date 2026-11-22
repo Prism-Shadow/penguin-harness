@@ -301,6 +301,7 @@ it("opens an app windowed over the grid, and its close returns to the grid", asy
   await click(button(en.appCenter.windowClose));
   expect(whereIs(router)).toBe("/apps");
   expect(grid()?.closest("[data-window]")?.hasAttribute("inert")).toBe(false);
+  expect(document.activeElement).toBe(tileButton(key("board")));
 });
 
 it("minimizes an app to its tile, still running, and its tile brings back the same window", async () => {
