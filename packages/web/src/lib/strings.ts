@@ -119,13 +119,11 @@ export const zh = {
     /** The desktop window's title band: back and forward through the pages visited. */
     back: "后退",
     forward: "前进",
+    /** A fold's toggle: the UI package's words for every fold it draws (lib/ui-strings.ts). */
     collapseGroup: "折叠",
     expandGroup: "展开",
     pinGroup: "置顶分组",
     unpinGroup: "取消置顶",
-    /** A nav entry's favourite toggle (a star): a favourite stays visible when the collapsible area folds. */
-    pinEntry: "收藏",
-    unpinEntry: "取消收藏",
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest). */
     org: {
       overview: "概览",
@@ -1558,6 +1556,8 @@ export const zh = {
     pluginUpdates: (n: number) => `${n} 个插件有更新`,
     presetUpdates: (n: number) => `${n} 个新预置模型可同步`,
     unexpectedErrors: (n: number) => `${n} 条未预期错误`,
+    /** Several trails' sentences under one dot (the App Center's entry, a folder), or a tile's name with its trail's. */
+    joined: (parts: readonly string[]) => parts.join("；"),
     /** Combined anchor whose trails are not all updates — an unexpected error is not one. */
     pending: "有待处理事项",
     /** Clears an update the user has decided not to take now (a later one raises the badge again). */

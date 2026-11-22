@@ -5,13 +5,7 @@ import {
   renderMainSessionDialogs,
 } from "../../features/session-list";
 import { sectionsIn } from "../../lib/sidebar-modes";
-import {
-  NavRow,
-  Segmented,
-  SidebarFrame,
-  SidebarNavArea,
-  SidebarNavGroup,
-} from "@prismshadow/penguin-ui";
+import { NavRow, Segmented, SidebarFrame, SidebarNavArea } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { DRAFT_SESSION_ID } from "../../features/chat";
 import { NEW_CHAT_ICON } from "../../lib/main-sidebar-persistence";
@@ -26,18 +20,13 @@ export function renderMainSidebarFrame(scope: MainSidebarView) {
     offeredModes,
     renderSections,
     inCompany,
-    navCollapsed,
-    navDrag,
-    navToggleRef,
     rootRef,
     newChatTitle,
     collapseTitle,
     canDrag,
-    toggleNavGroup,
-    navAreaDrop,
     newChat,
     switchMode,
-    navAreas,
+    navEntries,
     renderNavEntry,
     accountRow,
     onNavigate,
@@ -48,22 +37,16 @@ export function renderMainSidebarFrame(scope: MainSidebarView) {
   const mainSessionList = renderMainSessionList(scope);
 
   /**
-   * The fixed block under the switcher, which never scrolls: New chat, then the favourites, one
-   * run with one row spacing. New chat is always pinned: no star, no drag. A page row like the
-   * nav's (no fill at rest), told apart by its place and its weight, and lit while on the draft
-   * page. Company mode has no New chat — a channel is made rarely, so "New channel" is the
-   * channel list's own header action rather than a permanent row (channel-sidebar.tsx) — so its
-   * block holds only its favourites, and with none it is not drawn at all (the frame keeps the
-   * gap) unless a drag needs somewhere to land.
+   * The fixed block under the switcher, which never scrolls: New chat, then the nav's entries
+   * (Agents and the App Center), one run with one row spacing. No entry can be starred, dragged
+   * or folded away (PRFC-0033). New chat is a page row like the nav's (no fill at rest), told
+   * apart by its place and its weight, and lit while on the draft page. Company mode has no New
+   * chat — a channel is made rarely, so "New channel" is the channel list's own header action
+   * rather than a permanent row (channel-sidebar.tsx) — and its rows scroll with its lists, so it
+   * has no fixed block (the frame keeps the gap).
    */
-  const fixedNav: ReactNode | undefined = inCompany ? (
-    navAreas.pinned.length > 0 || navDrag !== null ? (
-      <SidebarNavArea drop={navAreaDrop("pinned")} reserve={navAreas.pinned.length === 0}>
-        {navAreas.pinned.map(renderNavEntry)}
-      </SidebarNavArea>
-    ) : undefined
-  ) : (
-    <SidebarNavArea drop={navAreaDrop("pinned")}>
+  const fixedNav: ReactNode | undefined = inCompany ? undefined : (
+    <SidebarNavArea>
       <NavRow
         surface="muted"
         label={S.chat.newSessionMenu}
@@ -76,14 +59,15 @@ export function renderMainSidebarFrame(scope: MainSidebarView) {
         primary
         className="font-medium"
       />
-      {navAreas.pinned.map(renderNavEntry)}
+      {navEntries.map(renderNavEntry)}
     </SidebarNavArea>
   );
 
   const frame = (
     <SidebarFrame
       rootRef={rootRef}
-      // The nav's fold and the Session list are one find-in-page region (components/find/).
+      // The scroll area (the Session list, or company mode's rows and lists) is one find-in-page
+      // region (components/find/).
       findRegion="sessions"
       // The work-mode switch, above the Project switcher: 开发 | 公司. Rendered only while
       // company mode is available (the admin master switch and the user's own switch both on);
@@ -134,23 +118,13 @@ export function renderMainSidebarFrame(scope: MainSidebarView) {
         </>
       }
     >
-      {/* The nav's fold, at the top of the scroll area: the entries that are not favourites,
-          folded away under the slim toggle (with nothing collapsible there is no toggle), in
-          either mode. The fold persists. Folding rows tween their height to zero, inert, and
-          leave once folded. The fold scrolls with the list; the favourites above it do not.
-          Mid-drag, an empty fixed block keeps a row's height and a hidden toggle band comes
-          back, so either side can take the drop. */}
-      <SidebarNavGroup
-        collapsed={navCollapsed}
-        onToggle={toggleNavGroup}
-        expandLabel={S.nav.expandGroup}
-        collapseLabel={S.nav.collapseGroup}
-        toggleRef={navToggleRef}
-        foldable={navAreas.collapsible.length > 0 || navDrag !== null}
-        drop={navAreaDrop("collapsible")}
-      >
-        {navAreas.collapsible.map(renderNavEntry)}
-      </SidebarNavGroup>
+      {/* Company mode's rows (the organization's pages) at the top of the scroll area, above its
+          channel list: plain rows that scroll with the lists under them. */}
+      {inCompany && navEntries.length > 0 && (
+        <nav>
+          <SidebarNavArea>{navEntries.map(renderNavEntry)}</SidebarNavArea>
+        </nav>
+      )}
 
       {inCompany ? (
         renderSections("body")

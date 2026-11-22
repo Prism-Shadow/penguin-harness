@@ -29,6 +29,9 @@
  *   (lib/host-history.ts), and the focus goes back to the tile.
  * - A tile whose app is building shows a turning ring and does not open; it turns live by itself
  *   when the build ends (use-app-center.ts follows the server's workbench news).
+ * - A system app with something waiting on its page wears the update dot the App Center's nav
+ *   entry carries, with the same sentence, and so does a folder holding one
+ *   (lib/system-app-notes.ts); the page clears it.
  * - Every tile, every folder and the grid's empty space have a context menu: right-click,
  *   Shift+F10 or the ContextMenu key, or press and hold on touch. It is also the keyboard's and
  *   touch's way to arrange the grid.
@@ -65,6 +68,7 @@ import { keepListedApps, launchApp, useRunningApps } from "../../lib/running-app
 import { localizedText } from "../../lib/skill-use";
 import { S } from "../../lib/strings";
 import { useSystemApps } from "../../lib/system-apps";
+import { useSystemAppNotes } from "../../lib/system-app-notes";
 import { toastApiError } from "../../lib/toast-api-error";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
@@ -178,6 +182,11 @@ export function AppCenterPage() {
   const [newFolderPicked, setNewFolderPicked] = useState<string[] | null>(null);
 
   const systemApps = useSystemApps();
+  /** What waits on each system app's page, by its key: its tile's dot (lib/system-app-notes.ts). */
+  const notes = useSystemAppNotes();
+  /** The sentence on an app's dot: a system app's trail; a workbench has none. */
+  const noteOf = (app: GridApp): string | null =>
+    app.shortcut.system === undefined ? null : (notes.get(app.shortcut.workbenchId) ?? null);
   /**
    * The system apps first, so they lead the server's order; they wait for the server's answer
    * (it carries the viewer's arrangement) unless the read failed.
@@ -336,6 +345,7 @@ export function AppCenterPage() {
       running={runningIds.has(app.id)}
       menuItems={(close) => actions && <AppMenu app={app} actions={actions} close={close} />}
       onOpen={() => launch(app)}
+      note={noteOf(app)}
     />
   );
 
@@ -434,6 +444,7 @@ export function AppCenterPage() {
                             onOpen={() =>
                               setOpenFolderId(openFolderId === item.id ? null : item.id)
                             }
+                            notes={item.apps.flatMap((app) => noteOf(app) ?? [])}
                           />
                         ),
                       )}

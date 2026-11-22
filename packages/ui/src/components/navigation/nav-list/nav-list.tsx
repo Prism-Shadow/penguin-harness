@@ -32,10 +32,9 @@
  * surface step would not show: its hover and its selection are thin washes of the ink instead
  * ({@link NAV_FILL}), which every other row on that column reads too.
  *
- * A row may share its box with a control laid over its end (the sidebar's pin toggle): then its
- * hover answers to the enclosing `group` (`groupHover`), so the fill holds while the pointer is on
- * the control, and a row whose whole box is a drag handle keeps its link from starting a drag of
- * its own address (`draggable={false}`).
+ * A row may share its box with a control laid over its end (a Workspace finder place's remove
+ * button): then its hover answers to the enclosing `group` (`groupHover`), so the fill holds while
+ * the pointer is on the control.
  */
 import { createContext, useContext } from "react";
 import type { ReactNode, Ref } from "react";
@@ -172,8 +171,6 @@ export interface NavRowLinkProps {
   "aria-label"?: string;
   "data-tooltip"?: string;
   "data-tooltip-extra"?: true;
-  /** `false`: the link starts no drag of its own address (the row around it is the handle). */
-  draggable?: false;
   onClick?: () => void;
   children: ReactNode;
 }
@@ -198,11 +195,6 @@ export interface NavRowProps {
    * its end, whose hover must not drop the row's fill.
    */
   groupHover?: boolean;
-  /**
-   * `false`: a link starts no drag of its own address, for a row inside an element that is itself
-   * the drag handle — the whole row moves instead.
-   */
-  draggable?: false;
   /** Renders a link to this address instead of a button. */
   href?: string;
   /** With `href`: draws the link through the caller's own element (a router's) instead of `<a>`. */
@@ -227,7 +219,6 @@ export function NavRow({
   density = "md",
   surface = "default",
   groupHover = false,
-  draggable,
   href,
   renderLink,
   onClick,
@@ -245,7 +236,6 @@ export function NavRow({
     ...(tooltip !== undefined ? { "data-tooltip": tooltip } : {}),
     ...(tooltip !== undefined && tooltipExtra ? { "data-tooltip-extra": true as const } : {}),
   };
-  const dragless = draggable === false ? { draggable: false as const } : {};
   const content = (
     <>
       {glyph !== undefined && (
@@ -281,7 +271,6 @@ export function NavRow({
             className: classes,
             ...(current !== undefined ? { "aria-current": current } : {}),
             ...named,
-            ...dragless,
             ...(onClick !== undefined ? { onClick } : {}),
             children: content,
           })}
@@ -289,14 +278,7 @@ export function NavRow({
       );
     }
     return (
-      <a
-        href={href}
-        aria-current={current}
-        onClick={onClick}
-        {...named}
-        {...dragless}
-        className={classes}
-      >
+      <a href={href} aria-current={current} onClick={onClick} {...named} className={classes}>
         {content}
       </a>
     );

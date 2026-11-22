@@ -49,6 +49,11 @@
  * query names, refuses a taken id with 409 `agent_exists` unless it says `overwrite`, and refuses
  * that to a member ({@link agentServer}'s `role`).
  *
+ * When a suite gives them, this server answers the signed-in user's preferences (`prefs`: the read
+ * answers them, a write merges into them at the top level as the real route does) and the
+ * Project's unexpected errors (`unexpectedErrors`: the Cost Center's error list and usage summary
+ * report them); without them both read as not found, as before.
+ *
  * Each server keeps the messaging bindings of its own conversations (`messaging`): the read
  * answers them masked, and the state switch turns one on or off. Each keeps its Agents' own
  * pictures too: a PUT of `…/agents/:id/avatar` stores or clears one on the server it reached,
@@ -112,6 +117,10 @@ import type {
   ScheduleItem,
   SessionInfo,
   SessionsBatchRequest,
+  UiPrefs,
+  UsageBucket,
+  UsageErrorItem,
+  UsageResponse,
   WorkbenchInfo,
   WorkbenchVersion,
   VaultEntryInfo,
@@ -384,6 +393,10 @@ export function agentServer(
      * directory → root-level file name → its text. Any other directory is not found.
      */
     files?: Record<string, Record<string, string>>;
+    /** The signed-in user's stored preferences; absent, `/api/me/prefs` is not found. */
+    prefs?: UiPrefs;
+    /** The Project's unexpected errors, newest first; absent, the Cost Center's reads are not found. */
+    unexpectedErrors?: UsageErrorItem[];
   } = {},
 ): AgentServer {
   const installKey = (machineId: string | null, agentId: string) => `${machineId ?? ""}/${agentId}`;
@@ -455,6 +468,7 @@ export function agentServer(
     const avatar = avatars.get(avatarKey(machineId, agentId));
     return avatar === undefined ? {} : { avatarRev: avatar.rev };
   };
+  let prefs: UiPrefs | null = options.prefs === undefined ? null : { ...options.prefs };
   let refusal: { status: number; code: string; message: string } | null = null;
   let held: Array<() => void> | null = null;
   /** Per held machine, the answers waiting for its release. */
@@ -661,6 +675,43 @@ export function agentServer(
           ? { ...ADMIN_ME, user: { ...ADMIN_ME.user, isAdmin: false } }
           : ADMIN_ME,
       );
+    }
+    if (path === "/api/me/prefs" && prefs !== null) {
+      if (method === "PUT") prefs = { ...prefs, ...(request.body as UiPrefs) };
+      return json({ prefs });
+    }
+    const errors = options.unexpectedErrors;
+    if (errors !== undefined && path === `/api/projects/${PROJECT_ID}/usage/errors`) {
+      return json({ items: errors.slice(0, 1), total: errors.length, rows: errors.length });
+    }
+    if (errors !== undefined && path === `/api/projects/${PROJECT_ID}/usage`) {
+      const bucket: UsageBucket = {
+        total: 0,
+        requests: 0,
+        cost: null,
+        hasUncosted: false,
+        toolRequests: 0,
+        toolCost: null,
+      };
+      return json({
+        summary: { today: bucket, last7d: bucket, total: bucket },
+        groupBy: "date",
+        groups: [],
+        granularity: "day",
+        series: [],
+        byAgentSeries: [],
+        byModelSeries: [],
+        tools: [],
+        agentIds: [],
+        models: [],
+        errors: {
+          total: errors.length,
+          unexpected: errors.length,
+          rows: errors.length,
+          recent: errors,
+          topCode: null,
+        },
+      } satisfies UsageResponse);
     }
     if (path === `/api/projects/${PROJECT_ID}/plugins/modules` && method === "POST") {
       const { plugin } = request.body as { plugin: string };

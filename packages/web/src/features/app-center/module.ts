@@ -1,7 +1,8 @@
 /**
- * The App Center: the Project's home screen of the system apps and the workbench shortcuts, pinned
- * in the nav by default and lit there on the system apps' pages too, and the windows of the apps
- * opened from it, over the page area so they outlive the page.
+ * The App Center: the Project's home screen of the system apps and the workbench shortcuts, one of
+ * the nav's three fixed entries, lit there on the system apps' pages too, and the carrier of their
+ * update dots (lib/system-app-notes.ts). The apps opened here have windows over the page area
+ * so they outlive the page.
  */
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import { AppCenterPage } from "./app-center-page";
