@@ -3,6 +3,7 @@
 - **Date:** 2026-11-22
 - **Type:** feature
 - **Scope:** `server`, `web`
+- **PR:** [#1693](https://github.com/Prism-Shadow/penguin-harness/pull/1693)
 
 [English](2026-11-22-workbench-model-settings.md)
 
