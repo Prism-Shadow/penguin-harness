@@ -25,7 +25,9 @@
  * PREINSTALLED MODULES (PRFC-0030, plugin/preinstall.ts) are listed by Project creation
  * (`preinstall`) under the same rule, with the system as the actor; the ones a Project predates
  * were listed once at boot (preinstall-once.ts), which also seeded their ledger row. Enabling one
- * an administrator stopped lists it in every Project again.
+ * an administrator stopped lists it in every Project again. One behind a system app
+ * (plugin/system-app-modules.ts) cannot be stopped: a stop answers 409, and so does any table
+ * edit here that would unlist it.
  *
  * Everything this touches survives a swap — the files, the database, the channel hub, the plugin
  * host claimed per call — so the generation that started a request may finish it after `ensure`
@@ -75,6 +77,7 @@ import {
 import { moduleStep } from "../plugin/module-rule.js";
 import { isBuiltin } from "../plugin/builtin.js";
 import { isPreinstalled, preinstalledModules } from "../plugin/preinstall.js";
+import { isSystemAppModule } from "../plugin/system-app-modules.js";
 import { pluginTableEdits, withOwnListing, type PluginTableEdits } from "./plugin-tables.js";
 
 /** What the process's plugin host holds, claimed per call: the host belongs to the process. */
@@ -120,6 +123,7 @@ export class PluginModulesService implements PluginModules {
       machineId: this.machineId,
       projectConfig: this.projectConfig,
       apply: (change) => reassembly.reassemble(change),
+      isLocked: (pkg) => isSystemAppModule(pkg, this.bases()),
     });
   }
 
@@ -299,6 +303,7 @@ export class PluginModulesService implements PluginModules {
         via: row.via,
         builtin: await isBuiltin(row.package, bases),
         preinstalled: await isPreinstalled(row.package, bases),
+        systemApp: await isSystemAppModule(row.package, bases),
         state: stateOf(row.package, running, closure).state,
         onServer: !("error" in (await readPluginDeclaration(row.package, bases))),
       });
@@ -314,6 +319,13 @@ export class PluginModulesService implements PluginModules {
     const row = this.ledger.get(pkg);
     if (row === null) {
       throw new HttpError(404, "unknown_request", `Nobody asked this server to run ${pkg}.`);
+    }
+    if (decision === "decline" && (await isSystemAppModule(pkg, this.bases()))) {
+      throw new HttpError(
+        409,
+        "system_app_module_locked",
+        `${pkg} provides a system app, so its module cannot be stopped.`,
+      );
     }
     const at = this.now();
     if (decision === "enable" && (await isPreinstalled(pkg, this.bases()))) {

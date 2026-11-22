@@ -573,6 +573,7 @@ The preset catalog includes, among others:
 - `kimi-k3.1-pro` / `kimi-k3.1-pro-highspeed` / `kimi-k3` (the high-speed variant on Moonshot only)
 - `qwen3.8-max` / `qwen3.8-flash`
 - `seed-2.1-pro` / `seed-2.1-turbo` / `seed-evolving`
+- Hy4 with text and image input: `hy4` on TokenDance and `tencent/hy4` on OpenRouter
 - `mimo-v2.6-pro` / `mimo-v2.6-flash` / `step-5-preview` / `ling-3.1-flash` (TokenDance)
 - `dots-3-note-preview` (free on TokenDance, 512K context)
 - `deepseek-ai/DeepSeek-V4.1-Flash`, `Qwen/Qwen3.8-27B`, `Qwen/Qwen3.8-Flash-Next` (ModelScope's api-inference; preset rows with no price)

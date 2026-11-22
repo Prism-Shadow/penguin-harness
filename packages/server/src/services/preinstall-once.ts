@@ -12,7 +12,8 @@
  * For every other Project, this server's own `[plugins.<machineId>]` table gains each
  * preinstalled module it does not list yet — nothing else of the file changes — and the pair is
  * recorded. From then on the Project's table is the administrator's: a removal is never undone
- * by a later boot. A Project created while the module was preinstalled was recorded at its
+ * by a later boot — except a module behind a system app's, which every boot lists again
+ * (system-app-relist.ts). A Project created while the module was preinstalled was recorded at its
  * creation; so the ones this still finds are those an older build made, a generation without
  * this code made during a push included, and the ones a failure left unrecorded.
  *   - A module the administrator stopped (its ledger row says declined) is recorded without
@@ -38,25 +39,13 @@
  * after 1.0 should still reach existing Projects (PRFC-0030's open question). See
  * changelog/unreleased/2026-11-19-backward-compatibility.md.
  */
-import fs from "node:fs/promises";
-import { parse as parseToml } from "smol-toml";
-import {
-  atomicWriteFile,
-  effectivePluginTable,
-  migrateProjectConfigTable,
-  parsePluginTables,
-  pluginTablesToToml,
-  projectConfigPath,
-  renderProjectConfigToml,
-} from "@prismshadow/penguin-core";
 import type {
   PluginModulePreinstalls,
   PluginModuleRequests,
 } from "@prismshadow/penguin-library-setting";
 import { listProjectIds, type PluginBase } from "../plugin/loader.js";
 import { preinstalledModules, type PreinstalledModule } from "../plugin/preinstall.js";
-import { withOwnListing } from "./plugin-tables.js";
-import { migratePenguinGoRoutes } from "./project-config-migrations.js";
+import { listInOwnTable, UnparseableConfig } from "./own-table-listing.js";
 
 export interface PreinstallOnceDeps {
   preinstalls: PluginModulePreinstalls;
@@ -69,9 +58,6 @@ export interface PreinstallOnceDeps {
   now: () => string;
   log: (line: string) => void;
 }
-
-/** A Project config that is not TOML: passed over for good, unlike a file that cannot be read or written. */
-class UnparseableConfig extends Error {}
 
 /** Lists each preinstalled module in every Project not handled for it yet. Never throws. */
 export async function listPreinstalledOnce(deps: PreinstallOnceDeps): Promise<void> {
@@ -149,53 +135,4 @@ function seedLedger(ledger: PluginModuleRequests, module: PreinstalledModule, at
   } else if (row.decision === null) {
     ledger.decide(module.package, "enabled", "", at, "builtin");
   }
-}
-
-/**
- * Adds `packages` to this server's own table of one Project, where it does not list them
- * already; answers the ones it added. The file is read and migrated the way the Project config
- * service reads it, so a file from an older release is written back in its current form, and
- * every key but `plugins` survives as it was. No file, nothing to add. Throws UnparseableConfig
- * for a file that is not TOML, and the I/O error itself for one that cannot be read or written.
- */
-async function listInOwnTable(
-  root: string,
-  projectId: string,
-  machineId: string,
-  packages: readonly string[],
-): Promise<string[]> {
-  if (packages.length === 0) return [];
-  const file = projectConfigPath(root, projectId);
-  let text: string;
-  try {
-    text = await fs.readFile(file, "utf8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
-  }
-  let parsed: unknown;
-  try {
-    parsed = parseToml(text);
-  } catch (err) {
-    throw new UnparseableConfig(err instanceof Error ? err.message : String(err));
-  }
-  const table: Record<string, unknown> =
-    parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  const tables = parsePluginTables(table.plugins) ?? { all: {}, machines: {} };
-  const listed = effectivePluginTable(tables, machineId);
-  const added = packages.filter((pkg) => !(pkg in listed));
-  if (added.length === 0) return [];
-  // The two migrations every read of the service applies (ProjectConfigService.readTable), so
-  // that rendering the file cannot hide what they look for — a rendered file always carries a
-  // `[providers]` table, which is what tells the key hoist a file is already current.
-  migrateProjectConfigTable(table);
-  migratePenguinGoRoutes(table);
-  table.plugins = pluginTablesToToml(withOwnListing(tables, machineId, added));
-  await atomicWriteFile(file, renderProjectConfigToml(table), {
-    mode: 0o600,
-    followSymlinks: true,
-  });
-  return added;
 }

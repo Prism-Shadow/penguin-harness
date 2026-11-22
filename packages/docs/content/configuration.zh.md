@@ -138,6 +138,8 @@ client_type = "openai-image"
 - `base_url`：新建 Project 时，各网关的端点存在其分组上；预置条目只在与分组不同时才存自己的（OpenCode Go 的 Anthropic Messages 条目、custom 里的 Atria Dawn）。使用模型时不会补上缺少的值：直连厂商的条目没有 base URL，请求发往厂商的缺省端点，或它的 `*_BASE_URL` 变量。
 - `api_key`：为空时使用分组密钥，除非条目自己的 `base_url` 与分组的不同 origin（见[分组连接信息](#分组连接信息)）。两者都没有时，只有解析不出 `base_url`、或解析出的是客户端缺省端点时，才使用客户端自己的环境变量（见[供应商凭证变量](#供应商凭证变量)）；其余条目需要自己的或分组的 key。
 
+配置 Hy4 时，TokenDance 使用 `provider = "tokendance"` 和 `model_id = "hy4"`，OpenRouter 使用 `provider = "openrouter"` 和 `model_id = "tencent/hy4"`。这两条预设的协议均为 `openai-responses`。
+
 ```toml
 default_model = { provider = "deepseek", model_id = "deepseek-flash" }
 
@@ -226,6 +228,7 @@ deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分�
 - 服务器运行所有 Project 表的并集，因此任何一个 Project 要求的插件，都会为所有 Project 加载。
 - 读取文件时，其他形式的条目会被丢弃，文件的其余部分照常加载。`plugins` 键不是表时，视为不要求任何插件。
 - 空表照样写成空表，表示这个 Project 不要求任何插件。
+- 随 PenguinHarness 发布、提供应用中心系统应用的插件始终留在列表里：会让本服务端不再为该 Project 运行它的写入以 `409` `system_app_module_locked` 拒绝；手工从文件中删掉的条目，服务器下次启动时写回本服务端的 `[plugins.<machineId>]` 表。
 
 ## 命令策略
 

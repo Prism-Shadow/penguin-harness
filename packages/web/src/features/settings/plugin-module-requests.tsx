@@ -14,12 +14,15 @@
  *   Project and keeps installs from bringing it back, while what the Agents carry stays;
  * - declined: Enable.
  *
- * A waiting row whose Project is gone can only be declined. The server answers each decision with
- * the whole list, which every reader of it takes at once (lib/plugin-modules.ts); a stop that
- * leaves the module running — a Project's shared table still lists it — says which Projects.
- * The list follows the page's machine picker: requests are kept by each server. A server whose
- * list cannot be read (a machine out of reach, or too old to keep requests) says so in one line
- * instead of an empty list. The page's heading names the list, so it draws no title of its own.
+ * A module behind a system app reads "System app, built in" and has no action: it always runs,
+ * and the server refuses to stop it. A preinstalled module's row belongs to every Project, so it
+ * names none. A waiting row whose Project is gone can only be declined. The server answers each
+ * decision with the whole list, which every reader of it takes at once (lib/plugin-modules.ts);
+ * a stop that leaves the module running — a Project's shared table still lists it — says which
+ * Projects. The list follows the page's machine picker: requests are kept by each server. A
+ * server whose list cannot be read (a machine out of reach, or too old to keep requests) says so
+ * in one line instead of an empty list. The page's heading names the list, so it draws no title
+ * of its own.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -65,6 +68,14 @@ function stateOf(row: PluginModuleRequest): {
   hint: string;
 } {
   const words = S.settings.moduleRequests;
+  if (row.systemApp === true) {
+    return {
+      glyph: ICONS.checkCircle,
+      tone: "success",
+      label: words.systemApp,
+      hint: words.systemAppHint,
+    };
+  }
   if (row.decision === null) {
     return { glyph: ICONS.hand, tone: "attention", label: words.waiting, hint: words.waitingHint };
   }
@@ -170,6 +181,7 @@ export function PluginModuleRequests({
         {label}
       </Button>
     );
+    if (row.systemApp === true) return null;
     if (row.decision === "enabled") return button(words.stop, () => setStopping(row));
     // A package asked for before it was on this server (a member's 「安装到 Agent」): it is
     // installed on the server from the Plugins page first; until then Enable waits, saying so.
@@ -200,7 +212,9 @@ export function PluginModuleRequests({
 
   const metaOf = (row: PluginModuleRequest) =>
     [
-      row.projectName ?? words.projectGone,
+      ...(row.preinstalled === true && row.projectId === null
+        ? []
+        : [row.projectName ?? words.projectGone]),
       row.requestedBy === "" ? words.system : (row.requestedByName ?? row.requestedBy),
       formatRelativeLong(row.decidedAt ?? row.requestedAt, locale),
     ].join(" · ");
