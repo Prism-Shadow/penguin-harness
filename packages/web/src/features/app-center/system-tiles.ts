@@ -11,13 +11,8 @@ import { glyphOf } from "../../lib/nav-icons";
 import type { SystemApp } from "../../lib/system-apps";
 import type { LocatedShortcut } from "./arrangement";
 
-// Contributed apps retain their relative order after the standard entries in the default grid.
-const standardApps = new Set(["models", "plugins", "machines", "usage", "benchmark"]);
-
 export function systemShortcutsOf(apps: readonly SystemApp[]): LocatedShortcut[] {
-  const standard = apps.filter((app) => standardApps.has(app.key));
-  const additional = apps.filter((app) => !standardApps.has(app.key));
-  return [...standard, ...additional].map((app) => ({
+  return apps.map((app) => ({
     agentId: SYSTEM_AGENT_ID,
     agentName: "",
     workbenchId: app.key,

@@ -2,9 +2,9 @@
  * The App Center's arrangement: the viewer's stored layout laid over the shortcuts the server
  * lists, and the moves the grid makes on it. Pure, so the rules hold without a DOM.
  *
- * - With no layout the grid is the server's order.
+ * - The default grid starts with the standard system apps, then keeps the incoming order.
  * - A stored app that is no longer listed drops out; a listed app the layout does not name is
- *   appended at the end, in the server's order.
+ *   appended at the end, in default grid order.
  * - A folder keeps its place, with however many apps it holds; one left empty goes. A folder of
  *   one app is kept (the new-folder dialog makes one), and this holds after every move as well.
  * - Folders do not nest: a folder dropped beside an app inside a folder lands beside that folder.
@@ -21,6 +21,7 @@ import type {
   AppCenterShortcut,
 } from "@prismshadow/penguin-server/api";
 
+import { SYSTEM_AGENT_ID } from "../../lib/builtin-agents";
 import { locatedAppKey } from "../../lib/app-center-path";
 
 /** A shortcut with the server it came from: absent `machineId` is this server. */
@@ -61,6 +62,10 @@ export interface GridFolder {
 
 export type GridItem = GridApp | GridFolder;
 
+const defaultSystemKeys = ["models", "plugins", "machines", "usage", "benchmark"].map((key) =>
+  locatedAppKey(SYSTEM_AGENT_ID, key),
+);
+
 /** The grid the viewer sees: the stored layout over the live shortcuts. */
 export function arrange(
   shortcuts: readonly LocatedShortcut[],
@@ -84,8 +89,9 @@ export function arrange(
     const apps = item.apps.map(take).filter((app): app is GridApp => app !== null);
     out.push(...folded(item.id, item.name, apps));
   }
-  for (const shortcut of shortcuts) {
-    const app = take(appKeyOf(shortcut));
+  const first = defaultSystemKeys.filter((key) => live.get(key)?.system !== undefined);
+  for (const key of [...first, ...live.keys()]) {
+    const app = take(key);
     if (app !== null) out.push(app);
   }
   return out;
