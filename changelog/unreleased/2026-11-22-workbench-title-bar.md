@@ -3,6 +3,7 @@
 - **Date:** 2026-11-22
 - **Type:** fix
 - **Scope:** `ui`
+- **PR:** [#1694](https://github.com/Prism-Shadow/penguin-harness/pull/1694)
 
 [中文版](2026-11-22-workbench-title-bar.zh.md)
 
