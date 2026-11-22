@@ -15,7 +15,8 @@
  * over only the intervals that recorded something and the geometry spreads
  * them across the card. A bucket that ran but has no priced model still
  * counts: it reads as a cost of 0, not a dash. `breaks` marks where the axis
- * skipped an interval.
+ * skipped an interval. The chart can be inspected without a mouse (ChartFrame's
+ * `inspectable`).
  */
 import { useState } from "react";
 import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-server/api";
@@ -45,11 +46,14 @@ const COST_PAINT: ChartPaint = { ink: "" };
 const MIN_DOT_STEP = 8;
 
 export function TrendChart({
+  label,
   series,
   granularity,
   currency = "USD",
   breaks,
 }: {
+  /** The chart's accessible name. */
+  label: string;
   series: UsageSeriesPoint[];
   granularity: UsageGranularity;
   currency?: Currency;
@@ -77,6 +81,8 @@ export function TrendChart({
     <div ref={ref}>
       {width > 0 && (
         <ChartFrame
+          label={label}
+          inspectable
           geom={geom}
           fmtY={(v) => formatMoney(v, currency)}
           dates={buckets}

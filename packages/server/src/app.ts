@@ -13,6 +13,7 @@
  * version rather than with this build. Swap semantics for anything the platform holds that
  * is not parked is a HARD STOP: approvals deny, runs abort, the scheduler dies with its App.
  */
+import type { ServerEvent, Access } from "@prismshadow/penguin-library-project";
 import { createHash } from "node:crypto";
 import zlib from "node:zlib";
 import fs from "node:fs";
@@ -22,7 +23,10 @@ import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
 import type { HttpBindings } from "@hono/node-server";
 import { bodyLimit } from "hono/body-limit";
-import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
+import {
+  bodyLimitBytes,
+  toAttachmentLimits,
+} from "@prismshadow/penguin-library-setting/attachment-limits";
 import { isAgentImport, MAX_PACKAGE_BYTES } from "./services/agent-zip.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { Instance, ModuleTree } from "@prismshadow/penguin-core/kernel";
@@ -51,19 +55,21 @@ import {
   type ProxyControl,
 } from "./hmr/capabilities.js";
 import { ensureCliShim, resolveCli, shimFromResolution } from "./services/cli-shim.js";
-import { openDatabase } from "./db/database.js";
-import { MachinesRepo } from "./db/repos/machines.js";
-import { ErrorsRepo } from "./db/repos/errors.js";
-import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
-import { SchedulesRepo } from "./db/repos/schedules.js";
-import { ServerSettingsRepo } from "./db/repos/server-settings.js";
-import { SessionsRepo } from "./db/repos/sessions.js";
-import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
-import { UsersRepo } from "./db/repos/users.js";
-import type { UserRow } from "./db/repos/users.js";
+import { openDatabase } from "@prismshadow/penguin-library-db";
+import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
+import { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
+import { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
+import { SchedulesRepo } from "@prismshadow/penguin-library-session/repos/schedules";
+import { ServerSettingsRepo } from "@prismshadow/penguin-library-setting/repos/server-settings";
+import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
+import { UiPrefsRepo } from "@prismshadow/penguin-library-setting/repos/ui-prefs";
+import { UsersRepo } from "@prismshadow/penguin-library-auth/repos/users";
+import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
 import { authMiddleware, jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
-import { originRule } from "./http/public-origin.js";
-import { WEB_APP_CSP } from "./http/page-csp.js";
+import type { Http } from "./http/app.js";
+import { legacyOwnOrigin } from "./hmr/legacy-browser.js";
+import { originRule } from "@prismshadow/penguin-library-http/public-origin";
+import { WEB_APP_CSP } from "@prismshadow/penguin-library-http/page-csp";
 import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
@@ -73,10 +79,10 @@ import { PLUGINS_RESOURCE_ID, type PluginHost } from "./plugin/host.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { AuthService } from "./auth/service.js";
 import { newAuthRuntimeState } from "./auth/runtime-state.js";
-import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
+import { AuthSessionsRepo } from "@prismshadow/penguin-library-auth/repos/auth-sessions";
 import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
-import { attributedProjectId } from "./http/attribution.js";
+import { attributedProjectId } from "@prismshadow/penguin-library-http/attribution";
 import { STREAM_IDLE_MS } from "./http/sse.js";
 import { installRoutes } from "./http/routes/install.js";
 import { ChannelHub } from "./runtime/channel.js";
@@ -114,7 +120,6 @@ import { AgentService } from "./services/agent-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
-import { ModelOAuthService } from "./services/model-oauth-service.js";
 import { ProjectService } from "./services/project-service.js";
 import { SessionService } from "./services/session-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
@@ -138,14 +143,13 @@ import type { PreviewTokenSigner } from "./services/preview-token.js";
 
 import type { ControlEnvContext, ProxyEnvPolicy, SpawnConfiner } from "@prismshadow/penguin-core";
 import { declined } from "./hmr/hono-seam.js";
-import { AgentsRepo } from "./db/repos/agents.js";
-import { MembersRepo } from "./db/repos/members.js";
-import { ProjectsRepo } from "./db/repos/projects.js";
-import { TraceIndexRepo } from "./db/repos/trace-index.js";
-import { UsageRepo } from "./db/repos/usage.js";
+import { AgentsRepo } from "@prismshadow/penguin-library-project/repos/agents";
+import { MembersRepo } from "@prismshadow/penguin-library-project/repos/members";
+import { ProjectsRepo } from "@prismshadow/penguin-library-project/repos/projects";
+import { TraceIndexRepo } from "@prismshadow/penguin-library-trace/repos/trace-index";
+import { UsageRepo } from "@prismshadow/penguin-library-observability/repos/usage";
 import { adminUsersRoutes } from "./http/routes/admin.js";
 import { adminSettingsRoutes } from "./http/routes/admin-settings.js";
-import type { ServerEvent } from "./api/types.js";
 import { meRoutes } from "./http/routes/me.js";
 import { eventsRoutes, userChannelKey } from "./http/routes/events.js";
 import { projectsRoutes } from "./http/routes/projects.js";
@@ -175,10 +179,9 @@ import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "./machines/service.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
-import type { Settings } from "./mechanisms/settings.js";
-import type { Errors } from "./mechanisms/observability.js";
-import type { Access } from "./mechanisms/projects.js";
-import type { Auth } from "./mechanisms/identity.js";
+import type { Settings } from "@prismshadow/penguin-library-setting";
+import type { Errors } from "@prismshadow/penguin-library-observability";
+import type { Auth } from "@prismshadow/penguin-library-auth";
 
 /**
  * What the runtime process holds after boot: the capabilities it owns for the process
@@ -423,6 +426,13 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   const settings = current(() => boot.tree.api<Settings>("SettingsModule", "Settings"));
   const access = current(() => boot.tree.api<Access>("ProjectsModule", "Access"));
   const authService = current(() => boot.tree.api<Auth>("IdentityModule", "Auth"));
+  const http = current(() => boot.tree.api<Partial<Pick<Http, "ownOrigin">>>("ApiModule", "Http"));
+  const ownOrigin = (path: string): boolean => {
+    const surface = http();
+    return typeof surface.ownOrigin === "function"
+      ? surface.ownOrigin(path)
+      : legacyOwnOrigin(path);
+  };
   const deps = {
     config: boot.config,
     desktop: boot.desktop,
@@ -543,7 +553,10 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
     }
     return capped.mw(c, next);
   });
-  app.use("/api/*", sameOriginWrites(originRule(deps.config)));
+  // The route groups that judge their callers' origin themselves are the current generation's
+  // to name (`origin: "own"`, Http.ownOrigin); one pushed before it could name them has the
+  // pairing route exempted by its path, as before (hmr/legacy-browser.ts).
+  app.use("/api/*", sameOriginWrites(originRule(deps.config), ownOrigin));
   app.use("/api/*", jsonOnlyWrites(originRule(deps.config)));
 
   // THE seam: every route is one the platform may take over by push — the upgrade channel
@@ -731,7 +744,7 @@ function staticResponse(
     "Cache-Control": cacheControlFor(servedPath),
     ETag: responseEtag,
   };
-  // The page's own policy (http/page-csp.ts), on HTML only: a header governs the document it
+  // The page's own policy (@prismshadow/penguin-library-http/page-csp), on HTML only: a header governs the document it
   // arrives with, and the scripts, stylesheets and fonts are not documents. On the 304 too: a
   // revalidation updates the stored response's headers, so a shell cached before the policy
   // existed picks it up without a re-download.

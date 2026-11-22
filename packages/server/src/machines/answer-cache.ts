@@ -2,7 +2,7 @@
  * The last answer of each read the hub forwarded to a machine, kept to revalidate rather than
  * to fetch again.
  *
- * A machine answers its JSON reads with an ETag (http/json-validators.ts). The hub keeps the
+ * A machine answers its JSON reads with an ETag (@prismshadow/penguin-library-http/json-validators). The hub keeps the
  * last such answer per machine, per reader and per path, and asks the next time with
  * `If-None-Match`: an unchanged answer comes back as a 304 of a few hundred bytes, and the
  * reader is answered with the kept body — byte for byte what the machine sent before. A changed
@@ -21,7 +21,7 @@
  * machine's answers go when it is taken out of a Project or uninstalled (service.ts).
  */
 
-import { isJsonAnswer } from "../http/json-answer.js";
+import { isJsonAnswer } from "@prismshadow/penguin-library-http/json-answer";
 
 /** One kept answer: what the machine said, with the validator it said it under. */
 export interface KeptAnswer {

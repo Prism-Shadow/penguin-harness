@@ -26,8 +26,8 @@ function socketFrame(message) {
  *   call, after registration;
  * - `hold(path, ms)` — hold the first call whose `path` is exactly `path` here for `ms`, then
  *   forward its frame to the server;
- * - `slowDown(fn)` — let every call reach the server `fn()` ms late: each call frame waits
- *   `fn()` ms here before it is forwarded;
+ * - `slowDown(fn)` — forward each call after the milliseconds returned by `fn(call)`.
+ *   The function may also wait for a test-controlled release before returning the delay;
  * - `nextCall(test)` — a promise for the next call frame `test(call)` accepts;
  * - `nextAnswer(test)` — a promise for the next answer frame whose call `test(call)` accepts;
  * - `answer(method, path, { status, body })` — answer every later call to exactly that method
@@ -44,13 +44,14 @@ export async function watchSocket(page) {
   const holds = [];
   const fakes = [];
   let slowdown = null;
+  const streams = new Map();
   const callOf = new Map();
 
   await page.routeWebSocket(
     (url) => url.pathname === "/api/socket",
     (ws) => {
       const server = ws.connectToServer();
-      ws.onMessage((message) => {
+      ws.onMessage(async (message) => {
         const frame = socketFrame(message);
         // A cancel (`{ id, cancel: true }`) names no endpoint and is not a call.
         if (frame === null || frame.call === undefined) {
@@ -63,6 +64,8 @@ export async function watchSocket(page) {
           path: frame.call.path,
           body: frame.call.body,
         };
+        if (frame.call.headers?.accept === "text/event-stream")
+          streams.set(call.path, { ws, id: call.id });
         callOf.set(call.id, call);
         calls.push(call);
         for (const hook of callHooks) hook(call);
@@ -71,22 +74,24 @@ export async function watchSocket(page) {
           for (let i = callWaiters.length - 1; i >= 0; i -= 1) {
             if (callWaiters[i].test(call)) callWaiters.splice(i, 1)[0].resolve(call);
           }
+          const response =
+            typeof fake.response === "function" ? await fake.response(call) : fake.response;
           ws.send(
             JSON.stringify({
               id: call.id,
-              status: fake.status,
+              status: response.status,
               headers: { "content-type": "application/json" },
-              body: fake.body,
+              body: response.body,
             }),
           );
           return;
         }
-        let delay = slowdown === null ? 0 : slowdown();
-        const held = holds.findIndex((hold) => hold.path === call.path);
-        if (held !== -1) delay += holds.splice(held, 1)[0].ms;
         for (let i = callWaiters.length - 1; i >= 0; i -= 1) {
           if (callWaiters[i].test(call)) callWaiters.splice(i, 1)[0].resolve(call);
         }
+        const held = holds.findIndex((hold) => hold.path === call.path);
+        const holdMs = held === -1 ? 0 : holds.splice(held, 1)[0].ms;
+        const delay = holdMs + (slowdown === null ? 0 : await slowdown(call));
         if (delay > 0) setTimeout(() => server.send(message), delay);
         else server.send(message);
       });
@@ -119,6 +124,11 @@ export async function watchSocket(page) {
     },
     nextCall: (test) => new Promise((resolve) => callWaiters.push({ test, resolve })),
     nextAnswer: (test) => new Promise((resolve) => answerWaiters.push({ test, resolve })),
-    answer: (method, path, { status, body }) => fakes.push({ method, path, status, body }),
+    answer: (method, path, response) => fakes.push({ method, path, response }),
+    emit(path, event, data) {
+      const stream = streams.get(path);
+      if (!stream) throw new Error("The page has not subscribed to " + path);
+      stream.ws.send(JSON.stringify({ id: stream.id, event, data: JSON.stringify(data) }));
+    },
   };
 }

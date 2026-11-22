@@ -28,6 +28,7 @@
  * control environment), so the file records the employee rather than the token's user — see
  * {@link callerSessionId} for why only the control environment may make that claim.
  */
+import type { SessionVia, UserDraftsStore } from "@prismshadow/penguin-library-auth";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
@@ -41,16 +42,14 @@ import type {
   OrganizationsResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionVia } from "../../auth/service.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Settings } from "../../mechanisms/settings.js";
-import type { ProjectLifecycle } from "../../mechanisms/projects.js";
+import type { Settings } from "@prismshadow/penguin-library-setting";
+import type { ProjectLifecycle } from "@prismshadow/penguin-library-project";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
-import type { UserDraftsStore } from "../../mechanisms/account-data.js";
-import type { AgentApi } from "../../mechanisms/agent-api.js";
-import type { ErrorLog } from "../../mechanisms/observability.js";
-import type { Schedules, SessionIndex } from "../../mechanisms/sessions.js";
-import type { TraceIndex } from "../../mechanisms/traces.js";
+import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
+import type { ErrorLog } from "@prismshadow/penguin-library-observability";
+import type { Schedules, SessionIndex } from "@prismshadow/penguin-library-session";
+import type { TraceIndex } from "@prismshadow/penguin-library-trace";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { Sessions } from "../../runtime/session-manager.js";
 import { deleteOrganizationWithAgents } from "../../services/organization-deletion.js";
@@ -236,6 +235,8 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
         ...(model !== undefined && model !== null ? { model } : {}),
       },
       c.var.user.userId,
+      // The creator brings the CEO's plugins' server modules along (PRFC-0031).
+      { userId: c.var.user.userId, isAdmin: c.var.user.isAdmin },
     );
     return c.json(detail, 201);
   });
@@ -360,17 +361,22 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
     const budget = optionalNumber(body, "budget", { nonNegative: true });
     const duties = optionalString(body, "duties", { maxLen: 2000 });
     const model = parseModel(body);
-    const item = await deps.orgService.hire(projectId, orgId, {
-      ...(agentId !== undefined ? { agentId } : {}),
-      ...(newAgent !== undefined ? { newAgent } : {}),
-      ...(name !== undefined ? { name } : {}),
-      title,
-      reportsTo,
-      ...(workspace !== undefined ? { workspace } : {}),
-      ...(budget !== undefined ? { budget } : {}),
-      ...(duties !== undefined ? { duties } : {}),
-      ...(model !== undefined && model !== null ? { model } : {}),
-    });
+    const item = await deps.orgService.hire(
+      projectId,
+      orgId,
+      {
+        ...(agentId !== undefined ? { agentId } : {}),
+        ...(newAgent !== undefined ? { newAgent } : {}),
+        ...(name !== undefined ? { name } : {}),
+        title,
+        reportsTo,
+        ...(workspace !== undefined ? { workspace } : {}),
+        ...(budget !== undefined ? { budget } : {}),
+        ...(duties !== undefined ? { duties } : {}),
+        ...(model !== undefined && model !== null ? { model } : {}),
+      },
+      { userId: c.var.user.userId, isAdmin: c.var.user.isAdmin },
+    );
     return c.json(item, 201);
   });
 

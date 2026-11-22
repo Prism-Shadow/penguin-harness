@@ -8,8 +8,10 @@
  *   rules it adjusts.
  * - It colours through tokens alone: no hex, `rgb()`, `oklch()` or Tailwind palette variable, and
  *   it switches on `.dark` only for Shiki's own palette.
- * - The Markdown table sheet, which the app's Markdown and the public sites' prose both load, names
- *   no token of either (`--ui-`, `--site-`), so every host's palette and mode can map onto it.
+ * - The two sheets both kinds of host load — the Markdown table sheet (the app's Markdown and the
+ *   public sites' prose) and the showcase family's (the Web App's plugin market and the public
+ *   site's) — name no token of either (`--ui-`, `--site-`) and no mode, so every host's palette
+ *   and mode can map onto them.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -42,8 +44,11 @@ describe("every component stylesheet", () => {
   });
 });
 
-describe("the Markdown table stylesheet", () => {
-  it("names no token of either host, so every host's palette and mode can map onto it", () => {
-    expect(rules("content/prose/markdown-table.css")).not.toMatch(/--ui-|--site-|\.dark\b/);
-  });
+describe("a stylesheet both the Web App and the public sites load", () => {
+  it.each(["content/prose/markdown-table.css", "showcase/showcase.css"])(
+    "%s names no token of either host, so every host's palette and mode can map onto it",
+    (rel) => {
+      expect(rules(rel)).not.toMatch(/--ui-|--site-|\.dark\b/);
+    },
+  );
 });

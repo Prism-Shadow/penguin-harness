@@ -3,11 +3,12 @@
  * the nodes under them, each with what it requires, provides, exports and contributes.
  * Pure rendering over the table — the same data the CI page draws.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Badge, NoticeStrip, Skeleton, type BadgeStyle } from "@prismshadow/penguin-ui";
 
 import * as api from "../api/endpoints";
 import { S } from "../lib/strings";
+import { failureNode } from "../lib/failure";
 
 interface Manifest {
   name: string;
@@ -186,7 +187,7 @@ function Detail({ name, table }: { name: string; table: Table }) {
 export function ModuleTreeView({ hash }: { hash: string }) {
   const t = S.harnessHistory;
   const [table, setTable] = useState<Table | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [selected, setSelected] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -199,7 +200,13 @@ export function ModuleTreeView({ hash }: { hash: string }) {
         if (!cancelled) setTable(data as Table);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (cancelled) return;
+        setError(
+          failureNode(err, {
+            text: err instanceof Error ? err.message : String(err),
+            what: "a harness version's module tree could not be read",
+          }),
+        );
       });
     return () => {
       cancelled = true;

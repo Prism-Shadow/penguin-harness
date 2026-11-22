@@ -52,50 +52,18 @@
  * different error codes.
  */
 import { formatLocalDate } from "../internal/dates.js";
-import { HttpError } from "../http/errors.js";
+import { isHttpError } from "../http/errors.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
-import type { ErrorLog, Errors } from "../mechanisms/observability.js";
+import { ErrorLog, Errors } from "@prismshadow/penguin-library-observability";
+import type {
+  ErrorSource,
+  ErrorKind,
+  ErrorRecordArgs,
+} from "@prismshadow/penguin-library-observability";
 
-/** Capture-site source (maps one-to-one to error_records.source). */
-export type ErrorSource =
-  | "http"
-  | "organization"
-  | "session"
-  | "llm"
-  | "environment"
-  | "compaction"
-  | "usage"
-  | "title"
-  | "subagent"
-  | "process"
-  | "schedule"
-  | "messaging"
-  | "id_suggest"
-  | "plugin";
-
-/** Error classification: see file header — the criterion is "does a human need to step in". */
-export type ErrorKind = "expected" | "unexpected";
-
-/** Attribution context (all optional: the login endpoint has no Project, and process-level fallback has no request at all). */
-export interface ErrorContext {
-  projectId?: string;
-  agentId?: string;
-  sessionId?: string;
-}
-
-export interface ErrorRecordArgs {
-  source: ErrorSource;
-  /** The caught error (unknown: the value caught may not be an Error; failures from the message stream pass the reason text directly). */
-  err: unknown;
-  ctx?: ErrorContext;
-  /** Semantic code (required for non-HTTP sources, e.g. session_run_failed); defaults to HttpError.code. */
-  code?: string;
-  /** HTTP status code; leave empty for non-HTTP sources. */
-  status?: number;
-  /** Explicit classification (see file header); defaults to inferring from `HttpError` — HTTP sources rely on this, other sources should pass it explicitly. */
-  kind?: ErrorKind;
-}
+/** Attribution context (all optional: the login endpoint has no Project, and process-level fallback has no request at all). Lives with the Errors contract (library/observability); re-exported for the recorder's callers. */
+export type { ErrorContext } from "@prismshadow/penguin-library-observability";
 
 /** Message truncation length (keep only a readable summary; the full stack is still logged). */
 export const MESSAGE_MAX = 500;
@@ -122,7 +90,8 @@ export class ErrorRecorder implements Errors {
   /** Record an error (synchronous, fails silently; same-window duplicates are dropped outright, see file header). */
   record(args: ErrorRecordArgs): void {
     try {
-      const http = args.err instanceof HttpError ? args.err : null;
+      // Any copy of HttpError (a plugin bundles its own), as handleError answers it.
+      const http = isHttpError(args.err) ? args.err : null;
       const now = this.clock.now();
       const projectId = args.ctx?.projectId ?? null;
       const code = args.code ?? http?.code ?? "internal";

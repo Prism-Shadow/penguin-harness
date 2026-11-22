@@ -13,16 +13,16 @@
  * exceptions) is a prominent rose; expected (HttpError, business 4xx) recedes into gray.
  * The outer frame is provided by the caller's ChartCard (full width, below the four business charts).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { UsageErrorItem, UsageErrors } from "@prismshadow/penguin-server/api";
 import { Badge, ConfirmModal, Pager, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { Empty } from "./usage-charts";
 import { toneInk } from "../../lib/tone";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /** The two error categories. */
 type ErrorKindKey = "unexpected" | "expected";
@@ -186,7 +186,7 @@ export function ErrorsPanel({
   // Agent deleted between load and click), and pinning to it computes a page count that can
   // strand the caller on a page the data no longer has. Rows, not records: a page holds rows.
   const [pagedRows, setPagedRows] = useState(rows);
-  const [pageError, setPageError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<ReactNode>(null);
   const [loading, setLoading] = useState(false);
   // A new dashboard response invalidates the offsets being paged through, so paging goes back to
   // page 0 — whose rows the effect below restores from that same response. Today the panel is
@@ -218,7 +218,9 @@ export function ErrorsPanel({
       })
       .catch((e: unknown) => {
         // Keep the rows already on screen rather than blanking the table under an error.
-        if (!cancelled) setPageError(apiErrorText(e));
+        if (!cancelled) {
+          setPageError(failureNode(e, { what: "a page of the errors table could not be loaded" }));
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

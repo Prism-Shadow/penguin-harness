@@ -8,18 +8,23 @@
  *   MCP servers while they wait for vault keys or a sign-in, and the Plugins page card's tags
  *   (`pluginTags`, each with its hover sentence; the category always, since the sub-page groups by
  *   installed and available rather than by category). The marks wrap under the name as a hook
- *   package's hook points do, and never truncate.
+ *   package's hook points do, and never truncate. A plugin that also ships server modules, whose
+ *   module does not run on the Agent's server, has one more mark after the status: why it does
+ *   not (off, awaiting the administrator, stopped by them, failed to load, waiting for a
+ *   restart), said on hover.
  * - Under the name, the plugin's one-line description, read as the card reads it. A plugin gone
  *   from the library has none to read, and no line, as a hook package without one has none.
  * - The npm version, quiet, then the actions: Install for an available plugin; Update while an
- *   installed one is behind the library or missing a part; the owner's Uninstall, the glyph alone
- *   as on a hook package's row.
+ *   installed one is behind the library or missing a part; Enable server module, or Ask the
+ *   administrator, while its module is off (plugin-status.ts `agentModuleMark`); the owner's
+ *   Uninstall, the glyph alone as on a hook package's row.
  *
  * The name is the row's button: it opens the detail, and so does a click anywhere else on the row
  * that is not one of its controls (lib/card-open.ts). A press on an action is the action's alone.
  * A part's puzzle on another sub-page lands here: the plugin's row is marked for a moment.
  */
 import type { ReactNode } from "react";
+import type { PluginModuleStatus } from "@prismshadow/penguin-server/api";
 import {
   Button,
   EntityCardAction,
@@ -36,12 +41,14 @@ import { cardBodyClick } from "../../lib/card-open";
 import { S } from "../../lib/strings";
 import {
   McpServerMarks,
+  ModuleStatusMark,
   pluginMcpState,
   pluginTags,
   rowIcon,
   rowShortDescription,
   rowVersion,
   type AgentInstalls,
+  type AgentModuleMark,
   type AgentPluginGroup,
   type AgentPluginStatus,
   type PluginRow,
@@ -71,6 +78,15 @@ export function AgentStatusMark({ status }: { status: AgentPluginStatus }) {
   );
 }
 
+/** A plugin's server module on the Agent's server: how it stands, and its mark while it does not run. */
+export interface AgentModule {
+  status: PluginModuleStatus;
+  /** Null while the module runs there. */
+  mark: AgentModuleMark | null;
+  /** The Agent lives on a machine. */
+  onMachine: boolean;
+}
+
 /** The statuses a row's section already names: Installed and Available say nothing more there. */
 const SAID_BY_SECTION: ReadonlySet<AgentPluginStatus> = new Set(["installed", "available"]);
 
@@ -83,19 +99,26 @@ export function StatusWithMcp({
   entry,
   installs,
   isOwner,
+  module,
 }: {
   entry: AgentPluginGroup;
   installs: AgentInstalls | undefined;
   isOwner: boolean;
+  /** The plugin's server module, when it ships one. */
+  module?: AgentModule | undefined;
 }) {
   const mcp = entry.plugin === null ? null : pluginMcpState(entry.plugin, installs);
   const waiting = mcp !== null && (mcp.missingKeys.length > 0 || mcp.signIn);
   const status = !SAID_BY_SECTION.has(entry.status);
-  if (!status && !waiting) return null;
+  const moduleMark = module?.mark ?? null;
+  if (!status && !waiting && moduleMark === null) return null;
   return (
     // The status word reads as a quiet fact beside the name, as it does on a facts line.
     <span className={`inline-flex shrink-0 items-center ${ICON_GAP.row} text-xs text-fg-muted`}>
       {status && <AgentStatusMark status={entry.status} />}
+      {module !== undefined && moduleMark !== null && (
+        <ModuleStatusMark mark={moduleMark} onMachine={module.onMachine} words="row" />
+      )}
       {mcp !== null && waiting && (
         <McpServerMarks
           keys={mcp.missingKeys}
@@ -104,6 +127,47 @@ export function StatusWithMcp({
         />
       )}
     </span>
+  );
+}
+
+/**
+ * The action a plugin's server module offers, in words: Enable server module, or Ask the
+ * administrator; nothing when the module runs or the viewer can do nothing about it. `variant`
+ * is the caller's: a row's main action, or a quiet one on the detail's line.
+ */
+export function ModuleActionButton({
+  entry,
+  title,
+  module,
+  actions,
+  variant = "secondary",
+}: {
+  entry: AgentPluginGroup;
+  title: string;
+  module: AgentModule | undefined;
+  actions: AgentPluginActions;
+  variant?: "secondary" | "ghost";
+}) {
+  const action = module?.mark?.action ?? null;
+  if (module === undefined || action === null) return null;
+  const label = action === "enable" ? S.agentPlugins.module.enable : S.agentPlugins.module.request;
+  return (
+    <Button
+      size="sm"
+      variant={variant}
+      leading={
+        <GlyphIcon
+          d={action === "enable" ? ICONS.server : ICONS.hand}
+          size={ICON_SIZE.iconButton}
+        />
+      }
+      loading={actions.running === entry.name}
+      disabled={actions.running !== null}
+      aria-label={`${label} ${title}`}
+      onClick={() => actions.askModule(entry, module.status)}
+    >
+      {label}
+    </Button>
   );
 }
 
@@ -174,6 +238,7 @@ function rowActions(
   title: string,
   isOwner: boolean,
   actions: AgentPluginActions,
+  module: AgentModule | undefined,
 ): ReactNode {
   const busy = actions.running === entry.name;
   const disabled = actions.running !== null;
@@ -195,6 +260,7 @@ function rowActions(
         worded(ICONS.download, S.skills.install, () => actions.install(entry))}
       {(entry.status === "update" || entry.status === "incomplete") &&
         worded(ICONS.rotateCw, S.skills.updateAction, () => actions.update(entry))}
+      <ModuleActionButton entry={entry} title={title} module={module} actions={actions} />
       {isOwner && entry.status !== "available" && (
         <IconButton
           variant="danger"
@@ -219,6 +285,7 @@ export function AgentPluginRow({
   installs,
   isOwner,
   actions,
+  module,
   marked,
   onOpen,
 }: {
@@ -232,6 +299,8 @@ export function AgentPluginRow({
   installs: AgentInstalls | undefined;
   isOwner: boolean;
   actions: AgentPluginActions;
+  /** The plugin's server module on the Agent's server, for a plugin the Agent carries that ships one. */
+  module?: AgentModule | undefined;
   /** A part's puzzle just pointed here. */
   marked: boolean;
   onOpen: () => void;
@@ -250,13 +319,13 @@ export function AgentPluginRow({
       title={title}
       titleTrail={
         <>
-          <StatusWithMcp entry={entry} installs={installs} isOwner={isOwner} />
+          <StatusWithMcp entry={entry} installs={installs} isOwner={isOwner} module={module} />
           {row !== undefined && pluginTags(row, { categoryTitle })}
         </>
       }
       description={row === undefined ? undefined : rowShortDescription(row, locale)}
       meta={version === undefined ? undefined : `v${version}`}
-      trailing={rowActions(entry, title, isOwner, actions)}
+      trailing={rowActions(entry, title, isOwner, actions, module)}
       onClick={onOpen}
       onBodyClick={cardBodyClick(onOpen)}
       marked={marked}

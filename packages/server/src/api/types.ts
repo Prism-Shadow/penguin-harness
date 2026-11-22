@@ -13,9 +13,21 @@
  * Docs: packages/docs/content/server-api.{zh,en}.md (site path /docs/server-api) is the
  * public route/SSE reference for this contract — keep it in sync when changing DTOs.
  */
+import type {
+  ChatDefaultsDto,
+  MemberInfo,
+  ProjectSummary,
+  ScheduleServerEvent,
+  ServerEvent,
+  CommandPolicyDto,
+  GoalServerEvent,
+  ProjectRole,
+  CompanyServerEvent,
+  SessionTracesResponse,
+  MachineServerEvent,
+} from "@prismshadow/penguin-library-project";
 import type { CompactionMode, AmspRecord, SessionSource, ToolCallPayload } from "@prismshadow/amsp";
 import type {
-  ApprovalReason as CoreApprovalReason,
   ElidedBody,
   MCPServerConfig,
   ThinkingLevelName,
@@ -24,30 +36,144 @@ import type {
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
 import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
-import type { AppCenterShortcut, WorkbenchInfo } from "../mechanisms/workbenches.js";
+import type { AppCenterShortcut, WorkbenchInfo } from "@prismshadow/penguin-library-workbench";
+// The vocabulary whose ownership moved to the domain libraries (the contracts name it):
+// the server's own API DTOs reference these, and the Web App reads them through this
+// module's exports, so each is imported and re-exported — the server→library direction
+// is the allowed one (restack3 rule 4).
+import type {
+  AgentApiKeyInfo,
+  AgentApiSettings,
+  AgentApiUpdateRequest,
+  ModelRefDto,
+} from "@prismshadow/penguin-library-agent-api";
+import type {
+  DefaultModelOffer,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
+  ModelBalanceAmount,
+  ModelBalanceErrorCode,
+  ModelInfo,
+  ModelProtocolDetectRequest,
+  ModelProtocolDetectResponse,
+  ModelProtocolProbeDto,
+  ModelPricingDto,
+  ModelTestRequest,
+  ModelTestResponse,
+  ModelUpdateEntry,
+  ModelVisionDetectRequest,
+  ModelVisionDetectResponse,
+  ModelVisionOutcome,
+  ModelsResponse,
+  ModelsUpdateRequest,
+  PresetSyncMode,
+  PresetSyncResponse,
+  ProtocolProbeOutcome,
+  ProviderConnectionDto,
+  ProviderConnectionResponse,
+  ProviderConnectionUpdate,
+  ModelEffectiveConnection,
+  CredentialInfo,
+} from "@prismshadow/penguin-library-model";
+import type {
+  ContextToolShare,
+  AgentTraceFileRef,
+  AgentTraceSessionGroup,
+  AgentTraceDateGroup,
+  AgentTraceSessionFile,
+  AgentTraceSessionEntry,
+  AgentTracesResponse,
+  ContextFileShare,
+  CostParts,
+  HistoryMessage,
+  RequestSpan,
+  SessionCategory,
+  SessionCategoryCounts,
+  SessionContextParts,
+  ToolCallSpan,
+  TraceAnalysisResponse,
+  TraceEventsResponse,
+  TraceFileInfo,
+  TraceImportResponse,
+  TraceModelSegment,
+  TraceOtherSpan,
+  TracePosition,
+  TraceTaskStats,
+  TraceToolSpan,
+  UsageTrendPointInTrace,
+} from "@prismshadow/penguin-library-trace";
+import type {
+  UsageAgentSeries,
+  UsageBucket,
+  UsageErrors,
+  UsageErrorsPage,
+  UsageGranularity,
+  UsageGroupRow,
+  UsageModelSeries,
+  UsageModelTotals,
+  UsageModelTotal,
+  UsageResponse,
+  UsageSeriesPoint,
+  UsageToolRow,
+  UsageEntitySeriesCounts,
+  UsageErrorCount,
+  ErrorContext,
+  UsageErrorItem,
+  UsageGroupBy,
+} from "@prismshadow/penguin-library-observability";
+import type {
+  SessionStatus,
+  PendingSteeringInfo,
+  PendingFollowUpInfo,
+  SubagentRuntimeInfo,
+  SessionSandbox,
+  SessionSandboxMode,
+  SessionSandboxNetwork,
+  SessionSandboxPreset,
+  UnavailableSandboxBackend,
+  ApprovalReason,
+  ApprovalMode,
+  SessionBackgroundTasks,
+} from "@prismshadow/penguin-library-session";
+import type { UserInfo } from "@prismshadow/penguin-library-auth";
+import type {
+  OrgCalendarOutcome,
+  OrgChannelMessage,
+  OrgChannelNotice,
+  OrgChannelNoticeKind,
+  OrgTicketChange,
+  OrgTriggerKind,
+} from "@prismshadow/penguin-library-organization";
+import type {
+  BrowserBackend,
+  BrowserExtensionRecord,
+  BrowserHello,
+  BuiltinBrowserAction,
+  BuiltinBrowserLoadWarning,
+  BuiltinBrowserMetrics,
+  BuiltinBrowserServerEvent,
+  BuiltinBrowserTab,
+  BuiltinBrowserTabMetrics,
+  ChromeExtensionCookie,
+  DesktopBrowserCommand,
+  DesktopBrowserCommandMessage,
+  DesktopBrowserCookie,
+  DesktopBrowserReplyMessage,
+} from "@prismshadow/penguin-library-machine";
 
 // ---------------------------------------------------------------------------
 // General
 // ---------------------------------------------------------------------------
 
 /**
- * Unified error response body: `code` is a machine-readable error code, `message` an English
- * user-facing message, and `details`, on the errors that have them, the facts a client acts on
- * beside the code (the Benchmark id a 409 `benchmark_exists` is about, say) — read from there,
- * never parsed out of the message.
+ * Unified error response body and its detail record — the shape lives in the http
+ * vocabulary package (services+http+cli restack T0); re-exported here so the API
+ * contract keeps spelling it.
  */
-export interface ErrorBody {
-  error: { code: string; message: string; details?: ErrorDetails };
-}
-
-/** An error's structured facts, by name; each code that carries them documents its own. */
-export type ErrorDetails = Readonly<Record<string, string>>;
+export type { ErrorBody, ErrorDetails } from "@prismshadow/penguin-library-http/errors";
+import type { ErrorDetails } from "@prismshadow/penguin-library-http/errors";
 
 /** Session approval mode (reuses the CLI enum). */
-export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask";
-
-/** Session run status: idle / Task in progress / compacting. */
-export type SessionStatus = "idle" | "running" | "compacting";
 
 /**
  * What kind of conversation a Session is (`user` / `api` / `schedule` / `subagent` / `cli` / `company` / `workbench`):
@@ -58,27 +184,6 @@ export type { SessionSource };
 // ---------------------------------------------------------------------------
 // Authentication and users
 // ---------------------------------------------------------------------------
-
-export interface UserInfo {
-  /** Semantic id, i.e. login name: `^[a-z][a-z0-9_-]{1,31}$`, immutable after creation. */
-  userId: string;
-  /** Built-in admin (seeded at startup). */
-  isAdmin: boolean;
-  /** Still using the initial password (seeded/set by admin): frontend prompts the user to change it soon. */
-  passwordIsInitial: boolean;
-  /**
-   * Nickname the account chose (1-32 characters), shown wherever the id would otherwise be.
-   * Omitted when unset — every account that predates the Profile page starts without one, and
-   * a surface with no value falls back to `userId`.
-   */
-  displayName?: string;
-  /**
-   * Avatar as a `data:image/...;base64,` URL, at most 131072 characters. Omitted when unset,
-   * and a surface with no value draws the letter placeholder instead.
-   */
-  avatar?: string;
-  createdAt: string;
-}
 
 /**
  * PUT /api/me/profile — a patch, not a replacement: an absent field keeps what is stored,
@@ -469,6 +574,8 @@ export interface UiPrefs {
   terminalTheme?: string | null;
   /** Whether tool cards name the built-in tools by their short alias. */
   toolAliases?: boolean | null;
+  /** How the conversation shows thinking and tool steps (the Web App's "standard", "expanded", "compact"). */
+  activityDisplayMode?: string | null;
   /** Whether task-completion notifications were asked for (each browser still needs its own OS permission). */
   notifications?: boolean | null;
   /** Whether the floating dock launcher was put away. */
@@ -579,18 +686,6 @@ export interface PrefsResponse {
 // Project and member authorization
 // ---------------------------------------------------------------------------
 
-export type ProjectRole = "owner" | "member";
-
-export interface ProjectSummary {
-  projectId: string;
-  /** Display name (the `name` in project_config.toml); frontend falls back to projectId when unset. */
-  name?: string;
-  /** Current user's role in this Project. */
-  role: ProjectRole;
-  ownerUserId: string;
-  createdAt: string;
-}
-
 export interface ProjectsResponse {
   projects: ProjectSummary[];
 }
@@ -619,12 +714,6 @@ export interface ProjectUpdateResponse {
   project: ProjectSummary;
 }
 
-export interface MemberInfo {
-  userId: string;
-  role: ProjectRole;
-  createdAt: string;
-}
-
 export interface MembersResponse {
   members: MemberInfo[];
 }
@@ -648,30 +737,12 @@ export interface MemberAddResponse {
  * `modelId` is the upstream request id, sent to MMSP as-is — `<provider>/<id>` string
  * concatenation is forbidden throughout the pipeline.
  */
-export interface ModelRefDto {
-  provider: string;
-  modelId: string;
-}
-
-/** Three pricing buckets, in USD per million tokens (unit is fixed at usd_per_mtok; not carried in the DTO). */
-export interface ModelPricingDto {
-  cacheRead: number;
-  cacheWrite: number;
-  output: number;
-}
 
 /**
  * One group's `[providers.<id>]` connection as the page reads it: the values the GROUP stores
  * (never the catalog's), the key masked. An absent field is unset: a row with no value of its
  * own then gets the client's default.
  */
-export interface ProviderConnectionDto {
-  baseUrl?: string;
-  clientType?: string;
-  apiKeyMasked?: string;
-  /** When the group key was written (ISO 8601). */
-  createdAt?: string;
-}
 
 /** Where an effective connection value comes from: the row itself, its group, or nowhere (the client's default). */
 export type ConnectionSourceDto = "model" | "provider" | "none";
@@ -683,126 +754,11 @@ export type ConnectionSourceDto = "model" | "provider" | "none";
  * The row's own values stay in `clientType` / `credential` (what the form edits); this is for
  * display.
  */
-export interface ModelEffectiveConnection {
-  baseUrl?: string;
-  baseUrlSource: ConnectionSourceDto;
-  clientType?: string;
-  clientTypeSource: ConnectionSourceDto;
-  /**
-   * `env` = no key in the file, and MMSP's routed client reads its own variable for the row's
-   * endpoint (no base URL, or the client's default endpoint) — reported when that variable
-   * holds a value here (`envKeyMasked`), `none` otherwise.
-   */
-  apiKeySource: "model" | "provider" | "env" | "none";
-  /** Mask of the key the row would use, whichever source; absent when none. */
-  apiKeyMasked?: string;
-}
-
-/** Read-only credential display: masked key and creation time; plaintext is never sent. */
-export interface CredentialInfo {
-  apiKeyMasked?: string;
-  baseUrl?: string;
-  createdAt?: string;
-}
-
-export interface ModelInfo {
-  /** Provider group id (anthropic / openai / …, see core's MODEL_PROVIDERS; custom models use `custom`). */
-  provider: string;
-  /** Upstream model id (the request id actually sent to MMSP); paired with `provider` forms the entry's unique key. */
-  modelId: string;
-  /**
-   * Display name: explicit TOML field (user-edited) takes priority, then the built-in catalog;
-   * falls back to unset (frontend shows modelId). The empty string is reported as such and
-   * means the user cleared the name on a model the catalog does name — render it as modelId,
-   * and send it back unchanged, since absent would ask for the catalog's name instead.
-   */
-  displayName?: string;
-  contextWindow?: number;
-  /**
-   * The row's OWN MMSP client type (`openai-chat`, `openai-responses`, etc.) — an override of
-   * its group's; absent = the row follows its group (see `effective`).
-   */
-  clientType?: string;
-  /**
-   * Whether image input (vision/multimodal) is supported: the TOML `vision` annotation only
-   * (a new Project writes `false` where the catalog says so); absent = unset, treated as
-   * supported. The catalog is not consulted.
-   */
-  vision?: boolean;
-  /**
-   * Per-model max output tokens (TOML `max_tokens` annotation; user-only, never preset by the
-   * built-in catalog): when set it wins over the Agent's `system_config.model.max_tokens`;
-   * unset = inherit the Agent value. Lets a small-context model cap its output below the
-   * seeded per-Agent default (32000), which cannot fit into e.g. a 32k context window.
-   */
-  maxTokens?: number;
-  /**
-   * Per-model fast mode (TOML `fast_mode` annotation; user-only, never preset by the
-   * built-in catalog): when true, session requests opt into the provider's faster serving
-   * tier at premium pricing (MMSP UniConfig `fast_mode`). Only `true` is reported;
-   * unset = off. Models without a fast tier reject requests carrying it.
-   */
-  fastMode?: boolean;
-  pricing?: ModelPricingDto;
-  /** Running promotion for this row — a fraction in (0, 1) off `pricing`, which is the list price — read from web.db. Absent when the row has none. */
-  discount?: number;
-  /**
-   * Environment variable name the entry falls back to when api_key is empty (e.g.
-   * ANTHROPIC_API_KEY): only for a row with no key in the file whose routed MMSP client reads
-   * that variable for its endpoint — no base URL on the row or its group, or the client's own
-   * default endpoint. Unset for a row with a key (its own or a group key that reaches it), a row
-   * sent to any other base URL (a gateway, Penguin Go, ModelScope, a vendor's second host or a
-   * proxy), or an id nothing routes.
-   */
-  envKey?: string;
-  /**
-   * Masked preview (same rule as `credential.apiKeyMasked`) of the value the server process
-   * currently holds for `envKey` — the plaintext is never serialized. Absent = the variable is
-   * unset or empty, or the entry gets no fallback. Reported only when no row or group key
-   * reaches the row.
-   */
-  envKeyMasked?: string;
-  /** The row's OWN key (masked) and base URL — overrides of its group's; see `effective`. */
-  credential?: CredentialInfo;
-  /** The connection the row is actually used with, and where each value comes from. */
-  effective: ModelEffectiveConnection;
-  isDefault: boolean;
-}
-
-export interface ModelsResponse {
-  /** Paired reference to the default Model. */
-  defaultModel?: ModelRefDto;
-  /** Vision model used as a proxy reader for read_file (describes images when the session model has vision=false). */
-  visionModel?: ModelRefDto;
-  /**
-   * When the Project's model/credential config last changed (ISO; the config file's mtime,
-   * so it survives restarts). The web's auth-dead gate compares it against the last auth
-   * abort: an abort OLDER than the last credential update no longer disables the composer
-   * (the key was fixed since). Absent when the Project has no config file yet.
-   */
-  updatedAt?: string;
-  /** Every group's stored connection (`[providers.<id>]`), keyed by provider id; a group with none is absent. */
-  providers: Record<string, ProviderConnectionDto>;
-  models: ModelInfo[];
-}
 
 /**
  * A change to one group's connection (`PUT /models/providers/:provider`, or a member of
  * `ModelsUpdateRequest.providers`). Omitted fields are kept.
  */
-export interface ProviderConnectionUpdate {
-  /** `null` clears it; omitted keeps it. */
-  baseUrl?: string | null;
-  /**
-   * `null` or `""` clears it; omitted keeps it. Any group takes one: a row that stores its own
-   * protocol keeps it.
-   */
-  clientType?: string | null;
-  /** A non-empty key; sets `createdAt`. Rows with their own key keep it. */
-  apiKey?: string;
-  /** When true, clears the group key (rows with their own key keep it). */
-  clearApiKey?: boolean;
-}
 
 /**
  * A group just became connected (its first group key landed) and the catalog names a model of
@@ -810,73 +766,8 @@ export interface ProviderConnectionUpdate {
  * the Project's default sits outside the group or is unset. Reported by the write that stored the
  * key, which leaves the default as it is: the page asks whether to make `model` the default.
  */
-export interface DefaultModelOffer {
-  /** The model offered as the default. */
-  model: ModelRefDto;
-  /** The default the Project stores now, outside the group; absent when it has none. */
-  current?: ModelRefDto;
-}
 
 /** `PUT /models/providers/:provider`: the table as it now stands, and the default offered, if any. */
-export interface ProviderConnectionResponse extends ModelsResponse {
-  defaultOffer?: DefaultModelOffer;
-}
-
-/** PUT full-table replace semantics: models not present are deleted; omitting apiKey = keep existing value. Key = (provider, modelId). */
-export interface ModelUpdateEntry {
-  /** Provider group (an independent entry field, always submitted with the request). */
-  provider: string;
-  /** Upstream model id (sent to MMSP as-is). */
-  modelId: string;
-  /**
-   * Display name; the server does not persist it when it matches the built-in catalog (keeps
-   * the config file clean). Absent and empty are different requests: absent inherits whatever
-   * the catalog calls the model, the empty string records that the user cleared the name.
-   */
-  displayName?: string;
-  /**
-   * The pair reference this entry was renamed from (provided when either the group or the
-   * upstream id changes): the server uses this to migrate the original entry's credential
-   * and unknown fields to the new key — otherwise a full-table replace would delete the
-   * original entry along with its credential.
-   */
-  renamedFrom?: ModelRefDto;
-  contextWindow?: number;
-  /**
-   * Empty string/omitted = the row stores none: it follows its group's protocol, else MMSP
-   * routes by the vendor family the modelId begins with.
-   */
-  clientType?: string;
-  /** Whether image input (vision/multimodal) is supported; omitted = supported (not persisted). */
-  vision?: boolean;
-  /** Per-model max output tokens, a positive integer (wins over the Agent config); omitted = inherit the Agent value (the annotation is cleared). */
-  maxTokens?: number;
-  /** Per-model fast mode: only `true` is persisted; omitted or `false` clears the annotation (absent = off). */
-  fastMode?: boolean;
-  pricing?: ModelPricingDto;
-  /**
-   * Promotion to store for this row, a fraction in (0, 1) off `pricing`; `null` clears it. Omitted
-   * keeps the stored promotion — unless this entry renames the row or changes its pricing, which
-   * clears it.
-   */
-  discount?: number | null;
-  /** Providing it overwrites and updates createdAt; omitting it keeps the existing value. */
-  apiKey?: string;
-  /** When true, clears the stored api_key. */
-  clearApiKey?: boolean;
-  /** null clears it; omitted keeps the existing value. */
-  baseUrl?: string | null;
-}
-
-export interface ModelsUpdateRequest {
-  /** Must be included in models (matched by paired reference). */
-  defaultModel?: ModelRefDto;
-  /** Vision model used as a proxy reader for read_file: must be included in models and not annotated vision=false; omitted keeps the existing value. */
-  visionModel?: ModelRefDto;
-  /** Group connection changes, merged per provider; a provider absent here keeps its table. */
-  providers?: Record<string, ProviderConnectionUpdate>;
-  models: ModelUpdateEntry[];
-}
 
 /**
  * `POST /models/sync-presets` (owner): `add` adds the catalog's presets the Project lacks
@@ -888,17 +779,9 @@ export interface ModelsUpdateRequest {
  * user-defined group deleted. Penguin Go included: its platform's next sync brings back the
  * platform's own models and promotions.
  */
-export type PresetSyncMode = "add" | "restore";
 
 export interface PresetSyncRequest {
   mode: PresetSyncMode;
-}
-
-export interface PresetSyncResponse extends ModelsResponse {
-  /** Preset rows added (both modes). */
-  added: number;
-  /** Preset rows the Project already had that `restore` changed (0 for `add`). */
-  restored: number;
 }
 
 /**
@@ -907,32 +790,6 @@ export interface PresetSyncResponse extends ModelsResponse {
  * config). When the model isn't in the config yet (adding a custom model — test-before-save),
  * all parameters come from this request body.
  */
-export interface ModelTestRequest {
-  /** Provider group of the model under test (paired with modelId). */
-  provider: string;
-  /** Upstream id of the model under test (sent to MMSP as-is). */
-  modelId: string;
-  /** Newly entered API key (plaintext); used for the test if provided. */
-  apiKey?: string;
-  /** "Clear saved API key" is checked: the test does **not** fall back to the stored key (tests against the current draft). */
-  clearApiKey?: boolean;
-  /** Speed-test mode: raises the probe's output cap (16 -> 64 tokens) so TTFT/TPS are measurable; costs a little more quota. */
-  speed?: boolean;
-  /**
-   * base URL (not secret; the frontend always sends the form's current value): a string
-   * means use it, `null` means explicitly clear it (no fallback to the stored value),
-   * `undefined` means fall back to the stored value only when not provided.
-   */
-  baseUrl?: string | null;
-  /** MMSP client type; required for an unsaved custom model whose id begins with no known vendor family (otherwise it can't be routed). */
-  clientType?: string;
-  /**
-   * Test with fast mode (the frontend always sends the form's current value, so an unsaved
-   * toggle — either direction — is what gets tested); omitted falls back to the stored
-   * annotation. Lets "Test connection" surface a fast-mode rejection before saving.
-   */
-  fastMode?: boolean;
-}
 
 /**
  * Vision capability probe: sends one 1x1 image and a one-word prompt on this model's
@@ -943,18 +800,6 @@ export interface ModelTestRequest {
  * Unlike protocol detection this is a real, billed completion — an image request cannot be
  * shaped to cost nothing — so it only ever runs when the user presses the control.
  */
-export interface ModelVisionDetectRequest {
-  provider: string;
-  modelId: string;
-  /** Newly entered API key (plaintext); the stored one backs the probe when omitted. */
-  apiKey?: string;
-  /** "Clear saved API key" is checked: do not fall back to the stored key. */
-  clearApiKey?: boolean;
-  /** Form's current base URL; null means "explicitly none" (as in the connectivity test). */
-  baseUrl?: string | null;
-  /** Protocol to speak, when the form has one; otherwise the stored/auto-routed client. */
-  clientType?: string;
-}
 
 /**
  * Vision probe verdict. `supported` = the model took the image and answered; `unsupported`
@@ -962,33 +807,14 @@ export interface ModelVisionDetectRequest {
  * error); `failed` = the probe never got a usable answer (auth, network, an unrelated
  * error), so nothing about the capability was learned and the setting is left alone.
  */
-export type ModelVisionOutcome = "supported" | "unsupported" | "failed";
 
 /** Vision probe result; `message` carries the truncated provider error for the failed case. */
-export interface ModelVisionDetectResponse {
-  outcome: ModelVisionOutcome;
-  message?: string;
-}
 
 /**
  * Connectivity test result: carries round-trip latency when ok, and a reason on failure
  * (truncated raw provider error). When streamed content was observed, also carries the
  * time-to-first-token and, when usage was reported (completed streams), the output rate.
  */
-export interface ModelTestResponse {
-  ok: boolean;
-  latencyMs?: number;
-  /** Time from request start to the first streamed content (thinking or text), ms. */
-  ttftMs?: number;
-  /**
-   * Output tokens per second over the streaming window (first content -> stream end), 1dp.
-   * Omitted unless the sample is large enough to mean anything: a reply of a few tokens is
-   * dominated by the final chunk's round trip, so the rate it yields tracks network jitter
-   * rather than the model. Callers render TTFT alone in that case.
-   */
-  tps?: number;
-  message?: string;
-}
 
 /**
  * Protocol auto-detection (POST /api/projects/:p/models/detect, owner): probes which of
@@ -997,22 +823,6 @@ export interface ModelTestResponse {
  * model dialog to fill `clientType` from the endpoint itself; costs no tokens (each probe
  * is a minimal invalid request whose error reveals the protocol shape).
  */
-export interface ModelProtocolDetectRequest {
-  /** Base URL to probe (as typed in the form); each probe appends its protocol path. */
-  baseUrl: string;
-  /** Newly entered API key (plaintext); used for probe auth if provided. Detection also works keyless: a protocol-shaped 401/403 still proves the route. */
-  apiKey?: string;
-  /** "Clear saved API key" is checked: do not fall back to the stored key (probe the current draft). */
-  clearApiKey?: boolean;
-  /**
-   * Optional paired reference: when it names a stored entry and no apiKey is given, that
-   * entry's saved key backs the probes (mirrors the connectivity test), else its group's.
-   * `provider` may be sent without `modelId` (the group settings dialog has no model): the
-   * group key backs the probes.
-   */
-  provider?: string;
-  modelId?: string;
-}
 
 /**
  * One probe's outcome: `served` = the route answered in an API shape (including auth
@@ -1021,38 +831,14 @@ export interface ModelProtocolDetectRequest {
  * `junk` = HTML / non-JSON / JSON matching no API shape; `timeout` / `network_error` =
  * the request itself failed.
  */
-export type ProtocolProbeOutcome =
-  "served" | "route_missing" | "server_error" | "junk" | "timeout" | "network_error";
 
 /** One probe, for debugging display: the probed URL derives from baseUrl only (never contains the key). */
-export interface ModelProtocolProbeDto {
-  /** MMSP client type this probe stands for (`openai-responses` / `ant-messages` / `openai-chat`). */
-  clientType: string;
-  /** Full URL probed (base URL + the protocol's path). */
-  url: string;
-  outcome: ProtocolProbeOutcome;
-  /** HTTP status, when a response arrived at all. */
-  status?: number;
-}
 
 /**
  * Detection result: probes run sequentially over the candidate base URLs derived from the
  * one that was typed and stop at the first served protocol, so `probes` lists only the
  * ones actually run, in order.
  */
-export interface ModelProtocolDetectResponse {
-  /** The first protocol an endpoint serves (an MMSP client type); absent when none of the three matched. */
-  detected?: string;
-  /**
-   * The base URL the detected protocol answered at — the typed URL normalized (endpoint
-   * path stripped, repeated `/v1` collapsed) and possibly with a trailing `/v1` added or
-   * removed, so `https://host/v1/chat/completions` comes back as `https://host/v1`.
-   * Present only alongside `detected`; callers write it back into their base URL field,
-   * since that is where the protocol is served.
-   */
-  baseUrl?: string;
-  probes: ModelProtocolProbeDto[];
-}
 
 /**
  * Endpoint model listing (POST /api/projects/:p/models/list, owner): given a base URL and
@@ -1060,24 +846,8 @@ export interface ModelProtocolDetectResponse {
  * `listModels()` on the routed client). Used by the add-group dialog to fill the list the
  * user picks the models to import from; the ids come back in the endpoint's own order.
  */
-export interface EndpointModelListRequest {
-  /** Endpoint base URL (as typed in the add-group dialog). */
-  baseUrl: string;
-  /** MMSP client type to speak (normally a detected generic protocol; whole-endpoint listings need one). */
-  clientType: string;
-  /** Newly entered API key (plaintext); omitted = the SDK's environment fallback for the protocol. */
-  apiKey?: string;
-}
 
 /** Listing outcome: model ids on success, a truncated provider/SDK reason otherwise. */
-export interface EndpointModelListResponse {
-  ok: boolean;
-  /** The model ids the endpoint serves, in the order the endpoint returned them (ok only). */
-  models?: string[];
-  /** The routed client has no models endpoint (MMSP UnsupportedOperationError) — callers offer the manual path. */
-  unsupported?: boolean;
-  message?: string;
-}
 
 /**
  * PUT /api/projects/:p/models/default (owner): narrow default-model switch — flips the same
@@ -1095,14 +865,6 @@ export interface DefaultModelResponse {
   defaultModel: ModelRefDto;
 }
 
-/** One balance in one currency. */
-export interface ModelBalanceAmount {
-  /** Decimal string in `currency`'s major unit, as the vendor states it (TokenDance's micro-yuan are converted to yuan). */
-  amount: string;
-  /** ISO 4217 code: `CNY`, `USD`, … */
-  currency: string;
-}
-
 /**
  * Why a group's balance could not be read:
  * - `unsupported`: the group publishes no balance endpoint (no `balance` descriptor in the catalog);
@@ -1111,7 +873,6 @@ export interface ModelBalanceAmount {
  * - `upstream_failed`: the vendor could not be reached in time, refused the request, or answered
  *   without a readable balance.
  */
-export type ModelBalanceErrorCode = "unsupported" | "no_key" | "upstream_failed";
 
 /**
  * GET /api/projects/:p/models/balance?provider=<group>[&force=1] (Project member): the account
@@ -1228,29 +989,19 @@ export interface ModelOAuthCodeResponse {
 // ---------------------------------------------------------------------------
 // Penguin Go key authorization (/api/projects/:p/platform-auth, owner)
 // ---------------------------------------------------------------------------
-
-export interface PlatformAuthStartResponse {
-  flowId: string;
-  authorizeUrl: string;
-  expiresAt: string;
-}
-
-export type PlatformAuthFlowErrorCode =
-  | "unreachable"
-  | "upstream_failed"
-  | "invalid_key"
-  | "expired"
-  | "locked"
-  | "already_delivered"
-  | "apply_failed";
-
-export interface PlatformAuthFlowStatusResponse {
-  status: "pending" | "applying" | "completed" | "cancelled" | "apply_failed" | "error";
-  error?: PlatformAuthFlowErrorCode;
-  applied?: number;
-  /** The default model offered on the delivered key (see DefaultModelOffer); on every `completed` answer. */
-  defaultOffer?: DefaultModelOffer;
-}
+//
+// The flow wire shapes moved to the model domain package
+// (@prismshadow/penguin-library-model/platform-auth-flow, services+http+cli restack S1),
+// ModelScope's aliases with them; re-exported here so the API contract keeps spelling them.
+export type {
+  PlatformAuthStartResponse,
+  PlatformAuthFlowErrorCode,
+  PlatformAuthFlowStatusResponse,
+  ModelScopeAuthStartResponse,
+  ModelScopeAuthFlowErrorCode,
+  ModelScopeAuthFlowStatusResponse,
+} from "@prismshadow/penguin-library-model/platform-auth-flow";
+import type { PlatformAuthFlowStatusResponse } from "@prismshadow/penguin-library-model/platform-auth-flow";
 
 /** Result of refreshing Penguin Go's catalog with the Project's stored platform key. */
 export interface PlatformModelSyncResponse extends ModelsResponse {
@@ -1258,21 +1009,12 @@ export interface PlatformModelSyncResponse extends ModelsResponse {
   updated: number;
 }
 
-// ---------------------------------------------------------------------------
-// ModelScope key authorization (/api/projects/:p/modelscope-auth, owner)
-// ---------------------------------------------------------------------------
-
 /**
- * The wire shapes are Penguin Go's, deliberately: both flows create a request, poll it, and
- * report the same six states and the same seven failure codes, so the App drives both with one
- * dialog. They are aliases rather than a second declaration because a copy would be the same
- * fields with the same meaning, and a shape that drifted apart in one of the two would be a
- * bug rather than a distinction. The endpoints stay separate regardless — a flow id issued by
- * one is not accepted by the other.
+ * ModelScope key authorization (/api/projects/:p/modelscope-auth, owner): its wire shapes are
+ * Penguin Go's, deliberately — both flows create a request, poll it, and report the same six
+ * states and the same seven failure codes, so the App drives both with one dialog. They moved
+ * beside Penguin Go's to the model domain package (platform-auth-flow), aliases included.
  */
-export type ModelScopeAuthStartResponse = PlatformAuthStartResponse;
-export type ModelScopeAuthFlowErrorCode = PlatformAuthFlowErrorCode;
-export type ModelScopeAuthFlowStatusResponse = PlatformAuthFlowStatusResponse;
 
 // ---------------------------------------------------------------------------
 // New-chat defaults (the `[default_chat]` block of .project_config.toml)
@@ -1286,25 +1028,6 @@ export type ModelScopeAuthFlowStatusResponse = PlatformAuthFlowStatusResponse;
  * top-level `default_model` served/written via the models routes (single-sourced with the
  * models page).
  */
-export interface ChatDefaultsDto {
-  /** Preselected Agent; must reference an existing Agent of the Project (400 unknown_agent). */
-  agentId?: string;
-  /** Prefilled Workspace directory; absent/empty = a temporary workspace. */
-  workspace?: string;
-  /** Prefilled approval mode; absent = the built-in "allow-all". */
-  approvalMode?: ApprovalMode;
-  /**
-   * Fallback thinking level for Agents whose config has no explicit `model.thinking_level`
-   * (resolution chain: Agent explicit > this project default > built-in "medium"). Never
-   * "none" — only the selectable tiers.
-   */
-  thinkingLevel?: Exclude<ThinkingLevelName, "none">;
-  /**
-   * Read-only, GET only: the sandbox policy a new Session starts with — the server's Sandbox
-   * settings. Not part of the Project's block; PUT ignores it.
-   */
-  sandbox?: SessionSandbox;
-}
 
 // ---------------------------------------------------------------------------
 // Sandbox command policy (Project-level: the [command_policy] block)
@@ -1350,21 +1073,13 @@ export interface CommandPolicyRuleDto {
  * `invalid_rule_pattern`, whose `details` name the rule (`rule`), its 0-based place in the
  * list (`index`) and the engine's reason (`reason`).
  */
-export interface CommandPolicyDto {
-  /** Effective master switch; an absent stored value reads as true (the policy defaults on). */
-  enabled: boolean;
-  /** The effective rule list — the factory set when the project predates seeding and has none stored. */
-  rules: CommandPolicyRuleDto[];
-  /** The factory set, served for the settings UI's "restore defaults". */
-  defaultRules: CommandPolicyRuleDto[];
-}
 
 /**
  * Why an `approval_request` asks when its approval mode did not send it: a command-policy
  * `ask` rule matched the call (`rule` is its name). Core's own type, the reason its policy
  * wrapper hands the approve callback, carried to the card as it is.
  */
-export type ApprovalReason = CoreApprovalReason;
+// ApprovalReason is the sessions library's alias of core's CoreApprovalReason (imported and re-exported below).
 
 // ---------------------------------------------------------------------------
 // Vault environment variables (Agent-level: agent_state/.vault.toml)
@@ -1519,10 +1234,16 @@ export interface AgentCreateRequest {
   /**
    * Library plugin names installed into the new Agent, seeding it at creation — each plugin's
    * skills and hook package. Every name must exist in the library (404 `unknown_plugin`
-   * otherwise, before anything is created); omitted or empty leaves the Agent with nothing
-   * installed, which is what a plain Agent gets by default.
+   * otherwise, before anything is created). The library's default-install plugins join them
+   * unless `defaultPlugins` is false.
    */
   plugins?: string[];
+  /**
+   * Whether the library's default-install plugins (those whose card sets `defaultInstall`: goal
+   * mode and Plan mode) join `plugins`; omitted = true. A client that sends the complete list it
+   * showed the user, as the Web App's create dialog does, sends false with it.
+   */
+  defaultPlugins?: boolean;
   /**
    * Skills imported from a directory on disk instead of the library. `skillsDirectory` is the
    * absolute path the user picked and `directorySkills` are the names to install from it, read
@@ -1584,6 +1305,16 @@ export interface AgentCompactionConfigDto {
   maxSessionTurns?: number;
   mode?: "summarize" | "discard";
   prompt?: string;
+  /**
+   * Tool rounds a summarize compaction may take before the summary (`max_rounds`); `<= 0` allows
+   * none. Reported as the effective value: a file without the key reads as the built-in default,
+   * as core reads it. Written as an integer of 0 or more. Absent only from an older server.
+   */
+  maxRounds?: number;
+  /** The line sent after each tool round (`reminder`); effective value like `maxRounds`. A blank one sends none. */
+  reminder?: string;
+  /** The note a context opens with when no summary could be had (`handoff_note`); effective value like `maxRounds`. A blank one gives the quoted data alone. */
+  handoffNote?: string;
 }
 
 /** Memory config. All fields report effective values (a config with no `memory` section reads as enabled with the built-in prompts, matching core); the prompts are edited on the Memory tab. */
@@ -1741,46 +1472,134 @@ export interface AgentConfigUpdateRequest {
 // /api/amsp/v1, whose snake_case wire types live in @prismshadow/amsp)
 // ---------------------------------------------------------------------------
 
-/** One API key of an Agent, as listed: the secret itself is shown once, at creation, and never again. */
-export interface AgentApiKeyInfo {
-  keyId: string;
-  /** 1-64 characters, given by whoever created it. */
-  name: string;
-  /** The key's first 16 characters (`penguin_` + 8), enough to tell keys apart. */
-  prefix: string;
-  /** user_id of the Project owner who created it. */
-  createdBy: string;
-  createdAt: string;
-  /** Last run request that authenticated with it; null = never used. */
-  lastUsedAt: string | null;
-}
+// AgentApiKeyInfo (the list view of one API key) lives with the AgentApi contract in
+// library/agent-api — imported and re-exported at the top of this file's Agent API block.
 
 /**
  * One Agent's public API settings — this server's, kept in web.db, never in the Agent State or
  * the Project file, so the Agent cannot expose itself or loosen its own approvals. An Agent
  * never configured reads as disabled, keyed, allow-all, with no keys.
  */
-export interface AgentApiSettings {
-  /** The API tab's switch; off = every AMSP request for this Agent is 404 `agent_not_found`. */
-  enabled: boolean;
-  /** Keyless access: a request without `Authorization` is accepted; off = 401 `unauthorized`. */
-  open: boolean;
-  /**
-   * The approval mode an API Session is created with. It is copied onto each API Session when
-   * that Session is created, and the Session's own mode is what every decision reads, so a
-   * change here applies to API Sessions created afterwards.
-   */
-  approvalMode: ApprovalMode;
-  /** Null follows the Project's default model. Applied only to new API Sessions. */
-  model: ModelRefDto | null;
-  /** Null follows the Agent/Project thinking configuration. */
-  thinkingLevel: ThinkingLevelName | null;
-  /** Null creates a temporary Workspace for each new API Session. */
-  workspace: string | null;
-  /** Positive integer. Checked for each API run; defaults to four concurrent Agent sessions. */
-  maxConcurrentRuns: number;
-  keys: AgentApiKeyInfo[];
-}
+
+// The vocabulary above lives with its contracts in the domain libraries; these
+// re-exports keep the module's export surface whole for the API's consumers.
+export type {
+  AgentApiKeyInfo,
+  AgentApiSettings,
+  AgentApiUpdateRequest,
+  ModelRefDto,
+  ScheduleServerEvent,
+  ServerEvent,
+  CommandPolicyDto,
+  GoalServerEvent,
+  MachineServerEvent,
+  ChatDefaultsDto,
+  ProjectRole,
+  ProjectSummary,
+  MemberInfo,
+  AgentTraceSessionEntry,
+  AgentTracesResponse,
+  ContextToolShare,
+  AgentTraceFileRef,
+  AgentTraceSessionGroup,
+  AgentTraceDateGroup,
+  AgentTraceSessionFile,
+  ContextFileShare,
+  CostParts,
+  HistoryMessage,
+  RequestSpan,
+  SessionCategory,
+  SessionCategoryCounts,
+  SessionContextParts,
+  SessionTracesResponse,
+  ToolCallSpan,
+  TraceAnalysisResponse,
+  TraceEventsResponse,
+  TraceFileInfo,
+  TraceImportResponse,
+  TraceModelSegment,
+  TraceOtherSpan,
+  TracePosition,
+  TraceTaskStats,
+  TraceToolSpan,
+  UsageErrorItem,
+  UsageGroupBy,
+  UsageTrendPointInTrace,
+  UsageAgentSeries,
+  UsageBucket,
+  UsageErrors,
+  UsageErrorsPage,
+  UsageGranularity,
+  UsageGroupRow,
+  UsageModelSeries,
+  UsageModelTotals,
+  UsageModelTotal,
+  UsageResponse,
+  UsageSeriesPoint,
+  UsageToolRow,
+  OrgChannelMessage,
+  OrgChannelNotice,
+  OrgChannelNoticeKind,
+  OrgTriggerKind,
+  CompanyServerEvent,
+  BrowserBackend,
+  BrowserExtensionRecord,
+  BrowserHello,
+  BuiltinBrowserAction,
+  BuiltinBrowserLoadWarning,
+  BuiltinBrowserMetrics,
+  BuiltinBrowserServerEvent,
+  BuiltinBrowserTab,
+  BuiltinBrowserTabMetrics,
+  ChromeExtensionCookie,
+  DesktopBrowserCommand,
+  DesktopBrowserCommandMessage,
+  DesktopBrowserCookie,
+  DesktopBrowserReplyMessage,
+  UsageEntitySeriesCounts,
+  UsageErrorCount,
+  ErrorContext,
+  UserInfo,
+  ApprovalMode,
+  SessionStatus,
+  PendingSteeringInfo,
+  PendingFollowUpInfo,
+  SubagentRuntimeInfo,
+  SessionSandbox,
+  SessionSandboxMode,
+  SessionSandboxNetwork,
+  SessionSandboxPreset,
+  UnavailableSandboxBackend,
+  ApprovalReason,
+  OrgCalendarOutcome,
+  OrgTicketChange,
+  DefaultModelOffer,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
+  ModelBalanceAmount,
+  ModelBalanceErrorCode,
+  ModelInfo,
+  ModelProtocolDetectRequest,
+  ModelProtocolDetectResponse,
+  ModelProtocolProbeDto,
+  ModelPricingDto,
+  ModelTestRequest,
+  ModelTestResponse,
+  ModelUpdateEntry,
+  ModelVisionDetectRequest,
+  ModelVisionDetectResponse,
+  ModelVisionOutcome,
+  ModelsResponse,
+  ModelsUpdateRequest,
+  PresetSyncMode,
+  PresetSyncResponse,
+  ProtocolProbeOutcome,
+  ProviderConnectionDto,
+  ProviderConnectionResponse,
+  ProviderConnectionUpdate,
+  ModelEffectiveConnection,
+  CredentialInfo,
+};
 
 export interface AgentApiResponse {
   api: AgentApiSettings;
@@ -1792,15 +1611,6 @@ export interface AgentApiResponse {
 }
 
 /** PUT body (owner only): every field optional, omitted fields keep their current value. */
-export interface AgentApiUpdateRequest {
-  enabled?: boolean;
-  open?: boolean;
-  approvalMode?: ApprovalMode;
-  model?: ModelRefDto | null;
-  thinkingLevel?: ThinkingLevelName | null;
-  workspace?: string | null;
-  maxConcurrentRuns?: number;
-}
 
 /** POST …/api/keys body (owner only). */
 export interface AgentApiKeyCreateRequest {
@@ -1972,113 +1782,6 @@ export interface MemoryImportResponse {
   indexWritten: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Session
-// ---------------------------------------------------------------------------
-
-/** How far a Session's commands may reach the filesystem (the sandbox's confinement mode). */
-export type SessionSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
-
-/**
- * The part of a Session's sandbox policy a person picks from the composer: the filesystem
- * mode and the network level. The Session keeps its own copy — taken from the server's
- * Sandbox settings when it was created — so editing those settings only changes what NEW
- * Sessions start with.
- */
-export interface SessionSandbox {
-  mode: SessionSandboxMode;
-  /** `open` = unrestricted, `local` = only the host's localhost, `none` = no network. */
-  network: SessionSandboxNetwork;
-  /**
-   * Response only, ignored in requests: whether a sandbox backend on this server can enforce
-   * the `read-only` and `workspace-write` modes. False on a deployment with no backend
-   * installed, where either mode would refuse every command: the composer shows them greyed
-   * out, saying no backend is installed.
-   */
-  confinementSupported?: boolean;
-  /** Response only, ignored in requests: the same for the `none` network level. */
-  noNetworkSupported?: boolean;
-  /**
-   * Response only, ignored in requests: whether a sandbox backend on this server can enforce
-   * the `local` level. When false the composer shows it greyed out, and picking it is refused
-   * (400 `sandbox_unsupported`).
-   */
-  localNetworkSupported?: boolean;
-  /** Response only, ignored in requests: whether a backend here can enforce `masksPaths`. */
-  maskPathsSupported?: boolean;
-  /**
-   * Response only, ignored in requests: true when this policy hides paths (the Sandbox card's
-   * masked paths, kept by every pick). Where `maskPathsSupported` is false, every level then
-   * refuses every command, and the composer says so.
-   */
-  masksPaths?: boolean;
-  /**
-   * Response only, ignored in requests: the names of the sandbox backends in use here, which the
-   * composer names when a level is beyond what they enforce. Absent with none in use.
-   */
-  backendsInUse?: string[];
-  /**
-   * Response only, ignored in requests: the sandbox backends that are enabled here but failed
-   * to load or failed their check (a WSL distro not set up, a wrong program path), each with
-   * why. A backend for another platform is not listed. With none mounted and one listed, the
-   * composer marks the confining levels unavailable and gives the first one's reason.
-   */
-  unavailableBackends?: UnavailableSandboxBackend[];
-  /**
-   * Response only, ignored in requests: the server's sandbox presets (the Sandbox card's table),
-   * in table order, disabled rows included. The composer lists the enabled ones and names the
-   * Session's level by the first row matching its mode, network and approval mode. A server
-   * that does not report it gets the composer's built-in table.
-   */
-  presets?: SessionSandboxPreset[];
-  /**
-   * Response only, ignored in requests: true when this Session's policy holds something the
-   * presets do not show — masked paths, or the temp directory not writable.
-   */
-  advanced?: boolean;
-  /**
-   * Response only, chat defaults only: the approval mode a new Session starts with when its
-   * request names none — the Sandbox card's default preset's, while the switch is on. Absent:
-   * the server's own fallback (`allow-all`).
-   */
-  defaultApprovalMode?: ApprovalMode;
-  /**
-   * Response only, ignored in requests: the Sandbox card's switch on this server — whether new
-   * Sessions start confined. Off, the composer offers the approval modes alone (a Session keeps
-   * its own policy either way). A server that does not report it is read as on.
-   */
-  switchOn?: boolean;
-}
-
-/** One sandbox preset: a named mode, network level and approval mode. */
-export interface SessionSandboxPreset {
-  id: string;
-  /** The name an administrator gave it, or its declared English name. */
-  name: string;
-  /** Its declared Chinese name, while it has not been renamed. */
-  nameZh?: string;
-  /** Whether the composer's menu lists it. */
-  enabled: boolean;
-  mode: SessionSandboxMode;
-  network: SessionSandboxNetwork;
-  approvalMode: ApprovalMode;
-  /**
-   * Response-only: its file mode or network is wider than the server's sandbox settings (the
-   * ceiling for non-admins), so a non-admin's pick of it is refused with `403 sandbox_forbidden`.
-   * The same comparison as that refusal; absent when it is within them.
-   */
-  aboveCeiling?: true;
-}
-
-/** An enabled sandbox backend that is not in use on this server, and why. */
-export interface UnavailableSandboxBackend {
-  name: string;
-  reason: string;
-}
-
-/** The network levels, widest first. */
-export type SessionSandboxNetwork = "open" | "local" | "none";
-
 export interface SessionInfo {
   sessionId: string;
   projectId: string;
@@ -2193,13 +1896,9 @@ export interface SessionInfo {
   backgroundTasks?: SessionBackgroundTasks;
 }
 
-/** The background-task counts of one Session (see SessionInfo.backgroundTasks). */
-export interface SessionBackgroundTasks {
-  /** Background command sessions whose process is still running. */
-  processes: number;
-  /** Background subagent sessions (promoted to a `subagent_id`) currently mid-round. */
-  subagents: number;
-}
+/** The background-task counts moved to @prismshadow/penguin-library-session (the AgentState
+ * closed shape reaches them); re-exported here for the `@prismshadow/penguin-server/api` path. */
+export type { SessionBackgroundTasks };
 
 /**
  * Session list category, the listing rule applied server-side: `archived` when the user
@@ -2208,10 +1907,8 @@ export interface SessionBackgroundTasks {
  * Session belongs to neither, whatever its marks: the list leaves it out of every category and
  * every total (a parent's Agent panel and company mode's own views open them).
  */
-export type SessionCategory = "active" | "archived";
 
 /** Per-category totals across an Agent's whole Session list (returned when the list is requested with counts). */
-export type SessionCategoryCounts = Record<SessionCategory, number>;
 
 /**
  * GET /api/projects/:projectId/agents/:agentId/sessions. Every query parameter is optional:
@@ -2532,19 +2229,12 @@ export interface SessionCreateResponse {
 }
 
 /** Immutable location of one record in a Session's append-only Trace. */
-export interface TracePosition {
-  /** Trace shard index (`001` on disk becomes `1`). */
-  fileIndex: number;
-  /** Zero-based record ordinal within the parsed shard. */
-  ordinal: number;
-}
 
 /**
  * History-only transport metadata; neither field is ever persisted into Trace JSONL.
  * `elided` names the bulky values the `history` stream sent as a preview (core's
  * history-elision.ts); `GET …/trace-body?ref=` returns each one whole.
  */
-export type HistoryMessage = AmspRecord & { tracePosition?: TracePosition; elided?: ElidedBody[] };
 
 export type { ElidedBody };
 
@@ -2690,10 +2380,12 @@ export interface MessagesPageInfo {
   };
   /**
    * The model of the context this window starts in — what the `session_meta` heading that
-   * context's Trace file names. A Session can switch models between contexts, and a window
-   * that starts partway into one does not hold that record: the client seeds it, so the Tasks
-   * ahead of the window's first `session_meta` have their model, and a switch further down the
-   * window is told from a plain rotation. Absent when the Session has no Trace yet.
+   * context's Trace file names, or the model a completed switch's `session_update` ahead of the
+   * window's start in that file names (the next file not opened yet). A Session can switch
+   * models between contexts, and a window that starts partway into one does not hold that
+   * record: the client seeds it, so the Tasks ahead of the window's first `session_meta` have
+   * their model, and a switch further down the window is told from a plain rotation. Absent
+   * when the Session has no Trace yet.
    */
   contextModel?: ModelRefDto;
   /**
@@ -3021,6 +2713,16 @@ export interface TaskCreateRequest {
    * out, or the sandbox refuses to run it) is 409 `goal_start_failed` with the reason.
    */
   goal?: { budget?: number };
+  /**
+   * Hook packages installed on the Agent whose `trigger: "host"` `user_prompt` command this
+   * Task runs (the composer's switches, see `PluginItem.composerMode`): each one's `context`
+   * follows the user's message, stamped `sender: "harness"`, in the order named. Run when the
+   * request is accepted, so a queued or interrupting input waits with its contexts; a steered
+   * input takes none. A package that is not installed, or declares no such command, is 409
+   * `prompt_hook_not_installed`; one whose command fails is 409 `prompt_hook_failed` with the
+   * reason; nothing is started or queued either way. Exclusive with `goal` (400).
+   */
+  promptHooks?: string[];
 }
 
 /** Goal-mode run state, read from the Session's GOAL.json — the goal plugin's file (the chat page's banner restores from it; a live status on an idle Session reads as `aborted`). */
@@ -3046,16 +2748,17 @@ export interface GoalResponse {
  *   A context with a completed turn is closed by an ordinary `manual` compaction pair (always
  *   summarize); one without — just compacted, or its first request never finished — has
  *   nothing to summarize and streams no pair. Then come the new context's opener records
- *   and its `session_meta`: its `provider` / `model_id` name the model the Session now runs
- *   on, the Session reads report that pair from this record on, and `task_state` turns idle
- *   after the switch.
+ *   and the switch's `session_update`: its `provider` / `model_id` name the model the Session
+ *   now runs on, the Session reads report that pair from this record on, and `task_state`
+ *   turns idle after the switch. The new context's `session_meta` streams with the next
+ *   message, when its Trace file opens.
  *   When the summary cannot be had — the model the Session is on is no longer configured or
  *   has no credential (it is then sent nothing, and no pair streams), or the compaction ends
  *   without a summary — the switch still completes, by Trace handoff: right
- *   after the `session_meta` comes a user text that is one whole `[model_switch_from]` block
+ *   after the `session_update` comes a user text that is one whole `[model_switch_from]` block
  *   whose `session` is this Session, naming the Trace file of the context it left. Only a
  *   stopped compaction (`aborted`), or a `fatal` one (the next context could not be opened on the
- *   target; its `error_message` says why), means no switch: no `session_meta` follows and the
+ *   target; its `error_message` says why), means no switch: no `session_update` follows and the
  *   Session keeps its model and its context.
  * - **200** {@link SessionResponse} — a Session that never ran has no context to close: it
  *   switched inside the request, and nothing is streamed.
@@ -3114,57 +2817,6 @@ export interface SteerRequest {
    * steers exactly like an image-only one instead of falling back to the follow-up queue.
    */
   files?: { fileName: string; dataUrl: string }[];
-}
-
-/**
- * One steering message queued on the server but not yet delivered to the model (delivery
- * happens at the next input assembly between turns). Carried on `task_state` events and the
- * SSE subscribe snapshot so the composer's "steering queued" hint — including what was sent —
- * survives reloads; entries leave the list as their `[user_steering]` message appears on the
- * stream, and the whole list drops when the run exits (core discards undelivered steering).
- */
-export interface PendingSteeringInfo {
-  /** Server-assigned id, stable for the entry's queued lifetime: the handle DELETE /steer/:steerId recalls it by. */
-  id: string;
-  /** The message text as accepted (trimmed); may be empty when images/files carry the message. */
-  text: string;
-  /** Number of images that rode along. */
-  images: number;
-  /** Number of file attachments that rode along. */
-  files: number;
-}
-
-/**
- * One follow-up task queued with `queueIfBusy` but not yet auto-started. Carried on
- * `task_state` events and the SSE subscribe snapshot (like `pendingSteering`) so the
- * composer can show each queued message's content with a recall affordance; entries leave
- * the list when they auto-start on idle — or when DELETE /follow-ups/:followUpId recalls one.
- */
-export interface PendingFollowUpInfo {
-  /** Server-assigned id, stable for the entry's queued lifetime: the handle DELETE /follow-ups/:followUpId recalls it by. */
-  id: string;
-  /** The queued input's text parts, joined; may be empty when images/files carry the message. */
-  text: string;
-  /** Number of images in the queued input. */
-  images: number;
-  /** Number of file attachments in the queued input. */
-  files: number;
-  /** An interrupt waiting for the run it aborted to settle: it starts first, and no other interrupt can move it. */
-  interrupt?: true;
-}
-
-/**
- * One live subagent child of a session's runtime, carried on `task_state` events and the SSE
- * subscribe snapshot: the child Session id (the origin hop the stream already correlates by),
- * its background registry handle (null while it only lives inside a foreground collect
- * window), and whether a round is currently running. Only an ACTIVE parent runtime reports
- * children — after a server restart the in-process children are gone, and the empty list is
- * the truth.
- */
-export interface SubagentRuntimeInfo {
-  sessionId: string;
-  subagentId: string | null;
-  running: boolean;
 }
 
 /**
@@ -3842,255 +3494,13 @@ export interface MessagingAccountHoldersResponse {
 // ---------------------------------------------------------------------------
 
 /** Docs: /docs/server-api § "Streaming (SSE)". */
-export type ServerEvent =
-  /**
-   * Approval request escalated to a human: every call under always-ask, plus rw/unknown-permission
-   * calls under read-only, plus — under every mode but deny-all — a call a command-policy `ask`
-   * rule matched, which carries `reason` (see runtime/approvals.ts); pending approvals are
-   * resent on reconnect.
-   */
-  | {
-      type: "approval_request";
-      toolCall: AmspRecord<ToolCallPayload>;
-      origin?: string[];
-      reason?: ApprovalReason;
-    }
-  /** Session run status flip (for toggling the input area and list); `queued` = queued follow-up count (see TaskCreateRequest.queueIfBusy). */
-  | {
-      type: "task_state";
-      state: SessionStatus;
-      queued?: number;
-      /** Steering messages queued but not yet delivered (absent = none): lets the composer's hint and its content survive reloads. */
-      pendingSteering?: PendingSteeringInfo[];
-      /**
-       * Steering the run ended without delivering (absent = none) — an interrupt while a tool
-       * was running is the ordinary way to produce one. Handed back rather than discarded: the
-       * composer recalls each by the same handle and restores it into the draft, so the typed
-       * message returns to the input box instead of being lost.
-       */
-      returnedSteering?: PendingSteeringInfo[];
-      /** Queued follow-up tasks awaiting auto-start (absent = none): per-entry content + recall handle, alongside the `queued` count. */
-      pendingFollowUps?: PendingFollowUpInfo[];
-      /**
-       * Live subagent children of this session's runtime (absent = none): the panel renders
-       * child running marks from this structural liveness instead of parsing tool-output
-       * text. Refreshed on every child run start/settle.
-       */
-      subagents?: SubagentRuntimeInfo[];
-    }
-  /** The model-generated title after the first turn has been persisted (for in-place list updates). */
-  | { type: "session_title"; sessionId: string; title: string }
-  /**
-   * The user-channel counterpart of `task_state`: the same run-state flip, named by
-   * `sessionId`, delivered on GET /api/events.
-   *
-   * `task_state` is session-scoped and deliberately carries no id, so it only ever reaches the
-   * one conversation a tab has subscribed to — every OTHER row in that tab's Session list would
-   * otherwise keep whatever status its last list fetch returned. This event exists so the list
-   * can stay live without polling; the per-Session contract is unchanged.
-   *
-   * `lastActiveAt` and `hasTrace` are the row's own fields as they stand after the flip, both
-   * written just before publishing (`markDriven` at run start sets has_trace and stamps
-   * last_active_at; `touchLastActive` stamps again at run end). They are what let a list act on
-   * the flip without refetching: the stamp separates "this finished while I was looking
-   * elsewhere" from "this finished before I last looked", and `hasTrace` separates a Session
-   * that has now run from one that never has — a first run would otherwise settle back into the
-   * blank "never ran" row the client still believes in.
-   *
-   * `projectId` names the Session's Project: a list showing one Project ignores another's flips
-   * without a request, and a flip for a Session of its own Project that it holds no row for is a
-   * row it is missing — one that became active below its activity cursor (see SessionsResponse) —
-   * which it fetches by id.
-   *
-   * Published only to the user channels of the Project's owner and members.
-   */
-  | {
-      type: "session_state";
-      sessionId: string;
-      projectId: string;
-      state: SessionStatus;
-      lastActiveAt: string;
-      hasTrace: boolean;
-    }
-  /**
-   * A Session's background-task counts changed: a command promoted to the background, a
-   * process that exited or was stopped, a background subagent starting or settling a round,
-   * a released session. The counts are the row's `backgroundTasks` as they stand after the
-   * change — zeros included, so a list can clear its mark without refetching. Published to
-   * the user channels of the Project's owner and members, like `session_state`.
-   */
-  | { type: "session_background"; sessionId: string; processes: number; subagents: number }
-  /**
-   * A Session's count of tool calls waiting for a person's approval changed: a call was
-   * escalated (every call under always-ask, rw/unknown calls under read-only), answered, or
-   * denied by an interrupt. The count is the row's `pendingApprovalCount` as it stands after
-   * the change, zeros included, so a list moves its mark without refetching; the calls
-   * themselves are on the Session's own stream (`approval_request`, replayed on subscribe).
-   * Published to the user channels of the Project's owner and members, like `session_state`.
-   */
-  | { type: "session_approvals"; sessionId: string; count: number }
-  /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */
-  | { type: "resync_required" }
-  /**
-   * The Project's model credentials changed (PUT /models): cached runtimes have been
-   * invalidated server-side, so an auth-dead Session can continue — the frontend clears
-   * its auth-dead composer state immediately. Published to every existing Session channel
-   * of the Project; tabs without a live channel learn the same fact from the models
-   * response's `updatedAt` on their next load.
-   */
-  | { type: "credentials_updated" }
-  /** Placeholder handshake on the user channel (reserved for automated task notifications). */
-  | { type: "hello" }
-  /**
-   * The stream's own beat, written by the endpoint's SSE writer every 20 seconds (http/sse.ts)
-   * on `/api/events`, and by the hub on a machine's aggregate stream. The socket's ping and the
-   * `: ping` comment line are invisible to a stream's consumer, so without this a stream that
-   * stopped while its socket stayed healthy would look alive forever: the hub
-   * (machines/event-hub.ts) and the browser (web api/socket.ts) each end a stream that misses
-   * two beats and re-issue it with its last event id.
-   */
-  | { type: "heartbeat" }
-  /** The served web assets were hot-swapped by a platform upgrade: clients reload to pick them up. */
-  | { type: "web_updated"; rev: string }
-  /**
-   * The server's imported theme packs changed (one was imported, replaced or removed): every
-   * signed-in tab re-reads `GET /api/themes`. No payload; on the user channel of everyone online.
-   */
-  | { type: "themes_changed" }
-  /**
-   * A Session now exists. On the user channel for every creation — the CLI, another tab,
-   * a schedule, an agent spawning a child — so the list learns about rows it did not make;
-   * and on the parent Session's channel for a subagent, which no list shows. `source` is what
-   * the new Session's meta records, and it tells a client which list, if any, the row joins.
-   */
-  | {
-      type: "session_created";
-      projectId: string;
-      agentId: string;
-      sessionId: string;
-      source: SessionSource;
-    }
-  /**
-   * The user's listing decision on one Session changed (PATCH `archived`, the archive page's
-   * batch unarchive): an archived row leaves the sidebar, an unarchived one joins it. One per
-   * Session, to the Project's users.
-   */
-  | {
-      type: "session_archived";
-      sessionId: string;
-      projectId: string;
-      agentId: string;
-      archived: boolean;
-    }
-  /**
-   * A Session was deleted (DELETE, the subagent children deleted with it, the archive page's
-   * batch delete): every client drops the row. One per Session, to the Project's users.
-   */
-  | { type: "session_deleted"; sessionId: string; projectId: string }
-  | ScheduleServerEvent
-  | GoalServerEvent
-  | CompanyServerEvent
-  | BuiltinBrowserServerEvent
-  | MachineServerEvent;
-
-/**
- * The machines' events on the user channel, published to admins only — the Machines page,
- * and the `/server/<id>` proxy everything else about a machine goes through, are admin-only.
- */
-export type MachineServerEvent =
-  /**
-   * Something the machines list reports changed — a job queued, started, moved to its next
-   * step, logged a line or ended; a connection was held or dropped; a reconnect began, failed
-   * or succeeded; a machine joined or left a Project; a checkout's install image started or
-   * finished building. No payload: a page re-reads `GET …/machines`, which is its one account
-   * of every machine. Coalesced, so a burst of log lines costs a few reads, not one per line.
-   */
-  | { type: "machines_changed" }
-  /**
-   * One of a connected machine's own user-channel events, tagged with the machine it came
-   * from. They ride the machines aggregate (event-hub.ts, `GET …/machines/events`) — ONE
-   * stream for every connected machine, whose per-machine frames have this same shape; the
-   * page that re-publishes them on its own channel wraps them this way too. One stream, not
-   * a stream per machine: five of those once took the browser's whole HTTP/1.1 allowance of
-   * six connections to one origin, and every other request of the page then waited behind
-   * them for good.
-   */
-  | { type: "machine_event"; machineId: string; event: ServerEvent };
-
-/** Goal-mode progress on the session channel (the chat page drives its goal banner from these). */
-export type GoalServerEvent =
-  /** A goal run began (published before the first round). */
-  | { type: "goal_started"; sessionId: string; objective: string; budget: number }
-  /** A round is starting; `used` is the runner's accounting up to this point. */
-  | { type: "goal_round"; sessionId: string; round: number; used: number; budget: number }
-  /** The goal reached a terminal state. */
-  | {
-      type: "goal_finished";
-      sessionId: string;
-      outcome: "complete" | "blocked" | "budget_limited" | "aborted";
-      rounds: number;
-      used: number;
-    };
-
-/** Schedule notification (user-level event stream; firing and delivery are notified via /api/events). */
-export type ScheduleServerEvent =
-  /** Fired and sent (sessionId is the session that received the Prompt; a new session under new-Session mode). */
-  | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
-  /** Target Session is running; this firing is queued and will be sent once it's idle. */
-  | {
-      type: "schedule_queued";
-      projectId: string;
-      agentId: string;
-      name: string;
-      sessionId: string;
-    }
-  /**
-   * A workbench of the Agent was (re)loaded — its folder changed, a reload was requested, or a
-   * version was restored — or switched on or off, by its own switch or the Agent's.
-   */
-  | { type: "workbench_updated"; projectId: string; agentId: string; workbench: WorkbenchInfo }
-  /** A load of a workbench's files has started (the watcher saw an edit, or a list or reload asked for it). */
-  | { type: "workbench_building"; projectId: string; agentId: string; workbenchId: string }
-  /** A workbench's folder is gone — removed from the Web App or deleted on disk. */
-  | { type: "workbench_removed"; projectId: string; agentId: string; workbenchId: string };
-
-// ---------------------------------------------------------------------------
-// Trace browsing and performance analysis
-// ---------------------------------------------------------------------------
-
-export interface TraceFileInfo {
-  /** Trace file index (one file corresponds to one complete model context). */
-  index: number;
-  /** Date subdirectory it belongs to (yyyy-mm-dd). */
-  date: string;
-  sizeBytes: number;
-  mtime: string;
-}
-
-export interface SessionTracesResponse {
-  files: TraceFileInfo[];
-}
 
 /** One tool's share of the context: its calls plus their results. Its *definition* is counted in `toolDefs`, not here. */
-export interface ContextToolShare {
-  name: string;
-  tokens: number;
-}
 
 /**
  * One file's share of the context: its `read_file` / `edit_file` / `write_file` calls plus their
  * results, keyed by the file each call named.
  */
-export interface ContextFileShare {
-  /**
-   * Workspace-relative when the file is inside the Session's Workspace; otherwise absolute, with
-   * the home directory shortened to `~`. Spellings that resolve to the same file are one row.
-   */
-  path: string;
-  tokens: number;
-  /** How many calls of each file tool named the file in this context. */
-  ops: { read: number; edit: number; write: number };
-}
 
 /**
  * What the Session's current model context is made of — the part derived from its messages.
@@ -4105,26 +3515,6 @@ export interface ContextFileShare {
  * recorded in the same Trace shard has no tool to be attributed to). `topFiles` is the same
  * ranking narrowed to the three file tools and keyed by the file each call named.
  */
-export interface SessionContextParts {
-  systemPrompt: number;
-  toolDefs: number;
-  userMessages: number;
-  assistantMessages: number;
-  toolRequests: number;
-  toolResults: number;
-  /** Sum of the six parts. */
-  total: number;
-  /** Tools ranked by the context their traffic occupies, descending; at most five. */
-  topTools: ContextToolShare[];
-  /** Files ranked by the context their file-tool traffic occupies, descending; at most five. */
-  topFiles: ContextFileShare[];
-  /**
-   * A completed compaction closed the context these figures describe, and the next one has not
-   * been written yet: the composition is of what was compacted away, not of what the model now
-   * carries. The same state in which the chat page's context ring shows `—`.
-   */
-  contextClosed: boolean;
-}
 
 /** `GET /api/sessions/:id/context`: the message-derived composition plus where compaction will fire. */
 export interface SessionContextResponse extends SessionContextParts {
@@ -4137,43 +3527,7 @@ export interface SessionContextResponse extends SessionContextParts {
   compactionThreshold: number | null;
 }
 
-export interface TraceEventsResponse {
-  events: AmspRecord[];
-  offset: number;
-  limit: number;
-  /**
-   * Record count of the file (basis for pagination), in the ordinals `tracePosition` and the
-   * analysis' `messageFrom` / `messageTo` use: malformed lines are not records.
-   */
-  total: number;
-}
-
 /** Duration span of a single LLM Request (request_begin/request_end paired by proximity). */
-export interface RequestSpan {
-  beginTs: string;
-  endTs?: string;
-  durationMs?: number;
-  status?: string;
-  /** The Task it belongs to (same convention as modelSegments/toolSpans). */
-  taskIndex: number;
-  /** Compaction request (falls between compaction_begin and compaction_end): excluded from TPS, see TraceTaskStats. */
-  compaction?: boolean;
-  /**
-   * Total human approval wait time within this Request. core does `await approve(tc)` inside
-   * the streaming loop — if approval doesn't return, the next chunk isn't consumed and
-   * `request_end` can't be emitted either, so the entire human wait falls inside the span
-   * (see context-engine's runTurn). Tool **execution** is not included (`void executeOne`,
-   * doesn't block the loop).
-   */
-  approvalWaitMs?: number;
-  /** LLM generation duration = durationMs − approvalWaitMs (≥ 0): only this can be used as the TPS denominator, not durationMs. */
-  activeMs?: number;
-  /**
-   * The thinking level this request went out at, as its `request_begin` records it. Absent
-   * when no level was sent, and on Traces written before the field — unknown, not a level.
-   */
-  thinkingLevel?: string;
-}
 
 /**
  * Per-Task Token / duration figures (aggregated server-side over the **entire** Trace file,
@@ -4183,116 +3537,8 @@ export interface RequestSpan {
  * the frontend's events are paginated (only the first N), so self-aggregation would mismatch
  * a numerator covering only the first N against a denominator covering the whole file.
  */
-export interface TraceTaskStats {
-  taskIndex: number;
-  /**
-   * This turn is a **compaction turn** (compaction forms its own turn); the UI marks it with
-   * a badge accordingly. It's treated the same as a user turn: it has Token /
-   * cost / duration / TPS, and **counts normally toward global stats** — the global totals are
-   * just the sum of the per-turn cards below, the two scopes match, so adding up the per-turn
-   * numbers must equal the total.
-   */
-  compaction?: boolean;
-  /**
-   * Which kind of compaction turn it is, from the turn's `compaction_begin`. Additive beside
-   * the flag rather than folded into it: `compaction` stays the sole gate on "is this a
-   * compaction turn", so a client that only knows the boolean keeps working unchanged, and one
-   * that reads this can name the turn for what it did — the two modes are different operations,
-   * and only `summarize` actually compacts anything (`discard` drops the old context outright).
-   * Absent on a turn analyzed before this field existed, or whose `compaction_begin` carried no
-   * mode; treat an absent value as `summarize`, which is what the badge said before the split.
-   */
-  compactionMode?: CompactionMode;
-  /**
-   * A short label for the round navigator: the first non-empty line of the user text that
-   * started this turn, with harness marker blocks and attachment lines removed, whitespace
-   * collapsed, at most 120 characters (the view truncates it further to fit). Absent when no
-   * user text started the turn — a summarize compaction turn, an image-only send — or none of
-   * its lines is left (only attachment lines).
-   */
-  prompt?: string;
-  /**
-   * This turn's message index range within the **entire file** (inclusive). A single
-   * sequential scan on the server tells which turn each message belongs to; the frontend
-   * attributes messages by this, **no longer guessing by timestamp** — the same millisecond
-   * can pack "previous turn's last reply + compaction start + compaction prompt + next turn's
-   * request_begin", which time boundaries can't separate, misattributing this turn's reply to
-   * the next turn.
-   */
-  messageFrom: number;
-  messageTo: number;
-  /**
-   * This turn's duration span: `startTs` = the moment of this turn's **first `request_begin`**
-   * — duration only looks at LLM requests, not the timestamp of user text like the user
-   * Prompt / compaction summary (`[context_summary]` is created during compaction but only
-   * persisted on the next run; resuming the next day would inflate the first turn by a whole
-   * day for no reason); `endTs` = the moment of the last non-session_meta message in the
-   * range. For a degenerate turn with no Request at all (interrupted right after sending),
-   * `startTs` is an empty string and duration counts as 0.
-   */
-  startTs: string;
-  endTs: string;
-  /**
-   * Context usage at the end of this Task = the three-bucket Token snapshot of the last
-   * **non-compaction** Request (same convention as the Chat page's `contextNow`). Note this
-   * must not be the sum of this Task's Requests — each Request's input carries the full
-   * history again, so summing double-counts the context, and a few rounds of tool calls
-   * would blow past the context window. A pure-compaction Task (no non-compaction Request)
-   * has no value here.
-   */
-  context?: { cacheRead: number; cacheWrite: number; output: number };
-  /**
-   * This turn's **cumulative** usage (the sum of the three buckets over every Request in this
-   * Task), for Token stats and cost conversion. Two different figures from `context`: that one
-   * is a snapshot (how much is occupied right now), this one is a ledger (how much this turn
-   * spent in total). Includes compaction requests — compaction tokens are real money spent and
-   * must be counted; consistent with the Chat page's tokensByBucket.
-   */
-  tokens: { cacheRead: number; cacheWrite: number; output: number };
-  /**
-   * This turn's cost in USD: each Request's three buckets at the Project's current rates for
-   * the file's model, at the tier that Request's own timestamp fell in — the rule and the
-   * price lookup the cost center applies to the usage row the same `token_usage` produced,
-   * so this figure, the toolbar's and the cost center's agree on what a request cost. Present
-   * on every turn of a priced file (a turn with no Request reads 0); absent when the model has
-   * no pricing or the file's head names no provider, and then absent from the response's
-   * total as well.
-   */
-  cost?: number;
-  /**
-   * Total LLM generation duration for this turn (the denominator for output TPS; human
-   * approval wait already deducted). The numerator is simply `tokens.output`: since
-   * compaction forms its own turn, each turn's output tokens are just its own Requests'
-   * output — there's no second figure to reconcile.
-   */
-  llmMs: number;
-  /**
-   * Wall-clock time this turn spent executing tools: the **union** of its tool spans'
-   * execution intervals (`approvalTs ?? callTs` to `outputTs`), so tools running in parallel
-   * are counted once instead of summed. Two exclusions, both deliberate: the human approval
-   * wait (`callTs` to `approvalTs`) is not tool work, and the argument-generation segment is
-   * the model streaming arguments, already counted in `llmMs`. A span with no `outputTs` —
-   * still running when the file ended, or interrupted — contributes nothing rather than being
-   * extrapolated to now.
-   *
-   * This and `llmMs` may **overlap**: a tool started in the background keeps running while the
-   * model decodes. They are two measured components of the turn's duration, not a partition of
-   * it, and they need not add up to the turn's span (approval waits and harness overhead belong
-   * to neither). Never derive one by subtracting the other from the duration.
-   */
-  toolMs: number;
-}
 
 /** Duration span of a single tool call (complete tool_call message → paired tool_call_output). */
-export interface ToolCallSpan {
-  toolCallId: string;
-  name: string;
-  startTs: string;
-  endTs?: string;
-  durationMs?: number;
-  /** The paired tool_call_output's `status` (completed / aborted / fatal); absent while the call has no output. */
-  status?: string;
-}
 
 /** Workspace file entry (Files tab). */
 export interface WorkspaceFileEntry {
@@ -4401,159 +3647,22 @@ export interface FilesStatResponse {
  * is based on request_begin; user input is treated as sent instantaneously and takes no
  * segment).
  */
-export interface TraceModelSegment {
-  kind: "thinking" | "text" | "tool_call";
-  startTs: string;
-  endTs: string;
-  /** Given when kind=tool_call. */
-  toolCallId?: string;
-  name?: string;
-  /** The Task it belongs to (a single user turn can contain multiple Requests): the frontend groups by this, each Task on its own independent timeline. */
-  taskIndex: number;
-}
 
 /**
  * Tool full lifecycle (parallel to model decoding): initiated (callTs) → approved
  * (approvalTs) → output (outputTs). Unclosed fields are unset (approval pending / executing /
  * file truncated).
  */
-export interface TraceToolSpan {
-  toolCallId: string;
-  name: string;
-  callTs: string;
-  approvalTs?: string;
-  decision?: string;
-  outputTs?: string;
-  /** The tool_call_output's `status` (completed / aborted / fatal); absent while unclosed. */
-  status?: string;
-  /** The Task that initiated this tool (grouped with its tool_call segment): async output belongs to this Task even if it arrives after request_end. */
-  taskIndex: number;
-}
 
 /**
  * Non-tool auxiliary phase on the timeline: rendered in its own lane under the "other"
  * legend category — deliberately not a tool span, since nothing was called. Currently the
  * first run's MCP connect + discovery (from the mcp_connect_begin/end event pair).
  */
-export interface TraceOtherSpan {
-  /** Unique bar key (e.g. `mcp-connect-<beginTs>`). */
-  key: string;
-  /** Lane label, e.g. "mcp connect". */
-  name: string;
-  startTs: string;
-  endTs: string;
-  /** Attached to the Task that follows the phase (same grouping convention as toolSpans). */
-  taskIndex: number;
-  /** True when the phase ended with failures (some servers unreachable) or was aborted. */
-  failed?: boolean;
-}
-
-export interface UsageTrendPointInTrace {
-  ts: string;
-  requestTotal: number;
-  sessionTotal: number;
-}
-
-export interface TraceAnalysisResponse {
-  /**
-   * Sum of all turns' durations (**including compaction turns**, same scope as `tasks` — the
-   * global figure is just the sum of the per-turn figures below; gaps between turns where the
-   * user is thinking or away are not counted). Computed server-side over the entire file: the
-   * frontend's events are paginated, so self-aggregation would undercount.
-   */
-  elapsedMs: number;
-  /**
-   * The file's model-API time: the sum of the turns' `llmMs` (human approval wait deducted,
-   * compaction requests included, so the scope matches `elapsedMs`).
-   */
-  apiMs: number;
-  /**
-   * The file's tool wall time: the sum of the turns' `toolMs` (parallel tools counted once
-   * within a turn). Summed per turn rather than unioned across the file, so the global figure
-   * stays the sum of the per-turn figures, exactly as `elapsedMs` is. May overlap `apiMs` —
-   * see `TraceTaskStats.toolMs`.
-   */
-  toolMs: number;
-  /**
-   * The file's cost in USD: the sum of the turns' `cost` (compaction turns included, the
-   * scope every total here shares). Absent exactly when the turns carry no `cost`.
-   */
-  cost?: number;
-  /**
-   * `cost` split by pricing bucket: every Request's Tokens at the rates and tier its share of
-   * `cost` was priced at, summed per bucket over the file. Present exactly when `cost` is; the
-   * turns carry no split.
-   */
-  costParts?: CostParts;
-  /**
-   * The model's context window as the file's head `session_meta` records it
-   * (`model_context_window`), for the context ring. The panel no longer reads every event, so the
-   * analysis carries it; absent when the head records none (an older server, or a file without
-   * one), and the panel then falls back as it always has.
-   */
-  modelContextWindow?: number | string;
-  requests: RequestSpan[];
-  /** Token / duration aggregated per Task (used directly by the Trace page's context ring and per-turn TPS). */
-  tasks: TraceTaskStats[];
-  toolCalls: ToolCallSpan[];
-  /** Execution timeline: model serial segments (LLM lane). */
-  modelSegments: TraceModelSegment[];
-  /** Execution timeline: each tool's approval/execution phases (independent lane, can overlap with model decoding). */
-  toolSpans: TraceToolSpan[];
-  /** Execution timeline: non-tool auxiliary phases (their own "other" lanes — currently the first run's MCP connect + discovery). */
-  otherSpans: TraceOtherSpan[];
-  /** Number of request_end events with status ∈ {timeout, malformed}. */
-  reconnectCount: number;
-  /** Number of compaction_begin events. */
-  compactionCount: number;
-  usageTrend: UsageTrendPointInTrace[];
-}
-
-export interface AgentTraceFileRef {
-  index: number;
-  sizeBytes: number;
-}
-
-export interface AgentTraceSessionGroup {
-  sessionId: string;
-  files: AgentTraceFileRef[];
-}
-
-export interface AgentTraceDateGroup {
-  date: string;
-  sessions: AgentTraceSessionGroup[];
-}
 
 /** One Trace file in the session-centric listing (`date` carried per file: one Session's shards can span date directories). */
-export interface AgentTraceSessionFile {
-  index: number;
-  date: string;
-  sizeBytes: number;
-}
 
 /** One Session's Trace files merged across date directories (the paginated listing's unit). */
-export interface AgentTraceSessionEntry {
-  sessionId: string;
-  /**
-   * Display title, resolved only for the returned page: the sessions DB title when one
-   * exists, else derived from the Session's first user prompt (bounded head-read of the
-   * earliest shard); absent when neither yields one (the client falls back to its
-   * default title — raw session ids are never rendered).
-   */
-  title?: string;
-  /**
-   * Sidebar category of this Session, from the same bounded classification the listing
-   * filters and counts with: archived exactly from the DB row; origin from the shared
-   * in-process registry / previously observed session_meta; a DB-untracked Session this
-   * process has not yet head-read falls into `active` until a page surfaces it (its
-   * head-read then registers the true origin for subsequent requests).
-   */
-  category: SessionCategory;
-  /** Workspace path locked at creation (DB row or observed session_meta); "" when unknown — the client's merged temp-group fallback. */
-  workspace: string;
-  /** Sorted by index ascending (a higher index is newer). */
-  files: AgentTraceSessionFile[];
-}
 
 /**
  * Agent-level Trace browsing structure. Without `limit` the response is the legacy full
@@ -4566,37 +3675,15 @@ export interface AgentTraceSessionEntry {
  * the Agent's session groups (folder labels / workspace-mode group headers), and `dates`
  * stays empty (per-file stats are only taken for the returned page).
  */
-export interface AgentTracesResponse {
-  dates: AgentTraceDateGroup[];
-  /** Present only when the request paginates: the requested slice of Session groups, newest first. */
-  sessions?: AgentTraceSessionEntry[];
-  /** Present only when the request paginates: session-group count of the paged (category-filtered) set. */
-  totalSessions?: number;
-  /** Present only when the request paginates: per-category totals over all of the Agent's session groups. */
-  counts?: SessionCategoryCounts;
-  /** Present only when the request paginates: `counts` broken down by Workspace path ("" = unknown). */
-  workspaceCounts?: Record<string, SessionCategoryCounts>;
-}
 
 export interface TraceImportRequest {
   /** Base64 of the Trace file content (JSON Lines; the first record must be `session_meta`). */
   dataBase64: string;
 }
 
-export interface TraceImportResponse {
-  /** Session id taken from the imported file's `session_meta`. */
-  sessionId: string;
-  /** Allocated file index: always 1 — an import creates a new Session (a duplicate session id is rejected with 409 `trace_session_exists`). */
-  index: number;
-  /** Date directory the file landed in (local yyyy-mm-dd from the first record's timestamp, matching the Trace Writer's convention). */
-  date: string;
-}
-
 // ---------------------------------------------------------------------------
 // Usage and cost statistics
 // ---------------------------------------------------------------------------
-
-export type UsageGroupBy = "date" | "agent" | "model" | "session";
 
 /**
  * A cost split by the three pricing buckets, in USD: cached input (`cacheRead`), uncached input
@@ -4604,43 +3691,8 @@ export type UsageGroupBy = "date" | "agent" | "model" | "session";
  * rate the whole cost was priced at, so the three sum to the cost they accompany (up to
  * floating-point rounding).
  */
-export interface CostParts {
-  cacheRead: number;
-  cacheWrite: number;
-  output: number;
-}
-
-export interface UsageBucket {
-  total: number;
-  requests: number;
-  /** Cost converted using current pricing at query time (USD); a partial sum when uncosted Models are included, null if none has pricing. */
-  cost: number | null;
-  /** Whether any Model has no pricing (its usage isn't included in cost; counted once pricing is added later). */
-  hasUncosted: boolean;
-}
-
-export interface UsageGroupRow {
-  /** Group key: date / agentId / modelId / sessionId. */
-  key: string;
-  /** Provider group when groupBy=model (rows are broken down by (provider, modelId); unset for other dimensions). */
-  provider?: string;
-  cacheRead: number;
-  cacheWrite: number;
-  output: number;
-  total: number;
-  requests: number;
-  cost: number | null;
-  /**
-   * `cost` split by pricing bucket, each record at the same rates, tier and promotion that
-   * priced it in `cost`. Present exactly when `cost` is not null; a row's unpriced usage is in
-   * neither.
-   */
-  costParts?: CostParts;
-  hasUncosted: boolean;
-}
 
 /** Time-series precision for the usage series (`granularity` query parameter). `minute` requires the `fromTs`/`toTs` window bounds. */
-export type UsageGranularity = "minute" | "hour" | "day" | "week" | "month";
 
 /**
  * One bucket of the usage time series (for the cost center's time-series charts).
@@ -4649,42 +3701,10 @@ export type UsageGranularity = "minute" | "hour" | "day" | "week" | "month";
  * `yyyy-mm-ddThh:mm` and hour `yyyy-mm-ddThh:00` (server-local clock), day
  * `yyyy-mm-dd`, week the ISO week's Monday `yyyy-mm-dd`, month `yyyy-mm`.
  */
-export interface UsageSeriesPoint {
-  bucket: string;
-  cacheRead: number;
-  cacheWrite: number;
-  output: number;
-  total: number;
-  /** Cost converted at query time (USD); null when no priced Model contributed. */
-  cost: number | null;
-  requests: number;
-  /** Successful requests in the bucket. */
-  completed: number;
-  /** Success-rate denominator: all requests minus aborted (a user interruption is not a model failure). */
-  denominator: number;
-}
-
-/**
- * One entity's per-bucket request and success counts, aligned index-for-index
- * with `series` (the requests-and-success-rate chart draws one such entity —
- * or stacks them all). `denominator` excludes aborted, same as elsewhere.
- */
-export interface UsageEntitySeriesCounts {
-  requests: number[];
-  completed: number[];
-  denominator: number[];
-}
 
 /** Per-Agent counts per bucket. */
-export interface UsageAgentSeries extends UsageEntitySeriesCounts {
-  agentId: string;
-}
 
 /** Per-Model counts per bucket (entity identity is the (provider, modelId) pair). */
-export interface UsageModelSeries extends UsageEntitySeriesCounts {
-  provider: string;
-  modelId: string;
-}
 
 /**
  * Lifetime Token total for one Model, keyed by the (provider, modelId) pair. Deliberately
@@ -4692,18 +3712,8 @@ export interface UsageModelSeries extends UsageEntitySeriesCounts {
  * question with no window attached, and the models page that shows it carries no filters of its
  * own to honour. Models never used are absent rather than zero.
  */
-export interface UsageModelTotal {
-  provider: string;
-  modelId: string;
-  /** The three buckets summed (cache read + cache write + output), matching the cost center's Token figure. */
-  tokens: number;
-  requests: number;
-}
 
 /** Response of `GET /usage/model-totals`. */
-export interface UsageModelTotals {
-  totals: UsageModelTotal[];
-}
 
 /**
  * The two categories an error record is filed under: `unexpected` is a 500 or an unforeseen
@@ -4712,31 +3722,11 @@ export interface UsageModelTotals {
  */
 export type UsageErrorKind = "unexpected" | "expected";
 
-/** Occurrence count of an error for a given source · code (the "most common" metric in the stats center's error panel). */
-export interface UsageErrorCount {
-  source: string;
-  code: string;
-  kind: string;
-  count: number;
-}
-
 /**
  * One row of the stats center's error panel table: the records of one calendar day that share
  * a source, code, kind and message. The day is the viewer's when the request carried
  * `utcOffsetMinutes`, and the server's own otherwise.
  */
-export interface UsageErrorItem {
-  /** The latest of the records this row stands for. */
-  ts: string;
-  source: string;
-  code: string;
-  kind: string;
-  message: string;
-  /** How many records this row stands for (the panel's "×N"). */
-  count: number;
-  /** The earliest of them; equal to `ts` for a single record. */
-  firstTs: string;
-}
 
 /**
  * Server-side error capture stats: not affected by the model
@@ -4746,18 +3736,6 @@ export interface UsageErrorItem {
  * chart, so it only has a total count, the most common error code, and the most recent N
  * items.
  */
-export interface UsageErrors {
-  /** Filtered record count — also what a clear of the same filter takes (see {@link UsageErrorsClearResponse}). */
-  total: number;
-  /** Count of unexpected ones (500 / runtime exceptions) among them — the part the frontend highlights. */
-  unexpected: number;
-  /** The most frequent source · code (null when there are no errors). */
-  topCode: UsageErrorCount | null;
-  /** Most recent N rows (reverse chronological) — the first page; older ones come from `GET /usage/errors`. */
-  recent: UsageErrorItem[];
-  /** How many rows the table has for this filter (records folded per {@link UsageErrorItem}) — what the pager counts. */
-  rows: number;
-}
 
 /**
  * GET /api/projects/:projectId/usage/errors — one page of the error detail table, newest
@@ -4770,13 +3748,6 @@ export interface UsageErrors {
  * with `limit=1` instead of pulling the whole dashboard aggregate. `utcOffsetMinutes` (minutes
  * east of UTC, the dashboard takes it too) says whose calendar day a row's records share.
  */
-export interface UsageErrorsPage {
-  items: UsageErrorItem[];
-  /** Filtered record count — the occurrences, which is what the cost-center badge counts. */
-  total: number;
-  /** Filtered row count (records folded per {@link UsageErrorItem}), so the caller knows when it has reached the end. */
-  rows: number;
-}
 
 /**
  * DELETE /api/projects/:projectId/usage/errors — empties the error table for the filter the
@@ -4793,43 +3764,6 @@ export interface UsageErrorsPage {
 export interface UsageErrorsClearResponse {
   /** How many rows were deleted, so the caller can say what went instead of guessing. */
   deleted: number;
-}
-
-export interface UsageResponse {
-  summary: {
-    today: UsageBucket;
-    last7d: UsageBucket;
-    total: UsageBucket;
-  };
-  groupBy: UsageGroupBy;
-  groups: UsageGroupRow[];
-  /** Effective precision of `series` (the validated `granularity` query parameter; defaults to day). */
-  granularity: UsageGranularity;
-  /**
-   * Usage time series over the requested from/to range (defaulting to the last 30
-   * days), zero-filled at `granularity`; affected by agent/model filters. Carries
-   * everything the time-series charts draw: Token buckets, cost, request count,
-   * and per-bucket success counts.
-   */
-  series: UsageSeriesPoint[];
-  /**
-   * Per-Agent counts per bucket, aligned index-for-index with `series`, sorted
-   * by total requests descending. Unaffected by the agent filter — the by-Agent
-   * chart draws the whole breakdown — but affected by date/model filters.
-   */
-  byAgentSeries: UsageAgentSeries[];
-  /**
-   * Per-Model counts per bucket, aligned index-for-index with `series`, sorted
-   * by total requests descending. Unaffected by the model filter — the by-Model
-   * chart draws the whole breakdown — but affected by date/agent filters.
-   */
-  byModelSeries: UsageModelSeries[];
-  /** Server-side error capture stats (affected by date/agent filters; unaffected by model filter). */
-  errors: UsageErrors;
-  /** List of Agent ids that have appeared in this Project (for the filter dropdown; unaffected by current filters). */
-  agentIds: string[];
-  /** List of Model paired references that have appeared in this Project (for the filter dropdown). */
-  models: ModelRefDto[];
 }
 
 // ---------------------------------------------------------------------------
@@ -4923,7 +3857,8 @@ export interface ScheduleUpsertRequest {
 /**
  * The archive route's query. Each part is `1` (carried) or `0` (left out); an absent part takes
  * its default: all carried but `schedules`, since an imported task runs on its schedule.
- * `workbenchData` is each workbench's `state.json`, and means nothing without `workbenches`.
+ * `workbenchData` is each workbench's `state.json` and its data folder (`app/data/<id>/`), and
+ * means nothing without `workbenches`.
  */
 export interface AgentArchiveQuery {
   skills?: "0" | "1";
@@ -5292,8 +4227,18 @@ export interface PluginItem {
   icon?: IconRef;
   /** The demo the Plugins page's quick start pre-fills (the card's `quickStart`); absent = pre-select its first skill. */
   quickStart?: QuickStartItem;
+  /** The card's `composerMode`: an Agent with the hook package gets it as a switch in the composer's "+" menu (sent as `TaskCreateRequest.promptHooks`). */
+  composerMode?: true;
+  /** The card's `defaultInstall`: every new Agent gets the plugin (see `AgentCreateRequest.defaultPlugins`); absent on a server that predates the field, and for a plugin an admin installed. */
+  defaultInstall?: true;
   /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (its mcpServers contributions); `[]` without any. */
   mcpServers: PluginMcpServerItem[];
+  /**
+   * The package also ships server modules (a hybrid plugin): installing it on an Agent also asks
+   * for its modules to run on the Agent's server (PRFC-0031). Absent from a server older than
+   * that, read as false.
+   */
+  modules?: boolean;
 }
 
 /** An MCP transport, as an entry resolves it (`transport`, else inferred from `command` / `url`). */
@@ -5363,6 +4308,12 @@ export interface PluginFilesResponse {
  */
 export interface PluginInstallRequest {
   names: string[];
+  /**
+   * Install the Agent part only and leave every plugin table alone (PRFC-0031): what the Web App
+   * sends to a machine, whose plugin list the hub owns. `modules` still says how each module
+   * stands there. A server older than this ignores the field.
+   */
+  skipModules?: boolean;
 }
 
 export interface AgentPluginsInstallResponse {
@@ -5371,6 +4322,133 @@ export interface AgentPluginsInstallResponse {
   hooks: HookItem[];
   /** The Agent's MCP servers after the install (a plugin's servers join its `tools.mcpServers`). A server name the Agent already has from someone else is 409 `mcp_server_name_taken`, nothing installed. */
   mcpServers: AgentMcpServerItem[];
+  /** Every library plugin that ships server modules, as it stands on this server for this Project (PRFC-0031); absent from a server older than that. */
+  modules?: PluginModuleStatus[];
+  /** POST only: what this install did about each installed plugin's server module; a plugin it left alone is not listed. Absent from a server older than PRFC-0031. */
+  moduleActions?: PluginModuleAction[];
+}
+
+/** How a library plugin's server module stands on this server (PRFC-0031). */
+export type PluginModuleState =
+  /** Loaded in this server's module tree. */
+  | "running"
+  /** Loaded, and this build cannot run it, or runs it without part of itself (`reason`). */
+  | "unsatisfied"
+  /** Some Project lists it for this server and the load failed (`reason`). */
+  | "failed"
+  /** Listed for this server, neither loaded nor failed: waiting for a restart. */
+  | "restart"
+  /** No Project lists it for this server. */
+  | "off";
+
+/** The standing ask to run a module on this server, as a Project member sees it. */
+export interface PluginModuleRequestView {
+  /** `pending`: waiting for the administrator; `declined`: the administrator stopped it, and installs do not bring it back. */
+  status: "pending" | "declined";
+  /** Whether the caller made it. */
+  mine: boolean;
+  requestedAt: string;
+}
+
+/** One library plugin that carries server modules, on this server and for this Project. */
+export interface PluginModuleStatus {
+  /** The library plugin's name: what `names` installs. */
+  plugin: string;
+  /** The npm package name: the specifier a plugin table lists. */
+  package: string;
+  /** Resolves from a prefix this build ships and only adds modules: the automatic path applies. */
+  builtin: boolean;
+  state: PluginModuleState;
+  /** Whether this Project lists it for this server (its shared table, or this server's own). */
+  listed: boolean;
+  /** Why, for `failed` and `unsatisfied`. */
+  reason?: string;
+  request?: PluginModuleRequestView;
+}
+
+/** What one install, or one explicit ask, did about a plugin's server module. */
+export interface PluginModuleAction {
+  plugin: string;
+  /**
+   * `enabled`: listed for this Project on this server, and running (or waiting for a restart);
+   * `requested`: an administrator is asked; `blocked`: the administrator stopped this module;
+   * `failed`: listed, and the module did not start (`reason`) — when the App would not boot with
+   * it, the listing was undone.
+   */
+  action: "enabled" | "requested" | "blocked" | "failed";
+  reason?: string;
+}
+
+/** POST /api/projects/:p/plugins/modules `{ plugin }` (any member): enable a plugin's server module, or ask the administrator to. */
+export interface PluginModuleAskRequest {
+  /** A library plugin's name: enable its server module, or ask for it. */
+  plugin?: string;
+  /**
+   * Instead of `plugin`: a package that is not on this server yet, asked for by a member's
+   * 「安装到 Agent」 (05 「插件库」 「安装模型」) — recorded as a request for the administrator,
+   * whose enable installs it on the server first. With the Agent the member was installing on.
+   */
+  package?: string;
+  agentId?: string;
+}
+
+/** The answer to an explicit ask: every module's state for this Project, and what the ask did. */
+export interface PluginModuleAskResponse {
+  modules: PluginModuleStatus[];
+  moduleActions: PluginModuleAction[];
+}
+
+/** One row of the ledger of module requests and decisions, for the administrator. */
+export interface PluginModuleRequest {
+  package: string;
+  plugin: string;
+  /** The Project whose table lists it, or will; null when that Project is gone, and for a preinstalled module's own row (PRFC-0030) — `preinstalled` tells the two apart. */
+  projectId: string | null;
+  /** That Project's display name (its id when it has none); null when there is none. */
+  projectName: string | null;
+  agentId: string | null;
+  /** The user who asked; "" when no person was behind it (company mode's reconcile, a preinstalled module's one-time listing). */
+  requestedBy: string;
+  /** That user's display name; null when it has none or the user is gone. */
+  requestedByName: string | null;
+  requestedAt: string;
+  /** null = pending. */
+  decision: "enabled" | "declined" | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  /** How it was enabled: `builtin` (automatic), `admin` (the administrator's own act), `approval` (a member's request approved). */
+  via: "builtin" | "admin" | "approval" | null;
+  builtin: boolean;
+  /**
+   * A preinstalled module (PRFC-0030): every Project's rather than one's. Its row names no
+   * Project (`projectId` null without the Project being gone), and enabling it after a stop
+   * lists it in every Project. Absent from a server older than PRFC-0030.
+   */
+  preinstalled?: boolean;
+  state: PluginModuleState;
+  /**
+   * The package is on this server (installed, linked or shipped). False for a member's request of
+   * a package not here yet: enabling it means installing it on the server first.
+   */
+  onServer: boolean;
+}
+
+/** GET /api/admin/plugin-modules, and the answer to a decision (administrator only). */
+export interface PluginModuleRequestsResponse {
+  requests: PluginModuleRequest[];
+  /** How many rows wait for a decision. */
+  pending: number;
+  /**
+   * After stopping a module: the Projects whose shared table still lists it, so it keeps running
+   * here until it is removed from them on the Plugins page. Absent when nothing else lists it.
+   */
+  stillListedBy?: Array<{ projectId: string; projectName: string }>;
+}
+
+/** POST /api/admin/plugin-modules/decide (administrator only). `decline` on an enabled row stops the module on this server. */
+export interface PluginModuleDecideRequest {
+  package: string;
+  decision: "enable" | "decline";
 }
 
 /**
@@ -5542,6 +4620,31 @@ export interface WorkbenchesResponse {
 }
 
 /**
+ * GET /api/projects/:p/agents/:a/workbenches?view=sidebar: the rows of the Agent's sidebar list, a
+ * shortcut (the App Center tile's shape) for every workbench that runs, has at least one tab and
+ * carries no `.hidden-from-sidebar` marker, by title; none while the Agent-wide switch is off.
+ * Read from the manifests, load status and the loads under way; nothing is compiled. A server
+ * older than the setting ignores `view` and answers `WorkbenchesResponse`.
+ */
+export interface WorkbenchSidebarResponse {
+  apps: AppCenterShortcut[];
+}
+
+/**
+ * PATCH /api/projects/:p/agents/:a/workbenches/:id/sidebar: the sidebar setting, any member of
+ * the Project. `show: false` writes the installation's `.hidden-from-sidebar` marker and `true`
+ * removes it; the source, its versions and its App Center declaration are untouched.
+ */
+export interface WorkbenchSidebarRequest {
+  show: boolean;
+}
+
+/** The workbench with its `showInSidebar` read back. */
+export interface WorkbenchSidebarSetResponse {
+  workbench: WorkbenchInfo;
+}
+
+/**
  * PUT /api/projects/:p/agents/:a/workbenches/enabled (the Agent-wide switch; answers
  * `WorkbenchesResponse`) and PUT …/workbenches/:id/enabled (one workbench's switch; answers
  * `{ workbench: WorkbenchInfo }`). Owner only. Turning a switch off unloads what it covers at
@@ -5564,6 +4667,8 @@ export interface WorkbenchEnabledRequest {
  * can also be installed from that channel (plugin/install.ts).
  */
 export interface PluginIndexEntry {
+  /** A downloaded package on the machine serving this listing, compared with the index release. */
+  localInstall?: { version: string; libraryOnly: boolean; updateAvailable: boolean };
   /** Package specifier — the string a Project's plugin list names. */
   name: string;
   /** Localized display names; the UI falls back to the package name. */
@@ -5595,8 +4700,22 @@ export interface PluginIndexEntry {
   keywords?: string[];
   /** Capability floor(s) the plugin provides on (e.g. "sandbox"). */
   categories?: string[];
+  /**
+   * For a sandbox backend: the platforms (`process.platform` names: `linux`, `darwin`, `win32`)
+   * it is a default backend for, as its package declares them on its `SandboxModule.providers`
+   * contribution. A server whose sandbox is turned on with no backend for its platform offers to
+   * install the embedded index's defaults for that platform, in index order; an entry without the
+   * field is the default for none.
+   */
+  sandboxDefaultFor?: string[];
   /** Unix timestamp (seconds) of the entry's last update. */
   updatedAt?: number;
+  /**
+   * The build carries an offline archive of this plugin (05 「插件库」 「安装从不卡住」): it installs
+   * with no registry, at this version, and this is what it carries — known before it is on this
+   * server. Absent for everything else, and on older servers.
+   */
+  offline?: { version: string; library: boolean; modules: boolean };
   /**
    * The hash this entry's release asset is pinned by, npm's `integrity` shape:
    * `sha512-<base64>` of the tarball its channel serves. Present when the publisher
@@ -5636,6 +4755,77 @@ export interface PluginIndexResponse {
    * once they have arrived, or names the source under `failures` once it has failed.
    */
   pending: string[];
+}
+
+/**
+ * One picture of the plugin market, named by the route this server serves it at
+ * (`GET /api/plugins/market/asset?path=…&rev=…`): the server fetches it from beside the market
+ * document, checks its bytes are a WebP, PNG or JPEG picture and keeps a copy, so a page never
+ * loads a picture from another host. A picture that cannot be had answers 404.
+ */
+export interface MarketImage {
+  /** The full rendition. */
+  url: string;
+  /** The small rendition a card draws; absent, a card draws `url`. */
+  thumbUrl?: string;
+  /** The picture's dominant colour (`#rrggbb`): the field it fades in over. */
+  tone?: string;
+}
+
+/** A screenshot on a plugin's detail: a picture and what it shows. */
+export interface MarketShot extends MarketImage {
+  caption?: string;
+  captionZh?: string;
+}
+
+/** What the market document says a plugin looks like. Every part is optional. */
+export interface PluginArt {
+  cover?: MarketImage;
+  /**
+   * A raster icon, for a plugin whose package is not on this server (an index row has none of its
+   * own); once the package is here, the package's own icon is drawn instead.
+   */
+  icon?: { url: string };
+  screenshots?: MarketShot[];
+}
+
+/**
+ * How many times each plugin is installed, for the market's 热门 / 飙升 (popular / rising) panel:
+ * `installs` in all, `weekly` in the last seven days, by npm package name.
+ *
+ * PLACEHOLDER: no install count exists across deployments yet, so today's numbers are generated
+ * with a fixed seed in the community repository's pipeline and published with
+ * `source: "placeholder"`. Replace them with a real install-count API later: it publishes this
+ * same shape with `source: "live"`, the switch a reader keys on.
+ */
+export interface MarketPopularity {
+  source: "placeholder" | "live";
+  /** The day the numbers were produced (`YYYY-MM-DD`). */
+  generatedAt: string;
+  items: Record<string, { installs: number; weekly: number }>;
+}
+
+/**
+ * GET /api/plugins/market: the market's curation — which plugins are selected, which of them
+ * may lead the selected carousel, and the art of the plugins that have any — keyed by npm package
+ * name (a library plugin's `package`, an index entry's `name`). A name this server does not list
+ * is simply not drawn. `source` says which document answered: the one shipped with this build, or
+ * the published one (plugin/market.ts). Selection is an editorial choice, not a ranking; the only
+ * numbers are the optional `popularity` block, placeholders until a real install-count API exists.
+ */
+export interface PluginMarketResponse {
+  /** Package names allowed to lead the selected carousel, in turn order; each is also in `selected`. */
+  hero: string[];
+  /** Package names of the selected plugins, in display order. */
+  selected: string[];
+  art: Record<string, PluginArt>;
+  source: "embedded" | "published";
+  /**
+   * The document's install counts, as it carries them; absent when it carries none, or a block
+   * that does not read (the rest of the document still answers). Placeholder numbers today
+   * (`source: "placeholder"`), to be replaced by a real install-count API: see MarketPopularity.
+   */
+  popularity?: MarketPopularity;
 }
 
 /**
@@ -5808,7 +4998,7 @@ export type {
   WorkbenchRequest,
   WorkbenchResponse,
   WorkbenchRecord,
-} from "../mechanisms/workbenches.js";
+} from "@prismshadow/penguin-library-workbench";
 
 /** GET /api/version/history: the harness versions this data root has committed, newest first. */
 export type VersionHistoryResponse = HarnessHistory;
@@ -6807,16 +5997,10 @@ export type OrgTicketStatus = "proposed" | "in_progress" | "review" | "done" | "
 export type OrgTicketPriority = "P0" | "P1" | "P2";
 /** Live employee state: running when the desk or any ticket session has a Task in progress; paused when budget-paused. */
 export type OrgEmployeeState = "running" | "idle" | "paused";
-/**
- * The trigger kinds an `[org_trigger]` block carries. `ticket_notice` is read-only: a ticket
- * change starts no run of its own, so nothing writes that kind any more, and it stays in the
- * union because Traces recorded while it did still carry it.
- */
-export type OrgTriggerKind = "init" | "event" | "mention" | "ticket_notice" | "ticket_work";
 /** The ticket changes an employee is told about, listed in the body of its next calendar sweep. */
-export type OrgTicketChange = "assigned" | "blocked" | "blocker_closed" | "done" | "rejected";
+
 /** What the last evaluation of a calendar event did. */
-export type OrgCalendarOutcome = "fired" | "queued" | "paused" | "missed" | "error";
+
 /**
  * The organization's working language: the language its handbook, its CEO's initialization
  * run, every employee brief and every desk and ticket run are written in. Detected from the
@@ -7063,58 +6247,6 @@ export interface OrgTicketsResponse {
   columns: Record<OrgTicketStatus, OrgTicketItem[]>;
   /** Files that failed to parse (skipped; also recorded as errors). */
   invalidFiles: Array<{ path: string; error: string }>;
-}
-
-/**
- * What a `system` line records, structured: the kind of event and its parameters, so a client
- * renders the sentence in the reader's language and with the principals' display names instead
- * of showing the English `text` verbatim. `text` stays the English sentence (the CLI, older
- * clients and the file itself read it); `notice` is the same fact for a client that can do better.
- */
-export type OrgChannelNoticeKind =
-  | "employee_joined"
-  | "employee_left"
-  | "channel_created"
-  | "channel_archived"
-  | "channel_unarchived"
-  | "channel_joined"
-  | "channel_invited"
-  | "channel_left"
-  | "channel_removed"
-  | "budget_warned"
-  | "budget_paused"
-  /**
-   * Legacy, read-only: ticket changes no longer write into a channel — the board is read from
-   * the board and the overview's inbox. These three kinds stay so the lines already in an
-   * organization's message files keep rendering; nothing writes them any more.
-   */
-  | "ticket_blocked"
-  | "ticket_done"
-  | "ticket_rejected";
-
-/**
- * The parameters each kind carries, all strings: principals as `agent:<id>` / `user:<id>`
- * (`agent`, `principal`, `by`, `reportsTo`), a ticket as `ticket` + `title`, a budget event as
- * `agent`, `period`, `percent`, `cost`, `budget`.
- */
-export interface OrgChannelNotice {
-  kind: OrgChannelNoticeKind;
-  params: Record<string, string>;
-}
-
-export interface OrgChannelMessage {
-  id: string;
-  /** ISO 8601 UTC. */
-  time: string;
-  /** `agent:<id>` / `user:<id>` / `system`. */
-  sender: string;
-  hop: number;
-  text: string;
-  /** Principals mentioned, `all` included. */
-  mentions: string[];
-  refs?: { ticket?: string; session?: string; replyTo?: string };
-  /** Present on `system` lines the server wrote with a structured notice; absent on lines from before the field existed. */
-  notice?: OrgChannelNotice;
 }
 
 /**
@@ -7575,37 +6707,6 @@ export interface OrgHandbookFileWriteRequest {
   content: string;
 }
 
-/** Company-mode notifications on the user-level event stream (best effort; the query routes carry the durable state). */
-export type CompanyServerEvent =
-  /** A work run (desk session) or ticket session was started by the organization scheduler or a ticket start. */
-  | {
-      type: "org_run";
-      projectId: string;
-      orgId: string;
-      agentId: string;
-      sessionId: string;
-      kind: OrgTriggerKind;
-    }
-  /** A new channel message (mentions included, so the client can tell whether it is addressed). */
-  | {
-      type: "org_channel";
-      projectId: string;
-      orgId: string;
-      channelId: string;
-      message: OrgChannelMessage;
-    }
-  /** A ticket's status, owner, blocked state or contributing sessions changed. */
-  | { type: "org_ticket"; projectId: string; orgId: string; ticketId: string; change: string }
-  /** Budget warning, pause or resume for an employee. */
-  | {
-      type: "org_budget";
-      projectId: string;
-      orgId: string;
-      agentId: string;
-      state: "warned" | "paused" | "resumed";
-      ratio: number;
-    };
-
 // ---------------------------------------------------------------------------
 // Web contributions (GET /api/contributions)
 // ---------------------------------------------------------------------------
@@ -7674,6 +6775,13 @@ export interface ContributionsResponse {
   pageRemovals: WebPageRemovalContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
+  /**
+   * The server modules plugins provide that this generation runs, by name: a web module that
+   * declared one of them (`WebAppModule.serverModules`) is drawn only while it is listed. A
+   * plugin left out of this generation because the build cannot satisfy it lists nothing; the
+   * platform's own modules always run and are not listed. Absent from a server older than it.
+   */
+  modules?: string[];
 }
 
 /** One command a plugin contributes to the CLI, as GET /api/cli/commands lists it. */
@@ -7684,6 +6792,16 @@ export interface PluginCliCommandInfo {
   key: string;
   /** Its one-line summary, per language. */
   summary: { en: string; zh: string };
+  /**
+   * Who may run it: the administrator only, or any member of the caller's Project. This server
+   * always says; a client reads an absent one (a server from before member commands) as `admin`.
+   */
+  access?: "admin" | "member";
+  /**
+   * The local files it exchanges: `read`, the options whose value is a file the terminal sends;
+   * `write`, the option naming the directory the terminal saves returned files into.
+   */
+  files?: { read?: string[]; write?: string };
 }
 
 /** GET /api/cli/commands: every command the server's plugins contribute, in load order. */
@@ -7701,13 +6819,39 @@ export interface PluginCliCommandRunRequest {
   language: "en" | "zh";
   /** The program name usage lines print (`penguin`, or `penguin exec <plugin>`). */
   prog: string;
+  /** The caller's Project (an Agent's `PENGUIN_PROJECT_ID`); a member command needs one. */
+  projectId?: string;
+  /** The caller's Session (an Agent's `PENGUIN_SESSION_ID`): a Session of `projectId`. */
+  sessionId?: string;
+  /** The local files the terminal read for the command's `files.read` options. */
+  files?: PluginCliCommandInputFile[];
 }
 
-/** What one run printed, and its exit code. */
+/** One file the terminal sends with a run. */
+export interface PluginCliCommandInputFile {
+  /** The option's value as typed: what the command looks the file up by. */
+  value: string;
+  /** The file's own name, no directory. */
+  name: string;
+  /** Its bytes, base64. */
+  data: string;
+}
+
+/** One file a run hands back to the terminal, which saves it under the command's `files.write`. */
+export interface PluginCliCommandOutputFile {
+  /** A plain file name, no directory. */
+  name: string;
+  mimeType?: string;
+  /** Its bytes, base64. */
+  data: string;
+}
+
+/** What one run printed, its exit code, and the files it handed back. */
 export interface PluginCliCommandRunResponse {
   exitCode: number;
   stdout: string;
   stderr: string;
+  files?: PluginCliCommandOutputFile[];
 }
 
 /**
@@ -7738,6 +6882,11 @@ export interface PluginConfigField {
    * fields. Presentation only: it is stored, validated and read like any other field.
    */
   advanced?: boolean;
+  /**
+   * A security setting — who may use the plugin, what it may reach: drawn under the plugin
+   * page's "Security" heading with a shield. Presentation only, like `advanced`.
+   */
+  security?: boolean;
   /** A save that would leave this field empty is refused. */
   required?: boolean;
   /** `enum` only: the values it may take, in display order. */
@@ -7930,6 +7079,115 @@ export interface PluginConfigEntry {
    * Asked per read, like the notices; the client never guesses the OS.
    */
   backend?: PluginConfigBackend;
+  /**
+   * The plugin whose server module declared the group, by the specifier the plugin list names it
+   * with — an npm package name, or for a package installed from a directory, that directory's
+   * absolute path; absent for the host's own groups (the sandbox, plugin sources) and from a
+   * server older than this field. The Settings dialog draws the group on that plugin's page,
+   * keyed `plugin:<specifier>`; a specifier the plugin library does not list (a path) gets a page
+   * named by the group's own title.
+   */
+  plugin?: string;
+  /**
+   * That plugin's display name, from its card, in both languages — what names its page when the
+   * plugin library does not list it (a server-module plugin with no Skill: a sandbox backend).
+   */
+  pluginTitle?: string;
+  pluginTitleZh?: string;
+  /**
+   * That plugin's version and icon as its package on this server says them, for the same page:
+   * the npm version, and the icon (served at `GET /api/admin/plugin-config/icon?plugin=…`); each
+   * absent when the package carries none or is not known here.
+   */
+  pluginVersion?: string;
+  pluginIcon?: IconRef;
+  /**
+   * What the group's status reports in the status page's shape, checked on the way out (a state
+   * this build does not know reads as `unknown`, a field of the wrong type is dropped); absent
+   * when it reports none, or when its report could not be read.
+   */
+  report?: PluginStatusReport;
+}
+
+/**
+ * A settings group's status in the plugin page's shape (its status contributor's `report()`):
+ * a summary word, the program the plugin installs beside itself, and the preconditions it
+ * checks. `action` and `recheck` name actions of the group's `actions`: an action named here is
+ * drawn on its element only; the others are the page's primary actions.
+ */
+export interface PluginStatusReport {
+  summary?: PluginStatusSummary;
+  version?: PluginStatusVersion;
+  /** Every precondition, in display order. */
+  checks?: PluginStatusCheck[];
+  /** The action that checks everything again: drawn once, at the checks' heading, and run without asking first (it only reads). */
+  recheck?: string;
+}
+
+/** Where the plugin stands, in a word or two, drawn as a pill in its state's tone. */
+export interface PluginStatusSummary {
+  /**
+   * `ready` usable now; `attention` something needs a person; `progress` work under way; `off`
+   * switched off or not usable here; `unknown` could not be told — also what a state this build
+   * does not know reads as (a newer plugin's), so a page never meets a state it cannot draw.
+   */
+  state: "ready" | "attention" | "progress" | "off" | "unknown";
+  text: string;
+  textZh?: string;
+  /** What the word cannot say, on the pill's hover. */
+  hint?: string;
+  hintZh?: string;
+}
+
+/** A program the plugin installs and runs beside itself (agent-desktop), as its version element shows it. */
+export interface PluginStatusVersion {
+  /** The program's name as its maker spells it. */
+  name: string;
+  /**
+   * `preparing` = being downloaded or installed now (`progress`, step in `text`); `missing` = not
+   * installed yet; `unknown` = could not be told, and what a state this build does not know reads as.
+   */
+  state: "installed" | "preparing" | "failed" | "missing" | "unsupported" | "unknown";
+  version?: string;
+  /** The OS and CPU the installed build is for ("linux-x64"). */
+  platform?: string;
+  /** While preparing: how far, from 0 to 1; absent when the step has no amount. */
+  progress?: number;
+  /** One line: the step while preparing, why when failed or unsupported, where it runs from. */
+  text?: string;
+  textZh?: string;
+  /** Folded under the element (an install directory, the whole error); lines separated by `\n`. */
+  details?: string;
+  detailsZh?: string;
+  /** The action the element offers as its button (install, retry). */
+  action?: string;
+}
+
+/** One precondition the plugin checks on this machine. */
+export interface PluginStatusCheck {
+  id: string;
+  /** What is checked, in a few words ("Display", "Accessibility"). */
+  label: string;
+  labelZh?: string;
+  /**
+   * `ok` holds; `action` needs a person; `unknown` could not be told yet (and what a state this
+   * build does not know reads as); `na` does not apply on this machine.
+   */
+  state: "ok" | "action" | "unknown" | "na";
+  /** One line in the plugin's own words: what was found, or what to do. */
+  text?: string;
+  textZh?: string;
+  /** Folded under the row: a tool's own words, paths; lines separated by `\n`. */
+  details?: string;
+  detailsZh?: string;
+  /** The action drawn on this row (open System Settings). */
+  action?: string;
+  /**
+   * A Settings page this row opens, drawn as a link on the row: `plugin:<specifier>` for a
+   * plugin's page (the sandbox lists each backend and links it to its plugin's page). A page
+   * the viewer does not have draws no link.
+   */
+  page?: string;
 }
 
 /** Whether a backend that applies to this machine is installed, and this OS's default ones. */
@@ -7937,9 +7195,9 @@ export interface PluginConfigBackend {
   /** A backend for this OS is installed: loaded, or installed and failing its check. */
   installed: boolean;
   /**
-   * The npm packages this OS defaults to, installed together; absent on an OS with no default
-   * backend. Linux names two: bubblewrap, and sandbox-dsh, which confines files through
-   * Landlock where bubblewrap is refused.
+   * The npm packages this OS defaults to, installed together: the rows of the index embedded in
+   * the server that declare this platform (`PluginIndexEntry.sandboxDefaultFor`), in index order;
+   * absent when none does.
    */
   recommended?: string[];
 }
@@ -8062,6 +7320,49 @@ export interface PluginInstallOutcome {
   modules: boolean;
   /** The zip held the version already installed: nothing was installed. */
   unchanged?: boolean;
+  /**
+   * Where the package came from, for an install by name or link: the npm registry, the link npm
+   * fetched, the published index's github channel, or the offline archive the build carries
+   * (05 「插件库」 「安装从不卡住」). Absent for a zip import and on older servers.
+   */
+  from?: "registry" | "link" | "channel" | "offline";
+}
+
+/** One Agent that carries a plugin, as the server-uninstall confirm names it. */
+export interface PluginHolder {
+  projectId: string;
+  projectName: string;
+  agentId: string;
+  agentName: string;
+}
+
+/**
+ * GET /api/admin/plugins/holders?package=… (admin): who would lose a plugin if it were uninstalled
+ * from this server (05 「插件库」 「安装模型」). `agents` is every Agent of every Project here that
+ * carries any part of it; `shared` the Projects whose shared table lists it (the uninstall is then
+ * refused); `shipped` a package the build ships (it cannot be uninstalled from the server).
+ */
+export interface PluginHoldersResponse {
+  package: string;
+  /** The library plugin the package is; null for a server module alone (no Agent carries it). */
+  plugin: string | null;
+  /** It is in this server's prefix (installed or linked). */
+  onServer: boolean;
+  shipped: boolean;
+  shared: Array<{ projectId: string; projectName: string }>;
+  agents: PluginHolder[];
+}
+
+/**
+ * DELETE /api/admin/plugins?package=… (admin): uninstalls the plugin from every Agent here, then
+ * from this server. 409 `plugin_shipped`, 404 `plugin_not_installed`, 409 `plugin_shared` (a
+ * Project's shared table lists it), 409 `module_failed`, 500 `plugin_remove_failed`.
+ */
+export interface PluginServerUninstallResponse {
+  package: string;
+  plugin: string | null;
+  /** Each Agent it was uninstalled from, with the parts that could not be removed. */
+  agents: Array<PluginHolder & { failed?: PluginUninstallResponse["failed"] }>;
 }
 
 /** POST /api/projects/:projectId/plugins/installed/archive (admin): a plugin package zip, base64. */
@@ -8076,6 +7377,11 @@ export interface InstalledPluginsResponse {
   /** After an install: what landed on this server. */
   installed?: PluginInstallOutcome;
   /**
+   * After an install: the App was still re-assembling on what it listed when the answer stopped
+   * waiting (60 s) — a module is starting; its row says how it stands once it has.
+   */
+  loading?: true;
+  /**
    * Specifiers this build SHIPS (the hot push's assets, or the installation's own
    * `plugins/`): installable without a download, and not installed until listed.
    */
@@ -8086,17 +7392,9 @@ export interface InstalledPluginsResponse {
   machineId: string;
   /** A listed plugin neither runs, nor failed to load, nor is one this build cannot run: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
   restartPending: boolean;
+  /** Every library plugin that ships server modules, as it stands on this server for this Project (PRFC-0031); absent from a server older than that. */
+  modules?: PluginModuleStatus[];
 }
-
-// ---------------------------------------------------------------------------
-// The agent browser, two backends behind one link (see builtin-browser/): the desktop's
-// built-in browser — Electron <webview> guests in the persist:penguin-browser partition,
-// driven over CDP by the shell on the server's behalf — and the user's own Chrome, driven
-// through the PenguinHarness Browser extension over a WebSocket the extension opens.
-// ---------------------------------------------------------------------------
-
-/** The browser an agent drives: the desktop's built-in one, or the user's own Chrome. */
-export type BrowserBackend = "builtin" | "chrome";
 
 /**
  * What a backend's link can do. The shell cannot create tabs (the Web App's <webview> does) and
@@ -8110,32 +7408,6 @@ export interface BrowserLinkCapabilities {
   throttles: boolean;
   /** `set-cookies` and `clear-data` (builtin). */
   cookieStore: boolean;
-}
-
-/**
- * One tab of the agent browser. Built-in: a guest page, `id` its webContents id. Chrome: a tab
- * the extension drives (one it created in the Penguin tab group, or one the user added), `id`
- * Chrome's tab id; `canGoBack`/`canGoForward` are always false there (the tabs API cannot read
- * them).
- */
-export interface BuiltinBrowserTab {
-  id: number;
-  /** The built-in tab belongs to this conversation; absent for pages opened outside a conversation. */
-  sessionId?: string;
-  /** Electron storage partition, shared only within this tab's Project. */
-  partition?: string;
-  url: string;
-  title: string;
-  loading: boolean;
-  canGoBack: boolean;
-  canGoForward: boolean;
-  favicon?: string;
-  /**
-   * Present while the page's renderer is gone, with Electron's reason (`crashed`, `oom`,
-   * `killed`, …): the panel shows the crash until the page is reloaded, and an agent action on
-   * the tab answers 409 `tab_crashed`.
-   */
-  crashed?: string;
 }
 
 /**
@@ -8186,18 +7458,6 @@ export interface BuiltinBrowserStatus {
 export interface BrowserBackendResponse {
   backend: BrowserBackend;
   choices: BrowserBackend[];
-}
-
-/** One Chrome paired to the caller's account (a row of `browser_extensions`). */
-export interface BrowserExtensionRecord {
-  id: string;
-  /** As the extension names itself, e.g. "Chrome 130 on macOS". */
-  name: string;
-  version: string;
-  createdAt: string;
-  lastSeenAt: string | null;
-  /** Whether this one holds the caller's connection now (one at a time per user). */
-  connected: boolean;
 }
 
 /** GET /api/builtin-browser/extension. */
@@ -8260,46 +7520,6 @@ export interface BrowserExtensionPairResponse {
  * - 4009 disabled: an admin switched Chrome connections off; retry hourly.
  */
 export type BrowserExtensionCloseCode = 4001 | 4003 | 4005 | 4008 | 4009;
-
-/** One tab's share of the built-in browser's load, as the shell last measured it. */
-export interface BuiltinBrowserTabMetrics {
-  tabId: number;
-  /** The memory held by the processes behind the page (its own and its cross-site frames'), KB. */
-  memoryKB: number;
-  /** Their CPU use since the previous measurement, in percent of one core. */
-  cpuPercent: number;
-}
-
-/** Why the built-in browser should be lighter. */
-export type BuiltinBrowserLoadWarning =
-  /** Its pages together hold more memory than they should. */
-  | "memory"
-  /** This computer is running out of memory. */
-  | "low_system_memory"
-  /** More tabs are open than the browser should hold. */
-  | "many_tabs";
-
-/**
- * The built-in browser's load: GET /status's `metrics`, and the `builtin_browser_metrics` event
- * after each of the shell's measurements (every ~10 s while tabs are open, and soon after one
- * closes). The thresholds are the server's; the UI and the CLI only word what it concluded.
- */
-export interface BuiltinBrowserMetrics {
-  /** When the server received the measurement (epoch ms). */
-  at: number;
-  tabs: BuiltinBrowserTabMetrics[];
-  /** All the pages' memory, a process two tabs share counted once, KB. */
-  totalKB: number;
-  /**
-   * This computer's memory, KB. Absent on macOS, whose free count leaves out the memory it would
-   * readily hand back, so that "free" there reads as nearly none on a healthy machine.
-   */
-  system?: { freeKB: number; totalKB: number };
-  /** What to warn about now; empty when all is well. */
-  warnings: BuiltinBrowserLoadWarning[];
-  /** While a memory warning stands: the tabs holding the most memory, heaviest first. */
-  heavyTabIds: number[];
-}
 
 /** GET /api/builtin-browser/tabs. */
 export interface BuiltinBrowserTabsResponse {
@@ -8371,10 +7591,23 @@ export interface BuiltinBrowserImportSource {
   profileName: string;
   hasCookies: boolean;
   hasHistory: boolean;
+  /**
+   * How the source is read. Absent: the profile's own files on this computer. `extension`: the
+   * user's connected Chrome extension (id `chrome-extension`), which hands over the cookies of
+   * the Chrome profile it runs in once the user allows it in Chrome; cookies only, and
+   * `profile` / `profileName` name the extension's Chrome.
+   */
+  via?: "extension";
 }
 
 export interface BuiltinBrowserImportSourcesResponse {
   sources: BuiltinBrowserImportSource[];
+  /**
+   * Why the user's Chrome extension is not among `sources`: none is paired, the paired one is not
+   * connected now, or an admin switched Chrome connections off. Absent when it is listed, and on
+   * a server that offers no Chrome backend at all.
+   */
+  extension?: "extension_not_paired" | "extension_disconnected" | "extension_disabled";
 }
 
 /** POST /api/builtin-browser/import. */
@@ -8388,11 +7621,52 @@ export interface BuiltinBrowserImportRequest {
   domains?: string[];
 }
 
+/**
+ * Why a cookie the import found stayed behind. `app_bound`: Chrome's app-bound encryption
+ * (Chrome 127+ on Windows), which only Chrome itself can undo. `dpapi`, `keychain`, `keyring`:
+ * the platform would not give up the browser's cookie key (Windows DPAPI, the macOS Keychain,
+ * the Linux desktop keyring). `undecryptable`: no key at hand fits the value. `partitioned`: it
+ * belongs to one context only — a partitioned (CHIPS) cookie kept for one top-level site, or a
+ * Firefox container's. `expired`: past its expiry.
+ */
+export type BuiltinBrowserCookieSkipReason =
+  "app_bound" | "dpapi" | "keychain" | "keyring" | "undecryptable" | "partitioned" | "expired";
+
+export interface BuiltinBrowserCookieSkip {
+  reason: BuiltinBrowserCookieSkipReason;
+  count: number;
+}
+
+/**
+ * What else an import reports, as a code (and counts) the Web App and the CLI word in the
+ * reader's language; the server sends no prose. `store`: which of the profile's stores.
+ */
+export type BuiltinBrowserImportNote =
+  /** The profile holds no cookie store. */
+  | { code: "no_cookie_store" }
+  /** The profile holds no history (an extension source never does). */
+  | { code: "no_history" }
+  /** The browser holds the store open (Windows): closing it lets the import read it. */
+  | { code: "store_busy"; store: "cookies" | "history" }
+  /** The store could not be copied or opened. */
+  | { code: "store_unreadable"; store: "cookies" | "history" }
+  /** The built-in browser refused `count` cookies; `errors` holds up to three of its messages, verbatim. */
+  | { code: "cookies_not_set"; count: number; errors: string[] };
+
 export interface BuiltinBrowserImportResult {
   sourceId: string;
-  cookies?: { found: number; imported: number; skipped: number; failed: number };
+  /** The browser imported from, as the source names it ("Chrome", "Firefox"). */
+  browserName: string;
+  cookies?: {
+    found: number;
+    imported: number;
+    skipped: number;
+    failed: number;
+    /** Why the skipped cookies stayed behind: one entry per reason that occurred; the counts add up to `skipped`. */
+    skips: BuiltinBrowserCookieSkip[];
+  };
   history?: { found: number; imported: number };
-  warnings: string[];
+  notes: BuiltinBrowserImportNote[];
 }
 
 export interface BuiltinBrowserHistoryEntry {
@@ -8420,142 +7694,6 @@ export interface BuiltinBrowserSettings {
    * then blank). PUT takes a bare host too and answers the address as stored.
    */
   homepage: string | null;
-}
-
-export type BuiltinBrowserAction =
-  "navigate" | "scan" | "exec" | "click" | "type" | "screenshot" | "cdp";
-
-/**
- * User-channel events of the agent browser. The built-in backend's go to every admin; a chrome
- * backend's go to the user whose Chrome it is, as do `builtin_browser_backend` and
- * `builtin_browser_extension`.
- */
-export type BuiltinBrowserServerEvent =
-  /**
-   * A backend's whole tab list. `backend` names whose: a desktop admin hears both the built-in
-   * browser's and their own Chrome's, and the two lists must not overwrite each other.
-   */
-  | {
-      type: "builtin_browser_tabs";
-      tabs: BuiltinBrowserTab[];
-      activeTabId: number | null;
-      backend: BrowserBackend;
-    }
-  /** Create a guest for `url`, then POST /tabs/claim with `requestId` once it has a webContents id. */
-  | {
-      type: "builtin_browser_open";
-      partition?: string;
-      requestId: string;
-      url: string;
-      activate: boolean;
-      openerTabId?: number;
-      sessionId?: string;
-    }
-  | { type: "builtin_browser_close"; tabId: number }
-  /** A draft or healed conversation acquired its permanent id. */
-  | { type: "builtin_browser_session"; fromSessionId: string; sessionId: string }
-  | {
-      type: "builtin_browser_activity";
-      tabId: number;
-      busy: boolean;
-      action: BuiltinBrowserAction;
-      sessionId?: string;
-    }
-  /** The shell measured the browser's load (see BuiltinBrowserMetrics). */
-  | { type: "builtin_browser_metrics"; metrics: BuiltinBrowserMetrics }
-  /** The user switched backend (PUT /backend); every window of theirs follows. */
-  | { type: "builtin_browser_backend"; backend: BrowserBackend }
-  /** The user's Chrome connected, went away, was replaced by another Chrome of theirs, or was revoked. */
-  | {
-      type: "builtin_browser_extension";
-      state: "connected" | "disconnected" | "replaced" | "revoked";
-      extension?: BrowserExtensionRecord;
-    };
-
-/** A cookie as the shell writes it (Electron's CookiesSetDetails). */
-export interface DesktopBrowserCookie {
-  url: string;
-  name: string;
-  value: string;
-  domain?: string;
-  path?: string;
-  secure?: boolean;
-  httpOnly?: boolean;
-  /** Unix seconds; absent = session cookie. */
-  expirationDate?: number;
-  sameSite?: "unspecified" | "no_restriction" | "lax" | "strict";
-}
-
-/**
- * Server → browser link: what the shell (built-in) or the extension (chrome) does with its tabs.
- * Mechanism only — the product logic stays on the server. The names are historical: the same
- * envelopes travel the extension's WebSocket as JSON text frames.
- */
-export type DesktopBrowserCommand =
-  /** Reply: a BrowserHello. An older shell never answers. */
-  | { op: "hello" }
-  /** Reply: `{ tabs: BuiltinBrowserTab[] }`. */
-  | { op: "tabs" }
-  /**
-   * Reply: the CDP method's result object. `events` names the tab's CDP events the shell relays
-   * from then on, as `cdp-event`s: it replaces the list before (empty relays none), and is set
-   * before the command runs, so an event the command itself causes is not missed. Without it
-   * the list stays as it is.
-   */
-  | {
-      op: "cdp";
-      tabId: number;
-      method: string;
-      params?: Record<string, unknown>;
-      events?: string[];
-    }
-  /** Reply: `{ set: number; failed: number; errors: string[] }` (at most 10 errors). */
-  | { op: "set-cookies"; cookies: DesktopBrowserCookie[]; partition?: string }
-  /** Reply: `{}`. */
-  | { op: "clear-data"; storages: ("cookies" | "cache" | "storage")[]; partition?: string }
-  /**
-   * Reply: `{}`. The tabs whose pages may be throttled while out of sight (Electron's background
-   * throttling, applied at once); every other tab runs at full speed. It replaces the list
-   * before. A tab is unthrottled until a command lists it, so a server that never sends one
-   * changes nothing. A shell older than this command answers `unknown_op`.
-   */
-  | { op: "throttle"; tabIds: number[] }
-  /**
-   * Chrome only (the shell answers `unknown_op`). Reply: `{ tab: BuiltinBrowserTab }`. A tab at
-   * `url` (http(s) or about:blank, checked by the server) in the extension's Penguin tab group;
-   * `activate` asks for it to be the selected tab of its window.
-   */
-  | { op: "open-tab"; url: string; activate: boolean }
-  /** Chrome only. Reply: `{}`. Closes a tab the extension drives. */
-  | { op: "close-tab"; tabId: number }
-  /** Chrome only. Reply: `{}`. Shows the tab in the user's Chrome (selects it, focuses its window). */
-  | { op: "activate-tab"; tabId: number }
-  /** Chrome only. Reply: `{}`. Sent every 20 s; the traffic keeps the MV3 service worker alive. */
-  | { op: "ping" };
-
-/**
- * The `hello` reply. Built-in: `{ version: 1, partition }` (an older shell sends no `backend`).
- * Chrome: `{ version: 1, backend: "chrome", extension }`; any other version is closed 4005.
- */
-export interface BrowserHello {
-  version: 1;
-  backend?: BrowserBackend;
-  partition?: string;
-  extension?: { version: string; chrome: string; name: string };
-}
-
-export interface DesktopBrowserCommandMessage {
-  type: "desktop-browser-command";
-  id: string;
-  command: DesktopBrowserCommand;
-}
-
-export interface DesktopBrowserReplyMessage {
-  type: "desktop-browser-reply";
-  id: string;
-  ok: boolean;
-  result?: unknown;
-  error?: string;
 }
 
 export type DesktopBrowserEvent =

@@ -23,8 +23,14 @@
  * the live tail (`liveRun` under the current cursor); a new subscriber gets
  * `pendingApprovals` replayed after its `task_state` snapshot — all as the server does.
  * `legacyServer` answers as a server from before `live=run` and `steerIfBusy`.
+ *
+ * A CLI started as a process of its own (a test in a pseudo-terminal) cannot reach the fetch
+ * stub: `listen()` serves the same routes over real HTTP instead, recorded the same way. Only
+ * it reaches `POST /api/auth/login`, which `penguin auth login` sends with `node:http`.
  */
 import fs from "node:fs";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 
@@ -278,6 +284,11 @@ export class FakeServer {
   };
   /** When true, a task POST emits `running` + the script's messages but never `idle` — the turn hangs (soft-yield timeout tests). */
   hangTasks = false;
+  /** Runs when an approval decision is POSTed, after it is recorded: a test ends a hung turn here. */
+  onApproval:
+    ((session: FakeSessionState, toolCallId: string, body: Json | undefined) => void) | null = null;
+  /** The password `POST /api/auth/login` accepts for any account; a sign-in mints a token into `logins`. */
+  password = "fake-password";
   usage: Json = {
     summary: {
       today: { total: 1000, requests: 2, cost: 0.5, hasUncosted: false },
@@ -345,6 +356,12 @@ export class FakeServer {
    * path below that prefix, its query and its body. The default is what a server outside the
    * desktop app answers.
    */
+  /**
+   * What `GET /api/contributions` answers: the plugin server modules running now, none by default.
+   * A server older than plugin modules answers no `modules` at all.
+   */
+  contributions: Json = { modules: [] };
+
   builtinBrowser: (req: { method: string; path: string; query: URLSearchParams; body?: Json }) => {
     status?: number;
     body?: unknown;
@@ -474,6 +491,62 @@ export class FakeServer {
         }
       }
     }
+  }
+
+  /**
+   * Serves this fake over HTTP on 127.0.0.1 for a CLI running in another process; nothing in this
+   * process is stubbed. Answers stream as they are produced, the SSE stream included, and a
+   * client that hangs up cancels its stream.
+   */
+  async listen(): Promise<{ url: string; close(): Promise<void> }> {
+    const server = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk: Buffer) => chunks.push(chunk));
+      req.on("end", () => {
+        void (async () => {
+          const headers = new Headers();
+          for (const [key, value] of Object.entries(req.headers)) {
+            if (typeof value === "string") headers.set(key, value);
+            else if (Array.isArray(value)) headers.set(key, value.join(", "));
+          }
+          const text = Buffer.concat(chunks).toString("utf8");
+          const answer = await this.handle(`http://${req.headers.host ?? "127.0.0.1"}${req.url}`, {
+            method: req.method ?? "GET",
+            headers,
+            ...(text.length > 0 ? { body: text } : {}),
+          });
+          const out: Record<string, string | string[]> = {};
+          answer.headers.forEach((value, key) => {
+            if (key !== "set-cookie") out[key] = value;
+          });
+          const cookies = answer.headers.getSetCookie();
+          if (cookies.length > 0) out["set-cookie"] = cookies;
+          res.writeHead(answer.status, out);
+          if (answer.body === null) {
+            res.end();
+            return;
+          }
+          const reader = answer.body.getReader();
+          res.on("close", () => void reader.cancel().catch(() => undefined));
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            res.write(value);
+          }
+          res.end();
+        })().catch((err: unknown) => res.destroy(err instanceof Error ? err : undefined));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    return {
+      url: `http://127.0.0.1:${port}`,
+      close: () =>
+        new Promise<void>((resolve) => {
+          server.closeAllConnections();
+          server.close(() => resolve());
+        }),
+    };
   }
 
   sessionInfo(s: FakeSessionState): Json {
@@ -1846,6 +1919,22 @@ export class FakeServer {
           }
         : {}),
     });
+    // A sign-in: the account's password for a session cookie, as a client that is not a browser
+    // gets it; anything else is refused the way the server refuses a wrong password.
+    if (apiPath === "/api/auth/login" && method === "POST") {
+      if (body?.password !== this.password) {
+        return this.error(401, "invalid_credentials", "Wrong account or password.");
+      }
+      const token = `login-${this.logins.size + 1}`;
+      this.logins.add(token);
+      return new Response(JSON.stringify({ userId: body?.userId }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "set-cookie": `penguin_session=${token}; Path=/; HttpOnly`,
+        },
+      });
+    }
     if (this.refuseAnonymous && authorization === undefined && cookie === undefined) {
       return this.error(401, "unauthorized", "Not signed in or the sign-in has expired.");
     }
@@ -1857,6 +1946,8 @@ export class FakeServer {
       }
     }
     const viaToken = authorization !== undefined;
+
+    if (apiPath === "/api/contributions" && method === "GET") return this.json(this.contributions);
 
     if (apiPath.startsWith("/api/builtin-browser/")) {
       const answer = this.builtinBrowser({
@@ -1967,6 +2058,10 @@ export class FakeServer {
         if (this.failSessionCreates > 0) {
           this.failSessionCreates -= 1;
           return this.error(503, "server_unavailable", "The server is restarting.");
+        }
+        // The server's rule: a Session that names no model runs on the Project's default.
+        if (typeof body?.modelId !== "string" && this.defaultModel === null) {
+          return this.error(400, "no_default_model", "This Project has no default model.");
         }
         const s = this.addSession({
           projectId: decodeURIComponent(m[1]!),
@@ -2247,6 +2342,7 @@ export class FakeServer {
         return new Response(null, { status: 202 });
       }
       if (/^\/approvals\//.test(rest) && method === "POST") {
+        this.onApproval?.(session, decodeURIComponent(rest.slice("/approvals/".length)), body);
         return new Response(null, { status: 204 });
       }
     }

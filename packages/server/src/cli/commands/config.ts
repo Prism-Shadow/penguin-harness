@@ -65,6 +65,7 @@ import {
   setVaultEntry,
 } from "@prismshadow/penguin-core";
 import { parseApprovalAnswer } from "../approval.js";
+import { terminalInput } from "../console-input.js";
 import { resolveRootOption } from "../root-option.js";
 import { getMessages, maskApiKey, type Messages } from "../i18n.js";
 import { applyLanguageToRc, restartShell } from "../lang-config.js";
@@ -163,8 +164,17 @@ export function registerConfigCommand(config: Command, t: Messages): void {
       // The confirmation message is shown in the target language; the user must confirm before the shell restarts.
       const m = getMessages(lang);
       process.stdout.write(`${m.langSet(lang, rcPath)}\n`);
-      const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
-      if (interactive && (await confirmYes(m.langRestartConfirm()))) {
+      // The answer comes from the terminal (console-input.ts), let go before the shell starts.
+      const input = terminalInput();
+      let restart = false;
+      try {
+        restart =
+          Boolean(input.stream.isTTY && process.stdout.isTTY) &&
+          (await confirmYes(m.langRestartConfirm(), input.stream));
+      } finally {
+        input.release();
+      }
+      if (restart) {
         process.stdout.write(`${m.langRestart()}\n`);
         restartShell(lang);
       } else {
@@ -173,8 +183,8 @@ export function registerConfigCommand(config: Command, t: Messages): void {
     });
 }
 
-function confirmYes(prompt: string): Promise<boolean> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+function confirmYes(prompt: string, input: NodeJS.ReadableStream): Promise<boolean> {
+  const rl = createInterface({ input, output: process.stdout });
   return new Promise<boolean>((resolve) => {
     let done = false;
     const finish = (value: boolean) => {

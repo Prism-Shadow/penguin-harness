@@ -263,11 +263,12 @@ penguin agent create --agent-id <id> [options]
 | `--name <name>` / `--description <text>` | 显示名称和描述。 | — |
 | `--author <author>` | 由谁创建这个 Agent：`user`、`agent` 或 `company`。 | 在对话中运行时为 `agent`，否则为 `user` |
 | `--plugins <names>` | 要预装的插件库插件名，逗号分隔，每个插件连同各自的 Skill 和钩子包一起安装。名称未知时直接拒绝，此时还没有创建任何东西。 | — |
+| `--no-default-plugins` | 不安装每个新 Agent 默认安装的插件：`goal`（[目标模式](/goal-mode)）与 `plan`（计划模式）。 | 二者都安装 |
 | `--project-id <id>` / `--json` / `--server <url>` | 见[全局约定](#全局约定)。 | — |
 
 ```bash
 penguin agent ls
-penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+penguin agent create --agent-id helper --name "Helper" --plugins software-development
 ```
 
 ### penguin agent export 与 import
@@ -667,11 +668,11 @@ note: No visible change on the page.
 `import` 和 `history` 属于内置浏览器；对用户自己的 Chrome 调用时，返回 `not_supported`。
 
 - `--list` 列出本机的浏览器个人资料：来源 id、浏览器、个人资料名称，以及其中是否有 Cookie 和历史记录。
-- `--from` 接受列表中的来源 id，或浏览器名（`chrome`、`edge`、`brave`、`arc`、`vivaldi`、`opera`、`chromium` 或 `firefox`），后者表示该浏览器的 `Default` 个人资料，或它唯一的个人资料。
+- `--from` 接受列表中的来源 id，或浏览器名（`chrome`、`edge`、`brave`、`arc`、`vivaldi`、`opera`、`chromium` 或 `firefox`），后者表示该浏览器的 `Default` 个人资料，或它唯一的个人资料。用户的 Chrome 连着时列表中另有 `chrome-extension`，经它导入 Cookie，须用户在 Chrome 中允许。
 - `--cookies` 和 `--history` 选择导入什么；两者都不给时全部导入。
 - `--domain` 只保留某个网站及其子域名的 Cookie。可以重复给出，也可以用逗号分隔多个网站。
 
-结果先给出来源，再打印 `cookies: <n> imported, <n> skipped, <n> failed (<n> found)`、`history: <n> imported (<n> found)`，每条警告各占一行 `warning:`。各平台的细节（如 macOS 的钥匙串提示、Windows 上 Chrome 的应用绑定 Cookie）见[从你的浏览器导入](/builtin-browser#从你的浏览器导入)。
+结果先给出来源，再打印 `cookies: <n> imported, <n> skipped, <n> failed (<n> found)`、逐个原因给出跳过数量的一行 `skipped:`、`history: <n> imported (<n> found)`，其余需要知道的情况各占一行 `warning:`。各平台的细节（如 macOS 的钥匙串提示、Windows 上 Chrome 的应用绑定 Cookie）见[从你的浏览器导入](/builtin-browser#从你的浏览器导入)。
 
 ### history
 
@@ -687,9 +688,24 @@ note: No visible change on the page.
 - `keyboard_focus_failed`：内置浏览器无法让该标签页在应用窗口里取得键盘焦点，因此一个字也没有输入。`type` 以失败结果报告并附上这条信息，原始 `cdp` 键盘命令则直接返回该错误码。可重试一次。
 - `cdp_refused`：原始命令超出了该后端允许的范围（见 [screenshot 和 cdp](#screenshot-和-cdp)）。
 - `not_supported`：对用户自己的 Chrome 调用了导入或历史记录；错误信息会提示改为请用户在 Chrome 的 Penguin 标签页中登录。
+- `import_declined`：用户没有在 Chrome 中允许经扩展导入；`extension_outdated`：用户的扩展版本过旧。
 - `script_error`、`timeout`、`invalid_url`、`source_not_found` 和 `import_failed`。
 
 CLI 自己还有三种：命令写错时的 `invalid_argument`、文件读写失败时的 `io_error`，以及连不上服务器时的 `request_failed`。
+
+## penguin storage
+
+数据根占用了多少空间，以及清理：shell 里的[设置 › 存储空间](/settings#存储空间)，是服务器 `/api/me/storage` 路由之上的瘦客户端。调用者看到的与页面给他看的相同：成员看到自己可进入的 Project，管理员看到整个数据根。这条命令与页面一起由预装的 `storage` 插件提供。
+
+```bash
+penguin storage [--refresh]                                  # 已用空间，按分类、Project、Agent，管理员另有服务端条目
+penguin storage clean [--older-than <天数>] [--all] [--yes]  # 审阅现在可以删除的内容；--yes 删除
+```
+
+- 服务器在后台测量。命令会等正在进行的测量结束，所以不会打印一块空磁盘。`--refresh` 先重新测量。
+- 不加 `--yes` 时 `clean` 只列出不删除。它打印页面显示的审阅结果，用 `x` 标出删除会带走的项：页面缺省勾选的项（已删除对话的草稿区、孤立的临时工作区、服务端缓存），加 `--all` 则是全部，含闲置对话的草稿区与 Agent 的工具环境。`--older-than` 是闲置天数，1–3650，缺省 7。
+- 加 `--yes` 时，每一项在删除时都重新判定，与页面相同；最后一行写明删除了几项、释放了多少空间、几项因正在使用或已不在而跳过。删除需要本人登录：Agent 的 shell 持有的本地 API 令牌会被拒绝（`human_required`），所以先用 [`penguin auth login`](#penguin-auth-login) 登录，或在页面上清理。
+- `--json` 把应答打印成一行 JSON（`clean` 只列出时是审阅结果加上 `chosen`，即 `--yes` 会删除的 id），`--server` 与其他命令相同。服务器上没有任何 Project 运行该插件的模块时，两者都以 `storage_unavailable` 失败。
 
 ## 审批模式（--approve）
 
@@ -790,7 +806,7 @@ penguin config lang en
 
 ## penguin exec
 
-在 server 上运行插件的一条命令。插件与其他贡献一样地贡献命令：一个类，其 `contributes["PluginCliCommandsProvider.commands"]` 条目是命令的数据半——一个 `key`（命令路径，`a.b.c` 等价于 `penguin a b c ARGS`）与每种语言一行 summary——其 `@Bind(entry.id)` 字段是代码半。命令住在 server 的模块树里，因此 CLI 从 server 列出它们（`GET /api/cli/commands`）、请 server 运行一条（`POST /api/cli/commands/run`）；运行插件的代码是管理员操作，CLI 以本地 API token 调用，与 `penguin plugin install` 同一权限。
+在 server 上运行插件的一条命令。插件与其他贡献一样地贡献命令：一个类，其 `contributes["PluginCliCommandsProvider.commands"]` 条目是命令的数据半——一个 `key`（命令路径，`a.b.c` 等价于 `penguin a b c ARGS`）与每种语言一行 summary——其 `@Bind(entry.id)` 字段是代码半。命令住在 server 的模块树里，因此 CLI 从 server 列出它们（`GET /api/cli/commands`）、请 server 运行一条（`POST /api/cli/commands/run`）；除成员命令（见下文）外，运行插件的代码是管理员操作，CLI 以本地 API token 调用，与 `penguin plugin install` 同一权限。
 
 ```bash
 penguin exec <id> [args...]
@@ -807,6 +823,8 @@ penguin exec <包>:<id> [args...]
 penguin exec sandbox.wsl.restart --prod
 penguin exec @penguinharness/sandbox-wsl:sandbox.wsl.restart   # id 撞名时
 ```
+
+插件标为 `access: "member"` 的命令，Project 的任何成员都能运行，不限管理员。一次运行带上调用方的 Project 与 Session：在 Agent 的 shell 里取其 `PENGUIN_PROJECT_ID` 与 `PENGUIN_SESSION_ID`；在 Agent 之外，这类命令缺省为 `default_project`。命令还可以声明指名本地文件的选项：每个 `read` 选项所指的文件由 CLI 相对当前目录读取、随运行发送，读不到即在发送任何内容之前停止。命令交回的文件保存到 `write` 选项所指的目录，缺省为当前目录，从不覆盖已有文件（改存为 `name-1.ext`），每个保存的路径都打印到 stderr。命令还可以只在 Project 启用了其插件时运行，也可以要求 Agent 的调用为该 Agent 所在 Session 此刻正在处理其消息的人运行，而不是为本机 API token 所代表的管理员运行；这类命令拒绝以 token 发出、却没有指明 Session 的调用（`session_required`），以及 Session 中没有已登录的人发起的运行正在进行的调用（`driver_unknown`）。
 
 ## penguin server / penguin web
 

@@ -3,14 +3,19 @@
  * opens with, the value a Save would send (what dirtiness compares), the errors a draft carries,
  * and the update a Save sends.
  *
- * The five numbers are typed as text, so a box can be cleared and retyped. A box's value is the
+ * The six numbers are typed as text, so a box can be cleared and retyped. A box's value is the
  * number it holds, `undefined` when it is blank, or its text when that is not a number at all —
  * which differs from every stored value, so an unparsable box is dirty (and invalid) rather than
  * slipping past the leave guard as "no change".
  *
- * The server takes each number as an integer that is > 0 or exactly -1, and it cannot drop a
- * stored override: blanking a box that holds a saved value is therefore an error, not a request
- * to go back to the default.
+ * The server takes each number as an integer that is > 0 or exactly -1, except the compaction's
+ * tool rounds, which are any integer of 0 or more (0 allows none). It cannot drop a stored
+ * override: blanking a box that holds a saved value is therefore an error, not a request to go
+ * back to the default.
+ *
+ * The three texts — the compaction prompt, the per-round reminder and the hand-off note — compare
+ * exactly, whitespace included, and a blank one is a value of its own (no reminder; the quoted
+ * data alone), so it is sent like any other edit.
  */
 import type {
   AgentCompactionConfigDto,
@@ -19,26 +24,33 @@ import type {
   AgentModelConfigDto,
 } from "@prismshadow/penguin-server/api";
 
-/** The five number boxes, in the order the tab shows them. */
+/** The six number boxes, in the order the tab shows them. */
 export const RUNTIME_NUMBER_FIELDS = [
   "maxTurns",
   "maxTokens",
   "timeoutMs",
   "maxContextLength",
   "maxSessionTurns",
+  "maxRounds",
 ] as const;
 
 export type RuntimeNumberField = (typeof RUNTIME_NUMBER_FIELDS)[number];
 
-/** The Runtime tab's draft: the numbers as typed, the two menus' picks ("" = not set), the prompt. */
+/** The Runtime tab's draft: the numbers as typed, the two menus' picks ("" = not set), the three texts. */
 export type RuntimeDraft = Record<RuntimeNumberField, string> & {
   thinkingLevel: string;
   mode: string;
   prompt: string;
+  reminder: string;
+  handoffNote: string;
 };
 
-/** Why a number box cannot be saved: not an integer > 0 or -1, or a saved value left blank. */
+/** Why a number box cannot be saved: outside the numbers its field accepts, or a saved value left blank. */
 export type RuntimeNumberError = "invalid" | "cannotClear";
+
+/** Whether a box may hold `value`: the tool rounds take 0 and up, every other box > 0 or -1. */
+const accepts = (field: RuntimeNumberField, value: number): boolean =>
+  Number.isInteger(value) && (field === "maxRounds" ? value >= 0 : value > 0 || value === -1);
 
 const text = (n: number | undefined): string => (n === undefined ? "" : String(n));
 
@@ -50,9 +62,12 @@ export function runtimeDraftOf(config: AgentConfigDto): RuntimeDraft {
     timeoutMs: text(config.model?.timeoutMs),
     maxContextLength: text(config.compaction?.maxContextLength),
     maxSessionTurns: text(config.compaction?.maxSessionTurns),
+    maxRounds: text(config.compaction?.maxRounds),
     thinkingLevel: config.model?.thinkingLevel ?? "",
     mode: config.compaction?.mode ?? "",
     prompt: config.compaction?.prompt ?? "",
+    reminder: config.compaction?.reminder ?? "",
+    handoffNote: config.compaction?.handoffNote ?? "",
   };
 }
 
@@ -69,7 +84,14 @@ export function normalizeRuntime(draft: RuntimeDraft): unknown {
   const numbers = Object.fromEntries(
     RUNTIME_NUMBER_FIELDS.map((field) => [field, runtimeNumberOf(draft[field])]),
   );
-  return { ...numbers, thinkingLevel: draft.thinkingLevel, mode: draft.mode, prompt: draft.prompt };
+  return {
+    ...numbers,
+    thinkingLevel: draft.thinkingLevel,
+    mode: draft.mode,
+    prompt: draft.prompt,
+    reminder: draft.reminder,
+    handoffNote: draft.handoffNote,
+  };
 }
 
 const changed = (draft: RuntimeDraft, baseline: RuntimeDraft, field: RuntimeNumberField) =>
@@ -89,13 +111,7 @@ export function runtimeErrors(
     if (!changed(draft, baseline, field)) continue;
     const value = runtimeNumberOf(draft[field]);
     if (value === undefined) errors[field] = "cannotClear";
-    else if (
-      typeof value !== "number" ||
-      !Number.isInteger(value) ||
-      (value <= 0 && value !== -1)
-    ) {
-      errors[field] = "invalid";
-    }
+    else if (typeof value !== "number" || !accepts(field, value)) errors[field] = "invalid";
   }
   return Object.keys(errors).length > 0 ? errors : null;
 }
@@ -136,6 +152,10 @@ export function runtimeUpdateOf(
     compaction.mode = draft.mode as AgentCompactionConfigDto["mode"];
   }
   if (draft.prompt !== baseline.prompt) compaction.prompt = draft.prompt;
+  const maxRounds = number("maxRounds");
+  if (maxRounds !== undefined) compaction.maxRounds = maxRounds;
+  if (draft.reminder !== baseline.reminder) compaction.reminder = draft.reminder;
+  if (draft.handoffNote !== baseline.handoffNote) compaction.handoffNote = draft.handoffNote;
   if (Object.keys(compaction).length > 0) config.compaction = compaction;
   return config;
 }
