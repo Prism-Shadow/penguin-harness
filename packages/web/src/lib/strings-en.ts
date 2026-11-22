@@ -3291,6 +3291,8 @@ export const en: Strings = {
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "Machine",
     thisServer: "This server",
+    /** The machine picker's first choice: every machine's cards at once (the default). */
+    allMachines: "All machines",
     /** A row the Project lists for a machine that has not reported it running yet. */
     notSynced: "not on that machine yet",
     /** The tag on a row the shared table lists, and its tooltip (Remove is unavailable on it). */

@@ -3477,6 +3477,8 @@ export const zh = {
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "机器",
     thisServer: "本机",
+    /** The machine picker's first choice: every machine's cards at once (the default). */
+    allMachines: "所有机器",
     /** A row the Project lists for a machine that has not reported it running yet. */
     notSynced: "尚未同步到该机器",
     /** The tag on a row the shared table lists, and its tooltip (Remove is unavailable on it). */
