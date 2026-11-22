@@ -54,6 +54,7 @@ const store = getStore({
   lang: params.lang,
   signedIn: !params.signedOut,
   notices: params.notices === true,
+  embedded: params.embedded === true,
   evolutionDemo: params.autoplay === "evolution",
 });
 installFetchShim();

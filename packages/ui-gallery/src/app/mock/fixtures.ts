@@ -363,7 +363,7 @@ export interface UsageDay {
   purpose?: string;
 }
 
-export function buildFixtures(lang: Lang, now: number): DemoFixtures {
+export function buildFixtures(lang: Lang, now: number, embedded = false): DemoFixtures {
   const L = <T>(zh: T, en: T): T => (lang === "zh" ? zh : en);
   const ago = (days: number, minutes = 0) => now - days * DAY - minutes * 60_000;
 
@@ -418,7 +418,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       workbenchCount: 0,
       skillCount: 3,
       hookCount: 1,
-      pluginUpdates: [{ name: IDS.plugins.registry, version: "2026.09.20.1" }],
+      pluginUpdates: embedded ? [] : [{ name: IDS.plugins.registry, version: "2026.09.20.1" }],
       memoryCount: 4,
       // Its API is on: see `agentApi` below.
       apiEnabled: true,
@@ -439,7 +439,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       sessionActivity: activity(11, 2),
       toolCount: 4,
       version: 3,
-      kernelOutdated: true,
+      kernelOutdated: !embedded,
       vaultKeyCount: 0,
       scheduleCount: 1,
       workbenchCount: 0,
@@ -1078,7 +1078,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     .find((plugin) => plugin.name === IDS.plugins.registry)!;
   const docsSkills = registryPlugin.skills.map((s) => ({
     ...s,
-    version: s.name === "claude-code-expert" ? "2026.09.11.1" : s.version,
+    version: !embedded && s.name === "claude-code-expert" ? "2026.09.11.1" : s.version,
   }));
   const installed: DemoFixtures["installed"] = {
     [IDS.agents.docs]: {
@@ -1160,6 +1160,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     machineId: "demo-machine-0001",
     restartPending: false,
   };
+  if (embedded)
+    installedPlugins.plugins = installedPlugins.plugins.filter((plugin) => !plugin.unsatisfied);
   // The sandbox backends' cards: their rows carry the bilingual descriptions and the shield
   // icons the packages' own cards (declared in each backend's src/index.ts) and icons hold.
   const shield = (inner: string) =>
@@ -2073,11 +2075,9 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     ...(error !== undefined ? { error } : {}),
   });
   const [docsAgent, notesAgent, generalAgent] = [agents[0]!, agents[1]!, agents[2]!];
-  const appCenter: AppCenterResponse = {
-    shortcuts: [
-      shortcut(docsAgent, "corpus-search", "Corpus search", "语料检索"),
-      shortcut(docsAgent, "citation-check", "Citation check", "引用核对", "building"),
-      shortcut(notesAgent, "changelog-board", "Changelog board", "变更看板"),
+  const releaseApps = [shortcut(notesAgent, "changelog-board", "Changelog board", "变更看板")];
+  if (!embedded)
+    releaseApps.push(
       shortcut(
         notesAgent,
         "release-calendar",
@@ -2086,6 +2086,12 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         "failed",
         "src/index.ts:12:7 TS2322 Type 'string' is not assignable to type 'number'.",
       ),
+    );
+  const appCenter: AppCenterResponse = {
+    shortcuts: [
+      shortcut(docsAgent, "corpus-search", "Corpus search", "语料检索"),
+      shortcut(docsAgent, "citation-check", "Citation check", "引用核对", "building"),
+      ...releaseApps,
       shortcut(generalAgent, "daily-todos", "Daily to-dos", "每日待办"),
       shortcut(generalAgent, "expenses", "Expense log", "报销登记"),
     ],
@@ -2097,7 +2103,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
           type: "folder",
           id: "release",
           name: L("发布", "Release"),
-          apps: [`${notesAgent.agentId}/changelog-board`, `${notesAgent.agentId}/release-calendar`],
+          apps: releaseApps.map((app) => `${app.agentId}/${app.workbenchId}`),
         },
         { type: "app", app: `${docsAgent.agentId}/citation-check` },
         { type: "app", app: `${generalAgent.agentId}/daily-todos` },
@@ -2181,7 +2187,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     dirs,
     context,
     usage,
-    usageErrors,
+    usageErrors: embedded ? [] : usageErrors,
     appCenter,
   };
 }
