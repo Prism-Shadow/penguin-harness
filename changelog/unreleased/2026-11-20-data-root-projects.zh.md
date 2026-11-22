@@ -12,7 +12,7 @@
 
 ## 细节
 
-- **路径。** core 的 `projectDir(root, id)` 为 `<root>/projects/<id>`，建在新增的 `projectsDir(root)` 之上，其余路径函数都随之变化。`benchmarksDir(root, projectId)` 为系统 Agent 的 `app/data/benchmark/`，建在 agent 级的 `workbenchDataDir` 之上。`listProjectDirs(root)` 列出 `projects/` 下含 `.project_config.toml` 的真实目录，跳过链接；插件 loader、已存配置的迁移、Agent 删除的续删与 Trace 的收编扫描都经它列出 Project。
+- **路径。** core 的 `projectDir(root, id)` 为 `<root>/projects/<id>`，建在新增的 `projectsDir(root)` 之上，其余路径函数都随之变化。`benchmarksDir(root, projectId)` 为系统 Agent 的 `app/data/benchmark/`，建在 agent 级的 `workbenchDataDir` 之上。`listProjectDirs(root)` 列出 `projects/` 下含 `.project_config.toml` 的真实目录，跳过链接；插件 loader、已存配置的迁移、Agent 删除的续删与 Trace 的收编扫描都经它列出 Project。机器同样按 `projects/` 下的 Project 计数：机器的配置同步交出每个使用它的 Project，只要仍有 Project 在用它，保存的密码就保留。
 - **Project id。** 已占用的 id 只看 `projects/` 下的目录与 web.db 的行，数据根顶层的名字不再占用 id。新建的 Project 重新可以叫 `app` 或 `run`，但不得叫 `projects`（400 `invalid_project_id`）。名为 `app` 或 `run` 的旧 Project 在原位置留有链接时，Workbench 在 `<root>/app` 与 `<root>/run` 下的共享目录会被拒绝，并说明是哪个 Project。
 - **迁移**（core 的 `state/layout-migration/`）：服务端每次启动，以及 SDK 的 `createAgent` 与 CLI 的 `penguin config model` / `penguin config vault` 在没有服务端持有数据根时，都先检查数据根。
   - 顶层每个真实的 Project 目录改名移入 `projects/`，原位置留一个链接：POSIX 为相对符号链接，Windows 为目录联接。
