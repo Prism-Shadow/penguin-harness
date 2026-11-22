@@ -1,9 +1,9 @@
 /**
  * End-to-end test for the plugin library (locale zh-CN):
- * - the sidebar nav shows "插件市场" ("Plugins"), and the page renders the library's plugins as
- *   cover cards under tabs — All first, then one per category (the category name follows the UI
- *   language — when the server ships a Chinese group name it's "Agent 自进化 / 办公效率 / 软件开发
- *   / AI 应用开发", falling back to English by default); a category tab narrows the grid and
+ * - the App Center shows the "插件市场" ("Plugins") system app, and the page renders the library's
+ *   plugins as cover cards under tabs — All first, then one per category (the category name
+ *   follows the UI language — when the server ships a Chinese group name it's "Agent 自进化 /
+ *   办公效率 / 软件开发 / AI 应用开发", falling back to English by default); a category tab narrows the grid and
  *   names itself in the address; a card's facts show the plugin's npm version, its install
  *   status as a glyph and its usage count, their words on hover; a plugin's detail opens over
  *   the market, in the address, its tile carrying the plugin's custom icon (its icon.svg, served
@@ -112,11 +112,12 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   });
   expect(created.ok(), "create helper agent").toBeTruthy();
 
-  // —— Plugin library page: sidebar nav entry, the category tabs, a grid of cover cards ——
+  // —— Plugin library page: the App Center's system app, the category tabs, a grid of cover cards ——
   await page.goto(`${BASE}/chat`);
-  const navLink = page.getByRole("link", { name: "插件市场" });
-  await expect(navLink).toBeVisible();
-  await navLink.click();
+  await page.getByRole("link", { name: "应用中心" }).click();
+  const appTile = page.getByRole("button", { name: "插件市场，系统应用" });
+  await expect(appTile).toBeVisible();
+  await appTile.click();
   await expect(page).toHaveURL(/\/plugins$/);
   // The groups are tabs: All first, chosen on entry, then each category.
   const allTab = page.getByRole("tab", { name: /^(All|全部)$/ });

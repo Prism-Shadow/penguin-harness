@@ -19,4 +19,10 @@ describe("pickDefaultAgent", () => {
     expect(pickDefaultAgent([agent("b"), agent("a")])?.agentId).toBe("b");
     expect(pickDefaultAgent([])).toBeNull();
   });
+
+  it("never hands the prompt to the system Agent, even listed first", () => {
+    const system = { ...agent("system_agent"), system: true } as AgentSummary;
+    expect(pickDefaultAgent([system, agent("b")])?.agentId).toBe("b");
+    expect(pickDefaultAgent([system])).toBeNull();
+  });
 });

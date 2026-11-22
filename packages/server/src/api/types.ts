@@ -1135,6 +1135,12 @@ export interface AgentSummary {
   agentId: string;
   name?: string;
   description?: string;
+  /**
+   * The system Agent (PRFC-0033): the owner of the system apps, which runs no Session, takes no
+   * plugin and keeps its identity. Present only on it, so a list from an older server (a
+   * machine) has none. The Web App shows its name and description from its own dictionary.
+   */
+  system?: true;
   /** Who made the Agent, as its config reads (absent there = `user`); the Agents page groups by it. This server always sends it; absent (a machine on an older server) reads as `user`. */
   author?: AgentAuthor;
   createdAt?: string;
@@ -1381,6 +1387,8 @@ export interface AgentConfigDto {
   description?: string;
   /** The effective author: the stored value, `user` when the field is missing or unknown. This server always sends it; absent (a machine on an older server) reads as `user`. */
   author?: AgentAuthor;
+  /** Present on the system Agent only (see AgentSummary.system): its settings page shows only the read-only overview and its system apps. */
+  system?: true;
   /** Agent State version number (treated as 1 if missing; shown in the settings page overview). */
   version: number;
   /** The stored kernel stamp (`kernel_version`): which defaults generation the config is based on; null when the config predates the kernel-version mechanism. */
@@ -6728,6 +6736,11 @@ export interface WebContribution {
  * reachable by URL only), whether it is admin-only, its renderer; its nav row's name in English
  * and Chinese and its glyph (a name in the web UI's icon registry); and the key of the page it
  * sits under, if any — one level only, and a page whose parent is absent is not shown.
+ *
+ * A page with `app` is a system app of the system Agent: a tile in the App Center named and drawn
+ * by the page's `title` / `titleZh` / `icon`, opening the page's path, shown to whom `admin`
+ * allows, placed by `app.order` among the system apps. A page whose `order` is not a finite
+ * number, or that names no `title`, is no app (it stays reachable by its path).
  */
 export type WebPageData = {
   key: string;
@@ -6739,6 +6752,7 @@ export type WebPageData = {
   title?: string;
   titleZh?: string;
   icon?: string;
+  app?: { order: number };
 };
 
 /** A page contribution as GET /api/contributions answers it. */

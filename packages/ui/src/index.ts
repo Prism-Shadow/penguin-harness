@@ -23,6 +23,7 @@ export * from "./components/icons/app-icon-shape/app-icon-shape";
 export * from "./components/icons/chevron/chevron";
 export * from "./components/icons/marks/marks";
 export * from "./components/icons/spinner/spinner";
+export * from "./components/icons/glyph-app-icon/glyph-app-icon";
 export * from "./components/icons/logos/provider-logo";
 export * from "./components/icons/logos/penguin-logo";
 export * from "./components/icons/avatars/avatar";

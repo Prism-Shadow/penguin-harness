@@ -401,8 +401,8 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // --- session expiry: any 401 sends the user back to /login (no stuck error page) ---
   // Clearing the cookie is what a rebuilt web.db looks like to the browser.
   await page.context().clearCookies();
-  // Stay in the SPA: navigating to 成本中心 ("Cost Center") fires GET /usage -> 401 -> global redirect.
-  await page.getByRole("link", { name: "成本中心" }).click();
+  // Stay in the SPA: opening the App Center fires GET /app-center -> 401 -> global redirect.
+  await page.getByRole("link", { name: "应用中心" }).click();
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.locator("form").getByRole("button", { name: "登录" })).toBeVisible();
 });

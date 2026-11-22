@@ -395,6 +395,8 @@ export const zh = {
     iconRegistry: (icons: number, files: number) => `${icons} 个图标，来自 ${files} 个文件`,
     duplicateNames: "同一路径的多个名字",
     iconMarks: "组件标记",
+    appIcons: "应用图标",
+    appIconsAside: "系统应用：页面字形画在应用图标的形状上，各尺寸同一形状",
     durations: "时长 × 缓动",
     reducedNote: "已减弱动效：每个变化直接呈现终态。",
     liveSignal: "实时信号",

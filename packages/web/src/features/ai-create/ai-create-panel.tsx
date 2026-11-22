@@ -10,6 +10,7 @@ import { useLayoutEffect, useRef, type ReactNode } from "react";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { CopyButton, HelpFold, Select, Textarea } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
+import { isConversationAgent } from "../../lib/builtin-agents";
 import { toneInk } from "../../lib/tone";
 import { agentDisplayName } from "../../state/project";
 import { composeAiPrompt } from "./ai-create-prompt";
@@ -126,7 +127,7 @@ export function AiCreatePanel({
               disabled={disabled}
               onChange={(e) => onAgentChange(e.target.value)}
             >
-              {agents.map((a) => (
+              {agents.filter(isConversationAgent).map((a) => (
                 <option key={a.agentId} value={a.agentId}>
                   {agentDisplayName(a)}
                 </option>

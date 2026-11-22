@@ -18,6 +18,7 @@
  * - With a configured model credential, it opens and runs Sessions the SDK's way, inside
  *   its own Project only, with allow-all: nobody is there to answer an ask. Its Sessions
  *   are archived with workbench provenance, including before their first run after a restart.
+ *   The Project's system Agent is neither listed nor opened: it runs no Sessions.
  * - A Session that only talks can select its own model and deny-all: that model's tool call is denied
  *   and the model reads the denial, while one opened without the option still runs its calls;
  *   a mode that would wait for a person is refused by name.
@@ -527,6 +528,11 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
       ran: "run: this Project has no Session 'not-a-session'",
       agents: [AGENT],
     });
+    const system = (await (await owner.get(`${BASE}/demo/api/open?agent=system_agent`)).json()) as {
+      opened: unknown;
+    };
+    expect(system.opened).toBe("The system Agent owns the system apps and runs no Sessions.");
+    expect(t.deps.sessionsRepo.listByAgent(PROJECT, "system_agent")).toEqual([]);
     const own = (await (await owner.get(`${BASE}/demo/api/open`)).json()) as {
       opened: { sessionId: string };
     };

@@ -6,6 +6,7 @@ import {
   groupSessionsByWorkspace,
 } from "../../lib/session-grouping";
 import { machineForSession } from "../../lib/session-machines";
+import { isConversationAgent } from "../../lib/builtin-agents";
 import { mergeRegisteredWorkspaces } from "./workspace-registry";
 import { orderGroups } from "./group-order";
 import { dropsEmployeeGroup } from "../agents";
@@ -72,12 +73,13 @@ export function useMainSidebarWorkspaceGroupCounts(
    * ticket sessions are company mode's and never counted here, so its group would only ever
    * be empty; it comes back the moment a development conversation with it exists. The
    * server's active total is raised by the loaded rows, which include a conversation created
-   * since the counts were taken.
+   * since the counts were taken. The system Agent, which never holds a conversation, gets none.
    */
   const groupAgents = useMemo(
     () =>
       agents.filter(
         (agent) =>
+          isConversationAgent(agent) &&
           !dropsEmployeeGroup(
             agent,
             Math.max(
