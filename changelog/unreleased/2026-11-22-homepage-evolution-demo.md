@@ -2,7 +2,8 @@
 
 - **Date:** 2026-11-22
 - **Type:** feature
-- **Scope:** landing, ui-gallery
+- **Scope:** `landing`, `ui-gallery`
+- **PR:** [#1688](https://github.com/Prism-Shadow/penguin-harness/pull/1688)
 
 [中文](2026-11-22-homepage-evolution-demo.zh.md)
 
