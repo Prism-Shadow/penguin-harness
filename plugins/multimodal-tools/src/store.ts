@@ -1,7 +1,7 @@
 /**
  * This plugin's files in a Project directory — the only place its results live:
  *
- *   <root>/<project>/.multimodal-tools/
+ *   <projects>/<project>/.multimodal-tools/      <projects>: the host's folder of Project folders
  *     voice-polish.json                 the Project's transcript-editing settings (absent until an
  *                                       owner sets them: editing then follows the bindings)
  *     sessions/<session>/<run>.json     one run: its operation, model, status, text, sources, files
@@ -75,6 +75,7 @@ async function writeAtomic(file: string, data: string | Uint8Array): Promise<voi
 }
 
 export class ToolStore {
+  /** `root`: the folder every Project's folder sits in, as the host's layout names it. */
   constructor(readonly root: string) {}
 
   private projectBase(projectId: string): string {
