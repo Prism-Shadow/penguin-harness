@@ -13,7 +13,7 @@ import { TraceIndexService } from "@prismshadow/penguin-library-trace/trace-inde
 
 export { TraceIndexService, traceFilePath } from "@prismshadow/penguin-library-trace/trace-index";
 
-/** The trace-index assembly: binds the index's paths port (repo and origins are decorator-injected fields the kernel fills). */
+/** The trace-index assembly: binds the index's paths port and its store (the ports are decorator-injected fields the server binds by hand). */
 @Module()
 export class TraceIndexServiceProvider {
   @Use() private readonly paths!: Paths;
@@ -24,7 +24,7 @@ export class TraceIndexServiceProvider {
 
   setup() {
     // The index's ports are decorator-injected fields; the server binds them by hand here.
-    this.service = Object.assign(new TraceIndexService(), { paths: this.paths, sources: this.sources });
+    this.service = Object.assign(new TraceIndexService(), { paths: this.paths, repo: this.repo, sources: this.sources });
     this.index = this.service;
   }
 }
