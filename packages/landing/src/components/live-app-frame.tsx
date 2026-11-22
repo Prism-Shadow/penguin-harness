@@ -18,6 +18,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { SyntheticEvent } from "react";
 import { S } from "../lib/strings";
+import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { frameSize, gallerySurfaceUrl, liveFrameSrc } from "../lib/live-frame";
 import type { SurfaceId } from "../lib/live-frame";
 import { SiteGlyph, useSiteLocale, useSiteTheme } from "@prismshadow/penguin-ui/site";
@@ -81,6 +82,7 @@ export function LiveAppFrame({
   const { dark } = useSiteTheme();
   const phone = useMedia("(max-width: 639.98px)");
   const fine = useMedia("(hover: hover) and (pointer: fine)");
+  const reducedMotion = usePrefersReducedMotion();
   const [playing, setPlaying] = useState(false);
   const size = frameSize(phone);
   const src = liveFrameSrc(surface, locale, dark, playing ? autoplay : undefined, !!autoplay);
@@ -148,6 +150,17 @@ export function LiveAppFrame({
     };
   };
 
+  const togglePlayback = (button: HTMLButtonElement) => {
+    if (!playing && box.current) {
+      const rect = box.current.getBoundingClientRect();
+      const visibleHeight = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+      if (visibleHeight < Math.min(rect.height, window.innerHeight) / 2) {
+        button.scrollIntoView({ block: "start", behavior: reducedMotion ? "instant" : "smooth" });
+      }
+    }
+    setPlaying(!playing);
+  };
+
   const ready = readySrc === src;
   const scale = width > 0 ? width / size.width : 0;
   const open = gallerySurfaceUrl(surface, locale, dark, phone);
@@ -167,8 +180,8 @@ export function LiveAppFrame({
           {autoplay && (
             <button
               type="button"
-              className="site-playback-button"
-              onClick={() => setPlaying(!playing)}
+              className="site-playback-button section-anchor"
+              onClick={(event) => togglePlayback(event.currentTarget)}
             >
               <SiteGlyph name={playing ? "square" : "play"} />
               <span>{playing ? S.live.stopDemo : S.live.playDemo}</span>

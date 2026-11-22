@@ -63,6 +63,40 @@ for (const [lang, play, stop] of [
   });
 }
 
+test.describe("starting the demo on a touchscreen", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  for (const reducedMotion of ["no-preference", "reduce"]) {
+    test(`reveals the demo on the first tap (${reducedMotion})`, async ({ page }) => {
+      await page.emulateMedia({ reducedMotion });
+      await page.addInitScript(() => localStorage.setItem("penguin-site.lang", "en"));
+      await page.goto("/");
+      const play = page.getByRole("button", { name: "Play demo", exact: true });
+      const stop = page.getByRole("button", { name: "Stop demo", exact: true });
+      // A reader can reach Play at the bottom edge before any of the app has come into view.
+      await play.evaluate((el) =>
+        window.scrollTo({
+          top: scrollY + el.getBoundingClientRect().bottom - innerHeight + 1,
+          behavior: "instant",
+        }),
+      );
+      const iframe = page.locator('iframe[src*="fresh=1"]');
+      const visibleFraction = () =>
+        iframe.evaluate((el) => {
+          const rect = el.getBoundingClientRect();
+          const visible = Math.max(0, Math.min(innerHeight, rect.bottom) - Math.max(0, rect.top));
+          return visible / rect.height;
+        });
+      expect(await visibleFraction()).toBe(0);
+      await play.tap();
+      await expect.poll(visibleFraction).toBeGreaterThan(0.5);
+      await expect(stop).toBeInViewport({ ratio: 1 });
+      await expect(iframe.contentFrame().locator(composer)).not.toHaveValue("");
+      await stop.tap();
+      await expect(iframe.contentFrame().getByRole("dialog")).toBeVisible();
+    });
+  }
+});
+
 test("waits for explicit playback with reduced motion", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const { frame } = await openHero(page);
