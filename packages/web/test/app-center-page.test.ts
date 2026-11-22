@@ -412,9 +412,7 @@ it("says how many apps of a folder are running, on the folder's tile", async () 
     en.appCenter.folderName("Work", 2, 0),
   );
   await click(folderButton("Work"));
-  await click(
-    topDialog().querySelector<HTMLButtonElement>(`li[data-app="${key("board")}"] button`)!,
-  );
+  await click(tileButton(key("board")));
   await until(() => frameOf("Board") !== null);
   await click(buttonIn(windowOf("Board")!, en.appCenter.windowMinimize));
   expect(folderButton("Work").getAttribute("aria-label")).toBe(
