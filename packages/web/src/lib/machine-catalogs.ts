@@ -34,6 +34,8 @@ export interface MachineCatalog<T> {
   error: string | null;
   /** Asks the machine again (readers on screen read at once). */
   refresh: () => void;
+  /** Asks the machine again and settles once it has answered or failed (a write waits on it). */
+  reread: () => Promise<void>;
 }
 
 /** How long an answer stands before a page that mounts asks again (ms). */
@@ -81,5 +83,9 @@ export function useMachineCatalogs<T>(
     // A re-read under way keeps an answer of this page load live: nothing on screen flickers.
     live: machine.link === "connected" && reads[i]!.fresh && !reads[i]!.error,
     refresh: () => store.invalidate(keys[i]!),
+    reread: () => {
+      store.invalidate(keys[i]!);
+      return store.read(keys[i]!, requests[i]!.run).catch(() => undefined);
+    },
   }));
 }

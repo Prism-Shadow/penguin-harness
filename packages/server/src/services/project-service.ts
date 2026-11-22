@@ -52,6 +52,7 @@ import type { TraceIndex } from "@prismshadow/penguin-library-trace";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { PluginModules } from "../mechanisms/plugins.js";
+import type { AppSeeds } from "./app-seeds.js";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;
@@ -94,6 +95,8 @@ export class ProjectService implements ProjectLifecycle {
   @Use() private readonly benchmarkSeeds!: BuiltinBenchmarkSeeds;
   /** The preinstalled built-in modules a new Project lists (PRFC-0030). */
   @Use() private readonly pluginModules!: PluginModules;
+  /** The seeds built-in plugins ship for their system apps' data, written once at creation. */
+  @Use() private readonly appSeeds!: AppSeeds;
 
   // Access control lives in ProjectAccess (services/project-access.ts); these delegate so
   // in-package callers keep one entry point.
@@ -126,9 +129,11 @@ export class ProjectService implements ProjectLifecycle {
    * lowercase letters, digits, and underscores only — the hyphen is a reserved
    * separator, usernames never contain a hyphen, so the first hyphen is the
    * ownership boundary and the prefix can never be crafted from another username;
-   * an admin's id contains no hyphen (occupying no user's namespace). Last, the preinstalled
+   * an admin's id contains no hyphen (occupying no user's namespace). Then the preinstalled
    * built-in modules are listed in the Project's own plugin table (PRFC-0030), which may
-   * re-assemble the App: nothing after it reads this generation's state.
+   * re-assemble the App: nothing after it reads this generation's state. Last, the seeds built-in
+   * plugins ship for their system apps' data are written for the built-in packages that table now
+   * lists (services/app-seeds.ts), from the data root alone.
    */
   async createProject(owner: UserRow, projectId: string, name?: string): Promise<ProjectSummary> {
     if (owner.isAdmin) {
@@ -196,6 +201,9 @@ export class ProjectService implements ProjectLifecycle {
       throw err;
     }
     await this.pluginModules.preinstall(projectId);
+    // Last, with the Project in place and its preinstalled modules listed: never a reason to roll
+    // it back (services/app-seeds.ts).
+    await this.appSeeds.seedProject(projectId);
     return {
       projectId,
       name: displayName,
@@ -250,8 +258,10 @@ export class ProjectService implements ProjectLifecycle {
     // Presets written just now bring their promotions, once the row they reference exists; a
     // Project that kept its own models keeps its own pricing.
     if (seeded) await this.projectConfig.seedPresetPromotions(projectId);
-    // Adopted, it is a new Project here: it lists the preinstalled modules (PRFC-0030), last.
+    // Adopted, it is a new Project here: it lists the preinstalled modules (PRFC-0030), then gets
+    // the system apps' seeds of the built-in packages its table lists, where their names are free.
     await this.pluginModules.preinstall(projectId);
+    await this.appSeeds.seedProject(projectId);
   }
 
   /**

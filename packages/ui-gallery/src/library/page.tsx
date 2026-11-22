@@ -14,11 +14,12 @@
 import { useEffect, useRef } from "react";
 import { BOARDS } from "./boards";
 import { LIBRARY_HEIGHT_MESSAGE } from "./frame";
+import type { LibraryPart } from "./frame";
 import { measureFrameHeight } from "./frame-height";
 import { expectSelfResize, onSelfResize } from "./frame-resize";
 import type { TopicId } from "./topics";
 
-export function LibraryBoardPage({ topic }: { topic: TopicId }) {
+export function LibraryBoardPage({ topic, part }: { topic: TopicId; part?: LibraryPart }) {
   const Board = BOARDS[topic];
   const page = useRef<HTMLElement>(null);
 
@@ -70,7 +71,7 @@ export function LibraryBoardPage({ topic }: { topic: TopicId }) {
 
   return (
     <main ref={page} className="lib-page" data-topic={topic}>
-      <Board />
+      <Board part={part} />
     </main>
   );
 }

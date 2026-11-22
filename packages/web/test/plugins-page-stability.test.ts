@@ -96,6 +96,8 @@ const MACHINE_HELPER = `${AGENT_ID} ${en.chat.machineTag("gpu-box")}`;
 const COUNT = '[data-plugin="charts"] .showcase-card-bar button:first-child';
 const textOf = (selector: string) => document.querySelector(selector)?.textContent?.trim() ?? null;
 const counts = () => watchText(COUNT, (node) => node.textContent?.trim() ?? "");
+const offlineNotice = () =>
+  document.body.textContent?.includes(en.appCenter.machinesOffline("gpu-box"));
 const PICKER = `button[aria-label="${en.plugins.viewMachine}"]`;
 /** The page header's controls, in the order they sit. */
 const headerControls = () =>
@@ -219,13 +221,9 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
     const localReads = installsReads(server, null);
 
     await setReachable(server, false);
-    await click(button(en.plugins.viewMachine));
-    expect(pickerEntries()).toContain(en.plugins.machineOutOfReach("gpu-box"));
-    await click(button(en.plugins.viewMachine));
+    expect(offlineNotice()).toBe(true);
     await setReachable(server, true);
-    await click(button(en.plugins.viewMachine));
-    expect(pickerEntries()).toContain("gpu-box");
-    await click(button(en.plugins.viewMachine));
+    await waitFor(() => !offlineNotice(), 40);
     expect(usedBy.texts().filter((value) => value.startsWith("Installed on"))).toEqual([USED_BY_2]);
     expect(installsReads(server, null)).toBe(localReads);
   });
@@ -286,6 +284,7 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
     expect(headerControls()).toEqual(controls);
     await click(button(en.plugins.viewMachine));
     expect(pickerEntries()).toEqual([
+      en.plugins.allMachines,
       en.plugins.thisServer,
       en.plugins.machineOutOfReach("gpu-box"),
     ]);
@@ -293,9 +292,9 @@ describe("the plugin market while a machine connects, fails or blinks", () => {
 
     await setReachable(server, true);
     await click(button(en.plugins.viewMachine));
-    expect(pickerEntries()).toEqual([en.plugins.thisServer, "gpu-box"]);
+    expect(pickerEntries()).toEqual([en.plugins.allMachines, en.plugins.thisServer, "gpu-box"]);
     await click(button(en.plugins.viewMachine));
     expect(headerControls()).toEqual(controls);
-    expect(picker.texts()).toEqual([en.plugins.thisServer]);
+    expect(picker.texts()).toEqual([en.plugins.allMachines]);
   });
 });

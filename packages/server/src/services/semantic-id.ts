@@ -12,7 +12,7 @@
  * | `project`   | none (admin)         | `_`          | `^[a-z][a-z0-9_]{1,63}$`                 |
  * | `project`   | `<username>-` (user) | `_`          | `<username>-[a-z0-9_]+`, 64 at most      |
  * | `agent`     | none                 | `_`          | `^[a-z][a-z0-9_]{1,63}$`                 |
- * | `benchmark` | none                 | `-`          | letters, digits, `_` and `-`; 100 at most |
+ * | contributed | none                 | `-`          | letters, digits, `_` and `-`; 100 at most |
  *
  * The organization's and the channel's prefix says what an id names and makes every core a
  * valid id; a core that already carries it is not prefixed twice. A non-admin's Project id
@@ -90,16 +90,25 @@ export const SEMANTIC_ID_RULES: Record<SemanticIdKind, SemanticIdRule> = {
     examples:
       "Report Writer → report_writer; 金融助手 → finance_copilot; 深度研究报告智能体 → deep_research_reporter; Notes → notes.",
   },
-  benchmark: {
+  benchmark: contributedIdRule("benchmark"),
+};
+
+/**
+ * The rule of a kind a server module contributes (services/semantic-id-kinds.ts): a kebab-case
+ * id of letters, digits, `_` and `-`, at most 100 (core's `isValidId`, which every folder-named
+ * object meets), its placeholder named after the kind. The Evaluation Center's Benchmarks are one.
+ */
+export function contributedIdRule(kind: string): SemanticIdRule {
+  return {
     prefix: "",
     separator: "-",
     maxLength: 64,
     accepts: (id) => id.length <= 100 && isValidId(id),
-    noun: "benchmark",
+    noun: kind,
     examples:
       "Report Writing → report-writing; 代码审查能力 → code-review; 深度研究 v2 → deep-research-v2; SQL → sql.",
-  },
-};
+  };
+}
 
 /**
  * A Project id as `userId` may create it: the admin's is a plain semantic id, anyone else's is

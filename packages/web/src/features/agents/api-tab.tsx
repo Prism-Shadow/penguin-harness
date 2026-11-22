@@ -45,8 +45,8 @@ import {
   Input,
   RuledSection,
   Select,
-  SkeletonList,
   ToggleRow,
+  Waiting,
   useUnsavedChanges,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -631,7 +631,7 @@ export function ApiTab({
   };
 
   if (loadError !== null) return <p className={`text-sm ${toneInk.danger}`}>{loadError}</p>;
-  if (settings === null) return <SkeletonList rows={3} />;
+  if (settings === null) return <Waiting rows={3} />;
 
   return (
     <>
