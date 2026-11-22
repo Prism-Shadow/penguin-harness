@@ -18,7 +18,7 @@
  * Memory tab — owner-only, like the table edits. The prompt teaches the model to manage
  * task files itself; the toggle never stops the server from firing configured tasks.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type {
   ScheduleItem,
   SchedulesResponse,
@@ -43,7 +43,6 @@ import {
 
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
@@ -52,6 +51,7 @@ import { AiCreateModal, AiCreateButtons } from "../ai-create";
 import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "../schedules";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { toastApiError } from "../../lib/toast-api-error";
+import { failureNode } from "../../lib/failure";
 
 /** Display status → badge. A finished one-off is settled: a neutral tag, solid so it still reads. */
 const STATUS_BADGE: Record<ScheduleStatus, BadgeStyle> = {
@@ -88,7 +88,7 @@ export function SchedulesTab({
 
   const [data, setData] = useState<SchedulesResponse | null>(null);
   // Tab-level error is only the initial list load failure; row/edit actions report via toast.
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [busy, setBusy] = useState(false);
   // Form dialog: non-null means open (editing that row, or null for a new task).
   const [form, setForm] = useState<{ editing: ScheduleItem | null } | null>(null);
@@ -110,7 +110,7 @@ export function SchedulesTab({
       setData(schedules);
       applyConfig(configView.config);
     } catch (e) {
-      setError(apiErrorText(e));
+      setError(failureNode(e, { what: "an Agent's schedules could not be loaded" }));
     }
   }, [projectId, agentId, machineId, applyConfig]);
 

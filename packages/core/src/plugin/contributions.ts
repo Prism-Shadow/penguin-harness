@@ -153,9 +153,11 @@ function readCard(table: PluginTable, warnings: string[]): LibraryContributions[
         `${at}.icon must be the path of a ${ICON_EXTENSIONS_TEXT} file in the package; ignored`,
       );
   }
-  if (entry.preinstall !== undefined) {
-    if (typeof entry.preinstall === "boolean") card.preinstall = entry.preinstall;
-    else warnings.push(`${at}.preinstall must be true or false; ignored`);
+  for (const key of ["preinstall", "defaultInstall", "composerMode"] as const) {
+    const value = entry[key];
+    if (value === undefined) continue;
+    if (typeof value === "boolean") card[key] = value;
+    else warnings.push(`${at}.${key} must be true or false; ignored`);
   }
   const quickStart = readQuickStart(entry.quickStart, `${at}.quickStart`, warnings);
   if (quickStart !== undefined) card.quickStart = quickStart;

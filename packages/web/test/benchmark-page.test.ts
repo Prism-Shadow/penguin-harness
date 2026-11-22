@@ -8,7 +8,8 @@
  * - An upload whose id is taken comes back as the overwrite question, about the id the answer's
  *   details name (the picked file's name when they name none); confirming sends the same zip
  *   again with `overwrite`, and the Benchmark comes back as imported. An overwrite refused while
- *   the Benchmark is being evaluated, and any zip the server refuses, comes back with its reason.
+ *   the Benchmark is being evaluated, and any zip the server refuses, comes back with its reason
+ *   and no report to offer: a refusal is not a failure.
  * - A published Benchmark's header offers Export beside the path's copy button; a draft, a failed
  *   one and one whose manifest cannot be read have no package and offer none.
  */
@@ -113,7 +114,10 @@ describe("a zip upload", () => {
       fallbackId: "picked-file",
     });
 
-    expect(result).toEqual({ kind: "refused", message: S.errors.byCode.benchmark_busy });
+    expect(result).toEqual({
+      kind: "refused",
+      failure: { text: S.errors.byCode.benchmark_busy, report: null },
+    });
   });
 
   it("that the server refuses comes back with its reason", async () => {
@@ -128,7 +132,7 @@ describe("a zip upload", () => {
 
     expect(result).toEqual({
       kind: "refused",
-      message: "CASE-002-format has no rubric/README.md.",
+      failure: { text: "CASE-002-format has no rubric/README.md.", report: null },
     });
   });
 });

@@ -4,15 +4,20 @@
  * in turn, at 14, 18, 24, 48 and 96 px; one Agent per accessory, named; every theme's drawing
  * pinned side by side; an agent's own picture at those sizes, beside one whose picture fails to
  * load and draws the default; and the avatar stack — agents and an account overlapping, then the
- * count of the rest. The page's mode switch shows the other mode.
+ * count of the rest; and the app icon shape — one picture at the home-screen size and smaller,
+ * a letter tile and a folder of four, whose corner is the active theme's. The page's mode switch
+ * shows the other mode.
  */
 import {
   AGENT_ACCESSORIES,
   AGENT_AVATAR_VARIANT_NAMES,
   AGENT_PALETTE,
+  APP_ICON_PX,
   AgentAvatar,
+  AppIconShape,
   AvatarStack,
   ICON_SIZE,
+  ImageIcon,
   USER_AVATAR_SIZE,
   UserAvatar,
   agentAccessory,
@@ -22,6 +27,15 @@ import type { AgentAvatarVariant, ThemeId } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
 import { useText } from "../../text";
+import { sampleAppArt } from "../app-art";
+
+/** The app icon at home-screen size, then smaller: a picker's, a window bar's, a folder preview's. */
+const APP_ICON_SIZES = [APP_ICON_PX, 40, 28, 20] as const;
+
+/** A folder icon's four previews: inset and gap inside the square, and each preview's edge. */
+const FOLDER_INSET = 6;
+const FOLDER_GAP = 4;
+const FOLDER_PREVIEW = (APP_ICON_PX - 2 * FOLDER_INSET - FOLDER_GAP) / 2;
 
 /** The sizes the board draws: a row's glyph, a group header's, a list's, a page header's, and the largest. */
 const SIZES = [14, 18, 24, 48, 96] as const;
@@ -199,6 +213,37 @@ export function AvatarsBoard() {
           <span className="lib-cell">
             <AvatarStack items={stack} max={2} size={ICON_SIZE.rowLead} />
             <span className="lib-caption">{t.stackShown(2, stack.length)}</span>
+          </span>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.appIcon} aside={t.appIconAside}>
+        <div className="lib-row" data-avatar-board="app-icon">
+          {APP_ICON_SIZES.map((size) => (
+            <span key={size} className="lib-cell">
+              <AppIconShape size={size}>
+                <ImageIcon icon={sampleAppArt(0)} size={size} fallback={null} />
+              </AppIconShape>
+              <span className="lib-caption">{t.sizeCaption(size)}</span>
+            </span>
+          ))}
+          <span className="lib-cell">
+            <AppIconShape className="flex items-center justify-center bg-accent text-2xl font-semibold text-accent-fg">
+              A
+            </AppIconShape>
+            <span className="lib-caption">{t.appIconLetter}</span>
+          </span>
+          <span className="lib-cell">
+            <AppIconShape
+              className="grid grid-cols-2 content-start bg-fg/10"
+              style={{ padding: FOLDER_INSET, gap: FOLDER_GAP }}
+            >
+              {[1, 2, 3, 4].map((n) => (
+                <AppIconShape key={n} size={FOLDER_PREVIEW}>
+                  <ImageIcon icon={sampleAppArt(n)} size={FOLDER_PREVIEW} fallback={null} />
+                </AppIconShape>
+              ))}
+            </AppIconShape>
+            <span className="lib-caption">{t.appIconFolder}</span>
           </span>
         </div>
       </BoardGroup>

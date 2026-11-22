@@ -20,7 +20,7 @@ import { ChatInput, type ComposerControl } from "../chat-input";
 import { approvalModeChoices } from "../approval-mode";
 import { agentPagePath } from "../session/main-chat-dock";
 import { machineForSession } from "../../../lib/session-machines";
-import { refusalHandoffOccurrence } from "../../../lib/amsp/compaction-summary";
+import { refusalHandoff } from "../../../lib/amsp/compaction-summary";
 import type { DraftCache } from "../draft-cache";
 import type { SessionStreamState } from "../use-session-stream";
 
@@ -105,6 +105,9 @@ export function SessionComposer({
   const contextWindow = modelInfo?.contextWindow;
   // Assumed supported by default: only models explicitly marked vision=false show a blocking hint when adding images.
   const vision = modelInfo?.vision !== false;
+  // A refusal hand-off raises the composer's notice; no failure dialog is mounted here, so it
+  // shows the provider's words without 「[详情]」.
+  const handoff = refusalHandoff(stream.model.items);
   return (
     <ChatInput
       controlRef={composerRef}
@@ -139,7 +142,9 @@ export function SessionComposer({
       onOpenAgentSettings={() =>
         navigate(agentPagePath(selected.agentId, machineForSession(selected.sessionId), "runtime"))
       }
-      refusalHandoff={refusalHandoffOccurrence(stream.model.items)}
+      refusalHandoff={
+        handoff && { occurrence: handoff.occurrence, message: handoff.item.errorMessage }
+      }
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
       sessionId={selected.sessionId}

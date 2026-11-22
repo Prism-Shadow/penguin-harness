@@ -1,4 +1,8 @@
-export { sameModelRef } from "../../lib/model-grouping";
+export { defaultChatModel, sameModelRef } from "../../lib/model-grouping";
+
+export { putVisionModel } from "./vision-model";
+
+export { useDefaultModelRows } from "./default-models";
 
 export { hasConfiguredKey } from "../../lib/model-grouping";
 

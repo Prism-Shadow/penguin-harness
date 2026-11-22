@@ -13,13 +13,13 @@ import { Hono } from "hono";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Contributed } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../src/auth/middleware.js";
-import type { UserRow } from "../src/db/repos/users.js";
+import type { UserRow } from "@prismshadow/penguin-library-auth/repos/users";
 import { HttpModule } from "../src/http/app.js";
 import { WebModule } from "../src/http/routes/contributions.js";
 import {
   DEFAULT_ATTACHMENT_MAX_MB,
   DEFAULT_ATTACHMENT_TOTAL_MB,
-} from "../src/services/attachment-limits.js";
+} from "@prismshadow/penguin-library-setting/attachment-limits";
 
 const TOKEN = "good-token";
 const USER = { userId: "u1", isAdmin: false };
@@ -165,7 +165,10 @@ describe("a route group's auth flag", () => {
 
 describe("a web contribution", () => {
   it("keeps the server's id and from over data fields of the same name", () => {
-    const web = wire(WebModule, {});
+    // An empty resource registry: no plugin host, so no plugin modules run.
+    const web = wire(WebModule, {
+      hmr: { resources: { register: () => () => {}, claim: () => undefined } },
+    });
     web.setup({
       contributions: {
         pages: [

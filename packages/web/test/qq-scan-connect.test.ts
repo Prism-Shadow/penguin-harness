@@ -114,10 +114,12 @@ describe("qqScanStep", () => {
     // Giving up releases the task: nothing resolved it, so the server would otherwise hold
     // its key until the sweep — the "key at rest" outcome this flow is shaped to avoid.
     const step = qqScanStep(failed(error), { failures: 2, refreshes: 0 });
+    // The error stays beside its words, so the toast offers its report.
     expect(step).toEqual({
       kind: "stop",
       notice: S.qq.scanFailed("bad gateway"),
       releaseTask: true,
+      error,
     });
     // One answer that came back resets the run — the loop passes failures: 0 again.
     expect(qqScanStep(ok({ status: "pending" }), { failures: 2, refreshes: 0 })).toEqual({

@@ -17,84 +17,142 @@
  * disabled: a greyed-out "Proxy" row still tells a non-admin the setting exists and that
  * someone else can reach it.
  *
+ * Other modules add pages of their own (`SettingsModule.sections`): each brings its key, group,
+ * visibility and place (`order`), and joins the rail among the app's pages by that place, its
+ * group kept contiguous. The rule here treats a contributed page exactly like one of the app's.
+ * A contribution in the `plugin` group takes no rail entry of its own: it joins its plugin's page
+ * (lib/plugin-pages.ts). The Plugins group comes last, under its own heading: the host's own
+ * plugin pages first (plugin sources, module requests, the Agent sandbox), then the plugin pages in
+ * the order the caller gives them — each already holds only what this viewer may see.
+ *
  * None of this is the boundary. The admin APIs answer a non-admin with 403 whatever the
  * browser chose to render.
  */
+import type { SettingsSectionData } from "@prismshadow/penguin-web-plugin";
 import { offersChangePassword, type AccountMenuSession } from "./account-menu";
 
-/** A page of the Settings dialog. */
-export type SettingsSectionKey =
+/**
+ * A contributed page's key. Branded, so the app's own code still names only its own pages and a
+ * mistyped one is a type error; a contributed key enters through the contribution's data or the
+ * plugin face's `requestSettings` (lib/settings-request.ts).
+ */
+export type ContributedSettingsKey = string & { readonly __contributedSettingsKey: true };
+
+/** A page of the Settings dialog: one of the app's own, or one another module contributed. */
+export type SettingsSectionKey = HostSettingsSectionKey | ContributedSettingsKey;
+
+/** The app's own pages. */
+export type HostSettingsSectionKey =
   | "profile"
   | "general"
   | "appearance"
   | "shortcuts"
   | "archived"
   | "account"
-  | "browser"
   | "proxy"
   | "uploads"
   | "company"
-  | "chromeExtension"
   | "agentApi"
   | "plugins"
+  | "moduleRequests"
+  | "sandbox"
   | "users";
 
-/** Rail heading a page sits under: the viewer's own preferences vs. the whole server's. */
-export type SettingsGroupKey = "personal" | "server";
+/** Rail heading a page sits under: the viewer's own preferences, the whole server's, a plugin's. */
+export type SettingsGroupKey = "personal" | "server" | "plugin";
 
 export interface SettingsSection {
   readonly key: SettingsSectionKey;
   readonly group: SettingsGroupKey;
 }
 
+/** The rail's groups, in the order their headings are drawn. */
+const GROUP_ORDER: Readonly<Record<SettingsGroupKey, number>> = {
+  personal: 0,
+  server: 1,
+  plugin: 2,
+};
+
 /** Who is looking, and from where — the union of what the visibility rules consume. */
 export interface SettingsViewer extends AccountMenuSession {
   readonly isAdmin: boolean;
 }
 
-/**
- * Every page in rail order, with its visibility rule. Pages of one group stay contiguous —
- * the rail renders this list top to bottom and starts a heading wherever the group changes.
- */
-const SECTION_RULES: ReadonlyArray<SettingsSection & { visible(viewer: SettingsViewer): boolean }> =
-  [
-    // Heads the personal group, and unlike the account page below it is visible in every
-    // session: a nickname and an avatar need no password to change, so the desktop shell's
-    // own window — which for some installs is the only session there is — keeps it.
-    { key: "profile", group: "personal", visible: () => true },
-    { key: "general", group: "personal", visible: () => true },
-    { key: "appearance", group: "personal", visible: () => true },
-    // Keyboard shortcuts are the account's, and apply in every session of it.
-    { key: "shortcuts", group: "personal", visible: () => true },
-    // The conversations not in the sidebar — archived by hand, or opened by a program and not
-    // kept — across every Project the user can open: theirs in every session.
-    { key: "archived", group: "personal", visible: () => true },
-    // The desktop shell's own window has no password to change; a password-established
-    // session against the same server still does. Same predicate as the old menu row.
-    { key: "account", group: "personal", visible: (v) => offersChangePassword(v) },
-    // The user's agent browser: the desktop app's choice of backend, and the Chromes paired to
-    // the account. Every user may pair their own Chrome, so every session has it.
-    { key: "browser", group: "personal", visible: () => true },
-    { key: "proxy", group: "server", visible: (v) => v.isAdmin },
-    { key: "uploads", group: "server", visible: (v) => v.isAdmin },
-    // The company-mode master switch: server-global like the proxy and upload limits.
-    { key: "company", group: "server", visible: (v) => v.isAdmin },
-    // Whether users may connect their own Chrome at all: server-global, like company mode.
-    { key: "chromeExtension", group: "server", visible: (v) => v.isAdmin },
-    // Whether any Agent's public API answers at all: server-global, like the Chrome switch.
-    { key: "agentApi", group: "server", visible: (v) => v.isAdmin },
-    // The sandbox, and the options loaded plugins declare (server-global, like the plugins themselves).
-    { key: "plugins", group: "server", visible: (v) => v.isAdmin },
-    // Single-user under the desktop shell: the server rejects the admin user routes there.
-    { key: "users", group: "server", visible: (v) => v.isAdmin && !v.desktopMode },
-  ];
+type SectionRule = SettingsSection & { order: number; visible(viewer: SettingsViewer): boolean };
 
-/** The pages this viewer may open, in rail order. */
-export function visibleSettingsSections(viewer: SettingsViewer): readonly SettingsSection[] {
-  return SECTION_RULES.filter((section) => section.visible(viewer)).map(({ key, group }) => ({
-    key,
-    group,
+/**
+ * The app's own pages, each with its place and visibility rule. The places leave room between
+ * them for contributed pages.
+ */
+const SECTION_RULES: readonly SectionRule[] = [
+  // Heads the personal group, and unlike the account page below it is visible in every
+  // session: a nickname and an avatar need no password to change, so the desktop shell's
+  // own window — which for some installs is the only session there is — keeps it.
+  { key: "profile", group: "personal", order: 10, visible: () => true },
+  { key: "general", group: "personal", order: 20, visible: () => true },
+  { key: "appearance", group: "personal", order: 30, visible: () => true },
+  // Keyboard shortcuts are the account's, and apply in every session of it.
+  { key: "shortcuts", group: "personal", order: 40, visible: () => true },
+  // The conversations not in the sidebar — archived by hand, or opened by a program and not
+  // kept — across every Project the user can open: theirs in every session.
+  { key: "archived", group: "personal", order: 50, visible: () => true },
+  // The desktop shell's own window has no password to change; a password-established
+  // session against the same server still does. Same predicate as the old menu row.
+  { key: "account", group: "personal", order: 60, visible: (v) => offersChangePassword(v) },
+  { key: "proxy", group: "server", order: 110, visible: (v) => v.isAdmin },
+  { key: "uploads", group: "server", order: 120, visible: (v) => v.isAdmin },
+  // The company-mode master switch: server-global like the proxy and upload limits.
+  { key: "company", group: "server", order: 130, visible: (v) => v.isAdmin },
+  // Whether any Agent's public API answers at all: server-global, like company mode.
+  { key: "agentApi", group: "server", order: 150, visible: (v) => v.isAdmin },
+  // The Plugins group opens with the host's own plugin pages, before any plugin's: where plugins
+  // install from, the members' requests to run a plugin's server module, then the sandbox Agents
+  // run in. All server-global, like the plugins themselves.
+  { key: "plugins", group: "plugin", order: 10, visible: (v) => v.isAdmin },
+  { key: "moduleRequests", group: "plugin", order: 15, visible: (v) => v.isAdmin },
+  { key: "sandbox", group: "plugin", order: 20, visible: (v) => v.isAdmin },
+  // Single-user under the desktop shell: the server rejects the admin user routes there.
+  { key: "users", group: "server", order: 170, visible: (v) => v.isAdmin && !v.desktopMode },
+];
+
+/** Where the plugins' own pages start in the Plugins group: after every page the host puts there. */
+const PLUGIN_PAGES_FROM = 1000;
+
+/** A contributed page as the rule judges it: everyone sees it, or admins alone. */
+function ruleOf(section: SettingsSectionData): SectionRule {
+  return {
+    key: section.key as ContributedSettingsKey,
+    group: section.group,
+    order: section.order,
+    visible: section.visibility === "admin" ? (v) => v.isAdmin : () => true,
+  };
+}
+
+/**
+ * The pages this viewer may open, in rail order: the app's own and the `contributed` ones, by
+ * group and then by place, so the pages of one group stay contiguous — the rail renders this list
+ * top to bottom and starts a heading wherever the group changes — then `pluginPages`, in the
+ * order given. A contributed page whose key the app already uses is dropped, and so is one in the
+ * `plugin` group: it is part of its plugin's page.
+ */
+export function visibleSettingsSections(
+  viewer: SettingsViewer,
+  contributed: readonly SettingsSectionData[] = [],
+  pluginPages: readonly { key: string }[] = [],
+): readonly SettingsSection[] {
+  const own = new Set<string>(SECTION_RULES.map((rule) => rule.key));
+  // After the host's own pages in the group, in the order given.
+  const plugins = pluginPages.map((page, i): SectionRule => ({
+    key: page.key as ContributedSettingsKey,
+    group: "plugin",
+    order: PLUGIN_PAGES_FROM + i,
+    visible: () => true,
   }));
+  const rules = contributed.filter((c) => c.group !== "plugin" && !own.has(c.key)).map(ruleOf);
+  return [...SECTION_RULES, ...rules, ...plugins]
+    .filter((section) => section.visible(viewer))
+    .sort((a, b) => GROUP_ORDER[a.group] - GROUP_ORDER[b.group] || a.order - b.order)
+    .map(({ key, group }) => ({ key, group }));
 }
 
 /**
@@ -117,6 +175,6 @@ export function resolveSettingsSection(
   raw: string | null | undefined,
   sections: readonly SettingsSection[],
 ): SettingsSectionKey | null {
-  if (sections.some((section) => section.key === raw)) return raw as SettingsSectionKey;
-  return sections[0]?.key ?? null;
+  const requested = sections.find((section) => section.key === raw);
+  return requested?.key ?? sections[0]?.key ?? null;
 }

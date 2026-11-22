@@ -22,7 +22,7 @@ import { InfoPopover } from "../../overlays/info-popover/info-popover";
 export type CardPadding = "none" | "sm" | "md";
 
 const PADDING: Record<CardPadding, string> = {
-  none: "overflow-hidden",
+  none: "",
   sm: "p-3",
   md: "p-4",
 };
@@ -56,6 +56,7 @@ export function Card({
       <Tag
         {...rest}
         className={`${framed ? "ui-frame " : ""}min-w-0 rounded-md ${framed ? "border border-line bg-surface" : ""} ${PADDING[padding]} ${interactive ? `cursor-default transition-colors duration-150 ${framed ? "hover:!border-line-emphasis" : "hover:bg-control-hover"}` : ""} ${className}`}
+        data-clip-surface={padding === "none" ? "" : undefined}
         data-wallpaper-surface={framed ? "panel" : undefined}
       >
         {children}
