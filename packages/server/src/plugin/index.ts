@@ -86,6 +86,7 @@ export type {
   PluginCliCommands,
   PluginCliCommandsSlots,
 } from "./cli-commands.js";
+export type { SystemAppData, SystemApps, SystemAppsSlots } from "./system-app-modules.js";
 export type {
   DeclaredBinding,
   ToolModelBindingCode,
