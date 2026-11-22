@@ -137,6 +137,8 @@ Field notes:
 - `base_url`: a new Project stores each gateway's endpoint on its group, and a preset row stores one only where it differs from its group's (OpenCode Go's Anthropic Messages rows, custom's Atria Dawn). Nothing fills a missing one when a model is used: direct vendor rows have none and reach the vendor's default endpoint, or its `*_BASE_URL` variable.
 - `api_key`: when empty, the entry uses its group key, unless the entry's own `base_url` is on another origin than the group's (see [Group connections](#group-connections)). With neither, it uses the client's own environment variable only when no `base_url` resolves for it or the one that does is the client's default endpoint (see [Provider credential variables](#provider-credential-variables)); every other entry needs a key of its own or its group's.
 
+For Hy4, set `provider = "tokendance"` and `model_id = "hy4"`, or `provider = "openrouter"` and `model_id = "tencent/hy4"`. Both presets use `client_type = "openai-responses"`.
+
 ```toml
 default_model = { provider = "deepseek", model_id = "deepseek-flash" }
 
@@ -225,6 +227,7 @@ The Plugins page does not offer package-global Delete plugin, which would remove
 - The server runs the union of every Project's table, so a plugin one Project asks for is loaded for all of them.
 - An entry of any other shape is dropped when the file is read, and the rest of the file still loads. A `plugins` key that is not a table asks for no plugins.
 - An empty table is written as an empty table: the Project asks for no plugins.
+- A plugin that ships with PenguinHarness and provides a system app of the App Center stays in the list: a write that would take it out of what this server runs for the Project is refused with `409` `system_app_module_locked`, and an entry deleted from the file by hand is written back into this server's `[plugins.<machineId>]` table at the next server start.
 
 ## Command policy
 

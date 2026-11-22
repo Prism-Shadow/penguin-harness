@@ -58,11 +58,11 @@ Project 创建时的列入是功能本身，予以保留。届时还须决定：
 
 [每个 Project 都有系统 Agent](2026-11-19-system-agent.zh.md)，id 为 `system_agent`。Agent id 由用户自选，所以 Project 里可能已有这个 id 的 Agent。它的 `system_config.yaml` 没有 `system: true`，因此仍是普通 Agent：照旧对话、删除与导出，供给从不覆盖它。它占着这个 id 时，该 Project 没有系统 Agent；Agents 页给 Project 的 owner 一行提示，点出这个 Agent。
 
-### 范围
+### 生效范围
 
 升级前已有 `agents/system_agent/` 的任何服务端、桌面端或机器上的 Project。
 
-### 需要做什么
+### 用户需要做什么
 
 要让该 Project 有系统 Agent：导出这个 Agent，以另一个 id 导入，再删除原来的。系统 Agent 在该 Project 的 Agent 列表下次被读取时补齐。
 

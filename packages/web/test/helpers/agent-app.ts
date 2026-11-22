@@ -1384,6 +1384,7 @@ export async function mountAgentApp(
     at,
     extra = [],
     pages = [],
+    layers = [],
   }: {
     route?: string;
     at: string;
@@ -1394,6 +1395,8 @@ export async function mountAgentApp(
      * and the system Agent's settings read the system apps from (test/helpers/system-app-pages.ts).
      */
     pages?: readonly WebAppPage[];
+    /** What the shell mounts beside every page, as its layers are: kept across navigation. */
+    layers?: ReactElement[];
   },
 ) {
   const router = createMemoryRouter(
@@ -1410,7 +1413,7 @@ export async function mountAgentApp(
             h(
               ProjectProvider,
               null,
-              h(MachinesProvider, null, h(SessionsProvider, null, h(Outlet))),
+              h(MachinesProvider, null, h(SessionsProvider, null, h(Outlet), ...layers)),
             ),
           ),
         ),

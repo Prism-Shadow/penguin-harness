@@ -4445,6 +4445,12 @@ export interface PluginModuleRequest {
    * lists it in every Project. Absent from a server older than PRFC-0030.
    */
   preinstalled?: boolean;
+  /**
+   * A preinstalled module behind a system app of the App Center: it always runs. A stop of it,
+   * and any plugin-table write that would unlist it, answers 409 `system_app_module_locked`.
+   * Absent from a server older than that rule.
+   */
+  systemApp?: boolean;
   state: PluginModuleState;
   /**
    * The package is on this server (installed, linked or shipped). False for a member's request of

@@ -34,7 +34,12 @@ type Gates = ReadonlyMap<string, readonly string[]>;
 
 /** The layers in their order, a gated module's each behind its gate. */
 export function layersOf(
-  layers: ReadonlyArray<{ id: string; from: string; Component: ComponentType }>,
+  layers: ReadonlyArray<{
+    id: string;
+    from: string;
+    Component: ComponentType;
+    area: WebAppLayer["area"];
+  }>,
   gates: Gates,
 ): WebAppLayer[] {
   return layers.map((layer) => ({
@@ -42,6 +47,7 @@ export function layersOf(
     Component: gates.has(layer.from)
       ? gatedComponent(layer.from, layer.Component)
       : layer.Component,
+    area: layer.area,
   }));
 }
 
