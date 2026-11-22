@@ -4085,6 +4085,7 @@ export const en: Strings = {
         toolkits: "RSI algorithms",
         benchmarks: "Benchmarks",
       },
+      shuffle: "Shuffle suggestions",
       examplesTitle: "Examples and shortcuts",
     },
     /** Folder names for the start page's collapsible examples (bookmark-style: exactly one open at a time). */
@@ -4097,6 +4098,8 @@ export const en: Strings = {
     /** Second tooltip line on an example row: the click fills the composer, it does not send. */
     exampleFillHint: "Click to fill the composer — edit it if you like, then send",
     shortcuts: {
+      retry: "Reload my shortcuts",
+      manage: "Manage shortcuts",
       folder: "My shortcuts",
       new: "New shortcut",
       newFromComposer: "Starts from whatever is in the composer",

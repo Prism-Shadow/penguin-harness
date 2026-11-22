@@ -4,7 +4,7 @@
  * hand in the add dialog (features/machines/add-machine-dialog.tsx), and a host's configure
  * dialog (features/machines/ssh-host-dialog.tsx) — the manual Benchmark form
  * (features/benchmark/create-benchmark-modal.tsx), the chat's shortcut editor
- * (features/chat/shortcuts-folder.tsx) and the built-in browser's homepage
+ * (features/chat/saved-prompts.tsx) and the built-in browser's homepage
  * (plugins/browser-automation/src/web/homepage-dialog.tsx).
  *
  * - The verb waits for what it needs: a new ssh host's name and address, a malformed value — or a
@@ -37,7 +37,7 @@ import type {
 import { AddMachineDialog } from "../src/features/machines/add-machine-dialog";
 import { SshHostDialog } from "../src/features/machines/ssh-host-dialog";
 import { CreateBenchmarkModal } from "../src/features/benchmark/create-benchmark-modal";
-import { ShortcutsFolder } from "../src/features/chat/shortcuts-folder";
+import { SavedPrompts } from "../src/features/chat/saved-prompts";
 import { HomepageDialog } from "../../../plugins/browser-automation/src/web/homepage-dialog";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import {
@@ -271,13 +271,11 @@ describe("record dialogs", () => {
       };
     }
 
-    async function openFolder() {
+    async function openShortcuts() {
       const server = prefsServer();
       await mount(
         withPrompt(
-          h(ShortcutsFolder, {
-            open: true,
-            onOpen: () => {},
+          h(SavedPrompts, {
             readComposerText: () => "Summarize the diff",
             onFill: () => {},
           }),
@@ -288,7 +286,7 @@ describe("record dialogs", () => {
     }
 
     it("keeps the dialog and the typing when the write is refused, and lists the shortcut once it lands", async () => {
-      const server = await openFolder();
+      const server = await openShortcuts();
       await click(button(s.new));
       await type(field(s.titleLabel), "Diff summary");
       server.refuseNext();
@@ -304,7 +302,7 @@ describe("record dialogs", () => {
     });
 
     it("saves a new shortcut as the composer filled it, and closes it untouched without a question", async () => {
-      await openFolder();
+      await openShortcuts();
       await click(button(s.new));
       expect(button(en.common.save).disabled).toBe(false);
       await pressEscape();

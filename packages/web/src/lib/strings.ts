@@ -4285,6 +4285,7 @@ export const zh = {
         toolkits: "自进化算法",
         benchmarks: "评估集",
       },
+      shuffle: "换一组示例",
       examplesTitle: "示例与快捷指令",
     },
     /** Collapsed group names for the start page's examples (bookmark style; only one open at a time). */
@@ -4298,6 +4299,8 @@ export const zh = {
     exampleFillHint: "点击填入输入框，可修改后自行发送",
     /** The examples block's last folder: prompts the user wrote and saved, stored per user on the server. */
     shortcuts: {
+      retry: "重新加载我的快捷指令",
+      manage: "管理快捷指令",
       folder: "我的快捷指令",
       new: "新建快捷指令",
       /**

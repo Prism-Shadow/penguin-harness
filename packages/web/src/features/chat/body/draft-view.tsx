@@ -1,8 +1,8 @@
 /**
  * Draft view (/chat/new): the pre-persistence form of a new
  * conversation, before any Session exists. The page around the input card is the start
- * dashboard (start-dashboard.tsx: the brand and its counts above the card, the examples and
- * shortcuts below it); this module keeps the draft itself. Before sending,
+ * dashboard (start-dashboard.tsx: the brand above the card, examples, shortcuts and counts
+ * below it); this module keeps the draft itself. Before sending,
  * this is where Agent / Workspace / approval mode / Model are all
  * chosen in one place — two small buttons sit right below the card: the Agent dialog and Workspace
  * directory selection (the menu browses server-side directories, and the current
@@ -1043,7 +1043,7 @@ export function DraftView({
   return (
     <div className="anim-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-6 md:px-4">
       {/*
-       * Vertical layout: everything visible — the dashboard's brand and tiles, the input card,
+       * Vertical layout: everything visible — the brand, project counts, the input card,
        * the ownership pills, the dashboard's examples — lives in ONE block between two empty flex-1
        * spacers, so the block is centred and the free space above and below it is exactly equal.
        * The header deliberately sits inside that block rather than in the upper spacer: keeping
