@@ -2,15 +2,17 @@
  * End-to-end tests for the App Center (/apps), against the real server (locale en).
  *
  * - The admin's default Project lists the shipped Support workbench as a tile with its own icon,
- *   served by the icon route. A click opens it windowed over the grid, and the window's close
- *   returns to the grid; "Open full screen" in the tile's menu opens the full page, whose exit
- *   comes back to the App Center. The App Center switch on the workbench's row (the Plugins
+ *   served by the icon route. A click opens it windowed over the grid; the window's minimize
+ *   returns to the grid with the tile marked running, and the tile brings back the same frame;
+ *   the window's close returns to the grid; "Open full screen" in the tile's menu opens the full
+ *   page, whose exit comes back to the App Center. The App Center switch on the workbench's row (the Plugins
  *   tab's Workbenches sub-page) takes the tile off (the empty page offers Create with AI) and puts
  *   it back.
  * - With three workbenches of a fresh account's Agent: a real pointer drag of one tile onto the
  *   middle of another rings the target while it hovers and makes a folder on release, which
  *   opens as a panel over the grid; the menu moves a tile backward; the arrangement outlives a
- *   reload; restoring the default order asks first and then clears it.
+ *   reload; restoring the default order asks first and then clears it. After several pages of
+ *   navigation inside a grouped app, its close button still returns directly to its tile.
  * - The header's New folder makes a folder of the apps checked in its dialog, under the name
  *   typed there, at the first checked app's place.
  * - A system app's tile opens its own page, where the nav keeps the App Center lit, Benchmark
@@ -49,8 +51,18 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await expect(page).toHaveURL(/\/apps\?app=penguin_support%2Fsupport$/);
   const appWindow = page.getByRole("region", { name: "Support" });
   await expect(appWindow.locator("iframe")).toBeVisible();
+  // Minimized, the app keeps running: the frame it comes back with is the same element.
+  await appWindow.locator("iframe").evaluate((frame) => {
+    frame.dataset.e2eKept = "yes";
+  });
+  await appWindow.getByRole("button", { name: "Minimize" }).click();
+  await expect(page).toHaveURL(`${BASE}/apps`);
+  await expect(grid.getByRole("button", { name: /^Support, .+, Running$/ })).toBeVisible();
+  await tile.click();
+  await expect(appWindow.locator('iframe[data-e2e-kept="yes"]')).toBeVisible();
   await appWindow.getByRole("button", { name: "Close, back to the App Center" }).click();
   await expect(page).toHaveURL(`${BASE}/apps`);
+  await expect(grid.getByRole("button", { name: /^Support, .+, Running$/ })).toHaveCount(0);
 
   await tile.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Open full screen" }).click();
@@ -131,7 +143,9 @@ test.beforeAll(async ({ browser }) => {
         dataBase64: zip({
           [`${id}/package.json`]: JSON.stringify(manifest(title)),
           [`${id}/index.ts`]: INDEX,
-          [`${id}/ui/index.html`]: `<!doctype html><html><body><h1>${title}</h1></body></html>`,
+          [`${id}/ui/index.html`]: `<!doctype html><html><body><h1>${title}</h1>
+            <a href="#read">Read</a><a href="#review">Review</a><a href="#saved">Saved</a>
+            </body></html>`,
         }).toString("base64"),
       },
     });
@@ -283,9 +297,14 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   await expect(panel.getByRole("button", { name: /^Gamma,/ })).toBeVisible();
   await panel.getByRole("button", { name: /^Gamma,/ }).click();
   const window = page.getByRole("region", { name: "Gamma" });
-  await expect(window.frameLocator("iframe").getByRole("heading", { name: "Gamma" })).toBeVisible();
+  const inside = window.frameLocator("iframe");
+  await expect(inside.getByRole("heading", { name: "Gamma" })).toBeVisible();
+  for (const name of ["Read", "Review", "Saved"]) await inside.getByRole("link", { name }).click();
+  // Browser Back navigates the app's pages. The host's close leaves the whole app in one step.
+  await page.evaluate(() => history.back());
+  await expect.poll(() => inside.locator("body").evaluate(() => location.hash)).toBe("#review");
   await window.getByRole("button", { name: "Close, back to the App Center" }).click();
-  await expect(panel).toBeVisible();
+  await expect(panel.getByRole("button", { name: /^Gamma,/ })).toBeFocused();
 
   await page.keyboard.press("Escape");
   await expect(panel).toBeHidden();
