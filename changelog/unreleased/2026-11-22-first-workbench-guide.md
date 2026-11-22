@@ -3,6 +3,7 @@
 - **Date:** 2026-11-22
 - **Type:** feature
 - **Scope:** `plugins`, `server`
+- **PR:** [#1695](https://github.com/Prism-Shadow/penguin-harness/pull/1695)
 
 [中文版](2026-11-22-first-workbench-guide.zh.md)
 
