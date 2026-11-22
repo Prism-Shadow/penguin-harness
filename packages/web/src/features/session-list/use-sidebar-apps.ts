@@ -15,32 +15,15 @@
  *   shows none of the last one's apps meanwhile.
  * - A read that fails keeps the rows shown. Safe mode reads nothing: no workbench runs there.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import type { AppCenterShortcut, IconRef } from "@prismshadow/penguin-server/api";
-import * as api from "../../api/endpoints";
 import { locatedAppKey } from "../../lib/app-center-path";
-import { usePageAgent } from "../../lib/page-agent";
+import { useAgentApps } from "../../lib/use-agent-apps";
+import { usePageAgent, type PageAgent } from "../../lib/page-agent";
 import { useRunningApps, type RunningShortcut } from "../../lib/running-apps";
 import { localizedText } from "../../lib/skill-use";
-import { shortcutOfWorkbench } from "../../lib/workbench-shortcut";
-import {
-  runningWorkbenches,
-  WORKBENCH_BUILDING_EVENT,
-  WORKBENCH_UPDATED_EVENT,
-  workbenchAppPath,
-  type WorkbenchUpdatedDetail,
-} from "../../lib/workbench-tabs";
-import { useSafeMode } from "../../rescue/safe-mode";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-
-/** The Agent whose apps lead the list, on the server it lives on. */
-export interface SidebarAppsAgent {
-  projectId: string;
-  agentId: string;
-  /** The machine the Agent lives on; null for this server. */
-  machineId: string | null;
-}
 
 export interface SidebarAppRow {
   /** The App Center's key, `<machineId>:` first for a machine's app: the window's address. */
@@ -65,78 +48,8 @@ export interface SidebarAppRow {
   shown: boolean;
 }
 
-/** The Agent's sidebar shortcuts, as its server lists them; null until the first answer. */
-export function useAgentApps(agent: SidebarAppsAgent | null) {
-  const safe = useSafeMode();
-  const scope =
-    agent === null ? null : JSON.stringify([agent.projectId, agent.agentId, agent.machineId]);
-  const [loaded, setLoaded] = useState<{ scope: string; apps: RunningShortcut[] } | null>(null);
-  /** The newest read: an older one's answer is dropped. */
-  const asked = useRef(0);
-  const projectId = agent?.projectId ?? null;
-  const agentId = agent?.agentId ?? null;
-  const machineId = agent?.machineId ?? null;
-
-  const read = useCallback(async () => {
-    const mine = ++asked.current;
-    if (safe || scope === null || projectId === null || agentId === null) return;
-    try {
-      const answer = await api.getSidebarApps(projectId, agentId, machineId);
-      if (asked.current !== mine) return;
-      const apps =
-        "apps" in answer
-          ? answer.apps.map((app) => located(projectId, app, machineId))
-          : runningWorkbenches(answer.workbenches)
-              .filter((w) => w.tabs.length > 0)
-              .map((w) =>
-                shortcutOfWorkbench(projectId, { agentId, agentName: agentId }, w, machineId),
-              );
-      setLoaded({ scope, apps });
-    } catch {
-      // The list is a convenience beside the conversations: a failed read leaves it as it was.
-    }
-  }, [safe, scope, projectId, agentId, machineId]);
-
-  useEffect(() => {
-    void read();
-    return () => {
-      asked.current++;
-    };
-  }, [read]);
-
-  useEffect(() => {
-    const news = (e: Event) => {
-      const d = (e as CustomEvent<WorkbenchUpdatedDetail>).detail;
-      if (d.projectId === projectId && d.agentId === agentId && (d.machineId ?? null) === machineId)
-        void read();
-    };
-    window.addEventListener(WORKBENCH_UPDATED_EVENT, news);
-    window.addEventListener(WORKBENCH_BUILDING_EVENT, news);
-    return () => {
-      window.removeEventListener(WORKBENCH_UPDATED_EVENT, news);
-      window.removeEventListener(WORKBENCH_BUILDING_EVENT, news);
-    };
-  }, [projectId, agentId, machineId, read]);
-
-  return { apps: !safe && loaded !== null && loaded.scope === scope ? loaded.apps : null, read };
-}
-
-/** A shortcut as the window takes it: on its machine, its full page asked of that machine. */
-function located(
-  projectId: string,
-  app: AppCenterShortcut,
-  machineId: string | null,
-): RunningShortcut {
-  if (machineId === null) return app;
-  return {
-    ...app,
-    machineId,
-    path: workbenchAppPath(projectId, app.agentId, app.workbenchId, app.tab, machineId),
-  };
-}
-
 export function useSidebarApps(): {
-  agent: SidebarAppsAgent | null;
+  agent: PageAgent | null;
   rows: readonly SidebarAppRow[];
   /** Reads the Agent's list again (after a write the server announces anyway). */
   reload: () => void;
@@ -145,7 +58,7 @@ export function useSidebarApps(): {
   const projectId = currentProject?.projectId ?? null;
   const page = usePageAgent();
   const { locale } = useLocale();
-  const agent = useMemo<SidebarAppsAgent | null>(() => {
+  const agent = useMemo<PageAgent | null>(() => {
     if (projectId === null) return null;
     if (
       page !== null &&

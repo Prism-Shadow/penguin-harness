@@ -25,7 +25,7 @@ import { locatedAppKey } from "../../lib/app-center-path";
 import { useRestoreApp } from "../../lib/running-apps";
 import { localizedText } from "../../lib/skill-use";
 import { useLocale } from "../../state/locale";
-import { useAgentApps } from "../session-list/use-sidebar-apps";
+import { useAgentApps } from "../../lib/use-agent-apps";
 import { onDefaultModelsRequest, onModelsChanged } from "../../lib/default-models-request";
 import {
   dismissOnboarding,
