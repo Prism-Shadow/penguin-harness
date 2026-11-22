@@ -1189,20 +1189,26 @@ export const en: Strings = {
     broken: "Failed to load",
     /** A tile whose app is still being built: it opens once the build is done. */
     building: "Building",
+    /** A tile whose app is running behind the grid, its window minimized. */
+    running: "Running",
     /** A tile's hint: its whole title and the Agent that owns it. */
     tileTip: (title: string, agent: string) => `${title}, from ${agent}`,
     buildingTip: (title: string, agent: string) =>
       `${title}, from ${agent}. Building; it opens once the build is done`,
     failedTip: (title: string, agent: string) =>
       `${title}, from ${agent}. Failed to load; its menu shows the error`,
+    runningTip: (title: string, agent: string) =>
+      `${title}, from ${agent}. Running; a click brings its window back`,
     /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
     tileName: (title: string, agent: string, state: string | null) =>
       state === null ? `${title}, ${agent}` : `${title}, ${agent}, ${state}`,
     systemTileName: (title: string) => `${title}, system app`,
     workbenchesEmptyTitle: "No apps from agents yet",
-    folderTip: (name: string, count: number) => `${name}, ${count} ${count === 1 ? "app" : "apps"}`,
-    folderName: (name: string, count: number) =>
-      `${name}, folder, ${count} ${count === 1 ? "app" : "apps"}`,
+    /** A folder's hint and accessible name: its apps, and how many of them are running. */
+    folderTip: (name: string, count: number, running: number) =>
+      `${name}, ${count} ${count === 1 ? "app" : "apps"}${running > 0 ? `, ${running} running` : ""}`,
+    folderName: (name: string, count: number, running: number) =>
+      `${name}, folder, ${count} ${count === 1 ? "app" : "apps"}${running > 0 ? `, ${running} running` : ""}`,
     /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
     newFolder: "New folder",
     /** The page header's button that opens the new-folder dialog. */
@@ -1245,6 +1251,7 @@ export const en: Strings = {
     /** A failed tile with no recorded message (an older status file). */
     errorUnknown: "No error message was recorded. Open the app to see how it loads.",
     /** The windowed app's title bar. */
+    windowMinimize: "Minimize",
     windowClose: "Close, back to the App Center",
     windowFullScreen: "Open full screen",
     /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
