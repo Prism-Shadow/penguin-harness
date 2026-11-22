@@ -20,7 +20,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { readPluginTable } from "@prismshadow/penguin-core";
+import { projectDir, readPluginTable } from "@prismshadow/penguin-core";
 import { moduleDefOf, type ModuleClass } from "@prismshadow/penguin-core/kernel";
 import type { ToolModelBindingsResponse } from "@prismshadow/penguin-library-model";
 import type { PluginCliCommandRunResponse, SessionCreateResponse } from "../src/api/types.js";
@@ -244,7 +244,7 @@ describe("the shipped multimodal tools plugin", () => {
   });
 
   it("removes a deleted Session's files at the next boot", async () => {
-    const dir = path.join(t.root, PROJECT, ".multimodal-tools", "sessions", sessionId);
+    const dir = path.join(projectDir(t.root, PROJECT), ".multimodal-tools", "sessions", sessionId);
     expect(existsSync(dir)).toBe(true);
     expect((await admin.delete(`/api/sessions/${sessionId}`)).status).toBe(204);
     t = await restartTestApp(t, { plugins: await shippedPlugin() });

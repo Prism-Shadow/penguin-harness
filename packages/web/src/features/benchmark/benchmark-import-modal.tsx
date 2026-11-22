@@ -91,11 +91,14 @@ const UPLOAD_LABEL_CLASS = buttonClass("secondary", "sm");
 
 export function ImportBenchmarkModal({
   projectId,
+  benchmarksDir,
   agents,
   onClose,
   onImported,
 }: {
   projectId: string;
+  /** The folder the Project's Benchmarks are in, as the prompt names it (benchmark-prompts.ts). */
+  benchmarksDir: string;
   agents: readonly AgentSummary[];
   onClose: () => void;
   /** A zip was written: the Benchmark as the list now reads it. The dialog has toasted it already. */
@@ -123,9 +126,10 @@ export function ImportBenchmarkModal({
   const chatPrompt = buildBenchmarkImportPrompt(
     trimmedSource || S.benchmark.importSourceToken,
     projectId,
+    benchmarksDir,
   );
   const executor = pickDefaultAgent(agents);
-  const chat = benchmarkImportChat(trimmedSource, projectId, agents);
+  const chat = benchmarkImportChat(trimmedSource, projectId, benchmarksDir, agents);
 
   const openChat = () => {
     if (chat === null) return;

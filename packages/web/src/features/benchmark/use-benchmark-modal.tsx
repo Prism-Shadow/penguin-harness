@@ -66,6 +66,7 @@ import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import {
   DEFAULT_TEST_REPETITIONS,
   MAX_RUNS,
+  benchmarkFolder,
   evaluateTail,
   optimizeTail,
   rsiOptimizeTail,
@@ -234,6 +235,7 @@ export function UseBenchmarkModal({
   const evaluateParams: EvaluateParams = {
     targetAgentId: testAgentId,
     benchmarkId: benchmark.id,
+    benchmarkDir: benchmarkFolder(benchmark),
     runs: runsValue ?? benchmark.runs ?? 1,
     ...testedRuntime,
   };
@@ -246,6 +248,7 @@ export function UseBenchmarkModal({
     skill: optimizerSkill,
     targetAgentId: testAgentId,
     benchmarkId: benchmark.id,
+    benchmarkDir: benchmarkFolder(benchmark),
     testRepetitions: repetitionsValue ?? DEFAULT_TEST_REPETITIONS,
     ...testedRuntime,
   };

@@ -188,7 +188,6 @@ function launchCommand(index: number): string {
   return [
     `PROJECT_DIR=${PROJECT_DIR}`,
     'PROJECT_ID="$(basename "$PROJECT_DIR")"',
-    'export PENGUIN_HOME="$(dirname "$PROJECT_DIR")"',
     `penguin run --message "${TEST_MESSAGE}" \\`,
     '  --provider deepseek --model-id deepseek-flash --project-id "$PROJECT_ID" \\',
     `  --agent-id ${IDS.agents.docs} --workspace "${workspace}" \\`,
@@ -525,7 +524,7 @@ export function rsiTranscript(lang: Lang, now: number, ref: ModelRef): Transcrip
       thinking(s(7), c.thinking[0]),
       toolCall(s(8), "call_scoreboard", "exec_command", {
         cmd: [
-          `cd ${PROJECT_SH}/benchmarks/${RSI_ROUND.benchmarkId}`,
+          `cd ${PROJECT_SH}/agents/system_agent/app/data/benchmark/${RSI_ROUND.benchmarkId}`,
           "python3 -c \"import yaml; e = yaml.safe_load(open('scoreboard.yaml'))['evaluations'][-1]; print(e['agent_id'], e['version'], e['model_id'], e['thinking_level'], e['score']); [print(c['case'], c['score']) for c in e['cases']]\"",
         ].join("\n"),
         description: c.readReference,
@@ -585,7 +584,7 @@ export function rsiTranscript(lang: Lang, now: number, ref: ModelRef): Transcrip
       thinking(s(APPEND_SEC - 4), c.thinking[4]),
       toolCall(s(APPEND_SEC - 1), "call_append", "exec_command", {
         cmd: [
-          `cd ${PROJECT_SH}/benchmarks/${RSI_ROUND.benchmarkId}`,
+          `cd ${PROJECT_SH}/agents/system_agent/app/data/benchmark/${RSI_ROUND.benchmarkId}`,
           "cat >> scoreboard.yaml <<'EOF'",
           appendedEvaluation(lang, evaluatedAt),
           "EOF",

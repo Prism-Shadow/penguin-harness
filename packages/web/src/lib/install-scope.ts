@@ -271,21 +271,9 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
-    key: "penguin.sidebarNavGroupCollapsed",
+    key: "penguin.sidebarApps.folded",
     scope: "browser",
-    why: "Whether the static page-nav group is folded; the nav is built from a compile-time manifest.",
-  },
-  {
-    kind: "exact",
-    key: "penguin.sidebarNavPinned",
-    scope: "browser",
-    why: "Which nav entries stay out of the fold; keyed by the compile-time manifest, names nothing on the server.",
-  },
-  {
-    kind: "family",
-    key: "penguin.sidebarModeNavPinned.",
-    scope: "browser",
-    why: "Which of a sidebar mode's nav entries (company mode's) stay out of the fold, one key per mode; names nothing on the server.",
+    why: "Whether the sidebar's app group is folded; one flag for every Agent, names nothing on the server.",
   },
   {
     kind: "exact",

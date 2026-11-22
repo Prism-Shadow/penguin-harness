@@ -66,7 +66,7 @@ import {
 } from "@prismshadow/penguin-core";
 import { parseApprovalAnswer } from "../approval.js";
 import { terminalInput } from "../console-input.js";
-import { resolveRootOption } from "../root-option.js";
+import { resolveProjectRoot } from "../root-option.js";
 import { getMessages, maskApiKey, type Messages } from "../i18n.js";
 import { applyLanguageToRc, restartShell } from "../lang-config.js";
 import { registerConfigModelCommand } from "./config-model.js";
@@ -88,7 +88,7 @@ export function registerConfigCommand(config: Command, t: Messages): void {
     .option("--agent-id <id>", t.common.agentId, DEFAULT_AGENT_ID)
     .option("--root <dir>", t.common.root)
     .action(async (opts) => {
-      const root = resolveRootOption(opts.root);
+      const root = await resolveProjectRoot(opts.root);
       try {
         await setVaultEntry(root, opts.projectId, opts.agentId, opts.key, opts.value);
       } catch (err) {
@@ -107,7 +107,7 @@ export function registerConfigCommand(config: Command, t: Messages): void {
     .option("--agent-id <id>", t.common.agentId, DEFAULT_AGENT_ID)
     .option("--root <dir>", t.common.root)
     .action(async (opts) => {
-      const root = resolveRootOption(opts.root);
+      const root = await resolveProjectRoot(opts.root);
       const entries = Object.entries(await loadAgentVault(root, opts.projectId, opts.agentId));
       if (entries.length === 0) {
         process.stdout.write(`${t.vaultListEmpty()}\n`);
@@ -128,7 +128,7 @@ export function registerConfigCommand(config: Command, t: Messages): void {
     .option("--agent-id <id>", t.common.agentId, DEFAULT_AGENT_ID)
     .option("--root <dir>", t.common.root)
     .action(async (opts) => {
-      const root = resolveRootOption(opts.root);
+      const root = await resolveProjectRoot(opts.root);
       const vaultEntries = await loadAgentVault(root, opts.projectId, opts.agentId);
       if (vaultEntries[opts.key] === undefined) {
         process.stderr.write(`${t.vaultKeyMissing(opts.key)}\n`);

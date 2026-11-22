@@ -23,8 +23,15 @@
  *   read too); only Close ends one. A system app opens as its own page instead, at its own
  *   address, and the nav keeps the App Center lit there; it can be moved and put in folders,
  *   never removed.
+ * - A folder unfolds in place from its icon (`?folder=<id>`, so Back closes it too;
+ *   folder-panel.tsx). Leaving a window, a folder or the full page goes back to the host's own
+ *   entry for the view beneath, however many pages the app's frame went through
+ *   (lib/host-history.ts), and the focus goes back to the tile.
  * - A tile whose app is building shows a turning ring and does not open; it turns live by itself
  *   when the build ends (use-app-center.ts follows the server's workbench news).
+ * - A system app with something waiting on its page wears the update dot the App Center's nav
+ *   entry carries, with the same sentence, and so does a folder holding one
+ *   (lib/system-app-notes.ts); the page clears it.
  * - Every tile, every folder and the grid's empty space have a context menu: right-click,
  *   Shift+F10 or the ContextMenu key, or press and hold on touch. It is also the keyboard's and
  *   touch's way to arrange the grid.
@@ -34,8 +41,8 @@
  * one, that button moves to the header. The system apps show even when the server's list cannot
  * be read, since the App Center is the way to their pages.
  */
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 import type { AppCenterShortcut } from "@prismshadow/penguin-server/api";
 import {
   AppIconShape,
@@ -55,17 +62,19 @@ import {
 import * as api from "../../api/endpoints";
 import { agentSettingsPath } from "../../lib/agent-location";
 import { APP_CENTER_PATH } from "../../lib/app-center-path";
-import { WINDOW_ENTRY_STATE, WINDOW_PARAM } from "../../lib/app-window-address";
-import { keepListedApps, launchApp, useRunningApps } from "../../lib/running-apps";
+import { windowEntryState, WINDOW_PARAM } from "../../lib/app-window-address";
+import { openFullPage, returnToHostEntry } from "../../lib/host-history";
+import { launchApp, takeListedShortcuts, useRunningApps } from "../../lib/running-apps";
 import { localizedText } from "../../lib/skill-use";
 import { S } from "../../lib/strings";
 import { useSystemApps } from "../../lib/system-apps";
+import { useSystemAppNotes } from "../../lib/system-app-notes";
 import { toastApiError } from "../../lib/toast-api-error";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { AiCreateButtons, AiCreateModal } from "../ai-create";
 import type { AiExample } from "../ai-create";
-import { AppTile, FolderTile, MENU_PX, type TileMark } from "./app-tile";
+import { appTriggerId, AppTile, FolderTile, MENU_PX, type TileMark } from "./app-tile";
 import {
   arrange,
   dissolveFolder,
@@ -98,6 +107,9 @@ import { useAppCenter } from "./use-app-center";
 /** The Skills a "Create with AI" conversation opens with: the visual language, then the workbench's own. */
 const APP_SKILLS = ["web-design", "penguin-plugin"];
 
+/** The query that names the open folder. */
+const FOLDER_PARAM = "folder";
+
 /** Three tiles a row on a phone, as a home screen has; as many as fit from `sm` up. */
 const GRID = "grid grid-cols-3 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(7rem,1fr))]";
 
@@ -118,12 +130,16 @@ function markOf(drop: Drop | null, id: string): TileMark {
   return null;
 }
 
+/** The App Center's route with `params`: the grid, an open folder, a window. */
+function appCenterPath(params: URLSearchParams): string {
+  return params.size ? APP_CENTER_PATH + "?" + params : APP_CENTER_PATH;
+}
+
 export function AppCenterPage() {
   const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const { locale } = useLocale();
   const navigate = useNavigate();
-  const location = useLocation();
   const [params, setParams] = useSearchParams();
   /** The Agent list as a value: a new array with the same Agents does not read again. */
   const agentIds = agents.map((agent) => agent.agentId).join("\n");
@@ -140,36 +156,24 @@ export function AppCenterPage() {
   } = useAppCenter(projectId, agentIds);
 
   const [aiOpen, setAiOpen] = useState(false);
-  const folderParam = params.get("folder");
-  // Direct interaction must be visible in the same frame; the router also accepts browser Back
-  // and links from full-screen workbenches, which can arrive in a deferred React transition.
-  const [openFolderId, setSelectedFolderId] = useState(folderParam);
-  useLayoutEffect(() => setSelectedFolderId(folderParam), [folderParam]);
-  useLayoutEffect(() => {
-    // A rapid browser Back can skip the intermediate router render entirely. Its destination
-    // may have the same folderParam as the last committed render, despite our local open.
-    const onPop = () =>
-      setSelectedFolderId(new URLSearchParams(window.location.search).get("folder"));
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, []);
-  // Keep the departing folder mounted until its icons reach their previews, including on Back.
+  // The open folder is the address's alone, so Back, a link and a click all agree on it; a
+  // router update that React skips on the way (a Back pressed mid-transition) cannot leave a
+  // second copy behind.
+  const openFolderId = params.get(FOLDER_PARAM);
+  // The departing folder stays mounted until it has folded back into its icon, Back included.
   const [displayedFolderId, setDisplayedFolderId] = useState(openFolderId);
   if (openFolderId !== null && displayedFolderId !== openFolderId)
     setDisplayedFolderId(openFolderId);
+  /** Opening a folder from the grid adds an entry and another replaces it; closing leaves it. */
   const setOpenFolderId = (id: string | null) => {
-    setSelectedFolderId(id);
     const next = new URLSearchParams(params);
-    if (id === null) next.delete("folder");
-    else next.set("folder", id);
-    if (id === null && location.state?.fromAppGrid) void navigate(-1);
-    else
-      setParams(next, {
-        replace: openFolderId !== null,
-        state: {
-          fromAppGrid: id !== null && (openFolderId === null || location.state?.fromAppGrid),
-        },
-      });
+    if (id === null) {
+      next.delete(FOLDER_PARAM);
+      returnToHostEntry(navigate, appCenterPath(next));
+    } else {
+      next.set(FOLDER_PARAM, id);
+      setParams(next, { replace: openFolderId !== null });
+    }
   };
   const [renaming, setRenaming] = useState<GridFolder | null>(null);
   const [errorOf, setErrorOf] = useState<GridApp | null>(null);
@@ -178,6 +182,11 @@ export function AppCenterPage() {
   const [newFolderPicked, setNewFolderPicked] = useState<string[] | null>(null);
 
   const systemApps = useSystemApps();
+  /** What waits on each system app's page, by its key: its tile's dot (lib/system-app-notes.ts). */
+  const notes = useSystemAppNotes();
+  /** The sentence on an app's dot: a system app's trail; a workbench has none. */
+  const noteOf = (app: GridApp): string | null =>
+    app.shortcut.system === undefined ? null : (notes.get(app.shortcut.workbenchId) ?? null);
   /**
    * The system apps first, so they lead the server's order; they wait for the server's answer
    * (it carries the viewer's arrangement) unless the read failed.
@@ -243,9 +252,16 @@ export function AppCenterPage() {
       ? openApp
       : null;
   const windowShown = openKey !== null && runningIds.has(openKey);
+  // A window leaving the address hands the focus back to the tile that opened it.
+  const previousWindow = useRef(openKey);
+  useLayoutEffect(() => {
+    if (openKey === null && previousWindow.current !== null)
+      document.getElementById(appTriggerId(previousWindow.current))?.focus({ preventScroll: true });
+    previousWindow.current = openKey;
+  }, [openKey]);
 
-  // An app the list no longer has ends: the App Center is the one place an app is opened from, so
-  // one it no longer lists could not be brought back. The rest take the shortcut it gives now.
+  // A running app the list has takes the shortcut it gives now. One it does not list runs on: the
+  // sidebar opens apps the App Center hides, and an app ends only when its workbench is gone.
   useEffect(() => {
     if (projectId === null || grid === null) return;
     const listed = new Map<string, LocatedShortcut>();
@@ -253,7 +269,7 @@ export function AppCenterPage() {
       if (item.type === "app") listed.set(item.id, item.shortcut);
       else for (const app of item.apps) listed.set(app.id, app.shortcut);
     }
-    keepListedApps(projectId, listed);
+    takeListedShortcuts(projectId, listed);
   }, [projectId, grid]);
 
   // An address that names a listed app starts it (a link, a reload, Forward after a close), before
@@ -265,19 +281,18 @@ export function AppCenterPage() {
       launchApp({ key: windowApp.id, projectId, shortcut: windowApp.shortcut });
   }, [projectId, windowAppId]);
 
+  /** Opens the app's window over the grid or the open folder, which its leaving returns to. */
   const openWindow = (app: GridApp) => {
     if (projectId !== null) launchApp({ key: app.id, projectId, shortcut: app.shortcut });
     const next = new URLSearchParams(params);
     next.set(WINDOW_PARAM, app.id);
-    setParams(next, { state: WINDOW_ENTRY_STATE });
+    setParams(next, { state: windowEntryState(appCenterPath(params)) });
   };
   /** Opens an app: a system app as its page, any other in its window. */
   const launch = (app: GridApp) => {
     if (app.shortcut.system === undefined) openWindow(app);
     else void navigate(app.shortcut.path);
   };
-  const openFullScreen = (app: GridApp, returnTo: string) =>
-    void navigate(app.shortcut.path, { state: { returnTo } });
 
   const actions: GridActions | null =
     grid === null || projectId === null
@@ -289,7 +304,10 @@ export function AppCenterPage() {
           arrange: commit,
           open: launch,
           isRunning: (app) => runningIds.has(app.id),
-          openFullScreen: (app) => openFullScreen(app, APP_CENTER_PATH + location.search),
+          openFullScreen: (app) =>
+            openFullPage(navigate, app.shortcut.path, appCenterPath(params), {
+              fromWindow: false,
+            }),
           showError: setErrorOf,
           viewInSettings: (app) =>
             void navigate(
@@ -306,6 +324,16 @@ export function AppCenterPage() {
                 app.shortcut.agentId,
                 app.shortcut.workbenchId,
                 false,
+                app.shortcut.machineId ?? null,
+              )
+              .then(() => refreshMachine(app.shortcut.machineId), toastApiError),
+          setShowInSidebar: (app, show) =>
+            void api
+              .setWorkbenchSidebar(
+                projectId,
+                app.shortcut.agentId,
+                app.shortcut.workbenchId,
+                show,
                 app.shortcut.machineId ?? null,
               )
               .then(() => refreshMachine(app.shortcut.machineId), toastApiError),
@@ -328,6 +356,7 @@ export function AppCenterPage() {
       running={runningIds.has(app.id)}
       menuItems={(close) => actions && <AppMenu app={app} actions={actions} close={close} />}
       onOpen={() => launch(app)}
+      note={noteOf(app)}
     />
   );
 
@@ -426,6 +455,7 @@ export function AppCenterPage() {
                             onOpen={() =>
                               setOpenFolderId(openFolderId === item.id ? null : item.id)
                             }
+                            notes={item.apps.flatMap((app) => noteOf(app) ?? [])}
                           />
                         ),
                       )}

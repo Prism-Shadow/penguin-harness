@@ -105,6 +105,7 @@ import type { PushSlip } from "./push-plugins.js";
 import type { Errors } from "@prismshadow/penguin-library-observability";
 import type { ServerEvent, UnsatisfiedPlugin } from "../api/types.js";
 import { migrate } from "@prismshadow/penguin-library-db/migrations";
+import { migrateDataRoot } from "../layout/migrate-data-root.js";
 import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
 import type { Auth } from "@prismshadow/penguin-library-auth";
 
@@ -372,6 +373,14 @@ async function createInner(
     if (deferred.length > 0) {
       console.log(`[platform] left for the runtime's next restart: ${deferred.join(", ")}`);
     }
+  }
+  // The data root's layout, for the same reason as the tables: this platform reads Projects under
+  // `<root>/projects/`, and a runtime from before that layout never moved them there. Before the
+  // plugin loader and every node, which read the Projects; a root already migrated (the runtime
+  // ran it at start) costs one listing. A migration that stops fails this boot: a push is then
+  // refused with its sentence and the previous platform keeps serving.
+  if (caps !== null) {
+    await migrateDataRoot(caps.config.root, caps.db, (line) => console.log(line));
   }
   // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
   // the predecessor declared at the version this build also declares, hard-stop the

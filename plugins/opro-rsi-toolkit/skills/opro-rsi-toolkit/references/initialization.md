@@ -9,8 +9,6 @@ Prepare the Target for OPRO before H1 is measured: one Target-owned Skill holds 
 ```bash
 PROJECT_DIR="<app_data_dir>"
 PROJECT_ID="$(basename "$PROJECT_DIR")"
-PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
-export PENGUIN_HOME
 penguin agent create --agent-id "<id>" --project-id "$PROJECT_ID" --json
 ```
 

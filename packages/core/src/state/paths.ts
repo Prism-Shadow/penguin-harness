@@ -1,7 +1,10 @@
 /**
  * Local directory layout for Agent State and Project config.
  *
- * Strictly follows the `~/.penguin/data/<project>/agents/<agent>/...` structure.
+ * Strictly follows the `~/.penguin/data/projects/<project>/agents/<agent>/...` structure: the
+ * data root's top level holds the server's own files and folders (`web.db`, `server.lock`,
+ * `bin/`, `plugins/`, `app/`, `run/`, …), and every Project is a folder of `projects/`
+ * (PRFC-0034), so no Project id shares a name with them.
  * This module only provides constants and pure path functions; it never creates directories or reads/writes files.
  * Docs: /docs/sessions-and-traces § "Data layout".
  */
@@ -25,18 +28,29 @@ export function resolveRoot(): string {
   return process.env.PENGUIN_HOME ?? path.join(os.homedir(), ".penguin", "data");
 }
 
+/** The name of the data root's folder that holds the Projects, and the one id no new Project takes. */
+export const PROJECTS_DIR_NAME = "projects";
+
 /**
- * The folder holding every Project's folder, one per id: the data root itself. The single
- * definition point of where Projects sit, so a reader that lists them (the Storage page's
- * measurement) follows wherever they move.
+ * `<root>/projects`: the folder holding every Project's folder, one per id. The single definition
+ * point of where Projects sit, so whatever lists or measures them follows wherever they move.
  */
 export function projectsDir(root: string): string {
-  return root;
+  return path.join(root, PROJECTS_DIR_NAME);
 }
 
-/** `<projectsDir>/<projectId>`. */
+/** `<root>/projects/<projectId>`. */
 export function projectDir(root: string, projectId: string): string {
   return path.join(projectsDir(root), projectId);
+}
+
+/**
+ * `<root>/<projectId>`: where a Project's folder was before the `projects/` level (PRFC-0034).
+ * Only the layout migration reads it, and the link it leaves there (state/layout-migration/);
+ * both go at 1.0.
+ */
+export function legacyProjectDir(root: string, projectId: string): string {
+  return path.join(root, projectId);
 }
 
 /**
@@ -228,11 +242,11 @@ export function agentRunDir(root: string, projectId: string, agentId: string): s
 }
 
 /**
- * What a new Project id may not be: the data root's own folders that sit beside the Projects and
- * that a Project's folder would share a name with (`app/`, `run/`). A Project already called so
- * keeps opening, its folder shared with them, until Projects move under `<root>/projects/`.
+ * What a new Project id may not be: `projects`. Its folder is `<root>/projects/projects/`, but an
+ * older build run on the same data root after a downgrade takes `<root>/projects` for that
+ * Project's folder and writes its config and Agents into the folder holding every Project.
  */
-export const ROOT_FOLDER_NAMES: readonly string[] = ["app", "run"];
+export const RESERVED_PROJECT_IDS: readonly string[] = [PROJECTS_DIR_NAME];
 
 /**
  * `<root>/app`: the server level of a workbench's folders — what every copy of an app installed
@@ -284,17 +298,6 @@ export function workbenchStateDir(
 /** `<agentStateDir>/schedule`, the scheduled-task directory (doesn't exist when unconfigured). */
 export function scheduleDir(root: string, projectId: string, agentId: string): string {
   return path.join(agentStateDir(root, projectId, agentId), "schedule");
-}
-
-/**
- * `<projectDir>/benchmarks`, the Project's capability-evaluation question banks and scores, a
- * sibling of `agents/` (doesn't exist when unconfigured). A Benchmark is a peer of an Agent, not
- * something an Agent owns: one Benchmark can evaluate several Agents, and the Agent under test is
- * recorded on each scoreboard evaluation. Benchmarks written under an Agent directory by an
- * earlier version are not read from here.
- */
-export function benchmarksDir(root: string, projectId: string): string {
-  return path.join(projectDir(root, projectId), "benchmarks");
 }
 
 /** `<agentDir>/snapshots`, Agent State version snapshots (doesn't exist when unconfigured). */

@@ -1,6 +1,6 @@
 /**
- * A Benchmark's manifest, `benchmark_config.toml`: the file that makes a directory under a
- * Project's `benchmarks/` a Benchmark, and what that Benchmark is.
+ * A Benchmark's manifest, `benchmark_config.toml`: the file that makes a directory of a
+ * Project's Benchmark folder (benchmark-dirs.ts) a Benchmark, and what that Benchmark is.
  *
  * A Benchmark is a directory named by its id. Its **package** is the directory minus the state
  * this copy keeps for itself: `benchmark_config.toml` and every `CASE-*` tree (a `statement/` and

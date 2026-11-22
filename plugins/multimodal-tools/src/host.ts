@@ -8,8 +8,7 @@
  *   ProjectModels   the Project's model table: the default and vision models, each row's client type
  *   ProjectAccess   who may see and who may configure a Project
  *   SessionLookup   the Session index: whose Session an id is, and whether it still exists
- *   DataRoot        the server's configuration: where the data root is, under which every
- *                   Project directory lies
+ *   DataLayout      the data root's layout: the folder every Project directory lies in
  */
 import { Interface } from "@prismshadow/penguin-core/plugin";
 import type { Opaque } from "@prismshadow/penguin-core/plugin";
@@ -81,9 +80,9 @@ export abstract class SessionLookup {
   abstract listByProject(projectId: string): { sessionId: string }[];
 }
 
-/** The server's configuration, by the two fields only it carries together (a bare `root` is ambiguous). */
+/** The data root's layout: where the host keeps the Projects' folders, which may move. */
 @Interface()
-export abstract class DataRoot {
-  abstract root: string;
-  abstract dbPath: string;
+export abstract class DataLayout {
+  /** The folder every Project's folder sits in, one per id. */
+  abstract projectsDir(): string;
 }

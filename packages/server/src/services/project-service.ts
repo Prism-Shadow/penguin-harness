@@ -25,7 +25,8 @@ import {
   DEFAULT_PROJECT_ID,
   projectDir,
   projectRunDir,
-  ROOT_FOLDER_NAMES,
+  projectsDir,
+  RESERVED_PROJECT_IDS,
   provisionProjectAgents,
   provisionProjectBenchmarks,
   type BuiltinBenchmark,
@@ -143,11 +144,11 @@ export class ProjectService implements ProjectLifecycle {
           `Project id must be 2–64 characters: ${SEMANTIC_ID_RULE}; ${NEW_ID_RULE} (the hyphen is reserved as the user namespace separator).`,
         );
       }
-      if (ROOT_FOLDER_NAMES.includes(projectId)) {
+      if (RESERVED_PROJECT_IDS.includes(projectId)) {
         throw new HttpError(
           400,
           "invalid_project_id",
-          `Project id ${projectId} is the name of a folder the data root keeps for itself (${ROOT_FOLDER_NAMES.join(", ")}); choose another.`,
+          `Project id ${projectId} is the name of the folder the data root keeps its Projects in; choose another.`,
         );
       }
     } else {
@@ -214,13 +215,14 @@ export class ProjectService implements ProjectLifecycle {
 
   /**
    * Every id `createProject` refuses as taken, as names only: every row, and every name already
-   * under the data root, where the Project's directory would go — a directory with no row
-   * included, which no Project list shows.
+   * under the data root's `projects/`, where the Project's directory would go — a directory with
+   * no row included, which no Project list shows. What sits at the data root's top level is the
+   * server's own and takes no id.
    */
   async takenProjectIds(): Promise<string[]> {
     let entries: string[] = [];
     try {
-      entries = await fs.readdir(this.root);
+      entries = await fs.readdir(projectsDir(this.root));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }

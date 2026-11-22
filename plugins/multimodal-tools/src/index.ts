@@ -25,7 +25,7 @@ import type { Hono } from "hono";
 import { bindingCode, type BindingCode } from "./accepts.js";
 import { cancelCommand, listCommand, operationCommand, statusCommand } from "./cli.js";
 import {
-  DataRoot,
+  DataLayout,
   ModelBindings,
   ModelRequests,
   ProjectAccess,
@@ -117,7 +117,7 @@ const SWEEP_EVERY_MS = 24 * 60 * 60 * 1000;
   },
 })
 export class MultimodalTools {
-  @Use() private readonly root!: DataRoot;
+  @Use() private readonly layout!: DataLayout;
   @Use() private readonly sessions!: SessionLookup;
   @Bind("multimodal-tools.binding.t2t") t2tBinding!: BindingCode;
   @Bind("multimodal-tools.binding.search") searchBinding!: BindingCode;
@@ -135,7 +135,7 @@ export class MultimodalTools {
     this.t2vBinding = bindingCode("t2v");
     this.t2sBinding = bindingCode("t2s");
     this.s2tBinding = bindingCode("s2t");
-    const { root } = this.root;
+    const root = this.layout.projectsDir();
     const sessions = this.sessions;
     const sweep = () => {
       // A Session still running a tool keeps its folder until the next sweep.
@@ -273,7 +273,7 @@ export class MultimodalToolCommands {
   @Use() private readonly requests!: ModelRequests;
   @Use() private readonly bindings!: ModelBindings;
   @Use() private readonly models!: ProjectModels;
-  @Use() private readonly root!: DataRoot;
+  @Use() private readonly layout!: DataLayout;
   @Bind("multimodal-tools.cli.t2t") t2tCli!: CliCommandCode;
   @Bind("multimodal-tools.cli.i2t") i2tCli!: CliCommandCode;
   @Bind("multimodal-tools.cli.search") searchCli!: CliCommandCode;
@@ -291,7 +291,7 @@ export class MultimodalToolCommands {
       requests: this.requests,
       bindings: this.bindings,
       models: this.models,
-      root: this.root.root,
+      root: this.layout.projectsDir(),
     });
     const get = () => tools;
     this.t2tCli = operationCommand(get, "t2t");
@@ -325,7 +325,7 @@ export class MultimodalToolRoutes {
   @Use() private readonly requests!: ModelRequests;
   @Use() private readonly bindings!: ModelBindings;
   @Use() private readonly models!: ProjectModels;
-  @Use() private readonly root!: DataRoot;
+  @Use() private readonly layout!: DataLayout;
   @Use() private readonly access!: ProjectAccess;
   @Use() private readonly sessions!: SessionLookup;
   @Bind("multimodal-tools.routes") routes!: Hono<RouteEnv>;
@@ -335,7 +335,7 @@ export class MultimodalToolRoutes {
       requests: this.requests,
       bindings: this.bindings,
       models: this.models,
-      root: this.root.root,
+      root: this.layout.projectsDir(),
     });
     this.routes = toolRoutes({ tools: () => tools, access: this.access, sessions: this.sessions });
   }

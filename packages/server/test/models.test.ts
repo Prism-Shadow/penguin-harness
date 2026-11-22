@@ -130,7 +130,7 @@ async function storeRows(
   rows: Array<{ provider: string; modelId: string; clientType?: string; baseUrl?: string }>,
 ): Promise<void> {
   await writeFile(
-    path.join(root, projectId, ".project_config.toml"),
+    path.join(root, "projects", projectId, ".project_config.toml"),
     renderProjectConfigToml({
       providers: presetProviderTable(),
       models: rows.map((r) => ({
@@ -194,7 +194,7 @@ describe("models preset & catalog enrichment", () => {
     expect(JSON.stringify(body)).not.toContain("sk-server-inline-1");
 
     // Secrets inlined in the single config file (persisted 0600); provider and model_id are separate columns, no concatenated string.
-    const projectDir = path.join(t.root, projectId);
+    const projectDir = path.join(t.root, "projects", projectId);
     const cfgFile = path.join(projectDir, ".project_config.toml");
     const cfgRaw = await readFile(cfgFile, "utf8");
     expect(cfgRaw).toContain("sk-server-inline-1");
@@ -226,7 +226,10 @@ describe("models preset & catalog enrichment", () => {
     // The catalog's group connections are written into the file once, as `[providers.<id>]`
     // tables: the gateways', vLLM's protocol and local server, Penguin Go's relay. The first-party vendors and
     // custom get none — their rows run on the client's defaults, or carry their own.
-    const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     for (const id of Object.keys(presetProviderTable())) {
       expect(toml, id).toContain(`[providers.${id}]`);
     }
@@ -494,7 +497,10 @@ describe("models preset & catalog enrichment", () => {
     const again = (await (await api.get(url())).json()) as ModelsResponse;
     expect(pick(again, "custom", "my-model").vision).toBe(false);
     expect(pick(again, "custom", "my-model").clientType).toBe("openai-chat");
-    const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).toContain('client_type = "openai-chat"');
     expect(toml).not.toContain('"openai"');
 
@@ -510,7 +516,7 @@ describe("models preset & catalog enrichment", () => {
   });
 
   it("PUT refuses an id a vendor group cannot route when the request introduces it, and carries a stored one through", async () => {
-    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    const cfgFile = path.join(t.root, "projects", projectId, ".project_config.toml");
     // A row in the shape a vendor-group add used to produce: no client_type, and an id of no
     // family MMSP knows, so it fails at request time with its `No client for model` sentence.
     // Rows like this exist in configs written before the rule below.
@@ -705,7 +711,7 @@ describe("models preset & catalog enrichment", () => {
     // Simulate an existing user config written by an older harness version: the deprecated
     // bare "openai" spelling on disk. Reading must not error and must report the canonical
     // spelling (normalize-on-read, no disk rewrite needed until the next PUT).
-    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    const cfgFile = path.join(t.root, "projects", projectId, ".project_config.toml");
     await writeFile(
       cfgFile,
       [
@@ -747,7 +753,7 @@ describe("models preset & catalog enrichment", () => {
         "",
       ]);
     const tokendance = catalogGroupConnection("tokendance")!;
-    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    const cfgFile = path.join(t.root, "projects", projectId, ".project_config.toml");
     await writeFile(
       cfgFile,
       [
@@ -834,7 +840,7 @@ describe("models preset & catalog enrichment", () => {
     // keeps a row on disk that catalogEntryFor no longer matches. Everything presetModelEntries
     // persisted must survive — only display_name lived solely in the catalog — and the row must
     // stay a normal, selectable entry rather than being pruned, rejected or blanked.
-    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    const cfgFile = path.join(t.root, "projects", projectId, ".project_config.toml");
     await writeFile(
       cfgFile,
       [
@@ -912,7 +918,10 @@ describe("models preset & catalog enrichment", () => {
     // Round-trips through disk (persisted as snake_case on the entry, not just echoed back).
     const again = (await (await api.get(url())).json()) as ModelsResponse;
     expect(pick(again, "custom", "local-qwen").maxTokens).toBe(8000);
-    const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).toContain("max_tokens = 8000");
 
     // Full-table PUT omitting the field clears the annotation (same replace semantics as vision/contextWindow).
@@ -923,7 +932,7 @@ describe("models preset & catalog enrichment", () => {
     const clearedRow = pick((await cleared.json()) as ModelsResponse, "custom", "local-qwen");
     expect("maxTokens" in clearedRow).toBe(false);
     expect(
-      await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8"),
+      await readFile(path.join(t.root, "projects", projectId, ".project_config.toml"), "utf8"),
     ).not.toContain("max_tokens");
 
     // Not a positive integer → 400 with the field-labelled message (nothing written).
@@ -1383,7 +1392,10 @@ describe("model-reference rekeying and the connectivity test", () => {
     expect(pick(body, "openai", "gpt-5.4").displayName).toBe("My GPT");
 
     // Clean on disk: unchanged preset models don't write display_name; provider is stored as a separate column, no concatenated string.
-    const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).not.toContain(`display_name = "${catalogName}"`);
     expect(toml).toContain('display_name = "My GPT"');
     expect(toml).toContain('provider = "openai"');
@@ -1523,7 +1535,7 @@ describe("model-reference rekeying and the connectivity test", () => {
     // Out of range or not a number: 400 before anything is written, so neither the file nor
     // the table moves — not even for the valid row beside it, whose new price would otherwise
     // have cleared its promotion.
-    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    const cfgFile = path.join(t.root, "projects", projectId, ".project_config.toml");
     const before = await readFile(cfgFile, "utf8");
     for (const bad of [0, 1, -0.2, 1.5, "0.2"]) {
       const res = await api.put(url(), {
@@ -1542,7 +1554,7 @@ describe("model-reference rekeying and the connectivity test", () => {
     // Two different requests, and reading them as one is how a client that simply has no name
     // for a model — one built from the catalog, which stores no name of its own — destroys the
     // name of every model it sends.
-    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    const cfgFile = path.join(t.root, "projects", projectId, ".project_config.toml");
     await api.put(url(), { models: [{ provider: "openai", modelId: "gpt-5.5" }] });
     const inherited = (await (await api.get(url())).json()) as ModelsResponse;
     expect(pick(inherited, "openai", "gpt-5.5").displayName).toBe(
@@ -1577,7 +1589,10 @@ describe("model-reference rekeying and the connectivity test", () => {
     });
     const body = (await (await api.get(url())).json()) as ModelsResponse;
     expect(pick(body, "openai", "gpt-5.5").displayName).toBe("Renamed");
-    let toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    let toml = await readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).not.toContain('display_name = ""');
 
     // A model outside the catalog has no name to inherit, so absence already says "no name"
@@ -1588,7 +1603,7 @@ describe("model-reference rekeying and the connectivity test", () => {
         { provider: "custom", modelId: "my-own-model", displayName: "" },
       ],
     });
-    toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    toml = await readFile(path.join(t.root, "projects", projectId, ".project_config.toml"), "utf8");
     expect(toml).not.toContain('display_name = ""');
     const after = (await (await api.get(url())).json()) as ModelsResponse;
     expect(pick(after, "custom", "my-own-model").displayName).toBeUndefined();
@@ -1992,7 +2007,7 @@ describe("group connections ([providers.<id>])", () => {
   let projectId: string;
   const url = () => `/api/projects/${projectId}/models`;
   const groupUrl = (provider: string) => `${url()}/providers/${provider}`;
-  const cfgFile = () => path.join(t.root, projectId, ".project_config.toml");
+  const cfgFile = () => path.join(t.root, "projects", projectId, ".project_config.toml");
 
   beforeAll(async () => {
     t = await createTestApp();
@@ -2392,7 +2407,7 @@ describe("preset sync: add new models / restore defaults", () => {
   let projectId: string;
   const url = () => `/api/projects/${projectId}/models`;
   const sync = (mode: unknown, as = api) => as.post(`${url()}/sync-presets`, { mode });
-  const cfgFile = () => path.join(t.root, projectId, ".project_config.toml");
+  const cfgFile = () => path.join(t.root, "projects", projectId, ".project_config.toml");
   /** The table as the models page sends it back unchanged: each row with what it stores. */
   const asEntries = (body: ModelsResponse) =>
     body.models.map((m) => ({

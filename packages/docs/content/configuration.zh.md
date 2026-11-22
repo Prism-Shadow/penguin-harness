@@ -87,7 +87,7 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 
 ## Project 配置
 
-`<root>/<project>/.project_config.toml` 是 Project 唯一的配置文件：隐藏文件，以 0600 权限写入，凭证内联在文件里：每个分组在 `[providers.<id>]` 存一份，模型条目上只存覆盖分组的值。模型的标识始终是 `(provider, model_id)` 这一对，绝不把字符串拼接成单个 id；指向这个文件的每处引用都同时带上两部分，也绝不会只凭 `model_id` 推断供应商。
+`<root>/projects/<project>/.project_config.toml` 是 Project 唯一的配置文件：隐藏文件，以 0600 权限写入，凭证内联在文件里：每个分组在 `[providers.<id>]` 存一份，模型条目上只存覆盖分组的值。模型的标识始终是 `(provider, model_id)` 这一对，绝不把字符串拼接成单个 id；指向这个文件的每处引用都同时带上两部分，也绝不会只凭 `model_id` 推断供应商。
 
 | 键 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |

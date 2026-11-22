@@ -96,7 +96,7 @@ describe("the fixtures", () => {
       "support",
     ]);
     const sidebar = await getSidebarApps(IDS.project, IDS.agents.general, null);
-    expect(sidebar?.map((app) => app.titleZh)).toEqual(["AI PPT", "图像工作室"]);
+    expect(sidebar).toMatchObject({ apps: [{ titleZh: "AI PPT" }, { titleZh: "图像工作室" }] });
     expect(f.sessions).toHaveLength(0);
     expect(f.models.defaultModel).toBeUndefined();
     expect(f.benchmarks.map((bench) => bench.id)).toContain("example-benchmark");

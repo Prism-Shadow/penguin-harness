@@ -96,7 +96,16 @@ describe("the archive page", () => {
   }
 
   const traceFile = (projectId: string, sessionId: string) =>
-    path.join(t.root, projectId, "agents", AGENT, "traces", DAY, `${sessionId}_001.jsonl`);
+    path.join(
+      t.root,
+      "projects",
+      projectId,
+      "agents",
+      AGENT,
+      "traces",
+      DAY,
+      `${sessionId}_001.jsonl`,
+    );
 
   /**
    * A Session as an earlier process left it: its index row (with `title` stored when given) and,
@@ -160,7 +169,7 @@ describe("the archive page", () => {
 
   /** The merged temporary Workspaces' kind of path: core's auto-created directory. */
   const tempWorkspace = (projectId: string) =>
-    path.join(t.root, projectId, "agents", AGENT, "workspaces", "tmp-0000abcd");
+    path.join(t.root, "projects", projectId, "agents", AGENT, "workspaces", "tmp-0000abcd");
 
   /** One Session of every kind, in this order (so `latest` rises down the list). */
   async function seedEveryKind(w: Awaited<ReturnType<typeof worldWithPeer>>) {

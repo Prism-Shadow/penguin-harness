@@ -64,7 +64,10 @@ describe("project command policy", () => {
 
   it("a new project is seeded with the factory rules, all asking; any member reads; a non-member gets 404", async () => {
     // Seeded at creation, model-presets style: the file itself carries the block.
-    const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await fs.readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).toContain("[[command_policy.rules]]");
 
     const res = await member.get(url);
@@ -82,7 +85,7 @@ describe("project command policy", () => {
   it("a pre-seeding project (no stored block) still serves the factory rules", async () => {
     // Strip the seeded block, mimicking a config written before the feature existed
     // (drop every command_policy line up to the [[models]] section).
-    const file = path.join(t.root, projectId, ".project_config.toml");
+    const file = path.join(t.root, "projects", projectId, ".project_config.toml");
     const lines = (await fs.readFile(file, "utf8")).split("\n");
     const start = lines.findIndex((l) => l.replace(/^\[+/, "").startsWith("command_policy"));
     const end = lines.findIndex((l) => l.startsWith("[[models]]"));
@@ -115,7 +118,10 @@ describe("project command policy", () => {
     // The factory reference is unaffected by edits.
     expect(stored.defaultRules).toEqual(before.defaultRules);
 
-    const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await fs.readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).toContain('name = "no-mkfs"');
     // Keyed on the exact stored line: "fork-bomb" is also a substring of windows-fork-bomb.
     expect(toml).not.toContain('name = "fork-bomb"');
@@ -138,7 +144,10 @@ describe("project command policy", () => {
       { name: "deny-curl", pattern: "\\bcurl\\b", enabled: true },
     ]);
 
-    const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await fs.readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml.match(/action = "ask"/g) ?? []).toHaveLength(1);
     expect(toml).not.toContain('action = "deny"');
   });
@@ -191,7 +200,7 @@ describe("project command policy", () => {
       ],
     });
     expect(placed.status).toBe(200);
-    const file = path.join(t.root, projectId, ".project_config.toml");
+    const file = path.join(t.root, "projects", projectId, ".project_config.toml");
     const toml = await fs.readFile(file, "utf8");
     await fs.writeFile(file, toml.replace('"PLACEHOLDER"', '"(?<broken"'), "utf8");
 

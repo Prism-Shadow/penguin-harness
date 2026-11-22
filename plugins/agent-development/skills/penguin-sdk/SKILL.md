@@ -1,7 +1,7 @@
 ---
 name: penguin-sdk
 description: Use to build a standalone external program with an agent in it, or connect an external program to a Penguin agent. For an app inside PenguinHarness with its own Agent and workbench tab, use agent-initialization and penguin-plugin directly; no SDK/API question applies. A program reaches an agent in one of two ways, and the skill asks the user which before building — embedded with the Penguin Harness SDK (`@prismshadow/penguin-core`, no server), or over the Penguin server's Agent API (AMSP, with the `@prismshadow/amsp` client or curl). This is writing application code, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI, and the Agent API client. Workbenches — the tabs and pages beside the chat that an Agent keeps for itself inside PenguinHarness — are the penguin-plugin skill's.
-version: 2026.10.26.1
+version: 2026.11.20.1
 ---
 
 # Penguin Harness SDK and Agent API
@@ -78,7 +78,7 @@ Each path also needs one thing only the user can provide: a model credential on 
 
 `@prismshadow/penguin-core` is the TypeScript SDK this agent itself runs on. Use it to build your own AI apps:
 
-- An **Agent** loads its state (prompts, tools, skills) from `<root>/<project_id>/agents/<agent_id>/`. Creating an Agent whose directory is empty initializes it with defaults.
+- An **Agent** loads its state (prompts, tools, skills) from `<root>/projects/<project_id>/agents/<agent_id>/`. Creating an Agent whose directory is empty initializes it with defaults.
 - A **Session** is one conversation of an Agent inside a **Workspace** directory.
 - `session.run()` executes one task and streams every step (thinking, text, tool calls) as AMSP records.
 

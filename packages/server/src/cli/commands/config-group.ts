@@ -18,7 +18,7 @@ import {
   providerInfo,
 } from "../../model-catalog/catalog.js";
 import type { Messages } from "../i18n.js";
-import { resolveRootOption } from "../root-option.js";
+import { resolveProjectRoot } from "../root-option.js";
 
 const GROUP_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
@@ -100,7 +100,7 @@ export async function addGroupConnection(
   },
   t: Messages,
 ): Promise<void> {
-  const root = resolveRootOption(opts.root);
+  const root = await resolveProjectRoot(opts.root);
   const group = String(opts.provider).trim();
   const rowOnly =
     opts.contextWindow !== undefined ||
@@ -192,7 +192,7 @@ export async function removeGroupConnection(
   opts: { provider: string; projectId: string; root?: string },
   t: Messages,
 ): Promise<void> {
-  const root = resolveRootOption(opts.root);
+  const root = await resolveProjectRoot(opts.root);
   const group = String(opts.provider).trim();
   const before = await loadProjectConfig(root, opts.projectId);
   if (before.providers?.[group] === undefined) {

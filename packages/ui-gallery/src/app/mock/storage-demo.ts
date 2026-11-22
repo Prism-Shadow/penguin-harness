@@ -106,7 +106,7 @@ function build(store: DemoStore): StorageDemo {
     {
       projectId: demoProject.projectId,
       name: demoProject.name ?? demoProject.projectId,
-      path: `${root}/${demoProject.projectId}`,
+      path: `${root}/projects/${demoProject.projectId}`,
       own: bytesOf({ other: 38 * MB }),
       agents: [
         {
@@ -136,7 +136,7 @@ function build(store: DemoStore): StorageDemo {
     {
       projectId: "research-lab",
       name: L("研究实验室", "Research lab"),
-      path: `${root}/research-lab`,
+      path: `${root}/projects/research-lab`,
       own: bytesOf({ other: 12 * MB }),
       agents: [
         {
@@ -160,7 +160,7 @@ function build(store: DemoStore): StorageDemo {
     {
       projectId: "website",
       name: L("官网", "Website"),
-      path: `${root}/website`,
+      path: `${root}/projects/website`,
       own: bytesOf({ other: 3 * MB }),
       agents: [
         {
