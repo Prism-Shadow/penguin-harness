@@ -1,7 +1,7 @@
 ---
 name: skillweaver-rsi-toolkit
 description: Run SkillWeaver (Zheng et al. 2025) on an agent - let it explore a website on its own, propose skills worth having, practise them, and hone the successful ones into tested, reusable API scripts in a skill library, then freeze the library and measure it on a published Benchmark of tasks on that site. Use when asked to make an agent better at a website by learning skills or APIs from self-directed practice.
-version: 2026.11.20.7
+version: 2026.11.22.1
 ---
 
 # SkillWeaver
@@ -80,7 +80,7 @@ Follow `references/initialization.md`. It creates the empty skill library Skill 
 
 ## Measure
 
-With a `benchmark_id`, every measurement is a full case × `runs` matrix through `references/evaluation.md`, following its controller section, and lands in that Benchmark's `scoreboard.yaml`. Launch the evaluation worker with `run_in_background: true` and retain its `subagent_id` so the same worker can resend a malformed result. Wait for it to finish before launching the next cell. Measure H1 before the first practice cell. A prior record is reusable only when its State version, case set, runtime and runs all match. Practice cells are never scored and never enter a scoreboard. Before and after each measurement matrix, record `TOOL fingerprint STATE`. The Target must keep its State read-only, including memory, throughout measurement. If the fingerprint changes, retain the records, mark the matrix invalid, and stop. Review the Target Traces for direct access to the website outside `penguin browser` or its registered API scripts. Preserve any affected cells and invalidate the matrix if that access occurred.
+With a `benchmark_id`, every measurement is a full case × `runs` matrix through `references/evaluation.md`, following its controller section, and lands in that Benchmark's `scoreboard.yaml`. Launch the evaluation worker with `run_in_background: true` and retain its `subagent_id` so the same worker can resend a malformed result. Wait for it to finish before launching the next cell. Measure H1 before the first practice cell. A prior record is reusable only when its State version, case set, runtime and runs all match. Practice cells are never scored and never enter a scoreboard. Before and after each measurement matrix, save `TOOL fingerprint STATE` and run `TOOL state-diff <before> <after>`. Every `penguin run` writes its own Workspace, scratch files, Traces and Workspace memory scope into the State, and `state-diff` allows those; any other added, removed or changed file, `memory/user/` included, means the Target changed its State during measurement: retain the records, mark the matrix invalid, and stop. Review the Target Traces for direct access to the website outside `penguin browser` or its registered API scripts. Preserve any affected cells and invalidate the matrix if that access occurred.
 
 ### The same site for both measurements
 
@@ -91,7 +91,7 @@ Practice changes a sandboxed site (it creates, edits and filters data), so H1 an
 These are the checks the run enforces itself, not instructions to anyone:
 
 - **The library changes only through Publish or a recorded passing test.** After either change, record `TOOL fingerprint LIBRARY` in `OUT/state.yaml`. Before and after every practice cell and every role call, compute it again; any difference you did not publish is a stop (`a Target edit to LIBRARY` or `a role edit to LIBRARY`), and the changed files are named in the report.
-- **No Target State changes during a practice cell.** Immediately before and after each practice cell, save `TOOL fingerprint STATE` in that iteration's records, in addition to the library fingerprint. If the State differs (including memory), record the changed paths and stop before judging or publishing. The check detects changes after execution and does not restrict the Target's tools.
+- **No Target State changes during a practice cell.** Immediately before and after each practice cell (before any `tested` or Publish), save `TOOL fingerprint STATE` in that iteration's records, in addition to the library fingerprint, and run `TOOL state-diff` on the two. If it reports a problem, record the changed paths and stop before judging or publishing. The check detects changes after execution and does not restrict the Target's tools.
 - **The runtime is the shipped one.** Before every practice cell, `TOOL verify-runtime APIS` must report no problem.
 - **Every API passed the checker.** Only files `TOOL check` accepted are registered, and `INDEX.md` lists registered APIs only.
 

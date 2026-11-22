@@ -10,6 +10,7 @@
 //   node skillweaver.mjs pick-test <apis-dir> [--seed N]   choose an untested API (practice utility)
 //   node skillweaver.mjs index <apis-dir>               rewrite INDEX.md from the APIs and library.json
 //   node skillweaver.mjs fingerprint <dir>              one SHA-256 over every file under <dir>, and each file's
+//   node skillweaver.mjs state-diff <before> <after>    two State fingerprints: files changed outside run output
 //   node skillweaver.mjs verify-runtime <apis-dir>      the runtime copy is byte-identical to the shipped one
 //
 // Every command prints one JSON object and exits 1 on a refusal.
@@ -304,6 +305,42 @@ export function fingerprint(dir) {
   return { digest: all.digest("hex"), files };
 }
 
+/**
+ * Paths every `penguin run` writes into an Agent State on its own: the run's Workspace, scratch
+ * files, Traces, and the memory scope of that Workspace (`memory/<scope>/`; `memory/user/` is the
+ * agent's lasting memory and is not one of them).
+ */
+export function isRunOutput(rel) {
+  const [top, scope] = rel.split("/");
+  if (top === "workspaces" || top === "scratchpad" || top === "traces") return true;
+  return top === "memory" && scope !== undefined && scope !== "user" && rel.split("/").length > 2;
+}
+
+/**
+ * Compare two `fingerprint` outputs of an Agent State. Files the runs write for themselves
+ * (`isRunOutput`) are listed but allowed; any other added, removed or changed file is a problem.
+ */
+export function stateDiff(beforeFile, afterFile) {
+  const before = JSON.parse(readFileSync(beforeFile, "utf8")).files;
+  const after = JSON.parse(readFileSync(afterFile, "utf8")).files;
+  if (!before || !after) throw new Error("state-diff takes two fingerprint outputs");
+  const changed = [];
+  const runOutput = [];
+  for (const rel of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (before[rel] === after[rel]) continue;
+    (isRunOutput(rel) ? runOutput : changed).push(rel);
+  }
+  changed.sort();
+  runOutput.sort();
+  return {
+    changed,
+    run_output: runOutput.length,
+    problems: changed.map((rel) =>
+      rel in before ? (rel in after ? `${rel} changed` : `${rel} was removed`) : `${rel} was added`,
+    ),
+  };
+}
+
 /** The runtime an API library carries must be the one this toolkit ships, byte for byte. */
 export function verifyRuntime(dir) {
   const shipped = readFileSync(path.join(HERE, RUNTIME));
@@ -369,6 +406,8 @@ async function main(argv) {
       return buildIndex(rest[0]);
     case "fingerprint":
       return fingerprint(rest[0]);
+    case "state-diff":
+      return stateDiff(rest[0], rest[1]);
     case "verify-runtime":
       return verifyRuntime(rest[0]);
     default:

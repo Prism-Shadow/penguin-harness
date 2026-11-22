@@ -269,6 +269,37 @@ describe("integrity", () => {
     expect(tool.fingerprint(dir)).toEqual(edited);
   });
 
+  it("allows the files a run writes into a State and flags every other State change", () => {
+    const state = path.join(dir, "state");
+    const write = (rel: string, text: string) => {
+      mkdirSync(path.dirname(path.join(state, rel)), { recursive: true });
+      writeFileSync(path.join(state, rel), text);
+    };
+    write("AGENTS.md", "reader line\n");
+    write("memory/user/MEMORY.md", "");
+    write("skills/skillweaver-apis/apis/library.json", "{}");
+    const before = path.join(dir, "before.json");
+    writeFileSync(before, JSON.stringify(tool.fingerprint(state)));
+    write("workspaces/CASE-001-run1/README.md", "task");
+    write("scratchpad/session-1/notes.txt", "x");
+    write("traces/2026-11-22/session-1_001.jsonl", "{}");
+    write("memory/case-001-run1-abc/MEMORY.md", "");
+    const runOnly = path.join(dir, "run-only.json");
+    writeFileSync(runOnly, JSON.stringify(tool.fingerprint(state)));
+    expect(tool.stateDiff(before, runOnly)).toEqual({ changed: [], run_output: 4, problems: [] });
+
+    write("memory/user/MEMORY.md", "learned during a measured run");
+    write("memory/notes.md", "a lasting memory file outside any Workspace scope");
+    rmSync(path.join(state, "AGENTS.md"));
+    const edited = path.join(dir, "edited.json");
+    writeFileSync(edited, JSON.stringify(tool.fingerprint(state)));
+    expect(tool.stateDiff(before, edited).problems).toEqual([
+      "AGENTS.md was removed",
+      "memory/notes.md was added",
+      "memory/user/MEMORY.md changed",
+    ]);
+  });
+
   it("refuses a runtime copy that differs from the shipped one", () => {
     tool.init(dir, SITE);
     expect(tool.verifyRuntime(dir)).toEqual({ problems: [] });
