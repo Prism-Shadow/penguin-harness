@@ -107,7 +107,6 @@ describe("the row of a plugin the build cannot fully run", () => {
       busy: false,
       blocked: false,
       onQuickStart: () => undefined,
-      onDeletePlugin: async () => undefined,
       onToggleInstall: async () => false,
       onUpdateOutdated: async () => undefined,
       onModuleApply: () => undefined,
@@ -117,12 +116,11 @@ describe("the row of a plugin the build cannot fully run", () => {
   };
   const repairButton = `aria-label="${en.plugins.repair} @acme/unmet"`;
 
-  it("says it is disabled on this build, why, and offers the repair beside Remove", () => {
+  it("says it is disabled on this build, why, and offers the repair", () => {
     const html = row({});
     expect(html).toContain(en.plugins.status.incompatible);
     expect(html).toContain("names interface");
     expect(html).toContain(repairButton);
-    expect(html).toContain(`aria-label="${en.plugins.uninstall} @acme/unmet"`);
   });
 
   it("a running row that lost a contribution says so and offers the same repair", () => {

@@ -26,7 +26,13 @@
  *
  * It answers the plugin library too: this server's (`library`) and each machine's own, and an
  * install on an Agent takes the named plugins' Skills from the library of the server that holds
- * the Agent, refusing a plugin that library does not have ({@link AgentServer.skillsOn}).
+ * the Agent, refusing a plugin that library does not have ({@link AgentServer.skillsOn}). An Agent
+ * created on this server joins its list under the name it was given, carrying the Skills of the
+ * plugins it was created with; a plugin this server's library lacks refuses the create. How the
+ * library's server modules stand on this server (`modules`) rides along on every answer of an
+ * Agent's plugins, and an ask for one (`POST …/plugins/modules`) applies the server's rule: a
+ * member's ask for a module that is not built in leaves a waiting request, anything else runs.
+ * The signed-in user is the administrator unless the suite says `admin: false`.
  *
  * It can hold machines too ({@link FakeMachine}): connected ones answer through their proxy
  * (`/server/<id>/api/…`) with an Agent list of their own — created and deleted there, never
@@ -68,7 +74,7 @@
  * the leave guard (`NavigationGuard`), a sidebar link and the Project and Session-list providers,
  * with the auth provider, the shell's page table (none unless the test gives one) and the one
  * discard prompt (`UnsavedPrompt`) around it. The signed-in user is the server's administrator
- * unless `serverAdmin` is false. Beside the
+ * unless `admin` is false. Beside the
  * mounted page, a conversation page at `/chat/:sessionId` is where a hand-off to a new chat
  * lands. The Session list opens the user's event stream, which jsdom has no `EventSource` for:
  * a silent one stands in (nothing in these suites is pushed over it). jsdom has no `matchMedia`
@@ -101,6 +107,7 @@ import type {
   MessagingChannel,
   MessagingChannelState,
   PluginItem,
+  PluginModuleStatus,
   AgentApiKeyInfo,
   AgentApiSettings,
   ModelsResponse,
@@ -316,6 +323,8 @@ export interface AgentServer {
   setBuilding(workbenchId: string, building: boolean): void;
   /** The viewer's App Center arrangement as the server holds it now (null: the default order). */
   appCenterLayout(): AppCenterLayout | null;
+  /** How the library's server modules stand on this server now; another write changes it. */
+  setModules(next: PluginModuleStatus[]): void;
 }
 
 export function agentServer(
@@ -341,6 +350,11 @@ export function agentServer(
     machines?: FakeMachine[];
     /** This server's plugin library (by default empty). */
     library?: PluginItem[];
+    /**
+     * The plugin market's curation (GET /api/plugins/market), with its popularity figures; by
+     * default none, which answers 404 as a server older than the market does.
+     */
+    market?: unknown;
     /** Scheduled tasks the Agent already has, on a machine when one is named (this server's otherwise). */
     schedules?: Array<{ machineId?: string; item: ScheduleItem }>;
     /** List {@link OTHER_PROJECT_ID} beside the Agent's Project. */
@@ -367,8 +381,10 @@ export function agentServer(
     older?: boolean;
     /** The signed-in user's role in the Project (by default its owner). */
     role?: "owner" | "member";
-    /** Whether the signed-in user is the server's administrator (by default they are). */
-    serverAdmin?: boolean;
+    /** Whether the signed-in user is the server's administrator (by default yes). */
+    admin?: boolean;
+    /** How the library's server modules stand on this server (by default the field is absent). */
+    modules?: PluginModuleStatus[];
     /** The Skills this server's Agent already has installed (by default none). */
     skills?: string[];
     /** The keys the Agent's API holds; a DELETE of one removes it. */
@@ -411,6 +427,7 @@ export function agentServer(
   let partMcp = [...(options.parts?.mcpServers ?? [])];
   let receipts = [...(options.parts?.receipts ?? [])];
   let pluginUpdates = [...(options.pluginUpdates ?? [])];
+  let modules = options.modules?.map((m) => ({ ...m }));
   /** The workbenches switched off, and the Agent-wide switch. */
   const switchedOff = new Set<string>();
   let allOn = true;
@@ -504,6 +521,8 @@ export function agentServer(
       ...organizations.flatMap((o) => o.employees.map((e) => e.agentId)),
     ]),
   ];
+  /** The names this server's Agents were created with here (a create), as its list answers them. */
+  const createdNames = new Map<string, string>();
   /** The organizations employing an Agent, as the Agent list carries them. */
   const employmentsOf = (agentId: string): Employment[] =>
     organizations.flatMap((o) =>
@@ -650,6 +669,27 @@ export function agentServer(
       ? (options.library ?? [])
       : (machines.find((m) => m.machineId === machineId)?.library ?? []);
 
+  /**
+   * The server's rule over the named plugins' modules that do not run: a member's ask for one that
+   * is not built in leaves a waiting request, anything else runs. What it did, per plugin.
+   */
+  const askModules = (names: readonly string[]) => {
+    const actions: Array<{ plugin: string; action: "enabled" | "requested" }> = [];
+    modules = modules?.map((m): PluginModuleStatus => {
+      if (!names.includes(m.plugin) || m.state === "running" || m.request !== undefined) return m;
+      if (options.admin === false && !m.builtin) {
+        actions.push({ plugin: m.plugin, action: "requested" });
+        return {
+          ...m,
+          request: { status: "pending", mine: true, requestedAt: "2026-11-19T08:00:00Z" },
+        };
+      }
+      actions.push({ plugin: m.plugin, action: "enabled" });
+      return { ...m, state: "running", listed: true };
+    });
+    return actions;
+  };
+
   const answer = (request: FetchRequest): Response => {
     const { method, path } = request;
     if (request.machine !== null) {
@@ -658,7 +698,7 @@ export function agentServer(
     }
     if (path === "/api/me") {
       return json(
-        options.serverAdmin === false
+        options.admin === false
           ? { ...ADMIN_ME, user: { ...ADMIN_ME.user, isAdmin: false } }
           : ADMIN_ME,
       );
@@ -672,7 +712,14 @@ export function agentServer(
       return json({ items: errors.slice(0, 1), total: errors.length, rows: errors.length });
     }
     if (errors !== undefined && path === `/api/projects/${PROJECT_ID}/usage`) {
-      const bucket: UsageBucket = { total: 0, requests: 0, cost: null, hasUncosted: false };
+      const bucket: UsageBucket = {
+        total: 0,
+        requests: 0,
+        cost: null,
+        hasUncosted: false,
+        toolRequests: 0,
+        toolCost: null,
+      };
       return json({
         summary: { today: bucket, last7d: bucket, total: bucket },
         groupBy: "date",
@@ -681,6 +728,7 @@ export function agentServer(
         series: [],
         byAgentSeries: [],
         byModelSeries: [],
+        tools: [],
         agentIds: [],
         models: [],
         errors: {
@@ -692,10 +740,18 @@ export function agentServer(
         },
       } satisfies UsageResponse);
     }
+    if (path === `/api/projects/${PROJECT_ID}/plugins/modules` && method === "POST") {
+      const { plugin } = request.body as { plugin: string };
+      if (modules?.some((m) => m.plugin === plugin) !== true) {
+        return apiError(400, "no_server_module", plugin);
+      }
+      return json({ modules, moduleActions: askModules([plugin]) });
+    }
     if (path === "/api/plugins") {
       return json({ groups: [{ id: "all", title: "All", plugins: libraryOf(request.machine) }] });
     }
     if (path === "/api/plugins/registry") return json({ plugins: [], failures: [], pending: [] });
+    if (path === "/api/plugins/market" && options.market !== undefined) return json(options.market);
     if (path === `/api/projects/${PROJECT_ID}/plugins/installed` && method === "GET") {
       return json({
         machineId: request.machine ?? "local-machine",
@@ -708,6 +764,7 @@ export function agentServer(
     const pluginsPath = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/plugins$/.exec(path);
     if (pluginsPath !== null) {
       const key = installKey(request.machine, decodeURIComponent(pluginsPath[1]!));
+      let moduleActions: ReturnType<typeof askModules> | undefined;
       if (method === "POST") {
         const { names } = request.body as { names: string[] };
         const library = libraryOf(request.machine);
@@ -718,6 +775,9 @@ export function agentServer(
           .flatMap((p) => p.skills.map((skill) => skill.name));
         installs.set(key, [...new Set([...(installs.get(key) ?? []), ...skills])]);
         pluginUpdates = pluginUpdates.filter((u) => !names.includes(u.name));
+        if (modules !== undefined && request.machine === null) {
+          moduleActions = askModules(names);
+        }
       }
       const version = (name: string) =>
         libraryOf(request.machine)
@@ -734,6 +794,8 @@ export function agentServer(
         hooks: partHooks,
         mcpServers: partMcp,
         workbenches: receipts,
+        ...(modules !== undefined && request.machine === null ? { modules } : {}),
+        ...(method === "POST" && moduleActions !== undefined ? { moduleActions } : {}),
       });
     }
     if (path === "/api/projects") {
@@ -764,7 +826,7 @@ export function agentServer(
           return {
             ...summaryOf(id),
             ...avatarFields(null, id),
-            name: id === AGENT_ID ? stored.config.name : id,
+            name: id === AGENT_ID ? stored.config.name : (createdNames.get(id) ?? id),
             ...(id === AGENT_ID && stored.config.author !== undefined
               ? { author: stored.config.author }
               : {}),
@@ -1120,7 +1182,17 @@ export function agentServer(
       return json({ workbench: listed(workbench) });
     }
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "POST") {
-      const body = request.body as { agentId: string; name?: string };
+      const body = request.body as { agentId: string; name?: string; plugins?: string[] };
+      // The plugins are seeded in the same call: an unknown one refuses before the Agent exists.
+      const names = body.plugins ?? [];
+      const missing = names.find((name) => !libraryOf(null).some((p) => p.name === name));
+      if (missing !== undefined) return apiError(404, "unknown_plugin", missing);
+      const skills = libraryOf(null)
+        .filter((p) => names.includes(p.name))
+        .flatMap((p) => p.skills.map((skill) => skill.name));
+      if (skills.length > 0) installs.set(installKey(null, body.agentId), skills);
+      if (!localAgentIds.includes(body.agentId)) localAgentIds = [...localAgentIds, body.agentId];
+      if (body.name !== undefined) createdNames.set(body.agentId, body.name);
       return json({ agent: { ...summaryOf(body.agentId), name: body.name ?? body.agentId } });
     }
     if (path === `${AGENT_PATH}/config`) {
@@ -1347,6 +1419,9 @@ export function agentServer(
       else building.delete(workbenchId);
     },
     appCenterLayout: () => appCenterLayout,
+    setModules: (next) => {
+      modules = next.map((m) => ({ ...m }));
+    },
   };
 }
 

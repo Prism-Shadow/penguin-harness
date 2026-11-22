@@ -10,8 +10,9 @@
  * are on it: no white flash in a dark app. Its keys reach the app too, so the palette still
  * answers from inside it. A page may ask to fill the app (`parent.postMessage({ type:
  * "penguin:fill-app" }, "*")`, only from this frame): the host that can do that passes
- * `onFillApp`. The iframe keys on the page's `uiRev`, so an Agent editing its pages sees them
- * reload.
+ * `onFillApp`. The page SDK's chat model requests are answered for this frame alone
+ * (workbench-model-picker.tsx), and a page that opts in (`pointerLock`) may capture the mouse.
+ * The iframe keys on the page's `uiRev`, so an Agent editing its pages sees them reload.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -22,14 +23,17 @@ import {
 } from "../../lib/workbench-theme";
 import { FILL_APP_MESSAGE, workbenchUiUrl, type WorkbenchTab } from "../../lib/workbench-tabs";
 import { useTheme } from "../../state/theme";
+import { WorkbenchModelPicker } from "./workbench-model-picker";
 
 /** How long a page that never finishes loading stays hidden before it is shown as it is. */
 const FRAME_REVEAL_TIMEOUT_MS = 4000;
 
 export function WorkbenchFrame({
+  projectId,
   tab,
   onFillApp,
 }: {
+  projectId: string;
   tab: WorkbenchTab;
   /** The page asked to fill the app; absent where it already does (the full page). */
   onFillApp?: () => void;
@@ -91,7 +95,15 @@ export function WorkbenchFrame({
         className={`min-h-0 flex-1 border-0 transition-opacity duration-150 motion-reduce:transition-none ${
           shownKey === frameKey ? "opacity-100" : "opacity-0"
         }`}
-        sandbox={PAGE_FRAME_SANDBOX}
+        sandbox={
+          tab.pointerLock === true ? PAGE_FRAME_SANDBOX + " allow-pointer-lock" : PAGE_FRAME_SANDBOX
+        }
+      />
+      <WorkbenchModelPicker
+        key={`model-picker/${frameKey}`}
+        frame={frameRef}
+        projectId={projectId}
+        machineId={tab.machineId}
       />
     </div>
   );

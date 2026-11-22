@@ -4,6 +4,7 @@ import { publishPageAgent } from "../../lib/page-agent";
 import { useChatController } from "./session/use-chat-controller";
 import { createMainChatView } from "./body/main-chat-view";
 import { renderMainChatToolbar } from "./toolbar/main-chat-toolbar";
+import { VoiceScope } from "./voice/voice-scope";
 import { renderMainChatBody } from "./body/main-chat-body";
 import { renderMainChatDialogs } from "./session/main-chat-dialogs";
 
@@ -44,7 +45,14 @@ export function ChatPage() {
             (dock-drag.tsx / dock-panel.tsx). */}
         <AppWindow shown data-dock-host>
           {renderMainChatToolbar(view)}
-          {renderMainChatBody(view)}
+          <VoiceScope
+            projectId={projectId}
+            server={workflowMachineId}
+            sessionId={controller.draft ? undefined : controller.selected?.sessionId}
+            active={chatShown}
+          >
+            {renderMainChatBody(view)}
+          </VoiceScope>
         </AppWindow>
       </WindowStack>
       {renderMainChatDialogs(view)}

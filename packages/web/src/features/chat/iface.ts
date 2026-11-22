@@ -5,11 +5,15 @@
  * consumer `@Use`s it and hands it to its components through its own deps, so none of them
  * imports the chat page's draft files.
  *
- * `Chat` carries the page's slot: `fileRenderers`, the named components a server's file renderer
+ * `Chat` carries the page's slots: `fileRenderers`, the named components a server's file renderer
  * rule may pick to draw a Workspace file below the reply paragraph that links it
- * (lib/file-renderers.ts).
+ * (lib/file-renderers.ts); `sessionHandovers`, what another module keeps under a conversation's
+ * id and moves when the conversation takes a new one (session-handover.ts); and `linkActions`,
+ * rows another module adds to the stream's menu for a web link (link-actions.ts). The last two
+ * take the plugin face's types.
  */
 import { Interface, type Slot } from "@prismshadow/penguin-core/kernel";
+import type { LinkAction, Ordered, SessionHandover } from "@prismshadow/penguin-web-plugin";
 
 import type { FileRenderer } from "../../lib/file-renderers";
 
@@ -50,4 +54,8 @@ export interface FileRendererData {
 export interface ChatSlots {
   /** A named file renderer. */
   fileRenderers: Slot<FileRendererData, FileRenderer>;
+  /** Moves what its module keeps under a conversation's old id to its new one, in `order`. */
+  sessionHandovers: Slot<Ordered, SessionHandover>;
+  /** A row of the stream's menu for a web link, before the app's own rows, in `order`. */
+  linkActions: Slot<Ordered, LinkAction>;
 }

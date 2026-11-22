@@ -1,6 +1,6 @@
 /**
  * The Browser panel on a server with no desktop app, where the agents' only browser is the
- * user's own Chrome (features/builtin-browser/chrome-surface.tsx, pairing-dialog.tsx).
+ * user's own Chrome (plugins/browser-automation/src/web/chrome-surface.tsx, pairing-dialog.tsx).
  * - A member's dock offers the Browser panel in a plain browser window, which hosts no
  *   `<webview>`. With no Chrome paired the panel shows the pairing steps inline: this page's
  *   address and a one-time code.

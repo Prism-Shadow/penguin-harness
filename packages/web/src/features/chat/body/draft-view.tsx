@@ -38,7 +38,7 @@
  * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
  * always survive.
  */
-import { browserState, adoptBrowserSession } from "../../builtin-browser";
+import { handOverSession } from "../session-handover";
 import {
   useCallback,
   useEffect,
@@ -49,6 +49,7 @@ import {
   type RefObject,
 } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { ComposerBanner, Notice } from "@prismshadow/penguin-ui";
 import type {
   AgentModelConfigDto,
   AgentSummary,
@@ -110,8 +111,9 @@ import { effectiveThinkingLevel } from "../../model-picker";
 import { useAgentSkills } from "../use-agent-skills";
 import { WorkspaceSelect } from "../../workspace";
 import { FilesPanelToggle } from "../dock-toggles";
-import { sameModelRef } from "../../models";
+import { defaultChatModel, sameModelRef } from "../../models";
 import { toastApiError } from "../../../lib/toast-api-error";
+import { requestDefaultModels } from "../../../lib/default-models-request";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
@@ -171,7 +173,7 @@ export function DraftView({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { agents: localAgents, setCurrentAgentId } = useProject();
+  const { agents: localAgents, setCurrentAgentId, currentProject } = useProject();
   /**
    * Agents on the machine the workspace is on. They are per-server: a Session created on
    * another machine can only name an Agent that exists THERE, so offering this machine's
@@ -428,15 +430,17 @@ export function DraftView({
     }
   }, [chatDefaults, stateWorkspace, cached.workspace, cached.approvalMode]);
 
-  // Model fallback: once config is ready, if nothing is selected or the selection is no longer valid, fall back to the project default → the first model (always as a paired reference).
+  const chatModels = useMemo(
+    () => models?.models.filter((m) => m.chatEligible !== false) ?? [],
+    [models],
+  );
+  const modelInfo = chatModels.find((m) => sameModelRef(m, modelRef));
+  // A cached choice or an older Project default can name a model intended only for tools.
   useEffect(() => {
-    if (!models) return;
-    if (modelRef && models.models.some((m) => sameModelRef(m, modelRef))) return;
-    const first = models.models[0];
-    setModelRef(
-      models.defaultModel ?? (first ? { provider: first.provider, modelId: first.modelId } : null),
-    );
-  }, [models, modelRef]);
+    if (!models || modelInfo) return;
+    const next = defaultChatModel(models.models, models.defaultModel);
+    setModelRef(next ? { provider: next.provider, modelId: next.modelId } : null);
+  }, [models, modelRef, modelInfo]);
 
   /**
    * Live reseed: the project-settings dialog saved new defaults in THIS tab while the
@@ -532,7 +536,13 @@ export function DraftView({
   // The composer's switches the draft's Agent offers, and the ones on (prompt-modes.ts).
   const promptModes = usePromptModes(projectId, resolvedAgentId, workspaceMachine);
   const switches = useMemo<ComposerSwitches>(
-    () => ({ modes: promptModes, on: offered(promptHooks, promptModes), onChange: setPromptHooks }),
+    () => ({
+      modes: promptModes.modes,
+      on: offered(promptHooks, promptModes.modes),
+      onChange: setPromptHooks,
+      offers: promptModes.offers,
+      install: promptModes.install,
+    }),
     [promptModes, promptHooks],
   );
   useEffect(() => {
@@ -817,32 +827,29 @@ export function DraftView({
   // failure, so the input area keeps the draft and can resend.
   const onSend = useCallback(
     async (input: TaskInputPart[], goal: { budget: number } | null = null): Promise<boolean> => {
-      if (!agentId || sendingRef.current) return false;
+      if (!agentId || !modelInfo || sendingRef.current) return false;
       sendingRef.current = true;
-      const browserScope = browserState().scope;
       // The draft's own docks, named now: the send takes round trips, and the user may be on
-      // another conversation by the time it has a Session to hand them to.
+      // another conversation by the time it has a Session to hand them to. It is also the scope
+      // whatever other modules keep for the draft hands over from (`ChatModule.sessionHandovers`).
       const dockScope = currentDockScope();
       let createdId: string | null = null;
       try {
         const body: SessionCreateRequest = { approvalMode };
         if (Object.keys(sandboxPick).length > 0) body.sandbox = sandboxPick;
-        // Model reference is submitted as a pair (provider + modelId; falls back to the Project default when not set).
-        if (modelRef) {
-          body.modelId = modelRef.modelId;
-          body.provider = modelRef.provider;
-        }
+        body.modelId = modelInfo.modelId;
+        body.provider = modelInfo.provider;
         if (workspace.trim()) body.workspace = workspace.trim();
         // Created ON the machine that owns the workspace: that server runs the agent in it.
         const created = await api.createSession(projectId, agentId, body, workspaceMachine);
         createdId = created.session.sessionId;
-        // The first task can use the draft's pages as soon as it starts.
-        await adoptBrowserSession(browserScope, createdId);
+        // The first task can use what the draft holds (its browser pages) as soon as it starts.
+        await handOverSession(dockScope, createdId);
         const res = await api.postTask(createdId, {
           input,
           ...(goal ? { goal } : promptHooksField(switches.on)),
         });
-        await adoptBrowserSession(createdId, res.sessionId);
+        await handOverSession(createdId, res.sessionId);
         // The switches hold for the conversation, so the new Session keeps them on.
         if (userId) saveSessionPromptModes(userId, res.sessionId, switches.on);
         // postTask answers with the CURRENT id: a Session with no Trace whose process
@@ -875,7 +882,7 @@ export function DraftView({
         // discard it — out of the list first, then off the server (unstarted-session.ts says why
         // in that order) — or every resend would pile up another empty Session in the sidebar.
         if (createdId) {
-          await adoptBrowserSession(createdId, browserScope);
+          await handOverSession(createdId, dockScope);
           void discardUnstartedSession(createdId, { remove, deleteSession: api.deleteSession });
         }
         toastApiError(e, modelRef ? { modelId: modelRef.modelId } : {});
@@ -890,6 +897,7 @@ export function DraftView({
       approvalMode,
       sandboxPick,
       modelRef,
+      modelInfo,
       workspace,
       // The machine can change while the path does not: a temporary workspace there after a
       // temporary one here is "" both times, and a send that kept the old machine would create
@@ -929,8 +937,6 @@ export function DraftView({
     if (resolvedAgentId && workspaceMachine === null) setCurrentAgentId(resolvedAgentId);
   }, [resolvedAgentId, workspaceMachine, onAgentChange, setCurrentAgentId]);
 
-  // Capability info for the currently selected model (vision/context window) switches instantly with the selection (matched by paired reference).
-  const modelInfo = models?.models.find((m) => sameModelRef(m, modelRef));
   // Goal mode's plugin check, against the Agent the Session will be created for, on the server
   // that holds it: nothing is created for a goal that cannot start (goal-plugin-gate.ts).
   const goalPlugin = useMemo(
@@ -940,17 +946,44 @@ export function DraftView({
   const contextWindow = modelInfo?.contextWindow;
   const vision = modelInfo?.vision !== false;
 
+  // No default model, and none chosen for this chat: Send waits for one (ChatInput's canSend),
+  // and the composer's top band says so, with the way to the Default model settings dialog for
+  // the owner (a member is told whom to ask).
+  const noDefaultBanner = models &&
+    chatModels.length > 0 &&
+    !models.defaultModel &&
+    modelRef === null && (
+      <ComposerBanner
+        {...(currentProject?.role === "owner"
+          ? { action: { label: S.defaultModels.composerAction, onClick: requestDefaultModels } }
+          : {})}
+      >
+        {currentProject?.role === "owner"
+          ? S.defaultModels.composerNone
+          : S.defaultModels.composerNoneMember}
+      </ComposerBanner>
+    );
+
   // The composer and the ownership pills under it, which the dashboard sets between its brand
   // and its examples.
   const composer = (
     <>
+      {models && chatModels.length === 0 && (
+        <Notice
+          tone="attention"
+          role="status"
+          action={{ label: S.project.goToModels, onClick: () => navigate("/models") }}
+        >
+          {S.project.noChatModels}
+        </Notice>
+      )}
       <ChatInput
         status="idle"
         controlRef={composerRef}
         onSend={onSend}
         onStop={async () => undefined}
         modelRef={modelRef}
-        models={models?.models ?? []}
+        models={chatModels}
         onChangeModel={setModelRef}
         thinkingLevel={thinkingLevel}
         onChangeThinkingLevel={onChangeThinkingLevel}
@@ -973,6 +1006,7 @@ export function DraftView({
         {...(cached.goal === true ? { initialGoal: true } : {})}
         goalPlugin={goalPlugin}
         switches={switches}
+        {...(noDefaultBanner ? { banner: noDefaultBanner } : {})}
         onSkillsChange={onSkillsChange}
         initialText={cached.text ?? ""}
         onTextChange={onTextChange}

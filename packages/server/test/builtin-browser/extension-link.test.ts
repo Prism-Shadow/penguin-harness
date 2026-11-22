@@ -1,8 +1,8 @@
 /**
- * The extension's WebSocket on the wire: the real upgrade handler (extension-ws.ts) on an
+ * The extension's WebSocket on the wire: the runtime's upgrade seam (hmr/upgrade-seam.ts) on an
  * ephemeral http.Server, the real `ws` client playing the PenguinHarness Browser extension, and
- * — for all but the liveness case — the gate of the real platform tree, paired through its
- * routes.
+ * — for all but the liveness case — the endpoint the real platform tree contributes
+ * (`HttpModule.upgrades`, extension-ws.ts), paired through its routes.
  *
  * - An upgrade from a web page's or another extension's origin is refused 403, one without a
  *   known token 401.
@@ -32,11 +32,15 @@ import type {
   BuiltinBrowserTab,
   DesktopBrowserCommandMessage,
 } from "../../src/api/types.js";
-import { PENGUIN_EXTENSION_ID } from "../../src/builtin-browser/extension-origin.js";
-import { ExtensionPairing } from "../../src/builtin-browser/extension-pairing.js";
-import { attachExtensionWebSocket } from "../../src/builtin-browser/extension-ws.js";
-import type { ExtensionGate } from "../../src/builtin-browser/extension-ws.js";
-import { BuiltinBrowser } from "../../src/builtin-browser/service.js";
+import {
+  BuiltinBrowser,
+  browserPlugin,
+  ExtensionPairing,
+  extensionUpgrade,
+  PENGUIN_EXTENSION_ID,
+} from "./plugin.js";
+import { attachUpgradeSeam } from "../../src/hmr/upgrade-seam.js";
+import type { UpgradeSurface } from "../../src/hmr/upgrade-seam.js";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { BrowserExtensionsRepo } from "@prismshadow/penguin-library-machine/browser-extensions";
 import { userChannelKey } from "../../src/http/routes/events.js";
@@ -72,13 +76,13 @@ afterEach(async () => {
   );
 });
 
-/** An http.Server on an ephemeral port with only the extension upgrade attached. */
-async function listen(gate: () => Promise<ExtensionGate | null>): Promise<number> {
+/** An http.Server on an ephemeral port with only the upgrade seam attached, offering every upgrade to `surface`. */
+async function listen(surface: () => Promise<UpgradeSurface | null>): Promise<number> {
   const server = http.createServer((_req, res) => {
     res.statusCode = 404;
     res.end();
   });
-  attachExtensionWebSocket(server, { gate, log: () => {} });
+  attachUpgradeSeam(server, { current: surface, reserved: () => false, log: () => {} });
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   return (server.address() as AddressInfo).port;
@@ -156,10 +160,8 @@ describe("the extension socket of the real platform", () => {
   let events: BuiltinBrowserServerEvent[];
 
   beforeEach(async () => {
-    t = await createTestApp();
-    port = await listen(async () =>
-      t.deps.tree.api<ExtensionGate>("BuiltinBrowserModule", "BrowserExtensionGate"),
-    );
+    t = await createTestApp({ plugins: browserPlugin() });
+    port = await listen(async () => t.deps.tree.api<UpgradeSurface>("ApiModule", "Http"));
     alice = apiClient(t.app, (await provisionUser(t.app, "alice")).cookie);
     events = [];
     t.deps.channels
@@ -329,7 +331,13 @@ describe("liveness", () => {
     });
     const { code } = pairing.mint("alice");
     token = pairing.pair({ code, name: "Chrome 130 on Linux", version: "0.2.13" }).token;
-    port = await listen(async () => browser);
+    const endpoint = extensionUpgrade({ gate: () => browser, log: () => {} });
+    port = await listen(async () => ({
+      upgrade: (req, socket, head) => {
+        endpoint.upgrade(req, socket, head, null);
+        return true;
+      },
+    }));
   });
   afterEach(async () => {
     browser.dispose();

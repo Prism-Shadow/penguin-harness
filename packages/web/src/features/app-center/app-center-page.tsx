@@ -24,7 +24,7 @@
  *   address, and the nav keeps the App Center lit there; it can be moved and put in folders,
  *   never removed.
  * - A folder unfolds in place from its icon (`?folder=<id>`, so Back closes it too;
- *   folder-panel.tsx). Closing a window, a folder or the full page goes back to the host's own
+ *   folder-panel.tsx). Leaving a window, a folder or the full page goes back to the host's own
  *   entry for the view beneath, however many pages the app's frame went through
  *   (lib/host-history.ts), and the focus goes back to the tile.
  * - A tile whose app is building shows a turning ring and does not open; it turns live by itself

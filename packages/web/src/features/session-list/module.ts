@@ -10,7 +10,7 @@ import type { SidebarSection } from "../../lib/sidebar-contributions";
 import type { ChatDrafts } from "../chat";
 import type { SessionList } from "./iface";
 import { sessionListDeps } from "./deps";
-import { composeMarks, rowExtensionsOf } from "./row-actions";
+import { composeMarks, gatedRowActions, rowExtensionsOf } from "./row-actions";
 import { MainSessionListSection } from "./main-sidebar-fragments";
 import { MainSidebarApps } from "./main-sidebar-apps";
 
@@ -28,7 +28,7 @@ export class SessionListModule {
   @Bind("session-list.apps") apps: SidebarSection = { Full: MainSidebarApps };
   @Bind("session-list.section") section!: SidebarSection;
   setup({ contributions }: ClassCtx) {
-    const rows = rowExtensionsOf(contributions.rowActions ?? []);
+    const rows = rowExtensionsOf(gatedRowActions(contributions.rowActions ?? []));
     const deps = { drafts: this.drafts, rows, useRowMarks: composeMarks(rows.marks) };
     this.section = {
       // main sidebar owns evolved list state; the slot carries its live renderer.

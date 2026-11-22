@@ -47,7 +47,17 @@ import type {
   ModuleDef,
   ModuleTree,
 } from "@prismshadow/penguin-core/kernel";
-import { agentDir, SYSTEM_AGENT_ID, userText } from "@prismshadow/penguin-core";
+import {
+  agentDir,
+  installedPlugin,
+  listInstalledWorkbenches,
+  PLUGIN_NAME_PATTERN,
+  SYSTEM_AGENT_ID,
+  userText,
+  workbenchCacheDir,
+  workbenchDataDir,
+  workbenchStateDir,
+} from "@prismshadow/penguin-core";
 import type { IconImage } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
 import { HttpError } from "../http/errors.js";
@@ -57,7 +67,12 @@ import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Traces } from "@prismshadow/penguin-library-trace";
 import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
-import type { WorkbenchApprovalMode, Workbenches } from "../mechanisms/workbenches.js";
+import type {
+  WorkbenchApprovalMode,
+  WorkbenchDataLevel,
+  WorkbenchHost,
+  Workbenches,
+} from "../mechanisms/workbenches.js";
 import type {
   AppCenterShortcut,
   WorkbenchTabIcon,
@@ -82,6 +97,13 @@ import {
   writeAppCenterShow,
   type AppCenterManifest,
 } from "./app-center.js";
+import {
+  ensureDir,
+  levelFolders,
+  removeBelow,
+  socketPathIn,
+  type WorkbenchPlace,
+} from "./data-dirs.js";
 import { migrateWorkbenches } from "./migrate.js";
 import { WorkbenchSubscriptions } from "./subscribe.js";
 import {
@@ -94,9 +116,11 @@ import {
 import { compileWorkbenchUi, hasTsxPages, type UiBuild } from "./compile-ui.js";
 import { installHarnessTypes, readHarnessTable } from "./harness-types.js";
 import { checkIfaces, ifaceQuestions } from "../plugin/iface-check.js";
-import { loadTypeScript } from "../plugin/typescript.js";
+import { loadTypeScript, nodeTypesRoot } from "../plugin/typescript.js";
 import { openUiRuntime, requireUiRuntime, type UiRuntime, type WebFiles } from "./ui-runtime.js";
 import { AgentStateRepo, agentStateRepoDir } from "./repo.js";
+import type { AgentStateEngines } from "./engines.js";
+import type { VersionAuthor } from "./git-identity.js";
 import {
   HIDDEN_FROM_SIDEBAR,
   isSafeRelPath,
@@ -256,7 +280,12 @@ function contributedTabs(manifests: readonly Manifest[], uiBase: string): Workbe
         .join("/");
       tabs.push({
         ...tab,
-        renderer: { iframe: { src: `${uiBase}/${rest}` } },
+        renderer: {
+          iframe: {
+            src: `${uiBase}/${rest}`,
+            ...(tab.renderer.iframe.pointerLock === true ? { pointerLock: true } : {}),
+          },
+        },
       });
     }
   }
@@ -328,6 +357,7 @@ export class WorkbenchService implements Workbenches {
   @Use() private readonly traces!: Traces;
   @Use() private readonly runner!: ScheduleTaskRunner;
   @Use() private readonly sessions!: ScheduleSessionCreator;
+  @Use() private readonly engines!: AgentStateEngines;
 
   private readonly loaded = new Map<string, Loaded>();
   private readonly watchers = new Map<string, { close(): void }>();
@@ -340,12 +370,17 @@ export class WorkbenchService implements Workbenches {
   private readonly removing = new Set<string>();
   private resources: ClassCtx["resources"] | null = null;
   private disposed = false;
-  /** The Agent State repository; its writes stay in order across instances (./repo.ts). */
+  /**
+   * The Agent State repository; its writes stay in order across instances (./repo.ts). A
+   * contributed engine writes and reads versions when one is ready (./engines.ts).
+   */
   private repo(projectId: string, agentId: string): AgentStateRepo {
     return new AgentStateRepo({
       gitdir: agentStateRepoDir(agentDir(this.paths.root, projectId, agentId)),
       now: () => this.clock.now(),
       log: (line) => this.log.line(`[workbenches] ${projectId}/${agentId}: ${line}`),
+      engine: this.engines.current(),
+      onEngineUnavailable: (engine) => this.engines.drop(engine),
     });
   }
 
@@ -411,6 +446,27 @@ export class WorkbenchService implements Workbenches {
     return out;
   }
 
+  async one(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<WorkbenchInfo | null> {
+    if (!isWorkbenchId(workbenchId)) return null;
+    await this.migrate(projectId, agentId);
+    this.watch(projectId, agentId);
+    const base = workbenchesDir(this.paths.root, projectId, agentId);
+    const folder = await readFolder(path.join(base, workbenchId), workbenchId);
+    if (folder === null) return null;
+    const { info, unloaded } = await this.settle(
+      projectId,
+      agentId,
+      folder,
+      !(await isSwitchedOff(base)),
+    );
+    if (unloaded) this.notify(projectId, agentId, info);
+    return info;
+  }
+
   async agentEnabled(projectId: string, agentId: string): Promise<boolean> {
     await this.migrate(projectId, agentId);
     return !(await isSwitchedOff(workbenchesDir(this.paths.root, projectId, agentId)));
@@ -452,16 +508,27 @@ export class WorkbenchService implements Workbenches {
     };
   }
 
-  async reload(projectId: string, agentId: string, workbenchId: string): Promise<WorkbenchInfo> {
+  async reload(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    by?: VersionAuthor,
+  ): Promise<WorkbenchInfo> {
     const folder = await this.folder(projectId, agentId, workbenchId);
     if (!(await this.runs(projectId, agentId, folder))) throw new WorkbenchDisabled(workbenchId);
-    return this.info(projectId, agentId, workbenchId, await this.load(projectId, agentId, folder));
+    return this.info(
+      projectId,
+      agentId,
+      workbenchId,
+      await this.load(projectId, agentId, folder, by),
+    );
   }
 
   async reloadIfEnabled(
     projectId: string,
     agentId: string,
     workbenchId: string,
+    by?: VersionAuthor,
   ): Promise<WorkbenchInfo> {
     const folder = await this.folder(projectId, agentId, workbenchId);
     if (await this.runs(projectId, agentId, folder)) {
@@ -470,7 +537,7 @@ export class WorkbenchService implements Workbenches {
           projectId,
           agentId,
           workbenchId,
-          await this.load(projectId, agentId, folder),
+          await this.load(projectId, agentId, folder, by),
         );
       } catch (err) {
         // Switched off while it loaded: answered as it stands, like any other that does not run.
@@ -485,11 +552,12 @@ export class WorkbenchService implements Workbenches {
     agentId: string,
     workbenchId: string,
     enabled: boolean,
+    by?: VersionAuthor,
   ): Promise<WorkbenchInfo> {
     const folder = await this.folder(projectId, agentId, workbenchId);
     await writeSwitch(folder.dir, enabled);
     const all = await this.agentEnabled(projectId, agentId);
-    const { info, loaded } = await this.settle(projectId, agentId, folder, all);
+    const { info, loaded } = await this.settle(projectId, agentId, folder, all, by);
     // A load announces itself; anything else is announced here, so open pages follow the switch.
     if (!loaded) this.notify(projectId, agentId, info);
     return info;
@@ -585,13 +653,18 @@ export class WorkbenchService implements Workbenches {
     workbenchId: string,
     rel: string,
   ): Promise<WorkbenchUiRuntimeFile | null> {
-    if (!isWorkbenchId(workbenchId)) return null;
+    if (!(await this.exists(projectId, agentId, workbenchId))) return null;
+    return (await this.runtime()?.file(rel)) ?? null;
+  }
+
+  async exists(projectId: string, agentId: string, workbenchId: string): Promise<boolean> {
+    if (!isWorkbenchId(workbenchId)) return false;
     await this.migrate(projectId, agentId);
     const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
     // A folder without package.json is not a workbench (./store.ts).
-    if (!(await isFile(path.join(dir, "package.json")))) return null;
+    if (!(await isFile(path.join(dir, "package.json")))) return false;
     await this.refuseIfOff(projectId, agentId, workbenchId, dir);
-    return (await this.runtime()?.file(rel)) ?? null;
+    return true;
   }
 
   async iconSvg(
@@ -624,6 +697,7 @@ export class WorkbenchService implements Workbenches {
     agentId: string,
     workbenchId: string,
     revision: string,
+    by?: VersionAuthor,
   ): Promise<WorkbenchInfo> {
     const folder = await this.folder(projectId, agentId, workbenchId);
     if (!/^[0-9a-f]{12}$/.test(revision)) throw new WorkbenchNotFound("no such version");
@@ -634,10 +708,15 @@ export class WorkbenchService implements Workbenches {
     // The load this triggers records the restored files as the newest version; a workbench
     // that does not run takes the files only, and records them when it next loads.
     await restoreSource(folder, files);
-    return this.reloadIfEnabled(projectId, agentId, workbenchId);
+    return this.reloadIfEnabled(projectId, agentId, workbenchId, by);
   }
 
-  async remove(projectId: string, agentId: string, workbenchId: string): Promise<void> {
+  async remove(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+    by?: VersionAuthor,
+  ): Promise<void> {
     const folder = await this.folder(projectId, agentId, workbenchId);
     const k = key(projectId, agentId, workbenchId);
     // Nothing may write into the folder while it is deleted: a load writes `.build/`, and a
@@ -658,10 +737,24 @@ export class WorkbenchService implements Workbenches {
     } finally {
       this.removing.delete(k);
     }
+    // Its data, cache and state folders go with it, so a workbench made later under the same id
+    // starts empty. A link the Agent left on the way to them is never followed.
+    const root = this.paths.root;
+    const agent = agentDir(root, projectId, agentId);
+    for (const [base, dir] of [
+      [agent, workbenchDataDir(root, projectId, agentId, folder.id)],
+      [agent, workbenchCacheDir(root, projectId, agentId, folder.id)],
+      [root, workbenchStateDir(root, projectId, agentId, folder.id)],
+    ] as const) {
+      await removeBelow(base, dir).catch((err: unknown) => {
+        this.log.line(`[workbenches] ${k}: ${dir} not removed: ${messageOf(err)}`);
+      });
+    }
     try {
       await this.repo(projectId, agentId).removePath(
         repoPath(workbenchId),
         `workbench ${workbenchId}: removed`,
+        { by },
       );
     } catch (err) {
       this.log.line(`[workbenches] ${k}: removal not recorded: ${messageOf(err)}`);
@@ -689,11 +782,23 @@ export class WorkbenchService implements Workbenches {
       // With the Agent-wide switch off none of its workbenches runs, so none has a tile.
       if (await isSwitchedOff(base)) continue;
       const agentName = (await this.agentConfig.readCardMeta(projectId, agentId)).name ?? agentId;
-      out.push(
-        ...(await agentShortcuts(projectId, { agentId, agentName }, base, (workbenchId) =>
-          this.building(key(projectId, agentId, workbenchId)),
-        )),
+      const shortcuts = await agentShortcuts(
+        projectId,
+        { agentId, agentName },
+        base,
+        (workbenchId) => this.building(key(projectId, agentId, workbenchId)),
       );
+      // The plugin that installed each, from its receipt; receipts that will not read name none,
+      // and the tiles still list.
+      const installedBy = new Map(
+        (await listInstalledWorkbenches(this.paths.root, projectId, agentId).catch(() => [])).map(
+          (w) => [w.name, w.plugin],
+        ),
+      );
+      for (const shortcut of shortcuts) {
+        const plugin = installedBy.get(shortcut.workbenchId);
+        out.push(plugin === undefined ? shortcut : { ...shortcut, plugin });
+      }
     }
     return out;
   }
@@ -746,6 +851,7 @@ export class WorkbenchService implements Workbenches {
     agentId: string,
     workbenchId: string,
     show: boolean,
+    by?: VersionAuthor,
   ): Promise<WorkbenchInfo> {
     const folder = await this.folder(projectId, agentId, workbenchId);
     try {
@@ -760,7 +866,7 @@ export class WorkbenchService implements Workbenches {
     }
     // The watcher sees the same edit; a load of the revision just written is shared, not repeated.
     // One that does not run is written all the same and answered from its folder.
-    return this.reloadIfEnabled(projectId, agentId, workbenchId);
+    return this.reloadIfEnabled(projectId, agentId, workbenchId, by);
   }
 
   async releaseAgent(projectId: string, agentId: string): Promise<void> {
@@ -966,6 +1072,7 @@ export class WorkbenchService implements Workbenches {
     agentId: string,
     folder: WorkbenchFolder,
     all: boolean,
+    by?: VersionAuthor,
   ): Promise<{ info: WorkbenchInfo; loaded: boolean; unloaded: boolean }> {
     const k = key(projectId, agentId, folder.id);
     const own = !(await isSwitchedOff(folder.dir));
@@ -979,7 +1086,7 @@ export class WorkbenchService implements Workbenches {
         };
       }
       try {
-        const fresh = await this.load(projectId, agentId, folder);
+        const fresh = await this.load(projectId, agentId, folder, by);
         return {
           info: await this.info(projectId, agentId, folder.id, fresh),
           loaded: true,
@@ -1017,9 +1124,16 @@ export class WorkbenchService implements Workbenches {
   /**
    * One load at a time per workbench. The watcher and a request can both ask while the
    * compiler is still running for the last edit; the later one waits and then loads what
-   * is on disk by then, so versions are recorded in order and never concurrently.
+   * is on disk by then, so versions are recorded in order and never concurrently. `by` is the
+   * member whose request asked for it, who the version it records is by; a caller that shares
+   * a load already running for the same revision shares its author too.
    */
-  private load(projectId: string, agentId: string, folder: WorkbenchFolder): Promise<Loaded> {
+  private load(
+    projectId: string,
+    agentId: string,
+    folder: WorkbenchFolder,
+    by?: VersionAuthor,
+  ): Promise<Loaded> {
     const k = key(projectId, agentId, folder.id);
     // The tab list, iframe and watcher can arrive together. They share one load of the same
     // revision instead of recompiling it and disposing its newly created tree for each caller.
@@ -1034,7 +1148,7 @@ export class WorkbenchService implements Workbenches {
         // asked for is what wins (setEnabled waits for every load queued before its marker).
         if (!(await this.runs(projectId, agentId, current))) throw new WorkbenchDisabled(folder.id);
         if (this.loading.get(k) === run) this.loadingRevision.set(k, current.revision);
-        return this.loadNow(projectId, agentId, current);
+        return this.loadNow(projectId, agentId, current, by);
       });
     this.loading.set(k, run);
     this.loadingRevision.set(k, folder.revision);
@@ -1061,6 +1175,7 @@ export class WorkbenchService implements Workbenches {
     projectId: string,
     agentId: string,
     folder: WorkbenchFolder,
+    by?: VersionAuthor,
   ): Promise<Loaded> {
     const k = key(projectId, agentId, folder.id);
     const previous = this.loaded.get(k);
@@ -1086,7 +1201,12 @@ export class WorkbenchService implements Workbenches {
         [HOST_IFACE, MAIN_IFACE],
         this.clock.now(),
       );
-      const entry = compileWorkbench(ts, folder.dir, folder.revision);
+      const entry = compileWorkbench(
+        ts,
+        folder.dir,
+        folder.revision,
+        nodeTypesRoot(this.hmr.assetsDir()),
+      );
       // Pages in TSX are the same load's second program, checked against the runtime this
       // server serves them with; a folder of plain pages never touches the runtime.
       if (hasTsxPages(folder.files)) {
@@ -1178,6 +1298,7 @@ export class WorkbenchService implements Workbenches {
             repoPath(folder.id),
             files,
             `workbench ${folder.id} @${folder.revision}`,
+            { by },
           );
         }
       } catch (err) {
@@ -1233,6 +1354,16 @@ export class WorkbenchService implements Workbenches {
   ) {
     const service = this;
     let state: unknown = await readState(folder.dir);
+    // The plugin it came from names the app at the shared levels; a name no plugin could have
+    // is no app's.
+    const from = await installedPlugin(folder.dir).catch(() => null);
+    const place: WorkbenchPlace = {
+      root: service.paths.root,
+      projectId,
+      agentId,
+      workbenchId: folder.id,
+      plugin: from !== null && PLUGIN_NAME_PATTERN.test(from) ? from : null,
+    };
     // The system Agent runs no Sessions (PRFC-0033), so it is never offered; `createSession`
     // refuses it through the session service. Whether the Project's `system_agent` is instead
     // an Agent of the user's (core state/system-agent.ts) is read once per tree: a system Agent
@@ -1246,8 +1377,19 @@ export class WorkbenchService implements Workbenches {
           .list(projectId)
           .filter((row) => row.agentId !== SYSTEM_AGENT_ID || usersSystemId)
           .map((row) => ({ agentId: row.agentId })),
-      async createSession(opts?: { agentId?: string; approvalMode?: WorkbenchApprovalMode }) {
+      async createSession(opts?: Parameters<WorkbenchHost["createSession"]>[0]) {
         const target = opts?.agentId ?? agentId;
+        const model = opts?.model;
+        if (
+          model !== undefined &&
+          (!model ||
+            typeof model.provider !== "string" ||
+            typeof model.modelId !== "string" ||
+            !model.provider.trim() ||
+            !model.modelId.trim())
+        ) {
+          throw new Error("createSession: model needs a provider and modelId");
+        }
         // Unattended, like a scheduled run: allow-all unless the workbench asks for deny-all,
         // whatever the default preset says. The handler's types name the two values, but a
         // cast gets past them, so the value is checked here too: any other mode would park a
@@ -1264,6 +1406,7 @@ export class WorkbenchService implements Workbenches {
         return service.sessions.createSession({
           projectId,
           agentId: target,
+          ...(model ? { provider: model.provider, modelId: model.modelId } : {}),
           approvalMode,
           source: "workbench",
           client: "workbench",
@@ -1302,6 +1445,21 @@ export class WorkbenchService implements Workbenches {
       subscribe(sessionId: string, listener: (record: WorkbenchRecord) => void) {
         service.ownSession(projectId, sessionId, "subscribe");
         return subscriptions.subscribe(sessionId, listener);
+      },
+      // The folders are made before their paths are handed out: the Agent they are named to
+      // may be sandboxed, and its commands can write the agent level only once it exists.
+      dataPaths: (level?: WorkbenchDataLevel) => {
+        const { paths, bases } = levelFolders(level, place, "dataPaths");
+        ensureDir(bases.dataDir, paths.dataDir, "dataPaths");
+        ensureDir(bases.cacheDir, paths.cacheDir, "dataPaths");
+        ensureDir(bases.stateDir, paths.stateDir, "dataPaths");
+        return paths;
+      },
+      socketPath: (name: string, level?: WorkbenchDataLevel) => {
+        const { paths, bases } = levelFolders(level, place, "socketPath");
+        const at = socketPathIn(paths.stateDir, name);
+        if (process.platform !== "win32") ensureDir(bases.stateDir, paths.stateDir, "socketPath");
+        return at;
       },
       getState: () => state,
       async setState(next: unknown) {

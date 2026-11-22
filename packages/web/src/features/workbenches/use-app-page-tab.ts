@@ -4,8 +4,9 @@
  * no such page, `undefined` until the first answer; `off` when the workbench is listed but does
  * not run (its own switch or the Agent-wide one is off), so it serves no page and the view says
  * why. `pages` are all of the workbench's pages, for a view that switches between them; `gone`
- * says the workbench itself is no more: its Agent's list answered without it, or the Agent is
- * not found. The list is read from the page's Agent, and
+ * says the workbench itself is no more: the Agent answered without it, or the Agent is not found.
+ * Only this workbench is read from the page's Agent (and only it is loaded, never the Agent's
+ * other workbenches, which would hold the page back behind their compiles), and it is
  * read again whenever the server says a workbench of that Agent changed or went away. A read
  * that fails keeps the page already shown and reports why.
  *
@@ -75,7 +76,7 @@ export function useAppPageTab({
     let alive = true;
     const load = async () => {
       try {
-        const res = await api.getWorkbenches(projectId, agentId, machineId);
+        const res = await api.getWorkbench(projectId, agentId, workbenchId, machineId);
         if (!alive) return;
         const running = runningWorkbenches(res);
         const listed = res.workbenches.find((w) => w.id === workbenchId) ?? null;

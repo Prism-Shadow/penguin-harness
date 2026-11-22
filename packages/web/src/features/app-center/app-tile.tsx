@@ -363,20 +363,27 @@ export function FolderTile({
             }}
             className={`${TILE_BUTTON} ${lifted ? "opacity-40" : ""}`}
           >
-            {/* The open folder unfolds from this square, its apps from their previews in it. */}
-            <AppIconShape
-              data-unfold-from
-              className={`relative grid grid-cols-2 content-start bg-fg/10 ${mark === "into" ? DROP_OUTLINE : ""}`}
-              style={{ padding: FOLDER_INSET_PX, gap: FOLDER_GAP_PX }}
-            >
-              {folder.apps.slice(0, 4).map((app) => (
-                <span key={app.id} data-unfold-source={app.id} className="flex">
-                  <TileIcon shortcut={app.shortcut} title={titleOf(app.shortcut)} size={MINI_PX} />
-                </span>
-              ))}
+            {/* The dot and the running bar sit outside the folder's square, which clips its previews. */}
+            <span className="relative block">
+              {/* The open folder unfolds from this square, its apps from their previews in it. */}
+              <AppIconShape
+                data-unfold-from
+                className={`relative grid grid-cols-2 content-start bg-fg/10 ${mark === "into" ? DROP_OUTLINE : ""}`}
+                style={{ padding: FOLDER_INSET_PX, gap: FOLDER_GAP_PX }}
+              >
+                {folder.apps.slice(0, 4).map((app) => (
+                  <span key={app.id} data-unfold-source={app.id} className="flex">
+                    <TileIcon
+                      shortcut={app.shortcut}
+                      title={titleOf(app.shortcut)}
+                      size={MINI_PX}
+                    />
+                  </span>
+                ))}
+              </AppIconShape>
               {notes.length > 0 && <TileDot />}
               {running > 0 && <RunningMark />}
-            </AppIconShape>
+            </span>
             <TileName>{folder.name}</TileName>
           </button>
         )}

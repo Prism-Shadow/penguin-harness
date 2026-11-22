@@ -4,7 +4,7 @@ import { mainPanelDefinition as mainWorkspace } from "../src/features/workspace/
 import { mainPanelDefinition as mainTrace } from "../src/features/traces/main-dock-panel";
 import { mainPanelDefinition as mainMessaging } from "../src/features/messaging/main-dock-panel";
 import { mainPanelDefinition as mainSchedules } from "../src/features/schedules/main-dock-panel";
-import { mainPanelDefinition as mainBrowser } from "../src/features/builtin-browser/main-dock-panel";
+import { mainPanelDefinition as mainBrowser } from "../../../plugins/browser-automation/src/web/main-dock-panel";
 import { TerminalModule } from "../src/features/terminal/module";
 import { dockPanelDefinition, type DockPanelDefinition } from "../src/features/dock/panel-registry";
 
@@ -32,7 +32,7 @@ const OrgProposalsPage = () => null;
  *   company-mode proposals page is drawn by the proposals page, inside company mode and from
  *   the root alike.
  * - The shell receives company's provider and the update badges' owner for the signed-in
- *   session, the five layers beside the columns in their mount order, the App Center's windows
+ *   session, the layers beside the columns in their mount order, the App Center's windows
  *   over the page area, and the user event handlers of company, the built-in browser and
  *   schedules in their dispatch order.
  * - The sidebar receives the Project switcher and the session list for development mode,
@@ -52,18 +52,18 @@ const OrgProposalsPage = () => null;
 import type { ComponentType, ReactElement } from "react";
 import {
   bootModules,
-  moduleDefOf,
   type ClassCtx,
   type Contributed,
   type IfaceTable,
-  type ManifestTable,
   type ModuleClass,
 } from "@prismshadow/penguin-core/kernel";
 
 import { beforeAll, describe, expect, it } from "vitest";
 import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
 import table from "../src/ifaces.json";
-import { bootWeb, WebRoot } from "../src/web-root";
+import { bootWeb, webRootDef } from "../src/web-root";
+import { setRunningServerModules } from "../src/lib/module-gate";
+import { pluginWebModules } from "../src/plugin-web.gen";
 import { WebAppModule } from "../src/web-app/module";
 import { navPagesOf, type WebAppPage } from "../src/web-app";
 
@@ -87,13 +87,15 @@ import { HomeRedirect } from "../src/features/company/home-redirect";
 import { ChatPage } from "../src/features/chat/chat-page";
 import { CompanyProvider, companyUserEvents } from "../src/features/company/company-state";
 import { ShortcutRuntime } from "../src/features/settings/shortcut-runtime";
-import { BuiltinBrowserLayer } from "../src/features/builtin-browser/browser-layer";
-import { builtinBrowserUserEvents } from "../src/features/builtin-browser/browser-events";
+import { BuiltinBrowserLayer } from "../../../plugins/browser-automation/src/web/browser-layer";
+import { builtinBrowserUserEvents } from "../../../plugins/browser-automation/src/web/browser-events";
 import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
 import { SettingsLayer } from "../src/features/settings/settings-layer";
 import { DockScope } from "../src/features/dock/dock-scope";
 import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
 import { PinnedBalanceBadge } from "../src/features/models/group-balance";
+import { ProjectSettingsLayer } from "../src/features/projects/project-settings-layer";
+import { DefaultModelsLayer } from "../src/features/models/default-models-layer";
 import { ProjectSwitcher } from "../src/features/projects/project-switcher";
 import {
   companyChannels,
@@ -172,9 +174,9 @@ beforeAll(async () => {
       ChatModule.prototype.setup.call(chat, ctx);
     },
   });
+  // As bootWeb boots it: the app's modules and the shipped plugins' web halves (the browser's).
   await bootModules(
-    moduleDefOf(WebRoot, {
-      manifests: table.modules as unknown as ManifestTable,
+    webRootDef(pluginWebModules, {
       instances: new Map<ModuleClass, object>([
         [WebAppModule, webApp],
         [SidebarModule, sidebar],
@@ -332,11 +334,13 @@ describe("the booted shell slots", () => {
     expect(new Set(codes).size).toBe(2);
   });
 
-  it("mounts five layers beside the columns in their order, the dock's scope last", () => {
+  it("mounts the layers beside the columns in their order, the dock's scope last", () => {
     expect(codeByOrder(layers.filter((layer) => layer.data.area !== "page"))).toEqual([
       TerminalDockRuntime,
       ShortcutRuntime,
       SettingsLayer,
+      ProjectSettingsLayer,
+      DefaultModelsLayer,
       BuiltinBrowserLayer,
       DockScope,
     ]);
@@ -401,6 +405,8 @@ describe("the booted sidebar slots", () => {
 
 describe("the booted dock slot", () => {
   it("registers the eight main panel definitions from their owners without a retired ports panel", () => {
+    // The browser's is a plugin's, registered while its server module runs.
+    setRunningServerModules(["BuiltinBrowserModule"]);
     const definitions = dockPanels
       .flatMap(
         (c) => (c.code as { mainDefinitions: readonly DockPanelDefinition[] }).mainDefinitions,

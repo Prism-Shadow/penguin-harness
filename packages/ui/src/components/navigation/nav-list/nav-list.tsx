@@ -37,7 +37,7 @@
  * the pointer is on the control.
  */
 import { createContext, useContext } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { ICON_GAP, ICON_SIZE } from "../../../icon-scale";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { iconTintOf } from "../../icons/sets";
@@ -69,6 +69,7 @@ export const NAV_FILL = {
 const NavOrientationContext = createContext<NavListOrientation>("vertical");
 
 export interface NavListProps {
+  ref?: Ref<HTMLElement>;
   /** The navigation's accessible name: what the rows switch between. */
   label: string;
   orientation?: NavListOrientation;
@@ -83,6 +84,7 @@ const LIST: Record<NavListOrientation, string> = {
 };
 
 export function NavList({
+  ref,
   label,
   orientation = "vertical",
   className = "",
@@ -90,7 +92,7 @@ export function NavList({
 }: NavListProps) {
   return (
     <NavOrientationContext.Provider value={orientation}>
-      <nav aria-label={label} className={`${LIST[orientation]} ${className}`}>
+      <nav ref={ref} aria-label={label} className={`${LIST[orientation]} ${className}`}>
         {children}
       </nav>
     </NavOrientationContext.Provider>

@@ -99,7 +99,12 @@ export function AppCenterWindow({
       <div className="relative min-h-0 flex-1">
         {shown ? (
           // Keyed on the page: each one is its own document, and the bar switches between them.
-          <WorkbenchFrame key={shown.tabId} tab={shown} onFillApp={fullScreen} />
+          <WorkbenchFrame
+            key={shown.tabId}
+            projectId={projectId}
+            tab={shown}
+            onFillApp={fullScreen}
+          />
         ) : (
           <p
             role="status"

@@ -1,12 +1,12 @@
 ---
 name: plugin-porting
 description: Turn an external plugin — a Codex or Claude Code plugin, a skills repository, a folder in a GitHub repository — into a PenguinHarness plugin package, its skills and its MCP servers, and install it on the server's plugin market with `penguin plugin install <folder>`; the package format, the mapping rules and the review duties.
-version: 2026.11.09.1
+version: 2026.11.21.1
 ---
 
 # Plugin Porting
 
-A PenguinHarness plugin is an npm package installed on the server and shared by every Project: the Plugins page shows its card, and anyone installs it on an Agent from there ("Manage installs"), which writes its skills and adds its MCP servers to that Agent's tools. This skill turns a plugin written for another tool into that package: fetch the source at a pinned commit, recognise its layout, build the package in a scratch folder by the rules below, review it, install it with the CLI, verify. To put a few skills into this Agent alone instead, use the `skill-porting` skill.
+A PenguinHarness plugin is an npm package installed on the server and shared by every Project: the Plugins page shows its card, and anyone installs it on an Agent from there ("Install on Agent"), which writes its skills and adds its MCP servers to that Agent's tools. This skill turns a plugin written for another tool into that package: fetch the source at a pinned commit, recognise its layout, build the package in a scratch folder by the rules below, review it, install it with the CLI, verify. To put a few skills into this Agent alone instead, use the `skill-porting` skill.
 
 ## Before you start
 
@@ -128,7 +128,7 @@ Build in `PKG="$WORK/<name>"`, in this order:
    ```md
    > Ported from <upstream folder URL at the commit> on <YYYY-MM-DD> for PenguinHarness.
    >
-   > **MCP servers:** `<name>` (<transport>, <url or command>) — needs: <the vault keys to set, or "sign-in, not available in this version", or nothing>; installed with the plugin by Manage installs.
+   > **MCP servers:** `<name>` (<transport>, <url or command>) — needs: <the vault keys to set, or "sign-in, not available in this version", or nothing>; installed with the plugin by Install on Agent.
    >
    > **Not carried:** <each dropped part: commands, agents, hooks, `.app.json` (ChatGPT hosted-app connector ids, meaningless outside ChatGPT), binary assets>.
    ```
@@ -172,4 +172,4 @@ When the server holds another version of the package, it says so: add `--overwri
 ## 6. Verify and report
 
 - `penguin plugin list --project-id <project id>` shows the package with the kind "skills / hooks / MCP"; the install itself printed one line per MCP server.
-- Report: the package name and version, the upstream folder and commit, the skills it carries, the MCP servers it carries with their transport and target, what was dropped ("Not carried"), and what you read in full versus scanned. For each server, say what it needs before it has tools: the vault keys to set — as the exact lines to run, without values: `penguin config vault set --key <KEY> --value <value> --agent-id <agent id> --project-id <project id> --root <app data root>`, or on the Agent's Vault tab — and whether it needs an OAuth sign-in, which this version cannot do yet. Say that a stdio server runs `<command>` on the server host. Tell the user that the plugin's card is now on the Plugins page, and that "Manage installs" puts it on any Agent, MCP servers together with the skills.
+- Report: the package name and version, the upstream folder and commit, the skills it carries, the MCP servers it carries with their transport and target, what was dropped ("Not carried"), and what you read in full versus scanned. For each server, say what it needs before it has tools: the vault keys to set — as the exact lines to run, without values: `penguin config vault set --key <KEY> --value <value> --agent-id <agent id> --project-id <project id> --root <app data root>`, or on the Agent's Vault tab — and whether it needs an OAuth sign-in, which this version cannot do yet. Say that a stdio server runs `<command>` on the server host. Tell the user that the plugin's card is now on the Plugins page, and that "Install on Agent" puts it on any Agent, MCP servers together with the skills.

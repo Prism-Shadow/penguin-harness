@@ -14,7 +14,7 @@
  * text colour (so line icons follow the ink, as they always have), anything else as itself.
  * Nothing of the icon ever enters the page as markup.
  */
-import { GlyphIcon, ImageIcon } from "@prismshadow/penguin-ui";
+import { GlyphIcon, ImageIcon, type CoverHue } from "@prismshadow/penguin-ui";
 import type { IconRef } from "@prismshadow/penguin-server/api";
 import { BOOK_ICON } from "../../lib/skill-use";
 
@@ -45,12 +45,37 @@ const SKILL_COLOR_OVERRIDES: Record<string, number> = {
   "penguin-sdk": 0,
 };
 
-export function skillTileColor(name: string): string {
+/** The palette index a name's tile takes: its override, else its hash. */
+function skillTileIndex(name: string): number {
   const override = SKILL_COLOR_OVERRIDES[name];
-  if (override !== undefined) return SKILL_TILE_COLORS[override]!;
+  if (override !== undefined) return override;
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return SKILL_TILE_COLORS[h % SKILL_TILE_COLORS.length]!;
+  return h % SKILL_TILE_COLORS.length;
+}
+
+export function skillTileColor(name: string): string {
+  return SKILL_TILE_COLORS[skillTileIndex(name)]!;
+}
+
+/**
+ * The cover hue of each palette colour, in palette order: the nearest of the icon tints a
+ * generated cover is drawn in, so a plugin's cover and its tile read as one colour.
+ */
+const SKILL_TILE_HUES: readonly CoverHue[] = [
+  "blue",
+  "green",
+  "violet",
+  "amber",
+  "pink",
+  "teal",
+  "blue",
+  "teal",
+];
+
+/** A name's generated-cover hue: the hue of the tile colour {@link skillTileColor} gives it. */
+export function skillTileHue(name: string): CoverHue {
+  return SKILL_TILE_HUES[skillTileIndex(name)]!;
 }
 
 /** The bare mark, inline: the icon's image at `size`, else the kind's glyph (`fallback`; the book unless the subject is not a skill). */

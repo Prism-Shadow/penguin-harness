@@ -17,9 +17,11 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BuiltinBrowserStatus } from "@prismshadow/penguin-server/api";
 import { AppWindow, DockFrame, WindowStack } from "@prismshadow/penguin-ui";
-import { BuiltinBrowserPanel } from "../src/features/builtin-browser/browser-panel";
-import { dispatchBrowser } from "../src/features/builtin-browser/browser-store";
-import { hasVisibleSlot } from "../src/features/builtin-browser/slot-registry";
+// The browser reaches the app's own helpers through the plugin face; this hands them over.
+import "../src/web-app/plugin-host";
+import { BuiltinBrowserPanel } from "../../../plugins/browser-automation/src/web/browser-panel";
+import { dispatchBrowser } from "../../../plugins/browser-automation/src/web/browser-store";
+import { hasVisibleSlot } from "../../../plugins/browser-automation/src/web/slot-registry";
 import { LocaleProvider } from "../src/state/locale";
 import { button, click, mount, type, unmountAll } from "./helpers/dom";
 

@@ -1,17 +1,27 @@
 /**
  * The mocked API covers every endpoint the Web App calls: the app's own endpoint wrappers
- * (`packages/web/src/api/endpoints.ts`) are imported with the network layer swapped, as the
- * gallery swaps it, and every one is called against the mock. An endpoint the mock does not
+ * (`packages/web/src/api/endpoints.ts`), those a feature keeps beside itself (any
+ * `features/<name>/api.ts`), and those a shipped plugin's web half exports (`api` on its `./web`
+ * entry, from the generated list) — the last two calling through the plugin face onto the app's
+ * network layer — are imported with the network layer swapped, as the gallery swaps it, and every
+ * one is called against the mock. Nothing is listed by hand: a wrapper a feature or a plugin adds
+ * is checked as soon as it is in the Web App. An endpoint the mock does not
  * route answers with the `gallery_unmocked` code and nothing else does, so that code — and a
  * handler that throws anything but the app's `ApiError` — is what fails here. The URL helpers
  * (file content, downloads) are checked the same way through the fetch path.
  * Transferring a draft's browser pages reports the unavailable browser, as opening a page
  * does: the gallery hosts no desktop browser and must not report a successful transfer.
  * The Agent plugin listing agrees with the installed Skills, hooks and MCP listings, and
- * refuses an unknown Agent with 404.
+ * refuses an unknown Agent with 404. The administrator's ledger of server module requests takes a
+ * decision the way the server does: approving a waiting request enables it, declining another
+ * declines it, enabling one whose Project is gone is refused, and an unknown package is 404.
  */
 import { describe, expect, it } from "vitest";
+// The face's host first: a feature's wrappers call the app's `apiFetch` through it.
+import "../../web/src/web-app/plugin-host";
 import * as api from "../../web/src/api/endpoints";
+import * as browserApi from "../../../plugins/browser-automation/src/web/api";
+import { pluginWebModules } from "../../web/src/plugin-web.gen";
 import { runTry } from "../../web/src/features/agents/api-try-log";
 import type { TryAction } from "../../web/src/features/agents/api-try-log";
 import { ApiError, UNMOCKED } from "../src/app/mock/errors";
@@ -22,10 +32,31 @@ import { resetStore } from "../src/app/mock/store";
 
 type AnyFn = (...args: unknown[]) => unknown;
 
-/** Every function the wrappers module exports, the key-auth descriptors' included. */
+/** Every feature's own wrappers in the app, by file. */
+const FEATURE_APIS = import.meta.glob<Record<string, unknown>>("../../web/src/features/*/api.ts", {
+  eager: true,
+});
+
+/** The wrapper modules, by the name a gap is reported under. */
+const WRAPPER_MODULES: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
+  endpoints: api,
+  ...Object.fromEntries(
+    Object.entries(FEATURE_APIS).map(([file, exports]) => [file.split("/").at(-2)!, exports]),
+  ),
+  ...Object.fromEntries(
+    pluginWebModules.flatMap((entry) =>
+      entry.plugin.api !== undefined ? [[entry.package, entry.plugin.api]] : [],
+    ),
+  ),
+};
+
+/** Every function the wrapper modules export, the key-auth descriptors' included. */
 function wrappers(): [name: string, fn: AnyFn][] {
   const found: [string, AnyFn][] = [];
-  for (const [name, value] of Object.entries(api)) {
+  const all = Object.entries(WRAPPER_MODULES).flatMap(([module, exports]) =>
+    Object.entries(exports).map(([name, value]) => [`${module}:${name}`, value] as const),
+  );
+  for (const [name, value] of all) {
     if (typeof value === "function") found.push([name, value as AnyFn]);
     else if (typeof value === "object" && value !== null) {
       for (const [inner, fn] of Object.entries(value)) {
@@ -79,6 +110,7 @@ describe("the mocked API", () => {
       pageRemovals: [],
       agentTabs: [],
       sessionTabs: [],
+      modules: [],
     });
     const me = await api.getMe();
     expect(me.user.isAdmin).toBe(true);
@@ -98,11 +130,64 @@ describe("the mocked API", () => {
       hooks: (await api.getAgentHooks(projectId, agentId, null)).hooks,
       mcpServers: (await api.getAgentMcpServers(projectId, agentId, null)).servers,
       workbenches: [],
+      modules: [],
     });
     await expect(api.getAgentPlugins(projectId, "nope", null)).rejects.toMatchObject({
       status: 404,
     });
     await expect(api.getSession("nope")).rejects.toMatchObject({ status: 404, code: "not_found" });
+  });
+
+  it("decides a server module request the way the server does, and answers the new list", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const asked = (pkg: string, projectId: string | null) => ({
+      package: pkg,
+      plugin: pkg.replace(/^@[^/]+\//, ""),
+      projectId,
+      projectName: projectId === null ? null : "Demo",
+      agentId: IDS.agents.docs,
+      requestedBy: "member",
+      requestedByName: "Member",
+      requestedAt: "2026-11-19T08:00:00.000Z",
+      decision: null,
+      decidedBy: null,
+      decidedAt: null,
+      via: null,
+      builtin: false,
+      state: "off" as const,
+      onServer: true,
+    });
+    store.f.pluginModuleRequests = [
+      asked("@acme/charts", store.f.project.projectId),
+      asked("@acme/notes", store.f.project.projectId),
+      asked("@acme/orphan", null),
+    ];
+    expect((await api.adminGetPluginModuleRequests(null)).pending).toBe(3);
+
+    const approved = await api.adminDecidePluginModule(
+      { package: "@acme/charts", decision: "enable" },
+      null,
+    );
+    expect(approved.requests.find((r) => r.package === "@acme/charts")).toMatchObject({
+      decision: "enabled",
+      via: "approval",
+      state: "running",
+    });
+    expect(approved.pending).toBe(2);
+
+    const declined = await api.adminDecidePluginModule(
+      { package: "@acme/notes", decision: "decline" },
+      null,
+    );
+    expect(declined.requests.find((r) => r.package === "@acme/notes")?.decision).toBe("declined");
+    expect(declined.pending).toBe(1);
+
+    await expect(
+      api.adminDecidePluginModule({ package: "@acme/orphan", decision: "enable" }, null),
+    ).rejects.toMatchObject({ status: 409, code: "project_gone" });
+    await expect(
+      api.adminDecidePluginModule({ package: "@acme/none", decision: "enable" }, null),
+    ).rejects.toMatchObject({ status: 404, code: "unknown_request" });
   });
 
   it("lists an installed workbench in its Agent's sidebar until it is hidden there, keeping its pages and App Center tile", async () => {
@@ -501,7 +586,7 @@ describe("the mocked API", () => {
       code: "demo_read_only",
     });
     await expect(api.startUpdateJob()).rejects.toMatchObject({ code: "demo_read_only" });
-    await expect(api.adoptBuiltinBrowserSession("draft", "saved")).rejects.toMatchObject({
+    await expect(browserApi.adoptBuiltinBrowserSession("draft", "saved")).rejects.toMatchObject({
       status: 503,
       code: "browser_unavailable",
     });

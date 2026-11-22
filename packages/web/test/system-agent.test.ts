@@ -100,7 +100,7 @@ describe("the system Agent on the Agents page", () => {
   });
 
   it("counts the system apps the viewer sees, and the count opens their list", async () => {
-    agentServer(undefined, { moreAgents: [SYSTEM], serverAdmin: false });
+    agentServer(undefined, { moreAgents: [SYSTEM], admin: false });
     const router = await mountAgentApp(h(AgentsPage), {
       route: "/list",
       at: "/list",
@@ -184,7 +184,7 @@ describe("the system Agent's settings page", () => {
   async function openSystemPage(tab?: string, { serverAdmin = true } = {}) {
     const config = agentConfig();
     config.config.system = true;
-    agentServer(config, { serverAdmin });
+    agentServer(config, { admin: serverAdmin });
     const at = `/agents/${AGENT_ID}${tab === undefined ? "" : `?tab=${tab}`}`;
     const router = await mountAgentApp(h(AgentSettingsPage), {
       at,
@@ -285,9 +285,9 @@ describe("the plugin market's manage-installs list", () => {
       moreAgents: [SYSTEM],
       machines: [{ ...GPU, library: [CHARTS] }],
     });
-    await mountAgentApp(h(PluginsPage), { route: "/plugins", at: "/plugins" });
-    await waitFor(() => hasButton(`${en.skills.manageInstall} charts`));
-    await click(button(`${en.skills.manageInstall} charts`));
+    await mountAgentApp(h(PluginsPage), { route: "/plugins", at: "/plugins?plugin=charts" });
+    await waitFor(() => hasButton(`${en.plugins.installModel.installAgent} charts`));
+    await click(button(`${en.plugins.installModel.installAgent} charts`));
     const rows = () =>
       [...topDialog().querySelectorAll("button")]
         .map((b) => b.getAttribute("aria-label") ?? "")

@@ -2,8 +2,10 @@
  * What the chat module binds into its page (lib/module-deps.tsx): the `fileRenderers`
  * contributions (iface.ts), read once at boot.
  */
+import type { ComponentType } from "react";
 import type { Contributed } from "@prismshadow/penguin-core/kernel";
 import type { FileRenderer } from "../../lib/file-renderers";
+import { gatedComponent } from "../../lib/module-gate";
 import { createDeps } from "../../lib/module-deps";
 import type { FileRendererData } from "./iface";
 
@@ -22,4 +24,16 @@ export function fileRenderersOf(contributions: readonly Contributed[]): ChatDeps
     if (!byName.has(name)) byName.set(name, c.code as FileRenderer);
   }
   return byName;
+}
+
+/**
+ * The contributions with each component drawn only while its module is shown: a module waiting
+ * for its server module (lib/module-gate.ts) has its file renderer draw nothing until that module
+ * runs. The chat module applies it at boot.
+ */
+export function gatedChatContributions(contributions: readonly Contributed[]): Contributed[] {
+  return contributions.map((c) => ({
+    ...c,
+    code: gatedComponent(c.from, c.code as ComponentType<object>),
+  }));
 }

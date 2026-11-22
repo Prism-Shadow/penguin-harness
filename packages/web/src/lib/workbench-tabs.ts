@@ -24,6 +24,7 @@ export interface WorkbenchTab {
   titleZh?: string;
   /** Where the page is served from — through the machine's connection when the workbench lives on one. */
   src: string;
+  pointerLock?: true;
   /** The machine whose server holds the workbench (the Agent's Session runs there); null = this server. */
   machineId: string | null;
   /** The workbench's package name, for the frame's bar. */
@@ -99,6 +100,7 @@ export function workbenchTabsOf(
               title: tab.title,
               ...(tab.titleZh === undefined ? {} : { titleZh: tab.titleZh }),
               src: apiUrl(tab.renderer.iframe.src, machineId),
+              ...(tab.renderer.iframe.pointerLock === true ? { pointerLock: true as const } : {}),
               machineId,
               name: w.name,
               version: w.version,
@@ -143,6 +145,15 @@ export function appPageTab(
 
 /** A page's own request to fill the app, posted to its parent: `{ type: "penguin:fill-app" }`. */
 export const FILL_APP_MESSAGE = "penguin:fill-app";
+
+/**
+ * A page's question about a chat model, posted to its parent by the page SDK's
+ * `chooseChatModel()` / `getChatModel()`: `{ type, id, op: "choose" | "get", current }`. The app
+ * answers on the same id with {@link CHAT_MODEL_REPLY}: `{ accepted: true }` at once, then
+ * `{ model }` (null when none was chosen) or `{ error }`.
+ */
+export const CHAT_MODEL_MESSAGE = "penguin:chat-model";
+export const CHAT_MODEL_REPLY = "penguin:chat-model-reply";
 
 /** The main app's manifest, the literal the template ships and what leaving the page restores. */
 export const MAIN_MANIFEST_HREF = "/manifest.webmanifest";
