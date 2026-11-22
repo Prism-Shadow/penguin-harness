@@ -39,7 +39,12 @@ import {
 import { SPRING_DEFAULT, createSpringDriver, type SpringDriver } from "../../../motion/spring";
 import { usePrefersReducedMotion } from "../../../motion/use-reduced-motion";
 import { usePointerDrag } from "../../layout/resize-handle/use-pointer-drag";
-import { LauncherBall, LauncherDismiss, LauncherEdgeHandle } from "../launcher/launcher";
+import {
+  LauncherBall,
+  LauncherDismiss,
+  LauncherEdgeHandle,
+  type LauncherSurface,
+} from "../launcher/launcher";
 import {
   FLOATING_BALL_METRICS,
   floatingBallDrag,
@@ -58,6 +63,8 @@ const DRAG_THRESHOLD = 4;
 const HANDLE_WIDTH = 14;
 
 export interface FloatingBallProps {
+  /** Opaque accent for controls floating over independently themed content. */
+  surface?: LauncherSurface;
   /** Where the ball rests and whether it is tucked away; the caller holds and stores it. */
   placement: FloatingBallPlacement;
   /** A drop, a tuck or an untuck: the placement to store and hand back. */
@@ -95,6 +102,7 @@ interface Press {
 }
 
 export function FloatingBall({
+  surface = "glass",
   placement,
   onChange,
   onActivate,
@@ -333,6 +341,7 @@ export function FloatingBall({
       {placement.tucked ? (
         rest !== null && (
           <LauncherEdgeHandle
+            surface={surface}
             buttonRef={handleRef}
             side={placement.side}
             width={handleWidth}
@@ -351,11 +360,12 @@ export function FloatingBall({
         <div
           ref={rootRef}
           className={`group pointer-events-auto absolute left-0 top-0 transition-opacity duration-150 ${
-            armed ? "opacity-50" : ""
+            armed ? (surface === "accent" ? "opacity-85" : "opacity-50") : ""
           }`}
           style={{ width: size, height: size }}
         >
           <LauncherBall
+            surface={surface}
             buttonRef={ballRef}
             {...dragProps}
             onClick={onBallClick}
@@ -372,6 +382,7 @@ export function FloatingBall({
             // Shown while the ball is pointed at or keyboard-focused (the ball's own focus or
             // the ×'s), never by the focus a mouse press leaves behind.
             <LauncherDismiss
+              surface={surface}
               corner={placement.side === "right" ? "left" : "right"}
               label={tuckLabel}
               onClick={tuck}

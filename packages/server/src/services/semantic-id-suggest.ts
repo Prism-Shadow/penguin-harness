@@ -12,11 +12,7 @@
  * non-admin's Project rule depends on who asks), the ids to avoid, where a dead end is
  * recorded. The completion itself belongs to no Session and is not metered.
  */
-import type {
-  SemanticIdKind,
-  SemanticIdSuggestReason,
-  SemanticIdSuggestResponse,
-} from "../api/types.js";
+import type { SemanticIdSuggestReason, SemanticIdSuggestResponse } from "../api/types.js";
 import type { UtilityCompletion } from "@prismshadow/penguin-library-project";
 import { fallbackSemanticId, placeholderSemanticId, sanitizeSuggestedId } from "./semantic-id.js";
 import type { SemanticIdRule } from "./semantic-id.js";
@@ -32,7 +28,7 @@ export interface SemanticIdSuggestInput {
   /** The display name (or whatever else names the thing yet). */
   name: string;
   /** For the failure record: which kind of id was asked for. */
-  kind: SemanticIdKind;
+  kind: string;
   rule: SemanticIdRule;
   /** Ids to avoid that the prompt also names: the few a dialog passed in. */
   taken: readonly string[];

@@ -67,6 +67,7 @@ import {
   Select,
   Skeleton,
   SkeletonCard,
+  Waiting,
   Sparkline,
   TodoNotice,
   UpdatePill,
@@ -914,7 +915,7 @@ export function AgentsPage() {
         /* Same single-column row styling as the real list (space-y-3 + the card's p-4), with a
            three-line info column plus sparkline/button-group placeholders, so no layout shift
            occurs once the skeleton disappears */
-        <div className="space-y-3">
+        <Waiting className="space-y-3">
           {Array.from({ length: 4 }, (_, i) => (
             <SkeletonCard key={i} className="flex flex-wrap items-center gap-x-6 gap-y-2 p-4">
               <div className="min-w-[14rem] flex-1">
@@ -926,7 +927,7 @@ export function AgentsPage() {
               <Skeleton className="h-8 w-52" />
             </SkeletonCard>
           ))}
-        </div>
+        </Waiting>
       ) : shownAgents.length === 0 ? (
         <EmptyState title={query.trim() === "" ? S.common.none : S.agent.searchEmpty} />
       ) : groupBy === "author" ? (

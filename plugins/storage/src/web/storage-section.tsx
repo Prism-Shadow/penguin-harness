@@ -23,9 +23,9 @@ import {
   SettingRow,
   SettingsEmpty,
   SettingsGroup,
-  SkeletonList,
   Spinner,
   UsageBar,
+  Waiting,
 } from "@prismshadow/penguin-ui";
 import {
   formatDateTime,
@@ -64,7 +64,7 @@ export function StorageSection({ openPage }: SettingsPageProps) {
     return state.loadError !== null ? (
       <SettingsEmpty>{S.storage.loadFailed(state.loadError)}</SettingsEmpty>
     ) : (
-      <SkeletonList rows={4} />
+      <Waiting rows={4} />
     );
   }
 

@@ -44,7 +44,7 @@ import {
   ICON_SIZE,
   NAV_FILL,
   RailDivider,
-  SkeletonList,
+  Waiting,
   railItemClass,
   toastSuccess,
   useRowContextMenu,
@@ -476,7 +476,7 @@ export function OrgSessionGroups({
         onToggle={() => setDesksOpen((v) => !v)}
       >
         {loading ? (
-          <SkeletonList rows={2} />
+          <Waiting rows={2} />
         ) : chartFailed && desks.length === 0 ? (
           <div className="flex items-center justify-between gap-2 px-2.5 py-1">
             <span className={`text-xs ${toneInk.danger}`}>{company.orgChartError}</span>

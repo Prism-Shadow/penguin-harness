@@ -54,8 +54,9 @@ import type {
 import type { WorkspaceFileContent, WorkspaceFileReadOptions } from "./workspace-files-service.js";
 import { packBenchmark, readBenchmarkArchive } from "./benchmark-archive.js";
 import { HttpError } from "../http/errors.js";
-import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "../hmr/capabilities.js";
+import type { SemanticIdKindSource } from "./semantic-id-kinds.js";
 import type { Benchmarks } from "../mechanisms/agents.js";
 import type { WorkspaceFiles } from "../mechanisms/workspace.js";
 
@@ -320,13 +321,25 @@ function toEvaluation(v: unknown): BenchmarkEvaluation | null {
   };
 }
 
-@Component()
+@Component({
+  contributes: {
+    "SemanticIdModule.kinds": [
+      // Writing a Benchmark is Project management: owner only, as its create route demands.
+      { id: "BenchmarkService.semanticIdKind", kind: "benchmark", access: "owner" },
+    ],
+  },
+})
 export class BenchmarkService implements Benchmarks {
   @Use() private readonly paths!: Paths;
   private get root(): string {
     return this.paths.root;
   }
   @Use() private readonly workspaceFiles!: WorkspaceFiles;
+  /** The `benchmark` kind of semantic id: the create dialog proposes an id from the title. */
+  @Bind("BenchmarkService.semanticIdKind") semanticIdKind!: SemanticIdKindSource;
+  setup() {
+    this.semanticIdKind = { takenIds: (projectId) => this.takenIds(projectId) };
+  }
 
   async list(projectId: string): Promise<BenchmarksResponse> {
     const dir = benchmarksDir(this.root, projectId);

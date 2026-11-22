@@ -19,6 +19,7 @@ export function WorkbenchExitBall({ label, onExit }: WorkbenchExitBallProps) {
   const [placement, setPlacement] = useState(() => readExitBall());
   return (
     <FloatingBall
+      surface="accent"
       placement={placement}
       onChange={(next) => {
         writeExitBall(next);

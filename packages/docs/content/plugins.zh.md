@@ -13,6 +13,30 @@ description: PenguinHarness 的插件是什么、插件包遵循的格式与校�
 
 服务端模块需要的平台，至少要和它投稿的槽一样新。槽是具名的贡献点，例如路由组所在的 `HttpModule.routes`。每个槽、槽数据的每个字段，都随某个发行版本出现。较旧的平台不认识较新的槽，也不认识较新的字段（如路由组的 `origin`）。它的校验于是丢弃该模块投给这个槽的全部贡献：插件缺了这一部分照常运行，**插件**页上它那一行说明原因。内置插件随它运行的服务端一同发布。发布到 npm 的包在 README 里写明它需要的最低版本。
 
+## 服务端模块能拿到什么
+
+服务端模块只经 `@prismshadow/penguin-server/plugin` 接触宿主。它在 `@Use` 字段里写明要哪个接口，内核把它接到模块树里具备这些成员的节点上：按结构匹配，所以插件也可以在自己的包里声明同样的视图，只写它调用的成员。宿主里没有节点具备这些成员时，该插件不进入这一代，**插件**页说明它缺了哪项要求。较旧的服务端就是这样拒绝为较新版本构建的插件。
+
+插件提供的系统应用所需（PRFC-0036）：
+
+| 接口 | 成员 | 说明 |
+| --- | --- | --- |
+| `AppData` | `dataPaths(projectId, appId) → Promise<{ dataDir, cacheDir, stateDir }>` | 应用在一个 Project 中自己的文件夹：系统 Agent 以应用 id 为键的 agent 级文件夹（`agents/system_agent/app/{data,cache}/<appId>/`，状态文件夹在 `run/` 下），交出前即已建好。处理器用 Node 的 `fs` 读写。id 不是单个普通路径段时 `400`，服务端没有该 Project 时 `404` `project_not_found`，该 Project 的 `system_agent` 是用户自己的 Agent 时 `409` `system_agent_held`。 |
+| `AgentTasks` | `start({ userId, projectId, agentId, prompt, approvalMode, skills?, model?, thinkingLevel?, title? }) → Promise<{ sessionId }>`、`status(userId, sessionId) → Promise<{ status, title, pendingApprovals } \| null>` | 以某个人的名义发起的 Agent 任务，步骤与 Web App 的「发送」相同：此人进不了该 Project 或 Agent 不存在时 `404`，系统 Agent `409` `system_agent_no_sessions`，新建临时 Workspace，Skill 以 `[use_skills]` 块放在正文之前，本轮的驱动者为此人，来源为 `user`（出现在其侧栏，带审批角标与完成通知），审批模式取给定的值。`status` 为 `running`、`completed` 或 `failed`，并给出任务在等的审批数；Session 已不在或此人读不到时为 `null`。发起任务的路由先检查 `requireHuman`。 |
+| `Access` | `requireProjectAccess`、`requireProjectOwner`、`canAccess` 等 | 谁能看到、谁拥有一个 Project。 |
+| `AgentSkills` | `installedSkills(projectId, agentId) → Promise<string[]>` | 一个 Agent 已装 Skill 的名称，按名称排序：即它的 `skills/<name>/` 中含 SKILL.md 的文件夹。Project 没有该 Agent 时 `404` `agent_not_found`。 |
+| `ProjectModels` | `getModels(projectId)` | Project 的模型（密钥已遮蔽）与默认模型。 |
+| `ProjectMachines` | `projectApis(projectId)` | Project 使用的机器，各带别名，连接时另带一个访问其 API 的客户端；同机器代理一样，只为管理员读取。 |
+| `WorkspaceFiles` | `list`、`read`、`resolvePath` 等 | Workspace 的文件，沿用服务端对链接与大小的防护。 |
+
+插件自己的路由所需的函数，以副本打包进插件：`containedFile(dir, rel)` 与 `uiFileResponse(c, file)` 从插件自己的文件夹提供页面文件，拒绝越界的路径与任何链接；`unzipBounded`、`assertSafeEntryPath`、`assertDistinctPaths`、`specialEntries` 与压缩包上限（`MAX_ARCHIVE_BYTES`、`MAX_ARCHIVE_FILES`、`MAX_FILE_BYTES`、`MAX_TOTAL_BYTES`）用于安全地读取上传的 zip。
+
+系统应用可投稿的数据槽：
+
+- `ProjectsModule.appSeeds` `{ app, path }`：新建 Project 时，包内 `<path>/` 下的每个文件夹以原名复制进该应用的 `dataDir`，名称已被占用的不动。宿主从 `ifaces.json` 读出这项声明并自行复制文件，只对内置包、只在创建时做一次：删掉的不再回来，已有的 Project 不会得到它们。
+- `SemanticIdModule.kinds` `{ kind, access? }`，代码半为 `{ takenIds(projectId) }`：`POST …/suggest-id` 可提议的一种 id，kebab-case，避开 `takenIds` 报告的 id；`access: "owner"` 时仅限 Project 的所有者。
+- `StartPageModule.metrics` `{ key, title, titleZh?, icon?, order, value, app? }`：开始页排在自带计数之后的一个计数，构建包时即已确定；`app` 为点击后打开的系统应用的页面键。`GET /api/contributions` 以 `startMetrics` 交出它们。
+
 ## 应用窗口中的页面
 
 服务端模块经 `WebModule.pages` 为 Web App 贡献页面。以 iframe 渲染（`renderer: { iframe: { src } }`，`src` 由模块自己的路由提供）、带 `title` 与 `app: { order }` 的页面是系统 Agent 的系统应用：它的图块在应用中心，点开后与 Agent 的应用一样在应用中心的窗口中运行——最小化后继续运行，全屏以无窗口外框的整页绘制同一个文档，关闭即结束。

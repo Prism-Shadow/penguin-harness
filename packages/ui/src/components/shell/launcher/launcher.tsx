@@ -35,10 +35,14 @@ const CAPTION_GAP = 4;
  */
 const FAN_STAGGER_MS = 16;
 
+/** Glass inside the host page, or an opaque accent when floating over arbitrary content. */
+export type LauncherSurface = "glass" | "accent";
+
 export interface LauncherBallProps extends Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
   "children" | "aria-label"
 > {
+  surface?: LauncherSurface;
   /** The ball's diameter (px). */
   size: number;
   /**
@@ -63,6 +67,7 @@ export interface LauncherBallProps extends Omit<
 }
 
 export function LauncherBall({
+  surface = "glass",
   size,
   captionHeight,
   glyph,
@@ -85,8 +90,10 @@ export function LauncherBall({
       aria-label={label}
       data-testid={testId}
       style={{ ...style, width: size, height: size }}
-      className={`ui-glass anim-pop relative flex touch-none select-none items-center justify-center rounded-full border border-line/80 text-fg-muted shadow-sm backdrop-blur-md transition-[background-color,color,opacity,box-shadow] duration-150 hover:bg-surface/95 hover:text-fg hover:opacity-100 hover:shadow-lg focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-        lit ? "bg-surface/95 text-fg opacity-100" : "bg-surface/75 opacity-80"
+      className={`anim-pop relative flex touch-none select-none items-center justify-center rounded-full border shadow-sm transition-[background-color,color,opacity,box-shadow] duration-150 hover:shadow-lg ${
+        surface === "accent"
+          ? "launcher-accent"
+          : `ui-glass border-line/80 text-fg-muted backdrop-blur-md hover:bg-surface/95 hover:text-fg hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${lit ? "bg-surface/95 text-fg opacity-100" : "bg-surface/75 opacity-80"}`
       } ${dragging ? "cursor-grabbing" : "cursor-default"} ${className}`}
     >
       {glyph}
@@ -221,6 +228,7 @@ export interface LauncherDismissProps extends Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
   "children" | "aria-label"
 > {
+  surface?: LauncherSurface;
   /** The accessible name and the hover hint: what putting the ball away does. */
   label: string;
   /** The ball's top corner it sits on: the one facing into the page. */
@@ -235,6 +243,7 @@ export interface LauncherDismissProps extends Omit<
  * hint: a cross beside a ball reads as "close", and this one only tucks.
  */
 export function LauncherDismiss({
+  surface = "glass",
   label,
   corner,
   buttonRef,
@@ -257,7 +266,11 @@ export function LauncherDismiss({
         left: corner === "left" ? -DISMISS_OVERHANG : undefined,
         right: corner === "right" ? -DISMISS_OVERHANG : undefined,
       }}
-      className={`ui-glass absolute flex items-center justify-center rounded-full border border-line/80 bg-surface/90 text-fg-muted shadow-sm backdrop-blur-md transition-[background-color,color,opacity] duration-150 hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${className}`}
+      className={`absolute flex items-center justify-center rounded-full border shadow-sm transition-[background-color,color,opacity] duration-150 ${
+        surface === "accent"
+          ? "launcher-accent"
+          : "ui-glass border-line/80 bg-surface/90 text-fg-muted backdrop-blur-md hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      } ${className}`}
     >
       <CloseIcon size={ICON_SIZE.launcherDismiss} />
     </button>
@@ -268,6 +281,7 @@ export interface LauncherEdgeHandleProps extends Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
   "children" | "aria-label"
 > {
+  surface?: LauncherSurface;
   /** The side edge it is flush with. */
   side: "left" | "right";
   /** px */
@@ -285,6 +299,7 @@ export interface LauncherEdgeHandleProps extends Omit<
  * clear on hover and focus. Where it sits along the edge is the caller's (`style`).
  */
 export function LauncherEdgeHandle({
+  surface = "glass",
   side,
   width,
   height,
@@ -303,7 +318,11 @@ export function LauncherEdgeHandle({
       aria-label={label}
       data-tooltip={label}
       style={{ ...style, width, height }}
-      className={`ui-glass flex items-center justify-center border border-line/80 bg-surface/75 text-fg-muted opacity-80 shadow-sm backdrop-blur-md transition-[background-color,color,opacity] duration-150 hover:bg-surface/95 hover:text-fg hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${shape} ${className}`}
+      className={`flex items-center justify-center border shadow-sm transition-[background-color,color,opacity] duration-150 ${
+        surface === "accent"
+          ? "launcher-accent"
+          : "ui-glass border-line/80 bg-surface/75 text-fg-muted opacity-80 backdrop-blur-md hover:bg-surface/95 hover:text-fg hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      } ${shape} ${className}`}
     >
       <GlyphIcon
         d={side === "right" ? ICONS.chevronLeft : ICONS.chevronRight}
