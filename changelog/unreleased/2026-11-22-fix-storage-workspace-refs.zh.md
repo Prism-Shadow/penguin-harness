@@ -3,6 +3,7 @@
 - **Date:** 2026-11-22
 - **Type:** fix
 - **Scope:** `plugins`, `server`
+- **PR:** [#1691](https://github.com/Prism-Shadow/penguin-harness/pull/1691)
 
 [English](2026-11-22-fix-storage-workspace-refs.md)
 
