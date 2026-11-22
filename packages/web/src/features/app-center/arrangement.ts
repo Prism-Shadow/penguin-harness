@@ -12,7 +12,8 @@
  * An item's id is its app key (`<agentId>/<workbenchId>`, which always holds a `/`) or its
  * folder's id (which never does), so one string names either. An app of a machine's Agent is
  * keyed `<machineId>:<agentId>/<workbenchId>` (lib/app-center-path.ts): two machines' Agents
- * may share an id, and so may their workbenches.
+ * may share an id, and so may their workbenches. A system app is keyed `system_agent/<page key>`
+ * and arranged like any other app.
  */
 import type {
   AppCenterLayout,
@@ -29,6 +30,11 @@ export interface LocatedShortcut extends AppCenterShortcut {
   machineLabel?: string;
   /** Its machine is out of reach, or did not answer the last read: shown, but not opened. */
   unavailable?: boolean;
+  /**
+   * A system app of the system Agent (system-tiles.ts), drawn with its page's glyph: it opens its
+   * page at `path`, never a window, and cannot be removed from the grid.
+   */
+  system?: { glyph: string };
 }
 
 /** An app's key in a layout: `<agentId>/<workbenchId>`, after `<machineId>:` for a machine's. */

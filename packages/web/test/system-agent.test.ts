@@ -5,8 +5,9 @@
  *
  * - Given the Project's system Agent, the Agents page shows its card under the dictionary's name
  *   (not its file's), tagged System, with Settings and the built-in Agents' disabled delete only:
- *   no New chat, no Usage, no Export, and no stats row. Opening it keeps the Agent the user talks
- *   to current.
+ *   no New chat, no Usage, no Export, and no stats row. Its one count is the system apps the
+ *   viewer sees, which opens its settings' list of them. Opening it keeps the Agent the user
+ *   talks to current.
  * - Its card is pinned above the list whichever way the list is grouped, in no author group and
  *   in no group's count.
  * - Given an Agent of the user's that already holds the id `system_agent` (no system flag), the
@@ -15,7 +16,8 @@
  * - A connected machine's own system Agent is not listed beside this server's Agents.
  * - The system Agent's settings page has only the Overview and Plugins tabs, a deep link to any
  *   other tab included: the overview names it from the dictionary and offers no save or export,
- *   and the Plugins tab lists its system apps (none yet).
+ *   and the Plugins tab lists the system apps the viewer sees, read-only, each opening its page:
+ *   five for an administrator, four (no Machines) for a member.
  * - The plugin market's manage-installs list offers neither this server's system Agent nor a
  *   machine's.
  */
@@ -38,6 +40,7 @@ import {
 } from "./helpers/agent-app";
 import type { FakeMachine } from "./helpers/agent-app";
 import { button, click, hasButton, unmountAll, waitFor } from "./helpers/dom";
+import { SYSTEM_APP_PAGES } from "./helpers/system-app-pages";
 
 /** This server's system Agent, its file naming it otherwise than the dictionary does. */
 const SYSTEM = { agentId: "system_agent", name: "Platform owner", system: true as const };
@@ -94,6 +97,19 @@ describe("the system Agent on the Agents page", () => {
     expect(card.querySelector(`[aria-label="${en.agent.builtinUndeletable}"]`)).not.toBeNull();
     expect(cardHas(card, en.skills.skillCount(0))).toBe(false);
     expect(card.querySelector(`[data-tooltip="${en.agent.sessionCount(0)}"]`)).toBeNull();
+  });
+
+  it("counts the system apps the viewer sees, and the count opens their list", async () => {
+    agentServer(undefined, { moreAgents: [SYSTEM], admin: false });
+    const router = await mountAgentApp(h(AgentsPage), {
+      route: "/list",
+      at: "/list",
+      pages: SYSTEM_APP_PAGES,
+    });
+    await waitFor(() => cards().length === 2);
+    await click(button(en.agent.systemAppCount(4)));
+    expect(router.state.location.pathname).toBe("/agents/system_agent");
+    expect(router.state.location.search).toBe("?tab=workbenches");
   });
 
   it("is pinned above the author groups, in none of them and in no count", async () => {
@@ -165,14 +181,25 @@ describe("the system Agent's settings page", () => {
   });
 
   /** The page of an Agent the server reports as the system Agent, opened at `tab`. */
-  async function openSystemPage(tab?: string) {
+  async function openSystemPage(tab?: string, { serverAdmin = true } = {}) {
     const config = agentConfig();
     config.config.system = true;
-    agentServer(config);
+    agentServer(config, { admin: serverAdmin });
     const at = `/agents/${AGENT_ID}${tab === undefined ? "" : `?tab=${tab}`}`;
-    await mountAgentApp(h(AgentSettingsPage), { at });
+    const router = await mountAgentApp(h(AgentSettingsPage), {
+      at,
+      pages: SYSTEM_APP_PAGES,
+      extra: [{ path: "/models", element: h("p", null, "Models page") }],
+    });
     await waitFor(() => hasButton(en.agent.tabOverview));
+    return router;
   }
+
+  /** The system apps' rows on the Plugins tab, by the name each shows. */
+  const appRows = () =>
+    [...document.querySelectorAll<HTMLElement>("li")]
+      .filter((row) => row.textContent?.includes(en.agent.systemAppTag))
+      .map((row) => row.textContent!.replace(en.agent.systemAppTag, "").replace(/Open$/, ""));
 
   it("has only the Overview and Plugins tabs, and a deep link to another lands on the overview", async () => {
     await openSystemPage("tools");
@@ -201,10 +228,26 @@ describe("the system Agent's settings page", () => {
     }
   });
 
-  it("lists its system apps on the Plugins tab", async () => {
-    await openSystemPage("workbenches");
-    expect(document.body.textContent).toContain(en.agent.systemAppsEmpty);
+  it("lists its system apps on the Plugins tab, read-only, and Open goes to the page", async () => {
+    const router = await openSystemPage("workbenches");
+    await waitFor(() => appRows().length > 0);
+    expect(appRows()).toEqual([
+      "Models",
+      "Plugins",
+      "Machines",
+      "Cost Center",
+      "Evaluation Center",
+    ]);
     expect(hasButton(en.workbenches.importTitle)).toBe(false);
+    expect(document.querySelector('[role="switch"], input[type="checkbox"]')).toBeNull();
+    await click(button(`${en.appCenter.menu.open} Models`));
+    expect(router.state.location.pathname).toBe("/models");
+  });
+
+  it("lists a member the system apps they can open, without Machines", async () => {
+    await openSystemPage("workbenches", { serverAdmin: false });
+    await waitFor(() => appRows().length > 0);
+    expect(appRows()).toEqual(["Models", "Plugins", "Cost Center", "Evaluation Center"]);
   });
 });
 

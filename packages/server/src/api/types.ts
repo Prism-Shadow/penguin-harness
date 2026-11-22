@@ -6748,6 +6748,11 @@ export interface WebContribution {
  * reachable by URL only), whether it is admin-only, its renderer; its nav row's name in English
  * and Chinese and its glyph (a name in the web UI's icon registry); and the key of the page it
  * sits under, if any — one level only, and a page whose parent is absent is not shown.
+ *
+ * A page with `app` is a system app of the system Agent: a tile in the App Center named and drawn
+ * by the page's `title` / `titleZh` / `icon`, opening the page's path, shown to whom `admin`
+ * allows, placed by `app.order` among the system apps. A page whose `order` is not a finite
+ * number, or that names no `title`, is no app (it stays reachable by its path).
  */
 export type WebPageData = {
   key: string;
@@ -6759,6 +6764,7 @@ export type WebPageData = {
   title?: string;
   titleZh?: string;
   icon?: string;
+  app?: { order: number };
 };
 
 /** A page contribution as GET /api/contributions answers it. */

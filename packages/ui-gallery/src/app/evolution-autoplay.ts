@@ -115,15 +115,22 @@ export function installEvolutionAutoplay(
         timer = playback.schedule(advance, 1300);
       }
     } else if (destination === "center") {
-      const link = [...doc.querySelectorAll<HTMLAnchorElement>('a[href="/benchmark"]')].find(
-        (candidate) => candidate.getClientRects().length > 0,
-      );
-      if (link) {
+      // The Evaluation Center is a system app: its tile in the App Center opens it.
+      const shown = <T extends Element>(selector: string) =>
+        [...doc.querySelectorAll<T>(selector)].find(
+          (candidate) => candidate.getClientRects().length > 0,
+        );
+      const tile = shown<HTMLButtonElement>('li[data-app="system_agent/benchmark"] > button');
+      const appCenter = shown<HTMLAnchorElement>('a[href="/apps"]');
+      if (tile) {
         destination = "detail";
-        link.click();
+        tile.click();
+        timer = playback.schedule(advance, 700);
+      } else if (appCenter) {
+        appCenter.click();
         timer = playback.schedule(advance, 700);
       } else {
-        // On a phone, open the real navigation drawer before choosing Evaluation Center.
+        // On a phone, open the real navigation drawer before choosing the App Center.
         [...doc.querySelectorAll<HTMLButtonElement>("header button")]
           .find((button) => button.getClientRects().length > 0)
           ?.click();
