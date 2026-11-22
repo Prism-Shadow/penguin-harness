@@ -9,7 +9,7 @@
  * what it contributes is visible to all of them.
  *
  * The closure is read from the FILES, without the database: this runs at boot, before the
- * platform exists, and a Project is a directory holding a `.project_config.toml`.
+ * platform exists, and a Project is a folder of `<root>/projects/` holding a `.project_config.toml`.
  *
  * Resolution is anchored at `process.argv[1]`, for the same reason the packaged
  * bundle's own resolver is: a bundle running from `hmr/store` has no node_modules of
@@ -21,11 +21,11 @@
  * default export, whose manifests the package's generated `ifaces.json` carries.
  */
 import fs from "node:fs/promises";
-import type { Dirent } from "node:fs";
 import { parse as parseToml } from "smol-toml";
 import {
   effectivePluginTable,
   IFACES_FILE,
+  listProjectDirs,
   packageEntry,
   parsePluginTables,
   projectConfigPath,
@@ -71,26 +71,12 @@ export interface PluginLoadResult {
   /** specifier → why it was skipped. */
   failed: Map<string, string>;
 }
-/** The Project ids of a data root: every directory holding a `.project_config.toml`. */
+/**
+ * The Project ids of a data root: every folder of `projects/` holding a `.project_config.toml`,
+ * links skipped (core's listProjectDirs).
+ */
 export async function listProjectIds(root: string): Promise<string[]> {
-  let entries: Dirent[];
-  try {
-    entries = await fs.readdir(root, { withFileTypes: true });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
-  }
-  const ids: string[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-    try {
-      await fs.access(projectConfigPath(root, entry.name));
-      ids.push(entry.name);
-    } catch {
-      // Not a Project directory: `hmr`, `store`, whatever else lives beside them.
-    }
-  }
-  return ids.sort();
+  return (await listProjectDirs(root)).map((project) => project.id);
 }
 
 /**

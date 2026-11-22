@@ -32,6 +32,7 @@ import {
   installSkill,
   McpServerNameTakenError,
   listInstalledHooks,
+  listProjectDirs,
   isValidId,
   loadAgentVault,
   memoryDir,
@@ -647,28 +648,27 @@ export class AgentService implements AgentLifecycle {
    * another. Folders a deletion of this process is already removing are left to it.
    */
   async resumeDeletions(): Promise<void> {
-    let projects: Dirent[] = [];
+    let projects: string[];
     try {
-      projects = await fs.readdir(this.root, { withFileTypes: true });
+      projects = (await listProjectDirs(this.root)).map((project) => project.id);
     } catch {
       return;
     }
-    for (const project of projects) {
-      if (!project.isDirectory() || !isValidId(project.name)) continue;
+    for (const projectId of projects) {
       let entries: string[] = [];
       try {
-        entries = await fs.readdir(deletingDir(this.root, project.name));
+        entries = await fs.readdir(deletingDir(this.root, projectId));
       } catch {
         continue;
       }
       for (const name of entries) {
         if (this.stopping.signal.aborted) return;
         if (!isValidId(name)) continue;
-        const known = this.deletions.get(`${project.name}/${name}`);
+        const known = this.deletions.get(`${projectId}/${name}`);
         if (known && (known.phase === "counting" || known.phase === "removing")) continue;
         const agentId = DELETION_NAME.exec(name)?.[1] ?? name;
-        this.startPurge(project.name, name, agentId);
-        await this.running.get(`${project.name}/${name}`);
+        this.startPurge(projectId, name, agentId);
+        await this.running.get(`${projectId}/${name}`);
       }
     }
   }

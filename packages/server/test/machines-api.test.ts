@@ -82,7 +82,7 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import zlib from "node:zlib";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { VERSION } from "@prismshadow/penguin-core";
+import { VERSION, projectDir } from "@prismshadow/penguin-core";
 import type {
   MachinesUseResponse,
   MachinesResponse,
@@ -3535,6 +3535,34 @@ describe("machines API", () => {
         error: { code: "ssh_password_unsupported", details: { ssh: "OpenSSH_for_Windows_8.1p1" } },
       });
       expect(fs.existsSync(stored("nas"))).toBe(false);
+    });
+
+    it("keeps a host's password while another Project under projects/ still uses the machine", async () => {
+      await boot({
+        listAliases: () => ["build-box", "nas"],
+        readConfig: () => CONFIG,
+        passwordSignIn: async () => ({ ok: true, detached: false }),
+      });
+      const stored = path.join(
+        machinesRoot,
+        "machines",
+        "ssh-passwords",
+        Buffer.from("build-box").toString("hex"),
+      );
+      store
+        .prepare("INSERT INTO projects (project_id, owner_user_id, created_at) VALUES (?, ?, ?)")
+        .run("acme", "admin", "2026-08-24T00:00:00.000Z");
+      fs.mkdirSync(projectDir(machinesRoot, "acme"), { recursive: true });
+      machinesRepo.setMembers("default_project", ["ssh:build-box"]);
+      machinesRepo.setMembers("acme", ["ssh:build-box"]);
+      expect(
+        (await admin.put(`${HOSTS}/build-box`, { hostName: "box.example.net", password: "pw" }))
+          .status,
+      ).toBe(200);
+      await admin.post("/api/projects/default_project/machines/stop-using", {
+        machines: ["ssh:build-box"],
+      });
+      expect(fs.existsSync(stored)).toBe(true);
     });
 
     it("names the field that would not survive as one config line", async () => {

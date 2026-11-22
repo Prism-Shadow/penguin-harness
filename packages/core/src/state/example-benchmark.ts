@@ -1,15 +1,15 @@
 /**
  * The example Benchmark: its content, and the writer that puts it on disk.
  *
- * At the Project level, `benchmarks/example-benchmark/` holds two sample cases (each with
- * statement/ and rubric/ indexed by a README.md), benchmark_config.toml (runs = 2, status =
- * published — the example is a finished Benchmark, not one a Skill is still writing — and origin
+ * In the Project's Benchmark folder (benchmark-dirs.ts), `example-benchmark/` holds two sample
+ * cases (each with statement/ and rubric/ indexed by a README.md), benchmark_config.toml (runs =
+ * 2, status = published — the example is a finished Benchmark, not one a Skill is still writing — and origin
  * builtin), and a scoreboard.yaml with three sample evaluations, each labelled with default_agent
  * as the Agent it tested — so the evaluation center has data out of the box. Its description states
  * plainly that this is a built-in example and the whole directory can be deleted or replaced.
  *
  * It is written when the Project is created (project-benchmarks.ts); a deleted example stays
- * deleted. Whatever else `benchmarks/` holds plays no part — the user's own Benchmarks, or the
+ * deleted. Whatever else that folder holds plays no part — the user's own Benchmarks, or the
  * retired per-agent location `agents/<agent>/benchmarks/` an older data root may keep, which
  * this code never reads.
  *

@@ -61,7 +61,6 @@ import type {
   ModelProviderAuthTokens,
   ModelPromotions,
 } from "@prismshadow/penguin-library-model";
-import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
@@ -82,6 +81,7 @@ import {
   effectiveConnection,
   groupKeyReaches,
   imageUrlMessage,
+  listProjectDirs,
   metaMaxTokens,
   migrateProjectConfigTable,
   parseProviderTable,
@@ -908,17 +908,9 @@ export class ProjectConfigService implements ProjectConfigStore {
    * (changelog/0.2.17/2026-10-15-backward-compatibility.md).
    */
   async migrateStoredConfigs(): Promise<void> {
-    let entries: Dirent[];
-    try {
-      entries = await fs.readdir(this.root, { withFileTypes: true });
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
-      throw err;
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    for (const { id } of await listProjectDirs(this.root)) {
       try {
-        await this.readTable(entry.name);
+        await this.readTable(id);
       } catch {
         // An unparseable file: the read that needs it reports it, with its own context.
       }

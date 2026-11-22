@@ -87,7 +87,7 @@ A new Project writes no `base_url` for these seven first-party groups, so their 
 
 ## Project config
 
-`<root>/<project>/.project_config.toml` is the Project's single config file: a hidden file written with mode 0600, with credentials inlined in it: once per group in `[providers.<id>]`, and on a model entry that overrides its group. A model's identity is always the `(provider, model_id)` pair. Strings are never concatenated into one id, every reference into this file carries both halves, and the provider is never inferred from a bare `model_id`.
+`<root>/projects/<project>/.project_config.toml` is the Project's single config file: a hidden file written with mode 0600, with credentials inlined in it: once per group in `[providers.<id>]`, and on a model entry that overrides its group. A model's identity is always the `(provider, model_id)` pair. Strings are never concatenated into one id, every reference into this file carries both halves, and the provider is never inferred from a bare `model_id`.
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |

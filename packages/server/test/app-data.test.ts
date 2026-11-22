@@ -25,6 +25,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   agentDir,
   benchmarksDir,
+  legacyBenchmarksDir,
   runDir,
   SYSTEM_AGENT_ID,
   systemConfigPath,
@@ -155,7 +156,8 @@ describe("AppData", () => {
       code: "system_agent_held",
     });
     const bench = await appData().dataPaths(project, "benchmark");
-    expect(bench.dataDir).toBe(benchmarksDir(t.root, project));
+    expect(bench.dataDir).toBe(legacyBenchmarksDir(t.root, project));
+    expect(await isDir(bench.dataDir)).toBe(true);
     for (const dir of [bench.cacheDir, bench.stateDir]) {
       expect(path.relative(theirs, dir).startsWith("..")).toBe(true);
       expect(await isDir(dir)).toBe(true);
@@ -168,7 +170,9 @@ describe("AppData", () => {
     const project = `${user.userId}-default_project`;
     const away = path.join(t.root, "away");
     await fs.mkdir(away, { recursive: true });
-    await fs.symlink(away, path.join(agentDir(t.root, project, SYSTEM_AGENT_ID), "app"), "dir");
+    const apps = path.join(agentDir(t.root, project, SYSTEM_AGENT_ID), "app");
+    await fs.rm(apps, { recursive: true, force: true });
+    await fs.symlink(away, apps, "dir");
     await expect(appData().dataPaths(project, "deck")).rejects.toThrow(/link or a file/);
     expect(await fs.readdir(away)).toEqual([]);
   });

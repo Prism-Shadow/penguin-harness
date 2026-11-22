@@ -137,10 +137,10 @@ Web App 的[评估中心](/evaluation-center)不需要手写 Prompt，就能启�
 
 ## Benchmark 存储
 
-Benchmark 属于 Project，每个 Benchmark 存放在 `<root>/<project>/benchmarks/<id>/`，与 `agents/` 平级。Benchmark 与 Agent 是平级关系，谁也不隶属于谁：一个 Benchmark 可以评估多个 Agent，一个 Agent 也可以接受多个 Benchmark 的评估。因此 `benchmark_config.toml` 不记录任何 Agent，被测的 Agent 记在每一条评估上。
+Benchmark 属于 Project，每个 Benchmark 存放在评估中心的数据目录 `<root>/projects/<project>/agents/system_agent/app/data/benchmark/<id>/`：它属于系统 Agent，系统 Agent 不会被删除或导出，这个目录因此与 Project 同寿。评估中心的提示词会把这个目录告诉 Agent（`BENCHMARK_DIR`）。Benchmark 与 Agent 是平级关系，谁也不隶属于谁：一个 Benchmark 可以评估多个 Agent，一个 Agent 也可以接受多个 Benchmark 的评估。因此 `benchmark_config.toml` 不记录任何 Agent，被测的 Agent 记在每一条评估上。
 
 ```text
-<project>/benchmarks/<id>/
+<project>/agents/system_agent/app/data/benchmark/<id>/
 ├── benchmark_config.toml       # the manifest: id, title, description, description_zh, version, status, runs (Builder runs is fixed at 1), [origin]
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent

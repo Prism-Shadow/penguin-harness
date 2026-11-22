@@ -54,6 +54,7 @@ describe("id-validation", () => {
     // The victim Agent's config does exist (readable by the victim via the legitimate path).
     const victimConfigPath = path.join(
       t.root,
+      "projects",
       victimProject,
       "agents",
       "default_agent",
@@ -72,6 +73,7 @@ describe("id-validation", () => {
   it("PUT config: traversal agentId → 404, victim file not overwritten", async () => {
     const victimConfigPath = path.join(
       t.root,
+      "projects",
       victimProject,
       "agents",
       "default_agent",

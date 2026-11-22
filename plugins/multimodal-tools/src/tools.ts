@@ -40,6 +40,7 @@ export interface ToolsHost {
   requests: ModelRequests;
   bindings: ModelBindings;
   models: ProjectModels;
+  /** The folder every Project's folder sits in (the host's layout). */
   root: string;
 }
 

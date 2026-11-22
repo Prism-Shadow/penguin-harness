@@ -62,7 +62,7 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
       beforeSeed: async (root) => {
         const dir = path.join(
           root,
-          "default_project/agents/penguin_support/agent_state/workbenches/support",
+          "projects/default_project/agents/penguin_support/agent_state/workbenches/support",
         );
         await fs.mkdir(dir, { recursive: true });
         await fs.writeFile(
@@ -208,7 +208,7 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
     });
     const disk = path.join(
       t.root,
-      "default_project/agents/plugin_support/agent_state/workbenches/support",
+      "projects/default_project/agents/plugin_support/agent_state/workbenches/support",
     );
     const state = JSON.stringify({
       tickets: [{ id: "saved", title: "Keep", status: "resolved", messages: [] }],
@@ -227,7 +227,21 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
     await fs.writeFile(path.join(disk, "ui/app.js"), "local edit");
     const reload = await admin.post(`${agent}/workbenches/support/reload`);
     expect(await reload.json()).toMatchObject({ workbench: { error: null } });
-    expect((await admin.post(`${agent}/plugins`, { names: ["penguin-support"] })).status).toBe(201);
+    // A list request can compile the current revision while the update is in progress.
+    // Let it do so with the old types still present, as a file watcher can on a slower disk.
+    const originalRm = fs.rm.bind(fs);
+    const rm = vi.spyOn(fs, "rm").mockImplementation(async (target, options) => {
+      if (target === path.join(disk, ".harness")) await admin.get(`${agent}/workbenches`);
+      await originalRm(target, options);
+    });
+    try {
+      expect((await admin.post(`${agent}/plugins`, { names: ["penguin-support"] })).status).toBe(
+        201,
+      );
+    } finally {
+      rm.mockRestore();
+    }
+
     expect(await (await admin.get(`${agent}/workbenches`)).json()).toMatchObject({
       workbenches: [{ error: null }],
     });
@@ -242,7 +256,7 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
     await admin.post("/api/projects/default_project/agents", { agentId: "conflict_support" });
     const dir = path.join(
       t.root,
-      "default_project/agents/conflict_support/agent_state/workbenches/support",
+      "projects/default_project/agents/conflict_support/agent_state/workbenches/support",
     );
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, "package.json"), "{}");
@@ -257,7 +271,10 @@ describe("support workbench following a question live", { timeout: 30000 }, () =
   let hold: Promise<void> | undefined;
   const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   const dir = () =>
-    path.join(t.root, "default_project/agents/penguin_support/agent_state/workbenches/support");
+    path.join(
+      t.root,
+      "projects/default_project/agents/penguin_support/agent_state/workbenches/support",
+    );
   /** The ticket as saved on disk, never read through GET. */
   const saved = async (id: string) =>
     (

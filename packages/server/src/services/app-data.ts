@@ -3,8 +3,8 @@
  * folders of PRFC-0032, keyed by the app's id — the page key of the system app a server module
  * contributes —
  *
- *   dataDir   <root>/<p>/agents/system_agent/app/data/<appId>/
- *   cacheDir  <root>/<p>/agents/system_agent/app/cache/<appId>/
+ *   dataDir   <root>/projects/<p>/agents/system_agent/app/data/<appId>/
+ *   cacheDir  <root>/projects/<p>/agents/system_agent/app/cache/<appId>/
  *   stateDir  <root>/run/<h(p)>/<h(system_agent)>/<h(appId)>/
  *
  * The system Agent is never deleted or exported, so these folders live exactly as long as the
@@ -15,10 +15,9 @@
  * Two answers are this host's alone, and no plugin computes them:
  *
  * - **The Evaluation Center's data** (`appId` `benchmark`) is the folder the Project's Benchmarks
- *   are in, core's `benchmarksDir`: `<p>/benchmarks/` until the data-root layout (PRFC-0034)
- *   moves them into the system Agent's `app/data/benchmark/` and re-points that function. A
- *   Project whose `system_agent` is an Agent of the user's (compat C1, core state/system-agent.ts)
- *   keeps its Benchmarks at the old place, which PRFC-0034's rule names there too; that app's
+ *   are in, the system Agent's `app/data/benchmark/`. A Project whose `system_agent` is an
+ *   Agent of the user's (compat C1, core state/system-agent.ts) keeps its Benchmarks in
+ *   `projects/<p>/benchmarks/`, which PRFC-0034 leaves in place. That app's
  *   cache then sits in its state folder, outside the user's Agent. The case goes with compat C1,
  *   at 1.0.
  * - **A Project whose `system_agent` is an Agent of the user's** has no system Agent, so it has no
@@ -32,7 +31,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  benchmarksDir,
+  BENCHMARK_APP_ID,
+  legacyBenchmarksDir,
   isSystemAgent,
   isValidId,
   projectDir,
@@ -65,9 +65,6 @@ export abstract class AppData {
    */
   abstract dataPaths(projectId: string, appId: string): Promise<AppDataPaths>;
 }
-
-/** The Evaluation Center's app id: its page key, and the folder name PRFC-0034 gives its data. */
-export const BENCHMARK_APP_ID = "benchmark";
 
 /** Where an Agent of the user's holds the system Agent's id: its config is there without the key. */
 async function heldByUsersAgent(root: string, projectId: string): Promise<boolean> {
@@ -113,18 +110,12 @@ export class SystemAgentAppData implements AppData {
       "dataPaths",
     );
     ensureDir(bases.stateDir, paths.stateDir, "dataPaths");
-    if (appId === BENCHMARK_APP_ID) {
-      // The Benchmarks' own folder (see the module header). Where the id is the user's Agent,
-      // nothing of the app goes into that Agent's folder: its cache sits in its state folder.
-      const dataDir = benchmarksDir(root, projectId);
+    if (held) {
+      const dataDir = legacyBenchmarksDir(root, projectId);
+      const cacheDir = path.join(paths.stateDir, "cache");
       ensureDir(projectDir(root, projectId), dataDir, "dataPaths");
-      if (held) {
-        const cacheDir = path.join(paths.stateDir, "cache");
-        ensureDir(paths.stateDir, cacheDir, "dataPaths");
-        return { dataDir, cacheDir, stateDir: paths.stateDir };
-      }
-      ensureDir(bases.cacheDir, paths.cacheDir, "dataPaths");
-      return { dataDir, cacheDir: paths.cacheDir, stateDir: paths.stateDir };
+      ensureDir(paths.stateDir, cacheDir, "dataPaths");
+      return { dataDir, cacheDir, stateDir: paths.stateDir };
     }
     ensureDir(bases.dataDir, paths.dataDir, "dataPaths");
     ensureDir(bases.cacheDir, paths.cacheDir, "dataPaths");

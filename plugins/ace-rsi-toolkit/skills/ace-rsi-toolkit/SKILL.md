@@ -1,7 +1,7 @@
 ---
 name: ace-rsi-toolkit
 description: Run ACE (Agentic Context Engineering, Zhang et al. 2025) on an agent the sequential offline way - a Reflector reads each training Trace, a Curator adds the lessons to a playbook of rules the agent reads before every task, and the final playbook is measured on a published Benchmark.
-version: 2026.11.05.1
+version: 2026.11.20.1
 ---
 
 # ACE
@@ -37,10 +37,10 @@ Resolve every path from your Environment's `App Data Dir`, as `references/evalua
 ```text
 PROJECT_DIR  = <app_data_dir>
 PROJECT_ID   = basename of PROJECT_DIR
-PENGUIN_HOME = dirname of PROJECT_DIR
+PROJECTS_DIR = dirname of PROJECT_DIR      # the folder holding the Project; not the data root
 TARGET       = PROJECT_DIR/agents/<test_agent_id>
 STATE        = TARGET/agent_state
-BENCHMARK    = PROJECT_DIR/benchmarks/<benchmark_id>
+BENCHMARK    = <the BENCHMARK_DIR the request names>   # when it names none: PROJECT_DIR/agents/system_agent/app/data/benchmark/<benchmark_id>
 CASE         = BENCHMARK/<case_id>       # statement/README.md is public; rubric/README.md is private
 SCOREBOARD   = BENCHMARK/scoreboard.yaml
 SKILL_DIR    = PROJECT_DIR/agents/<your Agent ID>/agent_state/skills/ace-rsi-toolkit

@@ -438,6 +438,7 @@ describe("a machine Session's history through the hub's copy", () => {
     await fs.rm(
       path.join(
         machine.root,
+        "projects",
         PROJECT,
         "agents",
         AGENT,

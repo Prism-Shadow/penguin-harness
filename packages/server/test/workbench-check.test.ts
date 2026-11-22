@@ -43,7 +43,7 @@ describe("Workbench Skill checker", { timeout: 30000 }, () => {
     });
     const dir = path.join(
       t.root,
-      "default_project/agents/file_created/agent_state/workbenches/demo",
+      "projects/default_project/agents/file_created/agent_state/workbenches/demo",
     );
     await fs.mkdir(path.join(dir, "ui"), { recursive: true });
     const manifest = {

@@ -370,7 +370,7 @@ describe("a plugin's server and Agent installs", () => {
     it("refuses while a Project's shared table lists it, and removes nothing", async () => {
       const mia = await notesEverywhere();
       // Listed in the shared table by hand, as an admin edits the Project's config.
-      const file = path.join(t.root, "default_project", ".project_config.toml");
+      const file = path.join(t.root, "projects", "default_project", ".project_config.toml");
       const config = await fs.readFile(file, "utf8");
       expect(config).not.toMatch(/^\[plugins\]$/m);
       await fs.writeFile(file, `${config}\n[plugins]\n"${NOTES}" = {}\n`);

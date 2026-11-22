@@ -50,6 +50,7 @@ import {
   scratchpadDir,
   projectConfigFromTable,
   projectConfigPath,
+  projectDir,
   providerConnectionShape,
   removeVaultEntry,
   renderProjectConfigToml,
@@ -2133,8 +2134,12 @@ describe("single hidden config file (.project_config.toml, credentials inlined)"
     }
     expect(await fs.readFile(file, "utf8")).toContain("sk-split-1");
     // The old two-file layout is no longer produced.
-    expect(await exists(path.join(tmpRoot, DEFAULT_PROJECT_ID, "project_config.toml"))).toBe(false);
-    expect(await exists(path.join(tmpRoot, DEFAULT_PROJECT_ID, ".credentials.toml"))).toBe(false);
+    expect(
+      await exists(path.join(projectDir(tmpRoot, DEFAULT_PROJECT_ID), "project_config.toml")),
+    ).toBe(false);
+    expect(
+      await exists(path.join(projectDir(tmpRoot, DEFAULT_PROJECT_ID), ".credentials.toml")),
+    ).toBe(false);
   });
 
   // POSIX-only: Windows has no owner-only mode bits to converge.
