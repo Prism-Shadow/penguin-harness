@@ -14,6 +14,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement, ReactNode } from "react";
+import { InlineIconButton } from "../src/components/actions/button/inline-icon-button";
 import { CopyButton } from "../src/components/actions/copy-button/copy-button";
 
 /** Hook slots in call order, the cursor rewound on each render, and every value `copied` was set to. */
@@ -63,7 +64,10 @@ function render(): Button {
   const fragment = CopyButton({ text: "sess-42", label: LABEL }) as ReactElement<{
     children: ReactNode[];
   }>;
-  return fragment.props.children[0] as Button;
+  const control = fragment.props.children[0] as ReactElement<
+    Parameters<typeof InlineIconButton>[0]
+  >;
+  return InlineIconButton(control.props) as Button;
 }
 
 /** Lets the write's resolution and the `.then` behind it run. */

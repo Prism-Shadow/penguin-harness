@@ -4,7 +4,8 @@
  * page (test/helpers/dom.ts), pressed the way a person presses them.
  *
  * - Given a card, its title is a button that opens the detail; a press on one of the card's
- *   actions runs that action and does not open the detail.
+ *   actions, or on a control in its note, runs that control alone and does not open the detail,
+ *   and no control sits inside the title's button.
  * - Given a card without facts, tags or actions, none of those lines is drawn.
  * - Given an action whose request is in flight, it takes no press and says it is busy.
  * - Given an action, its word names it — `name` when that says more — and is its tooltip; a hint
@@ -66,6 +67,22 @@ describe("EntityCard", () => {
     await click(buttonNamed("Install charts")!);
     expect(onInstall).toHaveBeenCalledTimes(1);
     expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a control in the note out of the title's button", async () => {
+    const onOpen = vi.fn();
+    const onDismiss = vi.fn();
+    await mount(
+      card({ onOpen, note: h("button", { type: "button", onClick: onDismiss }, "Dismiss") }),
+    );
+    const body = document.querySelector("button")!;
+    expect(body.querySelector("button")).toBeNull();
+    const dismiss = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent === "Dismiss",
+    )!;
+    await click(dismiss);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(onOpen).not.toHaveBeenCalled();
   });
 
   it("draws no facts, tag or action line when it has none", async () => {

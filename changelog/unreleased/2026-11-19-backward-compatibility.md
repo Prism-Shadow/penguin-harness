@@ -2,8 +2,8 @@
 
 - **Date:** 2026-11-19
 - **Type:** process
-- **Scope:** `core`, `server`, `web`
-- **PR:** [#1644](https://github.com/Prism-Shadow/penguin-harness/pull/1644), [#1654](https://github.com/Prism-Shadow/penguin-harness/pull/1654)
+- **Scope:** `core`, `server`, `web`, `db`
+- **PR:** [#1644](https://github.com/Prism-Shadow/penguin-harness/pull/1644), [#1642](https://github.com/Prism-Shadow/penguin-harness/pull/1642), [#1656](https://github.com/Prism-Shadow/penguin-harness/pull/1656), [#1654](https://github.com/Prism-Shadow/penguin-harness/pull/1654)
 
 [中文版](2026-11-19-backward-compatibility.zh.md)
 
@@ -30,6 +30,29 @@ The server maintainers keep both until the next major version (1.0), and remove 
 
 - `packages/server/src/hmr/legacy-browser.ts`, the `fallback` it fills in `hmr/upgrade-seam.ts`, and the `legacyOwnOrigin` fallback in `src/app.ts`;
 - the browser module's two names, which may then be renamed.
+
+## Projects created before a module was preinstalled
+
+[Preinstalled built-in modules are listed in Project config](2026-11-19-preinstalled-plugin-modules.md). A new Project lists them when it is created. A Project created earlier has no such listing. Without handling, once a feature moves into a preinstalled plugin, it would be missing from every Project that predates the move. The first boot of a build that ships a preinstalled module lists the module once in this server's own `[plugins.<machineId>]` table of every existing Project. Nothing else in the file changes. Each Project is recorded per package in web.db's `plugin_module_preinstalls`, and a recorded Project is never listed again. A Project the administrator later takes the module out of stays without it. In this batch the one such module is the agent browser's, from [browser-automation](2026-11-19-browser-use-plugin.md): without the listing, every existing Project would lose the browser on upgrade.
+
+### Scope
+
+Every `.project_config.toml` under the data root of a server that boots a build shipping a preinstalled module, once per package. A server whose build ships none changes nothing. A module the administrator stopped is not listed. A Project whose config cannot be read or written is logged and tried again at the next boot. One whose config is not valid TOML is logged and passed over for good.
+
+### What you need to do
+
+Nothing.
+
+### Lifetime
+
+The one-time listing stays until the next major version (1.0). Whoever prepares 1.0 removes it:
+
+- `packages/server/src/services/preinstall-once.ts` and its call in `packages/server/src/hmr/platform.ts`;
+- the record calls of Project creation and of the preinstalled enable in `packages/server/src/services/plugin-modules.ts`;
+- `PluginModulePreinstalls` and `PluginModulePreinstallsRepo` in `library/setting`;
+- the `plugin_module_preinstalls` table, through a new migration that drops it.
+
+Listing at Project creation is the feature itself and stays. At that point it is also to be decided whether a module first preinstalled after 1.0 should still reach existing Projects; that would keep the mechanism as a standing one.
 
 ## An Agent already named `system_agent`
 

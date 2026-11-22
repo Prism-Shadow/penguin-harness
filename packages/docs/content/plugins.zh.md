@@ -9,7 +9,7 @@ description: PenguinHarness 的插件是什么、插件包遵循的格式与校�
 
 插件包是一个 npm 包，`package.json` 只带 npm 自己的字段。插件携带的内容在它的入口源码里声明：一个空类，其 `@Component` 装饰器把插件的卡片、Skill、钩子包、MCP Server 和 Workbench 作为贡献投给服务端的 `PluginLibraryModule`；默认导出 `{ modules, replaces }` 是它添加的服务端模块。包的构建对自己的 tsconfig 跑 `penguin-gen-ifaces`，把这份声明写进 `package.json` 旁边的 `ifaces.json`；服务端读取的就是这张表，从不运行包本身。逐字段的表格、目录布局与完整示例见[工作原理](/skills#插件文件格式)。
 
-这些都是插件，同一份格式覆盖所有情况。不同的是包的内容装上后落在哪里：它投给 `PluginLibraryModule` 的贡献——Skill、钩子、MCP Server、Workbench、卡片——装上后进 Agent 的 Agent State，只带这些的包不需要代码入口（`goal` 插件是完整示例）；默认导出里列出的服务端模块——例如沙盒后端——装上后进服务端的模块树。一个包可以两者都有。
+这些都是插件，同一份格式覆盖所有情况。不同的是包的内容装上后落在哪里：它投给 `PluginLibraryModule` 的贡献——Skill、钩子、MCP Server、Workbench、卡片——装上后进 Agent 的 Agent State，只带这些的包不需要代码入口（`goal` 插件是完整示例）；默认导出里列出的服务端模块——例如沙盒后端——装上后进服务端的模块树。一个包可以两者都有。内置插件还可以带上 Web App 与 CLI 在构建时编入的两半——`./web` 与 `./cli` 两个入口。`browser-automation` 全都带上了：Agent 浏览器的服务端模块、它的面板与设置页、`penguin browser` 命令，以及它的 Skill。
 
 服务端模块需要的平台，至少要和它投稿的槽一样新。槽是具名的贡献点，例如路由组所在的 `HttpModule.routes`。每个槽、槽数据的每个字段，都随某个发行版本出现。较旧的平台不认识较新的槽，也不认识较新的字段（如路由组的 `origin`）。它的校验于是丢弃该模块投给这个槽的全部贡献：插件缺了这一部分照常运行，**插件**页上它那一行说明原因。内置插件随它运行的服务端一同发布。发布到 npm 的包在 README 里写明它需要的最低版本。
 
@@ -48,7 +48,7 @@ description: PenguinHarness 的插件是什么、插件包遵循的格式与校�
 
 四个来源，四条规则：
 
-1. **harness 自己的模块**不是插件作者要列出或提交的东西：它们今天住在主包里，正按功能重组（进行中的 PR [#1550](https://github.com/Prism-Shadow/penguin-harness/pull/1550)），将来落进仓库的插件库目录——它们是 PenguinHarness 的组成部分，不是别人的包。今天的包布局见[架构](/architecture)。
+1. **harness 自己的模块**不是插件作者要列出或提交的东西：它们多数住在主包里，能独立出来的功能会移进 `plugins/` 下的内置插件——Agent 浏览器是第一个，即 `browser-automation`——但无论在哪里，它们都是 PenguinHarness 的组成部分，不是别人的包。今天的包布局见[架构](/architecture)。
 2. **builtin plugins**随仓库 `plugins/` 目录发货——一个插件一个 npm 包，按分类列在[内置插件库](/skills#内置插件库)。安装它从 npm 或它的仓库取包，桌面应用把自己的一组插件直接打进安装包。围绕他人产品打造的插件带 `use-` 前缀（`use-firecrawl`），自进化工具包的名字以 `-rsi-toolkit` 结尾。
 3. **third-party plugins**收录进[插件索引](https://github.com/Prism-Shadow/penguin-harness-plugins)——一条 PR 一个条目，走那个仓库自己的收录协议。服务端在**插件**页把索引与内置清单合并；索引只管发现，包仍从条目指名的渠道安装。
 4. **自己的或未收录的插件**不需要索引：用 `penguin plugin link` 把本机目录链接进服务端的插件前缀——目录留在原地、原位引用，与安装的插件走同一条装载路径；已发布的包也可按 npm 名直接装。

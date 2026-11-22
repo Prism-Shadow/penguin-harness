@@ -25,6 +25,7 @@ export const zh = {
     plugins: "插件",
     benchmarks: "评估集",
     leaderboards: "榜单",
+    rfcs: "RFCs",
     amsp: "AMSP",
     docs: "文档",
     gallery: "主题包",
@@ -444,6 +445,9 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
         "office-productivity": "办公效率",
         "software-development": "软件开发",
         "ai-app-development": "AI 应用开发",
+        "learning-life": "学习与生活",
+        utilities: "实用工具",
+        entertainment: "娱乐",
         sandbox: "Agent 运行沙箱",
         other: "其他",
       } as Record<string, string>,
@@ -457,6 +461,31 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
       extensions: "Hooks 与工作台",
       skillCount: (n: number) => `${n} 个 Skill`,
       preinstalled: "默认预装",
+      /** The market's curation: the carousel's eyebrow and a card's tag. */
+      selected: "精选",
+      /** The selected carousel's accessible name. */
+      selectedPlugins: "精选插件",
+      viewDetails: "查看详情",
+      layoutLabel: "插件布局",
+      cardsLayout: "卡片视图",
+      listLayout: "列表视图",
+      sortSelected: "精选优先",
+      screenshots: "截图",
+      whatItInstalls: "包含内容",
+      downloadPlugin: "下载插件",
+      getPenguin: "获取 PenguinHarness",
+      source: "源码",
+      carousel: {
+        previous: "上一个",
+        next: "下一个",
+        pause: "暂停轮播",
+        play: "继续轮播",
+        position: (index: number, count: number) => `第 ${index} 个，共 ${count} 个`,
+      },
+      /** The leaderboards whose entries ran a plugin (an RSI toolkit's algorithm). */
+      measuredBy: "测评过它的榜单",
+      /** A part's kind on a plugin's page, under "What it installs". */
+      partKinds: { skill: "Skill", hook: "Hook", workbench: "工作台" },
     },
     benchmarks: {
       title: "评估集",
@@ -618,6 +647,71 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     /** A citation's back-link, for screen readers: the k-th place in the text that cites source n. */
     backToRef: (n: number, k: number) =>
       k > 1 ? `返回正文中引用 ${n} 的第 ${k} 处` : `返回正文中的引用 ${n}`,
+  },
+
+  /**
+   * The RFC pages (pages/rfcs.tsx, pages/rfc-doc.tsx): the repository's design RFCs (PRFCs) as a
+   * docs-style section, following the MMSP RFC site's layout and information structure.
+   */
+  rfcs: {
+    /** The tab title and description while the index page is open. */
+    title: "RFC 索引",
+    sidebarTitle: "RFCs",
+    description: "PenguinHarness 的每个设计决定都记录为一篇 RFC：这里是索引，以及本面的约定。",
+    indexLabel: "RFC 索引",
+    notFound: "找不到这篇 RFC。",
+    backToIndex: "返回 RFC 索引",
+    editOnGithub: "在 GitHub 上编辑本页",
+    copyMarkdown: "复制 Markdown",
+    copied: "已复制",
+    toc: "本页目录",
+    prev: "上一页",
+    next: "下一页",
+    sectionAll: "全部 RFC",
+    colRfc: "RFC",
+    colTitle: "标题",
+    colStatus: "Pull Request",
+    statusMerged: "Merged",
+    statusOpen: "Open",
+    statusDraft: "Draft",
+    statusClosed: "Closed",
+    /** The row's link to the open design PR carrying a revision newer than the merged version. */
+    openRevision: "未合并修订",
+    expandAll: "全部展开",
+    collapseAll: "全部折叠",
+    expandNode: (name: string) => `展开 ${name}`,
+    collapseNode: (name: string) => `折叠 ${name}`,
+    notes: [
+      "**Pull Request**：每篇 RFC 后附承载它的 `request-for-comments` PR（图标对应 GitHub PR 的 `Merged`、`Open`、`Draft` 状态，后接 `#PR-number`）；已合入主仓 `rfcs/` 的文档点击标题进入站内正文。",
+      "**唯一索引**：上方树图由 `rfcs/` 目录与 `request-for-comments` PR 状态在构建期自动生成。",
+    ],
+    colFile: "文件",
+    colContent: "内容",
+    files: [
+      {
+        file: "rfcs/",
+        path: "tree/main/rfcs",
+        content: "一个文件记录一个决定（`PRFC-NNNN-<slug>.md`）及其中文对照 `.zh.md`",
+      },
+      {
+        file: "TEMPLATE.md",
+        path: "blob/main/rfcs/TEMPLATE.md",
+        content: "新 RFC 的英文模板起点",
+      },
+    ],
+    bilingualNote:
+      "**双语对齐**：除 `TEMPLATE.md` 外，每个文件都有逐节对应的 `<name>.zh.md`，由网站直接渲染于 `/rfcs/`。",
+    search: {
+      open: "搜索",
+      label: "搜索 RFC",
+      placeholder: "搜索 RFC 标题、章节和正文",
+      start: "输入关键词搜索当前语言的全部 RFC",
+      noResults: "没有找到匹配的 RFC",
+      noResultsHint: "请尝试更短或不同的关键词",
+      results: "搜索结果",
+      close: "关闭搜索",
+      keyboardHint: "使用上下方向键选择，按回车打开",
+    },
   },
 
   /**

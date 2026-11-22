@@ -29,18 +29,35 @@ export type { Channels, Clock, Config, Db, Desktop, Log, Paths } from "../hmr/ca
 export type { Users } from "@prismshadow/penguin-library-auth";
 export type { SessionDrivers, SessionIndex } from "@prismshadow/penguin-library-session";
 export type { Settings, UiPrefsStore } from "@prismshadow/penguin-library-setting";
+export type { Access, ProjectConfigStore, Projects } from "@prismshadow/penguin-library-project";
+export type {
+  SessionCategory,
+  TraceIndex,
+  TraceIndexStore,
+} from "@prismshadow/penguin-library-trace";
+export type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
+export type { DataLayout } from "../mechanisms/data-layout.js";
+export type { DeletingFolders, DeletingPlace } from "../mechanisms/deleting-folders.js";
+export type { SessionActivity } from "../runtime/session-activity.js";
+export type { ListingView } from "../runtime/listing-view.js";
+export type { AgentConfig } from "../mechanisms/agents.js";
+export type { FileReveal } from "../mechanisms/workspace.js";
 export type { AppEnv } from "../auth/middleware.js";
 export type { ShellPort } from "../services/desktop-update-port.js";
 export type { UpgradeCaller, WebSocketUpgrade } from "../http/upgrade-endpoints.js";
 export type { MeRoutes, MeRoutesSlots, OwnedPref } from "../http/routes/me.js";
 export { HttpError, badRequest, errorBody, isHttpError } from "../http/errors.js";
 export { publicOriginOf } from "@prismshadow/penguin-library-http/public-origin";
+export { parseNonNegativeInt, readJson } from "@prismshadow/penguin-library-http/validate";
+export { listingViewOfRequest } from "../runtime/listing-view.js";
+export { FsLimiter } from "../services/tree-purge.js";
 export { requireHuman } from "../auth/require-human.js";
 export { userChannelKey } from "../http/user-channel.js";
 export { ensureInstallId } from "../install-id.js";
 export { shellPortOf } from "../services/desktop-update-port.js";
 export { profileFromEnv } from "../machines/profile.js";
 export type { Sandbox, SandboxSlots } from "../sandbox/service.js";
+export type { AgentStateEngines, AgentStateEnginesSlots } from "../workbenches/engines.js";
 export type { Terminals } from "../terminal/manager.js";
 export type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 export type { AgentService } from "../services/agent-service.js";
@@ -53,10 +70,38 @@ export type {
   PluginConfigSlots,
   SettingsGroupDecl,
 } from "./config.js";
+export type {
+  PluginStatusCheck,
+  PluginStatusReport,
+  PluginStatusSummary,
+  PluginStatusVersion,
+  SettingsGroupStatus,
+} from "./config-page.js";
 export type { Http, HttpSlots } from "../http/app.js";
 export type { WebShell, WebShellSlots } from "../http/routes/contributions.js";
 export type { PluginLibrary, PluginLibrarySlots } from "./library-module.js";
-export type { PluginCliCommands, PluginCliCommandsSlots } from "./cli-commands.js";
+export type {
+  PluginCliCommand,
+  PluginCliCommandRun,
+  PluginCliCommands,
+  PluginCliCommandsSlots,
+} from "./cli-commands.js";
+export type {
+  DeclaredBinding,
+  ToolModelBindingCode,
+  ToolModelBindingData,
+  ToolModelBindings,
+  ToolModelBindingsSlots,
+  ToolModelBindingTitle,
+  ToolModelCandidate,
+  ToolModelTestRequest,
+  ToolModelTestSubject,
+} from "../services/tool-model-bindings.js";
+export type {
+  ProjectModelRequest,
+  ProjectModelRequests,
+  ProjectModelScope,
+} from "../services/project-model-requests.js";
 
 // What a system app a plugin provides needs of the host (PRFC-0036): its own folders in a
 // Project, Agent tasks started as a person, the read views, the files it serves its page from,
@@ -77,7 +122,6 @@ export type {
   SemanticIdKindSource,
 } from "../services/semantic-id-kinds.js";
 export type { StartPage, StartPageSlots } from "../http/routes/start-page.js";
-export type { Access } from "@prismshadow/penguin-library-project";
 export type { ProjectMachines, ProjectModels } from "./views.js";
 export type { MachineApi } from "../machines/machine-api.js";
 export type { WorkspaceFiles } from "../mechanisms/workspace.js";

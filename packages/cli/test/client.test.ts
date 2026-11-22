@@ -2,6 +2,10 @@
  * Server-client plumbing: connection resolution order (--server > PENGUIN_API_URL >
  * live server.lock > auto-start), the remote-token gate, the SSE parser, and session
  * reference resolution (full id / unique fragment / ambiguity).
+ *
+ * - Given a plugin command the server refuses for the token outside a Session (403
+ *   `session_required`), the client never sends the person's stored sign-in instead: an Agent can
+ *   unset PENGUIN_SESSION_ID, so the refusal stands everywhere.
  */
 import fs from "node:fs";
 import net from "node:net";
@@ -20,6 +24,7 @@ import {
   ServerClient,
   shortSessionId,
   getMessages,
+  writeSession,
 } from "@prismshadow/penguin-server/cli";
 
 import { FakeServer } from "./fake-server.js";
@@ -32,6 +37,7 @@ const ENV_KEYS = [
   "PENGUIN_HOME",
   "PENGUIN_PROJECT_ID",
   "PENGUIN_AGENT_ID",
+  "PENGUIN_SESSION_ID",
 ];
 const saved = new Map<string, string | undefined>();
 
@@ -208,5 +214,52 @@ describe("option defaults", () => {
     expect(resolveAgentId(undefined)).toBe("env-agent");
     expect(resolveProjectId("flag-project")).toBe("flag-project");
     expect(resolveAgentId("flag-agent")).toBe("flag-agent");
+  });
+});
+
+describe("a plugin command that runs for a Session's driver, called outside a Session", () => {
+  const realFetch = globalThis.fetch;
+  let root: string;
+  let sent: Array<Record<string, string>>;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-client-"));
+    process.env.PENGUIN_API_TOKEN = "boot-token";
+    writeSession(root, { server: "http://localhost:7399", userId: "mia", token: "login-mia" });
+    sent = [];
+    // The server: the token is refused; a person's sign-in would run the command.
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const headers = (init.headers ?? {}) as Record<string, string>;
+      sent.push(headers);
+      return headers.authorization !== undefined
+        ? new Response(JSON.stringify({ error: { code: "session_required", message: "x" } }), {
+            status: 403,
+          })
+        : new Response(JSON.stringify({ exitCode: 0, stdout: "ran\n", stderr: "" }), {
+            status: 200,
+          });
+    }) as typeof fetch;
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("never sends the stored sign-in in the token's place: the refusal stands", async () => {
+    const client = new ServerClient(
+      {
+        baseUrl: "http://localhost:7399",
+        root,
+        autoStarted: false,
+        loopback: true,
+        fromRoot: true,
+      },
+      t,
+    );
+    await expect(client.request("POST", "/api/cli/commands/run", {})).rejects.toMatchObject({
+      status: 403,
+      code: "session_required",
+    });
+    expect(sent.map((h) => h.authorization ?? h.cookie)).toEqual(["Bearer boot-token"]);
   });
 });

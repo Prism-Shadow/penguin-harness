@@ -163,7 +163,10 @@ export class HostAgentTasks implements AgentTasks {
     }
     const text = buildSkillsMessage(task.skills ?? [], task.prompt);
     this.drivers.note(session.sessionId, task.userId);
-    const { sessionId } = await this.manager.startTask(session.sessionId, [userText(text)]);
+    // The person drives the run it starts, as the Web Send's sender does.
+    const { sessionId } = await this.manager.startTask(session.sessionId, [userText(text)], {
+      driver: task.userId,
+    });
     // A Session that healed into a new id on start is the same conversation, driven alike.
     if (sessionId !== session.sessionId) this.drivers.note(sessionId, task.userId);
     return { sessionId };

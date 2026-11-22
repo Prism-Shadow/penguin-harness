@@ -40,6 +40,7 @@ import {
 import { isSafeMode, useSafeMode } from "../../rescue/safe-mode";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
+import { WorkbenchModelPicker } from "./workbench-model-picker";
 import { localizedText } from "../chat";
 import { failureNode } from "../../lib/failure";
 
@@ -505,7 +506,15 @@ export function WorkbenchFrame({
         className={`min-h-0 flex-1 border-0 transition-opacity duration-150 motion-reduce:transition-none ${
           shownKey === frameKey ? "opacity-100" : "opacity-0"
         }`}
-        sandbox={PAGE_FRAME_SANDBOX}
+        sandbox={
+          tab.pointerLock === true ? PAGE_FRAME_SANDBOX + " allow-pointer-lock" : PAGE_FRAME_SANDBOX
+        }
+      />
+      <WorkbenchModelPicker
+        key={`model-picker/${frameKey}`}
+        frame={frameRef}
+        projectId={projectId}
+        machineId={tab.machineId}
       />
       <ConfirmModal
         open={restoring !== null}

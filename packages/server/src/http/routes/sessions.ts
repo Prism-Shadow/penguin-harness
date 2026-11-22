@@ -179,6 +179,7 @@ import type { LiveStreams } from "../../auth/live-streams.js";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { Workbenches } from "../../mechanisms/workbenches.js";
 import type { OrgService } from "../../runtime/organization/service.js";
+import type { ToolModelBindings } from "../../services/tool-model-bindings.js";
 import { sessionTitle } from "../session-title.js";
 
 /** Max path count and per-path length for a single files/stat check (message file-card candidates never exceed this scale). */
@@ -1246,6 +1247,8 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         // steering) so a recall (DELETE /follow-ups/:id, DELETE /steer/:id) can hand it back;
         // unused when the task starts directly.
         recall: recallStore(parsed.texts.join("\n"), parsed.images, parsed.attachments, written),
+        // The person sending it drives the run it starts (now, or when it leaves the queue).
+        ...(driver !== null ? { driver } : {}),
       });
       if (driver !== null && steered !== true) {
         if (steerIfBusy) deps.drivers?.note(row.sessionId, driver);
@@ -1295,7 +1298,13 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       row.sessionId,
     );
     try {
-      deps.manager.steer(row.sessionId, input, recallStore(text, images, files, written));
+      // A message from anyone but the run's driver leaves it with no driver (steerRunning).
+      deps.manager.steer(
+        row.sessionId,
+        input,
+        recallStore(text, images, files, written),
+        c.var.sessionVia === "token" ? undefined : c.var.user.userId,
+      );
     } catch (err) {
       // 409 (not running) or any other refusal: the files must not stay behind — the
       // frontend falls back to a normal task POST, which writes its own copies.
@@ -1560,7 +1569,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const driver = c.var.sessionVia === "token" ? null : c.var.user.userId;
     if (driver !== null) deps.drivers?.note(row.sessionId, driver);
-    const { sessionId } = await deps.manager.retryTask(row.sessionId);
+    const { sessionId } = await deps.manager.retryTask(row.sessionId, driver ?? undefined);
     if (driver !== null && sessionId !== row.sessionId) deps.drivers?.note(sessionId, driver);
     return c.json({ sessionId, queued: false } satisfies TaskCreateResponse, 202);
   });
@@ -1892,6 +1901,8 @@ export class SessionApiRoutes {
   @Use() private readonly orgService!: OrgService;
   @Use() private readonly workbenches!: Workbenches;
   @Use() private readonly drafts!: UserDraftsStore;
+  /** Optional for trees without the model tools group: every model then gets the chat probe. */
+  @Use() private readonly toolModelBindings?: ToolModelBindings;
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
@@ -1965,6 +1976,9 @@ export class SessionApiRoutes {
     this.modelsRoutes = modelsRoutes({
       ...modelDeps,
       penguinGoOrigin: this.config.penguinGoOrigin ?? normalizePenguinGoOrigin(undefined),
+      ...(this.toolModelBindings !== undefined
+        ? { toolModelBindings: this.toolModelBindings }
+        : {}),
     });
     this.modelOauthRoutes = modelOAuthRoutes(modelOAuthDeps);
     this.platformAuthRoutes = platformAuthRoutes({ ...modelDeps, platformAuth: this.platformAuth });

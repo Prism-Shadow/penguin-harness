@@ -2,11 +2,14 @@
  * GET /api/contributions — the web slots' contributions, as data, and the start page's
  * contributed counts (`startMetrics`, routes/start-page.ts). What a pushed platform or an
  * installed plugin adds to the web app arrives here; the app merges it with its own pages and
- * renders what it has a renderer for.
+ * renders what it has a renderer for. It also names the server modules plugins run in this
+ * generation (`modules`), which is how the app knows to draw a plugin's web half.
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
 import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { Hmr } from "../../hmr/capabilities.js";
+import { pluginHostFrom, runningPluginModules } from "../../plugin/host.js";
 import type {
   ContributionsResponse,
   RendererRef,
@@ -18,6 +21,7 @@ import type {
   WebPageRemovalContribution,
   WebPageRemovalData,
 } from "../../api/types.js";
+import type { WorkbenchTabRenderer } from "@prismshadow/penguin-library-workbench";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { StartPage } from "./start-page.js";
 
@@ -62,7 +66,7 @@ export interface WebShellSlots {
     key: string;
     title: string;
     titleZh?: string;
-    renderer: { builtin: string } | { iframe: { src: string } };
+    renderer: WorkbenchTabRenderer;
     /**
      * The launcher label when the tab installs as its own app (`/app/…/<key>`): overrides
      * the title for the PWA manifest's short_name. Absent or blank it means the title.
@@ -90,11 +94,13 @@ export interface WebShellSlots {
   },
 })
 export class WebModule {
+  @Use() private readonly hmr!: Hmr;
   /** The start page's counts ride the same answer (routes/start-page.ts). */
   @Use() private readonly startPage!: StartPage;
   @Provide() web!: WebShell;
   @Bind("web.contributions") contributionsRoutes!: Hono<AppEnv>;
   setup({ contributions }: ClassCtx) {
+    const hmr = this.hmr;
     // The kernel checked each contribution's data against its slot's type at boot.
     const collect = <T extends WebContribution>(slot: string): T[] =>
       (contributions[slot] ?? []).map(
@@ -110,7 +116,13 @@ export class WebModule {
       sessionTabs: collect("sessionTabs"),
       startMetrics: this.startPage.metrics(),
     };
-    const web: WebShell = { contributions: () => response };
+    // The host is claimed per call: what the boot left out is recorded on it after this setup.
+    const web: WebShell = {
+      contributions: () => ({
+        ...response,
+        modules: runningPluginModules(pluginHostFrom(hmr.resources)),
+      }),
+    };
     this.web = web;
     this.contributionsRoutes = contributionsRoutes({ web });
   }

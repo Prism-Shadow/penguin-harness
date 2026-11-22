@@ -3,6 +3,7 @@
   "compilerOptions": {
     "paths": {
       "@prismshadow/penguin-server/api": ["./src/api/types.ts"],
+      "@prismshadow/penguin-server/plugin": ["./src/plugin/index.ts"],
       "@prismshadow/penguin-library-auth": ["../../library/auth/src/index.ts"],
       "@prismshadow/penguin-library-auth/account-data": ["../../library/auth/src/account-data.ts"],
       "@prismshadow/penguin-library-auth/repos": ["../../library/auth/src/repos/index.ts"],
@@ -19,6 +20,17 @@
       "@prismshadow/penguin-library-agent-api/agent-api-repo": [
         "../../library/agent-api/src/agent-api-repo.ts"
       ],
+      "@prismshadow/penguin-library-cli": ["../../library/cli/src/index.ts"],
+      "@prismshadow/penguin-library-cli/client": ["../../library/cli/src/client.ts"],
+      "@prismshadow/penguin-library-cli/connection": ["../../library/cli/src/connection.ts"],
+      "@prismshadow/penguin-library-cli/console-input": ["../../library/cli/src/console-input.ts"],
+      "@prismshadow/penguin-library-cli/cut-text": ["../../library/cli/src/cut-text.ts"],
+      "@prismshadow/penguin-library-cli/messages": ["../../library/cli/src/messages.ts"],
+      "@prismshadow/penguin-library-cli/server-lock": ["../../library/cli/src/server-lock.ts"],
+      "@prismshadow/penguin-library-cli/stored-sign-in": [
+        "../../library/cli/src/stored-sign-in.ts"
+      ],
+      "@prismshadow/penguin-library-cli/table": ["../../library/cli/src/table.ts"],
       "@prismshadow/penguin-library-db": ["../../library/db/src/index.ts"],
       "@prismshadow/penguin-library-db/migrations": ["../../library/db/src/migrations/index.ts"],
       "@prismshadow/penguin-library-db/migrations/runner": [
@@ -151,10 +163,16 @@
       "@prismshadow/penguin-library-setting/attachment-limits": [
         "../../library/setting/src/attachment-limits.ts"
       ],
+      "@prismshadow/penguin-library-setting/plugin-module-preinstalls": [
+        "../../library/setting/src/plugin-module-preinstalls.ts"
+      ],
       "@prismshadow/penguin-library-setting/plugin-module-requests": [
         "../../library/setting/src/plugin-module-requests.ts"
       ],
       "@prismshadow/penguin-library-setting/repos": ["../../library/setting/src/repos/index.ts"],
+      "@prismshadow/penguin-library-setting/repos/plugin-module-preinstalls": [
+        "../../library/setting/src/repos/plugin-module-preinstalls.ts"
+      ],
       "@prismshadow/penguin-library-setting/repos/plugin-module-requests": [
         "../../library/setting/src/repos/plugin-module-requests.ts"
       ],

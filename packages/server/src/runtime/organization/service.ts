@@ -610,6 +610,15 @@ export class OrganizationService {
     }
     const name = req.name?.trim() || orgId;
     if (req.model !== undefined) await this.validateModel(projectId, req.model);
+    // Its desks run on the Project's default when it names no model: with none, the CEO's first
+    // run, and every run after it, would fail.
+    else if ((await this.deps.projectConfig.loadConfig(projectId)).default_model === undefined) {
+      throw new HttpError(
+        400,
+        "no_default_model",
+        "This Project has no default model: choose the model the organization runs on, or set the Project's default model first.",
+      );
+    }
     const workspace =
       req.workspace !== undefined ? await this.requireWorkspaceDir(req.workspace) : undefined;
     // The mission decides the working language unless the request names one: a company given

@@ -25,9 +25,17 @@
       "types": "./dist/plugin/index.d.ts",
       "import": "./dist/plugin/index.js"
     },
+    "./plugin-index": {
+      "types": "./dist/plugin/index-document.d.ts",
+      "import": "./dist/plugin/index-document.js"
+    },
     "./cli": {
       "types": "./dist/cli/index.d.ts",
       "import": "./dist/cli/index.js"
+    },
+    "./plugin-categories": {
+      "types": "./dist/plugin/category-manifest.d.ts",
+      "import": "./dist/plugin/category-manifest.js"
     },
     "./context-limits": {
       "types": "./dist/llm/context-limits.d.ts",
@@ -57,7 +65,7 @@
   "dependencies": {
     "@modelcontextprotocol/client": "^2.3.1",
     "@prismshadow/amsp": "workspace:*",
-    "@prismshadow/mmsp": "^0.5.10",
+    "@prismshadow/mmsp": "^0.5.12",
     "arktype": "^2.2.3",
     "smol-toml": "^1.9.1",
     "yaml": "^2.5.0"

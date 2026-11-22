@@ -1,12 +1,13 @@
 /**
  * The Plugins page's "incompatible plugins only" filter: a display preference of this browser
- * (`penguin.pluginsIncompatibleOnly`), switched in Settings › Plugins and by the page's own
- * notices, and read by the page to narrow its list to the plugins this build cannot fully run.
+ * (`penguin.pluginsIncompatibleOnly`), switched by the filter chip beside the page's search box and
+ * by the page's own notices, and read by the page to narrow its list to the plugins this build
+ * cannot fully run.
  *
- * A tiny store rather than a plain read, because the switch and the list it filters are on screen
- * together: the Settings dialog opens over the page, and the list has to follow the switch the
- * moment it flips. The value is read from storage once and kept in memory afterwards; as with the
- * dock launcher's preference, a change made in another tab shows after a reload.
+ * A tiny store rather than a plain read, because the chip, the notices and the list it filters are
+ * separate parts of the page that must follow one value the moment it flips. The value is read
+ * from storage once and kept in memory afterwards; as with the dock launcher's preference, a
+ * change made in another tab shows after a reload.
  */
 import { useSyncExternalStore } from "react";
 
