@@ -540,6 +540,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
         path: `/app/${PROJECT}/${AGENT}/crm`,
         tab: "main",
         build: "ready",
+        showInSidebar: true,
       },
       {
         agentId: AGENT,
@@ -551,6 +552,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
         path: `/app/${PROJECT}/${AGENT}/board/stats`,
         tab: "stats",
         build: "ready",
+        showInSidebar: true,
       },
       {
         agentId: AGENT,
@@ -559,6 +561,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
         title: "headless-pkg",
         path: `/app/${PROJECT}/${AGENT}/headless`,
         build: "ready",
+        showInSidebar: true,
       },
       // Declares nothing: shown, titled by its first tab.
       {
@@ -569,6 +572,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
         path: `/app/${PROJECT}/${AGENT}/plain`,
         tab: "main",
         build: "ready",
+        showInSidebar: true,
       },
       // Declares a title and no `show`: shown.
       {
@@ -579,6 +583,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
         path: `/app/${PROJECT}/${AGENT}/titled`,
         tab: "main",
         build: "ready",
+        showInSidebar: true,
       },
       {
         agentId: LATER,
@@ -589,6 +594,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
         tab: "notes",
         build: "failed",
         error: "index.ts:1:1 TS1005 ';' expected.",
+        showInSidebar: true,
       },
       {
         agentId: LATER,
@@ -598,6 +604,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
         path: `/app/${PROJECT}/${LATER}/stalled`,
         tab: "stalled",
         build: "failed",
+        showInSidebar: true,
       },
     ]);
     // A workbench never loaded gains no build.

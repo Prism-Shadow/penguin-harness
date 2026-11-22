@@ -19,7 +19,7 @@ import { latestConversation, withoutOrgSessions } from "../../lib/session-groupi
 import { NEW_CHAT_ICON, glyphOf } from "../../lib/nav-icons";
 import { APP_CENTER_PATH } from "../../lib/app-center-path";
 import { useOnSystemApp } from "../../lib/system-apps";
-import { navChildKeysFor, navKeysFor } from "./nav-state";
+import { navChildKeysFor, navKeysFor } from "../../lib/nav-pages";
 import { navPagesOf, pageTitle, useWebAppPages } from "../index";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
@@ -35,9 +35,9 @@ import { DRAFT_SESSION_ID, useNewChat } from "../../features/chat";
 /**
  * The folded navigation column: the unfold button on top (in the desktop window it is the title
  * band's sidebar toggle instead, and the rail has none); below it, in product-specified order,
- * last conversation / new chat / Agents / Models / Plugins / Machines (admins) / Cost Center /
- * Evaluation Center; the user avatar at the bottom, opening the same account menu the pinned
- * sidebar's avatar does. No logo.
+ * last conversation / new chat / Agents / App Center (the system apps are the App Center's tiles,
+ * and its entry is lit on their pages); the user avatar at the bottom, opening the same account
+ * menu the pinned sidebar's avatar does. No logo.
  *
  * In company mode the top slot is the organization's all-hands channel, the slot after it stays
  * empty, the organization's pages replace the development ones, and its other channels, desks
@@ -98,8 +98,7 @@ export function CollapsedRail({ onExpand }: { onExpand?: () => void }) {
   const newChat = useNewChat();
 
   /** Page entries (after the top slot and new chat): the pinned nav's manifest, routes
-      and labels, in its order, and all of them whether pinned or collapsible there — the
-      rail has no fold. Traces is not among them: reading a Trace happens in the chat
+      and labels, in its order. Traces is not among them: reading a Trace happens in the chat
       toolbar's panel switcher, which is the only place it happens. */
   const pages: ReadonlyArray<{
     key: string;
@@ -259,10 +258,12 @@ export function CollapsedRail({ onExpand }: { onExpand?: () => void }) {
           primary
         />
       )}
-      {/* 3 onward. Page entries. Four sit on a badge trail — Agents (an outdated kernel),
-          Plugins, Models and the Cost Center. The dot is decorative: this rail's icons have no
-          visible label, so the name and the hint carry both the entry and what is waiting. An
-          entry with nowhere to go keeps its place, muted, with nothing to click or tab to. */}
+      {/* 3 onward. Page entries. Two sit on badge trails — Agents (an outdated kernel) and the
+          App Center, whose one dot covers the system apps' trails (Plugins, Models and the Cost
+          Center) and whose name joins their sentences. The dot is decorative: this rail's icons
+          have no visible label, so the name and the hint carry both the entry and what is
+          waiting. An entry with nowhere to go keeps its place, muted, with nothing to click or
+          tab to. */}
       {pages.map((item) => {
         const label = item.note !== null ? `${item.label} · ${item.note}` : item.label;
         return (

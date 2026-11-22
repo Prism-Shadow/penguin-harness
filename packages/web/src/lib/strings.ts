@@ -119,13 +119,11 @@ export const zh = {
     /** The desktop window's title band: back and forward through the pages visited. */
     back: "后退",
     forward: "前进",
+    /** A fold's toggle: the UI package's words for every fold it draws (lib/ui-strings.ts). */
     collapseGroup: "折叠",
     expandGroup: "展开",
     pinGroup: "置顶分组",
     unpinGroup: "取消置顶",
-    /** A nav entry's favourite toggle (a star): a favourite stays visible when the collapsible area folds. */
-    pinEntry: "收藏",
-    unpinEntry: "取消收藏",
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest). */
     org: {
       overview: "概览",
@@ -1188,14 +1186,8 @@ export const zh = {
     noMatches: "没有匹配的智能体。",
     searchAgents: "搜索智能体",
 
-    tabsLabel: "聊天与工作台",
-    chatTab: "聊天",
-    brokenMark: "当前文件加载失败",
     reload: "重新加载",
-    reloading: "加载中…",
     history: "历史",
-    loadError: "加载失败",
-    loadingHistory: "加载历史…",
     /** The full-page route while it is still finding out which page it should show. */
     loadingPage: "正在打开页面…",
     noHistory: "还没有记录过版本。",
@@ -1206,23 +1198,17 @@ export const zh = {
     restoreConfirm: (revision: string) =>
       `恢复到版本 ${revision}？工作台的文件会换成该版本并立即重新加载，数据（state.json）保持不变；从未成功加载过的改动会丢失。`,
     remove: "移除",
-    fillApp: "占满应用",
-    /** `palette` is the formatted palette.toggle chord, null while unbound. */
-    fillAppHint: (palette: string | null): string =>
-      palette === null
-        ? "让这个页面占满整个应用；打开命令面板可退出"
-        : `让这个页面占满整个应用；${palette} 打开命令面板可退出`,
-    exitFullPage: "退出全页模式（回到工作台）",
+    /** The full page's way out to the app's window (the one it was opened from, or a new one). */
+    exitToWindow: "退出全屏（回到应用窗口）",
     exitFullPageButton: "退出全屏",
     exitBallTuck: "收起到边缘",
     exitBallShow: "显示退出按钮",
     retryHistory: "重试",
     exitHint: (palette: string | null): string =>
-      palette === null ? "打开命令面板可回到工作台。" : `按 ${palette} 打开命令面板可回到工作台。`,
+      palette === null ? "打开命令面板可退出全屏。" : `按 ${palette} 打开命令面板可退出全屏。`,
     noSuchPage: "这个工作台不存在或没有页面。",
     removeConfirm: "删除这个工作台及其数据？历史版本将不再列出。",
     removeYes: "确认移除",
-    removing: "移除中…",
     removeNo: "取消",
     importTitle: "导入工作台",
     importChatTitle: "推荐：让 Agent 在对话中导入",
@@ -1283,6 +1269,22 @@ export const zh = {
     /** The full page's way out when it was opened from the App Center. */
     exitToAppCenter: "退出全页模式（回到应用中心）",
   },
+  /** The sidebar's app list, under the nav and above the conversations (main-sidebar-apps.tsx). */
+  sidebarApps: {
+    title: "应用",
+    /** The group header's action: the Agent's Workbenches sub-page. */
+    manage: "管理应用",
+    /** A row's menu. */
+    open: "打开",
+    removeFromSidebar: "从侧边栏移除",
+    viewInSettings: "在 Agent 设置中查看",
+    /**
+     * A row's accessible name, and its hint when that says more than the name: the title, the
+     * Agent of an app that is only listed because it runs, and the app's state.
+     */
+    rowName: (title: string, agent: string | null, state: string | null) =>
+      [title, agent === null ? null : `来自 ${agent}`, state].filter((s) => s !== null).join("，"),
+  },
   appCenter: {
     title: "应用中心",
     loading: "加载中…",
@@ -1306,7 +1308,7 @@ export const zh = {
     tileName: (title: string, agent: string, state: string | null) =>
       state === null ? `${title}，${agent}` : `${title}，${agent}，${state}`,
     /** A system app's tile (lib/system-apps.ts): its hint, and its accessible name with its state. */
-    systemTileName: (title: string, state: string | null) =>
+    systemTileName: (title: string, state: string | null = null) =>
       state === null ? `${title}，系统应用` : `${title}，系统应用，${state}`,
     /** A system app's hint while it runs behind the grid, its window minimized. */
     systemRunningTip: (title: string) => `${title}，系统应用。运行中，点击恢复窗口`,
@@ -1330,6 +1332,8 @@ export const zh = {
       removeFromFolder: "移出分组",
       removeFromAppCenter: "从应用中心移除",
       viewInSettings: "在 Agent 设置中查看",
+      /** Checkable: the installation's sidebar setting, the row's 「展示到侧边栏」. */
+      showInSidebar: "在侧边栏显示",
       showError: "查看错误",
       rename: "重命名",
       dissolve: "解散分组",
@@ -1359,7 +1363,7 @@ export const zh = {
     errorUnknown: "没有记录错误信息。打开应用可查看它的加载状态。",
     /** The windowed app's title bar. */
     windowMinimize: "最小化",
-    windowClose: "关闭，回到应用中心",
+    windowClose: "关闭",
     windowFullScreen: "全屏打开",
     /** A system app's full page: its way out, back to the app's window where the page is now. */
     exitToWindow: "退出全页模式（回到应用窗口）",
@@ -1563,6 +1567,8 @@ export const zh = {
     pluginUpdates: (n: number) => `${n} 个插件有更新`,
     presetUpdates: (n: number) => `${n} 个新预置模型可同步`,
     unexpectedErrors: (n: number) => `${n} 条未预期错误`,
+    /** Several trails' sentences under one dot (the App Center's entry, a folder), or a tile's name with its trail's. */
+    joined: (parts: readonly string[]) => parts.join("；"),
     /** Combined anchor whose trails are not all updates — an unexpected error is not one. */
     pending: "有待处理事项",
     /** Clears an update the user has decided not to take now (a later one raises the badge again). */

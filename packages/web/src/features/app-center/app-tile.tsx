@@ -8,6 +8,11 @@
  *   build ends. An app whose last load failed is the dimmed tile with a warning mark: it still
  *   opens, and its menu shows the error. A system app's tile is always ready; its hint says it is
  *   a system app instead of naming an Agent.
+ * - A system app with something waiting on its page (a plugin update, new presets, unexpected
+ *   errors) wears the update dot on its icon's corner, and its hint and accessible name add that
+ *   trail's sentence: the App Center's nav entry carries the same dot, and the page clears it
+ *   (lib/system-app-notes.ts). A folder holding such an app wears the dot too, with the
+ *   sentences of the apps inside, so the trail never ends at a closed folder.
  * - An app that is running behind the grid (its window minimized) has a short bar under its
  *   icon, as a taskbar marks a running app, and its name and hint say so; a click brings its
  *   window back, even while it builds. A folder holding one has the same bar, and says how many.
@@ -39,6 +44,7 @@ import {
   ICON_SIZE,
   ImageIcon,
   InstallRing,
+  UpdateDot,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { toneDot, toneInk } from "../../lib/tone";
@@ -83,7 +89,8 @@ export function TileIcon({
   title,
   size = ICON_PX,
 }: {
-  shortcut: LocatedShortcut;
+  /** What draws it: the app's icon, else its letter tile in its id's colour, or a system glyph. */
+  shortcut: Pick<LocatedShortcut, "workbenchId" | "icon" | "system">;
   title: string;
   size?: number;
 }) {
@@ -139,6 +146,19 @@ const TILE_BUTTON =
   "flex w-full select-none flex-col items-center gap-2 rounded-lg p-2 text-center transition-colors duration-150 [-webkit-touch-callout:none] hover:bg-fg/5 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none";
 
 /**
+ * The update dot on an icon's top-right corner, straddling it: the page surface's dot (no ring),
+ * placed the way a page button wears it.
+ */
+function TileDot() {
+  return <UpdateDot size="inline" position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2" />;
+}
+
+/** A tile's hint or name with the sentence of what waits on its page, when something does. */
+function withNote(text: string, note: string | null): string {
+  return note === null ? text : S.todo.joined([text, note]);
+}
+
+/**
  * The name under the icon: two lines at most, then an ellipsis. Inside an open folder it has no
  * preview to travel from, so it fades in as the folder unfolds.
  */
@@ -153,6 +173,8 @@ function TileName({ fade = false, children }: { fade?: boolean; children: ReactN
   );
 }
 
+export const appTriggerId = (id: string) => `app-center-app-${id}`;
+
 export function AppTile({
   app,
   inFolder,
@@ -163,12 +185,15 @@ export function AppTile({
   running,
   menuItems,
   onOpen,
+  note = null,
 }: {
   app: GridApp;
   /** In an open folder, where its icon travels from the folder's preview of it. */
   inFolder: boolean;
   /** The title in the reader's language. */
   title: string;
+  /** What is waiting on the app's page (a system app's trail), for its dot; null for none. */
+  note?: string | null;
   drag: TileDragProps;
   mark: TileMark;
   /** This tile is the one being dragged. */
@@ -196,17 +221,24 @@ export function AppTile({
         : null;
   // A system app is always ready, and the platform's rather than an Agent's: it says so instead.
   const system = shortcut.system !== undefined;
-  const tip = system
-    ? running
-      ? S.appCenter.systemRunningTip(title)
-      : S.appCenter.systemTileName(title, null)
-    : running
-      ? S.appCenter.runningTip(title, owner)
-      : building
-        ? S.appCenter.buildingTip(title, owner)
-        : failed
-          ? S.appCenter.failedTip(title, owner)
-          : S.appCenter.tileTip(title, owner);
+  const tip = withNote(
+    system
+      ? running
+        ? S.appCenter.systemRunningTip(title)
+        : S.appCenter.systemTileName(title, null)
+      : running
+        ? S.appCenter.runningTip(title, owner)
+        : building
+          ? S.appCenter.buildingTip(title, owner)
+          : failed
+            ? S.appCenter.failedTip(title, owner)
+            : S.appCenter.tileTip(title, owner),
+    note,
+  );
+  const name = withNote(
+    system ? S.appCenter.systemTileName(title, state) : S.appCenter.tileName(title, owner, state),
+    note,
+  );
   return (
     <li
       className="relative"
@@ -222,11 +254,8 @@ export function AppTile({
             ref={target.ref}
             {...target.props}
             type="button"
-            aria-label={
-              system
-                ? S.appCenter.systemTileName(title, state)
-                : S.appCenter.tileName(title, owner, state)
-            }
+            id={appTriggerId(app.id)}
+            aria-label={name}
             aria-disabled={closed || undefined}
             data-tooltip={tip}
             data-tooltip-extra
@@ -261,6 +290,7 @@ export function AppTile({
                   <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.rowLead} />
                 </span>
               )}
+              {note !== null && <TileDot />}
               {running && <RunningMark />}
             </AppIconShape>
             <TileName fade={inFolder}>{title}</TileName>
@@ -292,11 +322,14 @@ export function FolderTile({
   running,
   menuItems,
   onOpen,
+  notes = [],
 }: {
   folder: GridFolder;
   expanded: boolean;
   /** An app's title in the reader's language. */
   titleOf: (shortcut: AppCenterShortcut) => string;
+  /** What is waiting on the pages of the apps inside, in their order, for the folder's dot. */
+  notes?: readonly string[];
   drag: TileDragProps;
   mark: TileMark;
   lifted: boolean;
@@ -318,8 +351,14 @@ export function FolderTile({
             id={folderTriggerId(folder.id)}
             aria-expanded={expanded}
             aria-controls={expanded ? folderPanelId(folder.id) : undefined}
-            aria-label={S.appCenter.folderName(folder.name, count, running)}
-            data-tooltip={S.appCenter.folderTip(folder.name, count, running)}
+            aria-label={S.todo.joined([
+              S.appCenter.folderName(folder.name, count, running),
+              ...notes,
+            ])}
+            data-tooltip={S.todo.joined([
+              S.appCenter.folderTip(folder.name, count, running),
+              ...notes,
+            ])}
             data-tooltip-extra
             onClick={() => {
               if (target.consumeLongPressClick()) return;
@@ -327,7 +366,7 @@ export function FolderTile({
             }}
             className={`${TILE_BUTTON} ${lifted ? "opacity-40" : ""}`}
           >
-            {/* The running bar sits outside the folder's square, which clips its previews. */}
+            {/* The dot and the running bar sit outside the folder's square, which clips its previews. */}
             <span className="relative block">
               {/* The open folder unfolds from this square, its apps from their previews in it. */}
               <AppIconShape
@@ -345,6 +384,7 @@ export function FolderTile({
                   </span>
                 ))}
               </AppIconShape>
+              {notes.length > 0 && <TileDot />}
               {running > 0 && <RunningMark />}
             </span>
             <TileName>{folder.name}</TileName>

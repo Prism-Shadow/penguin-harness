@@ -1,9 +1,8 @@
 /**
- * The App Center: the Project's home screen of the system apps and the workbench shortcuts, pinned
- * in the nav by default and lit there on the system apps' pages too, and the windows of the apps
- * opened from it, over the page area so they outlive the page. A system app a server module draws
- * in an iframe opens in those windows, and its full screen is a page of its own here, outside the
- * shell like an Agent workbench's full page (system-app-page.tsx).
+ * The App Center: the Project's home screen of the system apps and the workbench shortcuts, one of
+ * the nav's three fixed entries, lit there on the system apps' pages too, and the carrier of their
+ * update dots (lib/system-app-notes.ts). It also holds the windows of the apps opened from it, over
+ * the page area so they outlive the page. Plugin iframe apps also use this layer and their own full-screen page.
  */
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import { AppCenterPage } from "./app-center-page";

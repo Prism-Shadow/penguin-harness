@@ -4,10 +4,11 @@
  * keyboard (Shift+F10, the ContextMenu key) and touch (press and hold) reach all of it: "Move
  * to…" opens the new-folder dialog with the app picked, puts it into a folder or makes a new
  * folder with another app, and forward / backward step an item through the grid or its folder.
- * The empty space's menu opens the new-folder dialog too. A system app's menu has only the rows
- * that open and arrange it: it opens as its page or in its window (its window's title bar has the
- * full screen), has no build to fail, belongs to no Agent's settings and is never removed from
- * the grid.
+ * The empty space's menu opens the new-folder dialog too. A workbench's menu also carries the
+ * checkable "Show in the sidebar", the installation's sidebar setting (the Workbenches row's
+ * same-named one), when its server reports it. A system app's menu has only the rows that open
+ * and arrange it: it opens as its page, has no build to fail, belongs to no Agent's settings and
+ * is never removed from the grid. An iframe system app can also open full screen.
  *
  * "Move to…" opens a second page in the same menu rather than a submenu, which a phone has no
  * room for: Back returns to the first page, and focus moves to the first row of whichever page
@@ -54,6 +55,8 @@ export interface GridActions {
   showError: (app: GridApp) => void;
   viewInSettings: (app: GridApp) => void;
   removeFromAppCenter: (app: GridApp) => void;
+  /** The installation's sidebar setting, the row's "Show in the sidebar" (PRFC-0033). */
+  setShowInSidebar: (app: GridApp, show: boolean) => void;
   openFolder: (folder: GridFolder) => void;
   /** Opens the new-folder dialog, with this app picked (null: none). */
   newFolder: (picked: GridApp | null) => void;
@@ -231,6 +234,18 @@ export function AppMenu({
             disabled={app.shortcut.unavailable}
             onSelect={act(close, () => actions.viewInSettings(app))}
           />
+          {/* A server older than the setting does not say it, and gets no row. */}
+          {app.shortcut.showInSidebar !== undefined && (
+            <MenuItem
+              glyph={ICONS.panelLeft}
+              label={S.appCenter.menu.showInSidebar}
+              checked={app.shortcut.showInSidebar}
+              disabled={app.shortcut.unavailable}
+              onSelect={act(close, () =>
+                actions.setShowInSidebar(app, !app.shortcut.showInSidebar),
+              )}
+            />
+          )}
           <MenuItem
             glyph={ICONS.eyeOff}
             label={S.appCenter.menu.removeFromAppCenter}

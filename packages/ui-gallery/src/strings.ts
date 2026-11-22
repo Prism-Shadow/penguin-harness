@@ -2008,6 +2008,26 @@ export const zh = {
       windowMinimize: "最小化",
       windowFullScreen: "全屏打开",
       windowClose: "关闭",
+      windowPages: "有两个以上页面",
+      windowPageNames: ["今天", "本周", "归档"],
+      apps: "侧栏应用列表",
+      appsHint:
+        "侧栏里 Agent 的应用：应用图标与名称，带应用中心图块的同一组标记——运行中是图标下的短条，构建中是转动的圆环且不能打开，加载失败带警告标记但仍可打开。窗口在前时该行选中；行菜单由调用方给出。",
+      appsGroup: "应用",
+      appsManage: "管理应用",
+      appsMore: "更多操作",
+      appsRows: {
+        board: "看板",
+        notes: "笔记",
+        build: "构建报告",
+        broken: "旧版仪表盘",
+      },
+      appsRunning: "运行中",
+      appsBuilding: "构建中",
+      appsFailed: "加载失败",
+      appsOpen: "打开",
+      appsRemove: "从侧边栏移除",
+      appsSettings: "在 Agent 设置中查看",
     },
     data: {
       reviewList: {

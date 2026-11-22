@@ -82,8 +82,6 @@ const PREFERENCES: Record<string, string> = {
   "penguin.panelWidth": "420",
   "penguin.sidebarGroupMode": "agent",
   "penguin.sidebarSortMode": "manual",
-  "penguin.sidebarNavGroupCollapsed": "collapsed",
-  "penguin.sidebarNavPinned": '{"models":false}',
   "penguin.steerMode": "followup",
   "penguin.dock.launcherY": "0.25",
   "penguin.dock.launcherHidden": "1",

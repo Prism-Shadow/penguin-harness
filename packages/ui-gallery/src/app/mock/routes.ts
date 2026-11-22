@@ -3109,6 +3109,7 @@ const sidebarApps = (ctx: Ctx): AppCenterShortcut[] => {
         path: `/app/${ctx.params.projectId!}/${agent.agentId}/${w.id}`,
         tab: first.key,
         build: w.error === null ? "ready" : "failed",
+        showInSidebar: true,
       },
     ];
   });

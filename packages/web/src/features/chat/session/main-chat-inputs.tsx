@@ -1,5 +1,4 @@
 import { scopedValue, type Scoped } from "../../../lib/project-scope";
-import { chatDeps } from "../deps";
 import { useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import type {
@@ -19,7 +18,6 @@ import type { SwitchContextShape } from "../model-switch";
 
 /** Exact consecutive main ChatPage statements 0..25; called once, in original order. */
 export function useMainChatInputs() {
-  const { sessionTabs } = chatDeps.useDeps();
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams<{ sessionId?: string }>();
@@ -96,7 +94,6 @@ export function useMainChatInputs() {
   // click cannot post the switch twice.
   const [modelSwitchPosting, setModelSwitchPosting] = useState(false);
   return {
-    sessionTabs,
     navigate,
     location,
     params,
