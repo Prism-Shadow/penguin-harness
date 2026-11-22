@@ -1202,6 +1202,8 @@ export const en: Strings = {
     /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
     tileName: (title: string, agent: string, state: string | null) =>
       state === null ? `${title}, ${agent}` : `${title}, ${agent}, ${state}`,
+    systemTileName: (title: string) => `${title}, system app`,
+    workbenchesEmptyTitle: "No apps from agents yet",
     /** A folder's hint and accessible name: its apps, and how many of them are running. */
     folderTip: (name: string, count: number, running: number) =>
       `${name}, ${count} ${count === 1 ? "app" : "apps"}${running > 0 ? `, ${running} running` : ""}`,
@@ -2159,6 +2161,19 @@ export const en: Strings = {
       `Delete agent "${name}" on ${machine}? Its directory there (including all Traces) will be removed recursively and cannot be recovered.`,
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
+    systemName: "System",
+    systemDescription:
+      "Owns the system apps: Models, Plugins, Machines, Cost Center and Evaluation Center.",
+    systemTag: "System",
+    systemTagHint:
+      "The system agent owns the system apps. It does not chat or take plugins, and cannot be deleted or exported.",
+    systemAppsDesc:
+      "The system apps this agent owns. They come with the platform and open from the App Center.",
+    systemAppsEmpty: "No system apps yet.",
+    systemAppTag: "System app",
+    systemAppCount: (n: number) => `${n} ${n === 1 ? "system app" : "system apps"}`,
+    systemIdHeld: (name: string): string =>
+      `Agent "${name}" holds the id reserved for the system agent. Export it, import it under another id, then delete it; the system agent is added the next time the agents load.`,
     employeesSection: "Company employees",
     employeesSectionInfo:
       "These agents are employees of an organization and work in company mode. You can still chat with them and change their settings here; one can be deleted only after it leaves its organization in company mode.",
@@ -3283,6 +3298,8 @@ export const en: Strings = {
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "Machine",
     thisServer: "This server",
+    /** The machine picker's first choice: every machine's cards at once (the default). */
+    allMachines: "All machines",
     /** A row the Project lists for a machine that has not reported it running yet. */
     notSynced: "not on that machine yet",
     /** The tag on a row the shared table lists, and its tooltip (Remove is unavailable on it). */

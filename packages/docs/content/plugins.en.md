@@ -13,6 +13,30 @@ All of these are plugins, and one format covers them all. What differs is where 
 
 A server module needs a platform at least as new as the slots it contributes to. A slot is a named contribution point, such as a route group in `HttpModule.routes`. Every slot, and every field of a slot's data, arrives with some release. An older platform does not know a newer slot, or a newer field such as a route group's `origin`. Its check then drops every contribution that module makes to that slot. The plugin runs without that part of itself, and its row on the **Plugins** page says why. Built-in plugins ship with the server they run on. A package published to npm states the oldest release it needs in its README.
 
+## What a server module reaches
+
+A server module reaches the host through `@prismshadow/penguin-server/plugin` alone. It requires an interface by naming it in a `@Use` field, and the kernel wires it to whichever node of the tree has those members: the match is by structure, so a plugin may as well declare the same view in its own package, naming only the members it calls. A host that has no node with those members leaves the plugin out of the generation, and the **Plugins** page says which requirement it could not meet. That is how an older server refuses a plugin built for a newer one.
+
+What a system app a plugin provides needs (PRFC-0036):
+
+| Interface | Members | What it is |
+| --- | --- | --- |
+| `AppData` | `dataPaths(projectId, appId) → Promise<{ dataDir, cacheDir, stateDir }>` | The app's own folders in a Project: the system Agent's agent-level folders keyed by the app id (`agents/system_agent/app/{data,cache}/<appId>/`, the state folder under `run/`), each made before it is returned. Handlers read and write them with Node's `fs`. `400` for an id that is not one plain segment, `404` `project_not_found` for a Project the server does not have, `409` `system_agent_held` where the Project's `system_agent` is a user's own Agent. |
+| `AgentTasks` | `start({ userId, projectId, agentId, prompt, approvalMode, skills?, model?, thinkingLevel?, title? }) → Promise<{ sessionId }>`, `status(userId, sessionId) → Promise<{ status, title, pendingApprovals } \| null>` | An Agent task started as a person, by the steps the Web App's Send takes: `404` when the person cannot reach the Project or the Agent does not exist, `409` `system_agent_no_sessions` for the system Agent, a fresh temporary Workspace, the Skills as a `[use_skills]` block in front of the text, the person as the run's driver, source `user` (their sidebar, approval badge and completion notice), and the approval mode given. `status` is `running`, `completed` or `failed`, with the approvals the task waits on; `null` for a Session that is gone or that the person cannot read. A route that starts one checks `requireHuman` first. |
+| `Access` | `requireProjectAccess`, `requireProjectOwner`, `canAccess`, … | Who may see and who owns a Project. |
+| `AgentSkills` | `installedSkills(projectId, agentId) → Promise<string[]>` | The names of the Skills installed on an Agent, sorted: its `skills/<name>/` folders that hold a SKILL.md. `404` `agent_not_found` for an Agent the Project does not have. |
+| `ProjectModels` | `getModels(projectId)` | The Project's models, keys masked, and its default model. |
+| `ProjectMachines` | `projectApis(projectId)` | The machines a Project uses, each with its alias and a client to its own API while it is connected; read for an administrator only, as the machine proxy is. |
+| `WorkspaceFiles` | `list`, `read`, `resolvePath`, … | A Workspace's files, with the server's guards against links and sizes. |
+
+The values a route of its own needs, bundled into the plugin as copies: `containedFile(dir, rel)` and `uiFileResponse(c, file)` serve the plugin's page files from its own folder, refusing a path that climbs out and any link; `unzipBounded`, `assertSafeEntryPath`, `assertDistinctPaths`, `specialEntries` and the archive limits (`MAX_ARCHIVE_BYTES`, `MAX_ARCHIVE_FILES`, `MAX_FILE_BYTES`, `MAX_TOTAL_BYTES`) read an uploaded zip safely.
+
+Data slots a system app contributes to:
+
+- `ProjectsModule.appSeeds` `{ app, path }`: every folder under the package's `<path>/` is copied into the app's `dataDir` when a Project is created, under its own name and only where that name is free. The host reads the declaration from `ifaces.json` and copies the files itself, for built-in packages only, once: a deleted seed does not come back, and an existing Project never gets them.
+- `SemanticIdModule.kinds` `{ kind, access? }` with a code half `{ takenIds(projectId) }`: a kind of id `POST …/suggest-id` proposes, kebab-case, avoiding what `takenIds` names; `access: "owner"` limits it to the Project's owner.
+- `StartPageModule.metrics` `{ key, title, titleZh?, icon?, order, value, app? }`: a count the start page shows after its own, fixed when the package is built; `app` is the page key of the system app a click opens. `GET /api/contributions` delivers them as `startMetrics`.
+
 ## Checking the format
 
 Nothing loads a plugin package to find out what it is: the table says it. Two checks read that table and the package around it, and they agree because they read the same generated file.

@@ -18,6 +18,7 @@ import {
   toastSuccess,
   useFormDraft,
   useSaving,
+  Waiting,
 } from "@prismshadow/penguin-ui";
 import { ApiError } from "../../../api/client";
 import * as api from "../../../api/endpoints";
@@ -292,7 +293,7 @@ export function SecurityPolicySection({
       {loadError !== null ? (
         <p className="text-xs text-red-600 dark:text-red-400">{loadError}</p>
       ) : saved === null ? (
-        <p className="text-xs text-gray-400">{S.common.loading}</p>
+        <Waiting rows={4} />
       ) : (
         <>
           <div className="divide-y divide-gray-100 dark:divide-gray-800/60">

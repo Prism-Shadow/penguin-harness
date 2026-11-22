@@ -30,13 +30,13 @@ import {
   ConfirmModal,
   HelpFold,
   SettingsEmpty,
-  SkeletonList,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeaderCell,
   TableRow,
+  Waiting,
   toastSuccess,
   type BadgeStyle,
 } from "@prismshadow/penguin-ui";
@@ -97,9 +97,10 @@ export function SchedulesTab({
   // Name of the task pending deletion confirmation (non-null shows the confirm modal).
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  // A read after a change refreshes in place: the table on screen stays until the answer
+  // replaces it, so a toggle or a delete never drops the tab back to its wait.
   const load = useCallback(async () => {
     if (!projectId || !agentId) return;
-    setData(null);
     setError(null);
     try {
       // The injection controls' state loads in parallel with the tab's own table.
@@ -180,17 +181,20 @@ export function SchedulesTab({
 
       {/* Create entry point at the head of the table, right-aligned (the skills tab's slot): the
           two buttons offer the AI path and the form side by side; a member, who cannot write
-          files here, gets the AI button alone — asking the agent is a message, not a write. */}
-      <div className="flex justify-end">
-        <AiCreateButtons
-          size="sm"
-          onAi={() => openAi("")}
-          {...(isOwner ? { onManual: () => setForm({ editing: null }) } : {})}
-        />
-      </div>
+          files here, gets the AI button alone — asking the agent is a message, not a write. It
+          arrives with the switch above it, so neither moves the other. */}
+      {data !== null && (
+        <div className="flex justify-end">
+          <AiCreateButtons
+            size="sm"
+            onAi={() => openAi("")}
+            {...(isOwner ? { onManual: () => setForm({ editing: null }) } : {})}
+          />
+        </div>
+      )}
 
       {data === null ? (
-        <SkeletonList rows={4} />
+        error === null && <Waiting rows={4} />
       ) : schedules.length === 0 ? (
         <div className="space-y-4">
           <SettingsEmpty>{S.schedule.empty}</SettingsEmpty>

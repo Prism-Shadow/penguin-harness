@@ -13,9 +13,11 @@ import {
   toastSuccess,
   useFormDraft,
   useSaving,
+  Waiting,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
+import { isConversationAgent } from "../../../lib/builtin-agents";
 import { toastApiError } from "../../../lib/toast-api-error";
 import { agentDisplayName, useProject } from "../../../state/project";
 import { useAuth } from "../../../state/auth";
@@ -187,7 +189,7 @@ export function ChatDefaultsSection({
       {loadError ? (
         <p className="text-xs text-red-600 dark:text-red-400">{loadError}</p>
       ) : saved === null || models === null ? (
-        <p className="text-xs text-gray-400">{S.common.loading}</p>
+        <Waiting rows={3} />
       ) : isOwner ? (
         <>
           {/* Compact responsive grid: label + control stacked per cell, two columns from sm
@@ -201,7 +203,7 @@ export function ChatDefaultsSection({
               onChange={(e) => form.patch({ agentId: e.target.value })}
             >
               <option value="">{S.project.chatDefaultsNotSet}</option>
-              {agents.map((a) => (
+              {agents.filter(isConversationAgent).map((a) => (
                 <option key={a.agentId} value={a.agentId}>
                   {agentDisplayName(a)}
                 </option>

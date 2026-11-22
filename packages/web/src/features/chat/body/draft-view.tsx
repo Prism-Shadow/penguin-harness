@@ -76,6 +76,7 @@ import { machineLink, remoteAgentsEmpty, type MachineLink } from "../../../lib/m
 import { useMachines } from "../../../state/machines";
 import { useAuth } from "../../../state/auth";
 import { useProject } from "../../../state/project";
+import { isConversationAgent } from "../../../lib/builtin-agents";
 import { useSessions } from "../../../state/sessions";
 import { ChatInput } from "../chat-input";
 import type { ComposerControl } from "../chat-input";
@@ -223,8 +224,11 @@ export function DraftView({
   const [workspaceMachine, setWorkspaceMachine] = useState<string | null>(
     cached.workspace === undefined ? null : (cached.machineId ?? null),
   );
-  /** The Agents actually offerable for this draft: the target machine's, or this one's. */
-  const agents = workspaceMachine === null ? localAgents : remoteAgents;
+  /** The Agents actually offerable for this draft: the target machine's, or this one's — never the system Agent, which holds no conversation. */
+  const agents = useMemo(
+    () => (workspaceMachine === null ? localAgents : remoteAgents).filter(isConversationAgent),
+    [workspaceMachine, localAgents, remoteAgents],
+  );
   /**
    * The workspace's machine as the Machines page sees it — connected, coming back, stopped —
    * from the one live account of the machines, so this composer and that page never disagree:

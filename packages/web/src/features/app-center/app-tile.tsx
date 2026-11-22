@@ -6,10 +6,12 @@
  * - An app tile opens the app. While the app builds, its icon is dimmed under a turning ring and
  *   it does not open (its menu's open rows are disabled too); it turns live by itself when the
  *   build ends. An app whose last load failed is the dimmed tile with a warning mark: it still
- *   opens, and its menu shows the error.
+ *   opens, and its menu shows the error. A system app's tile is always ready; its hint says it is
+ *   a system app instead of naming an Agent.
  * - An app that is running behind the grid (its window minimized) has a short bar under its
  *   icon, as a taskbar marks a running app, and its name and hint say so; a click brings its
  *   window back, even while it builds. A folder holding one has the same bar, and says how many.
+ *   A system app never runs: it opens as its own page, not in a window.
  * - A folder tile shows the first four of its apps' icons in a 2×2 square and opens the folder.
  * - What a drag would do is marked here: a line in the gap beside the tile, or an outline around
  *   the icon it would go into. Neither moves anything. The tile's `data-drop` names the mark it
@@ -30,6 +32,7 @@ import {
   APP_ICON_PX,
   AppIconShape,
   ContextMenu,
+  GlyphAppIcon,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
@@ -39,7 +42,7 @@ import {
 import { S } from "../../lib/strings";
 import { toneDot, toneInk } from "../../lib/tone";
 import { skillTileColor } from "../skills";
-import type { GridApp, GridFolder, Side } from "./arrangement";
+import type { GridApp, GridFolder, LocatedShortcut, Side } from "./arrangement";
 
 /** Edge of a tile's icon, in px: the phone home screen's size, large enough to read a glyph in. */
 const ICON_PX = APP_ICON_PX;
@@ -71,17 +74,19 @@ export interface TileDragProps {
  * The app's own icon — an image from the URL the server serves it at (`ImageIcon`: an `<img>`, or
  * a mask in the text colour for a monochrome SVG) — else, and whenever that image fails to load,
  * a square in the id's colour with the title's first letter. Either is cut to the app icon shape
- * at its size, so a small icon is the same outline as a full one.
+ * at its size, so a small icon is the same outline as a full one. A system app wears its page's
+ * glyph on the same shape (the UI package's `GlyphAppIcon`).
  */
 export function TileIcon({
   shortcut,
   title,
   size = ICON_PX,
 }: {
-  shortcut: AppCenterShortcut;
+  shortcut: LocatedShortcut;
   title: string;
   size?: number;
 }) {
+  if (shortcut.system !== undefined) return <GlyphAppIcon d={shortcut.system.glyph} size={size} />;
   const letter = (
     <span
       aria-hidden
@@ -190,13 +195,17 @@ export function AppTile({
       : failed
         ? S.appCenter.broken
         : null;
-  const tip = running
-    ? S.appCenter.runningTip(title, owner)
-    : building
-      ? S.appCenter.buildingTip(title, owner)
-      : failed
-        ? S.appCenter.failedTip(title, owner)
-        : S.appCenter.tileTip(title, owner);
+  // A system app is always ready, and the platform's rather than an Agent's: it says so instead.
+  const system = shortcut.system !== undefined;
+  const tip = system
+    ? S.appCenter.systemTileName(title)
+    : running
+      ? S.appCenter.runningTip(title, owner)
+      : building
+        ? S.appCenter.buildingTip(title, owner)
+        : failed
+          ? S.appCenter.failedTip(title, owner)
+          : S.appCenter.tileTip(title, owner);
   return (
     <li
       className="relative"
@@ -213,7 +222,9 @@ export function AppTile({
             {...target.props}
             type="button"
             id={appTriggerId(app.id)}
-            aria-label={S.appCenter.tileName(title, owner, state)}
+            aria-label={
+              system ? S.appCenter.systemTileName(title) : S.appCenter.tileName(title, owner, state)
+            }
             aria-disabled={closed || undefined}
             data-tooltip={tip}
             data-tooltip-extra

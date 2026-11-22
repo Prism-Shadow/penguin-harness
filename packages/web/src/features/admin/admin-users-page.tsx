@@ -18,6 +18,7 @@ import {
   Input,
   Modal,
   PasswordInput,
+  Waiting,
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
@@ -65,7 +66,7 @@ export function AdminUsersSection() {
       </div>
 
       {users === null ? (
-        <p className="text-sm text-gray-400">{S.common.loading}</p>
+        <Waiting rows={3} />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
           <table className="w-full text-sm">

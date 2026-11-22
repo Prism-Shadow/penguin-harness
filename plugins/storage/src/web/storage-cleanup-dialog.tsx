@@ -21,8 +21,8 @@ import {
   Modal,
   ReviewList,
   SettingsEmpty,
-  SkeletonList,
   Spinner,
+  Waiting,
   toastAttention,
   toastInfo,
   toastSuccess,
@@ -231,7 +231,7 @@ export function StorageCleanupDialog({
                   <Spinner size="xs" label={S.storage.temp.reviewing} />
                   <span aria-hidden>{S.storage.temp.reviewing}</span>
                 </p>
-                <SkeletonList rows={4} />
+                <Waiting rows={4} />
               </div>
             )
           ) : (

@@ -1,6 +1,7 @@
 /**
  * The component library: every topic is registered once and sits in one of the two groups; its
- * frame opens through the same preference params as the app frames; the charts board tables the
+ * frame opens through the same preference params as the app frames, on one piece of a board when
+ * asked (the Loading board frames its waiting samples once per theme); the charts board tables the
  * tokens as the frame's style reads them; the content board's answered A2UI copies read their
  * sample answers back in full; the demo file tree flattens as the file tree reads it.
  */
@@ -55,6 +56,19 @@ describe("the library frame", () => {
     expect(parseLibraryParams(src.slice(src.indexOf("?")))).toEqual({
       topic: "pickers",
       lang: "zh",
+    });
+  });
+
+  it("opens one piece of a board alone when asked, and the whole board for a piece it does not know", () => {
+    const src = libraryFrameSrc("/base", prefs, "loading", "waiting");
+    expect(parseLibraryParams(src.slice(src.indexOf("?")))).toEqual({
+      topic: "loading",
+      lang: "zh",
+      part: "waiting",
+    });
+    expect(parseLibraryParams("?topic=loading&part=nope")).toEqual({
+      topic: "loading",
+      lang: "en",
     });
   });
 

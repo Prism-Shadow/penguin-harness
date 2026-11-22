@@ -23,8 +23,8 @@ import {
   ReviewList,
   Select,
   SettingsEmpty,
-  SkeletonList,
   Spinner,
+  Waiting,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import type { ReviewGroup, ReviewItem } from "@prismshadow/penguin-ui";
@@ -269,7 +269,7 @@ export function StorageSessionsDialog({
             state.error !== null ? (
               <SettingsEmpty>{S.storage.chats.loadFailed(state.error)}</SettingsEmpty>
             ) : (
-              <SkeletonList rows={4} />
+              <Waiting rows={4} />
             )
           ) : (
             <>

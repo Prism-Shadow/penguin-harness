@@ -1302,6 +1302,10 @@ export const zh = {
     /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
     tileName: (title: string, agent: string, state: string | null) =>
       state === null ? `${title}，${agent}` : `${title}，${agent}，${state}`,
+    /** A system app's tile (lib/system-apps.ts): its hint and its accessible name. */
+    systemTileName: (title: string) => `${title}，系统应用`,
+    /** Under the system apps' tiles while no Agent has an app here: what a workbench is. */
+    workbenchesEmptyTitle: "还没有 Agent 的应用",
     /** A folder's hint and accessible name: its apps, and how many of them are running. */
     folderTip: (name: string, count: number, running: number) =>
       `${name}，${count} 个应用${running > 0 ? `，${running} 个运行中` : ""}`,
@@ -2264,6 +2268,21 @@ export const zh = {
       `确认删除 ${machine} 上的 Agent「${name}」？它在那台机器上的目录（含全部 Trace）将被递归删除，不可恢复。`,
     deleteAgent: "删除 Agent",
     builtinUndeletable: "内置 Agent 不可被删除",
+    /** The system Agent (lib/builtin-agents.ts): its name and one line, never read from its file. */
+    systemName: "系统",
+    systemDescription: "系统应用的所有者：模型库、插件市场、机器管理、成本中心与评估中心。",
+    /** The pill after its name on the Agents page, and what the pill means. */
+    systemTag: "系统",
+    systemTagHint: "系统 Agent 拥有系统应用；它不对话、不装插件，也不能删除或导出。",
+    /** Its settings page's Plugins tab: the system apps it owns, listed read-only. */
+    systemAppsDesc: "系统 Agent 拥有的系统应用。它们随平台提供，从应用中心打开。",
+    systemAppsEmpty: "还没有系统应用。",
+    /** A system app's row there: its tag, and the system Agent's card's count of them. */
+    systemAppTag: "系统应用",
+    systemAppCount: (n: number) => `${n} 个系统应用`,
+    /** The Agents page's notice to the owner: an Agent of theirs holds the id reserved for the system Agent. */
+    systemIdHeld: (name: string): string =>
+      `Agent「${name}」占用了系统 Agent 的保留 id。导出它，以另一个 id 导入，再删除它；系统 Agent 会在下次加载时补齐。`,
     /** The Agents page's section of organization employees, and its "?" (what an employee is here). */
     employeesSection: "公司模式员工",
     employeesSectionInfo:
@@ -3465,6 +3484,8 @@ export const zh = {
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "机器",
     thisServer: "本机",
+    /** The machine picker's first choice: every machine's cards at once (the default). */
+    allMachines: "所有机器",
     /** A row the Project lists for a machine that has not reported it running yet. */
     notSynced: "尚未同步到该机器",
     /** The tag on a row the shared table lists, and its tooltip (Remove is unavailable on it). */

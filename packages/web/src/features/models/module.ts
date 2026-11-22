@@ -1,6 +1,7 @@
 /**
- * The models page, the pinned group's balance on the sidebar's account row, and the Project's
- * Default model settings dialog with the first-run guide before it, mounted beside every page.
+ * The models page, a system app (an App Center tile, lib/system-apps.ts), the pinned group's
+ * balance on the sidebar's account row, and the Project's Default model settings dialog with the
+ * first-run guide before it, mounted beside every page.
  */
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import type { NavBadge } from "../../lib/sidebar-contributions";
@@ -16,13 +17,14 @@ import { DefaultModelsLayer } from "./default-models-layer";
         key: "models",
         path: "/models",
         frame: "shell",
-        nav: "main",
+        nav: "none",
         admin: false,
         released: true,
         order: 30,
         title: "Models",
         titleZh: "模型库",
         icon: "chip",
+        app: { order: 10 },
       },
     ],
     "SidebarModule.navBadges": [{ id: "models.balance", anchor: "account", order: 20 }],

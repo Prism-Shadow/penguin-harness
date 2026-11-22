@@ -53,6 +53,7 @@ export interface ModulePart {
 
 /** One plugin of the page. */
 export interface PluginRow {
+  origin?: { machineId: string; label: string; live: boolean };
   /** Identity on the page: `library:<name>`, or `module:<specifier>` for a module-only row. */
   key: string;
   /**

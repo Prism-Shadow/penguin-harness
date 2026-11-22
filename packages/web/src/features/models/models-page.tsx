@@ -108,10 +108,10 @@ import {
   ROW_HOVER_BUTTON,
   Segmented,
   Select,
-  SkeletonList,
   Spinner,
   Switch,
   TodoNotice,
+  Waiting,
   WallpaperSurface,
   buttonClass,
   setDragPreview,
@@ -1953,7 +1953,7 @@ export function ModelsPage() {
       )}
 
       {rows === null ? (
-        <SkeletonList rows={4} />
+        <Waiting rows={4} />
       ) : rows.length === 0 ? (
         <EmptyState
           title={S.models.empty}

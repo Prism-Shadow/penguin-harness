@@ -168,6 +168,7 @@ describe("a web contribution", () => {
     // An empty resource registry: no plugin host, so no plugin modules run.
     const web = wire(WebModule, {
       hmr: { resources: { register: () => () => {}, claim: () => undefined } },
+      startPage: { metrics: () => [] },
     });
     web.setup({
       contributions: {

@@ -18,10 +18,12 @@ const OrgProposalsPage = () => null;
  * - bootWeb() boots the tree and hands back WebApp's root component.
  * - Every page has a unique id, key and path, and the component its module bound.
  * - Terminal and the workflow app pages mount outside the shell; everything else inside it.
- * - The main nav is Agents, Models, Plugins, Machines, Usage, Benchmark in that order, all
- *   released, Machines alone admin-only, and every page names its nav title in both languages
- *   (the words the nav dictionary held) and a glyph in the icon registry.
- * - A member's nav drops admin-only pages and adds nothing the admin lacks.
+ * - The main nav is Agents and the App Center, both released and open to members, each naming
+ *   its nav title in both languages (the words the nav dictionary held) and a glyph in the icon
+ *   registry.
+ * - The system apps are Models, Plugins, Machines, the Cost Center and the Evaluation Center in
+ *   that order, off the nav, each naming its title in both languages and a glyph; a member's drop
+ *   Machines, the one admin-only app, and add nothing the admin lacks.
  * - The chat page is the chat page; the dashboard and one machine's ports are
  *   pages of their own modules, off the nav, the ports page admin-only.
  * - Home (`/` and every unmatched path) is company mode's page, since it depends on the mode.
@@ -75,6 +77,7 @@ import { rowExtensionsOf, type RowExtensions } from "../src/features/session-lis
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { glyphOf } from "../src/lib/nav-icons";
+import { systemAppsOf } from "../src/lib/system-apps";
 import { AgentsPage } from "../src/features/agents/agents-page";
 import { TerminalPage, TerminalDockRuntime } from "../src/features/terminal";
 import { OrgRoutes } from "../src/features/company/org-routes";
@@ -218,12 +221,8 @@ describe("the booted page table", () => {
     expect(nav.map(({ key, admin, released }) => ({ key, admin, released }))).toEqual([
       { key: "agents", admin: false, released: true },
       { key: "apps", admin: false, released: true },
-      { key: "models", admin: false, released: true },
-      { key: "plugins", admin: false, released: true },
-      { key: "machines", admin: true, released: true },
-      { key: "usage", admin: false, released: true },
-      { key: "benchmark", admin: false, released: true },
     ]);
+    expect(navKeysFor(nav, false)).toEqual(navKeysFor(nav, true));
   });
 
   it("names every nav page's title in both languages and its glyph", () => {
@@ -231,6 +230,13 @@ describe("the booted page table", () => {
     expect(nav.map(({ key, title, titleZh, icon }) => ({ key, title, titleZh, icon }))).toEqual([
       { key: "agents", title: en.nav.agents, titleZh: zh.nav.agents, icon: "robot" },
       { key: "apps", title: en.appCenter.title, titleZh: zh.appCenter.title, icon: "tiles" },
+    ]);
+    for (const page of nav) expect(glyphOf(page.icon)).not.toBe("");
+  });
+
+  it("names the system apps in their order, with their titles in both languages and a glyph", () => {
+    const apps = systemAppsOf(pages, true);
+    expect(apps.map(({ key, title, titleZh, icon }) => ({ key, title, titleZh, icon }))).toEqual([
       { key: "models", title: "Models", titleZh: "模型库", icon: "chip" },
       { key: "plugins", title: en.nav.plugins, titleZh: zh.nav.plugins, icon: "puzzle" },
       {
@@ -242,13 +248,13 @@ describe("the booted page table", () => {
       { key: "usage", title: en.nav.usage, titleZh: zh.nav.usage, icon: "barChart" },
       { key: "benchmark", title: "Evaluation Center", titleZh: "评估中心", icon: "trophy" },
     ]);
-    for (const page of nav) expect(glyphOf(page.icon)).not.toBe("");
+    for (const app of apps) expect(glyphOf(app.icon)).not.toBe("");
+    for (const app of apps) expect(navPagesOf(pages).some((p) => p.key === app.key)).toBe(false);
   });
 
-  it("the nav a member sees drops admin-only pages", () => {
-    const nav = navPagesOf(pages);
-    const admin = navKeysFor(nav, true);
-    const member = navKeysFor(nav, false);
+  it("the system apps a member sees drop the admin-only one", () => {
+    const admin = systemAppsOf(pages, true).map((app) => app.key);
+    const member = systemAppsOf(pages, false).map((app) => app.key);
     expect(admin).toContain("machines");
     expect(member).not.toContain("machines");
     expect(member.every((key) => admin.includes(key))).toBe(true);

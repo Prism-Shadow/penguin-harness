@@ -57,7 +57,7 @@ createRoot(container).render(
         <ThemeProvider>
           <LocaleScope>
             <GalleryProvider>
-              <LibraryBoardPage topic={params.topic} />
+              <LibraryBoardPage topic={params.topic} part={params.part} />
             </GalleryProvider>
             <Toaster />
             <ReportHost />

@@ -40,7 +40,7 @@ export interface OrganizationDeletionDeps extends Omit<
   "orgService" | "agentConfigService"
 > {
   orgService: Pick<OrgService, "delete" | "employmentCensus" | "employersOf">;
-  agentConfigService: Pick<AgentConfig, "exists" | "requireExists">;
+  agentConfigService: Pick<AgentConfig, "exists" | "requireExists" | "isBuiltinAgent">;
 }
 
 /** What the failure of one Agent's delete reports: an `HttpError`'s own code, else nothing internal. */

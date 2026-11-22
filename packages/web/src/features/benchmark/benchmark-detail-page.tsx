@@ -21,7 +21,7 @@ import {
   ICONS,
   PageFrame,
   PageHeader,
-  Skeleton,
+  Waiting,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import type { MergedBenchmark } from "../../lib/benchmark-merge";
@@ -256,12 +256,7 @@ export function BenchmarkDetailPage() {
   } else if (missing) {
     body = <EmptyState title={S.benchmark.notFound} description={S.benchmark.notFoundHint} />;
   } else if (benchmark === null) {
-    body = (
-      <div className="space-y-3">
-        <Skeleton className="h-6 w-64" />
-        <Skeleton className="h-32 w-full" />
-      </div>
-    );
+    body = <Waiting form="page" />;
   } else if (masked) {
     body = (
       <UnpublishedNotice

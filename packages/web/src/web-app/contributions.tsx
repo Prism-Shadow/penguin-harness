@@ -142,8 +142,9 @@ function rendererOf(raw: unknown): RendererRef | null {
  * order after the last compiled page, each keeping the renderer it named. An entry is skipped
  * when it lacks a key or a path, when a compiled page (or an earlier entry) owns its key or
  * path, or when its renderer is neither an iframe with a `src` nor a `builtin` name in
- * `renderers`. Its nav name, glyph and parent are kept when they are strings; whether its
- * parent can hold it is decided over the merged table (parentedPagesOf).
+ * `renderers`. Its nav name, glyph and parent are kept when they are strings, and its `app` when
+ * it makes the page a system app (systemAppOf); whether its parent can hold it is decided over the
+ * merged table (parentedPagesOf).
  *
  * A company-mode page (`nav: "org"`) has a path relative to an organization: company mode
  * mounts it under the organization layout (features/company/org-routes.tsx) and the router
@@ -183,6 +184,7 @@ export function contributedPagesOf(
     }
     keys.add(key);
     paths.add(rooted);
+    const app = systemAppOf(entry.app, title, key);
     out.push({
       id: entry.id,
       key,
@@ -196,11 +198,27 @@ export function contributedPagesOf(
       ...(typeof titleZh === "string" ? { titleZh } : {}),
       ...(typeof icon === "string" ? { icon } : {}),
       ...(typeof parent === "string" ? { parent } : {}),
+      ...(app !== null ? { app } : {}),
       renderer,
       Component,
     });
   }
   return out;
+}
+
+/**
+ * A contributed page's `app` as the table keeps it: one whose `order` is a finite number makes the
+ * page a system app (lib/system-apps.ts). A page naming no `title` has no name for its tile, so it
+ * is no app: it stays reachable by its path, and the console says why its tile is missing.
+ */
+function systemAppOf(raw: unknown, title: unknown, key: string): { order: number } | null {
+  const order = (raw as { order?: unknown } | null | undefined)?.order;
+  if (typeof order !== "number" || !Number.isFinite(order)) return null;
+  if (typeof title !== "string") {
+    console.warn(`Contributed page "${key}" declares an app but no title; it is not an app`);
+    return null;
+  }
+  return { order };
 }
 
 /**

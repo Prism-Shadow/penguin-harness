@@ -29,6 +29,7 @@ import {
   SettingsEmpty,
   SettingsGroup,
   SettingsSection,
+  Waiting,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "./api";
@@ -182,7 +183,7 @@ export function BrowserSection() {
           </PrefRow>
         </SettingsGroup>
       )}
-      <PairedChromes list={list} onRevoke={setRevoking} />
+      {list === null ? <Waiting rows={2} /> : <PairedChromes list={list} onRevoke={setRevoking} />}
       {list !== null &&
         (list.enabled ? (
           <div>

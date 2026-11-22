@@ -1,7 +1,7 @@
 ---
 name: penguin-plugin
 description: Use for PenguinHarness plugins and workbenches — what a plugin package is and how to build, test, share and submit one, and the workbenches (the tabs and pages beside the chat, with server code behind them) an Agent keeps in its Agent State — building one, changing it, showing it as the whole app, restoring an earlier version, and removing it when the user wants the custom UI gone.
-version: 2026.11.21.1
+version: 2026.11.21.2
 ---
 
 # Penguin Plugins
@@ -239,10 +239,15 @@ export default {
 
 ### Design the interaction before writing the UI
 
-Treat the workbench as an application people return to. Before coding, choose its main list,
-its item detail, and how a person creates and revisits an item. Use that structure even when the
-request only says “build a Q&A app”. Do not turn independent conversations into one ever-growing
-page of complete answers.
+Choose one task people repeat. When improving an existing workbench, try that task with a real
+item and note the exact step where you get stuck or lose work. See how an established app for
+that task handles the step, using its official guide if needed. Adapt the interaction to the
+workbench's content and Penguin's controls.
+
+For document editors or workbenches with AI chat, read
+[Document editors and AI conversations](reference/editors-and-chat.md) for the file menu,
+saving an embedded editor, choosing a Session model and showing each turn's progress.
+For a Q&A app or a job queue, give each item its own detail view.
 
 - For questions, requests and jobs, start with a compact, centered list of titles, statuses and
   update times. Open one item's conversation in a dialog or detail panel. Keep follow-up messages
