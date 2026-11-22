@@ -4,7 +4,10 @@
  * implementation, so the two never drift. Rates ride in from the caller (the Project's
  * pricing lookup); this file owns only the arithmetic and the off-peak tier decision.
  */
-import { catalogEntryFor, offPeakAt } from "@prismshadow/penguin-library-model/model-catalog/catalog";
+import {
+  catalogEntryFor,
+  offPeakAt,
+} from "@prismshadow/penguin-library-model/model-catalog/catalog";
 import type { PricingRates, TieredRates } from "@prismshadow/penguin-library-model";
 
 export type { PricingRates, TieredRates };
