@@ -3,6 +3,7 @@
 - **Date:** 2026-11-22
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1689](https://github.com/Prism-Shadow/penguin-harness/pull/1689)
 
 [English](2026-11-22-app-center-default-order.md)
 
