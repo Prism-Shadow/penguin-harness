@@ -226,6 +226,7 @@ deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分�
 - 服务器运行所有 Project 表的并集，因此任何一个 Project 要求的插件，都会为所有 Project 加载。
 - 读取文件时，其他形式的条目会被丢弃，文件的其余部分照常加载。`plugins` 键不是表时，视为不要求任何插件。
 - 空表照样写成空表，表示这个 Project 不要求任何插件。
+- 随 PenguinHarness 发布、提供应用中心系统应用的插件始终留在列表里：会让本服务端不再为该 Project 运行它的写入以 `409` `system_app_module_locked` 拒绝；手工从文件中删掉的条目，服务器下次启动时写回本服务端的 `[plugins.<machineId>]` 表。
 
 ## 命令策略
 

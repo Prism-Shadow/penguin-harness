@@ -7,6 +7,10 @@
  * written inside the re-assembly's queue, so two edits never interleave, and undone — the tables
  * as they were — when the new tree fails to boot. An edit that only concerns other machines is
  * written as it is: re-assembling would rebuild the App for a tree that stays the same.
+ *
+ * An edit that would take a module behind a system app out of what this server runs for the
+ * Project is refused whole, before anything is written: 409 `system_app_module_locked`
+ * (plugin/system-app-modules.ts).
  */
 import {
   effectivePluginTable,
@@ -29,6 +33,8 @@ export interface PluginTablesDeps {
    * restart that will read it).
    */
   apply: (change: ReassemblyChange) => Promise<boolean>;
+  /** Whether `pkg` is a module behind a system app on this server, which no edit may drop. */
+  isLocked: (pkg: string) => Promise<boolean>;
 }
 
 export interface PluginTableEdits {
@@ -57,11 +63,25 @@ export function pluginTableEdits(deps: PluginTablesDeps): PluginTableEdits {
       );
     });
 
+  /** 409 when `after` no longer has this server run a locked module that `before` did. */
+  const refuseLockedDrop = async (before: PluginTables, after: PluginTables): Promise<void> => {
+    const kept = effectivePluginTable(after, deps.machineId);
+    for (const pkg of Object.keys(effectivePluginTable(before, deps.machineId))) {
+      if (pkg in kept || !(await deps.isLocked(pkg))) continue;
+      throw new HttpError(
+        409,
+        "system_app_module_locked",
+        `${pkg} provides a system app, so it cannot be removed from this Project's plugins on this server.`,
+      );
+    }
+  };
+
   const edit = async (
     projectId: string,
     next: (tables: PluginTables) => PluginTables,
   ): Promise<boolean> => {
     const current = await tablesOf(projectId);
+    await refuseLockedDrop(current, next(current));
     const same = (a: PluginTables, b: PluginTables) =>
       JSON.stringify(effectivePluginTable(a, deps.machineId)) ===
       JSON.stringify(effectivePluginTable(b, deps.machineId));

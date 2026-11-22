@@ -162,6 +162,7 @@ import { NpmPluginPackages } from "./plugin/packages.js";
 import { PluginSourceSettings } from "./plugin/source-settings.js";
 import { PluginMirrorSettings } from "./plugin/mirror-settings.js";
 import { PluginLibraryModule } from "./plugin/library-module.js";
+import { SystemAppModule } from "./plugin/system-app-modules.js";
 import { PluginModuleRequestsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-requests";
 import { PluginModulePreinstallsRepo } from "@prismshadow/penguin-library-setting/repos/plugin-module-preinstalls";
 import { PluginModules } from "./mechanisms/plugins.js";
@@ -633,8 +634,8 @@ export class ThemesModule {}
 /**
  * A library plugin's server modules, brought along by an install on an Agent (PRFC-0031): the
  * ledger of requests and decisions, the record of preinstalled modules handled per Project
- * (PRFC-0030), the service that applies the rule, and the member's and the administrator's
- * routes. Its own group: the Agent service and the installed-plugins routes
+ * (PRFC-0030), the service that applies the rule, the member's and the administrator's
+ * routes, and the slot a module declares the system app it provides in (`SystemAppModule.apps`). Its own group: the Agent service and the installed-plugins routes
  * reach it as `PluginModules`, and nothing else reads the ledger.
  */
 @Module({
@@ -643,6 +644,7 @@ export class ThemesModule {}
     PluginModulePreinstallsRepo,
     PluginModulesService,
     PluginModuleRoutes,
+    SystemAppModule,
   ],
   exports: [PluginModules],
 })
