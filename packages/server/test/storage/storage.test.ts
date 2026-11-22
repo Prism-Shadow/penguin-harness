@@ -393,6 +393,80 @@ describe("the Storage page", () => {
     expect(await exists(path.join(free, "scratch.txt"))).toBe(true);
   });
 
+  it("never offers or removes a temporary Workspace referenced through a directory link or Windows path casing", async () => {
+    const client = await admin();
+    const linked = path.join(workspaces(), "tmp-0000link");
+    const linkedSub = path.join(workspaces(), "tmp-0000lsub");
+    const sibling = path.join(workspaces(), "tmp-0000link2");
+    await put(path.join(linked, "report.md"), 100);
+    await put(path.join(linkedSub, "notes.txt"), 100);
+    await put(path.join(sibling, "orphan.txt"), 100);
+
+    // Mirrors the legacy `<root>/<projectId> -> projects/<projectId>` compatibility link.
+    const projectLink = path.join(t.root, `legacy-${P}`);
+    await fs.symlink(
+      path.join(t.root, "projects", P),
+      projectLink,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    const linkedPath = path.join(projectLink, "agents", A, "workspaces", "tmp-0000link");
+    const linkedMissingSub = path.join(
+      projectLink,
+      "agents",
+      A,
+      "workspaces",
+      "tmp-0000lsub",
+      "missing-sub",
+    );
+    await seed({ workspace: linkedPath, daysAgo: 90 });
+    await seed({ workspace: linkedMissingSub, daysAgo: 90 });
+    // A missing Workspace under `workspaces/` through the link must keep its tail segment and not
+    // collapse into the `workspaces/` holder (which would hide unrelated orphans like `sibling`).
+    await seed({
+      workspace: path.join(projectLink, "agents", A, "workspaces", "deleted-ws"),
+      daysAgo: 90,
+    });
+
+    const heldIds = [`workspace/${P}/${A}/tmp-0000link`, `workspace/${P}/${A}/tmp-0000lsub`];
+    let cased: string | null = null;
+    if (process.platform === "win32") {
+      cased = path.join(workspaces(), "tmp-0000case");
+      await put(path.join(cased, "win.txt"), 100);
+      await backdate(cased, 90);
+      const flippedDrive =
+        cased[0] === cased[0]!.toUpperCase()
+          ? cased[0]!.toLowerCase() + cased.slice(1)
+          : cased[0]!.toUpperCase() + cased.slice(1);
+      const flipped = flippedDrive.replace("\\workspaces\\", "\\WorkSpaces\\");
+      await seed({ workspace: flipped, daysAgo: 90 });
+      heldIds.push(`workspace/${P}/${A}/tmp-0000case`);
+    }
+
+    await backdate(linked, 90);
+    await backdate(linkedSub, 90);
+    await backdate(sibling, 90);
+
+    const offered = async () =>
+      (await review(client)).items.filter((i) => i.kind === "workspace").map((i) => i.name);
+
+    // Only the unrelated sibling workspace (sharing the `tmp-0000link` prefix) is offered.
+    expect(await offered()).toEqual(["tmp-0000link2"]);
+    expect((await clean(client, heldIds)).skipped).toEqual(
+      heldIds.map((id) => ({ id, reason: "in_use" })),
+    );
+    expect(await exists(path.join(linked, "report.md"))).toBe(true);
+    expect(await exists(path.join(linkedSub, "notes.txt"))).toBe(true);
+    if (cased !== null) expect(await exists(path.join(cased, "win.txt"))).toBe(true);
+
+    // A Session pointing at the Agent's `workspaces/` folder through the link holds everything under it.
+    await seed({ workspace: path.join(projectLink, "agents", A, "workspaces"), daysAgo: 90 });
+    expect(await offered()).toEqual([]);
+    expect((await clean(client, [`workspace/${P}/${A}/tmp-0000link2`])).skipped).toEqual([
+      { id: `workspace/${P}/${A}/tmp-0000link2`, reason: "in_use" },
+    ]);
+    expect(await exists(path.join(sibling, "orphan.txt"))).toBe(true);
+  });
+
   it("lets a member clean their own Projects only, and never a server cache", async () => {
     const client = await admin();
     const owner = await member("st_owner");

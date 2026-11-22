@@ -113,43 +113,80 @@ export function parseIdleDays(raw: unknown): number {
   return days;
 }
 
+/**
+ * Resolves `abs` through any symbolic links or Windows junctions, falling back to the nearest
+ * existing ancestor so references to a missing subdirectory under a linked Workspace still match.
+ */
+function realpathSyncOrAncestor(abs: string): string | null {
+  let current = abs;
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      const real = fs.realpathSync(current);
+      return tail.length === 0 ? real : path.join(real, ...tail.reverse());
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return null;
+      tail.push(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+/**
+ * Whether a Session holds a Workspace folder: has it (`forms`: as written and by realpath), or
+ * a folder inside it, as its Workspace — or the Agent's own folder or its `workspaces/`
+ * (`holders`), whose contents are then that Session's files. A Workspace above the Agent's
+ * folder (the home folder, the data root) does not hold the Agent's temporary Workspaces.
+ * On Windows, path comparisons are case-insensitive.
+ */
+export function isWorkspaceHeld(
+  forms: readonly string[],
+  holders: readonly string[],
+  refs: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  const sep = platform === "win32" ? "\\" : "/";
+  const norm = (p: string) => (platform === "win32" ? p.toLowerCase() : p);
+  const normHolders = holders.map(norm);
+  const normForms = forms.map(norm);
+  return refs.some((rawRef) => {
+    const ref = norm(rawRef);
+    return (
+      normHolders.includes(ref) ||
+      normForms.some(
+        (form) => ref === form || ref.startsWith(form.endsWith(sep) ? form : form + sep),
+      )
+    );
+  });
+}
+
 export class StorageCleanupService {
   constructor(private readonly deps: StorageCleanupDeps) {}
 
   /**
-   * Every Workspace path a Session of any Project holds, resolved. Read synchronously from the
-   * index, so a removal can read it in the same step as its rename.
+   * Every Workspace path a Session of any Project holds, as resolved and by realpath. Read
+   * synchronously from the index, so a removal can read it in the same step as its rename.
    */
   private workspaceRefs(): string[] {
     const refs: string[] = [];
+    const seen = new Set<string>();
     for (const projectId of this.deps.allProjectIds()) {
       for (const row of this.deps.sessions.listByProject(projectId)) {
         const workspace = row.workspace.trim();
-        if (workspace !== "") refs.push(path.resolve(workspace));
+        if (workspace === "") continue;
+        const resolved = path.resolve(workspace);
+        if (seen.has(resolved)) continue;
+        seen.add(resolved);
+        refs.push(resolved);
+        const real = realpathSyncOrAncestor(resolved);
+        if (real !== null && !seen.has(real)) {
+          seen.add(real);
+          refs.push(real);
+        }
       }
     }
     return refs;
-  }
-
-  /**
-   * Whether a Session holds a Workspace folder: has it (`forms`: as written and by realpath), or
-   * a folder inside it, as its Workspace — or the Agent's own folder or its `workspaces/`
-   * (`holders`), whose contents are then that Session's files. A Workspace above the Agent's
-   * folder (the home folder, the data root) does not hold the Agent's temporary Workspaces.
-   */
-  private static held(
-    forms: readonly string[],
-    holders: readonly string[],
-    refs: readonly string[],
-  ): boolean {
-    return refs.some(
-      (ref) =>
-        holders.includes(ref) ||
-        forms.some(
-          (form) =>
-            ref === form || ref.startsWith(form.endsWith(path.sep) ? form : form + path.sep),
-        ),
-    );
   }
 
   private judgeScratchpad(
@@ -243,7 +280,7 @@ export class StorageCleanupService {
           if (now - size.newestMs < ORPHAN_GRACE_MS) continue;
           const abs = path.join(this.deps.layout.workspacesDir(projectId, agent.agentId), name);
           const { forms, holders } = await this.workspaceForms(projectId, agent.agentId, abs);
-          if (StorageCleanupService.held(forms, holders, refs)) continue;
+          if (isWorkspaceHeld(forms, holders, refs)) continue;
           const ref: ItemRef = { kind: "workspace", projectId, agentId: agent.agentId, name };
           items.push({
             id: itemId(ref),
@@ -461,7 +498,7 @@ export class StorageCleanupService {
         }
       }
       case "workspace": {
-        if (StorageCleanupService.held(item.forms, item.holders, refs)) return "in_use";
+        if (isWorkspaceHeld(item.forms, item.holders, refs)) return "in_use";
         // Something written into it since it was measured makes it young again.
         let changed = size.newestMs;
         try {
