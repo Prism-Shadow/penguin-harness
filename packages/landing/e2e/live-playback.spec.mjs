@@ -39,13 +39,16 @@ for (const [lang, play, stop] of [
   test(`plays, stops and restarts a single evolution round (${lang})`, async ({ page }) => {
     if (lang === "zh") await page.setViewportSize({ width: 390, height: 844 });
     const { frame } = await openHero(page, lang);
-    await expect(frame.getByRole("dialog")).toBeVisible();
+    const guide = frame.getByRole("dialog", {
+      name: lang === "en" ? "Connect a model provider first" : "先连接一个模型供应商",
+    });
+    await expect(guide).toBeVisible();
     await page.clock.fastForward(30_000);
     await expect(frame.locator(composer)).toHaveValue("");
     await page.getByRole("button", { name: play, exact: true }).click();
     await expect(frame.locator(composer)).not.toHaveValue("");
     await page.getByRole("button", { name: stop, exact: true }).click();
-    await expect(frame.getByRole("dialog")).toBeVisible();
+    await expect(guide).toBeVisible();
     await expect(frame.locator(composer)).toHaveValue("");
     await page.getByRole("button", { name: play, exact: true }).click();
     const chart = frame.locator("main svg.ui-chart").first();

@@ -14,6 +14,7 @@ import { buildFixtures, DEFAULT_MODEL, effectiveOf } from "./fixtures";
 import type { DemoFixtures } from "./fixtures";
 import { harnessTranscript, orgDeskTranscript } from "./harness-transcript";
 import { IDS } from "./ids";
+import { seedFreshProject } from "./fresh-project";
 import { raiseNotices } from "./notices";
 import {
   rsiEvaluatorTranscript,
@@ -143,20 +144,10 @@ export class DemoStore {
       // Only the evaluator and test sessions belong to the example. They are hidden from the sidebar.
       const children = new Set<string>([...IDS.sessions.evaluators, ...IDS.sessions.tests]);
       f.sessions = evolutionDemo ? f.sessions.filter((s) => children.has(s.sessionId)) : [];
-      f.agents = f.agents.filter(
-        (a) => a.agentId === IDS.agents.general || (evolutionDemo && a.agentId === IDS.agents.docs),
-      );
-      f.project.name = "default_project";
-      f.user.displayName = f.user.userId;
+      seedFreshProject(f, evolutionDemo === true);
       f.schedules = [];
       f.usage = [];
-      f.appCenter = { shortcuts: [], layout: null };
-      f.chatDefaults.agentId = IDS.agents.general;
-      delete f.chatDefaults.workspace;
       if (!evolutionDemo) {
-        f.benchmarks = f.benchmarks.filter(
-          (b) => b.id !== IDS.benchmarks.docs && b.id !== IDS.benchmarks.draft,
-        );
         delete f.models.defaultModel;
         delete f.models.visionModel;
         for (const provider of Object.values(f.models.providers ?? {}))

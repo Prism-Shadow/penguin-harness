@@ -29,6 +29,7 @@ import {
   pushMessages,
 } from "../../web/src/lib/amsp/stream-model";
 import { refusalHandoff } from "../../web/src/lib/amsp/compaction-summary";
+import { getSidebarApps } from "../../web/src/api/endpoints";
 import { buildFixtures } from "../src/app/mock/fixtures";
 import { ALL_SESSION_IDS, IDS } from "../src/app/mock/ids";
 import { REPLY_CLOSE_MS, REPLY_HOLD_MS, REPLY_LEAD_MS, resetStore } from "../src/app/mock/store";
@@ -82,6 +83,26 @@ function collector(): StreamHandlers & { messages: AmspRecord[]; events: ServerE
 }
 
 describe("the fixtures", () => {
+  it("starts the homepage with the installed apps and a new conversation", async () => {
+    const { f } = resetStore({ lang: "en", signedIn: true, freshProject: true, now: NOW });
+    expect(f.agents.map((agent) => agent.agentId)).toEqual([
+      "default_agent",
+      "penguin_support",
+      "system_agent",
+    ]);
+    expect(f.appCenter.shortcuts.map((app) => app.workbenchId)).toEqual([
+      "slides",
+      "images",
+      "support",
+    ]);
+    const sidebar = await getSidebarApps(IDS.project, IDS.agents.general, null);
+    expect(sidebar?.map((app) => app.titleZh)).toEqual(["AI PPT", "图像工作室"]);
+    expect(f.sessions).toHaveLength(0);
+    expect(f.models.defaultModel).toBeUndefined();
+    expect(f.benchmarks.map((bench) => bench.id)).toContain("example-benchmark");
+    expect(f.benchmarks.map((bench) => bench.id)).not.toContain(IDS.benchmarks.docs);
+  });
+
   it("hold the same structure and the same ids in both languages", () => {
     const en = buildFixtures("en", NOW);
     const zh = buildFixtures("zh", NOW);

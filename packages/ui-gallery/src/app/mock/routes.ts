@@ -3098,13 +3098,14 @@ const sidebarApps = (ctx: Ctx): AppCenterShortcut[] => {
   return (installed.workbenches ?? []).flatMap((w): AppCenterShortcut[] => {
     const first = w.tabs[0];
     if (first === undefined || w.enabled === false || w.showInSidebar === false) return [];
+    const titleZh = w.appCenter?.titleZh ?? first.titleZh;
     return [
       {
         agentId: agent.agentId,
         agentName: agent.name ?? agent.agentId,
         workbenchId: w.id,
         title: w.appCenter?.title ?? first.title,
-        ...(first.titleZh !== undefined ? { titleZh: first.titleZh } : {}),
+        ...(titleZh !== undefined ? { titleZh } : {}),
         ...(w.icon !== undefined ? { icon: w.icon } : {}),
         path: `/app/${ctx.params.projectId!}/${agent.agentId}/${w.id}`,
         tab: first.key,
