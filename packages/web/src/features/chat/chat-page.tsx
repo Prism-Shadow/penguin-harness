@@ -47,9 +47,9 @@ export function ChatPage() {
           {renderMainChatToolbar(view)}
           <VoiceScope
             projectId={projectId}
-            server={workflowMachineId}
+            server={pageMachineId}
             sessionId={controller.draft ? undefined : controller.selected?.sessionId}
-            active={chatShown}
+            active
           >
             {renderMainChatBody(view)}
           </VoiceScope>
