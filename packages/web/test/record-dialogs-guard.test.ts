@@ -285,6 +285,25 @@ describe("record dialogs", () => {
       return server;
     }
 
+    it("reloads saved shortcuts before allowing edits when the initial read fails", async () => {
+      const stored = { id: "sc-notes", title: "Notes", prompt: "Summarize my notes" };
+      let reads = 0;
+      stubFetch((req) => {
+        expect(req.path).toBe("/api/me/prefs");
+        expect(req.method).toBe("GET");
+        return ++reads === 1
+          ? apiError(500, "internal")
+          : json({ prefs: { draftShortcuts: [stored] } });
+      });
+      await mount(h(SavedPrompts, { readComposerText: () => "", onFill: () => {} }));
+      await waitFor(() => hasButton(s.retry));
+      expect(hasButton(s.new)).toBe(false);
+      expect(hasButton(s.manage)).toBe(false);
+      await click(button(s.retry));
+      await waitFor(() => hasButton(stored.title));
+      expect(hasButton(s.manage)).toBe(true);
+    });
+
     it("keeps the dialog and the typing when the write is refused, and lists the shortcut once it lands", async () => {
       const server = await openShortcuts();
       await click(button(s.new));
