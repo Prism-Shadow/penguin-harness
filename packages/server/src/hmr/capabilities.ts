@@ -477,6 +477,16 @@ export abstract class Config {
    */
   abstract trustProxy: boolean;
   /**
+   * The published plugin market document this deployment reads (PENGUIN_PLUGIN_MARKET), or null
+   * for the one embedded in the build alone. Unset = the community repository's; `off` = no
+   * outbound request for the market, its document or its pictures; any other value replaces the
+   * URL, and the pictures are read beside it (plugin/market.ts).
+   *
+   * OPTIONAL like `pluginIndexUrl`: a runtime older than this field publishes none, and the
+   * market then reads the variable from its own process environment (http/routes/plugin-market.ts).
+   */
+  abstract pluginMarketUrl?: string | null;
+  /**
    * The CLI entry script this harness offers as `penguin` to the Agents it runs and in its
    * terminals — the file the `<root>/bin/penguin` shim runs (see services/cli-shim.ts).
    * `PENGUIN_CLI_ENTRY` when set: `penguin server|web` exports its own entry there, and the

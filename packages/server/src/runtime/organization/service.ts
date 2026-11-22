@@ -112,7 +112,11 @@ import { SEMANTIC_ID_RULES } from "../../services/semantic-id.js";
 import { suggestSemanticId } from "../../services/semantic-id-suggest.js";
 import { isNewSemanticId } from "../../services/ids.js";
 import { enabledMessagingChannel } from "@prismshadow/penguin-library-messaging/enabled-channel";
-import { latestSlotAt, nextSlotAfter, slotInWindow } from "@prismshadow/penguin-library-session/schedule-file";
+import {
+  latestSlotAt,
+  nextSlotAfter,
+  slotInWindow,
+} from "@prismshadow/penguin-library-session/schedule-file";
 import type { ScheduleDefinition } from "@prismshadow/penguin-library-session/schedule-file";
 import { budgetLine, budgetRatio, computeSpend, pausedEmployees } from "./budget.js";
 import type { OrgSpend } from "./budget.js";
@@ -2906,6 +2910,8 @@ export abstract class OrgService {
     projectId: string,
     req: OrganizationCreateRequest,
     userId: string,
+    /** Who creates it, for the CEO's plugins' server modules; a member who is not the administrator when absent. */
+    actor?: ModuleActor,
   ): Promise<OrganizationDetail>;
 
   abstract detail(projectId: string, orgId: string, userId: string): Promise<OrganizationDetail>;

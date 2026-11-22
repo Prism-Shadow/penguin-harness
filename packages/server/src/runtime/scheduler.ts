@@ -120,7 +120,7 @@ export abstract class ScheduleTaskRunner {
   abstract startTask(
     sessionId: string,
     input: ReturnType<typeof userText>[],
-    opts?: { queueIfBusy?: boolean },
+    opts?: { queueIfBusy?: boolean; driver?: string },
   ): Promise<{ sessionId: string; queued: boolean }>;
 }
 
