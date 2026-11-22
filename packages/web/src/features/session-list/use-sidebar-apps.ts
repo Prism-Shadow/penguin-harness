@@ -66,7 +66,7 @@ export interface SidebarAppRow {
 }
 
 /** The Agent's sidebar shortcuts, as its server lists them; null until the first answer. */
-function useAgentApps(agent: SidebarAppsAgent | null) {
+export function useAgentApps(agent: SidebarAppsAgent | null) {
   const safe = useSafeMode();
   const scope =
     agent === null ? null : JSON.stringify([agent.projectId, agent.agentId, agent.machineId]);
