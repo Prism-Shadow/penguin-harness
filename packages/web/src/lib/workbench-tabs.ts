@@ -153,6 +153,8 @@ export const FILL_APP_MESSAGE = "penguin:fill-app";
  * `{ model }` (null when none was chosen) or `{ error }`.
  */
 export const CHAT_MODEL_MESSAGE = "penguin:chat-model";
+/** A visible workbench's request to open its Project's Models page, answered on the same id. */
+export const OPEN_MODEL_SETTINGS_MESSAGE = "penguin:open-model-settings";
 export const CHAT_MODEL_REPLY = "penguin:chat-model-reply";
 
 /** The main app's manifest, the literal the template ships and what leaving the page restores. */

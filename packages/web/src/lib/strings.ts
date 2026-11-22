@@ -1168,6 +1168,8 @@ export const zh = {
     hint: (mod: string): string => `←→ 切换分组与列表 · ${mod}1–9 跳到分组`,
   },
   workbenches: {
+    configureOnMachine: "请在运行这个工作台的机器上配置模型。",
+    openBeforeConfiguring: "请先打开工作台，再配置模型。",
     title: "工作台",
     count: (n: number) => `${n} 个工作台`,
     open: "打开工作台",
