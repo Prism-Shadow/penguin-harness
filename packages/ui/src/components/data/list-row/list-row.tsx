@@ -47,7 +47,7 @@
 import { Children, useCallback, useEffect, useId, useRef, useState } from "react";
 import type { MouseEventHandler, ReactNode } from "react";
 import { SettingsEmpty } from "../../feedback/empty-state/empty-state";
-import { SkeletonList } from "../../feedback/skeleton/skeleton";
+import { Waiting } from "../../feedback/waiting/waiting";
 import { Card } from "../../layout/card/card";
 
 /**
@@ -113,7 +113,7 @@ export function SettingsList({
   /** What the list says when it holds no row; omitted, an empty list renders its empty frame. */
   empty?: ReactNode;
 }) {
-  if (loading) return <SkeletonList rows={skeletonRows} />;
+  if (loading) return <Waiting rows={skeletonRows} />;
   if (empty !== undefined && Children.toArray(children).length === 0) {
     return <SettingsEmpty>{empty}</SettingsEmpty>;
   }

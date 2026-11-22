@@ -37,9 +37,9 @@ import {
   SearchInput,
   Select,
   SettingsEmpty,
-  SkeletonList,
   Spinner,
   FailureText,
+  Waiting,
 } from "@prismshadow/penguin-ui";
 import { useStore } from "zustand/react";
 import { formatDateTime } from "../../lib/format";
@@ -222,7 +222,7 @@ export function ArchivedSessionsSection() {
 
       <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 pb-1">
         {state.groups === null ? (
-          <SkeletonList rows={4} />
+          <Waiting rows={4} />
         ) : state.groups.length === 0 ? (
           <SettingsEmpty>
             {state.error !== null ? (
@@ -371,7 +371,7 @@ function ArchiveGroup({
         </button>
       </div>
       {rows === undefined || (rows.loading && shown.length === 0) ? (
-        <SkeletonList rows={Math.min(group.count, 3)} />
+        <Waiting rows={Math.min(group.count, 3)} />
       ) : (
         <ul className="divide-y divide-line-muted border-t border-line-muted">
           {shown.map((s) => (

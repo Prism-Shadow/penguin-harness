@@ -78,6 +78,7 @@ import {
   ShowcaseLayoutToggle,
   useShowcaseLayout,
   Tabs,
+  Waiting,
   TodoNotice,
   toastError,
   toastSuccess,
@@ -1477,15 +1478,16 @@ export function PluginsPage() {
         </div>
       ) : groups === null && rows.length === 0 ? (
         // The cards' own grid, so the placeholders stand in the columns the cards will take.
-        <ShowcaseGrid
-          layout={layout}
-          className="lg:[--showcase-column-min:12rem] xl:[--showcase-column-min:14rem]"
-          aria-busy
-        >
-          {Array.from({ length: 6 }, (_, i) => (
-            <CoverCardSkeleton key={i} />
-          ))}
-        </ShowcaseGrid>
+        <Waiting>
+          <ShowcaseGrid
+            layout={layout}
+            className="lg:[--showcase-column-min:12rem] xl:[--showcase-column-min:14rem]"
+          >
+            {Array.from({ length: 6 }, (_, i) => (
+              <CoverCardSkeleton key={i} />
+            ))}
+          </ShowcaseGrid>
+        </Waiting>
       ) : visible.length > 0 ? (
         <ShowcaseGrid
           layout={layout}

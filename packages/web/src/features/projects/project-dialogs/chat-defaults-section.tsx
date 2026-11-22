@@ -13,6 +13,7 @@ import {
   toastSuccess,
   useFormDraft,
   useSaving,
+  Waiting,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
 import { S } from "../../../lib/strings";
@@ -188,7 +189,7 @@ export function ChatDefaultsSection({
       {loadError ? (
         <p className="text-xs text-red-600 dark:text-red-400">{loadError}</p>
       ) : saved === null || models === null ? (
-        <p className="text-xs text-gray-400">{S.common.loading}</p>
+        <Waiting rows={3} />
       ) : isOwner ? (
         <>
           {/* Compact responsive grid: label + control stacked per cell, two columns from sm
