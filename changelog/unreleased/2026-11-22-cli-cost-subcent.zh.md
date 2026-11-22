@@ -3,6 +3,7 @@
 - **Date:** 2026-11-22
 - **Type:** fix
 - **Scope:** `cli`, `server`
+- **PR:** [#1692](https://github.com/Prism-Shadow/penguin-harness/pull/1692)
 
 [English](2026-11-22-cli-cost-subcent.md)
 
