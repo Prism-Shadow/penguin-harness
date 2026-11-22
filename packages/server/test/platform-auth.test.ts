@@ -232,6 +232,10 @@ describe("Penguin Go key authorization routes", () => {
         })
       ).json()) as ProjectCreateResponse
     ).project.projectId;
+    // The default its owner chose (a new Project starts with none).
+    expect(
+      (await owner.put(`/api/projects/${projectId}/models/default`, DEEPSEEK_FLASH)).status,
+    ).toBe(200);
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "penguin_api_member" }))
         .status,

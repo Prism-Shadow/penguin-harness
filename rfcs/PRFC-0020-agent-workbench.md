@@ -1,4 +1,4 @@
-# PRFC-0020 Agent Workbench: App Naming, Plugin Distribution, and Product Support
+# PRFC-0020 Agent Workbench
 
 [中文版](PRFC-0020-agent-workbench.zh.md)
 

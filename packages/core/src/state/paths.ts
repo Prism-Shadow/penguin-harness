@@ -5,6 +5,7 @@
  * This module only provides constants and pure path functions; it never creates directories or reads/writes files.
  * Docs: /docs/sessions-and-traces § "Data layout".
  */
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 
@@ -24,9 +25,18 @@ export function resolveRoot(): string {
   return process.env.PENGUIN_HOME ?? path.join(os.homedir(), ".penguin", "data");
 }
 
-/** `<root>/<projectId>`. */
+/**
+ * The folder holding every Project's folder, one per id: the data root itself. The single
+ * definition point of where Projects sit, so a reader that lists them (the Storage page's
+ * measurement) follows wherever they move.
+ */
+export function projectsDir(root: string): string {
+  return root;
+}
+
+/** `<projectsDir>/<projectId>`. */
 export function projectDir(root: string, projectId: string): string {
-  return path.join(root, projectId);
+  return path.join(projectsDir(root), projectId);
 }
 
 /**
@@ -65,6 +75,14 @@ export function scratchpadDir(root: string, projectId: string, agentId: string):
 /** `<agentDir>/workspaces`. */
 export function workspacesDir(root: string, projectId: string, agentId: string): string {
   return path.join(agentDir(root, projectId, agentId), "workspaces");
+}
+
+/**
+ * `<agentDir>/shared_env`, the Agent's reusable tool environments, one folder per environment.
+ * The system prompt tells the model to keep them here; no code creates the folder.
+ */
+export function sharedEnvDir(root: string, projectId: string, agentId: string): string {
+  return path.join(agentDir(root, projectId, agentId), "shared_env");
 }
 
 /**
@@ -145,6 +163,122 @@ export function hooksDir(root: string, projectId: string, agentId: string): stri
  */
 export function workbenchesDir(root: string, projectId: string, agentId: string): string {
   return path.join(agentStateDir(root, projectId, agentId), "workbenches");
+}
+
+/**
+ * `<agentDir>/app`: the data the Agent's workbenches keep, beside its Agent State rather than in
+ * it, so a snapshot stays small and one root can be bound writable for the Agent's commands under
+ * a `workspace-write` sandbox. Created on first use; doesn't exist until then.
+ */
+export function agentAppDir(root: string, projectId: string, agentId: string): string {
+  return path.join(agentDir(root, projectId, agentId), "app");
+}
+
+/**
+ * `<agentDir>/app/data/<workbenchId>`: one workbench's data folder, which its handler reads and
+ * writes through the host and the Agent with its file tools. It travels in the Agent export with
+ * the workbench's data and is removed with the workbench.
+ */
+export function workbenchDataDir(
+  root: string,
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+): string {
+  return path.join(agentAppDir(root, projectId, agentId), "data", workbenchId);
+}
+
+/**
+ * `<agentDir>/app/cache/<workbenchId>`: one workbench's disposable files, anything that can be
+ * made again. Never exported; removed with the workbench.
+ */
+export function workbenchCacheDir(
+  root: string,
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+): string {
+  return path.join(agentAppDir(root, projectId, agentId), "cache", workbenchId);
+}
+
+/**
+ * `<root>/run`: the runtime-only files of the server's workbenches — Unix sockets, pipes, locks.
+ * A Unix socket's path holds at most 104 bytes on macOS (108 on Linux), and an Agent's folder is
+ * deep (a Project id and an Agent id of up to 64 characters each), so these live at a short path
+ * of their own: one fixed-length segment per level, a hash of its id (`runSegment`). Never
+ * exported; a level goes when its Project, Agent or workbench does.
+ */
+export function runDir(root: string): string {
+  return path.join(root, "run");
+}
+
+/** The fixed-length name an id takes under {@link runDir}: 10 hex characters of its SHA-256. */
+export function runSegment(id: string): string {
+  return createHash("sha256").update(id).digest("hex").slice(0, 10);
+}
+
+/** `<root>/run/<project>`: one Project's runtime folder. */
+export function projectRunDir(root: string, projectId: string): string {
+  return path.join(runDir(root), runSegment(projectId));
+}
+
+/** `<root>/run/<project>/<agent>`: one Agent's runtime folder, writable to its sandboxed commands. */
+export function agentRunDir(root: string, projectId: string, agentId: string): string {
+  return path.join(projectRunDir(root, projectId), runSegment(agentId));
+}
+
+/**
+ * What a new Project id may not be: the data root's own folders that sit beside the Projects and
+ * that a Project's folder would share a name with (`app/`, `run/`). A Project already called so
+ * keeps opening, its folder shared with them, until Projects move under `<root>/projects/`.
+ */
+export const ROOT_FOLDER_NAMES: readonly string[] = ["app", "run"];
+
+/**
+ * `<root>/app`: the server level of a workbench's folders — what every copy of an app installed
+ * from a plugin shares across this data root's Projects and Agents (a model's weights, a tool's
+ * binaries). Its state folders sit under `<root>/run/server` at a short path.
+ */
+export function serverAppDir(root: string): string {
+  return path.join(root, "app");
+}
+
+/**
+ * The machine level of a workbench's folders: shared by every data root of this OS user on this
+ * computer (the installed app, a dev instance, the CLI's own root), `~/.penguin/machine` unless
+ * `PENGUIN_MACHINE_HOME` names another. Never shared between OS users.
+ */
+export function machineAppDir(): string {
+  return process.env.PENGUIN_MACHINE_HOME ?? path.join(os.homedir(), ".penguin", "machine");
+}
+
+/**
+ * One installed app's folders at a shared level: `<base>/{data,cache}/<plugin>/<workbenchId>`,
+ * and its state folder `<runBase>/<runSegment("<plugin>/<workbenchId>")>` at a short path. `base`
+ * and `runBase` are the server's (`serverAppDir`, `<root>/run/server`) or the machine's
+ * (`machineAppDir`, `<machineAppDir>/run`).
+ */
+export function sharedWorkbenchDirs(
+  base: string,
+  runBase: string,
+  plugin: string,
+  workbenchId: string,
+): { dataDir: string; cacheDir: string; stateDir: string } {
+  return {
+    dataDir: path.join(base, "data", plugin, workbenchId),
+    cacheDir: path.join(base, "cache", plugin, workbenchId),
+    stateDir: path.join(runBase, runSegment(`${plugin}/${workbenchId}`)),
+  };
+}
+
+/** `<root>/run/<project>/<agent>/<workbench>`: one workbench's state folder (sockets, pipes, locks). */
+export function workbenchStateDir(
+  root: string,
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+): string {
+  return path.join(agentRunDir(root, projectId, agentId), runSegment(workbenchId));
 }
 
 /** `<agentStateDir>/schedule`, the scheduled-task directory (doesn't exist when unconfigured). */

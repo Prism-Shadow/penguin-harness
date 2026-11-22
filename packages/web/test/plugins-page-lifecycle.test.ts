@@ -21,7 +21,11 @@ import { en } from "../src/lib/strings-en";
 import { setActiveStrings } from "../src/lib/strings";
 
 const context = vi.hoisted(() => ({ projectId: "A", machines: [] as string[] }));
-vi.mock("react-router", () => ({ useNavigate: () => vi.fn() }));
+vi.mock("react-router", () => ({
+  useNavigate: () => vi.fn(),
+  useLocation: () => ({ state: null }),
+  useSearchParams: () => [new URLSearchParams(), vi.fn()],
+}));
 vi.mock("../src/state/project", () => ({
   useProject: () => ({
     currentProject: { projectId: context.projectId, role: "owner" },
@@ -71,7 +75,7 @@ vi.mock("../src/features/plugins/plugin-card", () => ({
       {
         "data-row": props.row.name,
         "data-state": props.row.module?.state,
-        "data-delete": props.onDeletePlugin === null ? "closed" : "open",
+        "data-server-uninstall": props.onServerUninstall === undefined ? "none" : "offered",
       },
       h("span", { "data-status": true }, props.status),
       h(
@@ -97,6 +101,8 @@ vi.mock("../src/api/endpoints", () => ({
   uninstallPlugin: vi.fn(),
   getPluginLibrary: vi.fn(),
   getPluginIndex: vi.fn(),
+  // A server without the market's curation: generated covers, no carousel.
+  getPluginMarket: vi.fn(() => Promise.reject(new Error("not found"))),
 }));
 import * as api from "../src/api/endpoints";
 import { INDEX_RECHECK_MS, PluginsPage } from "../src/features/plugins/plugins-page";
@@ -159,6 +165,7 @@ describe("the Plugins page's response lifecycle", () => {
         "initial",
         "self",
         expect.any(Function),
+        expect.any(Function),
       );
       context.projectId = "B";
       await page.rerender(h(PluginsPage));
@@ -198,13 +205,14 @@ describe("the Plugins page's response lifecycle", () => {
       "@acme/plugin",
       "Other00000000000",
       expect.any(Function),
+      expect.any(Function),
     );
     await click(row("plugin")!.querySelector("button")!);
     await click(document.querySelector("[data-confirm]")!);
     expect(api.uninstallPlugin).toHaveBeenCalledWith("A", "@acme/plugin", "Other00000000000");
   });
 
-  it("does not wire package-global Delete into the page, including an installed library/module row", async () => {
+  it("offers an admin the server uninstall of an installed package, and runs nothing before it is asked", async () => {
     vi.mocked(api.getInstalledPlugins).mockResolvedValue(snapshot("@penguinharness/mixed"));
     vi.mocked(api.getPluginLibrary).mockResolvedValue({
       groups: [
@@ -227,7 +235,7 @@ describe("the Plugins page's response lifecycle", () => {
       ],
     });
     await mount(h(PluginsPage));
-    expect(row("mixed")?.getAttribute("data-delete")).toBe("closed");
+    expect(row("mixed")?.getAttribute("data-server-uninstall")).toBe("offered");
     expect(api.uninstallPlugin).not.toHaveBeenCalled();
   });
 });
@@ -284,6 +292,7 @@ describe("a server module installed for the machine in view", () => {
         "A",
         "@acme/plugin",
         OTHER,
+        expect.any(Function),
         expect.any(Function),
       );
       expect(machineReads).toBe(2);

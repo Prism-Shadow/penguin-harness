@@ -1,4 +1,4 @@
-# PRFC-0022 RFC Invariants: a permanent section for what must always hold
+# PRFC-0022 RFC Invariant
 
 [中文版](PRFC-0022-rfc-invariant.zh.md)
 

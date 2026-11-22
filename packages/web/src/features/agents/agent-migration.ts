@@ -4,8 +4,9 @@
  * itself is the `agent-porting` Skill's, so a framework that changes its layout needs a Skill
  * edit, not a release of this page.
  */
-import { getAgentPlugins, getPluginLibrary, installAgentPlugins } from "../../api/endpoints";
+import { getAgentPlugins, getPluginLibrary } from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { installOnAgent } from "../plugins";
 
 /** The frameworks the dialog offers, in its order, each with the user directory it keeps its setup in. */
 export const MIGRATION_SOURCES = [
@@ -50,5 +51,6 @@ export async function portingNeed(
   return plugin?.skills.some((skill) => has.has(skill.name)) ? "update" : "install";
 }
 
+/** Installs the porting plugin on this server's Agent, the way every install goes (its lists kept for the plugin pages). */
 export const installPorting = (projectId: string, agentId: string) =>
-  installAgentPlugins(projectId, agentId, [PORTING_PLUGIN], null);
+  installOnAgent({ projectId, agentId, machineId: null }, [PORTING_PLUGIN]);

@@ -21,6 +21,7 @@ import {
   abortEvent,
   mcpConnectEnd,
   sessionMeta,
+  sessionUpdate,
   taskBegin,
   taskEnd,
   userText,
@@ -589,8 +590,8 @@ export class Session {
    * approval callback `approve` (the engine calls it once per tool_call within a turn).
    * On the first run, `session_meta` is written to the Trace first, and yielded first: the main
    * Session's every `session_meta` is on the stream exactly once, when it is written — this one,
-   * a compaction's new context's (behind the Task's `task_begin`, when its first write opens the
-   * file) and a model switch's (see `switchModel`).
+   * and the one of a context a compaction or a model switch opened (behind the Task's
+   * `task_begin`, when its first write opens the file).
    *
    * Every Task is bracketed by a `task_begin` / `task_end` pair (see TaskBeginPayload), written
    * to the Trace and yielded: `task_begin` comes before anything the Task writes — its input
@@ -692,7 +693,7 @@ export class Session {
       // the summary is only in the old file until the next context's first message opens the
       // new one (see TaskBeginPayload).
       if (await this.ensureMetaWritten()) yield this.meta;
-      yield* this.taskRecord(taskBegin());
+      yield* this.sessionRecord(taskBegin());
       if (continued) {
         // The continued Task's input is the first thing it writes: a context a compaction left
         // pending opens on it, so the new file's session_meta streams ahead of it, as on disk.
@@ -734,7 +735,7 @@ export class Session {
       // Reached only when the Task returned, however it ended: a throw from the Task or its
       // hooks propagates past this point and leaves the pair open, which is the record that
       // the Task never reached its end.
-      yield* this.taskRecord(taskEnd());
+      yield* this.sessionRecord(taskEnd());
       // A user's interruption outranks every hook: after a cutoff, or with the signal
       // already aborted between Tasks, a `continue` is recorded but never run — an aborted
       // engine would only hold the injected input as carry-over and leak it into the
@@ -746,10 +747,13 @@ export class Session {
   }
 
   /**
-   * Writes one Task record (`task_begin` / `task_end`) to the Trace, then yields it. Best-effort
-   * like every Session write: the stream carries the record even when the write failed.
+   * Writes one record of the Session's own — a Task record (`task_begin` / `task_end`) or a
+   * completed switch's `session_update` — to the Trace through the Session's sink, then yields
+   * it. The Session's sink never rotates, so the record lands in the current file and never
+   * opens the one a closed context left pending. Best-effort like every Session write: the
+   * stream carries the record even when the write failed.
    */
-  private async *taskRecord(msg: AmspRecord): AsyncGenerator<AmspRecord, void> {
+  private async *sessionRecord(msg: AmspRecord): AsyncGenerator<AmspRecord, void> {
     await this.writeTrace(msg, (msg.payload as { type: string }).type);
     yield msg;
   }
@@ -1010,10 +1014,13 @@ export class Session {
    * closed by a compaction — always **summarize**, whatever the Agent's `compaction.mode`
    * says, because the summary is what the new model continues from. That compaction is an
    * ordinary `manual` one: an ordinary request on the old model, extending the prefix the
-   * provider has cached. The model is recorded by the new context's `session_meta` alone; its
-   * Trace file opens at once, headed by that record — what a resume reads the model from —
-   * and the record is yielded last, so the stream names the model too. Only callable at a Task
-   * boundary, like `compact()`. Not the `/model` handoff, which opens a NEW Session.
+   * provider has cached. A completed switch is recorded by a `session_update` naming the
+   * target, written through the Session's own sink to the end of the file being left — what a
+   * resume reads the model from — and yielded as the switch's last record (the handoff follows
+   * it when that is what the next context opens with). The next context's file opens lazily,
+   * with its first message, like any rotation's: its `session_meta` is written and streamed
+   * then. Only callable at a Task boundary, like `compact()`. Not the `/model` handoff, which
+   * opens a NEW Session.
    *
    * When the summary cannot be had — the model the Session is on can no longer be reached
    * (no longer configured, or its client cannot be built: it is then sent nothing), or the
@@ -1033,6 +1040,8 @@ export class Session {
    * spawned from here inherit it; `aborted` — the switch was stopped, and the Session stays on
    * the model it was on; `fatal` — the target's context could not be opened after the
    * compaction (its `compaction_end` says why), and the Session stays on the model it was on.
+   * Only `completed` writes the `session_update`; a Session that never ran writes none either:
+   * it has no file, and its first run's `session_meta` records the model.
    */
   async *switchModel(opts: ModelSwitchOptions): AsyncGenerator<AmspRecord, StopReason> {
     const target: ModelRef = { provider: opts.provider, model_id: opts.modelId };
@@ -1079,12 +1088,18 @@ export class Session {
             this.compactionApprove(opts.approve),
           )
         : yield* this.engine!.handOverContext(handoff);
-      // Input an aborted bootstrap left with the Session rides on like the engine's pending
-      // input: its text alone, in memory (the original stays where the abort wrote it).
       if (status === "completed") {
+        // Input an aborted bootstrap left with the Session rides on like the engine's pending
+        // input: its text alone, in memory (the original stays where the abort wrote it).
         this.carryOverInput = this.carryOverInput.filter(
           (m) => (m.payload as { type?: string }).type === "text",
         );
+        // The switch's record: the next context is open in memory, its file not yet.
+        yield* this.sessionRecord(
+          sessionUpdate({ provider: target.provider, model_id: target.model_id }),
+        );
+        // Streamed with the context it opens; written at that context's file head.
+        if (this.engine!.opensWith(handoff)) yield handoff;
       }
       return status;
     } finally {

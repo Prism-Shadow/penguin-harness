@@ -2,8 +2,8 @@
  * chat `/switch-model`: switches the Session's model in place over the server API. Drives
  * the real REPL over a fake stdin against the in-process fake server (same harness as
  * chat-clear.test.ts and chat-thinking.test.ts). The fake answers the contract's three
- * shapes — 202 streaming an ordinary manual compaction pair and then the new context's
- * `session_meta` (followed, when no summary could be had, by the Trace handoff naming the
+ * shapes — 202 streaming an ordinary manual compaction pair and then the switch's
+ * `session_update` (followed, when no summary could be had, by the Trace handoff naming the
  * Session's file), 200 carrying the Session back for one that never ran, and 409 with a code
  * per refusal. The REPL renders the compaction like any other and learns the new model from
  * the Session it re-reads. Before the first message there is no Session to switch: the chat
@@ -16,7 +16,7 @@ import {
   buildModelSwitchMessage,
   compactionBegin,
   compactionEnd,
-  sessionMeta,
+  sessionUpdate,
   userText,
 } from "@prismshadow/penguin-core";
 import { registerChatCommand } from "../src/commands/chat.js";
@@ -98,10 +98,10 @@ function requestLog(sessionId: string): string[] {
 const TRACE_FILE = "/data/traces/2026-10-29/session_001.jsonl";
 
 /**
- * A 202 switch, streamed as core streams it. `summary`: a plain manual pair, then the new
- * context's main-session `session_meta` naming the target. `handoff`: no summary could be had,
- * so the compaction still completes but carries the error pair, and the new context's
- * `session_meta` is followed by the Trace handoff naming this Session's file. `fatal`: the
+ * A 202 switch, streamed as core streams it. `summary`: a plain manual pair, then the switch's
+ * main-session `session_update` naming the target. `handoff`: no summary could be had, so the
+ * compaction still completes but carries the error pair, and the `session_update` is followed
+ * by the Trace handoff naming this Session's file. `fatal`: the
  * target's context could not be opened, so the compaction ends `fatal` and nothing follows.
  * `aborted`: stopped, nothing follows. The fake moves the Session's model only when a new
  * context was opened (`summary`, `handoff`).
@@ -124,18 +124,7 @@ function streamedSwitch(
           ...(errorMessage !== undefined ? { errorMessage } : {}),
         }),
         ...(completed
-          ? [
-              sessionMeta({
-                session_id: session.sessionId,
-                provider: target.provider,
-                model_id: target.modelId,
-                model_context_window: "unknown",
-                system_prompt: "",
-                agent_state: "/tmp/agents/default_agent/agent_state",
-                workspace: session.workspace,
-                source: "user",
-              }),
-            ]
+          ? [sessionUpdate({ provider: target.provider, model_id: target.modelId })]
           : []),
         ...(outcome === "handoff"
           ? [
@@ -211,6 +200,17 @@ describe("chat /switch-model: 202 streams the switch", () => {
     expect(handover).toBeGreaterThan(completed);
     expect(done).toBeGreaterThan(handover);
     expect(out).toContain(t.switchModelCurrent(TARGET));
+  });
+
+  it("a chat that resumed a Session and sent nothing yet still reads the handoff as the switch's, not as a Prompt", async () => {
+    // No session_meta reaches the live view before the switch: it streams its session_update
+    // and the handoff, and the next context's meta waits for the next message.
+    const existing = server.addSession();
+    server.switchModel = streamedSwitch("handoff", "the summary does not fit");
+    const out = await driveChat([SWITCH_LINE, "/exit"], ["--resume", existing.sessionId]);
+    expect(out).toContain(t.switchModelHandedOver(TRACE_FILE));
+    expect(out).not.toContain("> [model_switch_from]");
+    expect(out).toContain(t.switchModelDone(CURRENT, TARGET));
   });
 
   it("a switch whose new context cannot be opened prints the failed line and keeps the model", async () => {

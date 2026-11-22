@@ -62,11 +62,16 @@ export class SchedulesRepo implements Schedules {
   /**
    * Register or sync a task's runtime state, returning the synced row plus a `fresh`
    * flag:
-   * - Insert if it doesn't exist (creator is only persisted at this point; a hand-edited
-   *   file gets registered via reconciliation, with creator falling back to the Project
-   *   owner);
+   * - Insert if it doesn't exist;
    * - A change to `start_at` resets the trigger state (a new task instance);
    * - Otherwise, a change to the file fingerprint only clears the disabled flag.
+   *
+   * The creator is who vouches for the file as it stands — the person whose runs it drives
+   * (the scheduler's `driver`). It is written on insert and on every change: the schedules
+   * route passes the person who saved it with their own sign-in (null for the local API token)
+   * and `attested`, which writes it even when nothing changed; reconciliation of a file found on
+   * disk — written or edited by an Agent, or by hand — passes null, so a schedule nobody signed
+   * for has no creator, and editing one a person saved takes theirs away.
    * `fresh` = this call was an insert or reset — the scheduler only establishes its
    * "missed, don't backfill" baseline at this moment; afterward, last_slot being NULL
    * only means "no scheduled time has been consumed yet", and it must fire normally once
@@ -79,6 +84,8 @@ export class SchedulesRepo implements Schedules {
     startAtMs: number;
     defHash: string;
     creatorUserId: string | null;
+    /** A person's save through the schedules route: the creator is written even when nothing changed. */
+    attested?: boolean;
   }): { row: ScheduleStateRow; fresh: boolean } {
     const existing = this.find(args.projectId, args.agentId, args.name);
     let fresh = false;
@@ -103,18 +110,32 @@ export class SchedulesRepo implements Schedules {
         .prepare(
           `UPDATE schedule_state
              SET start_at_ms = ?, def_hash = ?, last_slot_ms = NULL, last_fired_at = NULL,
-                 fired_once = 0, missed = 0, invalid_reason = NULL
+                 fired_once = 0, missed = 0, invalid_reason = NULL, creator_user_id = ?
            WHERE project_id = ? AND agent_id = ? AND name = ?`,
         )
-        .run(args.startAtMs, args.defHash, args.projectId, args.agentId, args.name);
+        .run(
+          args.startAtMs,
+          args.defHash,
+          args.creatorUserId,
+          args.projectId,
+          args.agentId,
+          args.name,
+        );
       fresh = true;
     } else if (existing.defHash !== args.defHash) {
       this.db
         .prepare(
-          `UPDATE schedule_state SET def_hash = ?, invalid_reason = NULL
+          `UPDATE schedule_state SET def_hash = ?, invalid_reason = NULL, creator_user_id = ?
            WHERE project_id = ? AND agent_id = ? AND name = ?`,
         )
-        .run(args.defHash, args.projectId, args.agentId, args.name);
+        .run(args.defHash, args.creatorUserId, args.projectId, args.agentId, args.name);
+    } else if (args.attested === true && existing.creatorUserId !== args.creatorUserId) {
+      this.db
+        .prepare(
+          `UPDATE schedule_state SET creator_user_id = ?
+           WHERE project_id = ? AND agent_id = ? AND name = ?`,
+        )
+        .run(args.creatorUserId, args.projectId, args.agentId, args.name);
     }
     const row = this.find(args.projectId, args.agentId, args.name);
     if (!row) throw new Error("Failed to read back schedule_state after registration");

@@ -237,6 +237,17 @@ export function dialogs(): HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>('[role="dialog"]')];
 }
 
+/**
+ * The words assistive technology reads in a node: its text, minus anything hidden from it
+ * (`aria-hidden`) — a mark that draws a count as a figure and says it as a sentence reads as the
+ * sentence.
+ */
+export function spokenText(node: Element): string {
+  const copy = node.cloneNode(true) as Element;
+  for (const hidden of copy.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+  return copy.textContent ?? "";
+}
+
 /** What {@link watchText} has seen. */
 export interface TextWatch {
   /** Every text the node has shown, in order, each differing from the one before it. */
@@ -252,16 +263,21 @@ export interface TextWatch {
  * empty text (a placeholder took its place), and one put back as a new entry.
  *
  * The node is read once per batch of DOM changes (a MutationObserver), which is what a browser
- * could paint: two changes within one task that undo each other were never on screen.
+ * could paint: two changes within one task that undo each other were never on screen. `read`
+ * says what of the node counts as its text (its `textContent` unless told otherwise; {@link
+ * spokenText} for a mark whose words are for assistive technology alone).
  */
-export function watchText(selector: string): TextWatch {
+export function watchText(
+  selector: string,
+  read: (node: Element) => string = (node) => node.textContent ?? "",
+): TextWatch {
   const seen: string[] = [];
   let present = false;
   const look = () => {
     const node = document.querySelector(selector);
     if (node === null && !present) return;
     present = true;
-    const text = node?.textContent ?? "";
+    const text = node === null ? "" : read(node);
     if (seen.at(-1) !== text) seen.push(text);
   };
   const observer = new MutationObserver(look);
