@@ -20,7 +20,7 @@ import { useLocation, useNavigate } from "react-router";
 import type { AppCenterShortcut, IconRef } from "@prismshadow/penguin-server/api";
 import { useLocale } from "../state/locale";
 import { useProject } from "../state/project";
-import { WINDOW_ENTRY_STATE, windowInFront, windowSearch } from "./app-window-address";
+import { windowEntryState, windowInFront, windowSearch } from "./app-window-address";
 import { APP_CENTER_PATH } from "./app-center-path";
 import { localizedText } from "./skill-use";
 
@@ -109,15 +109,16 @@ export function useRestoreApp(): (key: string) => void {
   const navigate = useNavigate();
   const location = useLocation();
   const front = windowInFront(location);
+  const here = location.pathname + location.search;
   return useCallback(
     (key: string) => {
       if (key === front) return;
       void navigate(
         { pathname: APP_CENTER_PATH, search: windowSearch(key) },
-        { state: WINDOW_ENTRY_STATE },
+        { state: windowEntryState(here) },
       );
     },
-    [navigate, front],
+    [navigate, front, here],
   );
 }
 
