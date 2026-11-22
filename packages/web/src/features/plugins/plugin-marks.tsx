@@ -13,21 +13,36 @@
  * sentence says what the status means for this plugin — the failure reason, the machines it runs
  * on, how many Agents are behind.
  */
-import { Badge, ICONS, StatusMark, type ToneName } from "@prismshadow/penguin-ui";
+import {
+  Badge,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
+  StatusMark,
+  type ToneName,
+} from "@prismshadow/penguin-ui";
 import type { ReactNode } from "react";
 import type { IconRef } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { localizedText } from "../../lib/skill-use";
 import type { PluginRow } from "./plugin-groups";
-import type { LibraryUsage, PluginStatus } from "./plugin-status";
+import type {
+  AgentModuleMark,
+  AgentModuleMarkKind,
+  LibraryUsage,
+  PluginStatus,
+} from "./plugin-status";
 
-/** The glyph of each status: done, waiting, a fault, elsewhere, or not yet there. */
+/** The glyph of each status: done, waiting, a fault, stopped, elsewhere, or not yet there. */
 const STATUS_GLYPH: Record<PluginStatus, string> = {
   installed: ICONS.checkCircle,
   update: ICONS.rotateCw,
+  awaiting: ICONS.hand,
   restart: ICONS.hourglass,
   failed: ICONS.alertCircle,
   incompatible: ICONS.alertCircle,
+  stopped: ICONS.stopCircle,
   "not-here": ICONS.server,
   available: ICONS.download,
 };
@@ -36,15 +51,29 @@ const STATUS_GLYPH: Record<PluginStatus, string> = {
 const STATUS_TONE: Record<PluginStatus, ToneName | undefined> = {
   installed: "success",
   update: "attention",
+  awaiting: "attention",
   restart: "attention",
   failed: "danger",
   incompatible: "attention",
+  stopped: undefined,
   "not-here": undefined,
   available: undefined,
 };
 
-/** A plugin's status as the UI package's mark: its glyph in its tone, its word, `hint` on hover. */
-export function PluginStatusMark({ status, hint }: { status: PluginStatus; hint: string }) {
+/**
+ * A plugin's status as the UI package's mark: its glyph in its tone, its word, `hint` on hover.
+ * `wordless` is the cover card's: the glyph alone, the word leading the hover sentence and
+ * staying the accessible text (the card shares its facts line with its controls).
+ */
+export function PluginStatusMark({
+  status,
+  hint,
+  wordless = false,
+}: {
+  status: PluginStatus;
+  hint: string;
+  wordless?: boolean;
+}) {
   const tone = STATUS_TONE[status];
   return (
     <StatusMark
@@ -52,8 +81,30 @@ export function PluginStatusMark({ status, hint }: { status: PluginStatus; hint:
       {...(tone !== undefined ? { tone } : {})}
       label={S.plugins.status[status]}
       hint={hint}
+      wordless={wordless}
       data-testid="plugin-status"
     />
+  );
+}
+
+/**
+ * How many Agents of this Project use a plugin, as the cover card draws it: the people glyph and
+ * the count, the sentence ("used by 2 agents") on hover and as the accessible text — the count
+ * alone does not say what it counts.
+ */
+export function PluginUsedByMark({ count }: { count: number }) {
+  const sentence = S.plugins.usedByAgents(count);
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center ${ICON_GAP.tight} tabular-nums`}
+      data-tooltip={sentence}
+      data-tooltip-content="text"
+      data-testid="plugin-used-by"
+    >
+      <GlyphIcon d={ICONS.users} size={ICON_SIZE.inlineGlyph} />
+      <span aria-hidden>{count}</span>
+      <span className="sr-only">{sentence}</span>
+    </span>
   );
 }
 
@@ -90,7 +141,78 @@ export function statusHint(
       return S.plugins.statusHint.failed(mod?.error ?? "");
     case "not-here":
       return S.plugins.statusHint.unsynced;
+    case "awaiting":
+      return S.plugins.statusHint.awaiting;
+    case "stopped":
+      return S.plugins.statusHint.stopped;
   }
+}
+
+/**
+ * The glyph and tone of each mark a server module gets on an Agent, by what it means: off and
+ * stopped recede (settled, nothing running), an ask waiting for the administrator and a listing
+ * waiting for a restart are unfinished, a failed load is a fault. Shape tells the two unfinished
+ * ones apart — a raised hand for an ask, the hourglass for a restart — and so do their words. Off
+ * is the lifted plug, apart from the server glyph that leads the detail's line and the Enable
+ * action.
+ */
+const MODULE_MARK: Record<AgentModuleMarkKind | "running", { glyph: string; tone?: ToneName }> = {
+  running: { glyph: ICONS.checkCircle, tone: "success" },
+  off: { glyph: ICONS.plugLifted },
+  awaiting: { glyph: ICONS.hand, tone: "attention" },
+  stopped: { glyph: ICONS.stopCircle },
+  failed: { glyph: ICONS.alertCircle, tone: "danger" },
+  restart: { glyph: ICONS.hourglass, tone: "attention" },
+};
+
+/** What a server module's mark means, on hover: why it does not run, and what that leaves. */
+function moduleHint(mark: AgentModuleMark | null, onMachine: boolean): string {
+  const hint = S.agentPlugins.module.hint;
+  if (mark === null) return hint.running;
+  switch (mark.kind) {
+    case "off":
+      return onMachine && mark.action === null ? hint.offOnMachine : hint.off;
+    case "awaiting":
+      return hint.awaiting;
+    case "stopped":
+      return hint.stopped;
+    case "failed":
+      return hint.failed(mark.reason ?? "");
+    case "restart":
+      return hint.restart;
+  }
+}
+
+/**
+ * A server module's state on an Agent's server, as the UI package's status mark. `words` picks
+ * the wording: `row` names the module in its words (「服务端模块未启用」), for a row where it
+ * stands beside the plugin's own status; `fact` gives the state alone, for the detail's line that
+ * is already named after the module. `mark` null is a module that runs.
+ */
+export function ModuleStatusMark({
+  mark,
+  onMachine,
+  words,
+}: {
+  mark: AgentModuleMark | null;
+  onMachine: boolean;
+  words: "row" | "fact";
+}) {
+  const kind = mark?.kind ?? "running";
+  const { glyph, tone } = MODULE_MARK[kind];
+  return (
+    <StatusMark
+      glyph={glyph}
+      {...(tone !== undefined ? { tone } : {})}
+      label={
+        words === "row" && kind !== "running"
+          ? S.agentPlugins.module.mark[kind]
+          : S.agentPlugins.module.state[kind]
+      }
+      hint={moduleHint(mark, onMachine)}
+      data-testid="module-status"
+    />
+  );
 }
 
 /** One tag on a row's tag line: a category, "built in", where it runs. */
@@ -158,6 +280,16 @@ export function pluginTags(
     );
   }
   return tags;
+}
+
+/**
+ * What this build cannot run of a server module, as a sentence: why it is disabled, or which
+ * part of it is not in use; undefined for a row that runs whole.
+ */
+export function rowNote(row: PluginRow): string | undefined {
+  const mod = row.module;
+  if (mod?.unsatisfied === undefined) return undefined;
+  return mod.state === "disabled" ? mod.unsatisfied : S.plugins.runsPartly(mod.unsatisfied);
 }
 
 /** The icon a row is drawn with, when it has one: the library plugin's, else the index entry's. */

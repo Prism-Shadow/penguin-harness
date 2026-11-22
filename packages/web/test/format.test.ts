@@ -126,6 +126,12 @@ describe("formatMoney", () => {
     expect(formatMoney(150)).toBe("$150");
   });
 
+  it("a cost below a tenth of a cent keeps four significant digits instead of rounding to zero", () => {
+    expect(formatMoney(0.0000123)).toBe("$0.0000123");
+    expect(formatMoney(0.00045678)).toBe("$0.0004568");
+    expect(formatMoney(0.0001, "CNY")).toBe("¥0.0007");
+  });
+
   it("CNY converted at 1:7", () => {
     expect(formatMoney(0, "CNY")).toBe("¥0");
     expect(formatMoney(1, "CNY")).toBe("¥7.00");

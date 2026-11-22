@@ -1,9 +1,10 @@
 /**
  * Every record, field by field, one at a time: a selector grouped by family (the envelope, the
- * Session's `session_meta`, complete messages, their fragments, the Task and Request boundaries,
- * aborts, approvals and hooks, context and tools, then the control frames) and the chosen record's
- * detail — its envelope and whether the Trace stores it, what it is, an example with every field
- * filled in, and a table of its fields: name, type, required or optional, meaning, example value.
+ * Session's `session_meta` and `session_update`, complete messages, their fragments, the Task and
+ * Request boundaries, aborts, approvals and hooks, context and tools, then the control frames)
+ * and the chosen record's detail — its envelope and whether the Trace stores it, what it is, an
+ * example with every field filled in, and a table of its fields: name, type, required or
+ * optional, meaning, example value.
  * The catalogue is lib/amsp-records.ts, the families and frames lib/amsp-vocabulary.ts, the words
  * the dictionaries' `amsp.records`. The selector is a list from `md` up, its names in their
  * family's colour (lib/amsp-tones.ts, with its legend above the list), and a native select on a

@@ -4,9 +4,10 @@
  * then every chart kind the app draws, on fixed demo data so the themes' chart styles compare:
  * the token donut, the ring gauge, the legend in both layouts, the cost trend line, the stacked
  * token bars with their cache-hit curve and legend, the requests-and-success-rate stack, the
- * sparkline at both scales, and the Trace timeline's lanes. The demo days include an idle
- * stretch for one agent and a day with no cache traffic, so the rate lines show their breaks and
- * a lone point; the cost, token and requests charts are inspectable (Tab, then the arrow keys).
+ * sparkline at both scales, the Trace timeline's lanes, and the usage bar (usage-bars.tsx). The
+ * demo days include an idle stretch for one agent and a day with no cache traffic, so the rate
+ * lines show their breaks and a lone point; the cost, token and requests charts are inspectable
+ * (Tab, then the arrow keys).
  *
  * Every input a chart receives is built once, at module level or memoized: a chart keeps
  * effects keyed on its data (the timeline re-measures its scroller whenever its groups change),
@@ -38,6 +39,7 @@ import { useGallery } from "../../state";
 import { BasicCharts } from "./basic-charts";
 import { ChartPrimitives } from "./chart-primitives";
 import { ChartTokenTable } from "./chart-tokens";
+import { UsageBars } from "./usage-bars";
 
 /** Fourteen days ending on a fixed date, so the charts are the same on every visit. */
 const DAY_COSTS = [
@@ -364,6 +366,7 @@ export function ChartsBoard() {
             />
           </div>
         </BoardGroup>
+        <UsageBars />
       </Part>
     </div>
   );

@@ -1,4 +1,4 @@
-# PRFC-0015 Agent State Component: hand off state during HMR, running tasks are not interrupted
+# PRFC-0015 Agent State
 
 [中文版](PRFC-0015-agent-state.zh.md)
 

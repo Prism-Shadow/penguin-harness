@@ -1,5 +1,5 @@
 /**
- * The import dialog's decisions (features/builtin-browser/import-options.ts): profiles grouped
+ * The import dialog's decisions (plugins/browser-automation/src/web/import-options.ts): profiles grouped
  * under their browser, the "only these sites" field as the request sends it, the macOS
  * Keychain note, and the request the chosen options make.
  */
@@ -11,7 +11,7 @@ import {
   keychainPromptLikely,
   parseDomainFilter,
   sourceImportable,
-} from "../src/features/builtin-browser/import-options";
+} from "../../../plugins/browser-automation/src/web/import-options";
 
 function source(
   id: string,

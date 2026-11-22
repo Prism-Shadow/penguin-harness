@@ -22,5 +22,5 @@
 
 ## 编号
 
-编号与文件名原样沿用设计仓。两份草案同占 `0005` 号——PRFC-0005-mechanisms-not-implementations.md 与 PRFC-0005-plugin-versioning.md——两条独立的设计线在各自落地前先后占了同一个号；它们是两份不同的文档，不是同一份的两个修订。`0013` 号已退役：HMR RFC 曾以 PRFC-0013 起草，落地前改号为 PRFC-0002。
+编号与文件名原样沿用设计仓。`0013` 号已退役：HMR RFC 曾以 PRFC-0013 起草，落地前改号为 PRFC-0002。
 

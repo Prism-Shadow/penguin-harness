@@ -148,8 +148,11 @@ export function renderMainChatBody(scope: MainChatView) {
                         <>
                           {/* `relative`: the floating dock launcher below anchors to this body —
                             the region between the toolbar and the composer — so clamping to
-                            it keeps the launcher off both. */}
-                          <div className="relative min-h-0 flex-1">
+                            it keeps the launcher off both. On a phone the ball rides over the
+                            transcript's right edge, so a Compact work group's head
+                            (ActivityGroup) ends its pager short of it through
+                            --activity-head-reserve. */}
+                          <div className="relative min-h-0 flex-1 max-sm:[--activity-head-reserve:62px]">
                             {emptyChat ? (
                               <div className="flex h-full items-center justify-center px-4">
                                 <p className="text-lg font-medium text-gray-400 dark:text-gray-500">

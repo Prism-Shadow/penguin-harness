@@ -7,7 +7,7 @@
  * the answer is decoded here before it is relayed. Relaying the encoded bytes would only work for
  * a browser on HTTP that happened to accept the same encoding: an API socket call is framed as
  * parsed JSON (socket/serve.ts), and the hub's own answer to its caller is encoded by its own
- * rule (http/json-compression.ts), never twice.
+ * rule (@prismshadow/penguin-library-http/json-compression), never twice.
  *
  * A machine whose server predates this answers as it always did, with no `Content-Encoding`, and
  * its answer is relayed untouched. One in an encoding this side did not ask for is left as it

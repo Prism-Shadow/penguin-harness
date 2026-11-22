@@ -16,12 +16,13 @@
  * - Given the owner uninstalls a Skill a plugin installed, the confirmation also says which plugin
  *   installed it; the user's own Skill's does not.
  * - Given a member, each sub-page's switch shows its state greyed and nothing is written.
- * - Given a machine's Agent, pressing another sub-page keeps the machine in the address.
+ * - Given a machine's Agent, pressing another sub-page keeps the machine in the address, and its
+ *   workbench's sidebar setting is written on that machine.
  * - Given the skills prompt holds unsaved edits, pressing another sub-page asks first, and "keep
  *   editing" leaves the address and the text alone.
  * - Given the Workbenches sub-page, the owner switches Board off by itself and its Open goes; with
  *   "Enable workbenches" off every row's switch is greyed at its own value; a machine older than
- *   the switches shows none.
+ *   the switches shows none, and its More menu has no sidebar setting.
  * - Given an Agent with no hook package, the Hooks sub-page says so and Import hook is still there.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -46,6 +47,7 @@ import {
   dialogs,
   field,
   hasButton,
+  menuItem,
   pressScrim,
   switchNamed,
   type,
@@ -230,7 +232,7 @@ describe("the kind sub-pages of the Plugins tab", () => {
   });
 
   it("keeps a machine's Agent on its machine when another sub-page is pressed", async () => {
-    const { router } = await openAgentPlugins({
+    const { router, server } = await openAgentPlugins({
       machines: [GPU],
       at: `${PAGE}?machine=gpu1&tab=skills`,
       ready: () => hasButton(`${en.skills.uninstall} notes`),
@@ -238,6 +240,15 @@ describe("the kind sub-pages of the Plugins tab", () => {
     await click(subPageButton(en.agentPlugins.subPages.workbenches));
     expect(whereIs(router)).toBe(`${PAGE}?machine=gpu1&tab=workbenches`);
     await waitFor(() => hasButton(`${en.workbenches.more} Board`));
+    await click(button(`${en.workbenches.more} Board`));
+    await click(menuItem(en.workbenches.showInSidebar));
+    await waitFor(() => server.writes().some((write) => write.path.endsWith("/sidebar")));
+    expect(server.writes().at(-1)).toMatchObject({
+      machine: "gpu1",
+      method: "PATCH",
+      path: `${AGENT_PATH}/workbenches/board/sidebar`,
+      body: { show: false },
+    });
   });
 
   it("asks before another sub-page replaces an edited skills prompt, and keep editing stays", async () => {
@@ -288,6 +299,9 @@ describe("the kind sub-pages of the Plugins tab", () => {
     });
     expect(() => switchNamed(en.workbenches.enableAll)).toThrow();
     expect(() => switchNamed(en.workbenches.enableOne("Board"))).toThrow();
+    await click(button(`${en.workbenches.more} Board`));
+    expect(menuItem(en.workbenches.reload)).toBeDefined();
+    expect(() => menuItem(en.workbenches.showInSidebar)).toThrow();
   });
 
   it("says an Agent has no hook package, and keeps Import hook", async () => {

@@ -16,6 +16,7 @@ import { Outlet, useLocation } from "react-router";
 import { AppShell, Drawer, MobileTopBar, Notice, UpdateDot } from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
 import { nagsAboutInitialPassword } from "../lib/account-menu";
+import { useSidebarWidth } from "../lib/sidebar-width";
 import { S } from "../lib/strings";
 import { onCommand } from "../lib/shortcuts/dispatcher";
 import { ErrorBoundary } from "../rescue/error-boundary";
@@ -99,6 +100,9 @@ export function AppLayout() {
       localStorage.setItem("penguin.sidebarCollapsed", next ? "1" : "0");
       return next;
     });
+  // The pinned sidebar's width as the reader dragged its edge (persisted); folding keeps it, so
+  // the sidebar comes back at the same width.
+  const sidebarWidth = useSidebarWidth();
   // The commands whose surface is this layout. Each declines (returns false, so the browser's
   // own key runs) when its effect could not be seen: the pinned sidebar exists only from the
   // `md` breakpoint up (below it the drawer's own sidebar answers while open), and a contributed
@@ -146,6 +150,7 @@ export function AppLayout() {
           : backgroundStyle(background.image, background.settings)
       }
       navCollapsed={collapsed}
+      navResize={{ ...sidebarWidth, label: S.nav.resizeSidebar }}
       band={
         band ? <TitleBand sidebarCollapsed={collapsed} onToggleSidebar={foldSidebar} /> : undefined
       }

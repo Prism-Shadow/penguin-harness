@@ -75,7 +75,7 @@ async function open(
   const server = agentServer(undefined, {
     workbenches: options.workbenches ?? [board],
     ...(options.layout !== undefined ? { appCenterLayout: options.layout } : {}),
-    ...(options.serverAdmin !== undefined ? { serverAdmin: options.serverAdmin } : {}),
+    ...(options.serverAdmin !== undefined ? { admin: options.serverAdmin } : {}),
     ...(options.machines !== undefined ? { machines: options.machines } : {}),
   });
   // Every read of this server's list fails: the page reads again when the Agent list arrives.

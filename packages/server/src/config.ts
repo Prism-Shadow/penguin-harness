@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
 import { PENGUIN_GO_BASE_URL } from "./model-catalog/catalog.js";
 import { offeredCli, type CliLaunch } from "./services/cli-shim.js";
+import { resolvePluginMarketUrl } from "./plugin/market.js";
 
 export interface ServerConfig {
   /** Local data root directory (shared with the SDK/CLI). */
@@ -98,7 +99,7 @@ export interface ServerConfig {
   portFile: string | null;
   /**
    * Trust `x-forwarded-proto` and `x-forwarded-host` from the request (PENGUIN_TRUST_PROXY=1),
-   * each only as a single value (http/public-origin.ts). Off by default: the headers are
+   * each only as a single value (@prismshadow/penguin-library-http/public-origin). Off by default: the headers are
    * caller-supplied, so on a non-loopback bind an untrusted caller could set the scheme to
    * `https` to walk through the hot-update network gate (hmr/routes.ts) while actually speaking
    * plaintext, get session cookies stamped `Secure` over plain HTTP, which the browser then never
@@ -110,6 +111,16 @@ export interface ServerConfig {
    * `Secure` flag (auth/middleware.ts cookieOptions). The desktop shell always sets it.
    */
   trustProxy: boolean;
+  /**
+   * The published plugin market document this deployment reads (PENGUIN_PLUGIN_MARKET), or null
+   * for the one embedded in the build alone. Unset = the community repository's; `off` = no
+   * outbound request for the market, its document or its pictures; any other value replaces the
+   * URL, and the pictures are read beside it (plugin/market.ts).
+   *
+   * OPTIONAL like `pluginIndexUrl`: a runtime older than this field publishes none, and the
+   * market then reads the variable from its own process environment (http/routes/plugin-market.ts).
+   */
+  pluginMarketUrl?: string | null;
   /**
    * The CLI entry script this harness offers as `penguin` to the Agents it runs and in its
    * terminals — the file the `<root>/bin/penguin` shim runs (see services/cli-shim.ts).
@@ -191,63 +202,19 @@ function normalizePreviewOrigin(raw: string | undefined): string | null {
   return url.origin;
 }
 
-/** HTTPS in production; plain HTTP is accepted only for an explicit loopback integration. */
-export function normalizePenguinGoOrigin(raw: string | undefined): string {
-  const value = raw?.trim() || new URL(PENGUIN_GO_BASE_URL).origin;
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error(`Invalid PENGUIN_GO_ORIGIN=${value} (expected an absolute HTTP(S) origin)`);
-  }
-  if (
-    url.username !== "" ||
-    url.password !== "" ||
-    url.pathname !== "/" ||
-    url.search !== "" ||
-    url.hash !== ""
-  ) {
-    throw new Error(
-      `Invalid PENGUIN_GO_ORIGIN=${value} (paths, credentials, query and fragment are not allowed)`,
-    );
-  }
-  const loopback =
-    url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
-    throw new Error(`Invalid PENGUIN_GO_ORIGIN=${value} (HTTPS required except for loopback HTTP)`);
-  }
-  return url.origin;
-}
-
 /**
- * Validates MODELSCOPE_BRIDGE_URL into a base URL with no trailing slash, or throws.
- *
- * Deliberately looser than normalizePenguinGoOrigin in exactly one place: a PATH PREFIX is
- * allowed, because the bridge is mounted under one in production
- * (`https://go.penguin.ooo/modelscope`) and strips it from the request itself — so the
- * prefix is part of the address the client must call. Credentials, query, fragment and
- * plaintext HTTP stay rejected.
+ * PENGUIN_GO_ORIGIN and MODELSCOPE_BRIDGE_URL validators — the flow origins' vocabulary moved
+ * to the model domain package (services+http+cli restack S1); re-exported here for the server's
+ * own import paths (the routes read the default off them too).
  */
-export function normalizeModelScopeBridgeUrl(raw: string | undefined): string {
-  const value = raw?.trim() || "https://go.penguin.ooo/modelscope";
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error(`Invalid MODELSCOPE_BRIDGE_URL=${value} (expected an absolute HTTP(S) URL)`);
-  }
-  if (url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== "") {
-    throw new Error(
-      `Invalid MODELSCOPE_BRIDGE_URL=${value} (credentials, query and fragment are not allowed)`,
-    );
-  }
-  if (url.protocol !== "https:") {
-    throw new Error(`Invalid MODELSCOPE_BRIDGE_URL=${value} (HTTPS required)`);
-  }
-  // A bare origin parses as pathname "/", which must become "" rather than stay a slash, or
-  // every appended route would read `//oauth/start`.
-  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
-}
+export {
+  normalizePenguinGoOrigin,
+  normalizeModelScopeBridgeUrl,
+} from "@prismshadow/penguin-library-model/origins";
+import {
+  normalizeModelScopeBridgeUrl,
+  normalizePenguinGoOrigin,
+} from "@prismshadow/penguin-library-model/origins";
 
 /** Parses server config from environment variables (PORT / PENGUIN_DEV_APP_PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_GO_ORIGIN / MODELSCOPE_BRIDGE_URL / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY / PENGUIN_CLI_ENTRY). */
 export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -291,6 +258,7 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
     desktopToken,
     portFile: env.PENGUIN_PORT_FILE?.trim() || null,
     trustProxy: env.PENGUIN_TRUST_PROXY === "1",
+    pluginMarketUrl: resolvePluginMarketUrl(env.PENGUIN_PLUGIN_MARKET),
     cliEntry: cli.entry,
     cliLaunch: {
       execArgs: cli.execArgs,

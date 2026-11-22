@@ -38,7 +38,9 @@
  * cached prefix records stay valid, so CACHE_VERSION is unchanged by them. So is it by the
  * in-session switch's Trace handoff, which counts like a summary: no shard written before it
  * existed holds a `[model_switch_from]` block naming its own Session (a `/model` block names
- * the Session it came from), so no cached record changes.
+ * the Session it came from), so no cached record changes. A `session_update` is metadata like
+ * `session_meta`: no item, no Task, no timing. Version 5 has it so: a harness that predates the
+ * record cached a shard holding one (after a downgrade) as an event that advances the open Task.
  *
  * Scan state is carried across shards (a Task can span a rotation). Cached per-shard
  * prefix records (trace_files.page_stats) persist the carry so old shards are read at
@@ -55,7 +57,7 @@ import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { MessageCursor, WindowPriorStats } from "@prismshadow/penguin-library-trace";
 
 /** Bump when any counting/boundary rule changes: cached page_stats records with an older version are recomputed. */
-export const CACHE_VERSION = 4;
+export const CACHE_VERSION = 5;
 
 /** Open-Task bookkeeping carried across messages (mirrors StreamModel.task* fields). */
 interface TaskCarry {
@@ -305,6 +307,9 @@ export async function scanMessages(
     // closes the steering-images window (session_meta and events included).
     const isUserImage = msg.type === "model_msg" && p.type === "image_url";
     if (!isUserImage) state.steeringOpen = false;
+    // A completed switch's session_update counts like session_meta: no item (the Web draws its
+    // marker, as it does for a meta naming another model), no Task, no timing.
+    if (msg.type === "event_msg" && p.type === "session_update") continue;
 
     if (msg.type === "model_msg") {
       // Compaction-internal model messages: never rendered, never counted (stream-model
