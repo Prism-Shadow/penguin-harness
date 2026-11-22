@@ -104,11 +104,17 @@ import type { TelegramTransport } from "@prismshadow/penguin-library-messaging/t
 import { QQConnector } from "@prismshadow/penguin-library-messaging/qq-connector";
 import { createQQTransport } from "@prismshadow/penguin-library-messaging/qq-api";
 import type { QQTransport } from "@prismshadow/penguin-library-messaging/qq-api";
-import { QQScanService, createQQScanTransport } from "@prismshadow/penguin-library-messaging/qq-scan";
+import {
+  QQScanService,
+  createQQScanTransport,
+} from "@prismshadow/penguin-library-messaging/qq-scan";
 import { WeChatConnector } from "@prismshadow/penguin-library-messaging/wechat-connector";
 import { createWeChatTransport } from "@prismshadow/penguin-library-messaging/wechat-api";
 import type { WeChatTransport } from "@prismshadow/penguin-library-messaging/wechat-api";
-import { WeChatScanService, createWeChatScanTransport } from "@prismshadow/penguin-library-messaging/wechat-scan";
+import {
+  WeChatScanService,
+  createWeChatScanTransport,
+} from "@prismshadow/penguin-library-messaging/wechat-scan";
 import type { WeChatScanTransport } from "@prismshadow/penguin-library-messaging/wechat-scan";
 import type { QQScanTransport } from "@prismshadow/penguin-library-messaging/qq-scan";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";

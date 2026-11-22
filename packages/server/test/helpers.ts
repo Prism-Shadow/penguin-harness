@@ -27,7 +27,10 @@ import type { AgentService } from "../src/services/agent-service.js";
 import type { AgentConfigService } from "../src/services/agent-config-service.js";
 import type { MemoryService } from "../src/services/memory-service.js";
 import type { SessionService } from "../src/services/session-service.js";
-import type { PricingLookup, UsageService } from "@prismshadow/penguin-library-observability/usage-service";
+import type {
+  PricingLookup,
+  UsageService,
+} from "@prismshadow/penguin-library-observability/usage-service";
 import type { WorkspaceFilesService } from "@prismshadow/penguin-library-workspace/workspace-files-service";
 import type { PreviewTokenSigner } from "../src/services/preview-token.js";
 import type { BenchmarkService } from "@prismshadow/penguin-library-benchmark/benchmark-service";
@@ -39,7 +42,10 @@ import type { SchedulesRepo } from "@prismshadow/penguin-library-session/repos/s
 import type { ErrorsRepo } from "@prismshadow/penguin-library-observability/repos/errors";
 import type { MessagingBindingsRepo } from "@prismshadow/penguin-library-messaging/repos/messaging-bindings";
 import type { MessagingBridge } from "@prismshadow/penguin-library-messaging/bridge";
-import type { QQScanService, QQScanTransport } from "@prismshadow/penguin-library-messaging/qq-scan";
+import type {
+  QQScanService,
+  QQScanTransport,
+} from "@prismshadow/penguin-library-messaging/qq-scan";
 import type { Scheduler } from "../src/runtime/scheduler.js";
 import type { OrganizationService } from "../src/runtime/organization/service.js";
 import type { OrgCacheRepo } from "@prismshadow/penguin-library-organization/organizations";
