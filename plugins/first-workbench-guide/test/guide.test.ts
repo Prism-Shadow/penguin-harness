@@ -2,9 +2,11 @@
  * Given an explicitly selected model, the first send starts a talk-only Session once;
  * a refresh during a turn must not turn an empty snapshot into success. The second turn
  * uses that Session and the user's revisions, and produces only bounded checklist data.
+ * Returning from model settings after a failed send restores the edits for the next attempt.
  * Invalid replies, launch failures and attempts to skip the conversation remain retryable.
  */
 import { describe, expect, it, vi } from "vitest";
+import { conversationDraft } from "../workbenches/first-workbench-guide/ui/draft.js";
 import pkg from "../workbenches/first-workbench-guide/index";
 const key = "a".repeat(32);
 const model = { provider: "chosen-provider", modelId: "chosen-model" };
@@ -74,6 +76,31 @@ describe("first workbench conversation", () => {
     expect((await call()).body).toMatchObject({ phase: "ready", design });
     expect((await call({ action: "generate" })).body.design).not.toHaveProperty("code");
     expect(host.run).toHaveBeenCalledTimes(2);
+  });
+  it("restores an edited request and replacement model after a failed conversation", async () => {
+    const { host, call } = fixture();
+    await call(first);
+    host.sessionResult.mockResolvedValue({
+      status: "failed",
+      text: "",
+      error: "Connection refused",
+    });
+    const failed = (await call()).body;
+    const edits = {
+      request: "Check expiration dates instead.",
+      model: { provider: "local", modelId: "inventory", label: "Inventory" },
+    };
+    const resumed = conversationDraft(JSON.parse(JSON.stringify(edits)), failed);
+    expect(resumed).toEqual(edits);
+    await call({ action: "chat", ...resumed });
+    expect(host.createSession).toHaveBeenLastCalledWith({
+      model: { provider: "local", modelId: "inventory" },
+      approvalMode: "deny-all",
+    });
+    expect(host.run.mock.calls.at(-1)).toEqual([
+      "s1",
+      [{ text: expect.stringContaining(edits.request) }],
+    ]);
   });
   it("rejects skipped setup and recovers from a failed start and malformed design", async () => {
     const { host, call } = fixture();

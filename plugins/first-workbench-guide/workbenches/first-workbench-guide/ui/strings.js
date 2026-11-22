@@ -6,8 +6,10 @@ export const words = {
     modelTitle: "Choose a chat model",
     settings: "Open Models settings",
     choose: "Choose model",
+    returnFromSettings:
+      "After saving your provider in Models, choose a model for this conversation.",
     unconfigured:
-      "Add a provider and its credentials in Models, then return here to choose a model.",
+      "The Project owner can add a provider and credentials in Models. Once configured, choose a model here.",
     found: (m) => "Project default: " + m + ". Choose the model for this conversation.",
     selected: (m) => "Using " + m,
     chatTitle: "Plan a task with the Agent",
@@ -21,7 +23,7 @@ export const words = {
     generating: "The Agent is writing the tasks and their completion criteria…",
     installTitle: "Install and try it",
     installInfo:
-      "The Agent wrote the checklist content. A built-in template gives it checkboxes and persistent storage. Install it for this Agent or download the complete plugin.",
+      "The Agent wrote the checklist content. A built-in template gives it checkboxes and persistent storage. Install it for this Agent. To use the ZIP elsewhere, an administrator imports it on the Plugins page, then a Project member adds it to the target Agent from the plugin library.",
     install: "Install on this Agent",
     export: "Download plugin ZIP",
     test: "Test installed checklist",
@@ -37,7 +39,6 @@ export const words = {
     unavailable:
       "Open this guide in PenguinHarness. You can also reach Models from the app navigation.",
     failed: "The request failed.",
-    changed: "Choose another model or try again.",
     load: "The workbench did not load a usable page.",
     wrong: "The installed workbench did not match this checklist.",
     testFailed: "The installed checklist did not save the expected change.",
@@ -49,7 +50,8 @@ export const words = {
     modelTitle: "选择对话模型",
     settings: "打开模型设置",
     choose: "选择模型",
-    unconfigured: "在「模型」中添加提供商并填写凭据，然后回到这里选择模型。",
+    returnFromSettings: "在「模型」中保存提供商后，可以为本次对话选择模型。",
+    unconfigured: "项目所有者可以在「模型」中添加提供商并填写凭据。配置完成后，在这里选择模型。",
     found: (m) => "项目默认模型为 " + m + "。请选择本次对话使用的模型。",
     selected: (m) => "当前模型：" + m,
     chatTitle: "和 Agent 商量任务",
@@ -63,7 +65,7 @@ export const words = {
     generating: "Agent 正在编写任务和完成条件……",
     installTitle: "安装并试用",
     installInfo:
-      "Agent 编写了清单内容。内置模板提供勾选和保存功能。你可以把工作台安装到当前 Agent，也可以下载完整的插件。",
+      "Agent 编写了清单内容。内置模板提供勾选和保存功能。可以把工作台安装到当前 Agent。要在其他 Agent 上使用，管理员先在插件页导入下载的 ZIP，再由项目成员从插件库将工作台添加到目标 Agent。",
     install: "安装到当前 Agent",
     export: "下载插件 ZIP",
     test: "测试已安装的清单",
@@ -76,7 +78,6 @@ export const words = {
     invalid: "回复中没有可安装的清单。可以补充需求，然后重新生成。",
     unavailable: "请在 PenguinHarness 中打开引导。你也可以从应用导航进入「模型」。",
     failed: "请求失败。",
-    changed: "请选择其他模型或重试。",
     load: "工作台未能加载可用页面。",
     wrong: "已安装的工作台与这份清单不一致。",
     testFailed: "清单未保存预期的更改。",
