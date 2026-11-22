@@ -11,11 +11,11 @@ import type {
   SessionInfo,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
-import { toastError } from "@prismshadow/penguin-ui";
 import * as api from "../../../api/endpoints";
 import { ApiError } from "../../../api/client";
 import { S } from "../../../lib/strings";
-import { apiErrorText } from "../../../lib/api-error";
+import { toastApiError, toastFailure } from "../../../lib/toast-api-error";
+import { toldFailure } from "../../../lib/failure";
 import { machineForSession } from "../../../lib/session-machines";
 import { createStreamModel, finalizeHistory, pushMessage } from "../../../lib/amsp/stream-model";
 import { switchDeskModel, useCompany } from "../../company";
@@ -77,7 +77,7 @@ export function useSessionSends({
         return true;
       } catch (e) {
         // Returning false -> the input area keeps the draft, letting the user fix it and resend (the error copy includes the session model's upstream id).
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return false;
       }
     },
@@ -143,7 +143,7 @@ export function useSessionSends({
           // The model may be written and the desk renewed by now; the lists say which.
           void company.reloadOrgChart();
           void company.reloadOrgSessions();
-          toastError(apiErrorText(e, { modelId: ref.modelId }));
+          toastApiError(e, { modelId: ref.modelId });
           return false;
         }
       }
@@ -174,7 +174,7 @@ export function useSessionSends({
         return true;
       } catch (e) {
         if (createdId) void api.deleteSession(createdId).catch(() => undefined);
-        toastError(apiErrorText(e, { modelId: ref.modelId }));
+        toastApiError(e, { modelId: ref.modelId });
         return false;
       }
     },
@@ -220,9 +220,7 @@ export function useSessionSends({
       } catch (e) {
         if (createdId) void api.deleteSession(createdId).catch(() => undefined);
         // The new chat uses the project's default model (createSession doesn't specify a model reference), so the error copy's model context follows suit.
-        toastError(
-          apiErrorText(e, models?.defaultModel ? { modelId: models.defaultModel.modelId } : {}),
-        );
+        toastApiError(e, models?.defaultModel ? { modelId: models.defaultModel.modelId } : {});
         return false;
       }
     },
@@ -250,7 +248,7 @@ export function useSessionSends({
         await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
       } catch (e) {
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return false;
       }
     },
@@ -283,7 +281,7 @@ export function useSessionSends({
         return "queued";
       } catch (e) {
         if (e instanceof ApiError && e.status === 409) return "not_running";
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
         return "failed";
       }
     },
@@ -327,14 +325,20 @@ export function useSessionSends({
           position = match?.kind === "task_stats" ? match.forkPosition : undefined;
         }
         if (position === undefined) {
-          toastError(S.chat.forkSessionFailed);
+          // No fork position for the reply: the record the fork is cut at was not found.
+          toastFailure(
+            toldFailure(S.chat.forkSessionFailed, {
+              what: "a conversation could not be forked: its fork position was not found",
+              detail: null,
+            }),
+          );
           return;
         }
         const created = await api.forkSession(selected.sessionId, { position });
         addSession(created.session);
         navigate(`/chat/${created.session.sessionId}`);
       } catch (e) {
-        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        toastApiError(e, { modelId: selected.modelId });
       }
     },
     [selected, addSession, navigate],

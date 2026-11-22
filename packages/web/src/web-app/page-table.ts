@@ -47,6 +47,11 @@ export interface WebAppPage extends Omit<PageData, "nav"> {
   Component: ComponentType;
   /** The renderer a server-contributed page named; absent on the modules' own pages. */
   renderer?: RendererRef;
+  /**
+   * The web module whose server module this page waits for (lib/module-gate.ts): the table
+   * leaves it out while that module is not running. Absent on every other page.
+   */
+  gatedBy?: string;
 }
 
 /** A page the server contributed: the renderer it named stays beside the component, for the readers that key on it. */

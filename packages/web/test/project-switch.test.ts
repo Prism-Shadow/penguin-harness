@@ -121,6 +121,8 @@ const usageOf = (projectId: string): UsageResponse => {
     requests: 1,
     cost: null,
     hasUncosted: false,
+    toolRequests: 0,
+    toolCost: null,
   };
   return {
     summary: { today: bucket, last7d: bucket, total: bucket },
@@ -130,6 +132,7 @@ const usageOf = (projectId: string): UsageResponse => {
     series: [],
     byAgentSeries: [],
     byModelSeries: [],
+    tools: [],
     agentIds: (AGENTS[projectId] ?? []).filter((agentId) => agentId !== "default_agent"),
     models: [],
     errors: { total: 0, unexpected: 0, rows: 0, recent: [], topCode: null },

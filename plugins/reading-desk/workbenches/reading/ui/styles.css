@@ -1,0 +1,326 @@
+:root {
+  --paper: color-mix(in srgb, var(--wb-canvas) 96%, #c7ad79);
+  --leaf: light-dark(#315e51, #b0d8c3);
+  --ink: light-dark(#fffdf6, #153528);
+  --pale: color-mix(in srgb, var(--leaf) 9%, var(--paper));
+  --size: 19px;
+  --serif: Georgia, "Songti SC", "Noto Serif CJK SC", "STSong", serif;
+}
+* {
+  box-sizing: border-box;
+}
+[hidden] {
+  display: none !important;
+}
+body {
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  color: var(--wb-fg);
+}
+h1,
+h2,
+p {
+  margin: 0;
+}
+button,
+.file-label {
+  cursor: pointer;
+  font: inherit;
+}
+button:disabled {
+  cursor: default;
+}
+.top,
+.controls,
+.chapter-location,
+footer,
+.tools,
+.brand,
+.pager,
+dialog form {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.top,
+.controls,
+dialog form {
+  justify-content: space-between;
+}
+.top {
+  padding: 0.8rem clamp(1rem, 3vw, 2.2rem);
+  border-bottom: 1px solid var(--wb-border);
+  background: var(--wb-canvas);
+}
+.brand img {
+  flex: none;
+  width: 2.15rem;
+}
+.brand h1 {
+  font: 600 1.35rem var(--serif);
+  color: var(--leaf);
+}
+button.primary,
+.file-label {
+  background: var(--leaf);
+  color: var(--ink);
+  border: 0;
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.85rem;
+}
+button.primary:hover:not(:disabled),
+.file-label:hover {
+  background: color-mix(in srgb, var(--leaf) 90%, var(--wb-fg));
+}
+#reader {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: clamp(13rem, 23vw, 19rem) minmax(0, 1fr);
+}
+aside {
+  padding: 1.45rem 1rem;
+  overflow: auto;
+  border-right: 1px solid var(--wb-border);
+  background: var(--wb-surface);
+}
+aside h2 {
+  font: 600 1.02rem var(--serif);
+  padding: 0 0.45rem;
+  margin-bottom: 0.5rem;
+}
+aside button {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: left;
+  width: 100%;
+  padding: 0.55rem;
+  border: 0;
+  background: transparent;
+  overflow-wrap: anywhere;
+}
+aside button[aria-current="true"] {
+  background: var(--pale);
+  color: var(--leaf);
+  font-weight: 600;
+}
+.chapter-number {
+  font-size: 0.8rem;
+  min-width: 1.15rem;
+  color: var(--wb-muted);
+  font-variant-numeric: tabular-nums;
+}
+.reading {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  min-width: 0;
+}
+.controls,
+footer {
+  padding: 0.65rem clamp(0.7rem, 2.3vw, 2rem);
+  color: var(--wb-muted);
+  font-size: 0.82rem;
+}
+.controls {
+  border-bottom: 1px solid var(--wb-border);
+}
+.controls button,
+footer button {
+  background: transparent;
+}
+.controls button {
+  border: 0;
+}
+.controls button:last-child {
+  border-left: 1px solid var(--wb-border);
+  border-radius: 0;
+}
+.reading #page {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+/* The page takes focus when a book opens, for the arrow keys; a ring around the whole text is
+   noise, not a cue. */
+.reading #page:focus-visible {
+  outline: none;
+}
+article {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: clamp(1.5rem, 5vh, 4rem) clamp(1.2rem, 5vw, 4.5rem) 2rem;
+}
+#book-title {
+  color: var(--leaf);
+  font-weight: 550;
+  font-size: 0.87rem;
+}
+article h2 {
+  font: 600 clamp(1.8rem, 3.2vw, 3rem)/1.25 var(--serif);
+  margin: 0.5rem 0 1.6rem;
+  overflow-wrap: anywhere;
+}
+#paragraphs {
+  font: var(--size)/1.85 var(--serif);
+  overflow-wrap: anywhere;
+}
+#paragraphs p {
+  margin: 0 0 1em;
+}
+mark {
+  background: light-dark(#f6e6ab, #544a31);
+  color: inherit;
+}
+.pager {
+  justify-content: space-between;
+  margin-top: 2rem;
+}
+.pager button {
+  border: 0;
+  background: transparent;
+  color: var(--leaf);
+}
+footer {
+  border-top: 1px solid var(--wb-border);
+  /* A full-page workbench carries the app's exit control at the lower right. */
+  padding-inline-end: 3.4rem;
+}
+#highlight[aria-disabled="true"] {
+  opacity: 0.6;
+}
+footer progress {
+  flex: 1;
+  height: 4px;
+  accent-color: var(--leaf);
+}
+#percent {
+  min-width: 3rem;
+  text-align: end;
+}
+dialog {
+  color: var(--wb-fg);
+  background: var(--wb-canvas);
+  border: 1px solid var(--wb-border);
+  border-radius: 0.7rem;
+  padding: 1.25rem;
+  width: min(30rem, calc(100% - 1.5rem));
+  max-height: 85dvh;
+}
+dialog::backdrop {
+  background: rgb(20 30 26/0.45);
+}
+dialog p {
+  margin: 0.85rem 0;
+}
+dialog form h2 {
+  margin: 0;
+  font: 600 1.4rem var(--serif);
+}
+.dismiss {
+  border: 0;
+}
+.file-label {
+  display: inline-block;
+}
+.file-label:focus-within {
+  outline: 2px solid var(--leaf);
+  outline-offset: 2px;
+}
+.file-label input {
+  width: 1px;
+  height: 1px;
+  position: absolute;
+  clip-path: inset(50%);
+}
+.entry {
+  border-top: 1px solid var(--wb-border);
+  margin-top: 1rem;
+  padding: 0.8rem 0;
+}
+.entry blockquote {
+  margin: 0.5rem 0;
+  font: 1rem/1.55 var(--serif);
+}
+.entry textarea {
+  width: 100%;
+  resize: vertical;
+}
+.entry .tools {
+  flex-wrap: wrap;
+  margin: 0.35rem 0;
+}
+#status {
+  position: fixed;
+  bottom: 3.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--wb-canvas);
+  border: 1px solid var(--wb-border);
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.8rem;
+}
+#toggle-shelf {
+  display: none;
+}
+@media (max-width: 680px) {
+  #toggle-shelf {
+    display: block;
+  }
+  .top {
+    padding: 0.5rem 0.7rem;
+  }
+  .brand {
+    gap: 0.35rem;
+    min-width: 0;
+  }
+  .brand h1 {
+    font-size: 1.1rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* The title gives way at phone width; the buttons keep their labels on one line. */
+  .top .tools button {
+    flex: none;
+    white-space: nowrap;
+  }
+  .brand img {
+    width: 1.7rem;
+  }
+  .tools {
+    gap: 0.25rem;
+  }
+  #reader {
+    position: relative;
+    display: flex;
+  }
+  .reading {
+    flex: 1;
+  }
+  aside {
+    display: none;
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 2;
+    width: min(85%, 18rem);
+    box-shadow: 3px 0 10px rgb(20 30 26/0.12);
+  }
+  body[data-shelf="open"] aside {
+    display: block;
+  }
+  .chapter-location {
+    flex-wrap: wrap;
+    gap: 0.15rem;
+  }
+  .controls .tools {
+    flex-shrink: 0;
+  }
+  .controls {
+    padding: 0.35rem 0.5rem;
+  }
+}

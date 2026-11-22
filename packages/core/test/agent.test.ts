@@ -39,6 +39,9 @@ import {
 } from "../src/state/paths.js";
 import {
   addModel,
+  assistantText,
+  compactionBegin,
+  compactionEnd,
   createAgent,
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
@@ -46,7 +49,11 @@ import {
   installSkill,
   loadProjectConfig,
   ModelSwitchRefusedError,
+  requestBegin,
+  requestEnd,
   saveProjectConfig,
+  sessionMeta,
+  sessionUpdate,
   setProviderConnection,
   setVaultEntry,
   userText,
@@ -1501,6 +1508,76 @@ describe("Session.switchModel on a real Agent (the composition layer's half)", (
       const head = (await readTrace(located!.path))[0]!;
       expect(head.type).toBe("session_meta");
       expect((head.payload as { model_id: string }).model_id).toBe("claude-sonnet-4-6");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a Session resumed with a switch still pending sends its first message on the target: the left file gains only the task_begin, the next opens with the target's meta and the summary, sent once", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-switch-pending");
+    await fs.mkdir(ws, { recursive: true });
+    const sessionId = "session-2026-07-06-12-00-00-abcdef03";
+    const dir = path.join(tracesDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID), "2026-07-06");
+    await fs.mkdir(dir, { recursive: true });
+    const left = path.join(dir, `${sessionId}_001.jsonl`);
+    // A context on the default model, closed by the switch's manual compaction, its target
+    // recorded behind it by a harness that writes the record.
+    const records: AmspRecord[] = [
+      sessionMeta({
+        session_id: sessionId,
+        provider: "deepseek",
+        model_id: "deepseek-flash",
+        model_context_window: 1_000_000,
+        system_prompt: "LEFT PROMPT",
+        agent_state: "/agent/state",
+        workspace: ws,
+        source: "user",
+      }),
+      userText("Start the task."),
+      requestBegin(),
+      assistantText("Started."),
+      requestEnd("completed"),
+      compactionBegin({ reason: "manual", mode: "summarize", context: 10, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      assistantText("[summary]the story so far[/summary]"),
+      requestEnd("completed"),
+      compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+      sessionUpdate({ provider: TARGET.provider, model_id: TARGET.modelId }),
+    ];
+    await fs.writeFile(left, records.map((m) => JSON.stringify(m) + "\n").join(""), "utf8");
+
+    const session = await agent.resumeSession({ sessionId });
+    try {
+      scriptedProvider.state.replies = ["On it."];
+      await drain(session.run([userText("Next step.")]));
+
+      expect(lastBuilt()!.modelId).toBe(TARGET.modelId);
+      const typeOf = (m: AmspRecord): string | undefined =>
+        m.type === "session_meta" ? "session_meta" : (m.payload as { type?: string }).type;
+      // The left file keeps what it had; the new Task's task_begin lands behind the record.
+      const leftNow = await readTrace(left);
+      expect(leftNow.length).toBe(records.length + 1);
+      expect(typeOf(leftNow.at(-1)!)).toBe("task_begin");
+      const located = await findLatestTraceFile(
+        tracesDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
+        sessionId,
+      );
+      expect(located!.index).toBe(2);
+      const opened = await readTrace(located!.path);
+      expect(opened[0]!.type).toBe("session_meta");
+      expect((opened[0]!.payload as { model_id: string }).model_id).toBe(TARGET.modelId);
+      const texts = opened
+        .filter((m) => typeOf(m) === "text" && (m.payload as { role?: string }).role === "user")
+        .map((m) => (m.payload as { text: string }).text);
+      expect(texts[0]).toMatch(/^\[context_summary\]/);
+      expect(texts[0]).toContain("the story so far");
+      expect(texts[1]).toBe("Next step.");
+      // The request carries the summary once, then the message.
+      const sent = JSON.stringify(scriptedProvider.state.requests.at(-1));
+      expect(sent.split("the story so far").length - 1).toBe(1);
+      expect(sent).toContain("Next step.");
     } finally {
       session.dispose();
     }

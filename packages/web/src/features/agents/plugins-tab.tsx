@@ -52,9 +52,9 @@ import {
   useMarkedRow,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { apiErrorText } from "../../lib/api-error";
 import { useAgentLocation } from "../../lib/agent-location";
 import { useInstantSetting } from "../../lib/instant-setting";
+import { useOnPluginModulesChanged } from "../../lib/plugin-modules";
 import {
   publishMachineAgentsChanged,
   readMachineAgents,
@@ -62,6 +62,7 @@ import {
 } from "../../lib/machine-agent-lists";
 import { S } from "../../lib/strings";
 import { WORKBENCH_UPDATED_EVENT } from "../../lib/workbench-tabs";
+import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useMachines } from "../../state/machines";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -87,6 +88,7 @@ import {
   type PluginsSubPage,
 } from "./plugins-subpages";
 import { usePromptInjection } from "./prompt-injection-controls";
+import { failureNode } from "../../lib/failure";
 
 /** Everything the sub-pages list, as the Agent's server last answered. */
 interface Lists {
@@ -130,6 +132,7 @@ export function PluginsTab({
   const { currentProject, reloadAgents, setCurrentAgentId } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  const isAdmin = useAuth().user?.isAdmin === true;
   /** The machine the Agent lives on (null: this server), and the Agents that server runs. */
   const machineId = useAgentLocation();
   const agent = useAgentsOn(machineId).find((a) => a.agentId === agentId);
@@ -161,7 +164,7 @@ export function PluginsTab({
 
   const [lists, setLists] = useState<Lists | null>(null);
   // Only a read that failed with nothing to show renders inline; actions report in toasts.
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [importing, setImporting] = useState<ImportKind | null>(null);
   /** The Plugins sub-page's search: what is on screen, narrowed; not remembered. */
   const [query, setQuery] = useState("");
@@ -191,7 +194,9 @@ export function PluginsTab({
       setLists({ installed, workbenches, library: library.groups, stateDir: config.stateDir });
       setError(null);
     } catch (e) {
-      if (asked.current === mine) setError(apiErrorText(e));
+      if (asked.current === mine) {
+        setError(failureNode(e, { what: "an Agent's plugins could not be loaded" }));
+      }
     }
   }, [projectId, agentId, machineId, applySkills, applyHooks]);
 
@@ -208,6 +213,12 @@ export function PluginsTab({
       window.removeEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
     };
   }, [load, projectId, agentId]);
+
+  // A server module changed on the Agent's server (an install elsewhere, the administrator's
+  // decision): the lists, which say how each module stands there, are read again.
+  useOnPluginModulesChanged((server) => {
+    if (server === machineId) void load();
+  });
 
   /**
    * After a change: the lists again, and the Agent list whose counts and update marks moved — a
@@ -397,6 +408,7 @@ export function PluginsTab({
         agentName={agentName}
         machineLabel={machineLabel}
         isOwner={isOwner}
+        isAdmin={isAdmin}
         locale={locale}
         library={lists?.library ?? null}
         installed={lists?.installed ?? null}

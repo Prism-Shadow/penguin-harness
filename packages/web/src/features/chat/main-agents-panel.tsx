@@ -55,5 +55,7 @@ export const mainPanelDefinition = {
   label: () => S.chat.openAgents,
   glyph: ICONS.robotPair,
   order: 10,
+  /** First in an empty dock's picker: what a conversation most often opens. */
+  lead: true,
   Body: AgentsPanelBody,
 };

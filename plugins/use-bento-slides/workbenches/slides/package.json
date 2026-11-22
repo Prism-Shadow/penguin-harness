@@ -1,0 +1,43 @@
+{
+  "name": "slides-workbench",
+  "version": "1.0.0",
+  "type": "module",
+  "penguin": {
+    "version": "2026.11.21.1",
+    "appCenter": {
+      "show": true,
+      "title": "AI Slides",
+      "titleZh": "AI PPT",
+      "icon": "ui/icon.svg"
+    },
+    "modules": [
+      {
+        "name": "Workbench",
+        "requires": {
+          "host": {
+            "iface": "@prismshadow/penguin-server#WorkbenchHost",
+            "from": "Host"
+          }
+        },
+        "provides": {
+          "main": "@prismshadow/penguin-server#WorkbenchMain"
+        },
+        "contributes": {
+          "WebModule.sessionTabs": [
+            {
+              "id": "slides.main",
+              "key": "main",
+              "title": "Slides",
+              "titleZh": "幻灯片",
+              "renderer": {
+                "iframe": {
+                  "src": "ui/index.html"
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

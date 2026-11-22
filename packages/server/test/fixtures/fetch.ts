@@ -37,7 +37,10 @@ export function fakeFetch(script: FetchScript): FetchFake {
     const request = new Request(input, init);
     const bytes = new Uint8Array(await request.arrayBuffer());
     const call: FetchCall = {
-      url: input instanceof Request ? input.url : String(input),
+      // A Request is read by its `url`, not by `instanceof`: a Request from another copy of the
+      // fetch classes fails `instanceof` and stringifies as "[object Request]". Google's SDK
+      // passed one when other files had run first in the same worker (isolate: false).
+      url: typeof input === "object" && "url" in input ? input.url : String(input),
       method: request.method,
       headers: request.headers,
       body: new TextDecoder().decode(bytes),

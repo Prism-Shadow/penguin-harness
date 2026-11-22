@@ -11,7 +11,8 @@
  *   child Session's start a row of their own.
  * - Once the complete record arrives the row shows its content in place of the fragments.
  * - Every other record is a row of its own, labelled by its `payload.type`, with its key fields;
- *   a record type the panel does not know shows what it carries.
+ *   a `session_update` names the model the Session's next context opens on, and a record type
+ *   the panel does not know shows what it carries.
  *
  * The panel:
  * - A run reads as numbered rows — the input, the call, its output, the answer — with no row for
@@ -285,6 +286,17 @@ describe("the rendered view's rows", () => {
       fields: [{ value: "fatal" }, { value: "auth" }, { value: "bad key" }],
     });
     expect(rows[2]).toMatchObject({ fields: [{ value: '{"value":7}' }] });
+  });
+
+  it("names the model a session_update sets for the next context, and shows what one naming no model carries", () => {
+    const rows = rowsOf([
+      ev({ type: "session_update", provider: "anthropic", model_id: "claude" }),
+      ev({ type: "session_update" }),
+    ]);
+    expect(rows).toMatchObject([
+      { kind: "event", label: "session_update", fields: [{ value: "anthropic/claude" }] },
+      { kind: "event", label: "session_update", fields: [{ value: "{}" }] },
+    ]);
   });
 });
 

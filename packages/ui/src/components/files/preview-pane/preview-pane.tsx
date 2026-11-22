@@ -39,7 +39,8 @@ export type PreviewView =
   | { kind: "opening" }
   /** Part of the file's view is still loading (a page's source fetched on demand). */
   | { kind: "loading" }
-  | { kind: "error"; message: string }
+  /** The failure's words, and 「[报告问题]」 after them for a failure (`FailureText`). */
+  | { kind: "error"; message: ReactNode }
   /** `reloadKey` remounts the image when the file is re-read under the same URL. */
   | { kind: "image"; src: string; alt: string; reloadKey?: Key }
   | { kind: "pdf"; src: string; title: string; reloadKey?: Key }

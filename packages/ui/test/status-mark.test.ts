@@ -7,6 +7,9 @@
  * - Given a status that recedes (no tone), the mark still names it in words; the glyph is never
  *   the carrier, so assistive technology skips it.
  * - Given no hint, the mark carries no tooltip of its own.
+ * - Given no room for the word (`wordless`), the glyph stands alone: the word is the mark's text
+ *   for assistive technology only and leads its tooltip, which opens since nothing on screen
+ *   says it.
  * - Given extra attributes, they land on the mark itself (a page's tests find it by them).
  */
 import { createElement } from "react";
@@ -56,6 +59,23 @@ describe("StatusMark", () => {
       createElement(StatusMark, { glyph: ICONS.checkCircle, tone: "success", label: "Installed" }),
     );
     expect(outerAttributes(html).has("data-tooltip")).toBe(false);
+  });
+
+  it("without room for its word, says it to assistive technology and in its tooltip", () => {
+    const html = renderStatic(
+      createElement(StatusMark, {
+        glyph: ICONS.checkCircle,
+        tone: "success",
+        label: "Installed",
+        hint: "An agent in this Project has it",
+        wordless: true,
+      }),
+    );
+    expect(html).toMatch(/<span class="sr-only">Installed<\/span>/);
+    const attrs = outerAttributes(html);
+    expect(tooltipRequest({ getAttribute: (name) => attrs.get(name) ?? null })).toMatchObject({
+      label: "Installed · An agent in this Project has it",
+    });
   });
 
   it("puts extra attributes on the mark itself", () => {

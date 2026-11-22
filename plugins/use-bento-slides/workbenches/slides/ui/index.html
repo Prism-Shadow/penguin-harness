@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Slides</title>
+    <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./deck-files.css" />
+    <script type="module" src="./app.js"></script>
+    <link rel="stylesheet" href="conversation.css" />
+  </head>
+  <body>
+    <div class="app" id="app" data-view="loading">
+      <header class="bar">
+        <button id="show-decks" class="back-link" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6M9 12h12" /></svg>
+        </button>
+        <div class="document-info">
+          <h1 id="deck-title" class="deck-title"></h1>
+          <span id="sync" class="sync" role="status"></span>
+        </div>
+        <div class="file-picker">
+          <button
+            id="file-button"
+            class="quiet-command"
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-controls="file-menu"
+          >
+            <span data-copy="fileMenu"></span>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          <div id="file-menu" class="file-menu" role="menu" aria-labelledby="file-button" hidden>
+            <button
+              id="new"
+              type="button"
+              role="menuitem"
+              tabindex="-1"
+              data-copy="newTitle"
+            ></button>
+            <button
+              id="import"
+              type="button"
+              role="menuitem"
+              tabindex="-1"
+              data-copy="importDeck"
+            ></button>
+            <hr role="separator" />
+            <button id="save" type="button" role="menuitem" tabindex="-1">
+              <span data-copy="saveDeck"></span><kbd id="save-shortcut" aria-hidden="true"></kbd>
+            </button>
+            <button
+              id="history"
+              type="button"
+              role="menuitem"
+              tabindex="-1"
+              aria-haspopup="dialog"
+              data-copy="history"
+            ></button>
+            <hr role="separator" />
+            <button id="pptx" type="button" role="menuitem" tabindex="-1" data-copy="pptx"></button>
+            <button
+              id="export"
+              type="button"
+              role="menuitem"
+              tabindex="-1"
+              data-copy="exportDeck"
+            ></button>
+          </div>
+        </div>
+        <div class="editor-actions">
+          <button
+            id="rail-toggle"
+            type="button"
+            class="quiet-command"
+            aria-pressed="true"
+            aria-controls="rail"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM14 5v14" /></svg>
+            <span data-copy="askAi"></span>
+          </button>
+          <button id="present" type="button" class="wb-primary">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z" /></svg>
+            <span data-copy="present"></span>
+          </button>
+        </div>
+        <input id="file" type="file" accept=".html,.json,text/html,application/json" hidden />
+      </header>
+
+      <p id="notice" class="notice" role="status" hidden></p>
+
+      <main class="stage">
+        <section class="editor" aria-label="Deck editor">
+          <iframe
+            id="editor"
+            title="Bento Slides editor"
+            sandbox="allow-scripts allow-downloads allow-popups allow-popups-to-escape-sandbox"
+          ></iframe>
+        </section>
+
+        <aside id="rail" class="rail" aria-labelledby="rail-title">
+          <header class="rail-head">
+            <h2 id="rail-title" data-copy="railTitle"></h2>
+            <button id="rail-reset" type="button" class="link" data-copy="newChat"></button>
+          </header>
+          <ol id="talk" class="talk" aria-labelledby="rail-title"></ol>
+          <form id="ask" class="ask">
+            <p id="context" class="context"></p>
+            <textarea id="prompt" rows="3" maxlength="20000" required></textarea>
+            <div class="ask-actions">
+              <div id="chat-model" class="chat-model"></div>
+              <button id="send" type="submit" class="wb-primary" data-copy="send"></button>
+              <button id="stop" type="button" hidden data-copy="stop"></button>
+            </div>
+          </form>
+        </aside>
+      </main>
+
+      <section class="start" id="deck-files" aria-labelledby="start-title">
+        <div class="file-home">
+          <header class="file-header">
+            <h1 id="start-title" data-files-copy="title"></h1>
+            <button id="start-import" type="button" data-files-copy="open"></button>
+          </header>
+          <div class="file-launch">
+            <section class="new-presentations" aria-labelledby="new-heading">
+              <div class="templates-heading">
+                <h2 id="new-heading" data-copy="newDeck"></h2>
+                <button
+                  id="start-sample"
+                  type="button"
+                  class="link"
+                  data-files-copy="sample"
+                ></button>
+              </div>
+              <div class="file-templates" id="templates">
+                <button id="start-blank" type="button">
+                  <span class="template-sheet blank-sheet" aria-hidden="true"><span>+</span></span>
+                  <span data-copy="blankDeck"></span>
+                </button>
+              </div>
+            </section>
+            <form id="start-ask" class="start-ask">
+              <h2><label for="start-prompt" data-files-copy="ai"></label></h2>
+              <textarea id="start-prompt" rows="2" maxlength="20000" required></textarea>
+              <div class="ask-actions">
+                <div id="start-model" class="chat-model"></div>
+                <button type="submit" class="wb-primary" data-copy="startGo"></button>
+              </div>
+            </form>
+          </div>
+          <h2 id="recent-heading" data-files-copy="recent"></h2>
+          <div class="file-head" aria-hidden="true">
+            <span data-files-copy="name"></span><span data-files-copy="modified"></span>
+          </div>
+          <p id="list-message" class="file-status" role="status"></p>
+          <button id="retry-decks" type="button" data-files-copy="retry" hidden></button>
+          <ul class="file-rows" id="recent-decks" aria-labelledby="recent-heading"></ul>
+        </div>
+      </section>
+      <dialog id="deck-action" aria-labelledby="deck-action-title">
+        <form id="deck-action-form">
+          <h2 id="deck-action-title"></h2>
+          <label id="rename-field"
+            ><span data-files-copy="name"></span
+            ><input id="rename-title" type="text" maxlength="120"
+          /></label>
+          <p id="remove-message"></p>
+          <p id="deck-action-message" role="alert"></p>
+          <div class="dialog-actions">
+            <button id="cancel-deck-action" type="button" data-copy="cancel"></button
+            ><button id="confirm-deck-action" type="submit" class="wb-primary"></button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog id="create-dialog" aria-labelledby="create-heading">
+        <form id="create-form">
+          <h2 id="create-heading" data-copy="newTitle"></h2>
+          <label
+            ><span data-copy="deckName"></span
+            ><input id="create-name" maxlength="120" required autofocus
+          /></label>
+          <label
+            ><span data-copy="layout"></span
+            ><select id="create-layout">
+              <option value="blank" data-copy="blankDeck"></option></select
+          ></label>
+          <figure id="template-preview" hidden>
+            <div id="preview-sheet" class="slide-preview"></div>
+            <figcaption>
+              <span id="preview-caption" aria-live="polite"></span>
+              <span class="preview-paging"
+                ><button id="preview-prev" type="button" data-copy="previousSlide"></button
+                ><button id="preview-next" type="button" data-copy="nextSlide"></button
+              ></span>
+            </figcaption>
+          </figure>
+          <p id="create-error" role="alert"></p>
+          <div class="dialog-actions">
+            <button id="create-cancel" type="button" data-copy="cancel"></button
+            ><button type="submit" class="wb-primary" data-copy="create"></button>
+          </div>
+        </form>
+      </dialog>
+      <dialog id="history-dialog" aria-labelledby="history-heading">
+        <header>
+          <h2 id="history-heading" data-copy="history"></h2>
+          <form method="dialog"><button type="submit" data-copy="close"></button></form>
+        </header>
+        <p id="history-status" role="status"></p>
+        <ul id="history-menu" aria-labelledby="history-heading"></ul>
+      </dialog>
+      <dialog id="player" aria-label="Presentation">
+        <header>
+          <strong id="player-title"></strong
+          ><button id="player-close" type="button" data-copy="backToEdit"></button>
+        </header>
+        <iframe id="player-frame" title="Presentation" sandbox="allow-scripts"></iframe>
+      </dialog>
+
+      <section class="unsupported" role="alert">
+        <h1 data-copy="unsupportedTitle"></h1>
+        <p data-copy="unsupportedBody"></p>
+      </section>
+    </div>
+  </body>
+</html>

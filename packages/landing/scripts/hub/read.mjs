@@ -7,18 +7,19 @@
  * File formats: plugins follow the plugin package (RFC-0003: npm's `package.json`, and the
  * contributions its built `ifaces.json` carries), benchmarks
  * `benchmark_config.toml` / `task_config.toml` with their statement and rubric, plus the optional
- * `data/<benchmark-id>/` folder (RFC-0001), experiments `meta_info.yaml`, `<phase>/summary.yaml`
+ * task files in the repository named by `data_url` (RFC-0001), experiments `meta_info.yaml`, `<phase>/summary.yaml`
  * and `<phase>/attempt-<n>.yaml` (RFC-0002), and leaderboards one `leaderboard.yaml` (RFC-0005).
  * A file that breaks its format fails the build: a page silently missing a benchmark is worse
  * than a deploy that waits for the source to be fixed. Only what is `published` is shown: a
  * benchmark or leaderboard still in review (`draft`) is read past.
  */
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { parse as parseYaml } from "yaml";
 import { readPluginIcon } from "./icon.mjs";
 import { readLibraryEntries } from "./plugin-table.mjs";
+import { externalDataRepo } from "./source.mjs";
 
 export const PLUGINS_SOURCE = "https://github.com/Prism-Shadow/penguin-harness/tree/main/plugins";
 export const BENCHMARK_SOURCE = "https://github.com/Prism-Shadow/penguin-harness-benchmark";
@@ -41,6 +42,10 @@ function subdirs(dir) {
 const readText = (file) => readFileSync(file, "utf8");
 const optionalText = (file) => (existsSync(file) ? readText(file) : undefined);
 
+// Only regular files from a data repository can supply text for the page.
+const dataText = (file) =>
+  lstatSync(file, { throwIfNoEntry: false })?.isFile() ? readText(file) : undefined;
+
 function fail(file, message) {
   throw new Error(`${file}: ${message}`);
 }
@@ -60,7 +65,7 @@ function stringList(value) {
 }
 
 /** `{ name, homepage? }` from an RFC author table or npm's `author` (a string or `{ name, url }`). */
-function readAuthor(value) {
+export function readAuthor(value) {
   if (typeof value === "string") {
     const match = /^([^<(]+?)\s*(?:<[^>]*>)?\s*(?:\(([^)]+)\))?$/.exec(value.trim());
     const name = match?.[1]?.trim();
@@ -82,10 +87,41 @@ function frontmatter(text) {
   return parsed && typeof parsed === "object" ? parsed : {};
 }
 
+/** A dated version, `YYYY.MM.DD.N` (the UTC day, then that day's sequence number). */
+const DATED_VERSION = /^(\d{4})\.(0[1-9]|1[0-2])\.(0[1-9]|[12]\d|3[01])\.\d+$/;
+
+/**
+ * The newest day among `versions`, as an ISO date (`YYYY-MM-DD`); undefined when none of them is
+ * a dated version. A plain semver (`1.0.0`, a hook package's `1`) says nothing about when.
+ */
+function newestDay(versions) {
+  let newest;
+  for (const version of versions) {
+    const match = typeof version === "string" ? DATED_VERSION.exec(version) : null;
+    if (!match) continue;
+    const day = `${match[1]}-${match[2]}-${match[3]}`;
+    if (newest === undefined || day > newest) newest = day;
+  }
+  return newest;
+}
+
+/** A Workbench's own `penguin.version`, from the package.json in its folder. */
+function workbenchVersion(dir, workbench) {
+  if (typeof workbench.path !== "string") return undefined;
+  const file = join(dir, workbench.path, "package.json");
+  if (!existsSync(file)) return undefined;
+  try {
+    return JSON.parse(readText(file))?.penguin?.version;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Every plugin package under `pluginsDir` (one directory per package): its npm fields from
  * `package.json`, and what it declares for the library — card, Skills, hook package, Workbenches —
- * from its built `ifaces.json` (plugin-table.mjs).
+ * from its built `ifaces.json` (plugin-table.mjs). `updated` is the newest day among its parts'
+ * dated versions (`newestDay`), absent when none is dated.
  */
 export function readPlugins(pluginsDir) {
   const plugins = [];
@@ -101,6 +137,17 @@ export function readPlugins(pluginsDir) {
     if (description === undefined) fail(file, "a description is required");
     const { card = {}, skills, hooks = {}, workbenches } = readLibraryEntries(dir);
     const quickStart = card.quickStart;
+    const skillFiles = skills
+      .filter((skill) => typeof skill.path === "string")
+      .map((skill) => ({ name: skill.name, skillFile: join(dir, skill.path, "SKILL.md") }))
+      .filter(({ skillFile }) => existsSync(skillFile))
+      .map(({ name, skillFile }) => ({ name, meta: frontmatter(readText(skillFile)) }));
+    // The only ordering signal besides curation: when the plugin's parts last changed.
+    const updated = newestDay([
+      ...skillFiles.map(({ meta }) => meta.version),
+      hooks.version,
+      ...workbenches.map((workbench) => workbenchVersion(dir, workbench)),
+    ]);
     plugins.push({
       id,
       packageName,
@@ -125,18 +172,11 @@ export function readPlugins(pluginsDir) {
               skills: stringList(quickStart.skills),
             }
           : undefined,
-      skills: skills
-        .filter((skill) => typeof skill.path === "string")
-        .map((skill) => ({ name: skill.name, skillFile: join(dir, skill.path, "SKILL.md") }))
-        .filter(({ skillFile }) => existsSync(skillFile))
-        .map(({ name, skillFile }) => {
-          const meta = frontmatter(readText(skillFile));
-          return {
-            name: optionalString(meta.name) ?? name,
-            description: optionalString(meta.short_description) ?? optionalString(meta.description),
-            descriptionZh: optionalString(meta.short_description_zh),
-          };
-        }),
+      skills: skillFiles.map(({ name, meta }) => ({
+        name: optionalString(meta.name) ?? name,
+        description: optionalString(meta.short_description) ?? optionalString(meta.description),
+        descriptionZh: optionalString(meta.short_description_zh),
+      })),
       hooks: Object.keys(hooks).filter(
         (key) => HOOK_POINTS.includes(key) && Array.isArray(hooks[key]),
       ),
@@ -145,17 +185,18 @@ export function readPlugins(pluginsDir) {
         .filter((name) => typeof name === "string"),
       readme: optionalText(join(dir, "README.md")),
       sourceUrl: `${PLUGINS_SOURCE}/${dirName}`,
+      ...(updated !== undefined ? { updated } : {}),
     });
   }
   return plugins;
 }
 
 /**
- * A task's folder under `data/<benchmark-id>/tasks/`: the one its statement links to, else the
+ * A task's folder under the package's tasks directory: the one its statement links to, else the
  * task id without its `CASE-NNN-` prefix, when that folder has files.
  */
-function taskDataName(benchmarkId, taskId, statement, folders) {
-  const linked = new RegExp(`/data/${benchmarkId}/tasks/([^/\\s)#?]+)`).exec(statement)?.[1];
+function taskDataName(prefix, taskId, statement, folders) {
+  const linked = new RegExp(`/${prefix}tasks/([^/\\s)#?]+)`).exec(statement)?.[1];
   for (const name of [linked, taskId.replace(/^CASE-\d+-/, ""), taskId]) {
     if (name && folders.has(name)) return name;
   }
@@ -187,6 +228,9 @@ function dataEntries(paths) {
 export function readBenchmarks(repo, dataFiles = []) {
   const root = join(repo, "packages");
   const benchmarks = [];
+  const sources = new Map([
+    [BENCHMARK_SOURCE, { root: repo, tree: `${BENCHMARK_SOURCE}/tree/main`, files: dataFiles }],
+  ]);
   for (const dirName of subdirs(root)) {
     const dir = join(root, dirName);
     const file = join(dir, "benchmark_config.toml");
@@ -196,8 +240,18 @@ export function readBenchmarks(repo, dataFiles = []) {
     if (requireText(config, "status", file) !== "published") continue;
     const author = readAuthor(config.author);
     if (author === undefined) fail(file, "[author] name is required");
-    const dataPrefix = `data/${dirName}/`;
-    const ownData = dataFiles.filter((path) => path.startsWith(dataPrefix));
+    const dataUrl = optionalString(config.data_url)?.trim();
+    const repository = dataUrl ?? BENCHMARK_SOURCE;
+    if (!sources.has(repository)) sources.set(repository, externalDataRepo(repo, repository));
+    const source = sources.get(repository);
+    const files = source?.files ?? [];
+    const legacyPrefix = `data/${dirName}/`;
+    const dataPrefix = dataUrl
+      ? ([`${dirName}/`, legacyPrefix].find((prefix) =>
+          files.some((path) => path.startsWith(`${prefix}tasks/`)),
+        ) ?? "")
+      : legacyPrefix;
+    const ownData = files.filter((path) => path.startsWith(dataPrefix));
     const taskFolders = new Map();
     for (const path of ownData) {
       const match = /^tasks\/([^/]+)\/(.+)$/.exec(path.slice(dataPrefix.length));
@@ -211,7 +265,7 @@ export function readBenchmarks(repo, dataFiles = []) {
         if (task.id !== name) fail(taskFile, `id "${task.id}" does not match its directory`);
         const budget = task.budget && typeof task.budget === "object" ? task.budget : {};
         const statement = optionalText(join(dir, name, "statement", "README.md")) ?? "";
-        const dataName = taskDataName(dirName, name, statement, taskFolders);
+        const dataName = taskDataName(dataPrefix, name, statement, taskFolders);
         return {
           id: name,
           title: requireText(task, "title", taskFile),
@@ -227,9 +281,9 @@ export function readBenchmarks(repo, dataFiles = []) {
           rubric: optionalText(join(dir, name, "rubric", "README.md")) ?? "",
           data: dataName
             ? {
-                url: `${BENCHMARK_SOURCE}/tree/main/${dataPrefix}tasks/${dataName}`,
-                instruction: optionalText(
-                  join(repo, dataPrefix, "tasks", dataName, "instruction.md"),
+                url: `${source.tree}/${dataPrefix}tasks/${dataName}`,
+                instruction: dataText(
+                  join(source.root, dataPrefix, "tasks", dataName, "instruction.md"),
                 ),
                 files: taskFolders.get(dataName).sort().slice(0, MAX_TASK_FILES),
                 fileCount: taskFolders.get(dataName).length,
@@ -237,6 +291,8 @@ export function readBenchmarks(repo, dataFiles = []) {
             : undefined,
         };
       });
+    const listed = dataUrl ? files : ownData.map((path) => path.slice(dataPrefix.length));
+    const listingPrefix = dataUrl ? "" : dataPrefix;
     benchmarks.push({
       id: dirName,
       title: requireText(config, "title", file),
@@ -248,14 +304,15 @@ export function readBenchmarks(repo, dataFiles = []) {
       status: requireText(config, "status", file),
       author,
       references: stringList(config.references),
+      dataUrl: dataUrl && /^https?:\/\//i.test(dataUrl) ? dataUrl : undefined,
       tasks,
       data:
-        ownData.length > 0
+        listed.length > 0
           ? {
-              url: `${BENCHMARK_SOURCE}/tree/main/${dataPrefix.slice(0, -1)}`,
-              readme: optionalText(join(repo, dataPrefix, "README.md")),
-              fileCount: ownData.length,
-              entries: dataEntries(ownData.map((path) => path.slice(dataPrefix.length))),
+              url: listingPrefix ? `${source.tree}/${listingPrefix.slice(0, -1)}` : source.tree,
+              readme: dataText(join(source.root, listingPrefix, "README.md")),
+              fileCount: listed.length,
+              entries: dataEntries(listed),
             }
           : undefined,
       sourceUrl: `${BENCHMARK_SOURCE}/tree/main/packages/${dirName}`,

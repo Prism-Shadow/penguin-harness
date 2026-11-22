@@ -35,8 +35,9 @@
    opens one of these layers (a test holds both, on the built sheet).
 
    - ui-base: the foundation defaults below (the eyebrow and display rules, the notice inks, the
-     tree's depth ladder, the glyph set, the stream veil, a tone strip on an image) and the base
-     pack, Frost: its values on the bare root and its recipes on `data-theme-base="modern"`.
+     tree's depth ladder, the glyph set, the stream veil, a tone strip on an image), the showcase
+     family's sheet and its map onto the tokens, and the base pack, Frost: its values on the bare
+     root and its recipes on `data-theme-base="modern"`.
    - ui-theme: every other pack's values and recipes. A pack's declaration beats the base's by
      layer whatever the specificity, so a pack's light rule beats Frost's dark rule for a name the
      pack sets, and a name it leaves out shows Frost's.
@@ -58,6 +59,10 @@
 @import "./window-band.css";
 @import "./cursors.css";
 @import "./animations.css";
+/* The showcase family's sheet (components/showcase/showcase.css), served in ui-base like the
+   foundation's own rules: a pack's `ui-showcase` recipe in ui-theme overrides it, and the map of
+   its properties onto the tokens is below. */
+@import "./components/showcase/showcase.css" layer(ui-base);
 
 /* How far a `ui-stream` host's newest lines are veiled, 0 to 1 (Frost multiplies it into its
    mask), private to the recipes (not a token) and registered as a number so a transition can
@@ -342,6 +347,8 @@
    * - `data-layout-motion`: an element whose size changes between states, the sidebar's width or a
    *   disclosure's `grid-template-rows: 0fr ↔ 1fr` — or whose place does, a dock surface lifting
    *   off the page column to cover it (`top`, `left`); the theme sets the duration and the curve.
+   *   Two values name a shared element instead, a surface unfolding from its trigger:
+   *   `shared-bounds` moves its clip, `shared-artwork` its pieces' transform and opacity.
    * - `data-fold="open" | "closing" | "settled"` beside it: a fold's body (`Fold`). The phase is
    *   the track — `1fr` open or settled, `0fr` closing — and a body opened after mount starts at
    *   `0fr` through `@starting-style`, so it enters the way it leaves. Never `auto`.
@@ -419,6 +426,61 @@
     }
   }
 
+  /* Only the route body is photographed. Chrome, open portals and fixed controls stay in
+     the live document. The transient name leaves the resting shell's stacking order intact. */
+  :root:active-view-transition:has([data-page-viewport]) {
+    view-transition-name: none;
+  }
+  :root:active-view-transition [data-page-viewport] {
+    view-transition-name: penguin-page;
+  }
+  :root:has([data-page-viewport])::view-transition {
+    pointer-events: none;
+  }
+  ::view-transition-group(penguin-page) {
+    overflow: clip;
+    animation-duration: var(--ui-page-duration);
+  }
+  /* A snapshot moves in the top layer, outside the shell's usual overflow clip. When the
+     desktop viewport begins at the edge of the sheet, keep its rounded frame in front. */
+  @media (min-width: 48rem) {
+    :root:not(:has(.ui-shell > [data-slot="main"] > [data-banner]))::view-transition-group(
+        penguin-page
+      ) {
+      border-radius: var(--ui-shell-radius);
+    }
+  }
+  ::view-transition-old(penguin-page),
+  ::view-transition-new(penguin-page) {
+    mix-blend-mode: plus-lighter;
+  }
+  ::view-transition-old(penguin-page) {
+    animation: var(--ui-page-exit) var(--ui-page-duration) ease-in-out both;
+  }
+  ::view-transition-new(penguin-page) {
+    animation: var(--ui-page-enter) var(--ui-page-duration) ease-in-out both;
+  }
+
+  /* The neutral page pair a theme may name for --ui-page-enter / --ui-page-exit. A theme's own
+     page motion is a keyframe in its pack's recipes (Frost's frost, Console's dissolve, Doodle's
+     hop), so an exported pack carries it. */
+  @keyframes ui-page-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes ui-page-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
   [data-reveal] {
     animation: ui-reveal var(--ui-dur-reveal) var(--ui-ease-out) backwards;
   }
@@ -449,6 +511,16 @@
       top, left;
     transition-duration: var(--ui-dur-layout);
     transition-timing-function: var(--ui-ease-layout);
+  }
+  /* A shared element (UnfoldSurface) keeps its final box in layout while its visible bounds
+     travel from its source's, and its artwork from the source's previews; artwork with no
+     preview fades in place. The component writes both endpoints; the same theme timing and both
+     reduced-motion overrides apply. */
+  [data-layout-motion="shared-bounds"] {
+    transition-property: clip-path;
+  }
+  [data-layout-motion="shared-artwork"] {
+    transition-property: transform, opacity;
   }
   [data-layout-motion][data-fold] {
     grid-template-rows: 1fr;
@@ -580,7 +652,18 @@
   animation: none;
   transition: none;
 }
+/* Back/Forward can recall a routed transition after the reader has turned motion off. */
+:root[data-motion="reduced"]::view-transition-group(penguin-page),
+:root[data-motion="reduced"]::view-transition-old(penguin-page),
+:root[data-motion="reduced"]::view-transition-new(penguin-page) {
+  animation-duration: 0s;
+}
 @media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(penguin-page),
+  ::view-transition-old(penguin-page),
+  ::view-transition-new(penguin-page) {
+    animation-duration: 0s;
+  }
   :is([data-presence], [data-backdrop], [data-reveal], .ui-live) {
     animation: none;
   }
@@ -639,6 +722,42 @@
   }
   .ui-display {
     color: var(--ui-fg-emphasis);
+  }
+
+  /* The showcase family (components/showcase/showcase.css) names no token: this maps its
+     properties onto the theme's, so a cover card, the selected carousel and a product page take
+     every theme's surfaces, lines, radii, text rungs and icon tints in both modes. A generated
+     cover's field is a wash of its hue over the surface; a dark theme takes a little more of
+     the hue, so the field still reads as a colour against a near-black surface. */
+  .showcase {
+    --showcase-surface: var(--ui-surface);
+    --showcase-surface-muted: var(--ui-surface-muted);
+    --showcase-line: var(--ui-line);
+    --showcase-line-muted: var(--ui-line-muted);
+    --showcase-line-strong: var(--ui-line-emphasis);
+    --showcase-line-w: var(--ui-border-w);
+    --showcase-fg: var(--ui-fg);
+    --showcase-fg-muted: var(--ui-fg-muted);
+    --showcase-accent: var(--ui-accent);
+    --showcase-radius: var(--ui-radius-lg);
+    --showcase-radius-sm: var(--ui-radius-md);
+    --showcase-text-sm: var(--ui-text-body-size);
+    --showcase-text-xs: var(--ui-text-small-size);
+    --showcase-font-mono: var(--ui-font-mono);
+    --showcase-dur: var(--ui-dur-fast);
+    --showcase-hue-blue: var(--ui-icon-tint-blue);
+    --showcase-hue-violet: var(--ui-icon-tint-violet);
+    --showcase-hue-pink: var(--ui-icon-tint-pink);
+    --showcase-hue-red: var(--ui-icon-tint-red);
+    --showcase-hue-orange: var(--ui-icon-tint-orange);
+    --showcase-hue-amber: var(--ui-icon-tint-amber);
+    --showcase-hue-green: var(--ui-icon-tint-green);
+    --showcase-hue-teal: var(--ui-icon-tint-teal);
+    --showcase-hue-slate: var(--ui-icon-tint-slate);
+    --showcase-field-mix: 14%;
+  }
+  .dark .showcase {
+    --showcase-field-mix: 22%;
   }
 
   /* A notice's tone as one ink every theme's recipe reads: the tone tokens keyed by the hook's
