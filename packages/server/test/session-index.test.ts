@@ -507,7 +507,7 @@ describe("session-index", () => {
 
   it("an explicit Workspace only needs to exist; it may live outside the Project directory", async () => {
     await configureModels();
-    const inside = path.join(t.root, projectId, "my-workdir");
+    const inside = path.join(t.root, "projects", projectId, "my-workdir");
     await fs.mkdir(inside, { recursive: true });
     const ok = await api.post(base(), { workspace: inside });
     expect(ok.status).toBe(201);
@@ -522,7 +522,8 @@ describe("session-index", () => {
 
     // A nonexistent directory is still 400 (not auto-created).
     expect(
-      (await api.post(base(), { workspace: path.join(t.root, projectId, "ghost") })).status,
+      (await api.post(base(), { workspace: path.join(t.root, "projects", projectId, "ghost") }))
+        .status,
     ).toBe(400);
   });
 
@@ -687,7 +688,7 @@ describe("session-index", () => {
 
   it("DELETE Session: the Workspace directory is not removed (user-supplied directories must survive)", async () => {
     await configureModels();
-    const inside = path.join(t.root, projectId, "keep-me");
+    const inside = path.join(t.root, "projects", projectId, "keep-me");
     await fs.mkdir(inside, { recursive: true });
     const { session } = (await (
       await api.post(base(), { workspace: inside })

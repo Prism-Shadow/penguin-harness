@@ -22,6 +22,7 @@ import { libraryPlugin, useInstalledPluginPrefix, usePushedPluginLibrary } from 
 import { pluginPackage } from "./helpers/plugin-packages.js";
 import {
   McpServerNameTakenError,
+  agentDir,
   assertPluginMcpServersInstallable,
   installPlugin,
   listInstalledMcpServers,
@@ -150,7 +151,7 @@ describe("a plugin's MCP servers on an Agent", () => {
     ]);
     // The skills land beside them, as before.
     await expect(
-      fs.access(path.join(root!, PROJECT, "agents", AGENT, "agent_state", "skills", "tools-guide")),
+      fs.access(path.join(agentDir(root!, PROJECT, AGENT), "agent_state", "skills", "tools-guide")),
     ).resolves.toBeUndefined();
   });
 
@@ -165,7 +166,7 @@ describe("a plugin's MCP servers on an Agent", () => {
     );
     expect(await fs.readFile(configFile(), "utf8")).toBe(before);
     await expect(
-      fs.access(path.join(root!, PROJECT, "agents", AGENT, "agent_state", "skills", "tools-guide")),
+      fs.access(path.join(agentDir(root!, PROJECT, AGENT), "agent_state", "skills", "tools-guide")),
     ).rejects.toThrow();
   });
 

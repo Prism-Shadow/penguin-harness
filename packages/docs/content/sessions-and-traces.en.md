@@ -22,14 +22,15 @@ For how the levels work together, see [Architecture](/architecture). For how Req
 
 ## Data layout
 
-The data root is the `PENGUIN_HOME` environment variable, `~/.penguin/data` by default. The layout is defined in one place, `packages/core/src/state/paths.ts`:
+The data root is the `PENGUIN_HOME` environment variable, `~/.penguin/data` by default. Its top level holds the server's own files and folders (`web.db`, `server.lock`, `bin/`, `logs/`, `plugins/`, `machines/`, `app/`, `run/`, …); every Project is a folder of `projects/`. The layout is defined in one place, `packages/core/src/state/paths.ts`:
 
 ```text
-<root>/<project>/
+<root>/projects/<project>/
 ├── .project_config.toml          # Project-level models & credentials (hidden file, 0600)
-├── benchmarks/                   # capability Benchmark cases and scores, one directory per
-│                                 # Benchmark — a peer of the Agents, evaluating any of them
 └── agents/
+    ├── system_agent/             # the system Agent; its app/data/benchmark/ holds the
+    │                             # Benchmark cases and scores, one directory per Benchmark —
+    │                             # a peer of the Agents, evaluating any of them
     └── <agent>/
         ├── agent_state/              # system_config.yaml, AGENTS.md, .vault.toml,
         │                             # tools/, skills/, hooks/, schedule/
@@ -52,6 +53,8 @@ The data root is the `PENGUIN_HOME` environment variable, `~/.penguin/data` by d
 ```
 
 Workbench runtime files — Unix sockets, pipes, locks — sit apart at `<root>/run/<project>/<agent>/<workbench>/`, each level a 10-character hash of its id, so that a socket path stays under the 103 bytes a Unix socket path holds. They are never exported and go with their workbench, agent or Project. A workbench installed from a plugin may also keep files shared by every copy of that app: on this server at `<root>/app/{data,cache}/<plugin>/<workbench>/` (its state under `<root>/run/server/`), and for this OS user on this computer at `~/.penguin/machine/` (or `PENGUIN_MACHINE_HOME`). Neither is exported or removed with a workbench.
+
+A data root from before November 2026 kept its Projects at the top level (`<root>/<project>/`) and its Benchmarks in `<project>/benchmarks/`. The first start of a newer version moves them, before it serves anything, and leaves a link at each old place, so a path recorded before the move — in a Trace, or in an open conversation — still reaches the same files. The links stay until 1.0. A Project named `projects` stops the move: the server does not start, and its message says how to rename that Project with the previous version.
 
 For the fields of each config file, see the [Configuration Reference](/configuration).
 

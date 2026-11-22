@@ -12,8 +12,9 @@
  *   not one plain segment is refused; on Windows the socket is a named pipe of its own.
  * - The agent level is the default; the server level is the data root's, the machine level this
  *   OS user's, each keyed by the plugin and the workbench and with a short state folder; a
- *   workbench made in place has no shared level, and an unknown level is refused. Where a Project
- *   is called `app` or `run`, a level whose folders would fall inside that Project's is refused.
+ *   workbench made in place has no shared level, and an unknown level is refused. Where an older
+ *   Project called `app` or `run` left a link at its old place, a level whose folders would fall
+ *   through it is refused.
  */
 import fs from "node:fs/promises";
 import net from "node:net";
@@ -171,7 +172,7 @@ describe("a workbench's levels", () => {
   it("answer the agent level when none is named, and each level its own folders and base", () => {
     const at = place("voice-kit");
     const root = at.root;
-    const agent = path.join(root, "acme", "agents", "writer");
+    const agent = path.join(root, "projects", "acme", "agents", "writer");
     expect(levelFolders(undefined, at, "dataPaths")).toEqual(
       levelFolders("agent", at, "dataPaths"),
     );
@@ -198,20 +199,33 @@ describe("a workbench's levels", () => {
     );
   });
 
-  it("make no folder inside a Project's folder: a Project called app or run takes the levels that would fall there", async () => {
+  it("make no folder through the link a Project called app or run left at its old place", async () => {
     const at = place("voice-kit");
+    // A Project's folder is under projects/, and one called so takes nothing from the levels.
     const project = async (name: string) => {
-      await fs.mkdir(path.join(at.root, name), { recursive: true });
-      await fs.writeFile(path.join(at.root, name, ".project_config.toml"), "");
+      await fs.mkdir(path.join(at.root, "projects", name), { recursive: true });
+      await fs.writeFile(path.join(at.root, "projects", name, ".project_config.toml"), "");
     };
     await project("app");
+    expect(levelFolders("server", at, "dataPaths").paths.dataDir).toBe(
+      path.join(at.root, "app", "data", "voice-kit", "voice"),
+    );
+    // The layout migration leaves a link at an older Project's old place until 1.0.
+    const linked = async (name: string) =>
+      fs.symlink(
+        process.platform === "win32" ? path.join(at.root, "projects", name) : `projects/${name}`,
+        path.join(at.root, name),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+    await linked("app");
     expect(() => levelFolders("server", at, "dataPaths")).toThrow(
-      /is the folder of the Project "app", so this server keeps no workbench folders there/,
+      /is the link to the folder of the Project "app", which moved to .*the link stays until 1\.0/,
     );
     expect(levelFolders("agent", at, "dataPaths").paths.dataDir).toContain(
       path.join("acme", "agents", "writer"),
     );
     await project("run");
+    await linked("run");
     for (const level of ["agent", "server"]) {
       expect(() => levelFolders(level, at, "socketPath")).toThrow(/the Project "run"/);
     }

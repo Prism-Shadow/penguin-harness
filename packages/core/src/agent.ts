@@ -28,6 +28,7 @@ import {
   DEFAULT_COMPACTION_MAX_ROUNDS,
   DEFAULT_COMPACTION_PROMPT,
   DEFAULT_COMPACTION_REMINDER,
+  ensureDataRootLayout,
   formatModelRef,
   getModel,
   listInstalledSkills,
@@ -41,6 +42,7 @@ import {
   providerConnectionShape,
   resolveEntryCredential,
   resolveModelRef,
+  resolveRoot,
   sameModelRef,
   sessionScratchpadDir,
   systemConfigPath,
@@ -488,8 +490,13 @@ function withPromptSections(prompt: string, sections: readonly PromptSection[]):
   return [prompt, ...sections.map((s) => `# ${s.title}\n${s.text}`)].join("\n\n");
 }
 
-/** Create or load an Agent (the one init-enabled use of `loadAgentState`). */
+/**
+ * Create or load an Agent (the one init-enabled use of `loadAgentState`). A data root still in
+ * the layout before `projects/` is migrated first when no server holds it, and refused while one
+ * does (state/layout-migration/, until 1.0).
+ */
 export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent> {
+  await ensureDataRootLayout(opts.root ?? resolveRoot());
   const state = await loadAgentState({
     ...(opts.agentId !== undefined ? { agentId: opts.agentId } : {}),
     ...(opts.projectId !== undefined ? { projectId: opts.projectId } : {}),

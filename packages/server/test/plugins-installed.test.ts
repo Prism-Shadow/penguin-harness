@@ -28,7 +28,7 @@ describe("installed plugins", () => {
   let admin: ReturnType<typeof apiClient>;
   const programEntry = process.argv[1];
 
-  const listFile = () => path.join(t.root, "default_project", ".project_config.toml");
+  const listFile = () => path.join(t.root, "projects", "default_project", ".project_config.toml");
 
   /**
    * Ships a package the way the build does: under the installation's `plugins/` prefix,

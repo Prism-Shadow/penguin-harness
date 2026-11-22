@@ -75,7 +75,7 @@ async function writeRaw(
   index: number,
   text: string,
 ): Promise<string> {
-  const dir = path.join(root, P, "agents", agentId, "traces", "2026-07-09");
+  const dir = path.join(root, "projects", P, "agents", agentId, "traces", "2026-07-09");
   await fs.mkdir(dir, { recursive: true });
   const file = path.join(dir, `${sessionId}_${String(index).padStart(3, "0")}.jsonl`);
   await fs.writeFile(file, text);

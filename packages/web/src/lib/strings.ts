@@ -2616,7 +2616,7 @@ export const zh = {
     aiAddTail: (projectId: string): string =>
       [
         "请使用 penguin-config 技能完成上面的配置：",
-        "- 下面每条命令都要带 `--root <数据根目录>`，即环境信息中 App Data Dir 的上级目录。命令的环境里没有这个值，不带 `--root` 会配置到另一个数据根目录，本 Project 什么也拿不到。",
+        "- 下面每条命令都要带 `--root <数据根目录>`：环境信息中的 App Data Dir 为 `<数据根目录>/projects/<project id>`，数据根目录即它往上两级的目录。命令的环境里没有这个值，不带 `--root` 会配置到另一个数据根目录，本 Project 什么也拿不到。",
         `- 每个模型执行一次 \`penguin config model add --provider <分组名> --model-id <上游模型 id> --project-id ${projectId} --root <数据根目录> [--base-url <端点>] [--client-type openai] [--api-key <key>] [--context-window <n>] [--price-cache-read <n> --price-cache-write <n> --price-output <n>]\`：\`--provider\` 必填，\`--model-id\` 用网关自己的模型 id；OpenAI 兼容端点加 \`--client-type openai --base-url <端点>\`。`,
         "- 来源是网页时先抓取页面：优先加我点名的模型，没有点名就选最常用的，最多 10 个左右。",
         "- 需要 API key 而我没给时只问我一次；我不提供就把 key 留空，并告诉我到模型库页补填。",
@@ -3178,7 +3178,7 @@ export const zh = {
     aiAddTail: (agentId: string, projectId: string): string =>
       [
         `请使用 penguin-config 技能，把上面的密钥写进智能体 ${agentId} 的保险柜（Project ${projectId}）：`,
-        "- 下面每条命令都要带 `--root <数据根目录>`，即环境信息中 App Data Dir 的上级目录。命令的环境里没有这个值，不带 `--root` 会写到另一个数据根目录，这个智能体的保险柜仍然是空的。",
+        "- 下面每条命令都要带 `--root <数据根目录>`：环境信息中的 App Data Dir 为 `<数据根目录>/projects/<project id>`，数据根目录即它往上两级的目录。命令的环境里没有这个值，不带 `--root` 会写到另一个数据根目录，这个智能体的保险柜仍然是空的。",
         `- 每个密钥执行一次 \`penguin config vault set --key <键名> --value <值> --agent-id ${agentId} --project-id ${projectId} --root <数据根目录>\`；只需创建键名时，值先填占位符 TODO，并告诉我该键的用途与申请地址。`,
         "- 不要在回复里复述任何值，不要读取 .vault.toml。",
         `- 最后运行 \`penguin config vault list --agent-id ${agentId} --project-id ${projectId} --root <数据根目录>\` 列出键名。`,
@@ -6153,6 +6153,7 @@ Benchmark：
     /** The evaluation dialog's Ask AI tail: this evaluation's facts, and what to read before answering. */
     askEvaluationTail: (p: {
       benchmarkId: string;
+      benchmarkDir: string;
       time: string;
       label: string;
       version: number | string;
@@ -6167,7 +6168,8 @@ Benchmark：
       cases: { id: string; score: string; cost: string; duration: string; sessionIds: string[] }[];
     }): string =>
       "请解释下面这次 Benchmark 评估的结果。只做阅读与分析：不要修改这套 Benchmark，也不要修改被测智能体。\n\n" +
-      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，记分板为 \`benchmarks/${p.benchmarkId}/scoreboard.yaml\`）\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR：\`${p.benchmarkDir}\`（记分板为 \`${p.benchmarkDir}/scoreboard.yaml\`）\n` +
       `- 评估时间：${p.time}\n` +
       `- 系列标签：${p.label}\n` +
       `- 被测版本：v${p.version}\n` +
@@ -6211,14 +6213,16 @@ Benchmark：
     /** The case dialog's Ask AI tail: the two READMEs to read, and this case's latest run results. */
     askCaseTail: (p: {
       benchmarkId: string;
+      benchmarkDir: string;
       caseId: string;
       latest: { time: string; score: string; runs: { score: string; sessionId: string }[] } | null;
     }): string =>
       "请解释下面这道 Benchmark 题目考的是什么、怎样才算答好。题目创建即冻结，只做阅读与分析，不要修改这套 Benchmark。\n\n" +
-      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR：\`${p.benchmarkDir}\`\n` +
       `- case_id：\`${p.caseId}\`\n` +
-      `- 题干：\`benchmarks/${p.benchmarkId}/${p.caseId}/statement/README.md\`\n` +
-      `- 评分细则：\`benchmarks/${p.benchmarkId}/${p.caseId}/rubric/README.md\`\n` +
+      `- 题干：\`${p.benchmarkDir}/${p.caseId}/statement/README.md\`\n` +
+      `- 评分细则：\`${p.benchmarkDir}/${p.caseId}/rubric/README.md\`\n` +
       (p.latest === null
         ? "- 这套 Benchmark 还没有评估记录。\n"
         : `- 最近一次评估（${p.latest.time}）在这道题上的平均分 ${p.latest.score}\n` +
@@ -6260,7 +6264,7 @@ Benchmark：
       },
     },
     /** The fixed tail after the draft: the `benchmark-design` inputs and the layout it writes. */
-    aiCreateTail: (targetAgentId: string): string =>
+    aiCreateTail: (targetAgentId: string, benchmarksDir: string): string =>
       "请使用 `benchmark-design` Skill，作为 Builder 为下面的被测智能体设计并校准一套 Benchmark，不要修改被测智能体本身。\n\n" +
       `- test_agent_id：\`${targetAgentId}\`\n` +
       "- benchmark_id：上文已指定则沿用，否则按场景取一个简短的语义化 id（仅字母、数字、`_` 和 `-`）\n" +
@@ -6268,7 +6272,7 @@ Benchmark：
       "- 出题手法：隐藏的先验条件、模糊或不完整的输入、互相冲突的材料、严格的交付格式；不要靠堆行数、堆规则来加难度\n" +
       "- desired_baseline_score：`<50`（上文另有要求时以上文为准）\n" +
       "- pilot_iteration_limit：`4`（上文另有要求时以上文为准）\n\n" +
-      "Benchmark 与 Agent 平级：在 Project 的 `benchmarks/<benchmark_id>/` 下（不在被测智能体目录内）创建 `benchmark_config.toml`" +
+      `Benchmark 与 Agent 平级：它的目录 BENCHMARK_DIR 为 \`${benchmarksDir}/<benchmark_id>/\`，在评估中心的数据目录里（不在被测智能体目录内）。在其中创建 \`benchmark_config.toml\`` +
       '（id 与目录名相同、title、description、version 为当天的日期版本 `"YYYY.MM.DD.1"`、status、runs = 1，以及 `kind = "agent"` 的 `[origin]` 表；不记录被测智能体）、' +
       "每题一个 `CASE-NNN-<slug>/`（`statement/README.md` 为题干，`rubric/README.md` 为评分细则，每题满分 100 分，细则不得泄露到题干）" +
       "以及 `scoreboard.yaml`（初始为 `evaluations: []`；每条 evaluation 记录被测的 `agent_id`、`version`、成对的 `provider` / `model_id` 与 `thinking_level`）。" +
@@ -6277,7 +6281,7 @@ Benchmark：
     // New Benchmark, manual mode: the form.
     manualCreateTitle: "手动创建 Benchmark",
     manualCreateIntro:
-      "填好标题、题干与评分细则后，目录结构会按技能约定写入 Project 的 benchmarks/ 下；Benchmark 与 Agent 平级，之后可以用它评测任意智能体。",
+      "填好标题、题干与评分细则后，目录结构会按技能约定写入评估中心的数据目录；Benchmark 与 Agent 平级，之后可以用它评测任意智能体。",
     idField: "Benchmark id",
     idHint: "目录名即标识：仅字母、数字、_ 和 -，例如 report-writing-v1",
     /** The id field's generation clause: a Benchmark is named by its title, not a display name. */
@@ -6337,13 +6341,15 @@ Benchmark：
     evaluateTail: (p: {
       targetAgentId: string;
       benchmarkId: string;
+      benchmarkDir: string;
       runs: number;
       provider: string;
       modelId: string;
     }): string =>
       "请使用 `agent-evaluation` Skill，在这套已冻结的 Benchmark 上评估被测智能体。\n\n" +
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
-      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR：\`${p.benchmarkDir}\`\n` +
       `- runs：\`${p.runs}\`\n` +
       `- provider：\`${p.provider}\`\n` +
       `- model_id：\`${p.modelId}\`\n\n` +
@@ -6376,6 +6382,7 @@ Benchmark：
     optimizeTail: (p: {
       targetAgentId: string;
       benchmarkId: string;
+      benchmarkDir: string;
       runs: number;
       provider: string;
       modelId: string;
@@ -6384,7 +6391,8 @@ Benchmark：
     }): string =>
       "请使用 `agent-optimization` Skill，针对已冻结的 Benchmark 优化被测智能体。\n\n" +
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
-      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR：\`${p.benchmarkDir}\`\n` +
       `- runs：\`${p.runs}\`\n` +
       `- provider：\`${p.provider}\`\n` +
       `- model_id：\`${p.modelId}\`\n` +
@@ -6429,13 +6437,15 @@ Benchmark：
       skill: string;
       targetAgentId: string;
       benchmarkId: string;
+      benchmarkDir: string;
       testRepetitions: number;
       provider: string;
       modelId: string;
     }): string =>
       `请使用 \`${p.skill}\` 技能，从这套 Benchmark 出发对被测智能体运行它的方法。\n\n` +
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
-      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- BENCHMARK_DIR：\`${p.benchmarkDir}\`\n` +
       `- test_repetitions：\`${p.testRepetitions}\`\n` +
       `- provider：\`${p.provider}\`\n` +
       `- model_id：\`${p.modelId}\`\n\n` +
@@ -6483,11 +6493,11 @@ Benchmark：
       reference: (s: string): string => `找到这个 Benchmark，并把它作为包导入：${s}。`,
     },
     /** The fixed tail: the benchmark-design Skill's import procedure when the Agent has it, then the rules for one that does not — the package format, the fetch pinned to a commit, where the copy goes and what it is written with. */
-    importPromptTail: (projectId: string): string =>
+    importPromptTail: (projectId: string, benchmarksDir: string): string =>
       [
         "若有 `benchmark-design` 技能，先读 `reference/package.md` 的导入说明。仓库来源先用 `git ls-remote` 将分支或标签固定到 40 位提交号，只获取所选包；本地 zip 先解压到临时目录。",
         '检查包内的 `benchmark_config.toml`（`status = "published"`）及各个 `CASE-*/statement/README.md`、`CASE-*/rubric/README.md`。读完所有文件，拒绝符号链接、可执行文件及无关内容。',
-        `在 Project \`${projectId}\` 的 \`<app_data_dir>/benchmarks/<id>/\` 中直接复制清单和各个 \`CASE-*/\`，保留包的 id、版本与题目；不要复制上游的 \`scoreboard.yaml\` 或 \`.jobs/\`。新建 \`scoreboard.yaml\`，内容为 \`evaluations: []\`。`,
+        `在 Project \`${projectId}\` 的 Benchmark 目录 BENCHMARK_DIR，即 \`${benchmarksDir}/<id>/\` 中直接复制清单和各个 \`CASE-*/\`，保留包的 id、版本与题目；不要复制上游的 \`scoreboard.yaml\` 或 \`.jobs/\`。新建 \`scoreboard.yaml\`，内容为 \`evaluations: []\`。`,
         '更新清单的 `[origin]`：仓库来源用 `kind = "git"`，记录 `url`、`ref`（提交号）、`path` 和 `imported_at`；本地来源用 `kind = "zip"` 与导入时间。目标目录已存在时先问我，未经同意不得覆盖；仍在评估的目录不得替换。',
         "核对复制后的清单和题数，报告 id、标题、版本、题数与路径。导入不运行评估。",
       ].join("\n"),

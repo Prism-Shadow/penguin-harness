@@ -92,8 +92,9 @@ const QUIET_ICON_BUTTON =
   "inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:bg-surface-muted hover:text-fg-muted";
 
 /**
- * What the header says under the Benchmark's title: the directory its files live in, with a copy
- * button — and, for a published Benchmark, Export beside it, which downloads its package — and
+ * What the header says under the Benchmark's title: the directory its files live in, relative to
+ * the App Data Dir, with a copy button that copies its absolute folder as the server holding the
+ * copy named it — and, for a published Benchmark, Export beside it, which downloads its package — and
  * the version its manifest is at; under them, for a copy an Agent imported from a repository
  * folder, a link to that folder. A draft, a failed Benchmark and one whose manifest cannot be read
  * have no package, and no Export. A Benchmark whose manifest was written before versions or could
@@ -104,7 +105,7 @@ export function BenchmarkHeaderFacts({
   benchmark,
   onExport,
 }: {
-  benchmark: Pick<BenchmarkSummary, "id" | "version" | "origin"> &
+  benchmark: Pick<BenchmarkSummary, "id" | "version" | "origin" | "dir"> &
     Partial<Pick<BenchmarkSummary, "status">>;
   /** Downloads the package; shown only when the Benchmark is published. */
   onExport?: () => void;
@@ -118,7 +119,7 @@ export function BenchmarkHeaderFacts({
             {benchmarkPath(benchmark.id)}
           </span>
           <CopyButton
-            text={benchmarkPath(benchmark.id)}
+            text={benchmark.dir ?? benchmarkPath(benchmark.id)}
             label={S.benchmark.copyPath}
             size="sm"
             className="shrink-0"

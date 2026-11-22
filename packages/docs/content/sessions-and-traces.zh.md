@@ -22,14 +22,15 @@ PenguinHarness 的全部运行时数据都存放在本地文件系统上。配�
 
 ## 数据目录
 
-数据根目录由环境变量 `PENGUIN_HOME` 指定，默认为 `~/.penguin/data`。目录布局统一定义在 `packages/core/src/state/paths.ts` 中：
+数据根目录由环境变量 `PENGUIN_HOME` 指定，默认为 `~/.penguin/data`。顶层只放服务端自己的文件与目录（`web.db`、`server.lock`、`bin/`、`logs/`、`plugins/`、`machines/`、`app/`、`run/` 等），每个 Project 都是 `projects/` 下的一个目录。目录布局统一定义在 `packages/core/src/state/paths.ts` 中：
 
 ```text
-<root>/<project>/
+<root>/projects/<project>/
 ├── .project_config.toml          # Project-level models & credentials (hidden file, 0600)
-├── benchmarks/                   # capability Benchmark cases and scores, one directory per
-│                                 # Benchmark — a peer of the Agents, evaluating any of them
 └── agents/
+    ├── system_agent/             # the system Agent; its app/data/benchmark/ holds the
+    │                             # Benchmark cases and scores, one directory per Benchmark —
+    │                             # a peer of the Agents, evaluating any of them
     └── <agent>/
         ├── agent_state/              # system_config.yaml, AGENTS.md, .vault.toml,
         │                             # tools/, skills/, hooks/, schedule/
@@ -52,6 +53,8 @@ PenguinHarness 的全部运行时数据都存放在本地文件系统上。配�
 ```
 
 工作台的运行时文件（Unix socket、管道、锁）另放在 `<root>/run/<project>/<agent>/<workbench>/`，每一级是其 id 的 10 位哈希，使 socket 路径不超过 Unix socket 路径的 103 字节上限。它们从不导出，随所属的工作台、Agent 或 Project 一并删除。 从插件安装的工作台还可以存放由该应用所有副本共用的文件：本服务器上位于 `<root>/app/{data,cache}/<plugin>/<workbench>/`（状态在 `<root>/run/server/` 下），这台电脑上本 OS 用户的位于 `~/.penguin/machine/`（或 `PENGUIN_MACHINE_HOME`）。两者都不导出，也不随工作台删除。
+
+2026 年 11 月之前的数据根把 Project 直接放在顶层（`<root>/<project>/`），Benchmark 放在 `<project>/benchmarks/`。新版本第一次启动时、开始服务之前把它们移到新位置，并在每个旧位置留一个链接，移动前记录下的路径（Trace 里的、仍开着的对话里的）照样指向同一批文件。链接保留到 1.0。名为 `projects` 的 Project 会让迁移停下：服务端不启动，提示里写明如何用上一个版本处理这个 Project。
 
 各配置文件的字段见[配置参考](/configuration)。
 

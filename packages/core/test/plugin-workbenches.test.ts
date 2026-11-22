@@ -14,6 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import {
+  agentDir,
   installPlugin,
   listInstalledWorkbenches,
   readLibraryPackage,
@@ -46,7 +47,7 @@ const SUPPORT_APP = {
 /** A support plugin as the library reads it: a Skill and the support workbench, declared in its table. */
 let supportPlugin: LibraryPlugin;
 const plugin = () => structuredClone(supportPlugin);
-const base = () => path.join(root, project, "agents", agent);
+const base = () => agentDir(root, project, agent);
 const dir = () => path.join(base(), "agent_state/workbenches/support");
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-wb-"));

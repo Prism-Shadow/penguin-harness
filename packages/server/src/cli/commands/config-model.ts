@@ -28,7 +28,7 @@ import {
   unroutableVendorModel,
 } from "../../model-catalog/catalog.js";
 import type { Messages } from "../i18n.js";
-import { resolveRootOption } from "../root-option.js";
+import { resolveProjectRoot } from "../root-option.js";
 import {
   type ConnectionFlags,
   addGroupConnection,
@@ -99,7 +99,7 @@ export function registerConfigModelCommand(model: Command, t: Messages): void {
         return;
       }
       const { patch } = parsed;
-      const root = resolveRootOption(opts.root);
+      const root = await resolveProjectRoot(opts.root);
       // --model-id takes the upstream id, paired with the required --provider as a
       // reference; the group is never guessed, so --api-key can only ever land on the
       // vendor the user named. No concatenation is performed.
@@ -232,7 +232,7 @@ export function registerConfigModelCommand(model: Command, t: Messages): void {
     .option("--project-id <id>", t.common.projectId, DEFAULT_PROJECT_ID)
     .option("--root <dir>", t.common.root)
     .action(async (opts) => {
-      const root = resolveRootOption(opts.root);
+      const root = await resolveProjectRoot(opts.root);
       // --model-id takes the upstream id, paired with the required --provider as a
       // reference (no concatenation, no fuzzy matching); setDefaultModel raises an error
       // when the reference is not found in models.
@@ -254,7 +254,7 @@ export function registerConfigModelCommand(model: Command, t: Messages): void {
     .option("--project-id <id>", t.common.projectId, DEFAULT_PROJECT_ID)
     .option("--root <dir>", t.common.root)
     .action(async (opts) => {
-      const root = resolveRootOption(opts.root);
+      const root = await resolveProjectRoot(opts.root);
       // Paired reference semantics match `model default`; existence and vision=false semantics validation is handled by setVisionModel.
       const ref: ModelRef = { provider: opts.provider, model_id: opts.modelId };
       try {
@@ -272,7 +272,7 @@ export function registerConfigModelCommand(model: Command, t: Messages): void {
     .option("--project-id <id>", t.common.projectId, DEFAULT_PROJECT_ID)
     .option("--root <dir>", t.common.root)
     .action(async (opts) => {
-      const root = resolveRootOption(opts.root);
+      const root = await resolveProjectRoot(opts.root);
       const cfg = await loadProjectConfig(root, opts.projectId);
       // The groups' stored connections first, since the models' (provider) values come from
       // them; then the models with what each one is used with.
@@ -305,7 +305,7 @@ export function registerConfigModelCommand(model: Command, t: Messages): void {
         await removeGroupConnection(opts, t);
         return;
       }
-      const root = resolveRootOption(opts.root);
+      const root = await resolveProjectRoot(opts.root);
       // Paired reference semantics match `model default` / `model vision`. removeModel is
       // idempotent, so whether a missing entry is worth reporting is decided here — same
       // shape as `vault remove`, which also checks first and exits non-zero.

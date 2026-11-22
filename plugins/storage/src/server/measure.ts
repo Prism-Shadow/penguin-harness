@@ -181,8 +181,9 @@ async function agentIds(
 }
 
 /**
- * One Project's folder: each of its Agents, and everything else — Benchmarks, organizations,
- * the config file, the Agents folder's `.deleting/` — as `other`.
+ * One Project's folder: each of its Agents (the system Agent's holds the Benchmarks, in its
+ * `app/data/`), and everything else — organizations, the config file, the Agents folder's
+ * `.deleting/` — as `other`.
  */
 export async function measureProject(
   layout: DataLayout,
@@ -205,7 +206,9 @@ export async function measureProject(
 
 /**
  * The data root's entries other than the Projects (`projectIds`, which their own units measure):
- * each top-level entry's size and category, and the server cache locations' entries.
+ * each top-level entry's size and category, and the server cache locations' entries. The folder
+ * the Projects sit in is an entry only when it holds something besides them, and a link left
+ * where a Project's folder used to be is none.
  */
 export async function measureServer(
   layout: DataLayout,
@@ -229,11 +232,17 @@ export async function measureServer(
   };
   const entries: StorageServerEntry[] = [];
   const root = layout.root();
+  const projectsDir = layout.projectsDir();
   for (const entry of await readEntries(root, opts.limiter)) {
     const abs = path.join(root, entry.name);
     if (plan.skip.has(abs)) continue;
+    // A Project's folder used to sit at the top level; a link stays there for old paths until
+    // 1.0, and it is that Project's, not the server's.
+    if (entry.isSymbolicLink() && projectIds.includes(entry.name)) continue;
     const category = itemized.get(abs)?.category ?? parts.get(abs) ?? "other";
     const size = await measurePlanned(abs, category, plan, categories, opts);
+    // The folder the Projects sit in is the server's only for what it holds besides them.
+    if (abs === projectsDir && size.bytes === 0) continue;
     entries.push({ name: entry.name, category, bytes: size.bytes });
   }
   entries.sort((a, b) => b.bytes - a.bytes || (a.name < b.name ? -1 : 1));

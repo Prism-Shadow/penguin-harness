@@ -4,7 +4,7 @@ description: >-
   Reproduce APE (Large Language Models are Human-Level Prompt Engineers, Zhou et al. 2022)
   on an agent and a frozen Benchmark, or on the house-style brief demo task shipped with
   this Skill: induce instructions from input/output examples, measure each one, keep the best.
-version: 2026.11.05.1
+version: 2026.11.20.1
 ---
 
 # APE
@@ -43,10 +43,10 @@ The paths of `references/evaluation.md`, from the Environment's `App Data Dir`, 
 ```text
 PROJECT_DIR  = <app_data_dir>
 PROJECT_ID   = basename of PROJECT_DIR
-PENGUIN_HOME = dirname of PROJECT_DIR
+PROJECTS_DIR = dirname of PROJECT_DIR      # the folder holding the Project; not the data root
 TARGET       = PROJECT_DIR/agents/<test_agent_id>
 STATE        = TARGET/agent_state
-BENCHMARK    = PROJECT_DIR/benchmarks/<benchmark_id>
+BENCHMARK    = <the BENCHMARK_DIR the request names>   # when it names none: PROJECT_DIR/agents/system_agent/app/data/benchmark/<benchmark_id>
 SCOREBOARD   = BENCHMARK/scoreboard.yaml
 SNAPSHOTS    = TARGET/snapshots
 OUT          = <app_data_dir>/agents/<agent_id>/scratchpad/<session_id>/ape-rsi-toolkit/<experiment_id>/

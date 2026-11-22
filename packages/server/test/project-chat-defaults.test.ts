@@ -103,7 +103,10 @@ describe("project chat defaults", () => {
     expect(await put.json()).toEqual(body);
     expect(await (await member.get(url)).json()).toEqual({ ...body, ...SERVED });
 
-    const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await fs.readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).toContain("[default_chat]");
     expect(toml).toContain('agent_id = "default_agent"');
     expect(toml).toContain('thinking_level = "high"');
@@ -119,7 +122,10 @@ describe("project chat defaults", () => {
     expect(await (await owner.get(url)).json()).toEqual({ ...{ thinkingLevel: "low" }, ...SERVED });
     // Empty body: the block disappears from the toml entirely.
     expect(await (await owner.put(url, {})).json()).toEqual({});
-    const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await fs.readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).not.toContain("default_chat");
   });
 
@@ -164,7 +170,10 @@ describe("project chat defaults", () => {
     expect(models.defaultModel).toEqual({ provider: "custom", modelId: "m-1" });
     expect(models.models).toHaveLength(1);
     // The key is masked on read, so assert on the file: a replacing write would drop it.
-    const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await fs.readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).toContain("sk-super-secret-key-123456");
     expect(toml).toContain('name = "Shared"');
     expect(toml).toContain('approval_mode = "deny-all"');
@@ -179,7 +188,10 @@ describe("project chat defaults", () => {
       ...{ workspace: "/srv/data" },
       ...SERVED,
     });
-    const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await fs.readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).toContain('name = "Renamed"');
   });
 });
@@ -226,7 +238,10 @@ describe("models default (narrow default-model switch)", () => {
     expect(models.defaultModel).toEqual({ provider: "custom", modelId: "m-2" });
     expect(models.models.find((m) => m.modelId === "m-2")?.isDefault).toBe(true);
     // RMW: the other entry's inline credential is untouched.
-    const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    const toml = await fs.readFile(
+      path.join(t.root, "projects", projectId, ".project_config.toml"),
+      "utf8",
+    );
     expect(toml).toContain("sk-super-secret-key-123456");
   });
 

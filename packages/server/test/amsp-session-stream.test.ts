@@ -119,7 +119,7 @@ async function traceFiles(
   agentId: string,
   sessionId: string,
 ): Promise<AmspRecord[][]> {
-  const dir = path.join(root, P, "agents", agentId, "traces");
+  const dir = path.join(root, "projects", P, "agents", agentId, "traces");
   const files: string[] = [];
   for (const day of await fs.readdir(dir)) {
     for (const name of await fs.readdir(path.join(dir, day))) {

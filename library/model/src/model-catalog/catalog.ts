@@ -1,5 +1,5 @@
 /**
- * Built-in model catalog data and its lookups (single source of truth): official chat models
+ * Built-in model catalog data and its lookups (single source of truth): chat and tool models
  * that MMSP can auto-route, the provider groups, pricing and off-peak rules, and the UI helpers
  * — the server's, which seeds a new Project's config from it (seed.ts), and the Web App's, the
  * CLI's and the component gallery's, which display it through the browser-safe subpath
@@ -58,7 +58,7 @@
  * OpenRouter z-ai/glm-5.1 and SiliconFlow Pro/zai-org/GLM-5.1 gateway listings
  * (delisted 2026-08-06; the Z.AI direct glm-5.1 remains), the OpenRouter
  * inclusionai/ling-3.0-flash:free listing (delisted from OpenRouter, removed 2026-08-18),
- * non-chat models (embedding / image generation / TTS), and Bedrock. Direct-vendor ids are
+ * embedding models and Bedrock. Direct-vendor ids are
  * auto-routed by MMSP and leave client_type unset; nine gateway groups (OpenRouter,
  * Fireworks AI, SiliconFlow, Atlas Cloud, Runcrate, TokenDance, OpenCode Go, Qwen
  * Pay-As-You-Go and Qwen Token Plan) can't be auto-routed, so every gateway row **always
@@ -2503,6 +2503,17 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // as `deepseek-v4-pro`; the two retired V4 Flash ids, served from V4.1 Flash, are not resold.
   // Gemini 3.7 Flash is no longer preset (2026-10-10): Google retires the id and reroutes it to
   // 3.8 Flash.
+  // Hydrogen and the tool rows follow Penguin Go's production catalog (2026-11-21).
+  {
+    modelId: "gemini-4-hydrogen",
+    displayName: "Gemini 4 Hydrogen",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1048576,
+    pricing: usd(0.075, 1.5, 7.5),
+    supportsVision: true,
+    clientType: "mmsp",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
   {
     // Owner-confirmed relay list prices (2026-10-14), matching Google's introductory
     // rates. Any further Penguin Go promotion comes from authorization or model sync.
@@ -2594,6 +2605,81 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: cny(0.3, 9, 27),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
+    clientType: "mmsp",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-3.1-flash-image",
+    displayName: "Gemini 3.1 Flash Image",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    // Go prices text and generated images separately. The catalog has a single output rate.
+    supportsVision: true,
+    tool: true,
+    clientType: "mmsp",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-omni-1.2-flash",
+    displayName: "Gemini Omni 1.2 Flash",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    // The Harness estimate uses the same output rate for thinking and video.
+    pricing: usd(1.5, 1.5, 12),
+    supportsVision: true,
+    tool: true,
+    clientType: "mmsp",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-3.8-flash-tts",
+    displayName: "Gemini 3.8 Flash TTS",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    pricing: usd(0, 0.5, 9),
+    supportsVision: false,
+    tool: true,
+    clientType: "mmsp",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "deepseek-tts",
+    displayName: "DeepSeek TTS",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    // Go receives the billable character count in the MMSP prompt bucket.
+    pricing: cny(0, 300, 0),
+    supportsVision: false,
+    tool: true,
+    clientType: "mmsp",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "deepseek-asr",
+    displayName: "DeepSeek ASR",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    // Go receives the billed audio seconds in the MMSP prompt bucket.
+    pricing: cny(0, 216.666667, 0),
+    supportsVision: false,
+    tool: true,
+    clientType: "mmsp",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "deepseek-search",
+    displayName: "DeepSeek Search",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    // Go's MMSP relay reports one prompt unit per successful ¥0.005 search.
+    pricing: cny(0, 5000, 0),
+    supportsVision: false,
+    tool: true,
+    clientType: "mmsp",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "deepseek-fetch",
+    displayName: "DeepSeek Fetch",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    // Go's MMSP relay reports one prompt unit per successful ¥0.005 fetch.
+    pricing: cny(0, 5000, 0),
+    supportsVision: false,
+    tool: true,
     clientType: "mmsp",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
