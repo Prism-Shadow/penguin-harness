@@ -13,6 +13,8 @@
  *   reload; restoring the default order asks first and then clears it.
  * - The header's New folder makes a folder of the apps checked in its dialog, under the name
  *   typed there, at the first checked app's place.
+ * - A system app's tile opens its own page, where the nav keeps the App Center lit, Benchmark
+ *   detail pages included.
  */
 import { test, expect } from "@playwright/test";
 import { ADMIN_ID, ADMIN_PASSWORD, login, provisionAndLogin } from "./auth.mjs";
@@ -65,7 +67,7 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await expect(toggle).toBeEnabled({ timeout: 30_000 });
 
   await page.goto(`${BASE}/apps`);
-  await expect(page.getByText("The App Center is empty")).toBeVisible();
+  await expect(page.getByText("No apps from agents yet")).toBeVisible();
   await expect(page.getByRole("button", { name: "Create with AI" })).toBeVisible();
 
   await openSupportRow(page);
@@ -213,7 +215,8 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   const tile = (name) => grid.getByRole("button", { name: new RegExp(`^${name},`) });
   const names = () =>
     grid
-      .locator(":scope > li")
+      // The workbenches' tiles and folders: the system apps lead the grid untouched.
+      .locator(':scope > li:not([data-app^="system_agent/"])')
       .evaluateAll((items) =>
         items.map((li) => li.querySelector(":scope > button > span:last-child")?.textContent ?? ""),
       );
@@ -329,7 +332,8 @@ test("the header's New folder makes a folder of the checked apps at the first on
   const grid = page.getByRole("list", { name: "App Center" });
   const names = () =>
     grid
-      .locator(":scope > li")
+      // The workbenches' tiles and folders: the system apps lead the grid untouched.
+      .locator(':scope > li:not([data-app^="system_agent/"])')
       .evaluateAll((items) =>
         items.map((li) => li.querySelector(":scope > button > span:last-child")?.textContent ?? ""),
       );
@@ -350,4 +354,18 @@ test("the header's New folder makes a folder of the checked apps at the first on
   // Kept with the account.
   await page.reload();
   await expect.poll(names).toEqual(["Alpha", "Pair"]);
+});
+
+test("a system app's tile opens its page, where the App Center stays lit", async ({ page }) => {
+  await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
+  await setAccountPrefs(page.request, { lang: "en" });
+  await page.goto(`${BASE}/apps`);
+  const grid = page.getByRole("list", { name: "App Center" });
+  await grid.getByRole("button", { name: "Evaluation Center, system app" }).click();
+  await expect(page).toHaveURL(`${BASE}/benchmark`);
+  const appCenter = page.locator("aside").first().getByRole("link", { name: "App Center" });
+  await expect(appCenter).toHaveAttribute("aria-current", "page");
+  // A Benchmark's own page lies under the Evaluation Center's.
+  await page.goto(`${BASE}/benchmark/no-such-benchmark`);
+  await expect(appCenter).toHaveAttribute("aria-current", "page");
 });

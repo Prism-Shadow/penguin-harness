@@ -87,8 +87,10 @@ test("rescue: a broken contribution answer shows the panel, and safe mode recove
   await expect(marker(page)).toBeVisible();
   expect(seen.count).toBe(before);
 
-  // Safe mode holds across an in-app navigation and a reload.
-  await sidebar.locator('a[href="/models"]').click();
+  // Safe mode holds across an in-app navigation and a reload. The models page is a system app,
+  // and safe mode keeps it: its tile is the Web App's own, not a contribution.
+  await sidebar.locator('a[href="/apps"]').click();
+  await page.locator('li[data-app="system_agent/models"] > button').click();
   await expect(page).toHaveURL(/\/models$/);
   await expect(marker(page)).toBeVisible();
   await page.reload();

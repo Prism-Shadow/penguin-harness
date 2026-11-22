@@ -1,10 +1,12 @@
 /**
- * The App Center (/apps): the Project's home screen. One tile per workbench of the Project's
- * Agents whose manifest asks to be shown (`penguin.appCenter.show`), each the app's icon and name;
- * the server reads them from the files without loading anything, so opening this page starts no
- * build. An administrator sees the apps of the Project's machines too, after this server's, each
- * with its machine's name under its own (use-app-center.ts); a machine out of reach keeps the
- * tiles it last showed, which do not open, and a note under the grid names it.
+ * The App Center (/apps): the Project's home screen. The system Agent's system apps come first
+ * (system-tiles.ts: Models, Plugins, Machines for an administrator, the Cost Center and the
+ * Evaluation Center), then one tile per workbench of the Project's Agents whose manifest asks to
+ * be shown (`penguin.appCenter.show`), each the app's icon and name; the server reads them from
+ * the files without loading anything, so opening this page starts no build. An administrator
+ * sees the apps of the Project's machines too, after this server's, each with its machine's name
+ * under its own (use-app-center.ts); a machine out of reach keeps the tiles it last showed, which
+ * do not open, and a note under the grid names it.
  *
  * - The arrangement is the viewer's own: they drag tiles to reorder them and onto one another to
  *   make folders, or make one from the "New folder" dialog (the header's button, the grid's
@@ -13,15 +15,19 @@
  *   empty. Restoring the default order asks first.
  * - A click (or Enter) opens the app windowed, over the grid, in this page's own window stack
  *   (`?app=<agentId>/<workbenchId>`, `<machineId>:` first for a machine's, so Back closes it);
- *   the tile's menu also opens it full screen, the full page whose exit comes back here.
+ *   the tile's menu also opens it full screen, the full page whose exit comes back here. A system
+ *   app opens as its own page instead, at its own address, and the nav keeps the App Center lit
+ *   there; it can be moved and put in folders, never removed.
  * - A tile whose app is building shows a turning ring and does not open; it turns live by itself
  *   when the build ends (use-app-center.ts follows the server's workbench news).
  * - Every tile, every folder and the grid's empty space have a context menu: right-click,
  *   Shift+F10 or the ContextMenu key, or press and hold on touch. It is also the keyboard's and
  *   touch's way to arrange the grid.
  *
- * With nothing to show, the page says what a workbench is and offers to have one built; there is
- * no manual path, so the AI button stands alone.
+ * While no Agent has an app here, the page says under the system apps what a workbench is and
+ * offers to have one built; there is no manual path, so the AI button stands alone. Once there is
+ * one, that button moves to the header. The system apps show even when the server's list cannot
+ * be read, since the App Center is the way to their pages.
  */
 import { useLayoutEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
@@ -46,6 +52,7 @@ import { agentSettingsPath } from "../../lib/agent-location";
 import { APP_CENTER_PATH } from "../../lib/app-center-path";
 import { localizedText } from "../../lib/skill-use";
 import { S } from "../../lib/strings";
+import { useSystemApps } from "../../lib/system-apps";
 import { toastApiError } from "../../lib/toast-api-error";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
@@ -76,6 +83,7 @@ import { BuildErrorDialog } from "./build-error-dialog";
 import { FolderNameDialog } from "./folder-name-dialog";
 import { FolderPanel } from "./folder-panel";
 import { NewFolderDialog } from "./new-folder-dialog";
+import { systemShortcutsOf } from "./system-tiles";
 import { AppMenu, FolderMenu, GridMenu, type GridActions } from "./tile-menus";
 import { useTileDrag, type Drop, type Dragged } from "./tile-drag";
 import { useAppCenter } from "./use-app-center";
@@ -165,10 +173,20 @@ export function AppCenterPage() {
   /** The new-folder dialog's starting pick, while it is open. */
   const [newFolderPicked, setNewFolderPicked] = useState<string[] | null>(null);
 
+  const systemApps = useSystemApps();
+  /**
+   * The system apps first, so they lead the server's order; they wait for the server's answer
+   * (it carries the viewer's arrangement) unless the read failed.
+   */
   const grid = useMemo(
-    () => (shortcuts === null ? null : arrange(shortcuts, layout)),
-    [shortcuts, layout],
+    () =>
+      shortcuts === null && error === null
+        ? null
+        : arrange([...systemShortcutsOf(systemApps), ...(shortcuts ?? [])], layout),
+    [shortcuts, error, layout, systemApps],
   );
+  /** Some Agent has an app here: the AI button sits in the header rather than under the grid. */
+  const hasWorkbench = shortcuts !== null && shortcuts.length > 0;
   const titleOf = (shortcut: AppCenterShortcut) =>
     localizedText(locale, shortcut.title, shortcut.titleZh);
 
@@ -211,7 +229,12 @@ export function AppCenterPage() {
   // The app open in a window, named by the query; an app no longer listed closes it.
   const openKey = params.get(OPEN_PARAM);
   const openApp = openKey === null || grid === null ? null : findItem(grid, openKey);
-  const windowApp = openApp?.type === "app" && !openApp.shortcut.unavailable ? openApp : null;
+  const windowApp =
+    openApp?.type === "app" &&
+    !openApp.shortcut.unavailable &&
+    openApp.shortcut.system === undefined
+      ? openApp
+      : null;
   /** The window was opened from this page, so closing it is a step back rather than a new entry. */
   const openedHere = (location.state as { appCenterWindow?: boolean } | null)?.appCenterWindow;
 
@@ -219,6 +242,11 @@ export function AppCenterPage() {
     const next = new URLSearchParams(params);
     next.set(OPEN_PARAM, app.id);
     setParams(next, { state: { appCenterWindow: true } });
+  };
+  /** Opens an app: a system app as its page, any other in its window. */
+  const launch = (app: GridApp) => {
+    if (app.shortcut.system === undefined) openWindow(app);
+    else void navigate(app.shortcut.path);
   };
   const closeWindow = () => {
     if (openedHere === true) void navigate(-1);
@@ -239,7 +267,7 @@ export function AppCenterPage() {
           customized: layout !== null,
           titleOf,
           arrange: commit,
-          open: openWindow,
+          open: launch,
           openFullScreen: (app) => openFullScreen(app, APP_CENTER_PATH + location.search),
           showError: setErrorOf,
           viewInSettings: (app) =>
@@ -277,7 +305,7 @@ export function AppCenterPage() {
       mark={markOf(drag.pending, app.id)}
       lifted={drag.dragged?.id === app.id}
       menuItems={(close) => actions && <AppMenu app={app} actions={actions} close={close} />}
-      onOpen={() => openWindow(app)}
+      onOpen={() => launch(app)}
     />
   );
 
@@ -295,7 +323,7 @@ export function AppCenterPage() {
         <GlyphIcon d={ICONS.folderPlus} />
         {S.appCenter.newFolderAction}
       </Button>
-      {create}
+      {hasWorkbench && create}
     </>
   );
 
@@ -379,6 +407,13 @@ export function AppCenterPage() {
                         ),
                       )}
                     </ul>
+                    {!hasWorkbench && error === null && (
+                      <EmptyState
+                        title={S.appCenter.workbenchesEmptyTitle}
+                        description={S.appCenter.empty}
+                        action={create}
+                      />
+                    )}
                     {displayedFolder !== null && (
                       <FolderPanel
                         key={displayedFolder.id}

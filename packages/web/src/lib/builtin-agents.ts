@@ -14,8 +14,8 @@ import type { AgentSummary } from "@prismshadow/penguin-server/api";
 
 const BUILTIN_AGENT_IDS: ReadonlySet<string> = new Set(["default_agent", "penguin_support"]);
 
-/** The id the server reserves for the system Agent. */
-const SYSTEM_AGENT_ID = "system_agent";
+/** The id the server reserves for the system Agent: its system apps' App Center keys start with it. */
+export const SYSTEM_AGENT_ID = "system_agent";
 
 /** What the predicates read off an Agent. */
 type AgentFacts = Pick<AgentSummary, "agentId" | "system">;

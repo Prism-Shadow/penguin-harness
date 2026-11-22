@@ -355,6 +355,9 @@ export const en: GalleryStrings = {
     iconRegistry: (icons, files) => `${icons} icons from ${files} files`,
     duplicateNames: "One path, several names",
     iconMarks: "Marks drawn as components",
+    appIcons: "App icons",
+    appIconsAside:
+      "A system app: its page's glyph on the app icon's shape, the same shape at every size",
     durations: "Durations × easings",
     reducedNote: "Reduced motion: every change shows its end state at once.",
     liveSignal: "Live signals",

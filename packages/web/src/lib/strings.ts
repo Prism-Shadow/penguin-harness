@@ -1299,6 +1299,10 @@ export const zh = {
     /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
     tileName: (title: string, agent: string, state: string | null) =>
       state === null ? `${title}，${agent}` : `${title}，${agent}，${state}`,
+    /** A system app's tile (lib/system-apps.ts): its hint and its accessible name. */
+    systemTileName: (title: string) => `${title}，系统应用`,
+    /** Under the system apps' tiles while no Agent has an app here: what a workbench is. */
+    workbenchesEmptyTitle: "还没有 Agent 的应用",
     folderTip: (name: string, count: number) => `${name}，${count} 个应用`,
     folderName: (name: string, count: number) => `${name}，分组，${count} 个应用`,
     /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
@@ -2266,6 +2270,9 @@ export const zh = {
     /** Its settings page's Plugins tab: the system apps it owns, listed read-only. */
     systemAppsDesc: "系统 Agent 拥有的系统应用。它们随平台提供，从应用中心打开。",
     systemAppsEmpty: "还没有系统应用。",
+    /** A system app's row there: its tag, and the system Agent's card's count of them. */
+    systemAppTag: "系统应用",
+    systemAppCount: (n: number) => `${n} 个系统应用`,
     /** The Agents page's notice to the owner: an Agent of theirs holds the id reserved for the system Agent. */
     systemIdHeld: (name: string): string =>
       `Agent「${name}」占用了系统 Agent 的保留 id。导出它，以另一个 id 导入，再删除它；系统 Agent 会在下次加载时补齐。`,
