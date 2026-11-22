@@ -174,8 +174,12 @@ describe("model-catalog", () => {
     for (const model of penguinGoModels) {
       expect(model.baseUrl, model.modelId).toBe(PENGUIN_GO_BASE_URL);
       expect(model.clientType, model.modelId).toBeDefined();
-      if (model.pricing !== undefined)
-        expect(model.pricing.unit, model.modelId).toBe("usd_per_mtok");
+      // The image preset bills text and images separately, which one output rate cannot express.
+      if (model.modelId === "gemini-3.1-flash-image") {
+        expect(model.pricing, model.modelId).toBeUndefined();
+      } else {
+        expect(model.pricing?.unit, model.modelId).toBe("usd_per_mtok");
+      }
       // No static promotion: the platform delivers whatever it runs at authorization and Sync,
       // so every row here is its list price and nothing else.
       expect(model.discount, model.modelId).toBeUndefined();
