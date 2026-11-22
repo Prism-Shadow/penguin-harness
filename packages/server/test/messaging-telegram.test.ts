@@ -77,7 +77,10 @@ import {
 } from "@prismshadow/penguin-library-messaging/bridge";
 import { MessagingChannelError } from "@prismshadow/penguin-library-messaging/connector";
 import { messagingErrorKind } from "@prismshadow/penguin-library-messaging/error-kind";
-import { MessagingMediaTooLargeError, collectUnderCap } from "@prismshadow/penguin-library-messaging/media";
+import {
+  MessagingMediaTooLargeError,
+  collectUnderCap,
+} from "@prismshadow/penguin-library-messaging/media";
 import type {
   TelegramBotClient,
   TelegramBotUser,
@@ -93,7 +96,10 @@ import {
   TelegramApiError,
   createTelegramTransport,
 } from "@prismshadow/penguin-library-messaging/telegram-api";
-import { TelegramConnector, telegramBotIdOf } from "@prismshadow/penguin-library-messaging/telegram-connector";
+import {
+  TelegramConnector,
+  telegramBotIdOf,
+} from "@prismshadow/penguin-library-messaging/telegram-connector";
 import { FakeFeishuSdk } from "./fixtures/feishu.js";
 import { fakeFetch, jsonResponse } from "./fixtures/fetch.js";
 import { forwardingTo } from "./fixtures/forwarding.js";

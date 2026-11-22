@@ -19,19 +19,12 @@
  *   state route's refusal names none: the holder may sit in a Project the caller cannot see.
  */
 import { Hono } from "hono";
-import type {
-  MessagingAccountHoldersResponse,
-  MessagingAccountsResponse,
-} from "./vocabulary.js";
+import type { MessagingAccountHoldersResponse, MessagingAccountsResponse } from "./vocabulary.js";
 import type { AppEnv } from "@prismshadow/penguin-library-http";
 import type { MessagingBindings } from "./messaging.js";
 import type { Access } from "@prismshadow/penguin-library-project";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
-import {
-  enabledAccounts,
-  findAccountHolders,
-  holdsAccount,
-} from "./account-holders.js";
+import { enabledAccounts, findAccountHolders, holdsAccount } from "./account-holders.js";
 import { isMessagingChannel } from "./enabled-channel.js";
 import type { MessagingMachineApi } from "./ports.js";
 import { HttpError } from "@prismshadow/penguin-library-http";
@@ -42,7 +35,11 @@ export interface MessagingAccountsRouteDeps {
   messagingRepo: Pick<MessagingBindings, "listAll">;
   sessionsRepo: Pick<SessionIndex, "findById">;
   /** The Project's machines with a connected API client, as Machines.projectApis returns it. */
-  machines: { projectApis(projectId: string): Promise<Array<{ machineId: string; alias: string; api: MessagingMachineApi | null }>> };
+  machines: {
+    projectApis(
+      projectId: string,
+    ): Promise<Array<{ machineId: string; alias: string; api: MessagingMachineApi | null }>>;
+  };
   access: Pick<Access, "requireProjectAccess">;
 }
 

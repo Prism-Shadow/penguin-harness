@@ -605,4 +605,3 @@ export interface MessagingAccountHoldersResponse {
   holders: MessagingAccountHolder[];
   unreachable: MessagingUnreachableMachine[];
 }
-

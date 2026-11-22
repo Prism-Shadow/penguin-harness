@@ -31,7 +31,11 @@
 import { describe, expect, it } from "vitest";
 import { attachedFileLine } from "@prismshadow/penguin-core";
 import { MESSAGING_TEXT_CHUNK_CHARS } from "@prismshadow/penguin-library-messaging/bridge";
-import { chunkMarkdown, isSafeUrl, parseMarkdown } from "@prismshadow/penguin-library-messaging/markdown";
+import {
+  chunkMarkdown,
+  isSafeUrl,
+  parseMarkdown,
+} from "@prismshadow/penguin-library-messaging/markdown";
 import { feishuCardOf, feishuMarkdownOf } from "@prismshadow/penguin-library-messaging/feishu-card";
 import { qqMarkdownOf } from "@prismshadow/penguin-library-messaging/qq-markdown";
 import { telegramHtmlOf } from "@prismshadow/penguin-library-messaging/telegram-html";

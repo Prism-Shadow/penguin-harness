@@ -38,7 +38,10 @@ import {
   newQQScanKey,
   qqScanQrUrl,
 } from "@prismshadow/penguin-library-messaging/qq-scan";
-import type { QQBindPollResult, QQScanTransport } from "@prismshadow/penguin-library-messaging/qq-scan";
+import type {
+  QQBindPollResult,
+  QQScanTransport,
+} from "@prismshadow/penguin-library-messaging/qq-scan";
 import { stubFetch } from "./fixtures/fetch.js";
 import { sessionRow } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";

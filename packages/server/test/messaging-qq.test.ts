@@ -60,7 +60,11 @@ import type {
   QQSendArgs,
   QQTransport,
 } from "@prismshadow/penguin-library-messaging/qq-api";
-import { QQApiError, normalizeDispatch, qqSendErrorText } from "@prismshadow/penguin-library-messaging/qq-api";
+import {
+  QQApiError,
+  normalizeDispatch,
+  qqSendErrorText,
+} from "@prismshadow/penguin-library-messaging/qq-api";
 import type { QQConnectorOpts } from "@prismshadow/penguin-library-messaging/qq-connector";
 import {
   QQ_PASSIVE_WINDOW_MS,
