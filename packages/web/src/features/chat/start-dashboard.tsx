@@ -10,8 +10,11 @@
  *   self-evolution toolkits of the library's `rsi` category, this Project's Benchmarks on this
  *   server — each opening the page that lists them. Each is read again whenever the page mounts,
  *   so a plugin installed or a Benchmark imported elsewhere shows on coming back; a count that
- *   has not arrived reads "—". Where the column is too narrow for both (a phone), the panel sits
- *   under the version line.
+ *   has not arrived reads "—". After them, in their order, come the counts server modules
+ *   contribute (lib/start-metrics.ts): fixed numbers, each opening the system app it names (in
+ *   its window, when it opens in one) or nothing; safe mode has none. Where the column is too
+ *   narrow for both (a phone), the panel sits under the version line, and so it does at every
+ *   width when there are contributed counts, which would otherwise squeeze the name.
  * - **Examples and shortcuts.** The example folders and the user's own shortcuts, one folder
  *   open at a time (example-tasks.ts, shortcuts-folder.tsx): the folders down one column and the
  *   open folder's rows beside them, so switching folders moves nothing; stacked on a phone. Every
@@ -57,7 +60,12 @@ import { S } from "../../lib/strings";
 import { NAV_ICONS, glyphOf } from "../../lib/nav-icons";
 import { formatMonthDay } from "../../lib/format";
 
+import { windowAddress } from "../../lib/app-window-address";
+import { localizedText } from "../../lib/skill-use";
+import { systemAppKey, useSystemApps } from "../../lib/system-apps";
 import { versionBadgeFor } from "../../lib/update-flow";
+import type { StartMetric } from "../../lib/start-metrics";
+import { useStartMetrics } from "../../lib/web-app-pages";
 import { openAppInfo, useUpdateFlow } from "../../lib/use-update-flow";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { useLocale } from "../../state/locale";
@@ -75,6 +83,26 @@ import {
 } from "./example-folder-row";
 import { SHORTCUTS_FOLDER_ID, ShortcutsFolder } from "./shortcuts-folder";
 import { useProjectBenchmarks, useRsiToolkits } from "./use-start-dashboard";
+
+/** Where the counts sit: beside the brand from `@2xl` up, or on their own row at every width. */
+type BrandLayout = "beside" | "below";
+
+const BRAND_GRID: Record<BrandLayout, string> = {
+  beside:
+    "grid grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)] items-center gap-x-3 @2xl:grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)_auto]",
+  below: "grid grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)] items-center gap-x-3",
+};
+
+const COUNTS_PLACE: Record<BrandLayout, string> = {
+  beside:
+    "col-span-2 row-start-3 mt-4 justify-self-start @2xl:col-span-1 @2xl:col-start-3 @2xl:row-start-1 @2xl:mt-0 @2xl:ml-3",
+  below: "col-span-2 row-start-3 mt-4 justify-self-start",
+};
+
+const VERSION_PLACE: Record<BrandLayout, string> = {
+  beside: "col-start-2 row-start-2 mt-1.5 text-xs tabular-nums text-fg-subtle @2xl:col-end-4",
+  below: "col-start-2 row-start-2 mt-1.5 text-xs tabular-nums text-fg-subtle",
+};
 
 export interface StartDashboardProps {
   projectId: string;
@@ -101,24 +129,28 @@ export function StartDashboard({
   const { agents, agentsLoading } = useProject();
   const toolkits = useRsiToolkits();
   const benchmarks = useProjectBenchmarks(projectId);
+  const metrics = useStartMetrics();
+  // Beside the brand there is room for the page's own three counts only: a longer strip would
+  // squeeze the name, so with contributed counts it takes its own row at every width.
+  const layout = metrics.length === 0 ? "beside" : "below";
 
   return (
     <div className="ui-start">
       {/* The logo spans the name, slogan and version line. The version starts at the name's
-          left edge and reaches under the counts at `@2xl`; below that, the counts take their
-          own third row. */}
+          left edge and reaches under the counts at `@2xl`; below that, or with contributed
+          counts, the counts take their own third row. */}
       <div data-slot="brand" className="@container mb-10">
-        <div className="grid grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)] items-center gap-x-3 @2xl:grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)_auto]">
+        <div className={BRAND_GRID[layout]}>
           <StartBrand />
-          <VersionLine />
-          <Card
-            data-slot="counts"
-            padding="none"
-            className="col-span-2 row-start-3 mt-4 justify-self-start @2xl:col-span-1 @2xl:col-start-3 @2xl:row-start-1 @2xl:mt-0 @2xl:ml-3"
-          >
-            {/* The hairlines between the counts are the list's own dividers. Three equal columns,
-                each as wide as the widest count needs, so the panel reads as one even strip. */}
-            <ul className="grid grid-cols-3 divide-x divide-line-muted">
+          <VersionLine layout={layout} />
+          <Card data-slot="counts" padding="none" className={COUNTS_PLACE[layout]}>
+            {/* The hairlines between the counts are the list's own dividers. Equal columns, one
+                per count, each as wide as the widest count needs, so the panel reads as one even
+                strip. */}
+            <ul
+              className="grid divide-x divide-line-muted"
+              style={{ gridTemplateColumns: `repeat(${3 + metrics.length}, minmax(0, 1fr))` }}
+            >
               <StatCount
                 glyph={glyphOf("robot")}
                 label={S.chat.start.metrics.agents}
@@ -138,6 +170,7 @@ export function StartDashboard({
                 to="/benchmark"
                 value={benchmarks.benchmarks?.length ?? null}
               />
+              {metrics.length > 0 && <ContributedCounts metrics={metrics} />}
             </ul>
           </Card>
         </div>
@@ -225,14 +258,11 @@ const versionBadgeClass =
  * version is cached for the whole app, so this is usually instant; until it is, the row holds an
  * empty line of the same height, so its arrival moves nothing on the page.
  */
-function VersionLine() {
+function VersionLine({ layout }: { layout: BrandLayout }) {
   const { locale } = useLocale();
   const { version } = useVersionInfo(true);
   return (
-    <p
-      data-slot="version"
-      className="col-start-2 row-start-2 mt-1.5 text-xs tabular-nums text-fg-subtle @2xl:col-end-4"
-    >
+    <p data-slot="version" className={VERSION_PLACE[layout]}>
       {version === null ? (
         "\u00a0"
       ) : (
@@ -288,10 +318,35 @@ function VersionBadge() {
 // The counts
 // ---------------------------------------------------------------------------
 
+/** The counts server modules contribute, after the page's own, each opening the app it names. */
+function ContributedCounts({ metrics }: { metrics: readonly StartMetric[] }) {
+  const { locale } = useLocale();
+  const systemApps = useSystemApps();
+  /** Where a count leads: the system app it names, in its window when it opens in one. */
+  const addressOf = (key: string | undefined): string | undefined => {
+    const app = key === undefined ? undefined : systemApps.find((one) => one.key === key);
+    if (app === undefined) return undefined;
+    return app.frame !== undefined ? windowAddress(systemAppKey(app.key)) : app.path;
+  };
+  return (
+    <>
+      {metrics.map((metric) => (
+        <StatCount
+          key={metric.id}
+          glyph={glyphOf(metric.icon)}
+          label={localizedText(locale, metric.title, metric.titleZh)}
+          to={addressOf(metric.app)}
+          value={metric.value}
+        />
+      ))}
+    </>
+  );
+}
+
 /**
  * One count: the glyph and the label over the number, all one link to the page that lists what
- * it counts. The label keeps to one line, so the three counts are one height whatever the
- * language.
+ * it counts, when there is one. The label keeps to one line, so the counts are one height
+ * whatever the language.
  */
 function StatCount({
   glyph,
@@ -301,26 +356,34 @@ function StatCount({
 }: {
   glyph: string;
   label: string;
-  to: string;
+  /** The page it opens; absent: the count opens nothing. */
+  to?: string | undefined;
   /** The count; null while it has not arrived. */
   value: number | null;
 }) {
+  const body = (
+    <>
+      <span className={`flex items-center ${ICON_GAP.row} whitespace-nowrap text-xs text-fg-muted`}>
+        <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
+        {label}
+      </span>
+      <span data-slot="figure" className="text-xl font-semibold leading-7 tabular-nums text-fg">
+        {value === null ? "—" : value}
+      </span>
+    </>
+  );
   return (
     <li data-slot="count" data-clip-surface="" className="min-w-0">
-      <Link
-        to={to}
-        className="flex min-w-0 flex-col rounded-[inherit] px-3 py-1.5 transition-colors duration-150 hover:bg-control-hover focus-visible:-outline-offset-2"
-      >
-        <span
-          className={`flex items-center ${ICON_GAP.row} whitespace-nowrap text-xs text-fg-muted`}
+      {to === undefined ? (
+        <div className="flex min-w-0 flex-col px-3 py-1.5">{body}</div>
+      ) : (
+        <Link
+          to={to}
+          className="flex min-w-0 flex-col rounded-[inherit] px-3 py-1.5 transition-colors duration-150 hover:bg-control-hover focus-visible:-outline-offset-2"
         >
-          <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
-          {label}
-        </span>
-        <span data-slot="figure" className="text-xl font-semibold leading-7 tabular-nums text-fg">
-          {value === null ? "—" : value}
-        </span>
-      </Link>
+          {body}
+        </Link>
+      )}
     </li>
   );
 }

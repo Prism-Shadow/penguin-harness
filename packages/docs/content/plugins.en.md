@@ -37,6 +37,20 @@ Data slots a system app contributes to:
 - `SemanticIdModule.kinds` `{ kind, access? }` with a code half `{ takenIds(projectId) }`: a kind of id `POST …/suggest-id` proposes, kebab-case, avoiding what `takenIds` names; `access: "owner"` limits it to the Project's owner.
 - `StartPageModule.metrics` `{ key, title, titleZh?, icon?, order, value, app? }`: a count the start page shows after its own, fixed when the package is built; `app` is the page key of the system app a click opens. `GET /api/contributions` delivers them as `startMetrics`.
 
+## A page in the App Center's window
+
+A server module contributes Web App pages through `WebModule.pages`. A page drawn by an iframe (`renderer: { iframe: { src } }`, with `src` served by the module's own route) that carries a `title` and `app: { order }` is a system app of the system Agent. Its tile sits in the App Center, and it opens in the App Center's window like an agent's app: minimize keeps it running, full screen draws the same document with no window around it, and Close ends it.
+
+- **Address.** The window is `/apps?app=system_agent/<page key>`. The page keeps its own location in `at`: the path and query inside the app, URL-encoded. The frame's `src` carries the starting location as its fragment (`#/<path>?<query>`). An address with no `at`, such as the tile, brings a running window back where its page is.
+- **Old addresses.** The page's `path`, and every address under it, open the window and replace the history entry: `/reports/r1?tab=a` becomes `/apps?app=system_agent/reports&at=%2Fr1%3Ftab%3Da`.
+- **Messages** (`postMessage`, same origin):
+  - `{ type: "penguin:location", at }` goes both ways. The page posts it whenever it moves inside itself, and the host replaces `at` without adding a history entry, so the page should move with `history.replaceState` rather than `pushState`. The host posts it when its own address moves (Back, Forward, a pasted address), and the page goes there without reloading.
+  - `{ type: "penguin:navigate", to }` asks the host to go to `to`, a path of this app outside `/api/`, such as `/chat/<sessionId>`. The window is minimized and keeps running.
+  - The host takes a message only from its window's own frame. A page should take one only from `window.parent`.
+- **Context.** The frame's root element carries `lang` (`zh-CN` or `en`) and `data-project-id`, updated when the interface language or the current Project changes. They sit beside the theme the host writes into every workbench page. The frame paints no background of its own.
+
+A contributed iframe page without `app` opens as a page at its `path`, framed the same way. Safe mode draws no server contribution, so the app is absent there.
+
 ## Checking the format
 
 Nothing loads a plugin package to find out what it is: the table says it. Two checks read that table and the package around it, and they agree because they read the same generated file.

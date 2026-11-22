@@ -37,8 +37,9 @@ export interface PageData {
   parent?: string;
   /**
    * Makes the page a system app of the system Agent: an App Center tile named and drawn by
-   * `title` / `titleZh` / `icon` that opens `path` as a page, shown to whom `admin` allows, placed
-   * by `order` among the system apps (lib/system-apps.ts). A page without a `title` is no app.
+   * `title` / `titleZh` / `icon`, shown to whom `admin` allows, placed by `order` among the system
+   * apps (lib/system-apps.ts). It opens `path` as a page, or in the App Center's window when the
+   * server contributed it as an iframe (windowFrameOf). A page without a `title` is no app.
    */
   app?: { order: number };
 }
@@ -63,6 +64,30 @@ export interface WebAppPage extends Omit<PageData, "nav"> {
 
 /** A page the server contributed: the renderer it named stays beside the component, for the readers that key on it. */
 export type ServerPage = WebAppPage & { renderer: RendererRef };
+
+/**
+ * The document a page opens in the App Center's window, or null for a page that opens as a page.
+ * A page the server contributed, drawn by an iframe, offered, outside company mode and a system
+ * app (`app`) opens in the window: its tile opens the window, and its `path` and every address
+ * under it lead there (web-app/window-redirect.tsx). Every other page, the modules' own system
+ * apps among them, opens at its path.
+ */
+export function windowFrameOf(
+  page: Pick<WebAppPage, "renderer" | "app" | "nav" | "released">,
+): string | null {
+  const { renderer } = page;
+  if (page.app === undefined || !page.released || page.nav === "org" || renderer === undefined)
+    return null;
+  return "iframe" in renderer ? renderer.iframe.src : null;
+}
+
+/** The route a page is mounted at: one that opens in the window answers every address under it. */
+export function routePathOf(
+  page: Pick<WebAppPage, "path" | "renderer" | "app" | "nav" | "released">,
+): string {
+  if (windowFrameOf(page) === null || page.path.endsWith("/*")) return page.path;
+  return `${page.path.replace(/\/+$/, "")}/*`;
+}
 
 /** The `pages` contributions as the router and the nav read them, by `order`. */
 export function pageTableOf(contributions: readonly Contributed[]): readonly WebAppPage[] {

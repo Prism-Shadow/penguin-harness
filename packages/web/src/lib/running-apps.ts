@@ -29,9 +29,13 @@ import { useProject } from "../state/project";
 import { windowEntryState, windowInFront, windowSearch } from "./app-window-address";
 import { APP_CENTER_PATH } from "./app-center-path";
 import { localizedText } from "./skill-use";
+import type { SystemShortcut } from "./system-apps";
 
-/** A running app's App Center shortcut, with the machine its Agent lives on (none: this server). */
-export type RunningShortcut = AppCenterShortcut & { machineId?: string };
+/**
+ * A running app's App Center shortcut, with the machine its Agent lives on (none: this server), and
+ * for a system app that opens in the window, the document its window draws.
+ */
+export type RunningShortcut = AppCenterShortcut & { machineId?: string; system?: SystemShortcut };
 
 /** One running app as its window's host keeps it. */
 export interface RunningAppRecord {

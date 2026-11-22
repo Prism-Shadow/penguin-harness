@@ -8,14 +8,18 @@
  * - Only offered pages (`released`) whose role rule the viewer meets: an admin-only page
  *   (Machines) is no app for a member, as its nav row was none.
  * - In `app.order`, then by key where two tie.
- * - A system app opens at its own path, as a page, never in the App Center's window: its page
- *   keeps its state in its own address, which a window's `?app=` would fight over.
+ * - A system app a feature contributes opens at its own path, as a page: its page keeps its state
+ *   in its own address, which a window's `?app=` would fight over. One a server module contributes
+ *   as an iframe opens in the App Center's window instead (web-app/page-table.ts `windowFrameOf`),
+ *   keyed `system_agent/<page key>`, with its location inside it in the window's `at`; its full
+ *   screen is the page `/app/<projectId>/system_agent/<page key>`.
  */
 import { useMemo } from "react";
 import { matchPath, useLocation } from "react-router";
 import { useAuth } from "../state/auth";
-import type { PageData } from "../web-app/page-table";
+import { windowFrameOf, type WebAppPage } from "../web-app/page-table";
 import { routeUnder } from "../web-app/route-under";
+import { SYSTEM_AGENT_ID } from "./builtin-agents";
 import { useWebAppPages } from "./web-app-pages";
 
 /** A system app as its readers draw it. */
@@ -29,13 +33,37 @@ export interface SystemApp {
   /** Its glyph's name in the UI package's icon registry (`ICONS`). */
   icon?: string;
   order: number;
+  /** The document it opens in the App Center's window; absent for one that opens as a page. */
+  frame?: string;
+}
+
+/**
+ * What a tile, and a running app, carry of a system app: its page's glyph, drawn on the App
+ * Center's icon shape, and the document it opens in the window when it opens in one.
+ */
+export interface SystemShortcut {
+  glyph: string;
+  frame?: string;
 }
 
 /** What the readers need of a page. */
 type AppPage = Pick<
-  PageData,
-  "key" | "path" | "admin" | "released" | "title" | "titleZh" | "icon" | "app"
+  WebAppPage,
+  "key" | "path" | "admin" | "released" | "title" | "titleZh" | "icon" | "app" | "renderer" | "nav"
 >;
+
+/** A system app's App Center key, which its window's address names: `system_agent/<page key>`. */
+export function systemAppKey(pageKey: string): string {
+  return `${SYSTEM_AGENT_ID}/${pageKey}`;
+}
+
+/** The full page of a system app that opens in the window, at `at` inside it. */
+export function systemAppFullPage(projectId: string, pageKey: string, at?: string | null): string {
+  const path = `/app/${encodeURIComponent(projectId)}/${SYSTEM_AGENT_ID}/${encodeURIComponent(pageKey)}`;
+  return at === null || at === undefined || at === "/"
+    ? path
+    : `${path}?${new URLSearchParams({ at }).toString()}`;
+}
 
 /** The system apps the viewer sees, in their order. */
 export function systemAppsOf(pages: readonly AppPage[], isAdmin: boolean): SystemApp[] {
@@ -44,6 +72,7 @@ export function systemAppsOf(pages: readonly AppPage[], isAdmin: boolean): Syste
     const { app, title } = page;
     if (app === undefined || title === undefined || !Number.isFinite(app.order)) continue;
     if (!page.released || (page.admin && !isAdmin)) continue;
+    const frame = windowFrameOf(page);
     apps.push({
       key: page.key,
       path: page.path,
@@ -51,6 +80,7 @@ export function systemAppsOf(pages: readonly AppPage[], isAdmin: boolean): Syste
       ...(page.titleZh !== undefined ? { titleZh: page.titleZh } : {}),
       ...(page.icon !== undefined ? { icon: page.icon } : {}),
       order: app.order,
+      ...(frame !== null ? { frame } : {}),
     });
   }
   return apps.sort((a, b) => a.order - b.order || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));

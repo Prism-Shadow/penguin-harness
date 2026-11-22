@@ -18,15 +18,17 @@ import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { AppWindow } from "@prismshadow/penguin-ui";
 import { APP_CENTER_PATH } from "../../lib/app-center-path";
-import { leaveWindow, windowInFront } from "../../lib/app-window-address";
+import { leaveWindow, windowAt, windowInFront } from "../../lib/app-window-address";
 import { openFullPage } from "../../lib/host-history";
 import {
   closeAllApps,
   closeApp,
   keepProjectApps,
   useRunningAppRecords,
+  type RunningAppRecord,
 } from "../../lib/running-apps";
 import { localizedText } from "../../lib/skill-use";
+import { systemAppFullPage } from "../../lib/system-apps";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { AppCenterWindow } from "./app-center-window";
@@ -45,20 +47,31 @@ export function AppCenterWindows() {
   useEffect(() => closeAllApps, []);
 
   const leave = () => leaveWindow(navigate, location);
+  /** The app's full page: a system app drawn in an iframe opens there where its window was. */
+  const fullPageOf = ({ projectId: project, shortcut }: RunningAppRecord) =>
+    shortcut.system?.frame !== undefined
+      ? systemAppFullPage(project, shortcut.workbenchId, windowAt(location))
+      : shortcut.path;
   return (
     <>
       {apps.map((app) =>
         app.projectId !== projectId ? null : (
           <AppWindow key={app.key} shown={app.key === front}>
             <AppCenterWindow
+              appKey={app.key}
               projectId={app.projectId}
               shortcut={app.shortcut}
               title={localizedText(locale, app.shortcut.title, app.shortcut.titleZh)}
               onMinimize={leave}
               onFullScreen={(path) =>
-                openFullPage(navigate, path, `${APP_CENTER_PATH}${location.search}`, {
-                  fromWindow: true,
-                })
+                openFullPage(
+                  navigate,
+                  app.shortcut.system?.frame !== undefined ? fullPageOf(app) : path,
+                  `${APP_CENTER_PATH}${location.search}`,
+                  {
+                    fromWindow: true,
+                  },
+                )
               }
               onClose={() => {
                 closeApp(app.key);

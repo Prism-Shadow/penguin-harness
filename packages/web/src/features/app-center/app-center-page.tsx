@@ -20,9 +20,11 @@
  *   live window. Several apps can run at once, and they keep running while the viewer is on
  *   another page, because their windows live in a layer over the page area rather than here
  *   (app-center-windows.tsx, over the running set in lib/running-apps.ts, which other surfaces
- *   read too); only Close ends one. A system app opens as its own page instead, at its own
- *   address, and the nav keeps the App Center lit there; it can be moved and put in folders,
- *   never removed.
+ *   read too); only Close ends one. A system app a server module draws in an iframe opens in a
+ *   window too, keyed `system_agent/<page key>`, and keeps its location inside it in the
+ *   window's `at` (app-center-window.tsx); one of the Web App's own opens as its own page
+ *   instead, at its own address, and the nav keeps the App Center lit there. A system app can be
+ *   moved and put in folders, never removed.
  * - A folder unfolds in place from its icon (`?folder=<id>`, so Back closes it too;
  *   folder-panel.tsx). Leaving a window, a folder or the full page goes back to the host's own
  *   entry for the view beneath, however many pages the app's frame went through
@@ -122,6 +124,10 @@ function aiExamples(): AiExample[] {
   }));
 }
 
+/** Whether the app opens in a window: every app but a system app drawn by a page of its own. */
+const opensInWindow = (app: GridApp) =>
+  app.shortcut.system === undefined || app.shortcut.system.frame !== undefined;
+
 /** The mark a tile wears for the drop the pointer would make now. */
 function markOf(drop: Drop | null, id: string): TileMark {
   if (drop === null) return null;
@@ -188,6 +194,14 @@ export function AppCenterPage() {
   const noteOf = (app: GridApp): string | null =>
     app.shortcut.system === undefined ? null : (notes.get(app.shortcut.workbenchId) ?? null);
   /**
+   * The system apps' shortcuts, the same objects from one render to the next as the server's are:
+   * a running app follows its shortcut by identity (lib/running-apps.ts `keepListedApps`).
+   */
+  const systemShortcuts = useMemo(
+    () => systemShortcutsOf(systemApps, projectId),
+    [systemApps, projectId],
+  );
+  /**
    * The system apps first, so they lead the server's order; they wait for the server's answer
    * (it carries the viewer's arrangement) unless the read failed.
    */
@@ -195,8 +209,8 @@ export function AppCenterPage() {
     () =>
       shortcuts === null && error === null
         ? null
-        : arrange([...systemShortcutsOf(systemApps), ...(shortcuts ?? [])], layout),
-    [shortcuts, error, layout, systemApps],
+        : arrange([...systemShortcuts, ...(shortcuts ?? [])], layout),
+    [shortcuts, error, layout, systemShortcuts],
   );
   /** Some Agent has an app here: the AI button sits in the header rather than under the grid. */
   const hasWorkbench = shortcuts !== null && shortcuts.length > 0;
@@ -244,11 +258,9 @@ export function AppCenterPage() {
   const runningIds = useMemo(() => new Set(running.map((app) => app.key)), [running]);
   const openKey = params.get(WINDOW_PARAM);
   const openApp = openKey === null || grid === null ? null : findItem(grid, openKey);
-  /** The workbench the address names; a system app has no window, so it never names one. */
+  /** The app the address names, when it opens in a window: a system app's page never does. */
   const windowApp =
-    openApp?.type === "app" &&
-    !openApp.shortcut.unavailable &&
-    openApp.shortcut.system === undefined
+    openApp?.type === "app" && !openApp.shortcut.unavailable && opensInWindow(openApp)
       ? openApp
       : null;
   const windowShown = openKey !== null && runningIds.has(openKey);
@@ -288,9 +300,9 @@ export function AppCenterPage() {
     next.set(WINDOW_PARAM, app.id);
     setParams(next, { state: windowEntryState(appCenterPath(params)) });
   };
-  /** Opens an app: a system app as its page, any other in its window. */
+  /** Opens an app in its window, or a system app that has none as its page. */
   const launch = (app: GridApp) => {
-    if (app.shortcut.system === undefined) openWindow(app);
+    if (opensInWindow(app)) openWindow(app);
     else void navigate(app.shortcut.path);
   };
 

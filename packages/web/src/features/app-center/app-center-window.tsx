@@ -11,7 +11,7 @@
  * follows the workbench as it reloads. A page may ask to fill the app, which is the full screen
  * button's. When the workbench is gone, the window says so to its host, which ends the app.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AppWindowBar, ICON_SIZE, Segmented } from "@prismshadow/penguin-ui";
 import type { LocatedShortcut } from "./arrangement";
 import { S } from "../../lib/strings";
@@ -19,20 +19,14 @@ import { localizedText } from "../../lib/skill-use";
 import { workbenchAppPath } from "../../lib/workbench-tabs";
 import { useLocale } from "../../state/locale";
 import { useAppPageTab, WorkbenchFrame } from "../workbenches";
+import { FrameAppBody } from "./frame-app-body";
 import { TileIcon } from "./app-tile";
 
 /** The title bar's icon: one rung above a line glyph in the same slot, as an avatar sits. */
 const BAR_ICON_PX = ICON_SIZE.sectionMark;
 
-export function AppCenterWindow({
-  projectId,
-  shortcut,
-  title,
-  onMinimize,
-  onClose,
-  onFullScreen,
-  onGone,
-}: {
+interface WindowProps {
+  appKey: string;
   projectId: string;
   shortcut: LocatedShortcut;
   title: string;
@@ -42,7 +36,58 @@ export function AppCenterWindow({
   onFullScreen: (path: string) => void;
   /** The app's workbench is gone (removed, or its Agent with it). */
   onGone: () => void;
+}
+
+export function AppCenterWindow(props: WindowProps) {
+  const src = props.shortcut.system?.frame;
+  if (src === undefined) return <AgentWorkbenchWindow {...props} />;
+  return (
+    <WindowShell {...props} fullScreen={() => props.onFullScreen(props.shortcut.path)}>
+      <FrameAppBody
+        appKey={props.appKey}
+        projectId={props.projectId}
+        src={src}
+        title={props.title}
+      />
+    </WindowShell>
+  );
+}
+
+function WindowShell({
+  title,
+  shortcut,
+  onMinimize,
+  onClose,
+  fullScreen,
+  controls,
+  children,
+}: Pick<WindowProps, "title" | "shortcut" | "onMinimize" | "onClose"> & {
+  fullScreen: () => void;
+  controls?: ReactNode;
+  children: ReactNode;
 }) {
+  return (
+    <section aria-label={title} className="flex h-full min-h-0 flex-col">
+      <AppWindowBar
+        icon={<TileIcon shortcut={shortcut} title={title} size={BAR_ICON_PX} />}
+        title={title}
+        controls={controls}
+        labels={{
+          minimize: S.appCenter.windowMinimize,
+          fullScreen: S.appCenter.windowFullScreen,
+          close: S.appCenter.windowClose,
+        }}
+        onMinimize={onMinimize}
+        onFullScreen={fullScreen}
+        onClose={onClose}
+      />
+      <div className="relative min-h-0 flex-1">{children}</div>
+    </section>
+  );
+}
+
+function AgentWorkbenchWindow(props: WindowProps) {
+  const { projectId, shortcut, onFullScreen, onGone } = props;
   const { locale } = useLocale();
   const machineId = shortcut.machineId ?? null;
   const { tab, pages, off, gone, failure } = useAppPageTab({
@@ -68,54 +113,43 @@ export function AppCenterWindow({
         : shortcut.path,
     );
   return (
-    <section aria-label={title} className="flex h-full min-h-0 flex-col">
-      <AppWindowBar
-        icon={<TileIcon shortcut={shortcut} title={title} size={BAR_ICON_PX} />}
-        title={title}
-        controls={
-          pages.length >= 2 && shown ? (
-            <div className="shrink-0">
-              <Segmented
-                options={pages.map((page) => ({
-                  value: page.key,
-                  label: localizedText(locale, page.title, page.titleZh),
-                }))}
-                value={shown.key}
-                onChange={setPicked}
-                cols={Math.min(pages.length, 5) as 2 | 3 | 4 | 5}
-              />
-            </div>
-          ) : undefined
-        }
-        labels={{
-          minimize: S.appCenter.windowMinimize,
-          fullScreen: S.appCenter.windowFullScreen,
-          close: S.appCenter.windowClose,
-        }}
-        onMinimize={onMinimize}
-        onFullScreen={fullScreen}
-        onClose={onClose}
-      />
-      <div className="relative min-h-0 flex-1">
-        {shown ? (
-          // Keyed on the page: each one is its own document, and the bar switches between them.
-          <WorkbenchFrame
-            key={shown.tabId}
-            projectId={projectId}
-            tab={shown}
-            onFillApp={fullScreen}
-          />
-        ) : (
-          <p
-            role="status"
-            className="flex h-full items-center justify-center px-6 text-sm text-fg-muted"
-          >
-            {tab === undefined && failure === null
-              ? S.workbenches.loadingPage
-              : (failure ?? (off ? S.workbenches.offPage : S.workbenches.noSuchPage))}
-          </p>
-        )}
-      </div>
-    </section>
+    <WindowShell
+      {...props}
+      fullScreen={fullScreen}
+      controls={
+        pages.length >= 2 && shown ? (
+          <div className="shrink-0">
+            <Segmented
+              options={pages.map((page) => ({
+                value: page.key,
+                label: localizedText(locale, page.title, page.titleZh),
+              }))}
+              value={shown.key}
+              onChange={setPicked}
+              cols={Math.min(pages.length, 5) as 2 | 3 | 4 | 5}
+            />
+          </div>
+        ) : undefined
+      }
+    >
+      {shown ? (
+        // Keyed on the page: each one is its own document, and the bar switches between them.
+        <WorkbenchFrame
+          key={shown.tabId}
+          projectId={projectId}
+          tab={shown}
+          onFillApp={fullScreen}
+        />
+      ) : (
+        <p
+          role="status"
+          className="flex h-full items-center justify-center px-6 text-sm text-fg-muted"
+        >
+          {tab === undefined && failure === null
+            ? S.workbenches.loadingPage
+            : (failure ?? (off ? S.workbenches.offPage : S.workbenches.noSuchPage))}
+        </p>
+      )}
+    </WindowShell>
   );
 }

@@ -16,11 +16,13 @@ import { FileRendererRulesContext, type FileRendererRule } from "../lib/file-ren
 import { contributionShown, setRunningServerModules, useModuleGates } from "../lib/module-gate";
 import { subscribeUserEvents } from "../lib/amsp/user-events";
 import { runningModulesFor } from "./running-modules";
+import { startMetricsOf } from "../lib/start-metrics";
 import { useSafeMode } from "../rescue/safe-mode";
 import { useAuth } from "../state/auth";
 import { webAppDeps } from "./deps";
 import { FramePage } from "./frame-page";
-import { parentedPagesOf, removedPagesOf, type WebAppPage } from "./page-table";
+import { parentedPagesOf, removedPagesOf, windowFrameOf, type WebAppPage } from "./page-table";
+import { windowRedirectFor } from "./window-redirect";
 
 /** What the store holds for the current user. */
 export interface ContributionsState {
@@ -144,7 +146,9 @@ function rendererOf(raw: unknown): RendererRef | null {
  * path, or when its renderer is neither an iframe with a `src` nor a `builtin` name in
  * `renderers`. Its nav name, glyph and parent are kept when they are strings, and its `app` when
  * it makes the page a system app (systemAppOf); whether its parent can hold it is decided over the
- * merged table (parentedPagesOf).
+ * merged table (parentedPagesOf). An iframe page that is a system app opens in the App Center's
+ * window (page-table.ts `windowFrameOf`), so what its route draws is the way into that window
+ * (window-redirect.tsx), not its frame.
  *
  * A company-mode page (`nav: "org"`) has a path relative to an organization: company mode
  * mounts it under the organization layout (features/company/org-routes.tsx) and the router
@@ -172,8 +176,18 @@ export function contributedPagesOf(
     if (paths.has(rooted)) continue;
     const renderer = rendererOf(entry.renderer);
     if (renderer === null) continue;
-    const Component =
-      "iframe" in renderer
+    const app = systemAppOf(entry.app, title, key);
+    const offered = released !== false;
+    const windowed =
+      windowFrameOf({
+        renderer,
+        nav: org ? "org" : "none",
+        released: offered,
+        ...(app !== null ? { app } : {}),
+      }) !== null;
+    const Component = windowed
+      ? windowRedirectFor(key, path)
+      : "iframe" in renderer
         ? framePageFor(renderer.iframe.src, typeof title === "string" ? title : key)
         : renderers.get(renderer.builtin);
     if (Component === undefined) {
@@ -184,7 +198,6 @@ export function contributedPagesOf(
     }
     keys.add(key);
     paths.add(rooted);
-    const app = systemAppOf(entry.app, title, key);
     out.push({
       id: entry.id,
       key,
@@ -192,7 +205,7 @@ export function contributedPagesOf(
       frame: "shell",
       nav: org ? "org" : nav === "main" ? "main" : "none",
       admin: admin === true,
-      released: released !== false,
+      released: offered,
       order: ++order,
       ...(typeof title === "string" ? { title } : {}),
       ...(typeof titleZh === "string" ? { titleZh } : {}),
@@ -310,6 +323,7 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
       pending,
       // A mocked or older server may leave these out.
       quickStarts: [],
+      startMetrics: startMetricsOf(answer),
       refresh: store.refresh,
     }),
     [compiled, answer, pageRenderers, pending, store],

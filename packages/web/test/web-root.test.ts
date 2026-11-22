@@ -208,11 +208,12 @@ describe("the booted page table", () => {
     expect(pages.find((p) => p.path === "/org/*")?.Component).toBe(OrgRoutes);
   });
 
-  it("mounts the terminal and the workflow app pages outside the shell", () => {
+  it("mounts the terminal, the workflow app pages and a system app's full page outside the shell", () => {
     expect(pages.filter((p) => p.frame === "bare").map((p) => p.path)).toEqual([
       "/terminal",
       "/app/:projectId/:agentId/:workbenchId",
       "/app/:projectId/:agentId/:workbenchId/:tabKey",
+      "/app/:projectId/system_agent/:appKey",
     ]);
   });
 

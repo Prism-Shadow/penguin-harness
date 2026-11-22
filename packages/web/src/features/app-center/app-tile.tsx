@@ -16,7 +16,8 @@
  * - An app that is running behind the grid (its window minimized) has a short bar under its
  *   icon, as a taskbar marks a running app, and its name and hint say so; a click brings its
  *   window back, even while it builds. A folder holding one has the same bar, and says how many.
- *   A system app never runs: it opens as its own page, not in a window.
+ *   A system app runs like any app when it opens in a window (a server module's iframe page);
+ *   one that opens as its own page never runs.
  * - A folder tile shows the first four of its apps' icons in a 2×2 square and opens the folder.
  * - What a drag would do is marked here: a line in the gap beside the tile, or an outline around
  *   the icon it would go into. Neither moves anything. The tile's `data-drop` names the mark it
@@ -222,7 +223,9 @@ export function AppTile({
   const system = shortcut.system !== undefined;
   const tip = withNote(
     system
-      ? S.appCenter.systemTileName(title)
+      ? running
+        ? S.appCenter.systemRunningTip(title)
+        : S.appCenter.systemTileName(title, null)
       : running
         ? S.appCenter.runningTip(title, owner)
         : building
@@ -233,7 +236,7 @@ export function AppTile({
     note,
   );
   const name = withNote(
-    system ? S.appCenter.systemTileName(title) : S.appCenter.tileName(title, owner, state),
+    system ? S.appCenter.systemTileName(title, state) : S.appCenter.tileName(title, owner, state),
     note,
   );
   return (

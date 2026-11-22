@@ -8,7 +8,7 @@
  * checkable "Show in the sidebar", the installation's sidebar setting (the Workbenches row's
  * same-named one), when its server reports it. A system app's menu has only the rows that open
  * and arrange it: it opens as its page, has no build to fail, belongs to no Agent's settings and
- * is never removed from the grid.
+ * is never removed from the grid. An iframe system app can also open full screen.
  *
  * "Move to…" opens a second page in the same menu rather than a submenu, which a phone has no
  * room for: Back returns to the first page, and focus moves to the first row of whichever page
@@ -132,7 +132,7 @@ export function AppMenu({
   const { grid } = actions;
   const building = app.shortcut.build === "building";
   const holder = folderOf(grid, app.id);
-  /** A system app opens as its page and is never removed: its menu only opens and arranges it. */
+  /** A system app is never removed and has no Agent: its menu only opens and arranges it. */
   const system = app.shortcut.system !== undefined;
 
   if (page === "move") {
