@@ -6,6 +6,7 @@
  */
 import type { ReactNode } from "react";
 import { Skeleton, SkeletonCard } from "../../feedback/skeleton/skeleton";
+import { Waiting } from "../../feedback/waiting/waiting";
 
 export interface MachineListProps {
   /** The cards. */
@@ -22,7 +23,7 @@ const PLACEHOLDERS = 3;
 export function MachineList({ children, empty = null, loading = false }: MachineListProps) {
   if (loading) {
     return (
-      <div className="space-y-3" aria-busy="true">
+      <Waiting className="space-y-3">
         {Array.from({ length: PLACEHOLDERS }, (_, i) => (
           <SkeletonCard key={i} className="flex flex-wrap items-center gap-x-6 gap-y-2 p-4">
             <div className="min-w-[14rem] flex-1">
@@ -33,7 +34,7 @@ export function MachineList({ children, empty = null, loading = false }: Machine
             <Skeleton className="h-8 w-40" />
           </SkeletonCard>
         ))}
-      </div>
+      </Waiting>
     );
   }
   return (

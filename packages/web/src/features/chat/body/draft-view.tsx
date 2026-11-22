@@ -49,7 +49,7 @@ import {
   type RefObject,
 } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { Notice } from "@prismshadow/penguin-ui";
+import { ComposerBanner, Notice } from "@prismshadow/penguin-ui";
 import type {
   AgentModelConfigDto,
   AgentSummary,
@@ -76,6 +76,7 @@ import { machineLink, remoteAgentsEmpty, type MachineLink } from "../../../lib/m
 import { useMachines } from "../../../state/machines";
 import { useAuth } from "../../../state/auth";
 import { useProject } from "../../../state/project";
+import { isConversationAgent } from "../../../lib/builtin-agents";
 import { useSessions } from "../../../state/sessions";
 import { ChatInput } from "../chat-input";
 import type { ComposerControl } from "../chat-input";
@@ -112,6 +113,7 @@ import { WorkspaceSelect } from "../../workspace";
 import { FilesPanelToggle } from "../dock-toggles";
 import { defaultChatModel, sameModelRef } from "../../models";
 import { toastApiError } from "../../../lib/toast-api-error";
+import { requestDefaultModels } from "../../../lib/default-models-request";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
@@ -171,7 +173,7 @@ export function DraftView({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { agents: localAgents, setCurrentAgentId } = useProject();
+  const { agents: localAgents, setCurrentAgentId, currentProject } = useProject();
   /**
    * Agents on the machine the workspace is on. They are per-server: a Session created on
    * another machine can only name an Agent that exists THERE, so offering this machine's
@@ -222,8 +224,11 @@ export function DraftView({
   const [workspaceMachine, setWorkspaceMachine] = useState<string | null>(
     cached.workspace === undefined ? null : (cached.machineId ?? null),
   );
-  /** The Agents actually offerable for this draft: the target machine's, or this one's. */
-  const agents = workspaceMachine === null ? localAgents : remoteAgents;
+  /** The Agents actually offerable for this draft: the target machine's, or this one's — never the system Agent, which holds no conversation. */
+  const agents = useMemo(
+    () => (workspaceMachine === null ? localAgents : remoteAgents).filter(isConversationAgent),
+    [workspaceMachine, localAgents, remoteAgents],
+  );
   /**
    * The workspace's machine as the Machines page sees it — connected, coming back, stopped —
    * from the one live account of the machines, so this composer and that page never disagree:
@@ -941,6 +946,24 @@ export function DraftView({
   const contextWindow = modelInfo?.contextWindow;
   const vision = modelInfo?.vision !== false;
 
+  // No default model, and none chosen for this chat: Send waits for one (ChatInput's canSend),
+  // and the composer's top band says so, with the way to the Default model settings dialog for
+  // the owner (a member is told whom to ask).
+  const noDefaultBanner = models &&
+    chatModels.length > 0 &&
+    !models.defaultModel &&
+    modelRef === null && (
+      <ComposerBanner
+        {...(currentProject?.role === "owner"
+          ? { action: { label: S.defaultModels.composerAction, onClick: requestDefaultModels } }
+          : {})}
+      >
+        {currentProject?.role === "owner"
+          ? S.defaultModels.composerNone
+          : S.defaultModels.composerNoneMember}
+      </ComposerBanner>
+    );
+
   // The composer and the ownership pills under it, which the dashboard sets between its brand
   // and its examples.
   const composer = (
@@ -983,6 +1006,7 @@ export function DraftView({
         {...(cached.goal === true ? { initialGoal: true } : {})}
         goalPlugin={goalPlugin}
         switches={switches}
+        {...(noDefaultBanner ? { banner: noDefaultBanner } : {})}
         onSkillsChange={onSkillsChange}
         initialText={cached.text ?? ""}
         onTextChange={onTextChange}

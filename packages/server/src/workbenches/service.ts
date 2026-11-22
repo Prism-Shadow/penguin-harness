@@ -52,6 +52,7 @@ import {
   installedPlugin,
   listInstalledWorkbenches,
   PLUGIN_NAME_PATTERN,
+  SYSTEM_AGENT_ID,
   userText,
   workbenchCacheDir,
   workbenchDataDir,
@@ -279,7 +280,12 @@ function contributedTabs(manifests: readonly Manifest[], uiBase: string): Workbe
         .join("/");
       tabs.push({
         ...tab,
-        renderer: { iframe: { src: `${uiBase}/${rest}` } },
+        renderer: {
+          iframe: {
+            src: `${uiBase}/${rest}`,
+            ...(tab.renderer.iframe.pointerLock === true ? { pointerLock: true } : {}),
+          },
+        },
       });
     }
   }
@@ -438,6 +444,27 @@ export class WorkbenchService implements Workbenches {
       }
     }
     return out;
+  }
+
+  async one(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<WorkbenchInfo | null> {
+    if (!isWorkbenchId(workbenchId)) return null;
+    await this.migrate(projectId, agentId);
+    this.watch(projectId, agentId);
+    const base = workbenchesDir(this.paths.root, projectId, agentId);
+    const folder = await readFolder(path.join(base, workbenchId), workbenchId);
+    if (folder === null) return null;
+    const { info, unloaded } = await this.settle(
+      projectId,
+      agentId,
+      folder,
+      !(await isSwitchedOff(base)),
+    );
+    if (unloaded) this.notify(projectId, agentId, info);
+    return info;
   }
 
   async agentEnabled(projectId: string, agentId: string): Promise<boolean> {
@@ -626,13 +653,18 @@ export class WorkbenchService implements Workbenches {
     workbenchId: string,
     rel: string,
   ): Promise<WorkbenchUiRuntimeFile | null> {
-    if (!isWorkbenchId(workbenchId)) return null;
+    if (!(await this.exists(projectId, agentId, workbenchId))) return null;
+    return (await this.runtime()?.file(rel)) ?? null;
+  }
+
+  async exists(projectId: string, agentId: string, workbenchId: string): Promise<boolean> {
+    if (!isWorkbenchId(workbenchId)) return false;
     await this.migrate(projectId, agentId);
     const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
     // A folder without package.json is not a workbench (./store.ts).
-    if (!(await isFile(path.join(dir, "package.json")))) return null;
+    if (!(await isFile(path.join(dir, "package.json")))) return false;
     await this.refuseIfOff(projectId, agentId, workbenchId, dir);
-    return (await this.runtime()?.file(rel)) ?? null;
+    return true;
   }
 
   async iconSvg(
@@ -1332,8 +1364,19 @@ export class WorkbenchService implements Workbenches {
       workbenchId: folder.id,
       plugin: from !== null && PLUGIN_NAME_PATTERN.test(from) ? from : null,
     };
+    // The system Agent runs no Sessions (PRFC-0033), so it is never offered; `createSession`
+    // refuses it through the session service. Whether the Project's `system_agent` is instead
+    // an Agent of the user's (core state/system-agent.ts) is read once per tree: a system Agent
+    // is only ever provisioned where no Agent holds the id.
+    const usersSystemId =
+      (await service.agentConfig.exists(projectId, SYSTEM_AGENT_ID)) &&
+      !(await service.agentConfig.isSystemAgent(projectId, SYSTEM_AGENT_ID));
     return {
-      listAgents: () => service.agents.list(projectId).map((row) => ({ agentId: row.agentId })),
+      listAgents: () =>
+        service.agents
+          .list(projectId)
+          .filter((row) => row.agentId !== SYSTEM_AGENT_ID || usersSystemId)
+          .map((row) => ({ agentId: row.agentId })),
       async createSession(opts?: Parameters<WorkbenchHost["createSession"]>[0]) {
         const target = opts?.agentId ?? agentId;
         const model = opts?.model;

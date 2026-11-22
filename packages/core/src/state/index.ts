@@ -9,6 +9,7 @@ export * from "./default-config.js";
 export * from "./kernel-history.js";
 export * from "./kernel-update.js";
 export * from "./builtin-agents.js";
+export * from "./system-agent.js";
 // A row's effective connection and credential: the Project config's rules, no catalog data.
 export * from "./model-connection.js";
 // Seeded command-policy rules + the single "absent = factory set" fallback (the server
@@ -23,5 +24,9 @@ export * from "./example-benchmark.js";
 export * from "./builtin-benchmarks.js";
 export { placeBenchmark, provisionProjectBenchmarks } from "./project-benchmarks.js";
 export type { PlaceBenchmarkOptions } from "./project-benchmarks.js";
+// A folder written into a directory of folders at once (staged, then renamed): Benchmarks, and
+// the seeds a built-in plugin ships for a system app's data.
+export { PLACE_STAGING_DIR, placeFolder } from "./place-folder.js";
+export type { PlaceFolderOptions } from "./place-folder.js";
 
 export * from "./plugin-workbenches.js";

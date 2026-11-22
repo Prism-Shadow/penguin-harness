@@ -109,6 +109,24 @@ export function builtinPluginRegistry(
   };
 }
 
+/**
+ * The sandbox backends the embedded index declares as defaults for `platform`
+ * (`sandboxDefaultFor`), in index order: what a server whose sandbox is turned on with no backend
+ * offers to install. Only the embedded index answers: the listing lets it win every name it
+ * carries, it is read without waiting on the network, and an offer to install a package as part
+ * of turning a setting on is something only what ships with this server supplies. A row without
+ * the field is the default for no platform.
+ */
+export function sandboxDefaultsFor(
+  platform: string,
+  entries: readonly Pick<IndexDocumentEntry, "name" | "sandboxDefaultFor">[] = parsePluginIndex(
+    builtinIndex,
+    BUILTIN_REGISTRY_SOURCE,
+  ),
+): string[] {
+  return entries.filter((e) => e.sandboxDefaultFor?.includes(platform) === true).map((e) => e.name);
+}
+
 /** The display fields an index entry may carry, which a package can also carry itself: its card's, and its icon. */
 export type PluginDisplay = Pick<
   PluginIndexEntry,
@@ -185,7 +203,20 @@ export function selectIndexChannel(
  */
 export function indexChannelLookup(
   readUrls: () => readonly string[],
-  { fetchImpl = fetch, ttlMs = INDEX_CACHE_TTL_MS, now = Date.now } = {},
+  {
+    fetchImpl = fetch,
+    ttlMs = INDEX_CACHE_TTL_MS,
+    now = Date.now,
+    attempts,
+    timeoutMs,
+  }: {
+    fetchImpl?: typeof fetch;
+    ttlMs?: number;
+    now?: () => number;
+    /** Per address (httpPluginRegistry): an install's lookup tries once, briefly — it already waited on npm. */
+    attempts?: number;
+    timeoutMs?: number;
+  } = {},
 ): (
   name: string,
   version?: string,
@@ -218,6 +249,8 @@ export function indexChannelLookup(
         try {
           const fromSource = await httpPluginRegistry([url, ...pluginProxyMirrors(url, mirrors)], {
             fetchImpl,
+            ...(attempts !== undefined ? { attempts } : {}),
+            ...(timeoutMs !== undefined ? { timeoutMs } : {}),
           }).index();
           const fresh = fromSource.filter((entry) => !registered.has(entry.name));
           for (const entry of fresh) registered.add(entry.name);

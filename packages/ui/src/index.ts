@@ -23,6 +23,7 @@ export * from "./components/icons/app-icon-shape/app-icon-shape";
 export * from "./components/icons/chevron/chevron";
 export * from "./components/icons/marks/marks";
 export * from "./components/icons/spinner/spinner";
+export * from "./components/icons/glyph-app-icon/glyph-app-icon";
 export * from "./components/icons/logos/provider-logo";
 export * from "./components/icons/logos/penguin-logo";
 export * from "./components/icons/avatars/avatar";
@@ -43,6 +44,7 @@ export * from "./components/icons/update-dot/update-dot";
 export * from "./components/feedback/badge/badge";
 export * from "./components/feedback/pill/pill";
 export * from "./components/feedback/skeleton/skeleton";
+export * from "./components/feedback/waiting/waiting";
 export * from "./components/feedback/empty-state/empty-state";
 export * from "./components/feedback/load-failed/load-failed";
 
@@ -215,6 +217,8 @@ export * from "./components/data/list-row/list-row";
 export * from "./components/data/key-value/key-value";
 export * from "./components/data/log-view/log-view";
 export * from "./components/data/table/table";
+// The review before a removal: groups of one-line rows to choose from, with Select all.
+export * from "./components/data/review-list/review-list";
 
 // W4-C — navigation: the nav list and its rows, the rail of a paged dialog or a settings page.
 export * from "./components/navigation/nav-list/nav-list";
@@ -245,6 +249,8 @@ export * from "./components/charts/cartesian/line-chart";
 export * from "./components/charts/pie-chart/pie-chart";
 export * from "./components/charts/scatter-chart/scatter-chart";
 export * from "./components/charts/gauge/gauge";
+// The usage bar: one total split into its parts as a stack, with its legend of sizes.
+export * from "./components/charts/usage-bar/usage-bar";
 
 // W8-B — the command palette: the search box over the caller's actions, and its filter.
 export * from "./components/overlays/command-palette/command-palette";
@@ -325,6 +331,7 @@ export * from "./components/shell/floating-ball/floating-ball-geometry";
 // with the hover actions it shares.
 export * from "./components/shell/app-shell/app-shell";
 export * from "./components/shell/app-window/app-window";
+export * from "./components/shell/app-window/app-window-bar";
 export { WallpaperSurface } from "./components/shell/app-shell/wallpaper";
 export type { WallpaperStyle } from "./components/shell/app-shell/wallpaper";
 export * from "./components/shell/rail/rail";
@@ -345,6 +352,10 @@ export * from "./components/machines/machine-card/machine-card";
 export * from "./components/machines/machine-list/machine-list";
 export * from "./components/machines/machine-toolbar/machine-toolbar";
 export * from "./components/machines/add-machine/add-machine";
+
+// Models: the Project's default-models dialog, and the guide shown before any model has a key.
+export * from "./components/models/default-models-dialog/default-models-dialog";
+export * from "./components/models/model-setup-guide/model-setup-guide";
 
 // Reading and finding: the find-in-page machinery the app's find bar and the Markdown reader share
 // (the text matcher, the DOM index with its highlight paint and reveal, the control row), the
@@ -370,7 +381,16 @@ export * from "./components/data/meta-line/meta-line";
 export * from "./components/feedback/status-mark/status-mark";
 export * from "./components/actions/glyph-action/glyph-action";
 export * from "./components/data/fact-row/fact-row";
+// What a destructive action reaches, in its confirm: named up to a limit, the rest counted.
+export * from "./components/data/impact-list/impact-list";
 export * from "./components/navigation/sub-page-bar/sub-page-bar";
+
+// A status page — a plugin's page in Settings: the strip at its head, the version element of a
+// program the subject installs beside itself (with its "Details" fold), and the checklist of its
+// preconditions.
+export * from "./components/layout/status-strip/status-strip";
+export * from "./components/feedback/installed-version/installed-version";
+export * from "./components/data/checklist/checklist";
 
 // The showcase family, shared with the public sites (site.ts): the cover, the cover card and its
 // grid, the selected carousel and its turn-taking, and a product page's parts.

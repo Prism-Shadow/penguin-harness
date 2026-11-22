@@ -35,8 +35,9 @@
  * and MiMo-V2.6-Flash rows, SiliconFlow's GLM-5.3 Flash and Hy4 preview rows, and Gemini 3.7
  * Flash dropped from every group, Google rerouting the id to 3.8 Flash: 2026-10-10; and the
  * Atlas Cloud group, from its public catalog API and pricing page: 2026-10-11; Gemini 4 Argon
- * (Google, Penguin Go and OpenRouter): 2026-10-14; and the Runcrate group, from its catalog API:
- * 2026-11-02).
+ * (Google, Penguin Go and OpenRouter): 2026-10-14; the Runcrate group, from its catalog API:
+ * 2026-11-02; and Gemini 4 Neon (Google and OpenRouter), per MMSP 0.5.12's registry:
+ * 2026-11-19).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -78,9 +79,8 @@
  * an unpinned gateway id would be placed by its own spelling — `deepseek-ai/DeepSeek-V4` would
  * reach DeepSeek's official client aimed at a gateway, and `openai/gpt-5.6-sol` would throw
  * outright (no known family begins with "openai/"). Gateway protocols are pinned:
- * - `openai-responses` for every OpenRouter row: OpenRouter serves the Responses API for
- *   every upstream at the same base URL the rows already carry, and the group pins the same
- *   protocol so a user-added entry inherits it;
+ * - `openai-responses` for OpenRouter chat and hand-added models, with `openai-image`
+ *   pinned on its dedicated image endpoint;
  * - `openai-chat` for the other OpenAI-compatible gateway rows (the generic Chat Completions
  *   client — the bare "openai" spelling is a deprecated upstream alias, see
  *   canonicalClientType);
@@ -248,14 +248,22 @@ export interface ModelProviderInfo {
   connectDefault?: string;
 }
 
+/** Published standard rates for the text-to-image endpoint. Unknown cache rates stay absent. */
+export type ImageToolPricing =
+  | { unit: "usd_per_mtok"; input: number; output: number; thoughts: number; cached?: number }
+  | { unit: "usd_per_image"; output: number; highResolution?: number };
+
 /** A single built-in model's catalog entry (`modelId` is the upstream id; paired with `provider` it forms the catalog's unique key). */
 export interface ModelCatalogEntry {
+  /** Dedicated tool model, selected through project capabilities. */
+  capability?: "search" | "fetch" | "image" | "video" | "tts" | "stt";
   modelId: string;
   displayName: string;
   /** Provider id (one of MODEL_PROVIDERS). */
   provider: string;
   contextWindow?: number;
   pricing?: ModelPricing;
+  imagePricing?: ImageToolPricing;
   /**
    * A model for the tools plugins offer (an image, speech or web model, bound through a Project's
    * `[tools]` table), not for conversation: the chat model pickers never offer it (ModelInfo's
@@ -317,7 +325,8 @@ export interface ModelCatalogEntry {
    */
   retired?: true;
   /**
-   * This row is, or once was, the default model of new Projects (PRESET_DEFAULT_MODEL). Usage
+   * This row was the default model of new Projects (until 2026-11-20 they were seeded with one;
+   * now they start with none). Usage
    * recorded on it stays priced after a Project stops storing the row — "Restore defaults"
    * deletes every row that is not a preset, retired ones included, and a former default is
    * often most of an older Project's history: retainedCatalogPricing gives the cost path this
@@ -511,8 +520,7 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://openrouter.ai/workspaces/default/keys",
     modelsUrl: "https://openrouter.ai/models",
     gatewayBaseUrl: OPENROUTER_BASE_URL,
-    // The whole group speaks the Responses API, which OpenRouter serves at the preset base
-    // URL below for every upstream — presets and user-added entries alike.
+    // Chat presets and hand-added models inherit Responses. Image presets pin the Images client.
     clientType: "openai-responses",
     // The catalog lists a fraction of what OpenRouter serves, so the group takes more.
     addable: true,
@@ -916,11 +924,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // their context windows are the listing's `top_provider.context_length`, as on the
   // mimo-v2.5 and step-3.7-flash rows.
   //
-  // Protocol: every row pins `openai-responses`. OpenRouter serves the Responses API at
-  // {base}/responses for every upstream, at the same https://openrouter.ai/api/v1 base URL
-  // the rows already carry, and the group pins the same protocol, which a new Project writes on
-  // `[providers.openrouter]`, so an entry added to it by hand follows it. The generic Responses client sends a text-only tool result as a plain
-  // string and replays reasoning items only where the upstream returned them.
+  // Chat presets inherit Responses from the group. Dedicated image presets pin their own
+  // client so MMSP sends the prompt to the Images endpoint at the same gateway base URL.
   //
   // Price buckets: cache_read stores the published input_cache_read
   // (falling back to the input price for the rows without one — the :free rows and the
@@ -935,9 +940,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   //
   // Discounts: what these rows record is what OpenRouter actually BILLS, so a gateway
   // promotion is stored at its discounted rate (unlike the direct-vendor rows, which keep the
-  // list price). The Gemini 3.x Flash rows are the exception: the promotion they sit on is
-  // Google's own dated launch discount rather than the gateway's, so they keep the list price
-  // and declare it in `discount`, exactly as their direct-vendor twins do. The endpoints API
+  // list price). Hy4 and the Gemini 3.x Flash rows instead retain their list prices and record
+  // the promotion separately in `discount`. The endpoints API
   // exposes the running promotion as `pricing.discount` on the default endpoint; rows sitting
   // on one say so and name the rate to restore, because a lapsed promotion silently doubles
   // the real cost — that is exactly how the gpt-5.6-terra and gpt-5.6-luna rows drifted 2x
@@ -1126,6 +1130,31 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.022, 0.66, 1.98),
     supportsVision: false,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // MMSP exposes the image endpoint as text-to-image, without a conversational context limit.
+    modelId: "google/gemini-nano-banana-2.1",
+    imagePricing: { unit: "usd_per_mtok", input: 1.5, thoughts: 7.5, output: 30 },
+    displayName: "Gemini Nano Banana 2.1",
+    provider: "openrouter",
+    capability: "image",
+    tool: true,
+    supportsVision: false,
+    clientType: "openai-image",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // MMSP 0.5.12's registry (models API, read 2026-11-19): OpenRouter quotes Google AI
+    // Studio's list rate with no discount, $3 input / $15 output / $0.15 cache hit. Implicit
+    // caching only, so cache_write records input. Text and image input.
+    modelId: "google/gemini-4-neon",
+    displayName: "Gemini 4 Neon",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.15, 3, 15),
+    supportsVision: true,
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
@@ -1495,6 +1524,17 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "openrouter",
     contextWindow: 256000,
     pricing: usd(0.04, 0.2, 1.15),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    modelId: "tencent/hy4",
+    displayName: "Hy4",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.042, 0.834, 2.501),
+    discount: 0.5,
     supportsVision: true,
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
@@ -2216,6 +2256,17 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: cny(0.57, 2, 7),
     supportsVision: true,
     clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    modelId: "hy4",
+    displayName: "Hy4",
+    provider: "tokendance",
+    contextWindow: 1024000,
+    pricing: cny(0.3, 6, 18),
+    discount: 0.5,
+    supportsVision: true,
+    clientType: "openai-responses",
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
@@ -3269,6 +3320,29 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // -- Google Gemini (official USD pricing). Gemini 3.7 Flash left the group on 2026-10-10:
   // Google retires the id and reroutes it to 3.8 Flash, at the same price. --
   {
+    // The provider bills image output and thoughts at different rates.
+    modelId: "gemini-nano-banana-2.1",
+    imagePricing: { unit: "usd_per_mtok", input: 1.5, thoughts: 7.5, output: 30 },
+    displayName: "Gemini Nano Banana 2.1",
+    provider: "google",
+    capability: "image",
+    tool: true,
+    contextWindow: 131072,
+    supportsVision: true,
+  },
+  {
+    // MMSP 0.5.12's registry, from aistudio.google.com/docs/pricing and
+    // aistudio.google.com/docs/models/gemini-4-neon (read 2026-11-19): $3 input / $15 output /
+    // $0.15 cache hit, no promotion. Implicit caching only, so cache_write is the input price.
+    // Text, image, video and audio input.
+    modelId: "gemini-4-neon",
+    displayName: "Gemini 4 Neon",
+    provider: "google",
+    contextWindow: 1048576,
+    pricing: usd(0.15, 3, 15),
+    supportsVision: true,
+  },
+  {
     // ai.google.dev/gemini-api/docs/pricing#gemini-4-argon (2026-10-14): standard list
     // prices with a 50% introductory discount through 2026-11-30. Only implicit caching
     // is supported; cache_write is the ordinary input price.
@@ -4017,7 +4091,7 @@ export function providerInfo(providerId: string): ModelProviderInfo | undefined 
  * undefined when the group pins none — an unknown id (a user-defined group) included.
  *
  * Six groups pin: vLLM, whose models are served by the user's own vLLM adapter,
- * OpenRouter, whose models all speak the Responses API OpenRouter serves at its preset base
+ * OpenRouter, whose chat models speak the Responses API at its preset base
  * URL, and TokenDance, SiliconFlow, Atlas Cloud and Runcrate, whose models all speak Chat
  * Completions.
  *

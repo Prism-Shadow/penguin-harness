@@ -4,7 +4,7 @@
  * Each entry names a module and the function in it that does the consequential thing — removes
  * a member, restores the default command rules, deletes a machine from the Project, stops a
  * machine's server, uninstalls the program from a machine or installs it there again, stops a
- * running process, runs a plugin's action, clears an organization draft, deletes an
+ * running process, clears an organization draft, deletes an
  * organization (and by default its Agents), syncs the model presets, revokes a paired Chrome,
  * deletes an archived conversation from its stub or the archive page. Every reference to that
  * function must sit inside a `ConfirmModal`'s `onConfirm`: directly, or in the body of a
@@ -31,11 +31,10 @@ const GUARDED: ReadonlyArray<readonly [string, string]> = [
   ["features/machines/machines-page.tsx", "uninstall"],
   ["features/machines/machines-page.tsx", "reinstall"],
   ["features/chat/session/main-chat-dialogs.tsx", "onKillProcess"],
-  ["features/settings/plugins-section.tsx", "runAction"],
   ["features/company/org-dialogs.tsx", "dropDraft"],
   ["features/company/org-dialogs.tsx", "doDelete"],
   ["features/models/preset-sync.tsx", "runPresetSync"],
-  ["features/builtin-browser/browser-section.tsx", "revokeChrome"],
+  ["plugins/browser-automation/src/web/browser-section.tsx", "revokeChrome"],
   ["features/chat/archived-session-stub.tsx", "remove"],
   ["features/settings/archived-sessions-section.tsx", "deletePending"],
 ];

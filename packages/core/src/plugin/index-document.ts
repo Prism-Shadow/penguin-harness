@@ -35,6 +35,11 @@ export interface IndexDocumentEntry {
   homepage?: string;
   keywords?: string[];
   categories?: string[];
+  /**
+   * For a sandbox backend: the platforms (`process.platform` names) it is a default backend for,
+   * as its package declares them; absent, the default for none.
+   */
+  sandboxDefaultFor?: string[];
   /** Unix timestamp (seconds) of the entry's last update. */
   updatedAt?: number;
   /** `sha512-<base64>` of the tarball the row's channel serves. */
@@ -71,7 +76,7 @@ function asIndexEntry(value: unknown): IndexDocumentEntry | null {
   ] as const) {
     if (e[key] !== undefined && typeof e[key] !== "string") return null;
   }
-  for (const key of ["keywords", "categories"] as const) {
+  for (const key of ["keywords", "categories", "sandboxDefaultFor"] as const) {
     if (e[key] !== undefined && !isStringArray(e[key])) return null;
   }
   if (e.updatedAt !== undefined && typeof e.updatedAt !== "number") return null;

@@ -2,8 +2,8 @@
  * The connection test of a tool model sends what its binding names, and that is a request the
  * model takes.
  *
- * - The speech recognition test sends a recording DeepSeek's recognizer accepts (16-bit PCM WAV),
- *   generated in code rather than shipped.
+ * - The speech recognition test sends spoken words in a recording DeepSeek's recognizer accepts
+ *   (16-bit PCM WAV), so it measures a real transcription.
  */
 import { describe, expect, it } from "vitest";
 import { bindingCode } from "../src/accepts.js";
@@ -18,5 +18,7 @@ describe("the connection test of a tool model", () => {
     expect(() =>
       requireDeepSeekAudio({ data: audio.data, mimeType: audio.mime_type }),
     ).not.toThrow();
+    // More than a second of 16 kHz mono 16-bit samples: a sentence, not a beep.
+    expect(audio.data.length).toBeGreaterThan(16_000 * 2);
   });
 });

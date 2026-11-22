@@ -53,7 +53,6 @@ import type {
   CliCommandSummary,
   CliModule,
 } from "@prismshadow/penguin-core/cli";
-import { browserCliModule } from "@prismshadow/penguin-server/cli";
 import type { CliHostMessages, Messages } from "@prismshadow/penguin-server/cli";
 /** The generated list: every plugin dependency of this package that exports `./cli`, by name. */
 import { shippedCliModules as generated } from "./cli-modules.gen.js";
@@ -67,15 +66,11 @@ export interface ShippedCliModule {
 }
 
 /**
- * The CLI modules this build ships: the shipped plugins' (generated, in package-name order), then
- * `penguin browser`'s, which lives in the server package until it moves into its plugin — the
- * generated list picks it up there, and this entry goes.
+ * The CLI modules this build ships: the shipped plugins' `./cli` exports (generated, in
+ * package-name order) — `penguin browser` among them, from browser-automation.
  */
 export function shippedCliModules(): readonly ShippedCliModule[] {
-  return [
-    ...generated,
-    { package: "@prismshadow/penguin-server", load: async () => browserCliModule },
-  ];
+  return [...generated];
 }
 
 /** One collected command: its data half and the code half its class bound. */

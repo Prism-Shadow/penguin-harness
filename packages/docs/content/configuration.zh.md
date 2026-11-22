@@ -104,7 +104,16 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 
 ### 模型条目
 
-Gemini 4 Argon 在 `google` 和 `penguin-go` 分组使用 `model_id = "gemini-4-argon"`，在 `openrouter` 分组使用 `model_id = "google/gemini-4-argon"`。预置条目分别使用 Google 官方 Interactions 客户端、MMSP HTTP 和 OpenRouter Responses。已有 Project 可在模型库页面点击**同步新增模型**补齐这些条目。
+Gemini 4 Argon 在 `google` 和 `penguin-go` 分组使用 `model_id = "gemini-4-argon"`，在 `openrouter` 分组使用 `model_id = "google/gemini-4-argon"`。预置条目分别使用 Google 官方 Interactions 客户端、MMSP HTTP 和 OpenRouter Responses。Gemini 4 Neon 在 `google` 分组使用 `model_id = "gemini-4-neon"`，在 `openrouter` 分组使用 `model_id = "google/gemini-4-neon"`，分别使用 Google 官方 Interactions 客户端和 OpenRouter Responses。已有 Project 可在模型库页面点击**同步新增模型**补齐这些条目。
+
+协议与所在分组不同的条目会在自身存储 `client_type`。例如 OpenRouter 的图像预置固定使用 Images 客户端，而分组使用 Responses：
+
+```toml
+[[models]]
+provider = "openrouter"
+model_id = "google/gemini-nano-banana-2.1"
+client_type = "openai-image"
+```
 
 | 键 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -128,6 +137,8 @@ Gemini 4 Argon 在 `google` 和 `penguin-go` 分组使用 `model_id = "gemini-4-
 - `pricing`：这里记的是牌价。正在进行的促销不写入这个文件：服务端把它保存在 `web.db` 里，计算成本时再从牌价中扣除。见[价格与促销](/models#价格与促销)。
 - `base_url`：新建 Project 时，各网关的端点存在其分组上；预置条目只在与分组不同时才存自己的（OpenCode Go 的 Anthropic Messages 条目、custom 里的 Atria Dawn）。使用模型时不会补上缺少的值：直连厂商的条目没有 base URL，请求发往厂商的缺省端点，或它的 `*_BASE_URL` 变量。
 - `api_key`：为空时使用分组密钥，除非条目自己的 `base_url` 与分组的不同 origin（见[分组连接信息](#分组连接信息)）。两者都没有时，只有解析不出 `base_url`、或解析出的是客户端缺省端点时，才使用客户端自己的环境变量（见[供应商凭证变量](#供应商凭证变量)）；其余条目需要自己的或分组的 key。
+
+配置 Hy4 时，TokenDance 使用 `provider = "tokendance"` 和 `model_id = "hy4"`，OpenRouter 使用 `provider = "openrouter"` 和 `model_id = "tencent/hy4"`。这两条预设的协议均为 `openai-responses`。
 
 ```toml
 default_model = { provider = "deepseek", model_id = "deepseek-flash" }
@@ -204,7 +215,7 @@ deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分�
 
 `[plugins]` 表列出 Project 要求的[服务端插件](/skills#服务端插件)，供所有机器共用，在**插件市场**页面只读；页面安装与移除写入所看机器的 `[plugins.<machineId>]` 表。每个键是一个包名，值是形如 Cargo `[dependencies]` 的要求：
 
-插件页不提供会移除共用表与其他机器条目的整包 Delete plugin。Manage installs 仍管理 Agent 副本，模块 Remove 只写所看机器自己的表。前一次 Project 访问的响应（包括离开后再回到同一 Project）不会替换当前模块快照。
+插件页不提供会移除共用表与其他机器条目的整包 Delete plugin。「安装到 Agent」仍管理 Agent 副本，模块 Remove 只写所看机器自己的表。前一次 Project 访问的响应（包括离开后再回到同一 Project）不会替换当前模块快照。
 
 ```toml
 [plugins]
@@ -217,6 +228,7 @@ deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分�
 - 服务器运行所有 Project 表的并集，因此任何一个 Project 要求的插件，都会为所有 Project 加载。
 - 读取文件时，其他形式的条目会被丢弃，文件的其余部分照常加载。`plugins` 键不是表时，视为不要求任何插件。
 - 空表照样写成空表，表示这个 Project 不要求任何插件。
+- 随 PenguinHarness 发布、提供应用中心系统应用的插件始终留在列表里：会让本服务端不再为该 Project 运行它的写入以 `409` `system_app_module_locked` 拒绝；手工从文件中删掉的条目，服务器下次启动时写回本服务端的 `[plugins.<machineId>]` 表。
 
 ## 命令策略
 
@@ -457,7 +469,7 @@ harness 填入以下占位符：
 - 最后，配置会打上当前 `kernel_version` 的标记。
 - 匹配是**保守**的：只有哈希与某一已记录代一致的标签页才算旧默认值。代太老、不在记录之内的标签页，会当作自定义内容保留。
 
-**还原为默认配置**的工作方式类似 Skill 更新：用当前默认值覆盖配置，只保留 `name`、`description`、`author` 和 `version`。其余全部替换，包括自定义系统提示词、工具列表、模型与压缩设置，以及 MCP Server，插件安装的也不例外（在**插件市场**页面用**管理安装**可以把它们装回来）。当内核更新的保守匹配留下旧字段时，用它做一次彻底刷新。
+**还原为默认配置**的工作方式类似 Skill 更新：用当前默认值覆盖配置，只保留 `name`、`description`、`author` 和 `version`。其余全部替换，包括自定义系统提示词、工具列表、模型与压缩设置，以及 MCP Server，插件安装的也不例外（在**插件市场**页面用**安装到 Agent** 可以把它们装回来）。当内核更新的保守匹配留下旧字段时，用它做一次彻底刷新。
 
 面向开发者的说明：
 

@@ -1,5 +1,5 @@
 /**
- * The Browser panel (features/builtin-browser/browser-panel.tsx) while the agents drive the
+ * The Browser panel (plugins/browser-automation/src/web/browser-panel.tsx) while the agents drive the
  * user's own Chrome, rendered to static markup from the window's browser store (node env, no
  * DOM), its menu's Chrome row, and the backend switch against the fetch fake.
  *
@@ -30,11 +30,14 @@ import type {
 } from "@prismshadow/penguin-server/api";
 // The browser reaches the app's own helpers through the plugin face; this hands them over.
 import "../src/web-app/plugin-host";
-import { BuiltinBrowserPanel } from "../src/features/builtin-browser/browser-panel";
-import { ChromeStatusRow } from "../src/features/builtin-browser/chrome-status-row";
-import { switchBrowserBackend } from "../src/features/builtin-browser/browser-actions";
-import { browserState, dispatchBrowser } from "../src/features/builtin-browser/browser-store";
-import { S as B } from "../src/features/builtin-browser/strings";
+import { BuiltinBrowserPanel } from "../../../plugins/browser-automation/src/web/browser-panel";
+import { ChromeStatusRow } from "../../../plugins/browser-automation/src/web/chrome-status-row";
+import { switchBrowserBackend } from "../../../plugins/browser-automation/src/web/browser-actions";
+import {
+  browserState,
+  dispatchBrowser,
+} from "../../../plugins/browser-automation/src/web/browser-store";
+import { S as B } from "../../../plugins/browser-automation/src/web/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 
 /** Toasts raised during a test, by kind (the real store would leave its dismiss timers running). */

@@ -20,6 +20,25 @@ export const DESKTOP_LOG_MAX_BYTES = 5 * 1024 * 1024;
 /** A longer line is cut: one runaway line must not rotate away everything before it. */
 const MAX_LINE_CHARS = 16 * 1024;
 
+/** A launcher may close its end of a pipe while the desktop app is still running. */
+function consoleMirror(stream: NodeJS.WriteStream): (text: string) => void {
+  let disconnected = false;
+  const onWrite = (err?: NodeJS.ErrnoException | null) => {
+    if (err?.code === "EPIPE" && !disconnected) {
+      disconnected = true;
+      // Writable calls the write callback before emitting its error. Handle this broken pipe
+      // once and leave other stream errors to their normal handlers.
+      stream.once("error", () => {});
+    }
+  };
+  return (text) => {
+    if (!disconnected) stream.write(text, onWrite);
+  };
+}
+
+const mirrorStdout = consoleMirror(process.stdout);
+const mirrorStderr = consoleMirror(process.stderr);
+
 export interface LogFile {
   readonly file: string;
   /** Appends one line, stamped. */
@@ -84,7 +103,7 @@ export function openLogFile(opts: LogFileOptions): LogFile {
       } catch {
         // Already unusable.
       }
-      process.stderr.write(`[shell] the log file ${opts.file} is off: ${String(err)}\n`);
+      mirrorStderr(`[shell] the log file ${opts.file} is off: ${String(err)}\n`);
     }
   };
   const stamped = (line: string) => `${now().toISOString()} ${clip(line)}\n`;
@@ -131,13 +150,13 @@ export function startDesktopLog(file: string): string {
 
 /** One line of the shell's own (`[shell] …`, `[updater] …`), to the console and the log file. */
 export function logLine(line: string): void {
-  process.stdout.write(`${line}\n`);
+  mirrorStdout(`${line}\n`);
   sink?.line(line);
 }
 
 /** A chunk of the embedded server's output, to the console as it came and to the log file by line. */
 export function logServerOutput(stream: "stdout" | "stderr", chunk: string): void {
-  process.stdout.write(`[server] ${chunk}`);
+  mirrorStdout(`[server] ${chunk}`);
   sink?.output(stream, "[server] ", chunk);
 }
 

@@ -6,7 +6,10 @@
  * and the installed MMSP, through OpenAI, OpenRouter and OpenCode Go.
  * Given OpenCode Go's group key, Gemini 4 Argon Contributor streams a tool call through
  * Go's generateContent endpoint with the group key and conversation header, never Google's API.
+ * Given a Nano Banana preset, asking for an image reaches its provider's image-capable
+ * endpoint and returns the original image bytes through MMSP.
  */
+import { AutoLLMClient } from "@prismshadow/mmsp";
 import { describe, expect, it, vi } from "vitest";
 import { CLIENT_CREDENTIALS } from "@prismshadow/mmsp/credentials";
 import { stubFetch } from "./fixtures/fetch.js";
@@ -28,7 +31,6 @@ import {
   MODEL_CATALOG,
   MODEL_PROVIDERS,
   PENGUIN_GO_BASE_URL,
-  PRESET_DEFAULT_MODEL,
   QWEN_OFF_PEAK,
   catalogEntryFor,
   catalogGroupConnection,
@@ -56,6 +58,7 @@ import {
   unroutableVendorModel,
   vendorClientType,
 } from "../src/model-catalog/index.js";
+import { modelModalities } from "../src/services/model-modalities.js";
 
 /**
  * The band a billed rate lies in, USD per million tokens. Wide on purpose — no row's value is
@@ -287,6 +290,69 @@ describe("model-catalog", () => {
     }
   });
 
+  it.each([
+    [
+      "google",
+      "gemini-nano-banana-2.1",
+      /^https:\/\/generativelanguage\.googleapis\.com\/.*\/interactions$/,
+    ],
+    [
+      "openrouter",
+      "google/gemini-nano-banana-2.1",
+      /^https:\/\/openrouter\.ai\/api\/v1\/images\/generations$/,
+    ],
+  ])("the %s Nano Banana preset returns the requested image", async (provider, model, endpoint) => {
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN4sAAAAASUVORK5CYII=",
+      "base64",
+    );
+    // The provider's answer only; what MMSP puts in the request body is MMSP's to test.
+    const fake = stubFetch(() => {
+      if (provider === "openrouter") {
+        return Response.json({
+          data: [{ b64_json: png.toString("base64"), media_type: "image/png" }],
+        });
+      }
+      const events = [
+        { event_type: "step.start", index: 0, step: { type: "model_output" } },
+        {
+          event_type: "step.delta",
+          index: 0,
+          delta: { type: "image", mime_type: "image/png", data: png.toString("base64") },
+        },
+        { event_type: "step.stop", index: 0 },
+        { event_type: "interaction.completed", interaction: { status: "completed" } },
+      ];
+      return new Response(
+        events
+          .map((e) => "event: " + e.event_type + "\ndata: " + JSON.stringify(e) + "\n\n")
+          .join(""),
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    });
+    try {
+      const entry = presetModelEntries().find(
+        (row) => row.provider === provider && row.model_id === model,
+      )!;
+      const connection = storedConnection({ ...entry, api_key: "test-key" });
+      const client = new AutoLLMClient({ model: entry.model_id, ...connection });
+      const images: Uint8Array[] = [];
+      for await (const event of client.streamingResponse({
+        messages: [{ role: "user", content_items: [{ type: "text.done", text: "Draw a dot" }] }],
+        config: { image_config: { resolution: "1K", aspect_ratio: "1:1" } },
+      })) {
+        for (const item of event.content_items)
+          if (item.type === "inline_data.done") images.push(item.data);
+      }
+      expect(fake.calls).toHaveLength(1);
+      const url = new URL(fake.calls[0]!.url);
+      expect(url.origin + url.pathname).toMatch(endpoint);
+      expect(images.map((bytes) => Buffer.from(bytes))).toEqual([png]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("the app URL a minted key is stamped with is the same one attribution headers carry", () => {
     expect(attributionHeaders("https://tokendance.space/gateway/v1")).toEqual({
       "X-App-URL": APP_URL,
@@ -314,6 +380,9 @@ describe("model-catalog", () => {
       "gemini-3.8-flash-lite-tts",
     ]);
     for (const m of MODEL_CATALOG) {
+      // A tool model (image generation) is priced and sized by the model-tool work, not by
+      // these chat-row rules.
+      if (m.capability) continue;
       if (m.tool) {
         // A tool model holds no conversation, so it has no context window; its buckets are the
         // ones MMSP folds the billing units into, and the ones a tool does not bill are zero.
@@ -780,6 +849,20 @@ describe("MMSP's clients as the catalog reads them", () => {
     }
   });
 
+  it("catalog invariant: a row MMSP's registry lists with no text output holds no chat, so it is marked a tool model", () => {
+    // The chat pickers hide only `tool` rows (ModelInfo's `chatEligible`). A model that returns
+    // only images, audio or search results, judged by MMSP's registry on the client the row
+    // routes to rather than by its name, would otherwise be offered as a chat model.
+    const textless = MODEL_CATALOG.filter((m) => {
+      const { output } = modelModalities(m.modelId, m.clientType);
+      return output !== undefined && !output.includes("Text");
+    });
+    expect(textless.length).toBeGreaterThan(0);
+    expect(
+      textless.filter((m) => m.tool !== true).map((m) => `${m.provider}/${m.modelId}`),
+    ).toEqual([]);
+  });
+
   it("unroutableVendorModel judges only the groups that route by id, and only once an id is typed", () => {
     // A vendor group: nothing carries a protocol, so the id has to be one MMSP places.
     expect(unroutableVendorModel("deepseek", "qwen/qwen3.8-flash-next")).toBe(true);
@@ -1109,12 +1192,10 @@ describe("off-peak schedules", () => {
     }
   });
 
-  it("usage on the default model of new Projects keeps a price once a Project drops its row, and so does every former default; any other model's does not", () => {
-    const ref = PRESET_DEFAULT_MODEL;
-    expect(retainedCatalogPricing(ref.provider, ref.model_id)).toEqual(
-      catalogEntryFor(ref.provider, ref.model_id)!.pricing,
-    );
-    for (const m of MODEL_CATALOG.filter((e) => e.wasDefault === true)) {
+  it("usage on every model new Projects were seeded with as their default keeps a price once a Project drops its row; any other model's does not", () => {
+    const former = MODEL_CATALOG.filter((e) => e.wasDefault === true);
+    expect(former.length).toBeGreaterThan(0);
+    for (const m of former) {
       expect(retainedCatalogPricing(m.provider, m.modelId), m.modelId).toBeDefined();
     }
     expect(retainedCatalogPricing("tokendance", "glm-5.3-flash")).toBeUndefined();

@@ -1,5 +1,5 @@
 /**
- * The tab on screen, told to the server (features/builtin-browser/on-screen-report.ts), as the
+ * The tab on screen, told to the server (plugins/browser-automation/src/web/on-screen-report.ts), as the
  * `POST …/tabs/on-screen` requests the fetch fake records. The layer reports on every frame it
  * lays out (every 16 ms here, on fake timers).
  *
@@ -16,7 +16,7 @@ import {
   ON_SCREEN_SETTLE_MS,
   forgetOnScreenReport,
   reportOnScreenTab,
-} from "../src/features/builtin-browser/on-screen-report";
+} from "../../../plugins/browser-automation/src/web/on-screen-report";
 import { json, stubFetch, type FakeFetch } from "./helpers/fetch";
 
 let fetch: FakeFetch;

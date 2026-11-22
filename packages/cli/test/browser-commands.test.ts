@@ -8,7 +8,10 @@
  * - `status` names the backend the user chose — the built-in browser, or their own Chrome with
  *   its name and the extension's version — and, when it cannot be driven, why and what to tell
  *   the user: Chrome not paired, not connected, or switched off by an admin. A server that names
- *   no backend gets the status alone.
+ *   no backend gets the status alone. A server that runs no browser module at all (its plugin's
+ *   server module stopped) gets, on any subcommand, one error line saying an administrator turns
+ *   it on; a server that predates the browser is told to update instead; a route's own 404 (a tab
+ *   the running browser does not know) stays what it is.
  * - Inside a session every call carries PENGUIN_SESSION_ID — in the body, or in the query of a
  *   GET or DELETE — so the server acts for the person driving the session (their Chrome).
  * - What only the built-in browser has (import, history), asked of the user's Chrome, says to
@@ -25,11 +28,11 @@ import { cli } from "../src/index.js";
 import {
   browserEn,
   browserZh,
-  getMessages,
   localMinute,
   RETURN_LIMIT,
   renderExec,
-} from "@prismshadow/penguin-server/cli";
+} from "@penguinharness/browser-automation/cli";
+import { getMessages } from "@prismshadow/penguin-server/cli";
 import { FakeServer } from "./fake-server.js";
 
 // The bundle the browser's commands receive: the host's, with the browser module's own group.
@@ -256,6 +259,34 @@ describe("status and tabs", () => {
       `status: unavailable (no_window)\nnote: ${t.browser.unavailableHint("no_window")}\n`,
     );
     expect(out()).toContain("desktop app");
+  });
+
+  it.each([["status"], ["tabs"], ["scan"]])(
+    "%s exits 1 saying the browser is off when the server runs no browser module (its routes answer 404)",
+    async (command) => {
+      // No route is set: the fake server answers 404 not_found on every browser path, as a server
+      // without the plugin's server module does, and lists the modules it runs (none).
+      expect(await cli(["browser", command])).toBe(1);
+      expect(out()).toBe("");
+      const line = stderr.join("");
+      expect(line).toContain("browser_unavailable");
+      expect(line).toContain("Settings › Plugins");
+    },
+  );
+
+  it("says the server predates the browser when it lists no plugin modules at all", async () => {
+    server.contributions = {};
+    expect(await cli(["browser", "status"])).toBe(1);
+    const line = stderr.join("");
+    expect(line).toContain("browser_unavailable");
+    expect(line).not.toContain("Settings › Plugins");
+    expect(line).toContain("update PenguinHarness");
+  });
+
+  it("keeps a route's own 404 (a tab it does not know) when the browser is running", async () => {
+    routes["GET /status"] = () => ({ body: { available: true, tabs: [], activeTabId: null } });
+    expect(await cli(["browser", "scan", "--tab", "99"])).toBe(1);
+    expect(stderr.join("")).toContain("not_found");
   });
 
   it("tabs prints a table, and --json the response", async () => {

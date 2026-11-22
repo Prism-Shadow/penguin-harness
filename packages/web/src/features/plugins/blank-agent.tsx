@@ -1,5 +1,5 @@
 /**
- * The manage-installs dialog's first row, 「新建空白 Agent」 (plugin-card.tsx): its 「新建并安装」
+ * The install flow's Agent list's first row, 「新建空白 Agent」 (plugin-card.tsx): its 「新建并安装」
  * opens the Agents page's Create agent dialog over the list, prefilled for a blank Agent that
  * carries the plugin — the plugin's title in the UI language as the name, the plugin ticked, and
  * this server as the place (the dialog is given no machine, so it offers none). The id is left to
@@ -24,7 +24,7 @@ export interface BlankAgentSource {
   /** This server's plugin library as the create dialog's picker rows; null until it is read. */
   library: PluginPickItem[] | null;
   /**
-   * The Agent was created: the page reads it into the manage-installs list. Never rejects — the
+   * The Agent was created: the page reads it into the install flow's Agent list. Never rejects — the
    * Agent exists whatever a later read says.
    */
   onCreated: (agent: AgentSummary) => Promise<void>;
@@ -41,7 +41,7 @@ export function blankAgentDraft(
   return { name: title, plugins: [...new Set([...defaultPicks(library), plugin.name])] };
 }
 
-/** The first row of the manage-installs list, laid out as the Agent rows under it are. */
+/** The first row of the install flow's Agent list, laid out as the Agent rows under it are. */
 export function BlankAgentRow({ disabled, onOpen }: { disabled: boolean; onOpen: () => void }) {
   return (
     <div className="border-b border-line pb-1">
@@ -68,7 +68,7 @@ export function BlankAgentRow({ disabled, onOpen }: { disabled: boolean; onOpen:
   );
 }
 
-/** The Create agent dialog for a blank Agent carrying `plugin`, over the manage-installs list. */
+/** The Create agent dialog for a blank Agent carrying `plugin`, over the install flow's Agent list. */
 export function BlankAgentDialog({
   plugin,
   title,

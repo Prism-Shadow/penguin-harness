@@ -77,10 +77,11 @@ export interface Todo {
  * Counted by Agent, because that is what the page lists and what the update acts on one of.
  */
 export function kernelUpdateTodo(
-  agents: ReadonlyArray<Pick<AgentSummary, "agentId" | "kernelOutdated">>,
+  agents: ReadonlyArray<Pick<AgentSummary, "agentId" | "kernelOutdated" | "system">>,
 ): Todo | null {
+  // The system Agent's kernel configures a runtime that never runs: it is no one's to update.
   const items = agents
-    .filter((a) => a.kernelOutdated)
+    .filter((a) => a.kernelOutdated && a.system !== true)
     .map((a) => a.agentId)
     .sort();
   if (items.length === 0) return null;

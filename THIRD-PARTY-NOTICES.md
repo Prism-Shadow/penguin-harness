@@ -309,10 +309,11 @@ Email: mengfanqi@xiaomi.com
 
 ## GenericAgent — the built-in browser's page scripts
 
-Adapted into this repository's source, so present wherever the server ships: every release archive,
-the desktop application, and the `@prismshadow/penguin-server` npm package.
+Adapted into this repository's source, so present wherever the browser-automation plugin ships:
+every release archive, the desktop application, a hot push, and the
+`@penguinharness/browser-automation` npm package, which carries its own copy of this notice.
 
-The built-in browser's page scripts under `packages/server/src/builtin-browser/page-scripts/` (the
+The built-in browser's page scripts under `plugins/browser-automation/src/server/page-scripts/` (the
 DOM simplification that `penguin browser scan` returns, and the change monitor behind
 `penguin browser exec`) are ported from GenericAgent's `simphtml.py`; each ported file says so at
 its top. The `penguin browser` commands and the `browser-automation` skill follow GenericAgent's

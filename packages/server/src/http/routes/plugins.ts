@@ -94,6 +94,7 @@ import {
   withoutIcon,
 } from "../../plugin/registry.js";
 import { indexMirrorRules } from "../../plugin/mirror-settings.js";
+import { offlineArchives, type OfflineArchive } from "../../plugin/offline-archives.js";
 import type {
   CachedRegistry,
   IndexDocumentEntry,
@@ -112,6 +113,7 @@ import {
 import { migrateWorkbenches } from "../../workbenches/migrate.js";
 import type { PluginLibrary } from "../../plugin/library-module.js";
 import { uninstallAgentPlugin } from "../../services/plugin-uninstall.js";
+import { refuseSystemAgentInstall } from "../../services/system-agent.js";
 
 /** What these route groups reach — bound by their component below. */
 export interface PluginsRouteDeps {
@@ -255,6 +257,7 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
+    await refuseSystemAgentInstall(deps.agentConfigService, projectId, agentId);
     const body = await readJson(c);
     const names = optionalStringArray(body, "names") ?? [];
     if (names.length === 0) throw badRequest("names must be a non-empty array.");
@@ -439,6 +442,8 @@ export interface PluginRoutesOptions {
   onCache?: (cache: CachedRegistry, url: string) => void;
   /** This server's plugin prefix (`<root>/plugins`), whose server modules from a link or a zip the listing adds; none without it. */
   prefix?: () => string | null;
+  /** The offline archives the build carries (plugin/offline-archives.ts): a listed entry with one says so. */
+  offline?: () => readonly OfflineArchive[];
 }
 
 /**
@@ -533,9 +538,22 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
   app.get("/", async (c) => {
     const { entries, failures, pending } = await listing();
     const here = bases();
-    const plugins = (await Promise.all(entries.map((entry) => described(entry, here)))).map(
-      (d) => d.entry,
-    );
+    // An entry the build carries an offline archive of installs without a registry, and says
+    // what it carries before it is on this server (05 「安装从不卡住」).
+    const archives = options.offline?.() ?? [];
+    const plugins = (await Promise.all(entries.map((entry) => described(entry, here)))).map((d) => {
+      const archive = archives.find((a) => a.name === d.entry.name);
+      return archive === undefined
+        ? d.entry
+        : {
+            ...d.entry,
+            offline: {
+              version: archive.version,
+              library: archive.library,
+              modules: archive.modules,
+            },
+          };
+    });
     const body: PluginIndexResponse = { plugins, failures, pending };
     return c.json(body);
   });
@@ -687,6 +705,7 @@ export class PluginRegistryRoutes {
       // Read per request: a push moves the shipped prefix to a new assets directory.
       bases: () => pluginBases(this.config.root, this.hmr.assetsDir()),
       prefix: () => pluginsPrefix(this.config.root),
+      offline: () => offlineArchives(pluginBases(this.config.root, this.hmr.assetsDir())),
       seed: parked ?? null,
       onCache: (cache, url) => {
         this.cache = cache;

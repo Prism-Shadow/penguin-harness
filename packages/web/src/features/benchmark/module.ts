@@ -1,4 +1,7 @@
-/** The benchmarks list and one benchmark's detail. */
+/**
+ * The benchmarks list, a system app (an App Center tile, lib/system-apps.ts), and one benchmark's
+ * detail, under it by path.
+ */
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import { BenchmarkPage } from "./benchmark-page";
 import { BenchmarkDetailPage } from "./benchmark-detail-page";
@@ -11,13 +14,14 @@ import { BenchmarkDetailPage } from "./benchmark-detail-page";
         key: "benchmark",
         path: "/benchmark",
         frame: "shell",
-        nav: "main",
+        nav: "none",
         admin: false,
         released: true,
         order: 70,
         title: "Evaluation Center",
         titleZh: "评估中心",
         icon: "trophy",
+        app: { order: 50 },
       },
       {
         id: "benchmark.detail",

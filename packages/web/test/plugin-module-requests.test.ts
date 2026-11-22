@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Settings › Plugins, the administrator's server module requests
+ * The list on the Settings dialog's module requests page, the administrator's
  * (features/settings/plugin-module-requests.tsx), against the HTTP fake: what the ledger lists,
  * and a decision answered with the new list.
  *
@@ -13,6 +13,8 @@
  *   with Enable.
  * - Given a stop the server answers with Projects whose shared table still lists the module, the
  *   toast names them.
+ * - Given a preinstalled module behind a system app, the row reads "System app, built in",
+ *   names no Project and offers no action.
  * - Given no request at all, the section says nothing waits.
  */
 import { createElement as h } from "react";
@@ -55,6 +57,7 @@ const request = (over: Partial<PluginModuleRequest>): PluginModuleRequest => ({
   via: null,
   builtin: false,
   state: "off",
+  onServer: true,
   ...over,
 });
 
@@ -174,6 +177,28 @@ describe("the administrator's server module requests", () => {
     await click(confirm!);
     await waitFor(() => toasts().length === 1);
     expect(toasts()).toEqual([words.stillListed("Charts", `Lab${words.sep}Ops`)]);
+  });
+
+  it("offers nothing on a system app's module, and names no Project for it", async () => {
+    server([
+      request({
+        projectId: null,
+        projectName: null,
+        requestedBy: "",
+        requestedByName: null,
+        decision: "enabled",
+        via: "builtin",
+        builtin: true,
+        preinstalled: true,
+        systemApp: true,
+        state: "running",
+      }),
+    ]);
+    await open();
+    await waitFor(() => rowText().includes(words.systemApp));
+    expect(rowText()).not.toContain(words.projectGone);
+    expect(hasButton(`${words.stop} Charts`)).toBe(false);
+    expect(hasButton(`${words.enable} Charts`)).toBe(false);
   });
 
   it("says nothing waits when the ledger is empty", async () => {

@@ -103,7 +103,16 @@ A new Project writes no `base_url` for these seven first-party groups, so their 
 
 ### Model entries
 
-Gemini 4 Argon uses `model_id = "gemini-4-argon"` in the `google` and `penguin-go` groups, and `model_id = "google/gemini-4-argon"` in `openrouter`. The presets use Google's official Interactions client, MMSP HTTP and OpenRouter Responses respectively. Existing Projects can add these entries with **Add new models** on the models page.
+Gemini 4 Argon uses `model_id = "gemini-4-argon"` in the `google` and `penguin-go` groups, and `model_id = "google/gemini-4-argon"` in `openrouter`. The presets use Google's official Interactions client, MMSP HTTP and OpenRouter Responses respectively. Gemini 4 Neon uses `model_id = "gemini-4-neon"` in `google` and `model_id = "google/gemini-4-neon"` in `openrouter`, through Google's official Interactions client and OpenRouter Responses. Existing Projects can add these entries with **Add new models** on the models page.
+
+A row whose protocol differs from its group's stores its own `client_type`. OpenRouter's image preset, for example, pins the Images client while the group uses Responses:
+
+```toml
+[[models]]
+provider = "openrouter"
+model_id = "google/gemini-nano-banana-2.1"
+client_type = "openai-image"
+```
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -127,6 +136,8 @@ Field notes:
 - `pricing`: the figure here is the list price. A running promotion is not written to this file: the server keeps it in `web.db` and takes it off when it computes cost. See [Prices and promotions](/models#prices-and-promotions).
 - `base_url`: a new Project stores each gateway's endpoint on its group, and a preset row stores one only where it differs from its group's (OpenCode Go's Anthropic Messages rows, custom's Atria Dawn). Nothing fills a missing one when a model is used: direct vendor rows have none and reach the vendor's default endpoint, or its `*_BASE_URL` variable.
 - `api_key`: when empty, the entry uses its group key, unless the entry's own `base_url` is on another origin than the group's (see [Group connections](#group-connections)). With neither, it uses the client's own environment variable only when no `base_url` resolves for it or the one that does is the client's default endpoint (see [Provider credential variables](#provider-credential-variables)); every other entry needs a key of its own or its group's.
+
+For Hy4, set `provider = "tokendance"` and `model_id = "hy4"`, or `provider = "openrouter"` and `model_id = "tencent/hy4"`. Both presets use `client_type = "openai-responses"`.
 
 ```toml
 default_model = { provider = "deepseek", model_id = "deepseek-flash" }
@@ -203,7 +214,7 @@ The default model is not part of this block: it stays the top-level `default_mod
 
 The `[plugins]` table lists the [server plugins](/skills#server-plugins) the Project asks for. It is shared by all machines and is read-only on the **Plugins** page; that page installs and removes entries in the viewed machine's `[plugins.<machineId>]` table. Each key is a package name, and each value is a requirement in the shape of Cargo's `[dependencies]`:
 
-The Plugins page does not offer package-global Delete plugin, which would remove the shared and other machines’ entries. Manage installs still edits Agent copies; module Remove writes only the viewed machine’s own table. Replies from a previous Project visit, including a return to the same Project, do not replace the current module snapshot.
+The Plugins page does not offer package-global Delete plugin, which would remove the shared and other machines’ entries. Install on Agent still edits agent copies; module Remove writes only the viewed machine’s own table. Replies from a previous Project visit, including a return to the same Project, do not replace the current module snapshot.
 
 ```toml
 [plugins]
@@ -216,6 +227,7 @@ The Plugins page does not offer package-global Delete plugin, which would remove
 - The server runs the union of every Project's table, so a plugin one Project asks for is loaded for all of them.
 - An entry of any other shape is dropped when the file is read, and the rest of the file still loads. A `plugins` key that is not a table asks for no plugins.
 - An empty table is written as an empty table: the Project asks for no plugins.
+- A plugin that ships with PenguinHarness and provides a system app of the App Center stays in the list: a write that would take it out of what this server runs for the Project is refused with `409` `system_app_module_locked`, and an entry deleted from the file by hand is written back into this server's `[plugins.<machineId>]` table at the next server start.
 
 ## Command policy
 
@@ -456,7 +468,7 @@ An existing agent always runs with its on-disk config as written; newer code def
 - The config is then stamped with the current `kernel_version`.
 - Matching is **conservative**: only a tab whose hash matches a recorded generation counts as an old default. A tab from a generation too old to be recorded is kept as if customized.
 
-**Restore default configuration** works like a Skill update: it overwrites the configuration with the current defaults and keeps only `name`, `description`, `author` and `version`. Everything else is replaced, including a custom system prompt, the tool list, the model and compaction settings, and MCP Servers, the ones a plugin installed included (**Manage installs** on the **Plugins** page puts those back). Use it as the full refresh when the kernel update's conservative matching leaves fields behind.
+**Restore default configuration** works like a Skill update: it overwrites the configuration with the current defaults and keeps only `name`, `description`, `author` and `version`. Everything else is replaced, including a custom system prompt, the tool list, the model and compaction settings, and MCP Servers, the ones a plugin installed included (**Install on Agent** on the **Plugins** page puts those back). Use it as the full refresh when the kernel update's conservative matching leaves fields behind.
 
 For developers:
 

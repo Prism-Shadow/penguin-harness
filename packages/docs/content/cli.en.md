@@ -693,6 +693,20 @@ An error is one line on stderr, `error: <code>: <message>`, and the command exit
 
 The CLI adds `invalid_argument` for a command typed wrong, `io_error` for a file it cannot read or write, and `request_failed` when the server cannot be reached.
 
+## penguin storage
+
+What the data root holds, and its cleanup: [Settings › Storage](/settings#storage) in the shell, a thin client over the server's `/api/me/storage` routes. The caller sees what the page shows them: a member the Projects they can open, an admin the whole data root. The preinstalled `storage` plugin carries the command with the page.
+
+```bash
+penguin storage [--refresh]                                  # the space used, by category, Project, agent and (admin) server entry
+penguin storage clean [--older-than <days>] [--all] [--yes]  # review what can be removed now; --yes removes it
+```
+
+- The server measures in the background. The command waits for a measurement under way to end, so it never prints an empty disk. `--refresh` measures again first.
+- `clean` is a dry run unless `--yes`. It prints the review the page shows and marks with `x` what a removal would take: what the page ticks to begin with (scratchpads of deleted chats, orphaned temporary workspaces, server caches), or with `--all` every item, the scratchpads of idle chats and the agents' tool environments included. `--older-than` is the idle age, 1–3650 days, 7 by default.
+- With `--yes` each item is checked again as it is removed, as on the page, and the last line says how many went, how much space they freed, and how many were skipped because they were in use or gone. A removal takes a person's sign-in: the local API token an agent's shell holds is refused with `human_required`, so sign in with [`penguin auth login`](#penguin-auth-login) first, or clean up on the page.
+- `--json` prints the response as one line of JSON (with `clean`'s dry run, the review plus `chosen`, the ids `--yes` would remove), and `--server` works as everywhere. When no Project on the server runs the plugin's module, both fail with `storage_unavailable`.
+
 ## Approval modes (--approve)
 
 | Mode | Behavior |

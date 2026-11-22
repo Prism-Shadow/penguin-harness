@@ -1,7 +1,8 @@
 /**
- * Every endpoint the Web App calls (`packages/web/src/api/endpoints.ts`, and the wrappers its
- * features keep beside them, such as the agent browser's `features/builtin-browser/api.ts`), answered from the
- * demo store. Reads answer the fixtures; writes mutate them where the app shows the result
+ * Every endpoint the Web App calls (`packages/web/src/api/endpoints.ts`, the wrappers its
+ * features keep beside them, and those a plugin web half exports, such as the agent browser's
+ * `plugins/browser-automation/src/web/api.ts`), answered from the demo store. Reads answer the
+ * fixtures; writes mutate them where the app shows the result
  * (a renamed Session, a saved model table, a new schedule) and answer `demo_read_only` where
  * the operation would need a machine, a registry or a provider behind it. Each handler's
  * return is annotated with the contract type it stands for, so a DTO change fails here
@@ -68,6 +69,7 @@ import type {
   InstalledPluginsResponse,
   PluginModuleAskResponse,
   PluginModuleRequestsResponse,
+  PluginHoldersResponse,
   MachinesResponse,
   MachinesUseResponse,
   McpServerTestResponse,
@@ -166,6 +168,14 @@ import { IDS } from "./ids";
 import { empty, fail, json, raw, Router } from "./router";
 import type { RequestContext } from "./router";
 import type { DemoStore } from "./store";
+import {
+  cleanupReview,
+  forgetStorageSession,
+  refreshStorage,
+  runCleanup,
+  storageSessions,
+  storageUsage,
+} from "./storage-demo";
 import type {
   ToolBindingUpdate,
   ToolBindingsResponse,
@@ -173,6 +183,12 @@ import type {
   VoicePolishUpdate,
 } from "../../../../web/src/api/tool-types";
 import { payloadOf } from "./types";
+import type {
+  StorageCleanupResult,
+  StorageCleanupReview,
+  StorageSessionsResponse,
+  StorageUsage,
+} from "@penguinharness/storage/types";
 import type { AmspRecord } from "./types";
 
 type Ctx = RequestContext;
@@ -297,6 +313,29 @@ router
   .get("/api/admin/plugin-modules", ({ store }): PluginModuleRequestsResponse =>
     moduleLedger(store),
   )
+  // Who would lose a plugin uninstalled from the server: the demo's Agents that carry its Skills.
+  .get("/api/admin/plugins/holders", ({ store, query }): PluginHoldersResponse => {
+    const pkg = query.get("package") ?? "";
+    const plugin = libraryPlugins(store).find((p) => p.package === pkg) ?? null;
+    const skills = new Set((plugin?.skills ?? []).map((s) => s.name));
+    const agents = store.f.agents
+      .filter((a) => (store.f.installed[a.agentId]?.skills ?? []).some((s) => skills.has(s.name)))
+      .map((a) => ({
+        projectId: IDS.project,
+        projectName: store.f.project.name ?? IDS.project,
+        agentId: a.agentId,
+        agentName: a.name ?? a.agentId,
+      }));
+    return {
+      package: pkg,
+      plugin: plugin?.name ?? null,
+      onServer: plugin?.source === "installed",
+      shipped: plugin !== null && plugin.source !== "installed",
+      shared: [],
+      agents,
+    };
+  })
+  .delete("/api/admin/plugins", () => readOnly("uninstall a plugin from the server"))
   // A decision as the server takes it: enabling lists the module (it runs), declining stops it; a
   // waiting request whose Project is gone can only be declined.
   .post("/api/admin/plugin-modules/decide", ({ store, body }): PluginModuleRequestsResponse => {
@@ -1412,9 +1451,38 @@ router
   })
   .post("/api/me/archived-sessions/delete", ({ store, body }): ArchivedSessionsBatchResponse => {
     let done = 0;
-    for (const id of batchIds(store, body)) if (store.deleteSession(id)) done += 1;
+    for (const id of batchIds(store, body)) {
+      // The Storage page lists conversations of Projects the demo store does not hold.
+      if (store.deleteSession(id) || forgetStorageSession(store, id)) done += 1;
+    }
     return { done, missing: [] };
   });
+
+// ---------------------------------------------------------------------------------------------
+// Storage (Settings › Storage): the demo's data root, its cleanup and its conversations by size
+// ---------------------------------------------------------------------------------------------
+
+router
+  .get("/api/me/storage", ({ store }): StorageUsage => storageUsage(store))
+  .post("/api/me/storage/refresh", ({ store }): StorageUsage => refreshStorage(store))
+  .get("/api/me/storage/cleanup", ({ store, query }): StorageCleanupReview => {
+    const days = Number(query.get("olderThanDays") ?? 7);
+    return cleanupReview(store, Number.isInteger(days) && days >= 1 && days <= 3650 ? days : 7);
+  })
+  .post("/api/me/storage/cleanup", ({ store, body }): StorageCleanupResult => {
+    const items = record(body).items;
+    return runCleanup(
+      store,
+      Array.isArray(items) ? items.filter((id) => typeof id === "string") : [],
+    );
+  })
+  .get("/api/me/storage/sessions", ({ store, query }): StorageSessionsResponse =>
+    storageSessions(store, query),
+  )
+  // The demo is not the desktop shell: there is no file manager to show a folder in.
+  .post("/api/me/storage/reveal", () =>
+    fail(404, "not_desktop", "Only the desktop shell can show a folder."),
+  );
 
 // ---------------------------------------------------------------------------------------------
 // Messaging bindings: nothing bound in the demo; every write needs a platform behind it
@@ -2408,6 +2476,31 @@ router
   }))
   // A plugin's server module asked for by hand: the demo's server runs what is asked of it.
   .post("/api/projects/:projectId/plugins/modules", ({ store, body }): PluginModuleAskResponse => {
+    // A member's ask for a package not on the server yet: a waiting request for the admin.
+    const asked = record(body).package;
+    if (typeof asked === "string" && record(body).plugin === undefined) {
+      const plugin = asked.replace(/^@[^/]+\//, "");
+      if (!store.f.pluginModuleRequests.some((r) => r.package === asked)) {
+        store.f.pluginModuleRequests.push({
+          package: asked,
+          plugin,
+          projectId: IDS.project,
+          projectName: null,
+          agentId: typeof record(body).agentId === "string" ? str(record(body).agentId) : null,
+          requestedBy: store.f.user.userId,
+          requestedByName: null,
+          requestedAt: new Date(store.f.now).toISOString(),
+          decision: null,
+          decidedBy: null,
+          decidedAt: null,
+          via: null,
+          builtin: false,
+          state: "off",
+          onServer: false,
+        });
+      }
+      return { modules: store.f.pluginModules, moduleActions: [{ plugin, action: "requested" }] };
+    }
     const name = str(record(body).plugin);
     const plugin = libraryPlugins(store).find((p) => p.name === name);
     if (plugin === undefined) fail(404, "unknown_plugin", `Plugin is not in the library: ${name}`);

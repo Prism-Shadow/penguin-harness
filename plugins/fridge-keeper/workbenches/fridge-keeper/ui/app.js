@@ -172,7 +172,10 @@ desk(t("Fridge Keeper", "冰箱管家"), (fridge, { send, draw }) => {
       ? hint(
           fridge.items.length
             ? t("No ingredients in this location.", "这里暂时没有食材。")
-            : t("Your inventory is empty.", "食材清单为空。"),
+            : t(
+                "Your inventory is empty. Use “Add ingredient” to stock the first one.",
+                "食材清单为空。点「添加食材」记下第一样。",
+              ),
         )
       : null,
   ].filter(Boolean);

@@ -21,13 +21,6 @@ export const en: Strings = {
       "The penguin tools CLI uses the models chosen here. Image understanding is the Project's vision model, which also reads images for models without vision. In chat, dictation uses Speech recognition, read-aloud uses Speech synthesis, and polishing uses Text generation.",
     imageUnderstanding: "Image understanding",
     unbound: "Not set",
-    noModels: "No compatible models",
-    noTools: "The multimodal tools plugin is off in this Project. Turn it on on the Plugins page.",
-    setDefault: "Set default",
-    setDefaultHint: (operation: string) =>
-      `Make this the Project's default ${operation.toLowerCase()} model`,
-    inUse: "In use",
-    inUseFor: (operations: readonly string[]) => `In use: ${operations.join(", ")}`,
     dictation: "Dictation",
     polish: "Polish dictation",
     polishWith: (model: string, provider: string) => `Polished by ${model} (${provider})`,
@@ -56,6 +49,38 @@ export const en: Strings = {
     play: "Play audio",
     audioError: "Could not play the audio for this reply.",
     preparing: "Preparing audio",
+  },
+
+  defaultModels: {
+    title: "Default model settings",
+    intro:
+      "New chats, the multimodal tools and voice use these models by default. Each one is saved as you pick it.",
+    introMember:
+      "New chats, the multimodal tools and voice use these models by default. Only the Project's owner can change them.",
+    introOnboarding:
+      "Pick a default chat model first and new chats will use it; the multimodal and tool defaults can wait. Each one is saved as you pick it.",
+    chat: "Chat",
+    multimodal: "Multimodal",
+    tools: "Tools",
+    chatModel: "Default chat model",
+    chatHint: "Used for new chats",
+    empty: "Connect a provider that offers this kind of model",
+    emptyAction: "Go to Models",
+    done: "Done",
+    followsDefault: (model: string) => `Follows the default chat model (${model})`,
+    followDefault: "Follow the default chat model",
+    guideTitle: "Connect a model provider first",
+    guideBody:
+      "This Project has no model it can use yet: no chat model has an API key. Connect a provider, or add a key on the Models page, then choose the default models.",
+    tokendance: "One wallet for many providers' models, no keys to type",
+    penguinGo: "PenguinHarness's own model service",
+    connect: "Connect",
+    keyText: "Already have an API key from a provider?",
+    keyAction: "Add an API key",
+    later: "Later",
+    composerNone: "No default model yet",
+    composerNoneMember: "No default model yet — ask an owner",
+    composerAction: "Set default model",
   },
 
   nav: {
@@ -599,6 +624,8 @@ export const en: Strings = {
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
+    /** The rail's last group: a page per plugin that has options. */
+    groupPlugins: "Plugins",
     /** Personal pages of the settings dialog. */
     profile: "Profile",
     generalTitle: "General",
@@ -658,8 +685,12 @@ export const en: Strings = {
       tls: "TLS handshake failed",
       network: "Unreachable",
     },
-    /** Admin-only sub-page (server-global): the options loaded plugins declare. */
-    pluginsTitle: "Plugins",
+    /** The Plugins group's first page (admin, server-global): where plugins install from. */
+    pluginsTitle: "Plugin sources",
+    /** The Plugins group's second page (admin, server-global): the sandbox Agents run in. */
+    sandboxTitle: "Agent Sandbox",
+    sandboxInfo:
+      "Which sandbox new Sessions start in: the switch and the presets apply to Sessions created afterwards; existing Sessions keep the policy they were created with. Each sandbox backend plugin has a line in the checks; its own options and checks are on its plugin page.",
     /** An enum option this machine cannot honour, listed greyed out. */
     pluginOptionUnavailable: (title: string, reason: string) =>
       `${title} (not supported: ${reason})`,
@@ -674,12 +705,64 @@ export const en: Strings = {
     pluginPositionOn: "On",
     pluginPositionOff: "Off",
     pluginsInfo:
-      "Below the switch: first the server module requests, then the options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here. The switch only changes what this browser lists on the Plugins page.",
-    /** The section of requests to run a library plugin's server module, and the decisions on them (admin). */
+      "Where plugins install from: the npm registry, the plugin index and the mirrors. Server-global, like the plugins themselves; a save applies at once, nothing to restart.",
+    /** A plugin's page in the Plugins group: its parts, the status page's blocks and words. */
+    pluginPage: {
+      /** The heading over the preconditions; its other end holds the one "check again". */
+      checks: "Checks",
+      /** The heading over the switches and fields. */
+      options: "Options",
+      /** The heading over the fields a plugin marks as security settings. */
+      security: "Security",
+      /** A precondition's state: the mark's tooltip and accessible name. */
+      checkState: {
+        ok: "OK",
+        action: "Needs action",
+        unknown: "Unknown",
+        na: "Not applicable",
+      },
+      /** The version element's state word. */
+      versionState: {
+        installed: "Installed",
+        preparing: "Preparing",
+        failed: "Install failed",
+        missing: "Not installed",
+        unsupported: "Not supported here",
+        unknown: "State unknown",
+      },
+      /** The fold under a check or the version element. */
+      details: "Details",
+      /** A check's link to the page it names (a sandbox backend's plugin page). */
+      openPage: "Open",
+      /** That fold's accessible name on a check's row: the row it belongs to. */
+      detailsAbout: (subject: string) => `Details: ${subject}`,
+      /** The picked machine holds none of this plugin's settings. */
+      noneOnMachine: (machine: string) => `${machine} has no options for this plugin.`,
+      /** A plugin's page that only a machine has, switched to this server. */
+      notOnThisServer:
+        "This plugin is not installed on this server. Pick a machine that has it above to see its options.",
+      /**
+       * The picked machine names no plugin on any of its groups: none of this plugin's, or a build
+       * older than the naming, which lists every plugin's options on the management page.
+       */
+      onAdminPage: (machine: string, page: string) =>
+        `Nothing on ${machine} is marked as this plugin's options. A machine on an older build does not say which plugin its options belong to and lists them all under ${page}.`,
+    },
+    /**
+     * The Plugins group's page of requests to run a library plugin's server module, and the
+     * decisions on them (admin): its rail name and heading, and its explanation on the "?".
+     */
     moduleRequests: {
-      title: "Server module requests",
+      title: "Module requests",
       info: "A member who installs a plugin with a server module on an agent leaves a request here when this server neither runs the module nor ships it in its build. Enabling lists it in that Project's plugin table for this server and reloads the server's plugins; running agents are not affected. A built-in plugin's module is enabled with the agent install, and is recorded here too.",
       empty: "No requests waiting",
+      /** The rail row's accessible name while requests wait: its name and the count beside it. */
+      waitingCount: (n: number) => `Module requests, ${n} waiting`,
+      /** In place of the list when the server on screen cannot answer (null: this server). */
+      unreadable: (machine: string | null, reason: string) =>
+        machine === null
+          ? `The module requests could not be read: ${reason}`
+          : `The module requests on ${machine} could not be read: ${reason}`,
       waiting: "Waiting",
       waitingHint: "Waiting for you to enable or decline it",
       declined: "Declined",
@@ -692,6 +775,10 @@ export const en: Strings = {
         admin: "Enabled by the admin",
         approval: "Enabled: the admin approved a member's request",
       },
+      /** A module behind a system app: it always runs and offers no stop. */
+      systemApp: "System app, built in",
+      systemAppHint:
+        "It powers a system app in the App Center, so it always runs and can't be stopped",
       /** In place of a Project that was deleted, and of a requester that is no person. */
       projectGone: "Project deleted",
       system: "System",
@@ -709,8 +796,6 @@ export const en: Strings = {
       stillListed: (name: string, projects: string) =>
         `The server module of ${name} still runs: the shared plugin table of ${projects} lists it. Remove it on the Plugins page.`,
     },
-    /** The page's own switch, above the server's cards: a display preference of this browser. */
-    pluginsIncompatibleOnly: "Show only incompatible plugins",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "Leave empty to keep the saved value",
     pluginSecretClear: "Clear stored value",
@@ -1108,18 +1193,26 @@ export const en: Strings = {
     broken: "Failed to load",
     /** A tile whose app is still being built: it opens once the build is done. */
     building: "Building",
+    /** A tile whose app is running behind the grid, its window minimized. */
+    running: "Running",
     /** A tile's hint: its whole title and the Agent that owns it. */
     tileTip: (title: string, agent: string) => `${title}, from ${agent}`,
     buildingTip: (title: string, agent: string) =>
       `${title}, from ${agent}. Building; it opens once the build is done`,
     failedTip: (title: string, agent: string) =>
       `${title}, from ${agent}. Failed to load; its menu shows the error`,
+    runningTip: (title: string, agent: string) =>
+      `${title}, from ${agent}. Running; a click brings its window back`,
     /** A tile's accessible name: the title it shows, then its Agent and, when it has one, its state. */
     tileName: (title: string, agent: string, state: string | null) =>
       state === null ? `${title}, ${agent}` : `${title}, ${agent}, ${state}`,
-    folderTip: (name: string, count: number) => `${name}, ${count} ${count === 1 ? "app" : "apps"}`,
-    folderName: (name: string, count: number) =>
-      `${name}, folder, ${count} ${count === 1 ? "app" : "apps"}`,
+    systemTileName: (title: string) => `${title}, system app`,
+    workbenchesEmptyTitle: "No apps from agents yet",
+    /** A folder's hint and accessible name: its apps, and how many of them are running. */
+    folderTip: (name: string, count: number, running: number) =>
+      `${name}, ${count} ${count === 1 ? "app" : "apps"}${running > 0 ? `, ${running} running` : ""}`,
+    folderName: (name: string, count: number, running: number) =>
+      `${name}, folder, ${count} ${count === 1 ? "app" : "apps"}${running > 0 ? `, ${running} running` : ""}`,
     /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
     newFolder: "New folder",
     /** The page header's button that opens the new-folder dialog. */
@@ -1162,6 +1255,7 @@ export const en: Strings = {
     /** A failed tile with no recorded message (an older status file). */
     errorUnknown: "No error message was recorded. Open the app to see how it loads.",
     /** The windowed app's title bar. */
+    windowMinimize: "Minimize",
     windowClose: "Close, back to the App Center",
     windowFullScreen: "Open full screen",
     /** Machines whose apps could not be read just now: what they last showed stays on the grid. */
@@ -2071,6 +2165,19 @@ export const en: Strings = {
       `Delete agent "${name}" on ${machine}? Its directory there (including all Traces) will be removed recursively and cannot be recovered.`,
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
+    systemName: "System",
+    systemDescription:
+      "Owns the system apps: Models, Plugins, Machines, Cost Center and Evaluation Center.",
+    systemTag: "System",
+    systemTagHint:
+      "The system agent owns the system apps. It does not chat or take plugins, and cannot be deleted or exported.",
+    systemAppsDesc:
+      "The system apps this agent owns. They come with the platform and open from the App Center.",
+    systemAppsEmpty: "No system apps yet.",
+    systemAppTag: "System app",
+    systemAppCount: (n: number) => `${n} ${n === 1 ? "system app" : "system apps"}`,
+    systemIdHeld: (name: string): string =>
+      `Agent "${name}" holds the id reserved for the system agent. Export it, import it under another id, then delete it; the system agent is added the next time the agents load.`,
     employeesSection: "Company employees",
     employeesSectionInfo:
       "These agents are employees of an organization and work in company mode. You can still chat with them and change their settings here; one can be deleted only after it leaves its organization in company mode.",
@@ -2381,6 +2488,11 @@ export const en: Strings = {
     speedTestStart: "Start",
     speedPending: "Testing…",
     speedFailed: "Test failed",
+    latencyTitle: "How long the request took",
+    speedSkipped: "Not tested",
+    speedSkipVideo: "Generating a video takes minutes and costs more, so the speed test skips it.",
+    speedSkipUnused:
+      "This model can't chat and nothing in this Project uses it, so it can't be tested.",
     ttftTitle: "Time to first token (TTFT)",
     tpsTitle: "Output rate (TPS)",
     modelCount: (n: number): string => `${n} model${n === 1 ? "" : "s"}`,
@@ -2660,6 +2772,15 @@ export const en: Strings = {
     confirmDefault: (name: string): string =>
       `Make "${name}" the default model? New sessions will use it by default.`,
     default: "Default",
+    inUse: "In use",
+    usedFor: (jobs: readonly string[]) => `Used for: ${jobs.join(", ")}`,
+    useModel: "Use model",
+    useHint: (jobs: readonly string[]) => `Use it in this Project for: ${jobs.join(", ")}`,
+    confirmUse: (name: string, jobs: readonly string[]) => `Use "${name}" for ${jobs.join(", ")}?`,
+    used: (jobs: readonly string[]) => `Now used for: ${jobs.join(", ")}`,
+    stopUsing: "Stop using model",
+    stopUsingHint: (jobs: readonly string[]) => `Stop using it for: ${jobs.join(", ")}`,
+    stoppedUsing: (jobs: readonly string[]) => `No longer used for: ${jobs.join(", ")}`,
     setDefault: "Set as default model",
     remove: "Delete model",
     readOnlyHint: "Members have read-only access; only owners can change models and credentials",
@@ -2908,6 +3029,7 @@ export const en: Strings = {
     workspace: "Workspace",
     model: "Model",
     modelDefault: "Project default",
+    modelRequired: "This Project has no default model: choose the model this task runs on.",
     deleteTitle: "Delete scheduled task",
     deleteConfirm: (name: string): string => `Delete scheduled task "${name}"?`,
     /** Toasts after a write. A schedule fires on its own clock, so none of them mentions when a conversation picks the change up: there is nothing to pick up. */
@@ -3028,7 +3150,7 @@ export const en: Strings = {
   plugins: {
     builtin: "built in",
     builtinHint:
-      "Ships with this build: installing it downloads nothing, and it loads only once you install it.",
+      "Ships with this build and cannot be uninstalled from the server: enabling it downloads nothing, and it loads only once you enable it.",
     installedRestart: "restart to load",
     stateFailed: "failed to load",
     /** A module plugin the running build cannot run at all: it needs a module or interface this build lacks. */
@@ -3042,7 +3164,7 @@ export const en: Strings = {
         : `This build cannot fully run ${n} installed plugins. Their rows say why.`,
     /** The notice's action: filters the list down to those rows. */
     unsatisfiedShow: "Show",
-    /** Page notice while Settings › Plugins narrows the list to the incompatible plugins. */
+    /** Page notice while the filter beside the search narrows the list to the incompatible plugins. */
     incompatibleOnlyNotice: "Only incompatible plugins are shown.",
     /** That notice's action: turns the filter off. */
     incompatibleOnlyShowAll: "Show all",
@@ -3051,13 +3173,80 @@ export const en: Strings = {
       n === 1
         ? "1 server module is waiting to be enabled"
         : `${n} server modules are waiting to be enabled`,
-    /** That notice's action: opens Settings › Plugins, where they are decided. */
+    /** That notice's action: opens the Settings dialog's module requests page, where they are decided. */
     moduleRequestsView: "View",
     /**
      * What an install did about the plugin's server module, after the install's own sentence
      * (`said`): enabled, asked of the admin, stopped by the admin, failed to start, or — on a
      * machine whose build does not ship it — to be installed for that machine.
      */
+    /**
+     * The two installs of a plugin and their controls (05 「插件库」 「安装模型」): the server's
+     * and an Agent's, with what each does said before the click.
+     */
+    installModel: {
+      enableTitle: (name: string) => `Enable the server module of ${name}`,
+      enableBody: (name: string) =>
+        `The server module of ${name} will be enabled for this Project. It ships with the build: nothing is downloaded.`,
+      disableTitle: (name: string) => `Disable the server module of ${name}`,
+      disableBody: (name: string) =>
+        `The server module of ${name} will be disabled for this Project; while another Project enables it, it keeps running.`,
+      installServer: "Install on server",
+      uninstallServer: "Uninstall from server",
+      enableModule: "Enable server module",
+      disableModule: "Disable server module",
+      adminOnly: "Only an admin can change the server",
+      installAgent: "Install on Agent",
+      flowTitle: (name: string) => `Install ${name}`,
+      stepServer: "Install on server",
+      stepAgents: "Install on Agents",
+      stepOf: (step: number, steps: number) => `Step ${step} of ${steps}`,
+      stepDone: "Done",
+      serverDone: (name: string) => `${name} is on the server, shared by every Project.`,
+      askBody:
+        "It is not on the server yet: ask an admin to install it there; once it is, install it on your Agents.",
+      askAdmin: "Ask an admin to install",
+      asked:
+        "An admin has been asked to install it. Once it is on the server, come back here to install it on your Agents.",
+      finish: "Done",
+      onServer: "Uninstalling it from the server uninstalls it from every Agent.",
+      checking: "Checking the plugin source…",
+      installing: "Installing…",
+      fromOffline: "Installing from the offline archive…",
+      loading: "Loading module…",
+      stepShort: { checking: "Checking…", fromOffline: "Installing…", loading: "Loading…" },
+      uninstallTitle: (name: string) => `Uninstall ${name} from the server`,
+      uninstallBody: (name: string, agents: number) =>
+        agents === 0
+          ? `${name} will be uninstalled from the server. No Agent has it.`
+          : `${name} will be uninstalled from the server and from ${agents} ${agents === 1 ? "Agent" : "Agents"}.`,
+      uninstallCopies:
+        "Their copies are deleted, local edits included, and so are the workbenches' data and history.",
+      holdersLoading: "Looking for the Agents that have it…",
+      moreAgents: (n: number) => `${n} more ${n === 1 ? "Agent" : "Agents"}`,
+      sharedRefused: (projects: string) =>
+        `The plugin table of ${projects} lists it for every machine: remove it from the Project's config first, then uninstall it from the server.`,
+      uninstalledToast: (name: string, agents: number) =>
+        agents === 0
+          ? `Uninstalled ${name} from the server`
+          : `Uninstalled ${name} from the server and from ${agents} ${agents === 1 ? "Agent" : "Agents"}`,
+      uninstalledPartly: (name: string, parts: string) =>
+        `Uninstalled ${name} from the server; these parts could not be deleted: ${parts}`,
+      machineKeepsCopies: (machine: string) =>
+        `${machine} runs an older server: its Agents keep their copies.`,
+      failedNote: (reason: string) => `Install failed: ${reason}`,
+      sourcesSettings: "Plugin sources",
+      importFromFile: "Import from file",
+      dismiss: "Dismiss",
+      requestedToast: (name: string) =>
+        `Asked an admin to install ${name} on the server; once it is there, install it on the Agent`,
+      offlineToast: (name: string) =>
+        `Installed ${name} from the offline archive the build carries`,
+      loadingToast: (name: string) => `Installed ${name}; its server module is still starting`,
+      requestNotOnServer:
+        "Not on the server yet: install it on the server from the Plugins page, then enable it.",
+      openPlugins: "Open Plugins",
+    },
     moduleInstall: {
       enabled: (said: string) => `${said}. Its server module is enabled.`,
       requested: (said: string) =>
@@ -3113,6 +3302,8 @@ export const en: Strings = {
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "Machine",
     thisServer: "This server",
+    /** The machine picker's first choice: every machine's cards at once (the default). */
+    allMachines: "All machines",
     /** A row the Project lists for a machine that has not reported it running yet. */
     notSynced: "not on that machine yet",
     /** The tag on a row the shared table lists, and its tooltip (Remove is unavailable on it). */
@@ -3128,6 +3319,12 @@ export const en: Strings = {
     openSettings: "Settings",
     pageDesc:
       "Every plugin, by category. Plugins of skills and/or a hook package ship with this build and are installed on agents; server-module plugins, such as the Agent Sandbox backends, are installed on the whole server by an admin.",
+    /**
+     * The filter beside the search: a toggle that narrows the list to the plugins this build cannot
+     * fully run, remembered in this browser; the group's accessible name, and the toggle's words.
+     */
+    filterLabel: "Filter plugins",
+    incompatibleOnlyFilter: "Incompatible only",
     /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
     groupByLabel: "Group by",
     groupBy: {
@@ -3234,7 +3431,8 @@ export const en: Strings = {
     /** In place of the description of a package that carries none. */
     noDescription: "No description",
     /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
-    libraryBuiltinHint: "Ships with this build; install it to an agent to use it there.",
+    libraryBuiltinHint:
+      "Ships with this build and cannot be uninstalled from the server; install it on an agent to use it there.",
     pluginCount: (n: number): string => (n === 1 ? "1 plugin" : `${n} plugins`),
     searchPlaceholder: "Search plugins",
     /** Sections of the plugin detail dialog: the description (and the package's README), then the files it installs. */
@@ -3615,8 +3813,6 @@ export const en: Strings = {
     selectAll: "Select all",
     selectNone: "Select none",
     selectedCount: (n: number): string => `${n} selected`,
-    manageInstall: "Manage installs",
-    manageInstallTitle: (name: string): string => `Manage installs: ${name}`,
     install: "Install",
     installed: "Installed",
     uninstall: "Uninstall",
@@ -6843,7 +7039,8 @@ Scenarios:
     },
     modelCredentialMissing: (modelId: string) =>
       `Model ${modelId} has no API key yet — configure it on the Models page first`,
-    noDefaultModel: "This project has no default model yet — add one on the Models page first",
+    noDefaultModel:
+      "This project has no default model yet — set one under Default model settings on the Models page",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
       invalid_credentials: "Incorrect username or password.",
@@ -6905,6 +7102,8 @@ Scenarios:
         "This model ID cannot be routed: a vendor group routes a model by the vendor prefix its ID begins with (gpt-, claude-, gemini-, glm-, kimi-, deepseek-, minimax-). Add the model under a custom group and pick or detect its protocol.",
       unknown_skill: "This skill is not in the selected directory.",
       unknown_plugin: "This plugin is not in the plugin library.",
+      system_app_module_locked:
+        "This plugin powers a system app in the App Center, so it can't be stopped or removed.",
       goal_plugin_not_installed:
         "Goal mode needs the goal plugin — install it on this agent from the plugin library, and switch its hook package on.",
       prompt_hook_not_installed:

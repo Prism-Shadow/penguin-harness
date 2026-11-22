@@ -697,7 +697,8 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
         const { prefs } = await api.getPrefs();
         if (cancelled || prefs.credentialGuideSeen) return;
         const def = res.models.find((m) => sameModelRef(m, res.defaultModel));
-        const missing = !res.defaultModel || !def || !hasConfiguredKey(def);
+        // A Project with no default model at all is the first-run guide's (default-models-layer.tsx).
+        const missing = res.defaultModel !== undefined && (!def || !hasConfiguredKey(def));
         if (missing) setCredentialGuide(true);
         // Mark as "seen" regardless of whether the dialog actually popped up: only ever once.
         void api.putPrefs({ credentialGuideSeen: true }).catch(() => undefined);

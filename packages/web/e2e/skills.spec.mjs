@@ -1,15 +1,15 @@
 /**
  * End-to-end test for the plugin library (locale zh-CN):
- * - the sidebar nav shows "插件市场" ("Plugins"), and the page renders the library's plugins as
- *   cover cards under tabs — All first, then one per category (the category name follows the UI
- *   language — when the server ships a Chinese group name it's "Agent 自进化 / 办公效率 / 软件开发
- *   / AI 应用开发", falling back to English by default); a category tab narrows the grid and
+ * - the App Center shows the "插件市场" ("Plugins") system app, and the page renders the library's
+ *   plugins as cover cards under tabs — All first, then one per category (the category name
+ *   follows the UI language — when the server ships a Chinese group name it's "Agent 自进化 /
+ *   办公效率 / 软件开发 / AI 应用开发", falling back to English by default); a category tab narrows the grid and
  *   names itself in the address; a card's facts show the plugin's npm version, its install
  *   status as a glyph and its usage count, their words on hover; a plugin's detail opens over
  *   the market, in the address, its tile carrying the plugin's custom icon (its icon.svg, served
  *   by URL and drawn as a mask in the text colour, never inlined; not the book fallback);
- * - the "Manage installation" Modal: an Agent row + Install / Installed (hover flips to
- *   Uninstall) button, with optimistic updates on install/uninstall; its first row,
+ * - the install flow's Agents step ("Install on Agent"): an Agent row + Install / Installed
+ *   (hover flips to Uninstall) button, with optimistic updates on install/uninstall; its first row,
  *   「新建空白 Agent」, opens Create Agent over it prefilled with the plugin, and the Agent it
  *   creates joins the list installed while the list stays open;
  * - Quick invoke is gated on the currently selected agent having the skill installed (here the
@@ -106,17 +106,18 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   });
   expect(put.ok(), "put models").toBeTruthy();
 
-  // The install target for "Manage installation": default_agent has all skills preinstalled, so use a blank Agent to exercise the install/uninstall flow.
+  // The install target for "Install on Agent": default_agent has all skills preinstalled, so use a blank Agent to exercise the install/uninstall flow.
   const created = await page.request.post(`${BASE}/api/projects/${projectId}/agents`, {
     data: { agentId: "agent_helper", name: "Helper Agent" },
   });
   expect(created.ok(), "create helper agent").toBeTruthy();
 
-  // —— Plugin library page: sidebar nav entry, the category tabs, a grid of cover cards ——
+  // —— Plugin library page: the App Center's system app, the category tabs, a grid of cover cards ——
   await page.goto(`${BASE}/chat`);
-  const navLink = page.getByRole("link", { name: "插件市场" });
-  await expect(navLink).toBeVisible();
-  await navLink.click();
+  await page.getByRole("link", { name: "应用中心" }).click();
+  const appTile = page.getByRole("button", { name: "插件市场，系统应用" });
+  await expect(appTile).toBeVisible();
+  await appTile.click();
   await expect(page).toHaveURL(/\/plugins$/);
   // The groups are tabs: All first, chosen on entry, then each category.
   const allTab = page.getByRole("tab", { name: /^(All|全部)$/ });
@@ -178,9 +179,9 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   await allTab.click();
   await expect(card("default-rsi-toolkit")).toBeVisible();
 
-  // —— Manage installation Modal: an Agent row + Install/Installed (clicking Installed uninstalls) ——
-  await page.getByRole("button", { name: "管理安装 data-analysis" }).click();
-  const dialog = page.locator("div").filter({ hasText: "管理安装：data-analysis" }).last();
+  // —— Install on Agent Modal: an Agent row + Install/Installed (clicking Installed uninstalls) ——
+  await page.getByRole("button", { name: "安装到 Agent data-analysis" }).click();
+  const dialog = page.getByRole("dialog").filter({ hasText: "安装到 Agent" });
   // default_agent (display name General Agent) has everything preinstalled -> "已安装"
   // ("Installed", whose accessible name is the uninstall action); agent_helper has nothing
   // installed -> "安装" ("Install").

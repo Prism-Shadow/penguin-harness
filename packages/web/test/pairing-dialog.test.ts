@@ -1,5 +1,5 @@
 /**
- * Connecting the user's Chrome (features/builtin-browser/pairing-dialog.tsx and
+ * Connecting the user's Chrome (plugins/browser-automation/src/web/pairing-dialog.tsx and
  * pairing-code.ts): the steps rendered to static markup (node env, no DOM), the window's one
  * pairing code against the fetch fake, and when the dialog counts the Chrome as connected.
  *
@@ -24,14 +24,14 @@ import {
   PairingStatus,
   PairingSteps,
   connectedSince,
-} from "../src/features/builtin-browser/pairing-dialog";
+} from "../../../plugins/browser-automation/src/web/pairing-dialog";
 import {
   ensurePairingCode,
   forgetPairingCode,
   pairingCode,
-} from "../src/features/builtin-browser/pairing-code";
+} from "../../../plugins/browser-automation/src/web/pairing-code";
 import { S } from "../src/lib/strings";
-import { S as B } from "../src/features/builtin-browser/strings";
+import { S as B } from "../../../plugins/browser-automation/src/web/strings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 
 const ORIGIN = "https://ph.example.com";

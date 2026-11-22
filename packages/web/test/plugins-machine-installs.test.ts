@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The plugin market's "manage installs" on a machine's Agents (features/plugins/plugins-page.tsx
+ * The plugin market's "Install on Agent" on a machine's Agents (features/plugins/plugins-page.tsx
  * and plugin-card.tsx): a connected machine's own Agents are install targets of their own, and
  * everything done to one happens on that machine (lib/agent-location.ts).
  *
@@ -66,10 +66,10 @@ async function openInstalls(machines: FakeMachine[]) {
   await mountAgentApp(h(PluginsPage), { route: "/plugins", at: "/plugins?plugin=charts" });
   await waitFor(() =>
     [...document.querySelectorAll("button")].some(
-      (b) => b.getAttribute("aria-label") === `${en.skills.manageInstall} charts`,
+      (b) => b.getAttribute("aria-label") === `${en.plugins.installModel.installAgent} charts`,
     ),
   );
-  await click(button(`${en.skills.manageInstall} charts`));
+  await click(button(`${en.plugins.installModel.installAgent} charts`));
   return server;
 }
 

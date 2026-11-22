@@ -13,7 +13,8 @@
     "shots": "node scripts/capture-shots.mjs",
     "blog-shots": "node scripts/capture-blog-shots.mjs",
     "blog-013-shots": "node scripts/capture-blog-013-shots.mjs",
-    "check-post-jumps": "node scripts/check-post-jumps.mjs"
+    "check-post-jumps": "node scripts/check-post-jumps.mjs",
+    "label-rfc-prs": "node scripts/label-rfc-prs.mjs"
   },
   "dependencies": {
     "@prismshadow/penguin-ui": "workspace:*",
@@ -51,6 +52,7 @@
     "@penguinharness/party-charades": "workspace:*",
     "@penguinharness/penguin-support": "workspace:*",
     "@penguinharness/penguin-testing-electron": "workspace:*",
+    "@penguinharness/reading-desk": "workspace:*",
     "@penguinharness/rrsi-rsi-toolkit": "workspace:*",
     "@penguinharness/sandbox-bwrap": "workspace:*",
     "@penguinharness/sandbox-dsh": "workspace:*",
@@ -60,6 +62,7 @@
     "@penguinharness/skilladam-rsi-toolkit": "workspace:*",
     "@penguinharness/skillopt-rsi-toolkit": "workspace:*",
     "@penguinharness/software-development": "workspace:*",
+    "@penguinharness/storage": "workspace:*",
     "@penguinharness/tabletop-desk": "workspace:*",
     "@penguinharness/trace-lookup": "workspace:*",
     "@penguinharness/trace-rsi-toolkit": "workspace:*",

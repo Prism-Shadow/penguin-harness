@@ -20,7 +20,7 @@ import { describe, expect, it } from "vitest";
 // The face's host first: a feature's wrappers call the app's `apiFetch` through it.
 import "../../web/src/web-app/plugin-host";
 import * as api from "../../web/src/api/endpoints";
-import * as browserApi from "../../web/src/features/builtin-browser/api";
+import * as browserApi from "../../../plugins/browser-automation/src/web/api";
 import { pluginWebModules } from "../../web/src/plugin-web.gen";
 import { runTry } from "../../web/src/features/agents/api-try-log";
 import type { TryAction } from "../../web/src/features/agents/api-try-log";
@@ -155,6 +155,7 @@ describe("the mocked API", () => {
       via: null,
       builtin: false,
       state: "off" as const,
+      onServer: true,
     });
     store.f.pluginModuleRequests = [
       asked("@acme/charts", store.f.project.projectId),

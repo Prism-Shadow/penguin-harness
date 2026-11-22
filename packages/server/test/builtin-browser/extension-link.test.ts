@@ -32,12 +32,15 @@ import type {
   BuiltinBrowserTab,
   DesktopBrowserCommandMessage,
 } from "../../src/api/types.js";
-import { PENGUIN_EXTENSION_ID } from "../../src/builtin-browser/extension-origin.js";
-import { ExtensionPairing } from "../../src/builtin-browser/extension-pairing.js";
-import { extensionUpgrade } from "../../src/builtin-browser/extension-ws.js";
+import {
+  BuiltinBrowser,
+  browserPlugin,
+  ExtensionPairing,
+  extensionUpgrade,
+  PENGUIN_EXTENSION_ID,
+} from "./plugin.js";
 import { attachUpgradeSeam } from "../../src/hmr/upgrade-seam.js";
 import type { UpgradeSurface } from "../../src/hmr/upgrade-seam.js";
-import { BuiltinBrowser } from "../../src/builtin-browser/service.js";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { BrowserExtensionsRepo } from "@prismshadow/penguin-library-machine/browser-extensions";
 import { userChannelKey } from "../../src/http/routes/events.js";
@@ -157,7 +160,7 @@ describe("the extension socket of the real platform", () => {
   let events: BuiltinBrowserServerEvent[];
 
   beforeEach(async () => {
-    t = await createTestApp();
+    t = await createTestApp({ plugins: browserPlugin() });
     port = await listen(async () => t.deps.tree.api<UpgradeSurface>("ApiModule", "Http"));
     alice = apiClient(t.app, (await provisionUser(t.app, "alice")).cookie);
     events = [];

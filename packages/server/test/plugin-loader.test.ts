@@ -321,16 +321,8 @@ describe("plugin loading", () => {
 });
 
 describe("builtin plugins", () => {
-  /**
-   * A plugin package under a prefix's node_modules, the shape scripts/build-plugins.mjs ships;
-   * with `card`, its module contributes that library card.
-   */
-  async function writeBuiltin(
-    prefix: string,
-    name: string,
-    moduleName: string,
-    card?: Record<string, unknown>,
-  ): Promise<void> {
+  /** A plugin package under a prefix's node_modules, the shape scripts/build-plugins.mjs ships. */
+  async function writeBuiltin(prefix: string, name: string, moduleName: string): Promise<void> {
     const dir = path.join(prefix, "node_modules", ...name.split("/"));
     await mkdir(dir, { recursive: true });
     // The prefix manifest names what was shipped, the way build-plugins writes it.
@@ -355,10 +347,7 @@ describe("builtin plugins", () => {
             name: moduleName,
             requires: {},
             provides: {},
-            contributes:
-              card === undefined
-                ? {}
-                : { "PluginLibraryModule.cards": [{ id: `${moduleName}.card`, ...card }] },
+            contributes: {},
             children: [],
           },
         },
@@ -412,29 +401,6 @@ describe("builtin plugins", () => {
     expect([...result.failed.entries()]).toEqual([]);
     expect(result.loaded.map((p) => p.specifier)).toEqual(["@acme/penguin-plugin-one"]);
     expect(result.loaded[0]!.modules.map((m) => m.manifest.name)).toEqual(["One"]);
-  });
-
-  it("loads a shipped module whose card asks to be preinstalled, though no Project lists it", async () => {
-    const assets = path.join(root, "hmr", "store", "assets", "abc");
-    const prefix = path.join(assets, "plugins");
-    await writeBuiltin(prefix, "@acme/everywhere", "Everywhere", { preinstall: true });
-    // A card that says nothing of preinstall preinstalls Agent content only, never a module.
-    await writeBuiltin(prefix, "@acme/asked-for", "AskedFor", { title: "Asked for" });
-    await writeBuiltin(prefix, "@acme/not-preinstalled", "NotPreinstalled", { preinstall: false });
-    // The operator's own install is never preinstalled, whatever its card says.
-    await writeBuiltin(path.join(root, "plugins"), "@acme/installed", "Installed", {
-      preinstall: true,
-    });
-    await writeConfig({ plugins: [] });
-    const result = await loadPlugins(root, assets);
-    expect([...result.failed.entries()]).toEqual([]);
-    expect(result.loaded.map((p) => p.specifier)).toEqual(["@acme/everywhere"]);
-
-    // Listed by a Project too, it is loaded once.
-    await writeConfig({ plugins: ["@acme/everywhere"] });
-    expect((await loadPlugins(root, assets)).loaded.map((p) => p.specifier)).toEqual([
-      "@acme/everywhere",
-    ]);
   });
 
   it("resolves a package through its exports' import condition, as npm shipped it", async () => {

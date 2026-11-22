@@ -74,6 +74,7 @@ import {
   effectivePluginTable,
   libraryParts,
   PLUGIN_MACHINE_ID,
+  type PluginRequirement,
   type PluginTables,
 } from "@prismshadow/penguin-core";
 import type { Config, Db, Hmr, Reassembly, ReassemblyChange } from "../../hmr/capabilities.js";
@@ -88,7 +89,9 @@ import {
 } from "../../plugin/loader.js";
 import type { ModuleActor, PluginModules, PluginPackages } from "../../mechanisms/plugins.js";
 import { pluginTableEdits } from "../../services/plugin-tables.js";
+import { isSystemAppModule } from "../../plugin/system-app-modules.js";
 import {
+  currentNpmRegistry,
   installedPackageDir,
   linkPluginDirectory,
   linkedPackages,
@@ -101,6 +104,12 @@ import { indexChannelLookup, type IndexChannel } from "../../plugin/registry.js"
 import { IndexSources } from "../../plugin/index-config.js";
 import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
 import { parsePluginArchive } from "../../services/plugin-archive.js";
+import {
+  integrityOf,
+  offlineArchiveFor,
+  offlineArchives,
+  type OfflineArchive,
+} from "../../plugin/offline-archives.js";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
 import { Access, ProjectConfigStore } from "@prismshadow/penguin-library-project";
 import type { Machines } from "../../machines/service.js";
@@ -109,18 +118,58 @@ import { MachinesRepo } from "@prismshadow/penguin-library-machine/machine";
 /** How a channel install reports its download as it runs: bytes received, the total when known. */
 export type InstallProgress = (received: number, total: number | null) => void;
 
+/** Where an install is getting the package from, as the install stream's `stage` events say. */
+export type InstallSource = "registry" | "link" | "channel" | "offline";
+
 /**
- * Installs by name or link, npm first. A name npm cannot serve — because it answered that
- * the package, or the requested version of it, is not on the registry (reason
- * "unavailable"); any other npm failure stays a failure, since a channel is not the answer
- * to a registry that refused or a script that died — can still come from the published
- * index: the entry whose version the request names may pin a github release channel, whose
- * asset is fetched, sha512-verified, and installed — the verified bytes only
- * (installPluginChannel). A channel listed without an integrity is a refusal with the
- * reason, not an install of unverified bytes; an entry with no channel leaves npm's failure
- * as the answer, naming that the index had nothing to fall through to either. Everything
- * surfaces as a PluginInstallError, which the route renders as npm's failure. `onProgress`
- * rides along to the channel install only — npm's own downloads are npm's to report.
+ * A step of an install, as the stream reports it (05 「安装从不卡住」): asking the registry about a
+ * name before it installs, a source being tried, the App re-assembling.
+ */
+export type InstallStage =
+  { stage: "checking" } | { stage: "installing"; source: InstallSource } | { stage: "loading" };
+
+/**
+ * A failure of `installNamedOrChanneled`: npm's words, then what the fallback said, as one message
+ * (what the CLI prints), keeping why npm failed, which registry it named, npm's words alone and the
+ * fallback's alone (what the route leads with).
+ */
+function failureLike(
+  err: PluginInstallError,
+  fallback: string,
+  worthSaying = true,
+): PluginInstallError {
+  const out = new PluginInstallError(`${err.message}. ${fallback}`);
+  if (err.reason !== undefined) out.reason = err.reason;
+  if (err.registry !== undefined) out.registry = err.registry;
+  out.npmSaid = err.message;
+  if (worthSaying) out.fallback = fallback;
+  // An install made without npm said it in its own words; what is added keeps them its own.
+  if (err.withoutNpm === true) out.withoutNpm = true;
+  return out;
+}
+
+/**
+ * Installs by name or link, npm first. A name is asked about first (`check`, a short `npm view`):
+ * a registry that does not answer, or does not have the name, fails that within seconds, and the
+ * install itself — whose window is long, since tarballs may legitimately be slow — never starts.
+ * Its failure takes the same way on as the install's would; any other answer leaves the install
+ * to run and to report in its own words. A name npm cannot serve can still come from two places,
+ * in this order:
+ *
+ * - The OFFLINE ARCHIVE the build carries for it (plugin/offline-archives.ts) — when npm answered
+ *   that the package or version is not on the registry ("unavailable"), could not reach the
+ *   registry ("unreachable"), or is not on this machine at all ("missing"). Its bytes are checked
+ *   against the sha512 recorded beside them before anything installs.
+ * - The published index's github release channel for the version asked for — only when npm
+ *   answered "unavailable": a channel is not the answer to a registry that refused, a dependency
+ *   that will not resolve or a script that died. Its asset is fetched, sha512-verified and
+ *   installed (installPluginChannel); a channel listed without an integrity is a refusal with the
+ *   reason, and an entry with no channel leaves npm's failure as the answer, naming that the
+ *   index had nothing to fall through to either.
+ *
+ * Everything surfaces as a PluginInstallError that keeps npm's reason, which the route renders as
+ * a specific refusal. `onProgress` rides along to the channel install only — npm's own downloads
+ * are npm's to report; `onStage` hears each source as it is tried.
  */
 export async function installNamedOrChanneled(
   root: string,
@@ -137,42 +186,74 @@ export async function installNamedOrChanneled(
       opts?: { onProgress?: InstallProgress },
     ) => Promise<InstalledPackage>;
     onProgress?: InstallProgress;
+    /** The offline archive an install of the name may come from, or null. */
+    offline?: (name: string, version?: string) => OfflineArchive | null;
+    installTarball?: (root: string, file: string, name: string) => Promise<InstalledPackage>;
+    onStage?: (stage: InstallStage) => void;
+    /** Asks the registry about a name before it installs; absent = no pre-check. */
+    check?: (root: string, spec: string) => Promise<void>;
   },
 ): Promise<InstalledPackage> {
   try {
+    if (source.kind === "name" && io.check !== undefined) {
+      io.onStage?.({ stage: "checking" });
+      try {
+        await io.check(root, source.spec);
+      } catch (err) {
+        // Not published, not reached or no npm at all: the install could only say the same, and
+        // about a registry that does not answer only after its own long window. Any other answer
+        // (a refusal, an auth failure) is the install's to report in its own words.
+        const other = err instanceof PluginInstallError && (err.reason ?? "other") === "other";
+        if (!other) throw err;
+      }
+    }
+    io.onStage?.({ stage: "installing", source: source.kind === "name" ? "registry" : "link" });
     return await io.install(root, source.spec);
   } catch (err) {
-    if (
-      !(err instanceof PluginInstallError) ||
-      source.kind !== "name" ||
-      err.reason !== "unavailable"
-    ) {
-      throw err;
+    if (!(err instanceof PluginInstallError) || source.kind !== "name") throw err;
+    const archive =
+      err.reason === "unavailable" || err.reason === "unreachable" || err.reason === "missing"
+        ? (io.offline?.(source.name, source.version) ?? null)
+        : null;
+    if (archive !== null && io.installTarball !== undefined) {
+      io.onStage?.({ stage: "installing", source: "offline" });
+      const { file, integrity } = await archive.tarball();
+      if ((await integrityOf(file)) !== integrity) {
+        throw failureLike(
+          err,
+          `The offline archive of ${archive.name} ${archive.version} does not match the sha512 recorded with it, so it was not used.`,
+        );
+      }
+      try {
+        return await io.installTarball(root, file, archive.name);
+      } catch (offlineErr) {
+        if (offlineErr instanceof PluginInstallError) {
+          throw failureLike(err, `Its offline archive: ${offlineErr.message}`);
+        }
+        throw offlineErr;
+      }
     }
-    const npmSaid = err.message;
-    // An install made without npm said it in its own words; what is added keeps them its own.
-    const failure = (message: string) => {
-      const next = new PluginInstallError(message);
-      if (err.withoutNpm === true) next.withoutNpm = true;
-      return next;
-    };
+    if (err.reason !== "unavailable") throw err;
     const resolved = (await io.channelOf?.(source.name, source.version)) ?? {
       channel: null,
       fault: null,
     };
     if (resolved.fault !== null) {
-      throw failure(`${npmSaid}. ${resolved.fault}`);
+      throw failureLike(err, resolved.fault);
     }
     if (resolved.channel === null) {
-      throw failure(
-        `${npmSaid}. The published plugin index lists no installable github channel for ${source.name} either.`,
+      throw failureLike(
+        err,
+        `The published plugin index lists no installable github channel for ${source.name} either.`,
+        false,
       );
     }
+    io.onStage?.({ stage: "installing", source: "channel" });
     try {
       return await io.installChannel(root, resolved.channel, { onProgress: io.onProgress });
     } catch (channelErr) {
       if (channelErr instanceof PluginInstallError) {
-        throw failure(`${npmSaid}. Its index channel: ${channelErr.message}`);
+        throw failureLike(err, `Its index channel: ${channelErr.message}`);
       }
       throw channelErr;
     }
@@ -241,6 +322,31 @@ export interface InstalledPluginsDeps {
    * the viewer sees it (PRFC-0031); absent in tests that build these routes alone.
    */
   modules?: (projectId: string, viewer: ModuleActor) => Promise<PluginModuleStatus[]>;
+  /**
+   * The offline archives the build carries (plugin/offline-archives.ts), read per install: a
+   * name npm cannot serve installs from one of them; absent = none.
+   */
+  offline?: () => readonly OfflineArchive[];
+  /** The registry npm installs from, for the refusal's words; null = npm's own configuration. */
+  registry?: () => string | null;
+}
+
+/** How long an install stream may stay silent before it sends a `ping` (the 40 s idle cut needs two missed). */
+const INSTALL_BEAT_MS = 20_000;
+/**
+ * How long an install's answer waits for the App to re-assemble on what it listed. A module whose
+ * start runs longer — a first-run download it awaited, which a module must not do — does not hold
+ * the answer: the install says the module is still starting, and the swap finishes on its own.
+ */
+const LOAD_WAIT_MS = 60_000;
+
+/** A registry address as a refusal names it: its host, or the address itself when it will not parse. */
+function hostOf(address: string): string {
+  try {
+    return new URL(address).host;
+  } catch {
+    return address;
+  }
 }
 
 export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> {
@@ -255,8 +361,12 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     return projectId;
   };
 
-  // Reading and editing the Project's tables, shared with the plugin-modules service.
-  const { tablesOf, edit, list } = pluginTableEdits(deps);
+  // Reading and editing the Project's tables, shared with the plugin-modules service. A module
+  // behind a system app is judged by the build this server runs at the moment of the edit.
+  const { tablesOf, edit, list } = pluginTableEdits({
+    ...deps,
+    isLocked: (pkg) => isSystemAppModule(pkg, pluginBases(deps.root, deps.assetsDir())),
+  });
 
   const view = async (
     projectId: string,
@@ -400,15 +510,45 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
   const installerSaid = (err: PluginInstallError) =>
     err.withoutNpm === true ? err.message : `npm: ${err.message}`;
 
-  /** npm's failure, as the answer: what it said, never a 500. */
-  const viaNpm = async (run: () => Promise<InstalledPackage>): Promise<InstalledPackage> => {
+  /**
+   * npm's failure, as the answer: what it said, never a 500 — and, when npm could not serve the
+   * name at all, said plainly first (05 「安装从不卡住」): not published yet (404 / ETARGET), or a
+   * registry that did not answer, each with its own code, so the page can offer the next step.
+   */
+  const viaNpm = async (
+    run: () => Promise<InstalledPackage>,
+    asked?: PluginSource,
+  ): Promise<InstalledPackage> => {
     try {
       return await run();
     } catch (err) {
-      if (err instanceof PluginInstallError) {
-        throw new HttpError(400, "plugin_install_failed", installerSaid(err));
+      if (!(err instanceof PluginInstallError)) throw err;
+      const registry = err.registry ?? deps.registry?.() ?? null;
+      const where = registry !== null ? hostOf(registry) : "the npm registry";
+      // The cause first, in one sentence the page can show under the card; npm's own words ride
+      // along as a detail, and a fallback's only when it has something to say.
+      const then = err.fallback !== undefined ? ` ${err.fallback}` : "";
+      const npm = { npm: err.npmSaid ?? err.message };
+      if (err.reason === "unavailable" && asked?.kind === "name") {
+        const what = asked.version !== undefined ? `${asked.name}@${asked.version}` : asked.name;
+        throw new HttpError(
+          400,
+          "plugin_not_published",
+          `${what} is not published on ${where} yet.${then}`,
+          undefined,
+          npm,
+        );
       }
-      throw err;
+      if (err.reason === "unreachable") {
+        throw new HttpError(
+          400,
+          "plugin_source_unreachable",
+          `${where} did not answer.${then}`,
+          undefined,
+          npm,
+        );
+      }
+      throw new HttpError(400, "plugin_install_failed", installerSaid(err));
     }
   };
 
@@ -418,21 +558,33 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
    */
   const scriptless = new WeakSet<InstalledPackage>();
 
-  /** The route's install of a specifier: npm first, the published index's channel on its failure. */
+  /**
+   * The route's install of a specifier: a name's pre-check and npm first, then the offline archive
+   * the build carries, then the published index's channel (installNamedOrChanneled). `onStage`
+   * hears the pre-check and each source tried.
+   */
   const installSpecifier = async (
     source: PluginSource,
     onProgress?: InstallProgress,
+    onStage?: (stage: InstallStage) => void,
   ): Promise<InstalledPackage> => {
-    const { withoutNpm, ...installed } = await viaNpm(() =>
-      installNamedOrChanneled(deps.root, source, {
-        install: (root, spec) => deps.packages.install(root, spec),
-        channelOf: deps.channelOf,
-        installChannel: (root, channel, opts) =>
-          deps.installChannel !== undefined
-            ? deps.installChannel(root, channel, opts)
-            : deps.packages.installChannel(root, channel, opts),
-        onProgress,
-      }),
+    const archives = deps.offline?.() ?? [];
+    const { withoutNpm, ...installed } = await viaNpm(
+      () =>
+        installNamedOrChanneled(deps.root, source, {
+          check: (root, spec) => deps.packages.check(root, spec),
+          install: (root, spec) => deps.packages.install(root, spec),
+          channelOf: deps.channelOf,
+          installChannel: (root, channel, opts) =>
+            deps.installChannel !== undefined
+              ? deps.installChannel(root, channel, opts)
+              : deps.packages.installChannel(root, channel, opts),
+          onProgress,
+          offline: (name, version) => offlineArchiveFor(archives, name, version),
+          installTarball: (root, file, name) => deps.packages.installTarball(root, file, name),
+          ...(onStage !== undefined ? { onStage } : {}),
+        }),
+      source,
     );
     if (withoutNpm === true) scriptless.add(installed);
     return installed;
@@ -553,9 +705,45 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     viewer: ModuleActor,
     source: PluginSource,
     machineId: string | null,
-    onProgress?: InstallProgress,
+    report: { onProgress?: InstallProgress; onStage?: (stage: InstallStage) => void } = {},
   ): Promise<InstalledPluginsResponse> => {
     const runsHere = machineId === null || machineId === deps.machineId;
+    // Where the package came from: the last source the chain tried is the one that served it.
+    let from: InstallSource | undefined;
+    const onStage = (stage: InstallStage) => {
+      if (stage.stage === "installing") from = stage.source;
+      report.onStage?.(stage);
+    };
+    /** The listing's re-assembly outlasted LOAD_WAIT_MS: the answer says the module is still starting. */
+    let loading = false;
+    /** Lists `name` — re-assembling the App when the tree changes, which the stream says first. */
+    const listing = async (name: string, requirement: PluginRequirement, table: string | null) => {
+      report.onStage?.({ stage: "loading" });
+      const listed = list(projectId, name, requirement, table).then(() => "listed" as const);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const slow = new Promise<"slow">((resolve) => {
+        timer = setTimeout(() => resolve("slow"), LOAD_WAIT_MS);
+      });
+      try {
+        if ((await Promise.race([listed, slow])) === "slow") {
+          loading = true;
+          // It finishes, or is undone, on its own; nobody is left to tell but the log.
+          listed.catch((err: unknown) =>
+            console.warn(
+              `[plugins] ${name}: the re-assembly after its install failed: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          );
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+      deps.syncFleet(projectId);
+    };
+    const outcome = (): Partial<PluginInstallOutcome> => (from !== undefined ? { from } : {});
+    const answered = async (installed: InstalledPackage | null) => ({
+      ...(await answer(projectId, viewer, installed, outcome())),
+      ...(loading ? { loading: true as const } : {}),
+    });
     if (source.kind === "link") {
       // A link names no package another machine could fetch by name: it installs here, and is
       // listed for this machine alone.
@@ -566,12 +754,11 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
           "A link installs on this server only; install it on that machine from its own Plugins page.",
         );
       }
-      const installed = await installSpecifier(source, onProgress);
+      const installed = await installSpecifier(source, report.onProgress, onStage);
       if ((await vetInstalled(installed)).modules) {
-        await list(projectId, installed.name, {}, deps.machineId);
-        deps.syncFleet(projectId);
+        await listing(installed.name, {}, deps.machineId);
       }
-      return answer(projectId, viewer, installed);
+      return answered(installed);
     }
     // A plugin the build ships is already on the machine: asking for it is consent, not a
     // download. Everything else goes through npm — the package first, the list second, since
@@ -581,7 +768,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     const shipped = await shippedNames();
     const installed =
       runsHere && !shipped.includes(source.name)
-        ? await installSpecifier(source, onProgress)
+        ? await installSpecifier(source, report.onProgress, onStage)
         : null;
     // A package of Skills, hooks or MCP servers alone is the library's from here on: no table
     // loads it.
@@ -589,15 +776,13 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     if (kinds === null || kinds.modules) {
       // `pkg@1.2.3` installs that version, and the table records it as what this Project asks
       // of the package; the key is the bare name, which is what the loader resolves.
-      await list(
-        projectId,
+      await listing(
         source.name,
         source.version === undefined ? {} : { version: source.version },
         machineId,
       );
-      deps.syncFleet(projectId);
     }
-    return answer(projectId, viewer, installed);
+    return answered(installed);
   };
 
   app.post("/", async (c) => {
@@ -609,14 +794,24 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     if (!(c.req.header("accept") ?? "").includes("text/event-stream")) {
       return c.json(await performInstall(projectId, viewerOf(c), source, machineId));
     }
-    // The same install, read as it arrives: `npm` while npm works (npm's own download is
-    // npm's to report), `result` the finished list. A failure that the JSON answer would
-    // have carried as a status rides as an `error` event with that status, so the page
-    // raises the same error either way.
+    // The same install, read as it arrives (05 「安装从不卡住」): `npm` at once, `stage` while a
+    // name's registry is asked, as each source is tried and before the App re-assembles,
+    // `download` while a channel's bytes come in (npm's own download is npm's to report),
+    // `result` the finished list. A `ping` every INSTALL_BEAT_MS keeps a long install's stream
+    // from reading as dead: the event-stream socket is cut after 40 s of silence (app.ts), and
+    // the page would be told the install failed while it carried on. A failure that the JSON
+    // answer would have carried as a status rides as an `error` event with that status, so the
+    // page raises the same error either way.
     return eventStream(c, async (sink) => {
+      sink.beat(INSTALL_BEAT_MS);
+      const event = (name: string, data: unknown) =>
+        void sink.send(name, null, JSON.stringify(data)).catch(() => undefined);
       try {
         await sink.send("npm", null, "{}");
-        const next = await performInstall(projectId, viewerOf(c), source, machineId);
+        const next = await performInstall(projectId, viewerOf(c), source, machineId, {
+          onProgress: (received, total) => event("download", { received, total }),
+          onStage: (stage) => event("stage", stage),
+        });
         await sink.send("result", null, JSON.stringify(next));
       } catch (err) {
         const [status, code, message] =
@@ -856,13 +1051,18 @@ export class InstalledPluginRoutes {
       // The configured index sources' github channels, for a name npm has no answer for; looked
       // up only then, cached at the listing's cadence (indexChannelLookup). The sources are
       // read per lookup: the plugin-index settings group's document, changed without a restart.
-      channelOf: indexChannelLookup(() => this.sources.urls()),
+      // One attempt per address, 10 s each: the install has already waited on npm, and a source
+      // that does not answer must not hold the answer for the three tries a listing gives it.
+      channelOf: indexChannelLookup(() => this.sources.urls(), { attempts: 1, timeoutMs: 10_000 }),
       // The plugin list rides the same trip the model config takes to a Project's machines.
       syncFleet: (projectId) => void this.machines.syncConfigEverywhere(projectId),
       // `penguin plugin link`: the npm prefix is this server's own disk, so a local directory
       // links straight into it.
       link: (dir, overwrite) => linkPluginDirectory(this.config.root, dir, overwrite),
       modules: (projectId, viewer) => this.pluginModules.status(projectId, viewer),
+      // Read per install: a push moves the builtin prefix, and the archives with it.
+      offline: () => offlineArchives(pluginBases(this.config.root, hmr.assetsDir())),
+      registry: () => currentNpmRegistry(),
     });
   }
 }

@@ -14,6 +14,11 @@
  *   The card is a size container, so the toolbar collapses by the card's own width rather than the
  *   viewport's; it takes the theme's input focus ring while anything inside it has focus, and
  *   carries the glass hook of the layer floating over the conversation.
+ * - `ComposerBanner` is a notice that belongs to the composer (no model to send with yet), drawn
+ *   as the card's top band through `ComposerCard`'s `banner`: inside the card's border and
+ *   attached to its top edge, so it reads as part of the input box rather than as a card of its
+ *   own. The tone tints the band; its action closes the row and wraps under the words on a
+ *   narrow card.
  * - `ChipRow` is the row of chips above the text body (`TagInput` in the composer's place).
  * - `SendButton` is the action button: the accent square with the send arrow, or the stop square
  *   while a run can be stopped.
@@ -26,6 +31,12 @@
  * these draw it.
  */
 import type { ReactNode, Ref, TextareaHTMLAttributes } from "react";
+import { Button } from "../../actions/button/button";
+import {
+  NOTICE_TONE,
+  NOTICE_TONE_CLASS,
+  type NoticeStripTone,
+} from "../../feedback/notice/notice-strip";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 import { menuPanelClass } from "../../overlays/menu-panel/menu-panel";
@@ -39,6 +50,7 @@ export type ComposerTextareaProps = Omit<
 > & { ref?: Ref<HTMLTextAreaElement> };
 
 export function ComposerCard({
+  banner,
   attachments,
   chips,
   textarea,
@@ -47,6 +59,8 @@ export function ComposerCard({
   strip,
   actions,
 }: {
+  /** A notice drawn as the card's top band (`ComposerBanner`), above everything else. */
+  banner?: ReactNode;
   /** The images and files staged for the message (`AttachmentList`), first in the card. */
   attachments?: ReactNode;
   /** The chip row above the text body (`ChipRow`); nothing is drawn when absent. */
@@ -68,6 +82,13 @@ export function ComposerCard({
       data-slot="composer"
       className="ui-glass @container rounded-lg border border-line-emphasis bg-surface px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-fg-muted focus-within:ring-2 focus-within:ring-fg-subtle/30"
     >
+      {banner !== undefined && banner !== null && banner !== false && (
+        // Out to the card's border on three sides, clipped to its top corners whatever radius the
+        // theme gives the card, and ruled off from the text below.
+        <div className="-mx-2.5 -mt-2 mb-2 overflow-hidden rounded-t-[inherit] border-b border-line-muted">
+          {banner}
+        </div>
+      )}
       {attachments !== undefined && attachments !== null && (
         <div className="mb-2">{attachments}</div>
       )}
@@ -101,6 +122,34 @@ export function ComposerCard({
         </div>
         <div className="flex shrink-0 items-center gap-2">{actions}</div>
       </div>
+    </div>
+  );
+}
+
+/** A notice in the composer's top band: the tone's tint, the words, and an optional action. */
+export function ComposerBanner({
+  tone = "attention",
+  action,
+  children,
+}: {
+  tone?: NoticeStripTone;
+  /** A button closing the row, in the accent. */
+  action?: { label: string; onClick: () => void };
+  children: ReactNode;
+}) {
+  return (
+    <div
+      data-slot="banner"
+      data-tone={NOTICE_TONE[tone]}
+      role="status"
+      className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2 text-sm ${NOTICE_TONE_CLASS[tone]}`}
+    >
+      <span className="min-w-0">{children}</span>
+      {action !== undefined && (
+        <Button size="sm" variant="primary" onClick={action.onClick}>
+          {action.label}
+        </Button>
+      )}
     </div>
   );
 }

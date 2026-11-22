@@ -158,3 +158,20 @@ button {
     padding-bottom: 4.5rem;
   }
 }
+dialog.confirm {
+  width: min(24rem, calc(100% - 2rem));
+  padding: 1.1rem 1.2rem;
+  color: var(--wb-fg);
+  background: var(--wb-canvas);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius);
+}
+dialog.confirm::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+dialog.confirm p {
+  margin: 0 0 1rem;
+}
+.confirm-actions {
+  justify-content: flex-end;
+}

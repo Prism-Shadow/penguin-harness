@@ -36,12 +36,14 @@ import {
   Select,
   Skeleton,
   SkeletonCard,
+  Waiting,
   Sparkline,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { S } from "../../lib/strings";
+import { isConversationAgent } from "../../lib/builtin-agents";
 import { cardBodyClick } from "../../lib/card-open";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatRelativeShort, formatScore, signedDelta } from "../../lib/format";
@@ -375,7 +377,7 @@ export function BenchmarkCard({
 /** Card-shaped placeholders, so nothing shifts when the fetch lands. */
 function CardSkeletons({ rows }: { rows: number }) {
   return (
-    <div className="space-y-3">
+    <Waiting className="space-y-3">
       {Array.from({ length: rows }, (_, i) => (
         <SkeletonCard key={i} className="flex flex-wrap items-center gap-x-6 gap-y-2 p-4">
           <div className="min-w-[14rem] flex-1">
@@ -387,7 +389,7 @@ function CardSkeletons({ rows }: { rows: number }) {
           <Skeleton className="h-8 w-44" />
         </SkeletonCard>
       ))}
-    </div>
+    </Waiting>
   );
 }
 
@@ -627,7 +629,7 @@ export function BenchmarkPage() {
             value={aiTarget}
             onChange={(e) => setAiTarget(e.target.value)}
           >
-            {agents.map((a) => (
+            {agents.filter(isConversationAgent).map((a) => (
               <option key={a.agentId} value={a.agentId}>
                 {agentDisplayName(a)}
               </option>

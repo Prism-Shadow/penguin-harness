@@ -1,7 +1,7 @@
 /**
- * Settings › Plugins, the administrator's 「服务端模块请求」 section: every ask to run a library
- * plugin's server module on the server on screen, and what was decided — one row each, newest
- * waiting first. Members leave a request when they install a plugin whose module this server does
+ * The list on the Plugins group's module requests page (module-requests-page.tsx), the
+ * administrator's: every ask to run a library plugin's server module on the server on screen, and
+ * what was decided — one row each, newest waiting first. Members leave a request when they install a plugin whose module this server does
  * not run and the build does not ship; a built-in module, or one the administrator installed,
  * is recorded here as enabled the moment it is.
  *
@@ -14,11 +14,15 @@
  *   Project and keeps installs from bringing it back, while what the Agents carry stays;
  * - declined: Enable.
  *
- * A waiting row whose Project is gone can only be declined. The server answers each decision with
- * the whole list, which every reader of it takes at once (lib/plugin-modules.ts); a stop that
- * leaves the module running — a Project's shared table still lists it — says which Projects.
- * The section follows the page's machine picker: requests are kept by each server, and a machine
- * too old to keep them shows no section at all.
+ * A module behind a system app reads "System app, built in" and has no action: it always runs,
+ * and the server refuses to stop it. A preinstalled module's row belongs to every Project, so it
+ * names none. A waiting row whose Project is gone can only be declined. The server answers each
+ * decision with the whole list, which every reader of it takes at once (lib/plugin-modules.ts);
+ * a stop that leaves the module running — a Project's shared table still lists it — says which
+ * Projects. The list follows the page's machine picker: requests are kept by each server. A
+ * server whose list cannot be read (a machine out of reach, or too old to keep requests) says so
+ * in one line instead of an empty list. The page's heading names the list, so it draws no title
+ * of its own.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -31,7 +35,7 @@ import {
   ConfirmModal,
   ICONS,
   ListRow,
-  RuledSection,
+  NoticeStrip,
   SettingsList,
   StatusMark,
   toastAttention,
@@ -44,7 +48,7 @@ import { acceptPluginModuleRequests, usePluginModuleRequests } from "../../lib/p
 import { localizedText } from "../../lib/skill-use";
 import { S } from "../../lib/strings";
 import { toastApiError } from "../../lib/toast-api-error";
-import { useLocale } from "../../state/locale";
+import { webLocale } from "@prismshadow/penguin-web-plugin";
 import { SkillTile } from "../skills";
 
 /** Waiting rows first, newest first; then decided ones, the latest decision first. */
@@ -64,6 +68,14 @@ function stateOf(row: PluginModuleRequest): {
   hint: string;
 } {
   const words = S.settings.moduleRequests;
+  if (row.systemApp === true) {
+    return {
+      glyph: ICONS.checkCircle,
+      tone: "success",
+      label: words.systemApp,
+      hint: words.systemAppHint,
+    };
+  }
   if (row.decision === null) {
     return { glyph: ICONS.hand, tone: "attention", label: words.waiting, hint: words.waitingHint };
   }
@@ -79,8 +91,17 @@ function stateOf(row: PluginModuleRequest): {
   };
 }
 
-export function PluginModuleRequests({ machine }: { machine: string | null }) {
-  const { locale } = useLocale();
+export function PluginModuleRequests({
+  machine,
+  machineName,
+}: {
+  machine: string | null;
+  /** The picked machine's name, for the line that says its list could not be read. */
+  machineName?: string;
+}) {
+  // The language on screen, as the dictionary switch tells it: the Settings dialog also renders
+  // outside the app's providers (a test, the gallery).
+  const locale = webLocale();
   const ledger = usePluginModuleRequests(machine, true);
   /** The library of the server on screen, by plugin name: each row's tile and display name. */
   const [library, setLibrary] = useState<ReadonlyMap<string, PluginItem>>(new Map());
@@ -105,8 +126,15 @@ export function PluginModuleRequests({ machine }: { machine: string | null }) {
     };
   }, [machine]);
 
-  // A machine too old to keep requests (or out of reach) shows no section rather than an error.
-  if (ledger.value === null && ledger.error !== null) return null;
+  // A server that cannot answer (a machine out of reach, or too old to keep requests) says so
+  // rather than showing an empty list.
+  if (ledger.value === null && ledger.error !== null) {
+    return (
+      <NoticeStrip tone="attention" as="p" className="rounded-md px-3 py-2 text-xs">
+        {S.settings.moduleRequests.unreadable(machineName ?? null, ledger.error)}
+      </NoticeStrip>
+    );
+  }
 
   const titleOf = (row: PluginModuleRequest) => {
     const plugin = library.get(row.plugin);
@@ -153,9 +181,26 @@ export function PluginModuleRequests({ machine }: { machine: string | null }) {
         {label}
       </Button>
     );
+    if (row.systemApp === true) return null;
     if (row.decision === "enabled") return button(words.stop, () => setStopping(row));
+    // A package asked for before it was on this server (a member's 「安装到 Agent」): it is
+    // installed on the server from the Plugins page first; until then Enable waits, saying so.
     const enable =
-      row.projectId !== null ? button(words.enable, () => void decide(row, "enable")) : null;
+      row.projectId === null ? null : row.onServer === false ? (
+        <Button
+          key="enable"
+          size="sm"
+          variant="secondary"
+          disabled
+          title={S.plugins.installModel.requestNotOnServer}
+          data-tooltip-extra
+          aria-label={`${words.enable} ${title}`}
+        >
+          {words.enable}
+        </Button>
+      ) : (
+        button(words.enable, () => void decide(row, "enable"))
+      );
     if (row.decision === "declined") return enable;
     return (
       <>
@@ -167,14 +212,16 @@ export function PluginModuleRequests({ machine }: { machine: string | null }) {
 
   const metaOf = (row: PluginModuleRequest) =>
     [
-      row.projectName ?? words.projectGone,
+      ...(row.preinstalled === true && row.projectId === null
+        ? []
+        : [row.projectName ?? words.projectGone]),
       row.requestedBy === "" ? words.system : (row.requestedByName ?? row.requestedBy),
       formatRelativeLong(row.decidedAt ?? row.requestedAt, locale),
     ].join(" · ");
 
   const rows = ordered(ledger.value?.requests ?? []);
   return (
-    <RuledSection title={words.title} info={words.info} level={3}>
+    <>
       <SettingsList
         label={words.title}
         loading={ledger.value === null}
@@ -232,6 +279,6 @@ export function PluginModuleRequests({ machine }: { machine: string | null }) {
           {stopping === null ? "" : words.stopBody(titleOf(stopping))}
         </p>
       </ConfirmModal>
-    </RuledSection>
+    </>
   );
 }

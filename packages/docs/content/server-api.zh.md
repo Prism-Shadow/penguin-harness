@@ -92,7 +92,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 ## 认证与账号
 
-登录、登出、账号认领，以及当前用户的密码、资料、偏好设置和已归档对话。
+登录、登出、账号认领，以及当前用户的密码、资料、偏好设置、已归档对话和存储空间。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -113,6 +113,12 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | GET | `/api/me/archived-sessions` | 一个分组中的已归档 Session：`?projectId=&workspace=&limit=&before=&q=&source=` → `{sessions, hasMore}` |
 | POST | `/api/me/archived-sessions/unarchive` | 批量取消归档：`{sessionIds}` 或 `{filter}` → `{done, missing}` |
 | POST | `/api/me/archived-sessions/delete` | 批量删除：`{sessionIds}` 或 `{filter}` → `{done, missing}` |
+| GET | `/api/me/storage` | [设置 › 存储空间](/settings#存储空间)的数字：按分类的字节数，按 Project 与 Agent 分项，管理员另有整个数据根 |
+| POST | `/api/me/storage/refresh` | 重新测量；应答同 `GET /api/me/storage` |
+| GET | `/api/me/storage/cleanup` | 此刻可以安全删除的条目：`?olderThanDays=` → `{measuredAt, olderThanDays, items}` |
+| POST | `/api/me/storage/cleanup` | 删除所选的条目：`{items, olderThanDays}` → `{removed, bytes, skipped}` |
+| GET | `/api/me/storage/sessions` | 按大小与时间列出的会话：`?projectId=&agentId=&listing=&olderThanDays=&sort=` → `{sessions, total, totalBytes, truncated}` |
+| POST | `/api/me/storage/reveal` | 在文件管理器中显示 Project 的文件夹或数据根：`{projectId?}`，应答 `204` |
 
 - `GET /api/auth/claim` 用于兑换首次登录链接或桌面 shell 的一次性 token。链接无效或已被使用时，会改为重定向到 `/login?claimFailed=…`，Web App 会在那里说明如何获取一条有效链接。
 - `GET /api/install` 无需身份验证。`installId` 是一个不透明的 id，存储在 `<root>/install-id`，在数据根目录首次使用时生成。Web App 将它与本地保存的 id 比对，不一致时清空浏览器端引用服务器实体的 UI 状态，这样替换数据根目录后就不会残留旧的 Workspace、草稿和置顶项。返回 `null` 表示服务器无法确立 id，此时客户端不得改动任何状态。
@@ -126,6 +132,13 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
   - `GET /api/me/archived-sessions/groups` 返回 `{groups: [{projectId, projectName, workspace, count, latest}], total, asOf}`，每个 Project 的每个 Workspace 一组。`workspace` 是 Workspace 路径，合并的临时 Workspace 记为 `temp`。`latest` 是组内最新的 `lastActiveAt`，分组按它从新到旧排列。`total` 是各组计数之和，`asOf` 是服务端取这些计数的时刻。`servers=here` 只返回本服务端的分组、不询问任何机器，`servers=machines` 只返回机器上的分组；Web App 分两次询问，一台不应答的机器因此不会拖住本服务端的分组。
   - `GET /api/me/archived-sessions` 按最近活动从新到旧分页读取一个分组。`projectId`、`workspace` 和 `limit`（1–100）必填，`before=<lastActiveAt>,<sessionId>` 与 Session 列表一样从已持有的最后一行之后继续。没有标题的行带上其 Trace 的首轮标题。
   - 两个批量路由接受 `{sessionIds: [...]}`（1–500 个 id）或 `{filter: {q?, source?, projectId?, workspace?, until?, exclude?}}`（代表过滤条件匹配的全部已归档 Session），返回 `{done, missing}`。过滤条件的 `until` 是某次分组响应的 `asOf`：此时批量操作只作用于那一刻已归档、此后没有活动的 Session，计数之后才归档、新开或运行过的 Session 不受影响。`exclude`（1–500 个 id）把这些 Session 排除在外，即**全选**之后又取消勾选的行。每个 Session 都走与 `PATCH` 或 `DELETE /api/sessions/:id` 相同的路径，每个 Session 一个事件。取消归档时 `done` 只计原本已归档的 Session；删除则删除点名的每一个 Session，无论是否已归档，运行中的先中止，但按过滤条件删除时会跳过运行中的 Session，也不计入 `done`。`missing` 列出不存在或调用者无权访问的 id；过滤形式不会产生 `missing`。
+- `/api/me/storage` 及其子路由为[设置 › 存储空间](/settings#存储空间)与 [`penguin storage`](/cli#penguin-storage) 提供数据。它们由预装的 `storage` 插件的服务端模块提供，没有任何 Project 运行该模块的服务器对它们答 `404`。它们只测量本服务器的数据根，不含已连接的机器。
+  - 数字在后台逐个单元测量——每个 Project 的文件夹一个单元，服务器自己的条目一个单元——只保存在内存中。`GET /api/me/storage` 对从未测量过的单元开始测量并立即应答：`measuring` 表示还有测量在进行，`measuredAt` 是所含单元中最早的测量时刻，在每个单元都测量过之前为 `null`。`POST /api/me/storage/refresh` 重新测量全部单元，正在进行的测量直接沿用。两者的应答都带 `reveal`，即调用者能否显示文件夹（`POST /api/me/storage/reveal`）。
+  - `categories` 给出 `traces`、`agentState`、`workspaces`、`scratchpads`、`caches`、`logs`、`plugins` 与 `other` 的字节数，每个字节恰好计入其中一类。`bytes` 与 `categories` 是调用者拥有或参与的 Project 之和，`projects` 逐个列出这些 Project 及其 Agent。管理员另有 `server`：整个数据根的 `bytes` 与 `categories`、以 `otherProjects: {count, bytes}` 合计的其不能进入的 Project，以及 `entries` 中顶层每个非 Project 条目。
+  - `GET /api/me/storage/cleanup` 先测量（数字不到一分钟的除外），再列出 `items`。每项带不透明的 `id`、`kind`（`scratchpad`、`workspace`、`agentCache` 或 `serverCache`）、`reason`（`orphan` 或 `idle`）、大小，以及缺省是否勾选（`selected`）。会话的草稿区在两种情况下列出：会话已不在且文件夹一天内没有改动；或会话未在使用、最近活动早于 `olderThanDays` 天（1–3650，缺省 7）。临时工作区只在没有任何 Project 的会话以它或其中的文件夹为 Workspace、且一天内没有改动时列出。Agent 的 `shared_env/<名称>/` 在它的会话都未在使用时列出，数据根的 `.cache/<名称>/` 只对管理员列出。
+  - `POST /api/me/storage/cleanup` 需要本人登录：本地 API 令牌答 `403` `human_required`，与其他只能由本人进行的写操作相同。它逐条重新判定，并在同一步里把通过的文件夹移开，之后才开始的 Task 不会写进正在删除的文件夹；内容在后台删除，删完后重新测量。`skipped` 逐条写明留下的条目与原因：`in_use`、`gone`（调用者无权清理的条目也这样答）或 `failed`。成员只能清理自己可进入的 Project，管理员可以清理数据根上的一切。
+  - `GET /api/me/storage/sessions` 列出调用者的 Project 中属于某个列表的会话（子 Agent 会话随其父会话），按大小降序或按最近活动升序（`sort=size|age`），至多 500 条。`listing` 为 `all`、`active` 或 `archived`，`olderThanDays` 只留最近活动早于该天数的会话。每行的 `traceBytes` 是其 Trace 文件的大小，`scratchpadBytes` 是最近一次测量看到的草稿区大小，`running` 标出在使用中的会话。删除用 `POST /api/me/archived-sessions/delete` 与 `{sessionIds}`。
+  - `POST /api/me/storage/reveal` 只在桌面应用自己的窗口中可用，同 Workspace 文件的 reveal；只有管理员可以显示数据根。
 
 ## 用户管理（仅管理员）
 
@@ -437,12 +450,12 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 
 ### 语义化 id 提议
 
-`POST /api/projects/:projectId/suggest-id` 接收 `{name, kind, taken?}`，返回 `{id, source, reason?}`。`kind` 取 `project`、`agent`、`benchmark`、`org` 或 `channel`，`taken` 是提议必须避开的一批 id。id 输入框旁边的**用 AI 生成**按钮，背后都是这一条路由。
+`POST /api/projects/:projectId/suggest-id` 接收 `{name, kind, taken?}`，返回 `{id, source, reason?}`。`kind` 取 `project`、`agent`、`org` 或 `channel`，或服务端模块经数据槽 `SemanticIdModule.kinds` 贡献的种类——评估中心的 `benchmark` 即是其一；`taken` 是提议必须避开的一批 id。没有模块贡献的种类返回 `400`。id 输入框旁边的**用 AI 生成**按钮，背后都是这一条路由。
 
 - 路径里这个 Project 的默认模型把名称翻译成一个符合该 kind 拼写风格的英文 id（`source: model`）；**新建 Project** 对话框借用的是打开它时所在的那个 Project。回答没有得出 id 时，会带着明确的格式要求再问模型一次。
 - 没有配置模型，或两次回答都不可用时，改用名称生成的 ASCII slug（`source: fallback`）。
-- 两条路径都生成不出 id 时，给出一个带日期的占位 id（`source: placeholder`），`reason` 为 `no_default_model`、`model_failed`、`unusable_answer` 或 `no_ascii`：`project_<yyyymmdd>`、`agent_<yyyymmdd>`、`benchmark-<yyyymmdd>`、`co_org_<yyyymmdd>` 或 `ch_channel_<yyyymmdd>`；非管理员的 Project id 前面还带用户名。
-- 各个 kind 的差别只有三处：id 的形状、服务端自己要避开的 id，以及谁可以请求。`project` 对管理员是 snake_case，对其他人是 `<username>-<后缀>`，要避开服务器上的每一个 Project id；`agent` 是 snake_case，要避开这个 Project 的 Agent；`benchmark` 是 kebab-case，要避开这个 Project 的 Benchmark，且仅限所有者；`org` 和 `channel` 带 `co_`、`ch_` 前缀，回答里已有前缀时不会重复添加，公司模式关闭时返回 `404` `company_mode_off`。其余情况下调用者必须是这个 Project 的成员。
+- 两条路径都生成不出 id 时，给出一个带日期的占位 id（`source: placeholder`），`reason` 为 `no_default_model`、`model_failed`、`unusable_answer` 或 `no_ascii`：`project_<yyyymmdd>`、`agent_<yyyymmdd>`、贡献的种类为 `<kind>-<yyyymmdd>`（如 `benchmark-<yyyymmdd>`）、`co_org_<yyyymmdd>` 或 `ch_channel_<yyyymmdd>`；非管理员的 Project id 前面还带用户名。
+- 各个 kind 的差别只有三处：id 的形状、服务端自己要避开的 id，以及谁可以请求。`project` 对管理员是 snake_case，对其他人是 `<username>-<后缀>`，要避开服务器上的每一个 Project id；`agent` 是 snake_case，要避开这个 Project 的 Agent；贡献的种类是 kebab-case（字母、数字、`_` 与 `-`，至多 100 个字符），要避开该贡献报告为已占用的 id，贡献写明 `access: "owner"` 时仅限所有者（`benchmark` 即如此）；`org` 和 `channel` 带 `co_`、`ch_` 前缀，回答里已有前缀时不会重复添加，公司模式关闭时返回 `404` `company_mode_off`。其余情况下调用者必须是这个 Project 的成员。
 - 服务端自己要避开的，是该 kind 的创建路由会以「已占用」拒绝的那些名称，包括任何列表都不显示的残留目录。它们不会进入提示词；发生冲突时只会加上 `_2` / `-2` 后缀。核心词因为以数字开头或只有一个字符而被该 kind 的规则拒绝时，会放到这个 kind 的名词后面再试一次（`3D Viewer` → `agent_3d_viewer`）。
 - 名称翻译不出来时路由也不会失败，因此请求 id 的对话框总能拿到结果。模型侧的每一次失败都会记录为 `id_suggest_failed` 错误，`org` 和 `channel` 记在 `organization` 来源下，其余记在 `id_suggest` 下。这次补全关闭思考运行，使用共享的元请求预算，不属于任何 Session，也不计量。
 
@@ -648,7 +661,7 @@ interface AgentApiKeyInfo {
 - `GET …/readme` 返回包自带的 `README.md`，从本机上的副本读取；没有时 `readme` 为 `null`。列表中没有的名称返回 `404` `not_found`，缺少 `name` 的请求返回 `400` `bad_request`。`GET …/archive` 与插件库的导出路由一样，把本机上一个已列出的包打成 zip 下载；包不在本机上时返回 `404` `plugin_not_here`。
 - `GET /api/plugins/market` 返回市场文档：`hero` 与 `selected` 列出 npm 包名（维护者精选的插件，以及其中可作市场轮播首屏的那些），`art` 按包名给出插件的 `cover`（`{url, thumbUrl?, tone?}`）、位图 `icon` 与 `screenshots`（`{url, thumbUrl?, caption?, captionZh?}`），每个 `url` 都是本服务端的图片路由。文档带有 `popularity` 时，它是 `{source, generatedAt, items}`，`items` 按包名给出每个插件的 `{installs, weekly}`；目前这些是**占位数字**（`source: "placeholder"`，以固定种子生成），之后由真实的安装量接口替换（`source: "live"`）。读不懂的该段会被略去，文档其余部分照常应答。文档即社区仓库的 `assets/plugins/market.json`，经与索引相同的镜像规则最多每 30 分钟抓取一次；在它应答之前，以及它不可达、格式错误或 `schema` 不同时，由服务端内置的副本应答，`source` 写明是哪一份（`embedded` 或 `published`）。`PENGUIN_PLUGIN_MARKET=off` 只读内置副本、不发起任何出网请求，填其他值则替换文档的 URL。图片路由只应答当前文档列出的路径，其他路径一律 `404` 且不发起抓取。内置插件的封面与缩略图随服务端一起发布，内置副本列出的路径直接从这里提供、不发起抓取，离线以及 `PENGUIN_PLUGIN_MARKET=off` 时同样如此。其余图片由服务端从文档旁抓取，字节须为 2 MB 以内的 WebP、PNG 或 JPEG 才会提供，并保存在 `<data root>/.cache/plugin-market/` 下，一天后重新校验，源不可达时从这里提供。取不到的图片返回 `404`。该目录只是缓存：删除它只会让每张图片重新抓取一次。
 - `GET …/installed` 对该 Project 的任何成员开放。`plugins` 的每个元素是 `{specifier, active, builtin, modules, replaces, error?, unsatisfied?}`：`active` 表示进程已加载并运行这个包，`builtin` 表示它随本次构建发布，`modules` 和 `replaces` 是其生成的 `ifaces.json` 声明的节点，`error` 说明它为什么没有运行，例如本机上没有这个包，或加载失败。运行中的构建缺少这个包所依赖的槽位、模块或接口，因而无法完整运行它时，`unsatisfied` 为 `{disabled, reason}`：`disabled` 为 true 表示整个包被停用，此时 `active` 为 false；为 false 表示包仍在运行，只是这份构建没有槽位可接的那部分贡献没有生效。`shipped` 列出构建发布的全部插件包，无论是否被要求。`file` 是保存列表的文件名。已列出的插件既没有运行、也没有加载失败、也不属于 `unsatisfied` 时，`restartPending` 为 true，重启服务器即可解决。Project 的 `.project_config.toml` 无法读取时返回 `400` `invalid_plugins_file`。
-- 写操作返回与 GET 相同的响应体；安装还会附带 `installed: {name, version, library, modules, unchanged?}`，说明装到服务端的是什么。`POST` 接受 npm 包名，可带版本、范围或标签（`@scope/name@^1.2`），或 npm 能直接获取的 https 链接：git 仓库（`https://github.com/o/r`、`git+https://…`、`github:o/r#tag`）或 tarball。路径、`file:`、`http:` 和 ssh 链接、链接中带凭据、包名后的 `npm:` 或 `file:` 别名，以及指向 GitHub 仓库中某个文件夹或文件的链接（`…/tree/…`、`…/blob/…`），都会在运行 npm 之前以 `400` `bad_request` 拒绝。从链接安装会获取管理员给出的任意 https 地址，包括内网地址：npm 在服务端、在它所在的网络里运行。安装后，与构建自带的服务端模块同名的包会被重新卸载，并以 `409` `plugin_shipped` 拒绝（它会替换掉所有 Project 的这个模块）；不是插件的包以 `400` `not_a_plugin` 拒绝。此时它的安装脚本已经运行过，错误信息会说明这一点。构建自带的插件直接加入列表，不下载；其余的先用 `npm install` 装进数据根目录的 `plugins/` 前缀，npm 拒绝时返回 `400` `plugin_install_failed`。装上的内容决定列表怎么写：服务端模块包会加入列表——从链接安装的只加入本机自己的 `[plugins.<machineId>]` 表，因为另一台机器拿到它的包名后，会从 npm 仓库取回同名的任意一个包——只含 Skill、钩子或 MCP 服务器的包进入插件库，不加入列表。`PUT` 只发送名称，留在列表中的名称保留文件为它记录的要求。`DELETE` 从列表中移除该名称；没有任何 Project 再为本机要求它时，从前缀中卸载这个包。
+- 写操作返回与 GET 相同的响应体；安装还会附带 `installed: {name, version, library, modules, unchanged?}`，说明装到服务端的是什么。`POST` 接受 npm 包名，可带版本、范围或标签（`@scope/name@^1.2`），或 npm 能直接获取的 https 链接：git 仓库（`https://github.com/o/r`、`git+https://…`、`github:o/r#tag`）或 tarball。路径、`file:`、`http:` 和 ssh 链接、链接中带凭据、包名后的 `npm:` 或 `file:` 别名，以及指向 GitHub 仓库中某个文件夹或文件的链接（`…/tree/…`、`…/blob/…`），都会在运行 npm 之前以 `400` `bad_request` 拒绝。从链接安装会获取管理员给出的任意 https 地址，包括内网地址：npm 在服务端、在它所在的网络里运行。安装后，与构建自带的服务端模块同名的包会被重新卸载，并以 `409` `plugin_shipped` 拒绝（它会替换掉所有 Project 的这个模块）；不是插件的包以 `400` `not_a_plugin` 拒绝。此时它的安装脚本已经运行过，错误信息会说明这一点。构建自带的插件直接加入列表，不下载；其余的先用 `npm install` 装进数据根目录的 `plugins/` 前缀，npm 拒绝时返回 `400` `plugin_install_failed`。装上的内容决定列表怎么写：服务端模块包会加入列表——从链接安装的只加入本机自己的 `[plugins.<machineId>]` 表，因为另一台机器拿到它的包名后，会从 npm 仓库取回同名的任意一个包——只含 Skill、钩子或 MCP 服务器的包进入插件库，不加入列表。`PUT` 只发送名称，留在列表中的名称保留文件为它记录的要求。`DELETE` 从列表中移除该名称；没有任何 Project 再为本机要求它时，从前缀中卸载这个包。`PUT` 或 `DELETE` 若会让本服务端不再为该 Project 运行提供应用中心系统应用的内置插件，返回 `409` `system_app_module_locked`，不写入任何内容。
 - `POST …/installed/archive` 安装上传 zip 中的包目录：`package.json` 位于 zip 根目录或唯一的顶层目录内，带合法的 npm 包名（去掉 scope 后须是插件名）和发行版本号，不含 `node_modules/`，并带 `ifaces.json`：包须已构建（没有它的 zip 会被拒绝，并提示以 `penguin-gen-ifaces` 构建），其表须向插件库贡献插件库能原样读取的 Skill、钩子包、MCP 服务器或 Workbench，或列出服务端模块。上限为 zip 14 MB、2,000 个文件、单个文件 5 MB、合计 50 MB，在解压任何内容之前检查（`413` `plugin_too_large`）；其他问题返回 `400` `plugin_archive_invalid`。服务端用 `npm pack --ignore-scripts` 打包这些文件，再安装生成的 tarball，并把它保存在前缀的 `archives/` 中。zip 中不能带 `.npmrc`（打包时它会配置 npm）；与构建自带的服务端模块同名的包会在安装任何内容之前以 `409` `plugin_shipped` 拒绝。已安装同一版本时返回 `200` 并带 `unchanged`；已安装其他版本时，不带 `overwrite: true` 会返回 `409` `plugin_exists`。从 zip 安装的服务端模块包只加入本机的表。
 - 在没有 npm 的服务端上（node 旁边没有，`PATH` 上也没有），按包名的 `POST`、它落到索引渠道的回退、`POST …/archive` 与 `DELETE` 对这样的包不经 npm 也能进行：没有声明 `dependencies`、`optionalDependencies`、`bundleDependencies` 或非可选的 `peerDependencies`，没有 `preinstall`、`install` 或 `postinstall` 脚本，也不带 `binding.gyp`。服务端读取包的 registry 文档（先「插件源」设置的 registry，再「插件镜像」），解包之前按 `dist.integrity` 的 sha512 校验 tarball，只写入普通文件，并照 npm 的写法把安装记入前缀的 `package.json`。zip 只安装 `npm pack` 会发布的文件（`files` 字段、各目录的 `.npmignore` 或其 `.gitignore`、npm 默认忽略的名称，以及 `bin` 与 `main`），由服务端打包存入 `archives/`；release 渠道的资产同样留在 `archives/`，日后运行 npm 时不必再去获取。重定向只跟随到 https，或本机回环之内。其他包和任何链接都返回 `400` `plugin_install_failed`，说明原因并提示安装 Node.js。有 npm 的服务端照旧全部交给 npm。
 - 写操作无需重启即可生效：App 围绕新列表[自行重组](/server-boot#重组)，效果与热替换相同。所有 Project 中正在进行的 Agent 运行都会被中止，因为所有 Project 共用同一棵模块树。新 App 启动失败时，改动会被撤销，之前的 App 随之恢复。
@@ -1417,7 +1430,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | POST | `/api/hmr/assets/probe` | 热更新：报告存储缺少哪些 blob |
 | PUT | `/api/hmr/blobs/:sha` | 热更新：按 sha256 上传一个 blob |
 | POST | `/api/hmr/upgrade` | 热更新：把 platform、CLI 和 web bundle 一并升到新版本。构建无法完整运行全部已装插件时返回 `409` `plugins_unsatisfied`，`error.plugins` 逐个列出 `{specifier, disabled, reason}`；带上请求头 `x-penguin-unsatisfied-plugins: leave-out` 重发，推送照常完成，应答里以 `unsatisfiedPlugins` 附上同一份清单 |
-| GET | `/api/contributions` | 以数据形式返回服务器模块和插件贡献给 Web App 的页面和标签页 |
+| GET | `/api/contributions` | 以数据形式返回服务器模块和插件贡献给 Web App 的页面和标签页，以及开始页的贡献计数（`startMetrics`） |
 
 - 非桌面模式下，桌面路由返回 `404` `not_found`。
 - `POST /api/desktop/shutdown` 不使用 cookie 会话。它用桌面 shell 专有的 Bearer token 认证（否则返回 `401` `unauthorized`），先应答，再立即开始优雅关闭。

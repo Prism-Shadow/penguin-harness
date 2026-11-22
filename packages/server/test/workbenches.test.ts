@@ -18,6 +18,7 @@
  * - With a configured model credential, it opens and runs Sessions the SDK's way, inside
  *   its own Project only, with allow-all: nobody is there to answer an ask. Its Sessions
  *   are archived with workbench provenance, including before their first run after a restart.
+ *   The Project's system Agent is neither listed nor opened: it runs no Sessions.
  * - A Session that only talks can select its own model and deny-all: that model's tool call is denied
  *   and the model reads the denial, while one opened without the option still runs its calls;
  *   a mode that would wait for a person is refused by name.
@@ -32,6 +33,8 @@
  * An edited workbench:
  * - A file that disappears mid-read is a change, not a failed request.
  * - Concurrent first reads share the same loaded instance rather than replacing it for each reader.
+ * - Listed by id, one workbench loads alone and the Agent's others are not compiled; an unknown
+ *   id lists none.
  * - An edited folder is re-imported and committed once per loaded revision to the Agent State
  *   repository, made beside agent_state/ at the first load; a rollback restores a version's
  *   files exactly, keeps the state, and is itself the newest version.
@@ -525,6 +528,11 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
       ran: "run: this Project has no Session 'not-a-session'",
       agents: [AGENT],
     });
+    const system = (await (await owner.get(`${BASE}/demo/api/open?agent=system_agent`)).json()) as {
+      opened: unknown;
+    };
+    expect(system.opened).toBe("The system Agent owns the system apps and runs no Sessions.");
+    expect(t.deps.sessionsRepo.listByAgent(PROJECT, "system_agent")).toEqual([]);
     const own = (await (await owner.get(`${BASE}/demo/api/open`)).json()) as {
       opened: { sessionId: string };
     };
@@ -838,6 +846,22 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     expect(results.every(([w]) => w?.error === null)).toBe(true);
     expect(new Set(results.map(([w]) => w!.loadedAt)).size).toBe(1);
     expect((await list())[0]?.loadedAt).toBe(results[0]![0]!.loadedAt);
+  });
+
+  it("lists one workbench by id and loads that one alone", async () => {
+    const other = path.join(path.dirname(dir), "other");
+    await writeDemo(other);
+    const res = await owner.get(`${base}?id=demo`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { workbenches: WorkbenchInfo[]; enabled: boolean };
+    expect(body.workbenches.map((w) => [w.id, w.error])).toEqual([["demo", null]]);
+    expect(body.enabled).toBe(true);
+    // Never compiled: a load writes its output and its status under `.build/`.
+    await expect(fs.stat(path.join(other, ".build"))).rejects.toMatchObject({ code: "ENOENT" });
+    const none = (await (await owner.get(`${base}?id=missing`)).json()) as {
+      workbenches: WorkbenchInfo[];
+    };
+    expect(none.workbenches).toEqual([]);
   });
 
   async function reload(): Promise<WorkbenchInfo> {

@@ -25,9 +25,18 @@ export function resolveRoot(): string {
   return process.env.PENGUIN_HOME ?? path.join(os.homedir(), ".penguin", "data");
 }
 
-/** `<root>/<projectId>`. */
+/**
+ * The folder holding every Project's folder, one per id: the data root itself. The single
+ * definition point of where Projects sit, so a reader that lists them (the Storage page's
+ * measurement) follows wherever they move.
+ */
+export function projectsDir(root: string): string {
+  return root;
+}
+
+/** `<projectsDir>/<projectId>`. */
 export function projectDir(root: string, projectId: string): string {
-  return path.join(root, projectId);
+  return path.join(projectsDir(root), projectId);
 }
 
 /**
@@ -66,6 +75,14 @@ export function scratchpadDir(root: string, projectId: string, agentId: string):
 /** `<agentDir>/workspaces`. */
 export function workspacesDir(root: string, projectId: string, agentId: string): string {
   return path.join(agentDir(root, projectId, agentId), "workspaces");
+}
+
+/**
+ * `<agentDir>/shared_env`, the Agent's reusable tool environments, one folder per environment.
+ * The system prompt tells the model to keep them here; no code creates the folder.
+ */
+export function sharedEnvDir(root: string, projectId: string, agentId: string): string {
+  return path.join(agentDir(root, projectId, agentId), "shared_env");
 }
 
 /**

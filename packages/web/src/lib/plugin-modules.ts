@@ -3,8 +3,8 @@
  * administrator's ledger of requests and decisions, and the event that says a module changed.
  *
  * - **The ledger** (`GET /api/admin/plugin-modules`) is one read per server, shared by every reader
- *   (lib/read-store.ts): the Settings section that decides, the Plugins page's notice that counts
- *   what waits, and the Plugins nav entry's dot. Only the administrator reads it; for anyone else
+ *   (lib/read-store.ts): the Settings page that decides, with the count on its rail row, the
+ *   Plugins page's notice that counts what waits, and the Plugins nav entry's dot. Only the administrator reads it; for anyone else
  *   it reads as nothing known. A decision brings the new list back and hands it over at once
  *   ({@link acceptPluginModuleRequests}).
  * - **The event** (`plugin_modules_changed`, no payload) comes on the user channel when an install

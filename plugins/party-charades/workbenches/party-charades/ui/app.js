@@ -11,6 +11,7 @@ import {
   select,
   form,
   button,
+  confirmAction,
 } from "./desk-kit.js";
 const teamName = (i) => (i === 0 ? t("Team A", "甲队") : t("Team B", "乙队"));
 let timer;
@@ -22,12 +23,17 @@ desk(t("Party Charades", "派对猜词"), (game, { send }) => {
   if (game.until) {
     const word = node("p", { className: "readout" });
     const correct = button(t("Guessed it", "猜中了"), () => send({ type: "correct" }), true),
-      pass = button(t("Pass", "跳过"), () => send({ type: "pass" }));
+      pass = button(t("Pass", "跳过"), () => send({ type: "pass" })),
+      finish = button(t("Finish turn", "结束本轮"), () => send({ type: "end" }));
     const tick = () => {
       const left = Math.max(0, Math.ceil((game.until - Date.now()) / 1000));
-      time.textContent = t("Seconds left ", "剩余秒数 ") + left;
+      time.textContent = left
+        ? t("Seconds left ", "剩余秒数 ") + left
+        : t("Finish the turn to add this turn’s points.", "点「结束本轮」把本轮得分记上。");
       word.textContent = left ? game.word?.[zh ? 1 : 0] : t("Time’s up", "时间到");
       correct.disabled = pass.disabled = !left;
+      // Once time is up, finishing the turn is the one thing left to do.
+      finish.classList.toggle("wb-primary", !left);
       if (!left) clearInterval(timer);
     };
     timer = setInterval(tick, 250);
@@ -37,11 +43,7 @@ desk(t("Party Charades", "派对猜词"), (game, { send }) => {
       word,
       clock,
       hint(t("Guessed this turn: ", "本轮猜中 ") + game.earned),
-      row(
-        correct,
-        pass,
-        button(t("Finish turn", "结束本轮"), () => send({ type: "end" })),
-      ),
+      row(correct, pass, finish),
     );
   } else {
     hero.append(
@@ -68,9 +70,12 @@ desk(t("Party Charades", "派对猜词"), (game, { send }) => {
       ),
     );
   }
-  const reset = button(t("New match", "新比赛"), () => {
+  const reset = button(t("New match", "新比赛"), async () => {
     if (
-      confirm(t("Clear both teams’ scores and start a new match?", "清空两队比分并重新开始比赛？"))
+      await confirmAction(
+        t("Clear both teams’ scores and start a new match?", "清空两队比分并重新开始比赛？"),
+        t("New match", "新比赛"),
+      )
     )
       void send({ type: "reset" });
   });

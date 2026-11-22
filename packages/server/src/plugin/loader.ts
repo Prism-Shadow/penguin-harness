@@ -33,7 +33,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type { PluginDeclaration } from "@prismshadow/penguin-core";
 import { findPackageJSON } from "node:module";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -45,6 +45,7 @@ import type {
 } from "@prismshadow/penguin-core/kernel";
 import { moduleDefOf } from "@prismshadow/penguin-core/kernel";
 import { pluginsPrefix } from "./install.js";
+import { workspacePrefixManifest } from "./workspace-prefix.js";
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
 
 import { readManifest } from "../hmr/manifest.js";
@@ -52,8 +53,7 @@ import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
 import { PluginHost, pluginHostFrom } from "./host.js";
 import platformTable from "../ifaces.json" with { type: "json" };
-import { checkIfaces, ifaceQuestions } from "./iface-check.js";
-import { withPreinstalledModules } from "./preinstall-unlisted.js";
+import { checkIfaces, ifaceQuestions, packageOf } from "./iface-check.js";
 import { loadTypeScript, TypeScriptUnavailable, type TypeScript } from "./typescript.js";
 
 /**
@@ -159,7 +159,8 @@ export async function readPluginClosure(
  *   2. `<assets>/plugins` — the BUILTIN plugins the committed hot push carried
  *      (scripts/build-plugins.mjs), i.e. the plugins of the revision that is running.
  *   3. `<installation>/plugins` — the builtin plugins the build shipped (the desktop app
- *      stages them beside `skills/`), for a deployment nothing was ever pushed to.
+ *      stages them beside `skills/`), for a deployment nothing was ever pushed to; in a
+ *      workspace checkout, then its one staged prefix (plugin/workspace-prefix.ts).
  *   4. the installation entry — a plugin installed globally beside the program.
  *
  * A prefix marked `builtin` is one the harness ships, not one the operator installed.
@@ -199,10 +200,13 @@ export function pluginBases(root: string | undefined, assetsDir: string | null):
   }
   const entry = process.argv[1];
   if (typeof entry === "string" && entry.length > 0) {
-    bases.push({
-      file: path.join(path.dirname(entry), "..", "plugins", "package.json"),
-      builtin: true,
-    });
+    const installation = path.join(path.dirname(entry), "..", "plugins", "package.json");
+    bases.push({ file: installation, builtin: true });
+    // A checkout's entries share one staged prefix (plugin/workspace-prefix.ts).
+    const workspace = workspacePrefixManifest(entry);
+    if (workspace !== null && path.resolve(workspace) !== path.resolve(installation)) {
+      bases.push({ file: workspace, builtin: true });
+    }
     bases.push({ file: entry, builtin: false, program: true });
   }
   return bases;
@@ -420,10 +424,12 @@ async function readPackageTable(file: string | null): Promise<{
  *
  * Two things can leave an interface uncompared, and neither fails the load — a pushed
  * platform must not take plugins away from a machine for something the plugin did not do:
- * a table that carries no copy of a host interface (the generator only writes the
- * interfaces a package DECLARES, so today that is every host interface a plugin requires),
- * and an installation whose program predates the compiler being a dependency. Both are
- * logged; an interface the table does carry, and that no longer fits, fails the load.
+ * a table that carries no copy of a host interface (the generator copies them only for a
+ * package built against the host's sources, with `--sources`; one built against the published
+ * declarations carries none), and an installation whose program predates the compiler being a
+ * dependency. Both are logged; an interface the table does carry, and that no longer fits,
+ * fails the load. An interface the package declares itself is not a host interface and is not
+ * asked about.
  */
 let compilerMissingLogged = false;
 async function interfaceMisfits(
@@ -431,8 +437,12 @@ async function interfaceMisfits(
   own: IfaceTable,
   defs: readonly ModuleDef[],
   assets: string | null,
+  /** The package's own name: an interface it declares itself is no host interface to compare. */
+  ownPackage: string | null,
 ): Promise<string[]> {
-  const questions = ifaceQuestions(defs.map((d) => d.manifest));
+  const questions = ifaceQuestions(defs.map((d) => d.manifest)).filter(
+    (q) => ownPackage === null || packageOf(q.key) !== ownPackage,
+  );
   if (questions.length === 0) return [];
   let ts: TypeScript;
   try {
@@ -450,6 +460,16 @@ async function interfaceMisfits(
     );
   }
   return fit.problems;
+}
+
+/** The `name` in a package.json, or null when it has none or cannot be read. */
+function packageNameOf(manifest: string): string | null {
+  try {
+    const name = (JSON.parse(readFileSync(manifest, "utf8")) as { name?: unknown }).name;
+    return typeof name === "string" ? name : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The package's default export as a Plugin, or null when it is not one. */
@@ -503,11 +523,10 @@ export async function loadPlugins(
   const failed = new Map<string, string>();
   const pushedAssets = assetsDir === undefined ? await committedAssetsDir(root) : assetsDir;
   const bases = pluginBases(root, pushedAssets);
-  // The closure over this root's Projects. A plugin the BUILD ships is available without a
-  // download — that is what `builtin` means — but availability is not consent: it loads when a
-  // Project asks for it, like every other plugin. The one exception, until PRFC-0030's listing
-  // is in this build, is a preinstalled built-in module (preinstall-unlisted.ts).
-  const specifiers = await withPreinstalledModules(await readPluginClosure(root, machineId), bases);
+  // The closure over this root's Projects, and nothing else. A plugin the BUILD ships is
+  // available without a download — that is what `builtin` means — but availability is not
+  // consent: it loads when a Project asks for it, like every other plugin.
+  const specifiers = await readPluginClosure(root, machineId);
   const loaded: LoadedPlugin[] = [];
   for (const specifier of specifiers) {
     // Reused only when the SAME FILE is behind the name. A push writes the builtin plugins to
@@ -570,6 +589,7 @@ export async function loadPlugins(
         read.ifaces,
         [...modules, ...replaces],
         pushedAssets,
+        packageNameOf(read.where),
       );
       if (misfits.length > 0) throw new Error(misfits.join("\n"));
       loaded.push({ specifier, file, stamp, modules, replaces, ifaces: read.ifaces });

@@ -60,6 +60,7 @@ import { compilePushBundle, pushBundleOptions } from "./push-bundle.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
 import { MARKET_COVERS_NAME, MARKET_COVERS_SOURCE, marketCoverFiles } from "./market-covers.mjs";
 import { buildBuiltinPlugins } from "./build-plugins.mjs";
+import { shippedCliPackages } from "./gen-cli-modules.mjs";
 import { archiveName, packArchive, prefixPackages } from "./asset-archives.mjs";
 import { nodeTypesPayload, typescriptPayload } from "./typescript-payload.mjs";
 import { libraryPayload } from "./library-payload.mjs";
@@ -271,6 +272,17 @@ async function compileEntry(entry, outfile) {
   // The platform and the CLI each import their generated interface table; make sure both
   // are current.
   const { execFileSync } = await import("node:child_process");
+  // So are the tables the CLI's shipped modules boot against (a plugin's `cli-ifaces.json`,
+  // which the CLI bundle inlines): each is written by its plugin's own build, rerun here so a
+  // push never carries the one an earlier build left.
+  const windows = process.platform === "win32";
+  for (const name of shippedCliPackages(path.join(ROOT, "packages", "cli"))) {
+    execFileSync(windows ? "pnpm.cmd" : "pnpm", ["--filter", name, "run", "build"], {
+      cwd: ROOT,
+      stdio: "inherit",
+      shell: windows,
+    });
+  }
   for (const pkg of ["server", "cli"]) {
     // The CLI's generated table also names the server's command classes (its children come
     // in through the server's `cli` subpath), so the CLI scan covers the server project too —
@@ -279,6 +291,14 @@ async function compileEntry(entry, outfile) {
     const args = [path.join(ROOT, "scripts/gen-ifaces.mjs")];
     for (const p of projects)
       args.push("--project", path.join(ROOT, "packages", p, "tsconfig.json"));
+    // Only the host's own sources and the library's, as the packages' `gen:ifaces` lines say: a
+    // shipped plugin's sources the programs reach (a test helper, the CLI's generated module
+    // list) carry their own table, and a copy here would stand in for theirs.
+    for (const p of projects) {
+      for (const dir of ["src", "test"])
+        args.push("--sources", path.join(ROOT, "packages", p, dir));
+    }
+    args.push("--sources", path.join(ROOT, "library"));
     args.push("--out", path.join(ROOT, "packages", pkg, "src", "ifaces.json"));
     execFileSync(process.execPath, args, { stdio: "inherit" });
   }

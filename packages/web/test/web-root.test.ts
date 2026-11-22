@@ -4,7 +4,7 @@ import { mainPanelDefinition as mainWorkspace } from "../src/features/workspace/
 import { mainPanelDefinition as mainTrace } from "../src/features/traces/main-dock-panel";
 import { mainPanelDefinition as mainMessaging } from "../src/features/messaging/main-dock-panel";
 import { mainPanelDefinition as mainSchedules } from "../src/features/schedules/main-dock-panel";
-import { mainPanelDefinition as mainBrowser } from "../src/features/builtin-browser/main-dock-panel";
+import { mainPanelDefinition as mainBrowser } from "../../../plugins/browser-automation/src/web/main-dock-panel";
 import { TerminalModule } from "../src/features/terminal/module";
 import { dockPanelDefinition, type DockPanelDefinition } from "../src/features/dock/panel-registry";
 
@@ -18,10 +18,12 @@ const OrgProposalsPage = () => null;
  * - bootWeb() boots the tree and hands back WebApp's root component.
  * - Every page has a unique id, key and path, and the component its module bound.
  * - Terminal and the workflow app pages mount outside the shell; everything else inside it.
- * - The main nav is Agents, Models, Plugins, Machines, Usage, Benchmark in that order, all
- *   released, Machines alone admin-only, and every page names its nav title in both languages
- *   (the words the nav dictionary held) and a glyph in the icon registry.
- * - A member's nav drops admin-only pages and adds nothing the admin lacks.
+ * - The main nav is Agents and the App Center, both released and open to members, each naming
+ *   its nav title in both languages (the words the nav dictionary held) and a glyph in the icon
+ *   registry.
+ * - The system apps are Models, Plugins, Machines, the Cost Center and the Evaluation Center in
+ *   that order, off the nav, each naming its title in both languages and a glyph; a member's drop
+ *   Machines, the one admin-only app, and add nothing the admin lacks.
  * - The chat page is the chat page; the dashboard and one machine's ports are
  *   pages of their own modules, off the nav, the ports page admin-only.
  * - Home (`/` and every unmatched path) is company mode's page, since it depends on the mode.
@@ -30,8 +32,9 @@ const OrgProposalsPage = () => null;
  *   company-mode proposals page is drawn by the proposals page, inside company mode and from
  *   the root alike.
  * - The shell receives company's provider and the update badges' owner for the signed-in
- *   session, the five layers in their mount order, and the user event handlers of company, the
- *   built-in browser and schedules in their dispatch order.
+ *   session, the layers beside the columns in their mount order, the App Center's windows
+ *   over the page area, and the user event handlers of company, the built-in browser and
+ *   schedules in their dispatch order.
  * - The sidebar receives the Project switcher and the session list for development mode,
  *   company's mode with its switcher, channels, roadmaps and desks, the to-do dots and the
  *   balance on their anchors, and company's unread count on the contributed proposals page's row
@@ -47,18 +50,18 @@ const OrgProposalsPage = () => null;
 import type { ComponentType, ReactElement } from "react";
 import {
   bootModules,
-  moduleDefOf,
   type ClassCtx,
   type Contributed,
   type IfaceTable,
-  type ManifestTable,
   type ModuleClass,
 } from "@prismshadow/penguin-core/kernel";
 
 import { beforeAll, describe, expect, it } from "vitest";
 import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
 import table from "../src/ifaces.json";
-import { bootWeb, WebRoot } from "../src/web-root";
+import { bootWeb, webRootDef } from "../src/web-root";
+import { setRunningServerModules } from "../src/lib/module-gate";
+import { pluginWebModules } from "../src/plugin-web.gen";
 import { WebAppModule } from "../src/web-app/module";
 import { navPagesOf, type WebAppPage } from "../src/web-app";
 
@@ -74,6 +77,7 @@ import { rowExtensionsOf, type RowExtensions } from "../src/features/session-lis
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { glyphOf } from "../src/lib/nav-icons";
+import { systemAppsOf } from "../src/lib/system-apps";
 import { AgentsPage } from "../src/features/agents/agents-page";
 import { TerminalPage, TerminalDockRuntime } from "../src/features/terminal";
 import { OrgRoutes } from "../src/features/company/org-routes";
@@ -81,13 +85,15 @@ import { HomeRedirect } from "../src/features/company/home-redirect";
 import { ChatPage } from "../src/features/chat/chat-page";
 import { CompanyProvider, companyUserEvents } from "../src/features/company/company-state";
 import { ShortcutRuntime } from "../src/features/settings/shortcut-runtime";
-import { BuiltinBrowserLayer } from "../src/features/builtin-browser/browser-layer";
-import { builtinBrowserUserEvents } from "../src/features/builtin-browser/browser-events";
+import { BuiltinBrowserLayer } from "../../../plugins/browser-automation/src/web/browser-layer";
+import { builtinBrowserUserEvents } from "../../../plugins/browser-automation/src/web/browser-events";
 import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
 import { SettingsLayer } from "../src/features/settings/settings-layer";
 import { DockScope } from "../src/features/dock/dock-scope";
+import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
 import { PinnedBalanceBadge } from "../src/features/models/group-balance";
 import { ProjectSettingsLayer } from "../src/features/projects/project-settings-layer";
+import { DefaultModelsLayer } from "../src/features/models/default-models-layer";
 import { ProjectSwitcher } from "../src/features/projects/project-switcher";
 import {
   companyChannels,
@@ -168,9 +174,9 @@ beforeAll(async () => {
       ChatModule.prototype.setup.call(chat, ctx);
     },
   });
+  // As bootWeb boots it: the app's modules and the shipped plugins' web halves (the browser's).
   await bootModules(
-    moduleDefOf(WebRoot, {
-      manifests: table.modules as unknown as ManifestTable,
+    webRootDef(pluginWebModules, {
       instances: new Map<ModuleClass, object>([
         [WebAppModule, webApp],
         [SidebarModule, sidebar],
@@ -215,12 +221,8 @@ describe("the booted page table", () => {
     expect(nav.map(({ key, admin, released }) => ({ key, admin, released }))).toEqual([
       { key: "agents", admin: false, released: true },
       { key: "apps", admin: false, released: true },
-      { key: "models", admin: false, released: true },
-      { key: "plugins", admin: false, released: true },
-      { key: "machines", admin: true, released: true },
-      { key: "usage", admin: false, released: true },
-      { key: "benchmark", admin: false, released: true },
     ]);
+    expect(navKeysFor(nav, false)).toEqual(navKeysFor(nav, true));
   });
 
   it("names every nav page's title in both languages and its glyph", () => {
@@ -228,6 +230,13 @@ describe("the booted page table", () => {
     expect(nav.map(({ key, title, titleZh, icon }) => ({ key, title, titleZh, icon }))).toEqual([
       { key: "agents", title: en.nav.agents, titleZh: zh.nav.agents, icon: "robot" },
       { key: "apps", title: en.appCenter.title, titleZh: zh.appCenter.title, icon: "tiles" },
+    ]);
+    for (const page of nav) expect(glyphOf(page.icon)).not.toBe("");
+  });
+
+  it("names the system apps in their order, with their titles in both languages and a glyph", () => {
+    const apps = systemAppsOf(pages, true);
+    expect(apps.map(({ key, title, titleZh, icon }) => ({ key, title, titleZh, icon }))).toEqual([
       { key: "models", title: "Models", titleZh: "模型库", icon: "chip" },
       { key: "plugins", title: en.nav.plugins, titleZh: zh.nav.plugins, icon: "puzzle" },
       {
@@ -239,13 +248,13 @@ describe("the booted page table", () => {
       { key: "usage", title: en.nav.usage, titleZh: zh.nav.usage, icon: "barChart" },
       { key: "benchmark", title: "Evaluation Center", titleZh: "评估中心", icon: "trophy" },
     ]);
-    for (const page of nav) expect(glyphOf(page.icon)).not.toBe("");
+    for (const app of apps) expect(glyphOf(app.icon)).not.toBe("");
+    for (const app of apps) expect(navPagesOf(pages).some((p) => p.key === app.key)).toBe(false);
   });
 
-  it("the nav a member sees drops admin-only pages", () => {
-    const nav = navPagesOf(pages);
-    const admin = navKeysFor(nav, true);
-    const member = navKeysFor(nav, false);
+  it("the system apps a member sees drop the admin-only one", () => {
+    const admin = systemAppsOf(pages, true).map((app) => app.key);
+    const member = systemAppsOf(pages, false).map((app) => app.key);
     expect(admin).toContain("machines");
     expect(member).not.toContain("machines");
     expect(member.every((key) => admin.includes(key))).toBe(true);
@@ -325,14 +334,21 @@ describe("the booted shell slots", () => {
     expect(new Set(codes).size).toBe(2);
   });
 
-  it("mounts the layers in their order, the dock's scope last", () => {
-    expect(codeByOrder(layers)).toEqual([
+  it("mounts the layers beside the columns in their order, the dock's scope last", () => {
+    expect(codeByOrder(layers.filter((layer) => layer.data.area !== "page"))).toEqual([
       TerminalDockRuntime,
       ShortcutRuntime,
       SettingsLayer,
       ProjectSettingsLayer,
+      DefaultModelsLayer,
       BuiltinBrowserLayer,
       DockScope,
+    ]);
+  });
+
+  it("mounts the App Center's windows over the page area, so they outlive its page", () => {
+    expect(codeByOrder(layers.filter((layer) => layer.data.area === "page"))).toEqual([
+      AppCenterWindows,
     ]);
   });
 
@@ -387,6 +403,8 @@ describe("the booted sidebar slots", () => {
 
 describe("the booted dock slot", () => {
   it("registers the eight main panel definitions from their owners without a retired ports panel", () => {
+    // The browser's is a plugin's, registered while its server module runs.
+    setRunningServerModules(["BuiltinBrowserModule"]);
     const definitions = dockPanels
       .flatMap(
         (c) => (c.code as { mainDefinitions: readonly DockPanelDefinition[] }).mainDefinitions,

@@ -9,7 +9,8 @@
  *   `apiErrors`), else the server's message; toasts, Settings requests and dock openings are
  *   recorded rather than shown;
  * - the dock has no tab on screen and the conversation scope is the placeholder `~none`; a tone
- *   map names the tone (`tone-danger`), which is enough to tell tones apart.
+ *   map names the tone (`tone-danger`), which is enough to tell tones apart;
+ * - a date prints as the ISO text it was handed, and a byte count as its number of bytes.
  *
  * Anything else a test needs differently it passes in `overrides`. Calling it again replaces the
  * previous stand-in.
@@ -108,6 +109,9 @@ export function provideTestHost(overrides: Partial<WebHost> = {}): TestHostRecor
     isTabShown: () => false,
     currentDockScope: () => "~none",
     formatDateTime: (iso) => iso,
+    formatRelativeShort: (iso) => iso,
+    formatRelativeLong: (iso) => iso,
+    formatBytes: (bytes) => `${bytes}B`,
     toneInk: tones(),
     toneSurface: tones(),
     toneDot: tones(),
