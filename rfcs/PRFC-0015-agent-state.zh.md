@@ -1,4 +1,4 @@
-# PRFC-0015 Agent 状态组件：热更新时移交状态，运行中的 Task 不被打断
+# PRFC-0015 Agent State
 
 [English](PRFC-0015-agent-state.md)
 

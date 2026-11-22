@@ -16,7 +16,7 @@
  */
 import type { AgentDeletionInfo, Employment } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import { settleWithin } from "../http/settle.js";
+import { settleWithin } from "@prismshadow/penguin-library-http/settle";
 import type { UserDraftsStore } from "@prismshadow/penguin-library-auth";
 import type { AgentApi } from "@prismshadow/penguin-library-agent-api";
 import type { AgentConfig, AgentLifecycle } from "../mechanisms/agents.js";

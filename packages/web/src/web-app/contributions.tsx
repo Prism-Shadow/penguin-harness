@@ -13,6 +13,9 @@ import type { ContributionsResponse, RendererRef } from "@prismshadow/penguin-se
 import * as api from "../api/endpoints";
 import { FileRendererRulesContext, type FileRendererRule } from "../lib/file-renderers";
 
+import { contributionShown, setRunningServerModules, useModuleGates } from "../lib/module-gate";
+import { subscribeUserEvents } from "../lib/amsp/user-events";
+import { runningModulesFor } from "./running-modules";
 import { useSafeMode } from "../rescue/safe-mode";
 import { useAuth } from "../state/auth";
 import { webAppDeps } from "./deps";
@@ -33,58 +36,76 @@ export interface ContributionsStore {
   /** The signed-in user (null = nobody): a change drops the last user's answer and asks again. */
   setUser(userId: string | null): void;
   /**
-   * Asks again for the signed-in user (after a plugin is installed or removed) and answers the
-   * new response, or null when nobody is signed in or the request failed — which keeps the
-   * answer held so far.
+   * Asks again for the signed-in user (the server said its contributions changed, or the event
+   * stream lost events) and answers the new response, or null when nobody is signed in or the
+   * request failed — which keeps the answer held so far.
    */
   refresh(): Promise<ContributionsResponse | null>;
   current(): ContributionsState;
   subscribe(listener: () => void): () => void;
 }
 
+/**
+ * How long to wait before asking again after a failed read, attempt by attempt; the last wait
+ * repeats. A failure is retried: the answer decides which plugin web halves are drawn, so one
+ * dropped request must not hide them for the life of the page.
+ */
+export const CONTRIBUTIONS_RETRY_MS: readonly number[] = [1_000, 2_000, 5_000, 10_000, 30_000];
+
 export function createContributionsStore(
   fetch: () => Promise<ContributionsResponse>,
+  retryMs: readonly number[] = CONTRIBUTIONS_RETRY_MS,
 ): ContributionsStore {
   let state: ContributionsState = { user: null, answer: null, pending: false };
   // Which request the newest user made: a late answer for the user just left is dropped, or
-  // one user's pages would show to the next.
+  // one user's pages would show to the next. A newer ask also stands in for a retry pending.
   let asked = 0;
+  let retry: ReturnType<typeof setTimeout> | null = null;
   const listeners = new Set<() => void>();
   const set = (next: ContributionsState) => {
     state = next;
     listeners.forEach((l) => l());
   };
+  /** One read for `user`, retried after a failure until it lands or a newer ask replaces it. */
+  const ask = (
+    user: string,
+    mine: number,
+    attempt: number,
+  ): Promise<ContributionsResponse | null> =>
+    fetch().then(
+      (answer) => {
+        if (asked === mine) set({ user, answer, pending: false });
+        return answer;
+      },
+      () => {
+        if (asked !== mine) return null;
+        // The answer held so far stands (nothing at all for a new user: the compiled table is a
+        // complete app); the read is tried again a little later.
+        if (state.pending) set({ ...state, pending: false });
+        const wait = retryMs[Math.min(attempt, retryMs.length - 1)] ?? 30_000;
+        retry = setTimeout(() => {
+          retry = null;
+          if (asked === mine) void ask(user, mine, attempt + 1);
+        }, wait);
+        return null;
+      },
+    );
+  const begin = (): number => {
+    if (retry !== null) clearTimeout(retry);
+    retry = null;
+    return ++asked;
+  };
   return {
     setUser(next) {
       if (next === state.user) return;
-      const mine = ++asked;
+      const mine = begin();
       set({ user: next, answer: null, pending: next !== null });
-      if (next === null) return;
-      fetch().then(
-        (answer) => {
-          if (asked === mine) set({ user: next, answer, pending: false });
-        },
-        () => {
-          // Nothing to fold in: the compiled table is a complete app. No retry — the next
-          // sign-in asks again.
-          if (asked === mine) set({ user: next, answer: null, pending: false });
-        },
-      );
+      if (next !== null) void ask(next, mine, 0);
     },
     refresh() {
       const user = state.user;
       if (user === null) return Promise.resolve(null);
-      const mine = ++asked;
-      return fetch().then(
-        (answer) => {
-          if (asked === mine) set({ user, answer, pending: false });
-          return answer;
-        },
-        () => {
-          if (asked === mine && state.pending) set({ ...state, pending: false });
-          return null;
-        },
-      );
+      return ask(user, begin(), 0);
     },
     current: () => state,
     subscribe(listener) {
@@ -264,7 +285,15 @@ export function pageTableFor(
  * for everything under the router.
  */
 export function WebAppPagesProvider({ children }: { children: ReactNode }) {
-  const { pages: compiled, pageRenderers } = webAppDeps.useDeps();
+  const { pages: booted, pageRenderers } = webAppDeps.useDeps();
+  // A page of a web module waiting for its server module is in the table only while that
+  // module runs (gated-slots.ts); the table follows the gates.
+  const gates = useModuleGates();
+  const compiled = useMemo(
+    () => booted.filter((p) => p.gatedBy === undefined || contributionShown(p.gatedBy)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `gates` is what says the gates moved
+    [booted, gates],
+  );
   const signedIn = useAuth().user?.userId ?? null;
   const userId = useSafeMode() ? null : signedIn;
   const [store] = useState(() => createContributionsStore(api.getContributions));
@@ -286,6 +315,21 @@ export function WebAppPagesProvider({ children }: { children: ReactNode }) {
     [compiled, answer, pageRenderers, pending, store],
   );
   const rules = useMemo(() => fileRendererRulesOf(answer), [answer]);
+  // The server re-assembled (a plugin came or went), or the stream lost events: ask again.
+  useEffect(
+    () =>
+      subscribeUserEvents((ev) => {
+        if (ev.type === "contributions_changed" || ev.type === "resync_required") {
+          void store.refresh();
+        }
+      }),
+    [store],
+  );
+  // The plugin server modules this generation runs open the gates of the web modules that need
+  // them (lib/module-gate.ts); until the server first answers, the list this browser last saw
+  // for this viewer stands in, so a plugin's web half does not pop in after every load.
+  // Signed out or in safe mode, every gate is shut.
+  useEffect(() => setRunningServerModules(runningModulesFor(userId, answer)), [userId, answer]);
   return (
     <PagesContext.Provider value={value}>
       <FileRendererRulesContext.Provider value={rules}>

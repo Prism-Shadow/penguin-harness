@@ -2,11 +2,13 @@ import type { ReactNode } from "react";
 import { Bind, Module } from "@prismshadow/penguin-core/kernel";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { joinedNote, useSystemAppNotes } from "../../lib/system-app-notes";
+import { useAuth } from "../../state/auth";
 import type { NavBadge } from "../../lib/sidebar-contributions";
 
 /** Main AppLayout previously owned this eager hook. Keep one signed-in owner as a slot provider. */
 function MainUpdateBadgesOwner({ children }: { children: ReactNode }) {
-  useUpdateBadges(true);
+  // The administrator's owner also reads the server module requests that wait (the Plugins dot).
+  useUpdateBadges(true, useAuth().user?.isAdmin === true);
   return children;
 }
 

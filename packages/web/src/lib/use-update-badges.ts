@@ -45,6 +45,7 @@ import {
 import { useTodoDismissals } from "./todo-dismissals";
 import { useProjectTodos } from "./use-project-todos";
 import { catalogDelta } from "./model-catalog-sync";
+import { usePluginModuleRequests } from "./plugin-modules";
 import { useProject } from "../state/project";
 
 /**
@@ -69,7 +70,13 @@ export interface UpdateBadges {
   note: string | null;
 }
 
-export function useUpdateBadges(eager = false): UpdateBadges {
+/**
+ * `admin` is the viewer being the server's administrator: the eager owner then also reads the
+ * members' requests to run a plugin's server module that wait (lib/plugin-modules.ts), which the
+ * Plugins dot counts — a trail that clears itself once they are decided, so there is nothing to
+ * dismiss. A passive instance counts what that read holds; for anyone else nothing reads it.
+ */
+export function useUpdateBadges(eager = false, admin = false): UpdateBadges {
   const { agents, currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   // Syncing presets is owner-only, so that trail has no control at its end for a member.
@@ -104,6 +111,7 @@ export function useUpdateBadges(eager = false): UpdateBadges {
     probes.errors === null ? null : unexpectedErrorTodo(probes.errors),
     "errors",
   );
+  const waitingModules = usePluginModuleRequests(null, admin && eager).value?.pending ?? 0;
 
   // Every raised source, in the order the trails appear in the nav. `badgeNote` reads the list;
   // the per-route map below is what each individual anchor says.
@@ -113,10 +121,15 @@ export function useUpdateBadges(eager = false): UpdateBadges {
   if (plugins !== null) sources.push({ kind: "plugins", count: plugins.count });
   if (models !== null) sources.push({ kind: "models", count: models.count });
   if (errors !== null) sources.push({ kind: "errors", count: errors.count });
+  if (waitingModules > 0) sources.push({ kind: "moduleRequests", count: waitingModules });
 
   const navNotes: Partial<Record<BadgedRoute, string>> = {};
   if (kernelTodo !== null) navNotes["/agents"] = S.agent.kernelOutdatedHint;
-  if (plugins !== null) navNotes["/plugins"] = S.todo.pluginUpdates(plugins.count);
+  const pluginNotes = [
+    ...(plugins !== null ? [S.todo.pluginUpdates(plugins.count)] : []),
+    ...(waitingModules > 0 ? [S.plugins.moduleRequestsNotice(waitingModules)] : []),
+  ];
+  if (pluginNotes.length > 0) navNotes["/plugins"] = pluginNotes.join(S.todo.listSeparator);
   if (models !== null) navNotes["/models"] = S.todo.presetUpdates(models.count);
   if (errors !== null) navNotes["/usage"] = S.todo.unexpectedErrors(errors.count);
 
@@ -165,6 +178,8 @@ function noteText(note: UpdateBadgeNote): string | null {
       return S.todo.presetUpdates(note.count);
     case "errors":
       return S.todo.unexpectedErrors(note.count);
+    case "moduleRequests":
+      return S.plugins.moduleRequestsNotice(note.count);
     default:
       return note.updatesOnly ? S.update.updatesAvailable : S.todo.pending;
   }

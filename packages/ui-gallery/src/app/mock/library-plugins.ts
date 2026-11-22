@@ -1,9 +1,12 @@
 /**
- * The library plugins the demo's self-evolution story stands on, read from the packages the
- * product ships (`plugins/<name>/package.json` and `icon.svg`) and the cards they declare: the
- * RSI toolkits, which make up the library's `rsi` category, and the Agent Evaluation plugin they
- * measure through. A card and its detail say what the real plugin says, in both languages, and
- * the start page counts the toolkits from this list as the app counts them from the server's.
+ * The library plugins of the demo, read from the packages the product ships
+ * (`plugins/<name>/package.json` and `icon.svg`) and the cards they declare: the RSI toolkits,
+ * which make up the library's `rsi` category, and the Agent Evaluation plugin they measure
+ * through — the self-evolution story — and the rest of what the plugin market shows, in the
+ * categories their cards name, plus two workbench plugins the market offers that this
+ * repository does not ship yet (`marketPlugins().studios`). A card and its detail say what the
+ * real plugin says, in both languages, and the start page counts the toolkits from this list as
+ * the app counts them from the server's.
  *
  * Each card and each Skill's metadata is spelled here (the card as the plugin's src/index.ts
  * declares it; the Skill as its SKILL.md names, describes and versions it): the gallery does not
@@ -31,6 +34,30 @@ import skilloptIcon from "../../../../../plugins/skillopt-rsi-toolkit/icon.svg?r
 import skilloptPkg from "../../../../../plugins/skillopt-rsi-toolkit/package.json";
 import traceIcon from "../../../../../plugins/trace-rsi-toolkit/icon.svg?raw";
 import tracePkg from "../../../../../plugins/trace-rsi-toolkit/package.json";
+import a2uiIcon from "../../../../../plugins/a2ui/icon.svg?raw";
+import a2uiPkg from "../../../../../plugins/a2ui/package.json";
+import browserIcon from "../../../../../plugins/browser-automation/icon.svg?raw";
+import browserPkg from "../../../../../plugins/browser-automation/package.json";
+import goalIcon from "../../../../../plugins/goal/icon.svg?raw";
+import goalPkg from "../../../../../plugins/goal/package.json";
+import bentoIcon from "../../../../../plugins/use-bento-slides/icon.svg?raw";
+import bentoPkg from "../../../../../plugins/use-bento-slides/package.json";
+import companyIcon from "../../../../../plugins/agent-company/icon.svg?raw";
+import companyPkg from "../../../../../plugins/agent-company/package.json";
+import supportIcon from "../../../../../plugins/penguin-support/icon.svg?raw";
+import supportPkg from "../../../../../plugins/penguin-support/package.json";
+import dataIcon from "../../../../../plugins/data-analysis/icon.svg?raw";
+import dataPkg from "../../../../../plugins/data-analysis/package.json";
+import firecrawlIcon from "../../../../../plugins/use-firecrawl/icon.svg?raw";
+import firecrawlPkg from "../../../../../plugins/use-firecrawl/package.json";
+import humanizerIcon from "../../../../../plugins/humanizer/icon.svg?raw";
+import humanizerPkg from "../../../../../plugins/humanizer/package.json";
+import softwareIcon from "../../../../../plugins/software-development/icon.svg?raw";
+import softwarePkg from "../../../../../plugins/software-development/package.json";
+import claudeCodeIcon from "../../../../../plugins/use-claude-code/icon.svg?raw";
+import claudeCodePkg from "../../../../../plugins/use-claude-code/package.json";
+import agentDevIcon from "../../../../../plugins/agent-development/icon.svg?raw";
+import agentDevPkg from "../../../../../plugins/agent-development/package.json";
 
 /** The npm fields of a plugin's package.json the library listing reads. */
 interface Manifest {
@@ -38,6 +65,7 @@ interface Manifest {
   version: string;
   description: string;
   license?: string;
+  author?: { name: string };
 }
 
 /** The card fields the library listing reads (core's PluginCard). */
@@ -199,6 +227,177 @@ const CARDS: Record<string, Card> = {
       skills: ["benchmark-design"],
     },
   },
+  a2ui: {
+    title: "A2UI Interactive Answers",
+    titleZh: "A2UI 交互式回答",
+    descriptionZh:
+      "让模型输出更易读的富文本组件：选项、表单、分步操作、提示框、Mermaid 图、由数据绘制的基础统计图（折线、面积、柱状、饼图、散点、直方图或仪表），以及基于这些统计图构建的一眼可读的小组件（天气卡片、用仪表展示额度余量、预算或任务进度的指标面板、系统资源面板），外加实时时钟与倒计时，以围栏代码块的形式写在普通 Markdown 回复里，Web App 用自己的组件渲染，其他界面显示为纯文本；用户的选择以普通文字填入输入框。附带中英文的 STE 风格写作规则、两个把天气查询和系统快照直接生成组件块的脚本，以及一个检查脚本：发送前校验每个组件、给草稿打分并打印自审清单。",
+    shortDescription:
+      "Choices, forms, steps, callouts, diagrams and widgets in replies, with a checker.",
+    shortDescriptionZh: "在回复里使用选项、表单、步骤、提示框、图表和小组件，并自带检查脚本。",
+    quickStart: {
+      prompt:
+        "Ask me which of three weekend plans I prefer as a choice block, then show the one I pick as a short procedure in steps.",
+      promptZh:
+        "用选项组件问我三个周末计划中更喜欢哪一个，再把我选中的那个写成一份简短的分步操作。",
+      skills: ["a2ui"],
+    },
+  },
+  "browser-automation": {
+    title: "Browser Automation",
+    titleZh: "浏览器自动化",
+    descriptionZh:
+      "用 penguin browser 在 shell 中驱动 Agent 浏览器——桌面应用的内置浏览器或用户自己的 Chrome，由用户选择——以简化 HTML 或纯文本读取页面，用 JavaScript 以及可信的点击与输入操作页面，提取订单、搜索结果等结构化数据；登录用的是用户自己的账号。",
+    shortDescription: "Read pages, act and extract data in the built-in browser or your Chrome.",
+    shortDescriptionZh: "在内置浏览器或你的 Chrome 中读取页面、执行操作、提取数据。",
+    quickStart: {
+      prompt:
+        "Open news.ycombinator.com in the agent browser and list the top five stories as a table of title, points and link.",
+      promptZh:
+        "在 Agent 浏览器中打开 news.ycombinator.com，把排名前五的帖子整理成表格：标题、分数和链接。",
+      skills: ["browser-automation"],
+    },
+  },
+  goal: {
+    title: "Goal Mode",
+    titleZh: "目标模式",
+    descriptionZh:
+      "目标模式：一个 stop hook，让会话持续朝目标工作——每轮重新注入目标并检查目标文件——直到目标完成、受阻或 token 预算耗尽。",
+    shortDescription: "Loop the session on an objective until it is done.",
+    shortDescriptionZh: "让会话循环推进一个目标直到完成。",
+    quickStart: {
+      prompt:
+        "Write fizzbuzz.py in this Workspace that prints FizzBuzz for 1 to 30, run it, and check that every line of the output is right.",
+      promptZh:
+        "在当前工作区写一个 fizzbuzz.py，打印 1 到 30 的 FizzBuzz，运行它，并逐行确认输出正确。",
+      goal: true,
+    },
+  },
+  "use-bento-slides": {
+    title: "Bento Slides",
+    titleZh: "Bento 幻灯片",
+    shortDescription: "Author Bento slide decks.",
+    shortDescriptionZh: "制作 Bento 幻灯片。",
+    quickStart: {
+      prompt:
+        "Make a three-slide Bento deck in this Workspace introducing PenguinHarness: a title slide, what it does, and how to get started.",
+      promptZh:
+        "在当前工作区做一份三页的 Bento 幻灯片介绍 PenguinHarness：标题页、它能做什么、如何上手。",
+      skills: ["bento-slides"],
+    },
+  },
+  "agent-company": {
+    title: "Agent Company",
+    titleZh: "智能体公司",
+    descriptionZh:
+      "把 Project 里的 Agent 组织成一家公司：先与用户一问一答地创建组织，再是每个工位会话与工单会话都遵循的员工协议（触发块、工单看板、频道礼仪、预算、重负载或不可逆的事先向董事会请示），以及 CEO、人事与财务的操作手册——使命拆解为工单、招募与日程、预算与成本巡检——还有科研协议（在董事会批准的资源额度内跑 autoresearch 式实验循环、作者与审稿人对抗评审），以及让数字分身在真人之间传话的镜像协议。",
+    shortDescription:
+      "Company setup plus the employee, CEO, HR, finance, research and mirror playbooks.",
+    shortDescriptionZh: "创建组织，以及员工、CEO、人事、财务、科研、镜像公司的操作手册。",
+    quickStart: {
+      prompt:
+        "Create a company-mode organization for this Project: ask me for its id, name, mission, shared workspace, model and CEO budget one question at a time, confirm the whole thing with me, then create it.",
+      promptZh:
+        "为这个 Project 创建一个公司模式的组织：一次问我一个问题，收齐它的 id、名称、使命、共享工作区、模型和 CEO 预算，整体向我确认后再创建。",
+      skills: ["company-setup"],
+    },
+  },
+  "penguin-support": {
+    title: "PenguinHarness Q&A Assistant",
+    titleZh: "PenguinHarness 问答助手",
+    descriptionZh: "PenguinHarness 产品客服：问题列表、对话弹窗，以及依据文档和源码的解答。",
+    shortDescription: "Product questions, sourced answers and a support workbench.",
+    shortDescriptionZh: "产品问答、来源引用与客服工作台。",
+    quickStart: {
+      prompt:
+        "How do I create an agent and choose its model in PenguinHarness? Cite the official docs.",
+      promptZh: "如何在 PenguinHarness 中新建智能体并选择模型？请引用官方文档。",
+      skills: ["penguin-support"],
+    },
+  },
+  "data-analysis": {
+    title: "Data Analysis",
+    titleZh: "数据分析",
+    shortDescription: "Deliver correct data-analysis artifacts with bounded verification.",
+    shortDescriptionZh: "以正确数据语义完成产物并进行有界核查。",
+    quickStart: {
+      prompt:
+        "Create a CSV of 30 days of made-up daily sales in this Workspace, then analyze it: weekly totals, the best and the worst day, and a line chart saved as sales.png.",
+      promptZh:
+        "在当前工作区生成一份 30 天的虚构日销售额 CSV，然后分析它：每周合计、最好和最差的一天，并把折线图保存为 sales.png。",
+      skills: ["data-analysis"],
+    },
+  },
+  "use-firecrawl": {
+    title: "Firecrawl Search",
+    titleZh: "Firecrawl 搜索",
+    shortDescription: "Web search and page scraping via Firecrawl.",
+    shortDescriptionZh: "用 Firecrawl 做网络搜索与页面抓取。",
+    quickStart: {
+      prompt:
+        "Search the web for the latest PenguinHarness release and summarize its three most important changes, with links to the sources.",
+      promptZh: "在网上搜索 PenguinHarness 的最新版本，概括其中最重要的三项改动，并附上来源链接。",
+      skills: ["firecrawl"],
+    },
+  },
+  humanizer: {
+    title: "Humanizer",
+    titleZh: "去 AI 味写作",
+    shortDescription: "Strip AI-writing tells from prose in any language.",
+    shortDescriptionZh: "去除文本的 AI 味，把行文改成书籍、报纸、百科式的风格，任何语言通用。",
+    quickStart: {
+      prompt:
+        'Rewrite this so it reads like edited human writing: "In today\'s fast-paced world, it is important to note that leveraging cutting-edge solutions can unlock a myriad of opportunities and drive meaningful impact across diverse domains."',
+      promptZh:
+        "把这段话改写成像经过编辑的人写的文字：「在当今快速发展的时代，值得注意的是，借助前沿解决方案能够解锁无数机遇，并在多元领域推动有意义的影响。」",
+      skills: ["humanizer"],
+    },
+  },
+  "software-development": {
+    title: "Software Development",
+    titleZh: "软件开发",
+    descriptionZh:
+      "端到端的软件开发——面向真实任务的软件工程实践准则，加上生成网页与应用界面的 Penguin 视觉规范。",
+    shortDescription: "Engineering practice and web UI defaults in one plugin.",
+    shortDescriptionZh: "软件工程实践与网页视觉规范合一。",
+    quickStart: {
+      prompt:
+        "Build a single-file landing page, index.html, in this Workspace for a made-up note-taking app, with a light and a dark theme.",
+      promptZh:
+        "在当前工作区为一个虚构的笔记应用做一个单文件落地页 index.html，带浅色和深色两套主题。",
+      skills: ["web-design"],
+    },
+  },
+  "use-claude-code": {
+    title: "Remote Claude Code",
+    titleZh: "远程操控 Claude Code",
+    shortDescription: "Run Claude Code on remote hosts over SSH.",
+    shortDescriptionZh:
+      "在远程主机上通过 SSH 运行 Claude Code（持久会话 / headless / tmux 交互 / 多轮续接）。",
+    quickStart: {
+      prompt:
+        "Check whether ssh and the claude CLI are available on this machine, then show the exact commands you would use to run a headless Claude Code task on a remote host.",
+      promptZh:
+        "检查这台机器上 ssh 和 claude CLI 是否可用，然后给出在远程主机上以无界面方式运行一次 Claude Code 任务的具体命令。",
+      skills: ["remote-claude-code"],
+    },
+  },
+  "agent-development": {
+    title: "Agent Development",
+    titleZh: "智能体开发",
+    descriptionZh:
+      "基于 PenguinHarness 的智能体开发：依据需求初始化智能体、用 SDK 构建应用或经 Agent API 接入智能体、搭建 Workbench（智能体自己维护的、对话旁的页面）、经统一的 LLM API 调用任意模型、管理模型与密钥、编排智能体/会话/成本/定时任务。",
+    shortDescription:
+      "Agent setup, SDK, Agent API, workbenches, LLM API, config and orchestration.",
+    shortDescriptionZh: "智能体初始化、SDK、Agent API、Workbench、LLM API、配置与编排。",
+    quickStart: {
+      prompt:
+        "Use the penguin CLI to list the agents in this Project and the five most recent sessions, then tell me in one line each what every agent is for.",
+      promptZh:
+        "用 penguin CLI 列出当前 Project 里的 Agent 和最近五个会话，再用一句话说明每个 Agent 是做什么的。",
+      skills: ["penguin-orchestration"],
+    },
+  },
 };
 
 /**
@@ -210,8 +409,16 @@ export function shippedIcon(svg: string): IconRef {
   return { url: `data:image/svg+xml,${encodeURIComponent(svg.trim())}`, tint: true };
 }
 
+/** What a plugin ships besides Skills: its hook package's points and version, its workbenches. */
+type Extras = Partial<Pick<PluginItem, "hooks" | "hookVersion" | "workbenches">>;
+
 /** A library plugin as GET /api/plugins lists one this build ships. */
-function libraryPlugin(manifest: Manifest, svg: string, skills: SkillMetadataItem[]): PluginItem {
+function libraryPlugin(
+  manifest: Manifest,
+  svg: string,
+  skills: SkillMetadataItem[],
+  extras: Extras = {},
+): PluginItem {
   const name = manifest.name.replace(/^@[^/]+\//, "");
   return {
     name,
@@ -220,12 +427,14 @@ function libraryPlugin(manifest: Manifest, svg: string, skills: SkillMetadataIte
     version: manifest.version,
     package: manifest.name,
     source: "builtin",
+    ...(manifest.author ? { author: manifest.author.name } : {}),
     ...(manifest.license ? { license: manifest.license } : {}),
     repository: "https://github.com/Prism-Shadow/penguin-harness",
     skills,
     hooks: [],
     icon: shippedIcon(svg),
     mcpServers: [],
+    ...extras,
   };
 }
 
@@ -321,4 +530,229 @@ export function agentEvaluationPlugin(): PluginItem {
       "2026.11.01.1",
     ),
   ]);
+}
+
+/** The PenguinHarness Q&A Assistant: a Skill, and the `support` workbench it installs. */
+export function penguinSupportPlugin(): PluginItem {
+  return libraryPlugin(
+    supportPkg,
+    supportIcon,
+    [
+      skill(
+        "penguin-support",
+        "Answer PenguinHarness product questions and troubleshoot setup, models, agents, plugins and workbenches using the official documentation and source code.",
+        "2026.10.14.2",
+      ),
+    ],
+    { workbenches: [{ name: "support", version: "2026.11.04.1" }] },
+  );
+}
+
+/** The goal-mode plugin: a hook package and no Skills. */
+export function goalPlugin(): PluginItem {
+  return libraryPlugin(goalPkg, goalIcon, [], {
+    hooks: ["user_prompt", "stop"],
+    hookVersion: "2026.10.26.1",
+  });
+}
+
+/**
+ * A workbench plugin the market offers that this repository does not ship yet: installed on the
+ * server by an admin, one workbench, no icon (its cover is the generated one).
+ */
+function studioPlugin(fields: {
+  name: string;
+  title: string;
+  titleZh: string;
+  description: string;
+  descriptionZh: string;
+  shortDescription: string;
+  shortDescriptionZh: string;
+}): PluginItem {
+  return {
+    ...fields,
+    version: "0.1.0",
+    package: `@penguinharness/${fields.name}`,
+    source: "installed",
+    author: "Prism-Shadow",
+    license: "Apache-2.0",
+    skills: [],
+    hooks: [],
+    workbenches: [{ name: "studio", version: "2026.11.14.1" }],
+    mcpServers: [],
+  };
+}
+
+/**
+ * The rest of the library the market shows, by the category each plugin's card declares:
+ * office productivity (the goal and support plugins are their own builders above, since other
+ * fixtures name them), software development and AI app development; and the two demo workbench
+ * plugins, in office productivity, that feed the App Center's "Add apps" section.
+ */
+export function marketPlugins(): {
+  office: PluginItem[];
+  software: PluginItem[];
+  aiApp: PluginItem[];
+  studios: PluginItem[];
+} {
+  return {
+    office: [
+      libraryPlugin(a2uiPkg, a2uiIcon, [
+        skill(
+          "a2ui",
+          "Make a reply easier to read and act on with rich blocks inside ordinary Markdown: a choice, a form, a procedure in steps, a callout, a Mermaid diagram, widgets and charts drawn from data.",
+          "2026.11.04.1",
+        ),
+      ]),
+      libraryPlugin(browserPkg, browserIcon, [
+        skill(
+          "browser-automation",
+          "Drive the PenguinHarness agent browser from the shell with `penguin browser`: open pages, read them as simplified HTML or text, act with JavaScript and trusted clicks and typing, and pull structured data out of them.",
+          "2026.10.22.1",
+        ),
+      ]),
+      libraryPlugin(bentoPkg, bentoIcon, [
+        skill(
+          "bento-slides",
+          "Create and edit Bento presentations — self-contained .bento.html decks whose document is JSON.",
+          "2026.10.11.1",
+        ),
+      ]),
+      libraryPlugin(companyPkg, companyIcon, [
+        skill(
+          "company-ceo",
+          "Run a PenguinHarness organization as its CEO — turn the mission into a ticket tree, hire HR and finance first, schedule the calendar and report to the board.",
+          "2026.11.03.1",
+        ),
+        skill(
+          "company-employee",
+          "The protocol every employee of a PenguinHarness organization follows: the handbook, work runs, tickets, channels and budget discipline.",
+          "2026.11.05.1",
+        ),
+        skill(
+          "company-finance",
+          "Run finance for a PenguinHarness organization — set and adjust monthly budgets, audit spend daily and explain budget alerts.",
+          "2026.10.10.1",
+        ),
+        skill(
+          "company-hr",
+          "Run HR for a PenguinHarness organization — calendars, hiring and offboarding, evaluating and improving employees.",
+          "2026.10.12.1",
+        ),
+        skill(
+          "company-mirror",
+          "Run a PenguinHarness organization that mirrors a real company — one digital twin per real colleague.",
+          "2026.10.10.1",
+        ),
+        skill(
+          "company-research",
+          "Run experiments and papers in a PenguinHarness research organization, with adversarial review of every claim.",
+          "2026.10.10.1",
+        ),
+        skill(
+          "company-setup",
+          "Create a company-mode organization together with the user, one question at a time.",
+          "2026.10.10.1",
+        ),
+      ]),
+      libraryPlugin(dataPkg, dataIcon, [
+        skill(
+          "data-analysis",
+          "Complete data-analysis tasks with bounded inspection, correct data semantics, native artifact handling, complete delivery, and risk-based verification.",
+          "2026.10.04.1",
+        ),
+      ]),
+      libraryPlugin(firecrawlPkg, firecrawlIcon, [
+        skill(
+          "firecrawl",
+          "Search the web and scrape pages into clean markdown with the Firecrawl API.",
+          "2026.10.04.1",
+        ),
+      ]),
+      libraryPlugin(humanizerPkg, humanizerIcon, [
+        skill(
+          "humanizer",
+          "Rewrite or edit prose in any language so it reads like edited human writing in the register of books, newspapers and encyclopedias rather than default AI output.",
+          "2026.10.04.1",
+        ),
+      ]),
+    ],
+    software: [
+      libraryPlugin(softwarePkg, softwareIcon, [
+        skill(
+          "software-engineering",
+          "Complete software-engineering tasks — investigate and review code, implement bug fixes, features and refactors with minimal scope, validate changes, and report verified outcomes.",
+          "2026.10.04.1",
+        ),
+        skill(
+          "web-design",
+          "Penguin visual language for generated web pages and app UIs — GitHub-style simplicity with a single blue accent, light and pure-black dark themes.",
+          "2026.11.04.1",
+        ),
+      ]),
+      libraryPlugin(claudeCodePkg, claudeCodeIcon, [
+        skill(
+          "remote-claude-code",
+          "Run Claude Code on a remote host over SSH — a persistent login session, headless runs, the interactive TUI inside a remote tmux, and multi-turn continuity.",
+          "2026.10.04.1",
+        ),
+      ]),
+    ],
+    aiApp: [
+      libraryPlugin(agentDevPkg, agentDevIcon, [
+        skill(
+          "agent-initialization",
+          "Initialize or extend an Agent from a user requirement - write AGENTS.md, set identity metadata, and create, install or import Skills and hook packages.",
+          "2026.11.07.1",
+        ),
+        skill(
+          "penguin-config",
+          "Manage model API keys, default models and per-agent vault secrets with the penguin CLI.",
+          "2026.11.02.1",
+        ),
+        skill(
+          "penguin-orchestration",
+          "Drive PenguinHarness itself from a shell — list and create agents and sessions, send and steer messages mid-flight, and query costs and scheduled tasks.",
+          "2026.10.15.1",
+        ),
+        skill(
+          "penguin-plugin",
+          "Use for workbenches — the tabs and pages beside the chat, with server code behind them, that an Agent keeps in the `workbenches/` folder of its Agent State.",
+          "2026.11.09.1",
+        ),
+        skill(
+          "penguin-sdk",
+          "Use to build a standalone external program with an agent in it, or connect an external program to a Penguin agent.",
+          "2026.10.26.1",
+        ),
+        skill(
+          "unified-llm-api",
+          "Call model APIs through @prismshadow/mmsp (MMSP) — streaming text generation, image generation, speech synthesis, embeddings and the supported-model registry with one client.",
+          "2026.10.24.1",
+        ),
+      ]),
+    ],
+    studios: [
+      studioPlugin({
+        name: "bento-studio",
+        title: "AI PPT Workbench",
+        titleZh: "AI PPT 工作台",
+        description:
+          "A workbench beside the chat for drafting, editing and presenting slide decks with the agent.",
+        descriptionZh: "对话旁的工作台：和智能体一起起草、编辑并放映幻灯片。",
+        shortDescription: "Draft, edit and present slide decks beside the chat.",
+        shortDescriptionZh: "在对话旁起草、编辑并放映幻灯片。",
+      }),
+      studioPlugin({
+        name: "perler-studio",
+        title: "Perler Bead Studio",
+        titleZh: "拼豆工作台",
+        description:
+          "A workbench that turns a picture into a perler bead pattern, with the bead count for each colour.",
+        descriptionZh: "把一张图片转换成拼豆图纸，并按颜色统计所需豆子数量的工作台。",
+        shortDescription: "Turn a picture into a bead pattern with counts per colour.",
+        shortDescriptionZh: "把图片转换成拼豆图纸，并按颜色统计豆子。",
+      }),
+    ],
+  };
 }

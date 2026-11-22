@@ -21,7 +21,7 @@
  *
  * A server a plugin installed carries the plugin's name: a puzzle mark after its name says
  * which plugin (by its title, read from the library once), the edit dialog says reinstalling
- * the plugin replaces the entry, and the removal says Manage installs can put it back. What
+ * the plugin replaces the entry, and the removal says Install on Agent can put it back. What
  * keeps a server from connecting — vault keys its `${KEY}` references name and the vault
  * lacks, an OAuth sign-in this version cannot do — is read from the server (GET …/mcp-servers)
  * and shown as marks in a status column, whoever added the server.

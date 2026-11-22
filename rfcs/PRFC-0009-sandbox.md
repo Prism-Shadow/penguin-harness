@@ -1,4 +1,4 @@
-# PRFC-0009 Sandbox: policy fails closed, backend is a plugin
+# PRFC-0009 Agent Sandbox
 
 [中文版](PRFC-0009-sandbox.zh.md)
 

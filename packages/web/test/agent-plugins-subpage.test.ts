@@ -299,9 +299,11 @@ describe("the Plugins sub-page of an Agent's settings", () => {
     const before = asked();
     await click(button(en.agentPlugins.openMarket));
     await waitFor(() => whereIs(router) === "/plugins");
-    const usedBy = '[data-plugin="notes-kit"] [data-testid="plugin-used-by"]';
-    await waitFor(() => document.querySelector(usedBy) !== null);
-    expect(document.querySelector(usedBy)?.textContent).toBe(en.plugins.usedByAgents(1));
+    const count = '[data-plugin="notes-kit"] .showcase-card-bar button:first-child';
+    await waitFor(
+      () =>
+        document.querySelector(count)?.textContent?.trim() === en.plugins.marketAgentInstalls(1),
+    );
     expect(asked()).toBe(before);
   });
 });

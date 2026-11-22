@@ -12,10 +12,20 @@ The settings domain as a library package — #255's restack, step L02.
   defined; the per-file, per-request and body caps are derived from one
   another here. Pure arithmetic, no dependencies — it lives with the settings
   because the caps it derives ARE settings.
-- `src/repos/` — `ServerSettingsRepo` (implements `Settings`) and
-  `UiPrefsRepo` (implements `UiPrefsStore`): the `server_settings` and
-  `ui_prefs` tables. Each takes the `Db` capability from
+- `src/plugin-module-requests.ts` — the `PluginModuleRequests` contract and
+  its row: who asked this server to run a plugin's server module, and what an
+  administrator decided (PRFC-0031).
+- `src/repos/` — `ServerSettingsRepo` (implements `Settings`),
+  `UiPrefsRepo` (implements `UiPrefsStore`) and `PluginModuleRequestsRepo`
+  (implements `PluginModuleRequests`): the `server_settings`, `ui_prefs` and
+  `plugin_module_requests` tables. Each takes the `Db` capability from
   `@prismshadow/penguin-library-db`.
+- `src/plugin-module-preinstalls.ts` and its repo — the
+  `PluginModulePreinstalls` contract over the `plugin_module_preinstalls`
+  table: the preinstalled built-in modules this server has handled for each
+  Project (PRFC-0030). The server also builds the repo with `wire`, outside a
+  tree: the one-time listing runs while a generation boots, before its module
+  tree exists.
 
 ## The dependency rule
 
