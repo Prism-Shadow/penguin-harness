@@ -86,7 +86,8 @@ describe("the goal plugin check", () => {
     const [check, install] = pluginRequests();
     expect([check!.machine, install!.machine]).toEqual(["m1", "m1"]);
     expect(install!.method).toBe("POST");
-    expect(install!.body).toEqual({ names: ["goal"] });
+    // A machine is told to leave its plugin tables alone: this server keeps its plugin list.
+    expect(install!.body).toEqual({ names: ["goal"], skipModules: true });
     expect(gateView.status).toBe("installed");
     expect(gateView.holdsSend).toBe(false);
   });

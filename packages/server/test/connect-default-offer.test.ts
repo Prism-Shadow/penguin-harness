@@ -40,11 +40,15 @@ describe("a group's first key offers its default model", () => {
   afterAll(async () => {
     await t.cleanup();
   });
-  // Every case runs against a new Project of its own.
+  // Every case runs against a new Project of its own, whose owner chose DeepSeek V4.1 Flash as
+  // its default (a new Project starts with none).
   beforeEach(async () => {
     projects += 1;
     const res = await owner.post("/api/projects", { projectId: `owner_o-p${projects}` });
     projectId = ((await res.json()) as ProjectCreateResponse).project.projectId;
+    expect(
+      (await owner.put(`/api/projects/${projectId}/models/default`, DEEPSEEK_FLASH)).status,
+    ).toBe(200);
   });
 
   const url = () => `/api/projects/${projectId}/models`;

@@ -515,18 +515,20 @@ export class ContextEngine {
   private pendingSummary: AmspRecord | null = null;
   /**
    * The summary (or a model switch's handoff) the running context opened with, until a turn
-   * completes on it: the only record of the conversation before the rotation, so a model switch
-   * away from such a context writes it at the head of the next context's file.
+   * completes on it: the only record of the conversation before the rotation. The rotation that
+   * opens the context's file writes it at the head, after the meta and the opener's records —
+   * the one place a context's opening is written — so a model switch away from a context that
+   * never answered carries it to the next file's head.
    */
   private openingSummary: AmspRecord | null = null;
   /** Bootstrap records still owed to the Trace (written after the first run's input); see ContextEngineDeps.bootstrapRecords. */
   private pendingBootstrapRecords: AmspRecord[] | null = null;
   /**
-   * Set to true once compaction completes: Trace rotation is deferred until the next
-   * message that needs writing (see `write`) — so that if no further messages follow the
-   * compaction, we don't create an empty file containing only session_meta. A model switch is
-   * the one exception: it performs the rotation at once (see `switchContext`). Whoever opens
-   * the file streams its session_meta (see `openPendingContext`).
+   * Set to true once a compaction or a model switch completes: Trace rotation is deferred until
+   * the next message that needs writing (see `write`) — so that if no further messages follow,
+   * we don't create a file holding only the context's head. There is no exception. Whoever opens
+   * the file streams its session_meta (see `openPendingContext`), and the rotation writes the
+   * head, the text the context opens with included (see `rotateIfPending`).
    */
   private pendingTraceRotation = false;
   /**
@@ -777,11 +779,11 @@ export class ContextEngine {
     // placeholders) is **sent to the model only, never persisted** — Trace records only real
     // messages, and resumption replay best-effort reconstructs from original messages.
     // Exception: the compaction summary, which is the new
-    // context's first input record, is written as usual.
-    // The first write after a compaction opens the new context's file: its session_meta
-    // streams here, ahead of the input the host echoes, in the order the Trace has them.
+    // context's first input record: the rotation writes it at the new file's head.
+    // The first write after a compaction or a switch opens the new context's file: its
+    // session_meta streams here, ahead of the input the host echoes, in the order the Trace
+    // has them.
     yield* this.openPendingContext();
-    if (summary) await this.write(summary);
     for (const msg of newMessages) await this.write(msg);
     // User-prompt hooks (RunOptions.userPrompt, wired by the Session from the Agent's
     // installed hook packages): consulted once per Prompt, here, so what they answer lands
@@ -1072,7 +1074,6 @@ export class ContextEngine {
             // instruction appended. Queued steering (including anything that arrived during the
             // compaction) is delivered right after it as standalone [user_steering] user turns.
             yield* this.openPendingContext();
-            await this.write(result.opening);
             const injected = [
               ...(yield* this.deliverBackgroundNotices()),
               ...(yield* this.deliverSteering()),
@@ -1225,7 +1226,7 @@ export class ContextEngine {
   }
 
   /**
-   * A model switch's rotation: closes the running context and opens the next one at once.
+   * A model switch's rotation: closes the running context and opens the next one, in memory.
    * Which model the next context runs on is the opener's business (`openNextContext`, which
    * the Session owns); the engine only closes and opens. Callable at a Task boundary, with
    * compaction configured, like `compact()`.
@@ -1234,7 +1235,7 @@ export class ContextEngine {
    *   the summary is what the next model continues from. It is an ordinary compaction request
    *   on the running LLM object — the same model, prompt, toolset and parameters, one appended
    *   user turn — so it extends the prefix the provider has cached; `approve` answers its tool
-   *   rounds' calls, and `handoff` takes the in-place note's rung (streamed after the meta).
+   *   rounds' calls, and `handoff` takes the in-place note's rung.
    *   Short of `completed`, the context stays as it was.
    * - A context with none has nothing to summarize and is simply replaced: no request and no
    *   event pair. Its pending text rides on in memory. Nothing is written until the next
@@ -1242,11 +1243,9 @@ export class ContextEngine {
    * - With no compaction configured there is no summary to ask for: given a `handoff`, the
    *   context is handed over with it.
    *
-   * The next context's Trace file is then opened at once rather than at its first message:
-   * its `session_meta` is the durable record of the switch — a resume reads the model from
-   * the latest file — and the summary the context opens with follows it. That meta is yielded
-   * last (before the handoff, when that is what the context opens with). Returns the terminal
-   * status.
+   * The next context's Trace file opens with its first message, like any rotation's: the
+   * Session records the switch itself (a `session_update`), and asks `opensWith` whether the
+   * handoff is what the next context opens with. Returns the terminal status.
    */
   async *switchContext(
     signal?: AbortSignal,
@@ -1256,11 +1255,7 @@ export class ContextEngine {
     if (this.sessionTurns === 0) return yield* this.replaceContext(this.switchCarry());
     if (!this.compaction) return handoff ? yield* this.handOverContext(handoff) : "fatal";
     const status = yield* this.compact({ signal, mode: "summarize", approve, handoff });
-    if (status !== "completed") return status ?? "fatal";
-    const handedOver = handoff !== undefined && this.pendingSummary === handoff;
-    yield* this.openSwitchedContext();
-    if (handedOver) yield handoff;
-    return "completed";
+    return status ?? "fatal";
   }
 
   /**
@@ -1280,8 +1275,9 @@ export class ContextEngine {
 
   /**
    * Replaces the running context; the next opens with `text` pending, after `handoff` if given:
-   * written and sent where a summary would be, and streamed after the meta (nothing else does).
-   * An opener that throws propagates with nothing written and the context unchanged.
+   * written and sent where a summary would be. Without one, the next context keeps the opening
+   * the replaced one had. An opener that throws propagates with nothing written and the context
+   * unchanged.
    */
   private async *replaceContext(
     text: AmspRecord[],
@@ -1289,23 +1285,12 @@ export class ContextEngine {
   ): AsyncGenerator<AmspRecord, StopReason> {
     yield* this.rotate(null, handoff && (() => handoff));
     this.pendingCarryOver = handoff ? [handoff, ...text] : text;
-    yield* this.openSwitchedContext();
-    if (handoff) yield handoff;
     return "completed";
   }
 
-  /** The eager open (see `switchContext`); the meta is streamed without a Trace sink too. */
-  private async *openSwitchedContext(): AsyncGenerator<AmspRecord, StopReason> {
-    const opened = await this.rotateIfPending();
-    if (this.openingSummary) await this.write(this.openingSummary);
-    if (this.pendingSummary) {
-      // On the file now: from here it is pending input, which a run sends without writing.
-      this.pendingCarryOver = [this.pendingSummary, ...this.pendingCarryOver];
-      this.pendingSummary = null;
-    }
-    const meta = opened ?? this.contextMeta;
-    if (meta) yield meta;
-    return "completed";
+  /** Whether `record` is the text the running context opens with (a model switch's handoff, written at its file's head and streamed with it). */
+  opensWith(record: AmspRecord): boolean {
+    return this.openingSummary === record;
   }
 
   /**
@@ -1820,7 +1805,6 @@ export class ContextEngine {
     );
     if (rotated.status === "fatal") return { errorMessage: rotated.errorMessage };
     yield* this.openPendingContext();
-    await this.write(rotated.opening!);
     return { opening: rotated.opening! };
   }
 
@@ -2122,8 +2106,10 @@ export class ContextEngine {
     }
     const built = opening ? await opening() : undefined;
     yield* this.adoptContext(opened, records);
+    // A compaction span replaces the opening or clears it (a discard has none); a replacement
+    // with no handoff keeps the opening the replaced context had.
+    this.openingSummary = built ?? (span === null ? this.openingSummary : null);
     if (!built) return { status: "completed" };
-    this.openingSummary = built;
     return { status: "completed", opening: built };
   }
 
@@ -2136,8 +2122,7 @@ export class ContextEngine {
    * Trace **does not** split files immediately — that's deferred until the next message that
    * needs writing, when it rotates and opens with the context's session_meta and records,
    * streaming the meta (see `openPendingContext`), avoiding an empty file if no further messages
-   * follow the compaction; a model
-   * switch opens the file right after this returns instead (see `switchContext`).
+   * follow the compaction or the switch.
    */
   private async *adoptContext(
     opened: OpenedContext,
@@ -2323,11 +2308,13 @@ export class ContextEngine {
 
   /**
    * Performs the deferred Trace rotation when one is pending: splits the file and opens it with
-   * the current context's session_meta and records (its MCP connect pair, if any, and its
-   * toolset). Best-effort like every Trace write. Returns the session_meta it wrote (attempted,
-   * whatever the outcome), for the caller to stream; null when nothing was pending. Reached
-   * through `openPendingContext` by the first write after a compaction, through `write` as a
-   * backstop, and directly by `switchContext`, which opens the file at once.
+   * the current context's head — its session_meta, its records (its MCP connect pair, if any,
+   * and its toolset), then the text it opens with (`openingSummary`: a summary, a hand-off
+   * note, or a switch's handoff), the one place a context's opening is written. Best-effort
+   * like every Trace write. Returns the session_meta it wrote (attempted, whatever the
+   * outcome), for the caller to stream; null when nothing was pending. Reached through
+   * `openPendingContext` by the first write after a compaction or a switch, and through `write`
+   * as a backstop.
    */
   private async rotateIfPending(): Promise<AmspRecord | null> {
     const trace = this.deps.trace;
@@ -2337,6 +2324,7 @@ export class ContextEngine {
       if (trace.rotate) await trace.rotate();
       if (this.contextMeta) await trace.write(this.contextMeta);
       for (const record of this.contextRecords) await trace.write(record);
+      if (this.openingSummary) await trace.write(this.openingSummary);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[trace] rotate failed: ${message}\n`);
@@ -2345,9 +2333,9 @@ export class ContextEngine {
   }
 
   /**
-   * Opens the file a compaction left pending, when one is, and streams its session_meta: the
-   * main Session's every session_meta is on the stream exactly once, at the moment it is
-   * written. Called right before the write that opens the file — the run's input (a Task's
+   * Opens the file a compaction or a switch left pending, when one is, and streams its
+   * session_meta: the main Session's every session_meta is on the stream exactly once, at the
+   * moment it is written. Called right before the write that opens the file — the run's input (a Task's
    * first write, after its `task_begin`; the Session calls it before yielding a continued
    * Task's input) and a mid-Task summary. The records the opener emitted were streamed when the
    * context opened and are only written here.

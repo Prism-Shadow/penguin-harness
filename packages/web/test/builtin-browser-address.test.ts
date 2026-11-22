@@ -1,5 +1,5 @@
 /**
- * The built-in browser's address bar rules (features/builtin-browser/address.ts): what a typed
+ * The built-in browser's address bar rules (plugins/browser-automation/src/web/address.ts): what a typed
  * line loads — the address as typed, a bare host with a scheme, or a Bing search — what an
  * entry in the homepage dialog saves, and how a page's address, title and favicon are shown back.
  */
@@ -15,7 +15,7 @@ import {
   normalizeAddress,
   tabAddress,
   tabLabel,
-} from "../src/features/builtin-browser/address";
+} from "../../../plugins/browser-automation/src/web/address";
 
 const search = (q: string) => `${SEARCH_URL}${encodeURIComponent(q)}`;
 

@@ -3,7 +3,8 @@
  * window both render it: the tab `tabKey` names, else the workbench's first; `null` when there is
  * no such page, `undefined` until the first answer; `off` when the workbench is listed but does
  * not run (its own switch or the Agent-wide one is off), so it serves no page and the view says
- * why. The list is read from the page's Agent, and
+ * why. Only this workbench is read from the page's Agent (and only it is loaded, never the
+ * Agent's other workbenches, which would hold the page back behind their compiles), and it is
  * read again whenever the server says a workbench of that Agent changed or went away. A read
  * that fails keeps the page already shown and reports why.
  *
@@ -11,7 +12,7 @@
  * user event stream open and raises WORKBENCH_UPDATED_EVENT, so without it the view opens a
  * stream of its own, or it would never notice its workbench being edited or removed.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import * as api from "../../api/endpoints";
 import { openUserEvents } from "../../api/sse";
 import {
@@ -22,6 +23,7 @@ import {
   type WorkbenchTab,
   type WorkbenchUpdatedDetail,
 } from "../../lib/workbench-tabs";
+import { failureNode } from "../../lib/failure";
 
 export interface AppPageTabQuery {
   projectId: string;
@@ -46,11 +48,12 @@ export function useAppPageTab({
 }: AppPageTabQuery): {
   tab: WorkbenchTab | null | undefined;
   off: boolean;
-  failure: string | null;
+  /** Why the list could not be read: its words, and 「[报告问题]」 for a failure. */
+  failure: ReactNode;
 } {
   const [tab, setTab] = useState<WorkbenchTab | null | undefined>(undefined);
   const [off, setOff] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
+  const [failure, setFailure] = useState<ReactNode>(null);
 
   useEffect(() => {
     if (!enabled) {
@@ -60,7 +63,7 @@ export function useAppPageTab({
     let alive = true;
     const load = async () => {
       try {
-        const res = await api.getWorkbenches(projectId, agentId, machineId);
+        const res = await api.getWorkbench(projectId, agentId, workbenchId, machineId);
         if (!alive) return;
         const running = runningWorkbenches(res);
         setOff(
@@ -70,23 +73,34 @@ export function useAppPageTab({
         setTab(appPageTab(workbenchTabsOf(running, machineId), workbenchId, tabKey));
         setFailure(null);
       } catch (err) {
-        if (alive) setFailure(err instanceof Error ? err.message : String(err));
+        if (alive) {
+          setFailure(
+            failureNode(err, {
+              text: err instanceof Error ? err.message : String(err),
+              what: "an app's page could not be read",
+            }),
+          );
+        }
       }
     };
     void load();
     const onUpdated = (e: Event) => {
       const d = (e as CustomEvent<WorkbenchUpdatedDetail>).detail;
-      if (d.projectId === projectId && d.agentId === agentId) void load();
+      if (d.projectId === projectId && d.agentId === agentId && (d.machineId ?? null) === machineId)
+        void load();
     };
     window.addEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
     const conn = ownEvents
-      ? openUserEvents({
-          onRecord: () => undefined,
-          onServerEvent: (ev) => {
-            if (ev.type !== "workbench_updated" && ev.type !== "workbench_removed") return;
-            if (ev.projectId === projectId && ev.agentId === agentId) void load();
+      ? openUserEvents(
+          {
+            onRecord: () => undefined,
+            onServerEvent: (ev) => {
+              if (ev.type !== "workbench_updated" && ev.type !== "workbench_removed") return;
+              if (ev.projectId === projectId && ev.agentId === agentId) void load();
+            },
           },
-        })
+          machineId,
+        )
       : null;
     return () => {
       alive = false;

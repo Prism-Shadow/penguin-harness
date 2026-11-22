@@ -1,44 +1,16 @@
-/** Stable identifiers for Penguin Go's key-authorization flow. */
-import type { DefaultModelOffer } from "../api/types.js";
-
-export const PLATFORM_CLIENT_ID = "penguin-harness";
-
-export interface PlatformCatalogPricing {
-  unit: "usd_per_mtok";
-  cacheRead: number;
-  cacheWrite: number;
-  output: number;
-}
-
-/** A platform model normalized into the fields Penguin persists for a newly discovered row. */
-export interface PlatformCatalogModel {
-  modelId: string;
-  displayName: string;
-  contextWindow: number;
-  supportsVision: boolean;
-  /**
-   * List price, which is what a Project stores: the platform's `listPricing` when it runs a
-   * promotion on the model, its billed `pricing` otherwise.
-   */
-  pricing: PlatformCatalogPricing;
-  /** Fraction off `pricing` the platform is running (0.5 = half price); absent when none. */
-  discount?: number;
-  baseUrl: string;
-  clientType: "mmsp";
-}
-
-/** Validated snapshot returned by Penguin Go's client-model catalog. */
-export interface PlatformModelCatalog {
-  models: PlatformCatalogModel[];
-}
-
 /**
- * Catalog merge result. `updated` counts changes to existing prices, promotions or routes;
- * `defaultOffer` is the default an authorization's first group key offers, if any.
+ * Stable identifiers for Penguin Go's key-authorization flow. The shapes moved to the model
+ * domain package (@prismshadow/penguin-library-model, services+http+cli restack S1) —
+ * `platform-auth-flow` carries the client id, the normalized catalog shapes and the flow wire
+ * shapes. This re-export keeps the server's own import paths stable.
  */
-export interface PlatformModelApplyResult {
-  added: number;
-  updated: number;
-  applied: number;
-  defaultOffer?: DefaultModelOffer;
-}
+export { PLATFORM_CLIENT_ID } from "@prismshadow/penguin-library-model/platform-auth-flow";
+export type {
+  PlatformCatalogPricing,
+  PlatformCatalogModel,
+  PlatformModelCatalog,
+  PlatformModelApplyResult,
+  PlatformAuthStartResponse,
+  PlatformAuthFlowErrorCode,
+  PlatformAuthFlowStatusResponse,
+} from "@prismshadow/penguin-library-model/platform-auth-flow";

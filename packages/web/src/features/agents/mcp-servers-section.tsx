@@ -21,7 +21,7 @@
  *
  * A server a plugin installed carries the plugin's name: a puzzle mark after its name says
  * which plugin (by its title, read from the library once), the edit dialog says reinstalling
- * the plugin replaces the entry, and the removal says Manage installs can put it back. What
+ * the plugin replaces the entry, and the removal says Install on Agent can put it back. What
  * keeps a server from connecting — vault keys its `${KEY}` references name and the vault
  * lacks, an OAuth sign-in this version cannot do — is read from the server (GET …/mcp-servers)
  * and shown as marks in a status column, whoever added the server.
@@ -43,7 +43,6 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
-  toastError,
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -58,6 +57,9 @@ import { McpServerMarks } from "../plugins";
 import { permissionOf, transportOf } from "./mcp-servers-form";
 import { McpServerDialog } from "./mcp-server-dialog";
 import { toneInk } from "../../lib/tone";
+import { toastFailure } from "../../lib/toast-api-error";
+import { failureOf } from "../../lib/failure";
+import type { Failure } from "@prismshadow/penguin-ui";
 
 /** Table cell summary: the spawn line for stdio, the URL for http/sse. */
 function targetOf(entry: MCPServerConfig): string {
@@ -179,8 +181,8 @@ export function McpServersSection({
   const pluginTitle = (name: string) => pluginTitles.get(name) ?? name;
 
   /** Persist the full list (immediate, vault-style); returns null on success or an error message. */
-  const persist = async (next: MCPServerConfig[]): Promise<string | null> => {
-    if (!projectId || !agentId) return S.common.unknownError;
+  const persist = async (next: MCPServerConfig[]): Promise<Failure | null> => {
+    if (!projectId || !agentId) return { text: S.common.unknownError, report: null };
     setBusy(true);
     try {
       const res = await api.putAgentConfig(
@@ -194,7 +196,7 @@ export function McpServersSection({
       toastSuccess(S.agent.savedTakesEffect);
       return null;
     } catch (e) {
-      return apiErrorText(e);
+      return failureOf(e);
     } finally {
       setBusy(false);
     }
@@ -232,8 +234,8 @@ export function McpServersSection({
 
   const confirmDelete = async () => {
     if (deleting === null) return;
-    const err = await persist(servers.filter((_, i) => i !== deleting));
-    if (err !== null) toastError(err);
+    const failure = await persist(servers.filter((_, i) => i !== deleting));
+    if (failure !== null) toastFailure(failure);
     setDeleting(null);
   };
 

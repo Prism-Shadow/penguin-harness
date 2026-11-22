@@ -21,6 +21,7 @@ import type {
   BrowserExtensionPairResponse,
   BrowserHello,
   BuiltinBrowserTab,
+  ChromeExtensionCookie,
   DesktopBrowserCommand,
   DesktopBrowserCommandMessage,
   DesktopBrowserEvent,
@@ -32,6 +33,7 @@ export type {
   BrowserBackend,
   BrowserHello,
   BuiltinBrowserTab,
+  ChromeExtensionCookie,
   DesktopBrowserCommand,
   DesktopBrowserCommandMessage,
   DesktopBrowserEvent,
@@ -67,6 +69,7 @@ export const CLOSE_DISABLED = 4009 satisfies BrowserExtensionCloseCode;
 /**
  * The words a refused command answers with, in `reply.error`. `no_such_tab` and `tab_released`
  * mean the same to the server as the shell's: the tab is not one this server may drive.
+ * `import_declined`: the user did not allow `read-cookies` on the consent page.
  */
 export type LinkRefusal =
   | "bad_command"
@@ -75,7 +78,8 @@ export type LinkRefusal =
   | "tab_released"
   | "extension_paused"
   | "cdp_refused"
-  | "bad_url";
+  | "bad_url"
+  | "import_declined";
 
 // --- guards ----------------------------------------------------------------------------------
 
@@ -111,6 +115,7 @@ export function parseCommandMessage(data: unknown): ParsedCommand | null {
     case "hello":
     case "tabs":
     case "ping":
+    case "read-cookies":
       return { id, command: { op: command.op } };
     case "cdp": {
       const { tabId, method, params, events } = command;

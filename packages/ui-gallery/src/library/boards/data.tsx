@@ -4,7 +4,8 @@
  * list rows plain and opening what they name, rows with marks after their title (whose puzzle
  * marks its plugin's row in a list under them), a list loading
  * and empty, rows whose text runs far past a narrow card (one of them trailed), label/value pairs
- * at both rungs, and a running job's log — all from the package.
+ * at both rungs, a running job's log, and the review-before-delete list (review-lists.tsx) — all
+ * from the package.
  */
 import type { ReactNode } from "react";
 import {
@@ -19,6 +20,7 @@ import {
   EntityCardGrid,
   FactList,
   FactRow,
+  ImpactList,
   GlyphAction,
   GlyphIcon,
   ICONS,
@@ -42,6 +44,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { BoardGroup } from "../../foundations/shared";
 import { useGallery } from "../../state";
+import { ReviewLists } from "./review-lists";
 
 /** Ids, schedules, figures and command output are the same in both languages: data, not copy. */
 const SCHEDULES = [
@@ -296,6 +299,25 @@ export function DataBoard() {
           </div>
         </div>
       </BoardGroup>
+      <BoardGroup title={t.impactList} aside={t.impactListHint}>
+        <div className="lib-stack">
+          <div style={{ maxWidth: 360 }}>
+            <ImpactList
+              items={t.impactItems.map(([name, where]) => ({ key: name, name, where }))}
+              more={t.impactMore}
+              pending={t.impactPending}
+            />
+          </div>
+          <div style={{ maxWidth: 360 }}>
+            <ImpactList
+              items={t.impactItems.slice(0, 2).map(([name, where]) => ({ key: name, name, where }))}
+              more={t.impactMore}
+              pending={t.impactPending}
+            />
+          </div>
+          <ImpactList items={null} more={t.impactMore} pending={t.impactPending} />
+        </div>
+      </BoardGroup>
       <BoardGroup title={t.factRows} aside={t.factRowsHint}>
         <div className="lib-stack">
           <FactList label={t.factListLabel}>
@@ -510,6 +532,7 @@ export function DataBoard() {
           <LogView lines={LOG} highlightLast label={t.logLabel} maxHeight="sm" />
         </div>
       </BoardGroup>
+      <ReviewLists />
     </div>
   );
 }

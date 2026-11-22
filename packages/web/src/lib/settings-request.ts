@@ -8,7 +8,7 @@
  * in, the layout is not up) is kept and delivered the moment it subscribes, so "open Settings on
  * Appearance" is honoured however early it is asked.
  */
-import type { SettingsSectionKey } from "./settings-sections";
+import type { ContributedSettingsKey, SettingsSectionKey } from "./settings-sections";
 
 export interface SettingsRequest {
   /** The page to open on; absent opens the viewer's first page, as the menu row does. */
@@ -24,6 +24,16 @@ let pending: SettingsRequest | null = null;
 export function requestSettings(request: SettingsRequest = {}): void {
   if (listener) listener(request);
   else pending = request;
+}
+
+/**
+ * The same for a page named by a key the app's code does not know — a contributed page, as the
+ * plugin face asks for it. An unknown key opens the viewer's first page, as any other does.
+ */
+export function requestSettingsPage(request: { section?: string } = {}): void {
+  requestSettings(
+    request.section === undefined ? {} : { section: request.section as ContributedSettingsKey },
+  );
 }
 
 /**

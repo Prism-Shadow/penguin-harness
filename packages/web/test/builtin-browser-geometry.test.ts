@@ -1,5 +1,5 @@
 /**
- * Where the built-in browser's pages sit (features/builtin-browser/geometry.ts).
+ * Where the built-in browser's pages sit (plugins/browser-automation/src/web/geometry.ts).
  *
  * - The page on screen covers a fully visible slot exactly; a clipped slot clips the frame to
  *   the dock's window while the page keeps the slot's size, offset by what the clip cuts off.
@@ -22,7 +22,7 @@ import {
   shownSize,
   slotPlacement,
   snapRect,
-} from "../src/features/builtin-browser/geometry";
+} from "../../../plugins/browser-automation/src/web/geometry";
 
 const slot = { left: 800, top: 100, width: 480, height: 700 };
 const viewport = { left: 0, top: 0, width: 1280, height: 900 };

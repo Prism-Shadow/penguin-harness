@@ -6,7 +6,10 @@
  * and the installed MMSP, through OpenAI, OpenRouter and OpenCode Go.
  * Given OpenCode Go's group key, Gemini 4 Argon Contributor streams a tool call through
  * Go's generateContent endpoint with the group key and conversation header, never Google's API.
+ * Given a Nano Banana preset, asking for an image reaches its provider's image-capable
+ * endpoint and returns the original image bytes through MMSP.
  */
+import { AutoLLMClient } from "@prismshadow/mmsp";
 import { describe, expect, it, vi } from "vitest";
 import { CLIENT_CREDENTIALS } from "@prismshadow/mmsp/credentials";
 import { stubFetch } from "./fixtures/fetch.js";
@@ -28,7 +31,6 @@ import {
   MODEL_CATALOG,
   MODEL_PROVIDERS,
   PENGUIN_GO_BASE_URL,
-  PRESET_DEFAULT_MODEL,
   QWEN_OFF_PEAK,
   catalogEntryFor,
   catalogGroupConnection,
@@ -56,6 +58,7 @@ import {
   unroutableVendorModel,
   vendorClientType,
 } from "../src/model-catalog/index.js";
+import { modelModalities } from "../src/services/model-modalities.js";
 
 /**
  * The band a billed rate lies in, USD per million tokens. Wide on purpose — no row's value is
@@ -286,6 +289,69 @@ describe("model-catalog", () => {
     }
   });
 
+  it.each([
+    [
+      "google",
+      "gemini-nano-banana-2.1",
+      /^https:\/\/generativelanguage\.googleapis\.com\/.*\/interactions$/,
+    ],
+    [
+      "openrouter",
+      "google/gemini-nano-banana-2.1",
+      /^https:\/\/openrouter\.ai\/api\/v1\/images\/generations$/,
+    ],
+  ])("the %s Nano Banana preset returns the requested image", async (provider, model, endpoint) => {
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN4sAAAAASUVORK5CYII=",
+      "base64",
+    );
+    // The provider's answer only; what MMSP puts in the request body is MMSP's to test.
+    const fake = stubFetch(() => {
+      if (provider === "openrouter") {
+        return Response.json({
+          data: [{ b64_json: png.toString("base64"), media_type: "image/png" }],
+        });
+      }
+      const events = [
+        { event_type: "step.start", index: 0, step: { type: "model_output" } },
+        {
+          event_type: "step.delta",
+          index: 0,
+          delta: { type: "image", mime_type: "image/png", data: png.toString("base64") },
+        },
+        { event_type: "step.stop", index: 0 },
+        { event_type: "interaction.completed", interaction: { status: "completed" } },
+      ];
+      return new Response(
+        events
+          .map((e) => "event: " + e.event_type + "\ndata: " + JSON.stringify(e) + "\n\n")
+          .join(""),
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    });
+    try {
+      const entry = presetModelEntries().find(
+        (row) => row.provider === provider && row.model_id === model,
+      )!;
+      const connection = storedConnection({ ...entry, api_key: "test-key" });
+      const client = new AutoLLMClient({ model: entry.model_id, ...connection });
+      const images: Uint8Array[] = [];
+      for await (const event of client.streamingResponse({
+        messages: [{ role: "user", content_items: [{ type: "text.done", text: "Draw a dot" }] }],
+        config: { image_config: { resolution: "1K", aspect_ratio: "1:1" } },
+      })) {
+        for (const item of event.content_items)
+          if (item.type === "inline_data.done") images.push(item.data);
+      }
+      expect(fake.calls).toHaveLength(1);
+      const url = new URL(fake.calls[0]!.url);
+      expect(url.origin + url.pathname).toMatch(endpoint);
+      expect(images.map((bytes) => Buffer.from(bytes))).toEqual([png]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("the app URL a minted key is stamped with is the same one attribution headers carry", () => {
     expect(attributionHeaders("https://tokendance.space/gateway/v1")).toEqual({
       "X-App-URL": APP_URL,
@@ -304,7 +370,37 @@ describe("model-catalog", () => {
       "Qwen/Qwen3.8-27B",
       "Qwen/Qwen3.8-Flash-Next",
     ]);
+    // Tool models MMSP's registry prices nowhere: Google publishes per-image and per-audio rates
+    // MMSP does not fold into its buckets yet.
+    const UNPRICED_TOOLS = new Set([
+      "gemini-3.1-flash-lite-image",
+      "gemini-3.1-flash-image",
+      "gemini-3.8-flash-tts",
+      "gemini-3.8-flash-lite-tts",
+    ]);
     for (const m of MODEL_CATALOG) {
+      // A tool model (image generation) is priced and sized by the model-tool work, not by
+      // these chat-row rules.
+      if (m.capability) continue;
+      if (m.tool) {
+        // A tool model holds no conversation, so it has no context window; its buckets are the
+        // ones MMSP folds the billing units into, and the ones a tool does not bill are zero.
+        const ref = `${m.provider}/${m.modelId}`;
+        expect(m.contextWindow, ref).toBeUndefined();
+        if (m.pricing === undefined) {
+          expect(UNPRICED_TOOLS.has(m.modelId), ref).toBe(true);
+          continue;
+        }
+        const { cache_read, cache_write, output } = m.pricing;
+        expect(cache_read, ref).toBeLessThanOrEqual(cache_write);
+        for (const rate of [cache_read, cache_write, output]) {
+          if (rate === 0) continue;
+          expect(rate, ref).toBeGreaterThanOrEqual(MIN_RATE_USD_PER_MTOK);
+          expect(rate, ref).toBeLessThanOrEqual(MAX_RATE_USD_PER_MTOK);
+        }
+        expect(Math.max(cache_write, output), ref).toBeGreaterThan(0);
+        continue;
+      }
       if (m.pricing === undefined) {
         expect(UNPRICED.has(m.modelId), m.modelId).toBe(true);
       } else if (
@@ -675,7 +771,14 @@ describe("MMSP's clients as the catalog reads them", () => {
       const official = vendorClientType(id)!;
       expect(CLIENT_CREDENTIALS[official], id).toBeDefined();
       for (const m of MODEL_CATALOG.filter((row) => row.provider === id)) {
-        expect(routedClientType(m.modelId, null), `${id}/${m.modelId}`).toBe(official);
+        const routed = routedClientType(m.modelId, null);
+        // The official client serves a vendor's tool models through its media or web client
+        // (openai-image, deepseek-speech …), which reads the same key.
+        if (m.tool && routed !== official) {
+          expect(CLIENT_CREDENTIALS[routed!]?.apiKeyEnv, `${id}/${m.modelId}`).toBe(
+            CLIENT_CREDENTIALS[official]!.apiKeyEnv,
+          );
+        } else expect(routed, `${id}/${m.modelId}`).toBe(official);
       }
     }
     for (const id of ["penguin-go", "tokendance", "openrouter", "vllm", "custom", "my-group"]) {
@@ -712,6 +815,16 @@ describe("MMSP's clients as the catalog reads them", () => {
         expect(env!.envBaseUrlKey, m.modelId).toBe("ANTHROPIC_BASE_URL");
         continue;
       }
+      if (
+        m.provider === "tokendance" &&
+        (m.clientType === "deepseek-webtool" || m.clientType === "deepseek-transcription")
+      ) {
+        // TokenDance's DeepSeek tool endpoint is DeepSeek's clients on its gateway: their pair is
+        // DeepSeek's, which MMSP reads for no base URL only, so the gateway row's key is its own.
+        expect(env!.envKey, m.modelId).toBe("DEEPSEEK_API_KEY");
+        expect(env!.envBaseUrlKey, m.modelId).toBe("DEEPSEEK_BASE_URL");
+        continue;
+      }
       if (m.provider === "opencode-go" && m.clientType === "google-genai") {
         expect(env!.envKey, m.modelId).toBe("GEMINI_API_KEY");
         expect(env!.envBaseUrlKey, m.modelId).toBe("GEMINI_BASE_URL");
@@ -733,6 +846,20 @@ describe("MMSP's clients as the catalog reads them", () => {
         `${m.provider}/${m.modelId}`,
       ).toBe(false);
     }
+  });
+
+  it("catalog invariant: a row MMSP's registry lists with no text output holds no chat, so it is marked a tool model", () => {
+    // The chat pickers hide only `tool` rows (ModelInfo's `chatEligible`). A model that returns
+    // only images, audio or search results, judged by MMSP's registry on the client the row
+    // routes to rather than by its name, would otherwise be offered as a chat model.
+    const textless = MODEL_CATALOG.filter((m) => {
+      const { output } = modelModalities(m.modelId, m.clientType);
+      return output !== undefined && !output.includes("Text");
+    });
+    expect(textless.length).toBeGreaterThan(0);
+    expect(
+      textless.filter((m) => m.tool !== true).map((m) => `${m.provider}/${m.modelId}`),
+    ).toEqual([]);
   });
 
   it("unroutableVendorModel judges only the groups that route by id, and only once an id is typed", () => {
@@ -1064,12 +1191,10 @@ describe("off-peak schedules", () => {
     }
   });
 
-  it("usage on the default model of new Projects keeps a price once a Project drops its row, and so does every former default; any other model's does not", () => {
-    const ref = PRESET_DEFAULT_MODEL;
-    expect(retainedCatalogPricing(ref.provider, ref.model_id)).toEqual(
-      catalogEntryFor(ref.provider, ref.model_id)!.pricing,
-    );
-    for (const m of MODEL_CATALOG.filter((e) => e.wasDefault === true)) {
+  it("usage on every model new Projects were seeded with as their default keeps a price once a Project drops its row; any other model's does not", () => {
+    const former = MODEL_CATALOG.filter((e) => e.wasDefault === true);
+    expect(former.length).toBeGreaterThan(0);
+    for (const m of former) {
       expect(retainedCatalogPricing(m.provider, m.modelId), m.modelId).toBeDefined();
     }
     expect(retainedCatalogPricing("tokendance", "glm-5.3-flash")).toBeUndefined();
@@ -1152,7 +1277,16 @@ describe("off-peak schedules", () => {
  *   a base URL MMSP refuses; the endpoint's variable only with no base URL anywhere.
  */
 describe("environment variable names (what MMSP's routed client reads)", () => {
-  const VENDORS = ["deepseek", "google", "openai", "anthropic", "zhipu", "moonshot", "minimax"];
+  const VENDORS = [
+    "jina",
+    "deepseek",
+    "google",
+    "openai",
+    "anthropic",
+    "zhipu",
+    "moonshot",
+    "minimax",
+  ];
 
   it("under a new Project's tables, every vendor preset reads its vendor's variable and no gateway preset reads any", () => {
     const table = presetProviderTable();

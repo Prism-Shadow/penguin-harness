@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Image Studio</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="identity">
+        <img src="icon.svg" alt="" width="32" height="32" />
+        <h1 data-label="title"></h1>
+      </div>
+      <div class="history">
+        <label for="jobs" data-label="history"></label
+        ><select id="jobs"></select>
+      </div>
+    </header>
+    <main>
+      <form id="brief">
+        <h2 data-label="brief"></h2>
+        <label for="prompt" data-label="prompt"></label
+        ><textarea id="prompt" rows="7" maxlength="6000" required></textarea>
+        <fieldset>
+          <legend data-label="try"></legend>
+          <div id="ideas"></div>
+        </fieldset>
+        <label for="ratio" data-label="ratio"></label
+        ><select id="ratio">
+          <option value="1:1">1:1</option>
+          <option value="16:9">16:9</option>
+          <option value="9:16">9:16</option>
+          <option value="4:3">4:3</option>
+          <option value="3:4">3:4</option>
+        </select>
+        <div class="binding"><span data-label="model"></span><span id="model"></span></div>
+        <button class="primary" id="generate" type="submit" data-label="generate"></button>
+        <p id="error" role="alert" hidden></p>
+      </form>
+      <section class="preview" aria-labelledby="preview-title">
+        <div class="topline">
+          <h2 id="preview-title" data-label="preview"></h2>
+          <button id="stop" type="button" hidden data-label="stop"></button>
+        </div>
+        <div id="stage">
+          <div class="placeholder">
+            <div class="frame" aria-hidden="true">▧</div>
+            <p id="status" role="status"></p>
+          </div>
+        </div>
+        <div id="downloads"></div>
+        <p id="detail" hidden></p>
+      </section>
+    </main>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

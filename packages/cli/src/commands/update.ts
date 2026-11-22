@@ -63,6 +63,7 @@ import { fileURLToPath } from "node:url";
 import { VERSION, compareVersions, normalizeVersion, userAgent } from "@prismshadow/penguin-core";
 import type { Command } from "commander";
 import type { InstallerSource, Messages } from "@prismshadow/penguin-server/cli";
+import { terminalInput } from "@prismshadow/penguin-server/cli";
 import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { CliCommandCode, CliCommandProgram } from "@prismshadow/penguin-core/cli";
 
@@ -437,8 +438,8 @@ export async function downloadInstaller(
 }
 
 /** Interactive y/N confirmation; SIGINT and stream close both count as "no", so it can never hang. */
-function confirmYes(prompt: string): Promise<boolean> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+function confirmYes(prompt: string, input: NodeJS.ReadableStream): Promise<boolean> {
+  const rl = createInterface({ input, output: process.stdout });
   return new Promise<boolean>((resolve) => {
     let done = false;
     const finish = (value: boolean) => {
@@ -696,17 +697,26 @@ export function confirmationMode(
   return interactive ? "prompt" : "needs-yes";
 }
 
-/** Confirmation gate: `--yes` skips it; a non-TTY stdin must pass `--yes` rather than hang. */
+/**
+ * Confirmation gate: `--yes` skips it; a non-TTY input must pass `--yes` rather than hang. The
+ * input is the terminal: stdin, or the console where the runtime was given no stdin
+ * (console-input.ts).
+ */
 async function confirmUpgrade(yes: boolean | undefined, t: Messages): Promise<boolean> {
-  const mode = confirmationMode(yes, Boolean(process.stdin.isTTY && process.stdout.isTTY));
-  if (mode === "proceed") return true;
-  if (mode === "needs-yes") {
-    process.stdout.write(`${t.update.needsYes()}\n`);
+  if (yes) return true;
+  const input = terminalInput();
+  try {
+    const mode = confirmationMode(yes, Boolean(input.stream.isTTY && process.stdout.isTTY));
+    if (mode === "needs-yes") {
+      process.stdout.write(`${t.update.needsYes()}\n`);
+      return false;
+    }
+    if (await confirmYes(t.update.confirm(), input.stream)) return true;
+    process.stdout.write(`${t.update.cancelled()}\n`);
     return false;
+  } finally {
+    input.release();
   }
-  if (await confirmYes(t.update.confirm())) return true;
-  process.stdout.write(`${t.update.cancelled()}\n`);
-  return false;
 }
 
 /** `penguin update`. */

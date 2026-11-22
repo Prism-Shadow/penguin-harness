@@ -1,4 +1,4 @@
-# PRFC-0002 HMR v1: the layer has only `/api/hmr`, and depends only on http and log
+# PRFC-0002 Hot Module Replacement
 
 [中文版](PRFC-0002-hmr.zh.md)
 
