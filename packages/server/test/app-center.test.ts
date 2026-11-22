@@ -572,6 +572,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
         path: `/app/${PROJECT}/${AGENT}/plain`,
         tab: "main",
         build: "ready",
+        showInSidebar: true,
       },
       // Declares a title and no `show`: shown.
       {
@@ -582,6 +583,7 @@ describe("the App Center", { timeout: 30_000 }, () => {
         path: `/app/${PROJECT}/${AGENT}/titled`,
         tab: "main",
         build: "ready",
+        showInSidebar: true,
       },
       {
         agentId: LATER,
