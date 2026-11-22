@@ -1,5 +1,6 @@
 /** The default Project in the homepage frame, before the reader starts its evolution example. */
 import type { BenchmarkSummary, WorkbenchInfo } from "@prismshadow/penguin-server/api";
+import { dependencies as serverDependencies } from "../../../../server/package.json";
 import { version } from "../../../../web/package.json";
 import images from "../../../../../plugins/multimodal-tools/workbenches/images/package.json";
 import imagesIcon from "../../../../../plugins/multimodal-tools/workbenches/images/ui/icon.svg?url";
@@ -13,10 +14,13 @@ import { IDS } from "./ids";
 
 // The guide is optional in a checkout. Read its installed workbench manifest and artwork
 // together when shipped, so the demo uses the same titles, page key and version as the app.
-const guides = import.meta.glob<typeof slides>(
-  "../../../../../plugins/first-workbench-guide/workbenches/*/package.json",
-  { eager: true, import: "default" },
-);
+const guides =
+  "@penguinharness/first-workbench-guide" in serverDependencies
+    ? import.meta.glob<typeof slides>(
+        "../../../../../plugins/first-workbench-guide/workbenches/*/package.json",
+        { eager: true, import: "default" },
+      )
+    : {};
 const guideIcons = import.meta.glob<string>(
   "../../../../../plugins/first-workbench-guide/workbenches/*/ui/*.svg",
   { eager: true, query: "?url", import: "default" },

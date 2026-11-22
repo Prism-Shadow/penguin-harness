@@ -10,3 +10,5 @@
 The homepage opens the Web App on a fresh Project. **Play demo** runs one self-evolution example through its evaluation chart. **Stop demo** closes the run and returns to the initial screen.
 
 When most of the demo is offscreen, starting playback scrolls the window into view.
+
+The guide entry in the website preview links to the download page and explains where to open the guide after installation.

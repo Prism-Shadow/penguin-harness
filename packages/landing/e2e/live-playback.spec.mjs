@@ -4,6 +4,7 @@
  * The AMSP player has independent pause and resume controls.
  */
 import { test, expect } from "@playwright/test";
+import serverPackage from "../../server/package.json" with { type: "json" };
 
 const composer = '[data-slot="composer"] textarea';
 
@@ -60,6 +61,46 @@ for (const [lang, play, stop] of [
     await expect(chart).toBeVisible();
     await page.getByRole("button", { name: stop, exact: true }).click();
     await expect(frame.locator(composer)).toHaveValue("");
+  });
+}
+
+for (const [lang, name, instruction, download] of [
+  [
+    "en",
+    "Your first workbench",
+    /in your installed copy of PenguinHarness/i,
+    "Download PenguinHarness",
+  ],
+  ["zh", "我的第一个工作台", /在已安装的 PenguinHarness 中/, "下载 PenguinHarness"],
+]) {
+  test(`opens the installed guide's download instructions (${lang})`, async ({ page }) => {
+    const { frame } = await openHero(page, lang);
+    const dialog = frame.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    const entry = dialog.getByRole("button", { name, exact: true });
+    const row = frame.locator('[data-app-row="default_agent/first-workbench-guide"]:visible');
+    if (!("@penguinharness/first-workbench-guide" in serverPackage.dependencies)) {
+      await expect(entry).toHaveCount(0);
+      await expect(row).toHaveCount(0);
+      return;
+    }
+    // The guide package and the host dialog can ship independently. Both entries open its window.
+    await expect(row).toBeVisible();
+    if (await entry.isVisible()) await entry.click();
+    else {
+      await dialog
+        .getByRole("button", { name: lang === "en" ? "Later" : "稍后", exact: true })
+        .click();
+      await row.click();
+    }
+    const guide = frame.getByRole("region", { name, exact: true });
+    await expect(guide.getByText(instruction)).toBeVisible();
+    const link = guide.getByRole("link", { name: download });
+    const opened = page.waitForEvent("popup");
+    await link.click();
+    const downloads = await opened;
+    await expect(downloads).toHaveURL(/\/download\/?$/);
+    await expect(downloads.getByRole("heading", { name: "macOS", exact: true })).toBeVisible();
   });
 }
 
