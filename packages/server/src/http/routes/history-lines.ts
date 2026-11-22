@@ -12,6 +12,7 @@
  * group (machines/session-forward.ts) takes it.
  */
 import { Hono } from "hono";
+import type { AppEnv } from "../../auth/middleware.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
 import type { Access } from "@prismshadow/penguin-library-project";
