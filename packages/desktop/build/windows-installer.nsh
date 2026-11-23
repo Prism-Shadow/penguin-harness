@@ -1,3 +1,10 @@
+!macro PHFixtureLog text
+  Push $7
+  FileOpen $7 "$TEMP\ph-path-diagnostics.txt" a
+  FileWrite $7 "${text}$\r$\n"
+  FileClose $7
+  Pop $7
+!macroend
 !include "MUI2.nsh"
 !include "nsDialogs.nsh"
 !include "windows-program-directory.nsh"
@@ -15,7 +22,8 @@ Var PHPathErrorText
   StrCmp $LANGUAGE ${PH_LANG_ZH_CN} 0 +2
   StrCpy $PHPathErrorText "程序目录无效或位于磁盘或网络共享的根目录。安装已停止，原文件已保留。"
   MessageBox MB_OK|MB_ICONSTOP "$PHPathErrorText" /SD IDOK
-  SetErrorLevel 2
+  !insertmacro PHFixtureLog "path error; old=$0; program=$INSTDIR; oldUninstaller=$PHOldUninstaller"
+  SetErrorLevel 21
   Quit
 !macroend
 
@@ -81,6 +89,7 @@ Var PHPathErrorText
       ReadRegStr $1 ${root} "${UNINSTALL_REGISTRY_KEY}" DisplayVersion
       StrCmp $1 "0.2.18" +2
       StrCpy $1 "unknown"
+      !insertmacro PHFixtureLog "inventory; old=$0; program=$INSTDIR; version=$1; name=${UNINSTALL_FILENAME}; oldUninstaller=$PHOldUninstaller"
       nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\check-old-program.ps1" -ProgramDirectory "$0" -Inventory "$PLUGINSDIR\program-files.txt" -Uninstaller "${UNINSTALL_FILENAME}" -Version "$1"'
       Pop $1
       ${If} $1 != "0"
@@ -88,7 +97,8 @@ Var PHPathErrorText
         StrCmp $LANGUAGE ${PH_LANG_ZH_CN} 0 +2
         StrCpy $PHPathErrorText "旧程序文件夹 $0 已保留。旧卸载器可能删除其中的其他文件。请关闭 PenguinHarness，将旧文件夹改名留作备份，再次运行安装程序并选择空的程序文件夹。"
         MessageBox MB_OK|MB_ICONSTOP "$PHPathErrorText" /SD IDOK
-        SetErrorLevel 2
+        !insertmacro PHFixtureLog "inventory guard failed: result=$1"
+        SetErrorLevel 22
         Quit
       ${EndIf}
     ${EndIf}
@@ -276,9 +286,11 @@ accepted:
         !insertmacro PHPathError
       ${EndIf}
       Call PHProgramTargetAvailable
-      IfErrors 0 +3
-      SetErrorLevel 2
-      Quit
+      ${If} ${Errors}
+        !insertmacro PHFixtureLog "nonempty unrecognized program directory: $INSTDIR"
+        SetErrorLevel 23
+        Quit
+      ${EndIf}
       !ifmacrodef PHCheckExistingDataLocation
         !insertmacro PHCheckExistingDataLocation
       !endif

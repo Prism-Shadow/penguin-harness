@@ -30,7 +30,8 @@ Var PHDataInitialized
   !insertmacro PHRunDataHelper Check
   ${If} $0 != "0"
     MessageBox MB_OK|MB_ICONSTOP "$4" /SD IDOK
-    SetErrorLevel 2
+    !insertmacro PHFixtureLog "data check: code=$0; program=$INSTDIR; value=$PHDataValue; reason=$4"
+    SetErrorLevel 24
     Quit
   ${EndIf}
 !macroend
@@ -47,7 +48,8 @@ Var PHDataInitialized
     ${If} $0 != "0"
       DetailPrint "$4"
       MessageBox MB_OK|MB_ICONSTOP "$4" /SD IDOK
-      SetErrorLevel 2
+      !insertmacro PHFixtureLog "data apply: code=$0; program=$INSTDIR; value=$PHDataValue; reason=$4"
+      SetErrorLevel 25
       Quit
     ${EndIf}
   ${EndIf}
