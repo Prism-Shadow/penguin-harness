@@ -160,8 +160,7 @@ export default {
 } satisfies WorkbenchPackage;
 `;
 
-async function importApp(request, base, title) {
-  const id = title.toLowerCase();
+async function importApp(request, base, title, id = title.toLowerCase()) {
   const imported = await request.post(`${base}/archive`, {
     data: {
       overwrite: true,
@@ -712,9 +711,10 @@ test("only open workbenches appear across the App Center, Session directory and 
   await expect(rows).toHaveCount(1);
 
   await page.getByText("Directory inspection", { exact: true }).first().click();
-  await page.getByRole("button", { name: "Browse workbenches" }).click();
-  const directory = page.getByRole("region", { name: "Workbenches" });
-  const secondApp = directory.getByRole("button", { name: "Cabinet30", exact: true });
+  await page.getByRole("button", { name: "Shortcuts", exact: true }).click();
+  await page.getByRole("button", { name: "Open App Center", exact: true }).click();
+  const directory = page.getByRole("list", { name: "App Center", exact: true });
+  const secondApp = directory.locator('li[data-app="default_agent/cabinet30"] > button').first();
   await expect(secondApp).toBeVisible();
   await expect(rows).toHaveCount(1);
   await secondApp.click();
@@ -746,4 +746,70 @@ test("only open workbenches appear across the App Center, Session directory and 
   await page.getByRole("link", { name: /^App Center(?: ·|$)/ }).click();
   await expect(grid.getByRole("button", { name: /^Cabinet/ })).toHaveCount(30);
   await expect(group).toHaveCount(0);
+});
+
+test("duplicate workbenches show their Agent on desktop, in a folder, and on a phone", async ({
+  page,
+}) => {
+  const { request } = page;
+  const account = "tileowner";
+  await provisionAndLogin(request, account, P);
+  await setAccountPrefs(request, { lang: "en" });
+  const { projects } = await (await request.get("/api/projects")).json();
+  const base = `/api/projects/${projects[0].projectId}`;
+  for (const [agentId, name, id] of [
+    ["library_a", "Amber", "first-copy"],
+    ["library_b", "Blue", "second-copy"],
+  ]) {
+    await expect(await request.post(base + "/agents", { data: { agentId, name } })).toBeOK();
+    await importApp(request, base + "/agents/" + agentId + "/workbenches", "Notebook", id);
+  }
+  await importApp(request, base + "/agents/library_a/workbenches", "Calendar");
+  const image =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+  await expect(
+    await request.put(base + "/agents/library_b/avatar", { data: { avatar: image } }),
+  ).toBeOK();
+  const tiles = [
+    ["library_a/first-copy", "Amber"],
+    ["library_b/second-copy", "Blue"],
+  ];
+  const tile = (id) => page.locator(`[data-app="${id}"]`);
+  for (const [width, height] of [
+    [1280, 800],
+    [375, 750],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await page.goto(BASE + "/apps");
+    await expect(tile("library_a/calendar").locator("[data-workbench-owner]")).toHaveCount(0);
+    for (const [id, name] of tiles) {
+      await expect(tile(id).getByRole("button")).toHaveAccessibleName(new RegExp(name));
+      const badge = tile(id).locator("[data-workbench-owner]");
+      if (name === "Blue") {
+        const picture = badge.locator("img");
+        await expect(picture).toHaveAttribute("src", /\/agents\/library_b\/avatar\?rev=/);
+        await expect.poll(() => picture.evaluate((img) => img.naturalWidth)).toBe(1);
+      } else {
+        await expect(badge).toHaveText("A");
+      }
+      await tile(id).getByRole("button").click();
+      await expect(page.locator(`[data-workspace-page="app:${id}"]`)).toBeVisible();
+      await page.goto(BASE + "/apps");
+    }
+  }
+  await expect(
+    await request.put(base + "/app-center/layout", {
+      data: {
+        layout: {
+          v: 1,
+          items: [{ type: "folder", id: "shelf", name: "Shelf", apps: tiles.map(([id]) => id) }],
+        },
+      },
+    }),
+  ).toBeOK();
+  await page.reload();
+  const folder = page.locator('[data-folder="shelf"]');
+  await expect(folder.locator("[data-workbench-owner]")).toHaveCount(2);
+  await folder.getByRole("button").click();
+  await expect(tile(tiles[0][0]).locator("[data-workbench-owner]")).toBeVisible();
 });

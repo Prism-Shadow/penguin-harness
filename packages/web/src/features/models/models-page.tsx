@@ -3251,18 +3251,15 @@ function ModelDialog({
   };
 
   /**
-   * Protocol detection: POST /models/detect probes the base URL for the three detectable
-   * protocols (openai-responses → ant-messages → openai-chat, first hit wins) and applies
+   * Protocol detection: POST /models/detect probes the base URL and applies
    * the result to the form's clientType. Resolves to the detected client type, or null
    * when nothing matched / the probe failed, so the save path can decide from the same run
    * whether it may go on.
    *
    * No API key is required. The server resolves the probe credential in three layers — the
    * key typed here, else this entry's stored key, else the environment variable for
-   * whichever protocol each probe speaks (ANTHROPIC_* / OPENAI_*) — and a keyless probe
-   * still identifies a route that answers in a protocol's own error shape. So the button
-   * is always live and a failure explains itself afterwards instead of being pre-empted by
-   * a disabled control.
+   * whichever protocol each probe speaks. The button can run without an entered key.
+   * Google detection requires a successful listing, and may need a key.
    *
    * Outcomes are announced with a toast, like the connectivity test in this same dialog:
    * transient and non-blocking, nothing to dismiss before carrying on. The Toaster portals
