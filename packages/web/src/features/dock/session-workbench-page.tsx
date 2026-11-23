@@ -390,7 +390,7 @@ function SessionPicker({
     <section
       ref={directory}
       aria-label={title}
-      className="@container mx-auto flex h-full w-full min-w-0 max-w-3xl flex-col gap-3 overflow-y-auto p-3 @sm:p-5"
+      className="@container mx-auto flex h-full w-full min-w-0 max-w-3xl flex-col gap-3 overflow-y-auto p-3 @sm:p-4"
     >
       <h1 className="text-lg font-semibold">{title}</h1>
       <SearchInput
