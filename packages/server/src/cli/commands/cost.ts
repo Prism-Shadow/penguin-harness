@@ -36,7 +36,17 @@ function localDate(d: Date): string {
 
 function formatCost(cost: number | null, hasUncosted: boolean, t: Messages): string {
   if (cost === null) return t.cost.noPricing();
-  const value = `$${cost.toFixed(4)}`;
+  // Match Web's formatMoney: below a tenth of a cent, four fixed decimals would round a real
+  // charge (a search, a short audio clip) to zero — use four significant digits instead.
+  const abs = Math.abs(cost);
+  const figure =
+    abs > 0 && abs < 0.001
+      ? Number(cost.toPrecision(4)).toLocaleString("en-US", {
+          maximumSignificantDigits: 4,
+          useGrouping: false,
+        })
+      : cost.toFixed(4);
+  const value = `$${figure}`;
   return hasUncosted ? `${value}+` : value;
 }
 
