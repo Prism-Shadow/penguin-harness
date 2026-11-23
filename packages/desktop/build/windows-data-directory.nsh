@@ -14,6 +14,46 @@ Var PHDataInitialized
   StrCpy ${variable} "${chinese}"
 !macroend
 
+!macro PHRunDataHelper action
+  StrCpy $1 "$INSTDIR"
+  StrCpy $2 "$PHDataValue"
+  StrCpy $3 "${action}"
+  ${If} ${UAC_IsInnerInstance}
+    !insertmacro UAC_AsUser_Call Function PHDataHelper ${UAC_SYNCREGISTERS}
+  ${Else}
+    Call PHDataHelper
+  ${EndIf}
+!macroend
+
+!macro PHCheckExistingDataLocation
+  Call PHReadDataChoice
+  !insertmacro PHRunDataHelper Check
+  ${If} $0 != "0"
+    MessageBox MB_OK|MB_ICONSTOP "$4" /SD IDOK
+    SetErrorLevel 2
+    Quit
+  ${EndIf}
+!macroend
+!macro PHDataPage
+  Page custom PHShowDataPage PHLeaveDataPage
+!macroend
+
+!macro PHCommitDataDirectory
+  Call PHReadDataChoice
+  ${If} $PHDataValue != ""
+    !insertmacro PHDataText $0 "Verifying PenguinHarness data..." "正在校验 PenguinHarness 数据…"
+    DetailPrint "$0"
+    !insertmacro PHRunDataHelper Apply
+    ${If} $0 != "0"
+      DetailPrint "$4"
+      MessageBox MB_OK|MB_ICONSTOP "$4" /SD IDOK
+      SetErrorLevel 2
+      Quit
+    ${EndIf}
+  ${EndIf}
+!macroend
+; electron-builder adds its plugin directory before it expands customHeader.
+!macro PHDataPageFunctions
 Function PHReadDataChoice
   ${If} $PHDataInitialized != ""
     Return
@@ -48,30 +88,6 @@ Function PHDataHelper
   Pop $0
   Pop $4
 FunctionEnd
-
-!macro PHRunDataHelper action
-  StrCpy $1 "$INSTDIR"
-  StrCpy $2 "$PHDataValue"
-  StrCpy $3 "${action}"
-  ${If} ${UAC_IsInnerInstance}
-    !insertmacro UAC_AsUser_Call Function PHDataHelper ${UAC_SYNCREGISTERS}
-  ${Else}
-    Call PHDataHelper
-  ${EndIf}
-!macroend
-
-!macro PHCheckExistingDataLocation
-  Call PHReadDataChoice
-  !insertmacro PHRunDataHelper Check
-  ${If} $0 != "0"
-    MessageBox MB_OK|MB_ICONSTOP "$4" /SD IDOK
-    SetErrorLevel 2
-    Quit
-  ${EndIf}
-!macroend
-!macro PHDataPage
-  Page custom PHShowDataPage PHLeaveDataPage
-!macroend
 
 Function PHShowDataPage
   Call PHReadDataChoice
@@ -157,18 +173,5 @@ Function PHLeaveDataPage
   ${EndIf}
 FunctionEnd
 
-!macro PHCommitDataDirectory
-  Call PHReadDataChoice
-  ${If} $PHDataValue != ""
-    !insertmacro PHDataText $0 "Verifying PenguinHarness data..." "正在校验 PenguinHarness 数据…"
-    DetailPrint "$0"
-    !insertmacro PHRunDataHelper Apply
-    ${If} $0 != "0"
-      DetailPrint "$4"
-      MessageBox MB_OK|MB_ICONSTOP "$4" /SD IDOK
-      SetErrorLevel 2
-      Quit
-    ${EndIf}
-  ${EndIf}
 !macroend
 !endif
