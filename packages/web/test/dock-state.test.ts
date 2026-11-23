@@ -654,6 +654,8 @@ it("offers only explicit registered panel opens to the Session workbench adapter
   try {
     dock.openPanel("workspace");
     expect(dock.panelDock("workspace")).toBeNull();
+    dock.openNativePanel("workspace", "bottom");
+    expect(dock.panelDock("workspace")).toBe("bottom");
     dock.openPanel("memory");
     dock.openPanel(":app:custom");
     dock.activateTab("memory");

@@ -839,6 +839,15 @@ export function setSessionPanelOpener(opener: typeof sessionPanelOpener): void {
  */
 export function openPanel(id: PanelId, position?: DockPosition, fallback?: DockPosition): void {
   if (isPanelId(id) && sessionPanelOpener?.(id)) return;
+  openNativePanel(id, position, fallback);
+}
+
+/** A user choosing a panel within a particular dock keeps that physical placement. */
+export function openNativePanel(
+  id: PanelId,
+  position?: DockPosition,
+  fallback?: DockPosition,
+): void {
   const target = position ?? panelDock(id) ?? fallback ?? "right";
   insertTab({ kind: "panel", panel: id }, target);
   commit();

@@ -117,7 +117,7 @@ import {
   hideView,
   moveDock,
   moveTab,
-  openPanel,
+  openNativePanel,
   removeTab,
   reorderDock,
   resetBottomRatio,
@@ -548,7 +548,7 @@ export function DockPanel({
     // The merged view has no edge of its own to insist on — the panel's existing tab (or
     // its own default edge) decides, which is also where it lands when the window widens
     // back out.
-    openPanel(definition.id, merged ? undefined : position, definition.defaultPosition);
+    openNativePanel(definition.id, merged ? undefined : position, definition.defaultPosition);
   };
 
   const addMenu = (
@@ -663,7 +663,7 @@ export function DockPanel({
       glyph: <GlyphIcon d={definition.glyph} size={ICON_SIZE.iconButton} />,
       ...(chord !== null ? { keys: chordKeys(chord) } : {}),
       onChoose: () =>
-        openPanel(definition.id, merged ? undefined : position, definition.defaultPosition),
+        openNativePanel(definition.id, merged ? undefined : position, definition.defaultPosition),
     };
   };
   // The picker leads with the panels that ask to (`lead`): what a conversation most often opens.
