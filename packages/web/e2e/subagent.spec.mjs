@@ -494,19 +494,31 @@ test("previous and next turns retain the original child through another send and
   await expect(cold).toHaveURL(new RegExp(`/chat/${firstId}$`));
 
   await setAccountPrefs(cold.request, { lang: "en" });
-  await cold.setViewportSize({ width: 1000, height: 750 });
+  await cold.setViewportSize({ width: 1280, height: 750 });
   await cold.goto(`${BASE}/chat/${sessionId}`);
   const narrow = cold
     .getByTestId("dock")
     .filter({ has: cold.getByText("Call graph", { exact: true }) });
   const previousEn = narrow.getByRole("button", { name: "Previous turn", exact: true });
-  if (!(await previousEn.isVisible())) await cold.getByTestId("dock-toggle-right").click();
+  const composer = cold.locator(`[data-workspace-page="chat:${sessionId}"] textarea`).first();
+  await expect(composer).toBeVisible();
+  const englishToggle = cold.getByTestId("dock-toggle-right");
+  await expect(englishToggle).toHaveAttribute("aria-expanded", /true|false/);
+  if ((await englishToggle.getAttribute("aria-expanded")) === "false") await englishToggle.click();
   await expect(previousEn).toBeVisible();
   await expect(narrow.getByText("Page 3", { exact: true })).toBeVisible();
-  await previousEn.focus();
-  await cold.keyboard.press("Space");
+  await expect(previousEn).toBeEnabled();
+  await previousEn.click();
   const englishPage = narrow.getByText("Page 2", { exact: true });
   await expect(englishPage).toBeVisible();
+  const handle = cold.locator('[data-testid="dock-resizer"][aria-orientation="vertical"]:visible');
+  const grip = await handle.boundingBox();
+  const dockBox = await narrow.boundingBox();
+  const y = grip.y + grip.height / 2;
+  await cold.mouse.move(grip.x + grip.width / 2, y);
+  await cold.mouse.down();
+  await cold.mouse.move(dockBox.x + dockBox.width - 360, y, { steps: 10 });
+  await cold.mouse.up();
   const headingBox = await narrow.getByText("Call graph", { exact: true }).boundingBox();
   const narrowBox = await narrow.boundingBox();
   const readoutBox = await englishPage.boundingBox();
