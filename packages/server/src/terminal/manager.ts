@@ -35,6 +35,11 @@ import { shellStartupDir, type TerminalPathFirst } from "./shell-startup.js";
 import { shimNamesDataRoot, terminalCliNotice } from "./cli-notice.js";
 import { terminalRoutes } from "./routes.js";
 import { identityFrom } from "./identity.js";
+import type { Settings } from "@prismshadow/penguin-library-setting";
+import {
+  DEFAULT_TERMINAL_LIMIT,
+  readResourceLimit,
+} from "@prismshadow/penguin-library-setting/resource-limits";
 import type { Auth } from "@prismshadow/penguin-library-auth";
 import type { Access } from "@prismshadow/penguin-library-project";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
@@ -44,7 +49,7 @@ import type { RemoteTerminals } from "../machines/terminal-relay.js";
 export const EXITED_SESSION_GRACE_MS = 5 * 60 * 1000;
 const KILL_GRACE_MS = 2000;
 /** Cap per user; a runaway UI loop would otherwise fork shells until the box gives up. */
-export const MAX_TERMINALS_PER_USER = 12;
+export const MAX_TERMINALS_PER_USER = DEFAULT_TERMINAL_LIMIT;
 
 export interface CreateTerminalRequest {
   cwd: string;
@@ -67,6 +72,7 @@ export class TerminalManager {
     private readonly resources: Resources,
     private readonly opts: {
       graceMs?: number;
+      maxOpen?: () => number;
       /** Where a pushed bundle's node-pty assets live (hmr.assetsDir); absent falls back to the packaged require. */
       assets?: () => string | null;
       /**
@@ -109,11 +115,12 @@ export class TerminalManager {
     const cwd = await resolveCwd(request.cwd);
 
     const owned = this.list(request.ownerUserId).filter((session) => session.alive);
-    if (owned.length >= MAX_TERMINALS_PER_USER) {
+    const limit = this.opts.maxOpen?.() ?? MAX_TERMINALS_PER_USER;
+    if (owned.length >= limit) {
       throw new HttpError(
         429,
         "terminal_limit_reached",
-        `You already have ${MAX_TERMINALS_PER_USER} open terminals. Close one first.`,
+        `You already have ${limit} open terminals. Close one first.`,
       );
     }
 
@@ -398,6 +405,7 @@ export class TerminalModule {
   @Use() private readonly auth!: Auth;
   @Use() private readonly access!: Access;
   @Use() private readonly sessions!: SessionIndex;
+  @Use() private readonly settings!: Settings;
   /** Answers `get` for a pty on a machine (machines/terminal-relay.ts). */
   @Use() private readonly remote!: RemoteTerminals;
   @Provide() terminals!: Terminals;
@@ -406,6 +414,7 @@ export class TerminalModule {
     const terminals = new TerminalManager(resources, {
       // A pushed bundle's node-pty binaries live where the host materialized them.
       assets: () => this.hmr.assetsDir() ?? null,
+      maxOpen: () => readResourceLimit(this.settings, "terminalMaxOpen"),
       beyond: (id) => this.remote.get(id),
       // `penguin` in a terminal is the one the Agent's commands get: this harness's own.
       pathFirst: () => {
