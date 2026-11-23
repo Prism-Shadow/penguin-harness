@@ -116,6 +116,9 @@ export class DockModule {
         if (!definition) return null;
         return sessionWorkbenchPage(ref.kind, ref.address, definition.label());
       },
+      existingPanelId(page) {
+        return parseSessionWorkbenchPage(page)?.kind ?? null;
+      },
       Body: SessionWorkbenchBody,
     });
     setDockListeners({
