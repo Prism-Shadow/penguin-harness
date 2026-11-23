@@ -123,7 +123,8 @@ async function checkout(
   {
     ranges = {},
     locked = VERSION,
-  }: { ranges?: Record<string, string | undefined>; locked?: string } = {},
+    asset,
+  }: { ranges?: Record<string, string | undefined>; locked?: string; asset?: string } = {},
 ): Promise<string> {
   const root = path.join(tmp, "checkout");
   const importers: Record<string, unknown> = {};
@@ -150,7 +151,12 @@ async function checkout(
     JSON.stringify({
       lockfileVersion: "9.0",
       importers,
-      packages: { [`${NAME}@${locked}`]: { resolution: { integrity } } },
+      packages: {
+        [`${NAME}@${locked}`]: {
+          ...(asset && { version: VERSION }),
+          resolution: { integrity, ...(asset && { tarball: asset }) },
+        },
+      },
     }),
   );
   return root;
@@ -299,6 +305,28 @@ describe("an external built-in plugin in the built-in prefix", () => {
       expect(index.calls).toEqual([]);
       expect(await (await staged(built)).page()).toBe("<h1>fixture</h1>");
     });
+  });
+
+  it("builds a GitHub-only release from the exact asset and rejects a mismatched lock or package", async () => {
+    const asset =
+      "https://github.com/owner/repo/releases/download/v2026.11.23-rc.1/fixture-app-0.1.0.tgz";
+    const ranges = Object.fromEntries(HOST_PACKAGES.map((host) => [host, asset]));
+    const { bytes, integrity } = await packFixture(path.join(tmp, "release"));
+    const root = await checkout(integrity, { locked: asset, ranges, asset });
+    const lock = readPnpmLock(root);
+    expect(pinProblems(root, lock)).toEqual([]);
+    expect(externalPins(root, lock)).toEqual([{ name: NAME, version: VERSION, integrity, asset }]);
+    const release = stubFetch(() => new Response(new Uint8Array(bytes)));
+    const env = npmEnv("http://127.0.0.1:9/", true);
+    const built = await buildBuiltinPlugins({ root, env });
+    expect(await (await staged(built)).page()).toBe("<h1>fixture</h1>");
+    expect(release.calls.map((call) => call.url)).toEqual([asset]);
+    const wrong = await checkout(integrity, { locked: asset, ranges, asset: asset + ".changed" });
+    expect(pinProblems(wrong, readPnpmLock(wrong))).not.toEqual([]);
+    const other = await packFixture(path.join(tmp, "other"), { manifest: { version: "3.0.0" } });
+    stubFetch(() => new Response(new Uint8Array(other.bytes)));
+    await checkout(other.integrity, { locked: asset, ranges, asset });
+    await expect(buildBuiltinPlugins({ root, env })).rejects.toThrow("the asset contains");
   });
 
   it("takes the github channel of its index entry when npm cannot supply it", async () => {
