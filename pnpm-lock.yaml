@@ -660,6 +660,9 @@ importers:
       '@penguinharness/awm-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-awm-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-awm-rsi-toolkit-0.2.19-rc.1.tgz
+      '@penguinharness/continual-learning':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
       '@penguinharness/default-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
@@ -827,6 +830,9 @@ importers:
       '@penguinharness/awm-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-awm-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-awm-rsi-toolkit-0.2.19-rc.1.tgz
+      '@penguinharness/continual-learning':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
       '@penguinharness/default-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
@@ -998,6 +1004,9 @@ importers:
       '@penguinharness/computer-use':
         specifier: workspace:*
         version: link:../../plugins/computer-use
+      '@penguinharness/continual-learning':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
@@ -1260,6 +1269,9 @@ importers:
       '@penguinharness/awm-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-awm-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-awm-rsi-toolkit-0.2.19-rc.1.tgz
+      '@penguinharness/continual-learning':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz
       '@penguinharness/default-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
@@ -3138,6 +3150,10 @@ packages:
   '@penguinharness/computer-use@file:plugins/computer-use':
     resolution: {directory: plugins/computer-use, type: directory}
     engines: {node: '>=24'}
+
+  '@penguinharness/continual-learning@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz':
+    resolution: {integrity: sha512-6Spzm6IBWhqwhE/by6KhaQwKNxAw9ww3ivMj5W9ub+9anbfAy7C3iWTGGnhScEcnpPy8nyuFSVUbLfpx6FK7MQ==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz}
+    version: 0.2.19-rc.2
 
   '@penguinharness/data-analysis@file:plugins/data-analysis':
     resolution: {directory: plugins/data-analysis, type: directory}
@@ -8018,6 +8034,8 @@ snapshots:
   '@penguinharness/browser-automation@file:plugins/browser-automation': {}
 
   '@penguinharness/computer-use@file:plugins/computer-use': {}
+
+  '@penguinharness/continual-learning@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.9/continual-learning-0.2.19-rc.2.tgz': {}
 
   '@penguinharness/data-analysis@file:plugins/data-analysis': {}
 
