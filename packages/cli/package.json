@@ -23,7 +23,7 @@
     "gen:ifaces": "node ../../scripts/gen-cli-modules.mjs --package . --out src/cli-modules.gen.ts && node ../../scripts/gen-ifaces.mjs --project tsconfig.json --project ../server/tsconfig.json --sources src --sources test --sources ../server/src --sources ../server/test --sources ../../library --out src/ifaces.json --components-out src/cli-commands.gen.ts",
     "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
     "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
-    "build": "pnpm gen:ifaces && tsup",
+    "build": "pnpm gen:ifaces && tsup && node ../../scripts/stage-release-library.mjs",
     "penguin": "node ../../scripts/run-with-env.mjs --unset=PENGUIN_CLI_ENTRY PENGUIN_HOME=~/.penguin/dev-data-cli PENGUIN_PROFILE=dev PORT=7369 -- tsx src/penguin.ts"
   },
   "dependencies": {

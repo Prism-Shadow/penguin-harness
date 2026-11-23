@@ -548,6 +548,23 @@ export const en: Strings = {
   },
 
   dock: {
+    closedResources: (count: number) => `Closed resources: ${count}`,
+    toolUnavailable: "This Session workbench is unavailable.",
+    chooseSession: "Choose a Session",
+    searchSessions: "Search all Sessions",
+    emptySessions: "No matching Sessions.",
+    openTerminals: (count: number) => `${count} open ${count === 1 ? "terminal" : "terminals"}`,
+    openBrowserPages: (count: number) => `${count} open ${count === 1 ? "page" : "pages"}`,
+    archivedSession: "Archived",
+    childSession: "Subagent",
+    moreSessions: "Show more Sessions",
+    selectSession: (title: string, host: string) => `Select Session ${title} (${host})`,
+    closeSelected: "Close selected resources",
+    terminalImpact: "Running commands in the selected Sessions will stop.",
+    browserImpact: "The selected Sessions’ browser tabs will close.",
+    unavailableMachine: "Unavailable",
+    here: "This server",
+
     addTab: "Add panel",
     closeTab: "Close panel",
     hideDock: "Hide sidebar",

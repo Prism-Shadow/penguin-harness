@@ -630,6 +630,23 @@ export const zh = {
 
   /** The dock surfaces (right / bottom) every side element renders in as a tab. */
   dock: {
+    closedResources: (count: number) => `已关闭 ${count} 个资源`,
+    toolUnavailable: "此会话工作台暂不可用。",
+    chooseSession: "选择会话",
+    searchSessions: "搜索全部会话",
+    emptySessions: "未找到匹配的会话。",
+    openTerminals: (count: number) => `${count} 个已打开的终端`,
+    openBrowserPages: (count: number) => `${count} 个已打开的页面`,
+    archivedSession: "已归档",
+    childSession: "子智能体",
+    moreSessions: "显示更多会话",
+    selectSession: (title: string, host: string) => `选择会话 ${title}（${host}）`,
+    closeSelected: "关闭所选资源",
+    terminalImpact: "所选会话中正在运行的终端命令会停止。",
+    browserImpact: "所选会话中的浏览器标签页将被关闭。",
+    unavailableMachine: "不可用",
+    here: "本机服务端",
+
     /** The dock header's "+" menu: panels and shells this dock can take a tab for. */
     addTab: "添加面板",
     /** A panel tab's × (its content closes; terminal tabs use terminal.killShell instead). */

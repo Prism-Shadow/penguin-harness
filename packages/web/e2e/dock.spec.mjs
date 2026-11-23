@@ -130,7 +130,7 @@ async function waitForShell(page, tag) {
   await expect.poll(() => screenText(page), { timeout: 30000 }).toMatch(new RegExp(`${tag}$`, "m"));
 }
 
-test("Ctrl+` opens the terminal group in the bottom dock; hiding keeps it running, reopening reattaches", async ({
+test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running, reopening reattaches", async ({
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
@@ -148,7 +148,7 @@ test("Ctrl+` opens the terminal group in the bottom dock; hiding keeps it runnin
   await page.getByPlaceholder(/输入消息/).waitFor();
   // Open with the keyboard, like Codex/VS Code.
   await page.keyboard.press("Control+Backquote");
-  await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 10000 });
+  await expect(dockAt(page, "right")).toBeVisible({ timeout: 10000 });
   await expect(shellTabs(page)).toHaveCount(0);
   await page.getByTestId("terminal-new-tab").click();
   await waitForShell(page, "DOCK_UP_1");
@@ -156,7 +156,10 @@ test("Ctrl+` opens the terminal group in the bottom dock; hiding keeps it runnin
   await expect.poll(() => screenText(page), { timeout: 15000 }).toContain("DOCK_KEEPS_RUNNING");
 
   // Hide via the dock's ×: the surface goes away, the tab and the shell do not.
-  await dockAt(page, "bottom").getByTestId("dock-close").click();
+  await dockAt(page, "right")
+    .locator('[data-testid="dock-tab"][data-tab-id^=":app:session-tool/terminal"]')
+    .getByTestId("dock-tab-close")
+    .click();
   await expect(anyDock(page)).toHaveCount(0);
   await expect
     .poll(async () => {
@@ -167,7 +170,7 @@ test("Ctrl+` opens the terminal group in the bottom dock; hiding keeps it runnin
 
   // Ctrl+` restores the same shell — the marker typed before the hide is still on screen.
   await page.keyboard.press("Control+Backquote");
-  await expect(dockAt(page, "bottom")).toBeVisible();
+  await expect(dockAt(page, "right")).toBeVisible();
   await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("DOCK_KEEPS_RUNNING");
 
   // A shell tab's × (always visible) asks first — killing ends the shell for real — and
@@ -477,7 +480,9 @@ test("each conversation manages its own tabs: nothing leaks, and each side survi
   await page.getByPlaceholder(/输入消息/).waitFor();
   await openViaPicker(page, "right", "workspace");
   await page.keyboard.press("Control+Backquote");
-  await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 20000 });
+  await expect(
+    dockAt(page, "right").locator('[data-tab-id^=":app:session-tool/terminal"]'),
+  ).toBeVisible();
   await expect(shellTabs(page)).toHaveCount(0);
   await page.getByTestId("terminal-new-tab").click();
   await waitForShell(page, "SCOPED_SHELL");
@@ -492,12 +497,12 @@ test("each conversation manages its own tabs: nothing leaks, and each side survi
     dockAt(page, "bottom").locator('[data-tab-id="memory"][data-active="true"]'),
   ).toBeVisible();
 
-  // Back to A: its arrangement returns — the same shell tab in the bottom dock, live
-  // (identity via the tab id plus a fresh probe; scrollback replay has a known
-  // load-sensitive flake that predates the docks). B's memory tab did not follow.
+  // The explicit file tab survives a round trip. Reopening the terminal shortcut finds
+  // the same running shell, with its original ID and live input.
   await page.goto(`${BASE}/chat/${sidA}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
   await expect(dockAt(page, "right").locator('[data-tab-id="workspace"]')).toBeVisible();
+  await page.keyboard.press("Control+Backquote");
   await expect(
     page.locator(`[data-testid="terminal-tab"][data-tab-id="${shellId}"][data-active="true"]`),
   ).toBeVisible();
@@ -599,7 +604,7 @@ test("a new shell starts in the conversation's Workspace, not at home", async ({
   await page.goto(`${BASE}/chat/${session.sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
   await page.keyboard.press("Control+Backquote");
-  await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 20000 });
+  await expect(dockAt(page, "right")).toBeVisible({ timeout: 20000 });
   await expect(shellTabs(page)).toHaveCount(0);
   await page.getByTestId("terminal-new-tab").click();
   await waitForShell(page, "WS_CWD");
@@ -649,7 +654,7 @@ test("a failed shell create surfaces as a toast, and a later attempt recovers", 
   // Server recovers (unroute) → the next attempt starts a real shell.
   await page.unroute("**/api/terminals");
   await page.getByTestId("terminal-new-tab").click();
-  await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 20000 });
+  await expect(dockAt(page, "right")).toBeVisible({ timeout: 20000 });
   await waitForShell(page, "RECOVERED");
   await killAllTerminals(page.request);
 });

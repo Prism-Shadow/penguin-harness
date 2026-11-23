@@ -54,6 +54,7 @@ import {
   type SpringDriver,
 } from "@prismshadow/penguin-ui";
 
+import { useSessionPanelOpener } from "./session-panel-opener";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { useSessionShortcuts } from "./session-shortcuts";
@@ -96,6 +97,7 @@ export interface DockLauncherProps {
 
 /** Renders the ball while no dock surface holds its room and the user has not put it away. */
 export function DockLauncher({ agentsPending }: DockLauncherProps) {
+  useSessionPanelOpener();
   useSyncExternalStore(subscribeDock, dockVersion);
   useSyncExternalStore(subscribeLauncherHidden, launcherHiddenVersion);
   const narrow = isNarrow();

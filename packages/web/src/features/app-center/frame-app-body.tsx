@@ -46,7 +46,10 @@ export function FrameAppBody({
     const { location: now } = here.current;
     const search = searchWithAt(now.search, at);
     if (search === now.search) return;
-    void navigate({ pathname: now.pathname, search }, { replace: true, state: now.state });
+    // A full-screen dock uses the standalone public URL while keeping its actual
+    // window alive. Keep both addresses on the location the frame just reported.
+    const mask = now.mask && { ...now.mask, search: searchWithAt(now.mask.search, at) };
+    void navigate({ pathname: now.pathname, search }, { replace: true, state: now.state, mask });
   };
 
   // Brought to the front by an address that asks nothing: it says where the page already is.
