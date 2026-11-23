@@ -431,6 +431,10 @@ function switchScope(target: string, mayHandOver: boolean): void {
 }
 
 /** The scope on screen (tests and diagnostics; components never need it). */
+export function matchesDockOwner(sessionId: string, pageId?: string): boolean {
+  return scope === (pageId?.startsWith("scoped-chat:") ? pageId : sessionId);
+}
+
 export function currentDockScope(): string {
   return windowScopes.get(scope) ?? scope;
 }

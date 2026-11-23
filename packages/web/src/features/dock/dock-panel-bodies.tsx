@@ -5,9 +5,17 @@ import {
   useRef,
   type ComponentType,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
-import { borrowedDockPanel, fullscreenDock, type DockPosition } from "./dock-state";
+import { PageIdentity } from "../../lib/page-focus";
+import {
+  borrowedDockPanel,
+  dockTabs,
+  matchesDockOwner,
+  fullscreenDock,
+  type DockPosition,
+} from "./dock-state";
 import type { DockMount } from "./use-dock-mount";
 
 export interface PanelBodyProps {
@@ -21,23 +29,37 @@ export interface PanelBodyProps {
 
 // A native editor belongs to its Session, across a temporary change of dock edge.
 // Each Body keeps one React key and one portal container; only its placement changes.
-const Containers = createContext<Map<string, HTMLElement> | null>(null);
+interface PanelContainers {
+  nodes: Map<string, HTMLElement>;
+  parking: RefObject<HTMLDivElement | null>;
+}
+const Containers = createContext<PanelContainers | null>(null);
+
+function place(container: HTMLElement, slot: HTMLElement) {
+  if (container.parentNode === slot) return;
+  if (
+    container.isConnected &&
+    slot.isConnected &&
+    "moveBefore" in slot &&
+    typeof slot.moveBefore === "function"
+  )
+    slot.moveBefore(container, null);
+  else slot.appendChild(container);
+}
 
 export function NativePanelSlot({ id }: { id: string }) {
-  const container = useContext(Containers)?.get(id);
+  const pool = useContext(Containers);
+  const container = pool?.nodes.get(id);
   const attach = useCallback(
     (slot: HTMLDivElement | null) => {
-      if (!slot || !container || container.parentNode === slot) return;
-      if (
-        container.isConnected &&
-        slot.isConnected &&
-        "moveBefore" in slot &&
-        typeof slot.moveBefore === "function"
-      )
-        slot.moveBefore(container, null);
-      else slot.appendChild(container);
+      if (!slot || !pool || !container) return;
+      place(container, slot);
+      return () => {
+        if (container.parentNode === slot && pool.parking.current)
+          place(container, pool.parking.current);
+      };
     },
-    [container],
+    [container, pool],
   );
   return <div ref={attach} className="flex h-full min-h-0 flex-col" />;
 }
@@ -48,16 +70,35 @@ export function useNativePanelSlots() {
 
 export function DockPanelArea({
   mounts,
+  sessionId,
   Body,
   children,
 }: {
-  mounts: DockMount[];
+  mounts: DockMount[] | null;
+  sessionId: string | null;
   Body: ComponentType<PanelBodyProps>;
   children: ReactNode;
 }) {
-  const nodes = useRef(new Map<string, HTMLElement>());
+  const page = useContext(PageIdentity);
+  const parking = useRef<HTMLDivElement>(null);
+  const pool = useRef<PanelContainers>({ nodes: new Map(), parking }).current;
+  const last = useRef(new Map<string, PanelBodyProps>());
+  // Changing routes briefly detaches the conversation from the foreground dock.
+  // Return its actual editor when it is shown again, even after visiting another page.
+  const owns = mounts !== null && (sessionId === null || matchesDockOwner(sessionId, page?.id));
   const placements = new Map<string, PanelBodyProps>();
-  for (const { view, open } of mounts) {
+  if (owns) {
+    for (const position of ["right", "bottom"] as const) {
+      for (const { panel: id } of dockTabs(position)) {
+        if (last.current.has(id))
+          placements.set(id, { id, position, merged: false, active: false, fullscreen: false });
+      }
+    }
+  } else {
+    for (const [id, body] of last.current)
+      placements.set(id, { ...body, active: false, fullscreen: false });
+  }
+  for (const { view, open } of owns ? mounts : []) {
     if (!view) continue;
     for (const { panel } of view.tabs) {
       const id = borrowedDockPanel(panel) ?? panel;
@@ -72,20 +113,22 @@ export function DockPanelArea({
       });
     }
   }
-  for (const id of nodes.current.keys()) if (!placements.has(id)) nodes.current.delete(id);
+  if (owns) last.current = placements;
+  for (const id of pool.nodes.keys()) if (!placements.has(id)) pool.nodes.delete(id);
   for (const id of placements.keys()) {
-    if (!nodes.current.has(id) && typeof document !== "undefined") {
+    if (!pool.nodes.has(id) && typeof document !== "undefined") {
       const container = document.createElement("div");
       container.className = "flex h-full min-h-0 flex-col";
-      nodes.current.set(id, container);
+      pool.nodes.set(id, container);
     }
   }
   return (
-    <Containers.Provider value={nodes.current}>
+    <Containers.Provider value={pool}>
       <div data-dock-area className="flex min-h-0 flex-1 flex-col">
+        <div ref={parking} hidden />
         {children}
         {[...placements.values()].map((props) => {
-          const node = nodes.current.get(props.id);
+          const node = pool.nodes.get(props.id);
           return node ? createPortal(<Body {...props} />, node, props.id) : null;
         })}
       </div>
