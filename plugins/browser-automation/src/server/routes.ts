@@ -142,7 +142,9 @@ function sessionIdQuery(c: Context<AppEnv>): string | undefined {
 
 /** The dock scopes drafts to their Project until the first send creates a Session. */
 function draftProject(sessionId: string): string | undefined {
-  return /^~project:(.+)$/.exec(sessionId)?.[1] ?? /^(.+):(?:new|draft-[^:]+)$/.exec(sessionId)?.[1];
+  return (
+    /^~project:(.+)$/.exec(sessionId)?.[1] ?? /^(.+):(?:new|draft-[^:]+)$/.exec(sessionId)?.[1]
+  );
 }
 
 const STORAGES = new Set(["cookies", "cache", "storage"]);

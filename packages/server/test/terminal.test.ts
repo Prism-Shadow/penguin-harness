@@ -580,6 +580,36 @@ describePty("terminal API", () => {
     }
   });
 
+  it("requires Project membership and only manages the caller's shells within shared Sessions", async () => {
+    const t = await createTestApp();
+    try {
+      const { provisionUser } = await import("./helpers.js");
+      const owner = apiClient(t.app, (await provisionUser(t.app, "pty_owner")).cookie);
+      const member = apiClient(t.app, (await provisionUser(t.app, "pty_member")).cookie);
+      const projectId = "pty_owner-shared";
+      expect((await owner.post("/api/projects", { projectId, name: "Shared" })).status).toBe(201);
+      const sessionId = "shared-shell-room";
+      t.deps.sessionsRepo.insert(sessionRow(sessionId, { projectId }));
+      const path = `/api/terminals/projects/${projectId}/session-resources`;
+      const options = { sessionId, cwd: t.root };
+      expect((await owner.post("/api/terminals", options)).status).toBe(201);
+      expect((await member.get(path)).status).toBe(404);
+      expect((await member.post("/api/terminals", options)).status).toBe(404);
+      expect((await member.post(path + "/close", { sessionIds: [sessionId] })).status).toBe(404);
+      expect(
+        (await owner.post(`/api/projects/${projectId}/members`, { userId: "pty_member" })).ok,
+      ).toBe(true);
+      expect(await (await member.get(path)).json()).toEqual({ counts: {} });
+      expect((await member.post("/api/terminals", options)).status).toBe(201);
+      expect(
+        await (await member.post(path + "/close", { sessionIds: [sessionId] })).json(),
+      ).toEqual({ results: [{ sessionId, closed: 1 }] });
+      expect(await (await owner.get(path)).json()).toEqual({ counts: { [sessionId]: 1 } });
+    } finally {
+      await t.cleanup();
+    }
+  });
+
   it("files a shell under the conversation that opened it, and only its user can refile it", async () => {
     const t = await createTestApp();
     try {

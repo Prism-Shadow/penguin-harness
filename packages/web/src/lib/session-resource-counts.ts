@@ -1,4 +1,4 @@
-import { fetchJson } from "../features/terminal/terminal-view";
+import { fetchJson } from "./terminal-http";
 
 type SessionResourceKind = "terminal" | "builtin-browser";
 
@@ -14,7 +14,9 @@ export async function listSessionResourceCounts(
   machineId: string | null,
 ): Promise<Record<string, number>> {
   const { counts } = await fetchJson<{ counts: Record<string, number> }>(
-    managementPath(kind, projectId), undefined, machineId,
+    managementPath(kind, projectId),
+    undefined,
+    machineId,
   );
   return counts;
 }
@@ -25,8 +27,12 @@ export function closeSessionResources(
   machineId: string | null,
   sessionIds: readonly string[],
 ): Promise<{ results: Array<{ sessionId: string; closed: number; error?: string }> }> {
-  return fetchJson(managementPath(kind, projectId) + "/close", {
-    method: "POST",
-    body: JSON.stringify({sessionIds}),
-  },machineId);
+  return fetchJson(
+    managementPath(kind, projectId) + "/close",
+    {
+      method: "POST",
+      body: JSON.stringify({ sessionIds }),
+    },
+    machineId,
+  );
 }
