@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** fix
 - **Scope:** `web`, `server`
+- **PR:** [#1728](https://github.com/Prism-Shadow/penguin-harness/pull/1728)
 
 [中文版](2026-11-23-google-genai-protocol-detection.zh.md)
 
