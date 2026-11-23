@@ -54,6 +54,34 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  library/agent:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-http':
+        specifier: workspace:*
+        version: link:../http
+      '@prismshadow/penguin-library-session':
+        specifier: workspace:*
+        version: link:../session
+      '@prismshadow/penguin-library-trace':
+        specifier: workspace:*
+        version: link:../trace
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+      yaml:
+        specifier: ^2.5.0
+        version: 2.9.0
+    devDependencies:
+      '@types/node':
+        specifier: ^24
+        version: 24.13.3
+      tsup:
+        specifier: ^8
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+
   library/agent-api:
     dependencies:
       '@prismshadow/penguin-core':
@@ -95,6 +123,34 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  library/benchmark:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-http':
+        specifier: workspace:*
+        version: link:../http
+      '@prismshadow/penguin-library-workspace':
+        specifier: workspace:*
+        version: link:../workspace
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+      smol-toml:
+        specifier: ^1.9.1
+        version: 1.9.1
+      yaml:
+        specifier: ^2.5.0
+        version: 2.9.0
+    devDependencies:
+      '@types/node':
+        specifier: ^24
+        version: 24.13.3
+      tsup:
+        specifier: ^8
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+
   library/cli:
     dependencies:
       '@prismshadow/penguin-core':
@@ -135,6 +191,9 @@ importers:
       '@prismshadow/penguin-library-auth':
         specifier: workspace:*
         version: link:../auth
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       hono:
         specifier: ^4.13.11
         version: 4.13.13
@@ -338,7 +397,16 @@ importers:
       '@prismshadow/penguin-library-db':
         specifier: workspace:*
         version: link:../db
+      '@prismshadow/penguin-library-http':
+        specifier: workspace:*
+        version: link:../http
+      '@prismshadow/penguin-theme-pack':
+        specifier: workspace:*
+        version: link:../../packages/theme-pack
     devDependencies:
+      '@types/node':
+        specifier: ^24
+        version: 24.13.3
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -397,6 +465,22 @@ importers:
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  library/workspace:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-library-http':
+        specifier: workspace:*
+        version: link:../http
+    devDependencies:
+      '@types/node':
+        specifier: ^24
+        version: 24.13.3
+      tsup:
+        specifier: ^8
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
 
   packages/amsp:
     devDependencies:
