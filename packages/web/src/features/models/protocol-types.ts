@@ -230,7 +230,7 @@ function draftEntry(
 
 /*
  * Failure classification used to live here, splitting "unreachable" from "the endpoint
- * answered but serves none of the three". Removed deliberately (per maintainer): the
+ * answered but serves none of the probed protocols". Removed deliberately (per maintainer): the
  * distinction is invisible to the person configuring a model, and phrasing one branch as
  * "the endpoint responded" read as success to users. Every failure now shows the same
  * short message naming the two things they can actually act on — the API key and the base

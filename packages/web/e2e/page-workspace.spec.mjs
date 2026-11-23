@@ -120,10 +120,15 @@ test("a workbench shares the session viewport and its iframe survives changing p
   const [id] = await start(page, ADMIN_ID);
   const chat = slot(page, id);
   await chat.locator(composer).fill("Keep the support conversation");
-  await chat.getByRole("button", { name: "Browse workbenches" }).click();
-  const directory = page.getByRole("region", { name: "Workbenches" });
+  const shortcuts = chat.getByRole("button", { name: "Shortcuts", exact: true });
+  await shortcuts.focus();
+  await page.keyboard.press("Enter");
+  const openCenter = chat.getByRole("button", { name: "Open App Center", exact: true });
+  await openCenter.focus();
+  await page.keyboard.press("Enter");
+  const directory = page.getByRole("list", { name: "App Center", exact: true });
   await expect(directory).toBeVisible();
-  await directory.getByText("Support", { exact: true }).click();
+  await directory.locator('li[data-app="penguin_support/support"] > button').first().click();
   const app = slot(page, "app:penguin_support/support");
   await expect(chat).toHaveAttribute("data-pane", "left");
   await expect(app).toHaveAttribute("data-pane", "right");
@@ -142,6 +147,37 @@ test("a workbench shares the session viewport and its iframe survives changing p
   await expect(frame).toBeVisible();
   expect(await original.evaluate(() => window.workspaceContinuity)).toBe("initial frame");
   await expect(chat.locator(composer)).toHaveValue("Keep the support conversation");
+});
+
+test.describe("on a touch phone", () => {
+  test.use({ hasTouch: true, viewport: { width: 320, height: 690 } });
+
+  test("the Session shortcut opens the App Center without starting an app or terminal", async ({
+    page,
+  }) => {
+    const [first] = await start(page, "mobileappshortcuts");
+    const written = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (
+        request.method() === "POST" &&
+        (url.pathname === "/api/terminals" ||
+          url.pathname.endsWith("/windows") ||
+          url.pathname.endsWith("/tabs"))
+      )
+        written.push(url.pathname);
+    });
+    const chat = slot(page, first);
+    await chat.getByRole("button", { name: "Shortcuts", exact: true }).tap();
+    const openCenter = chat.getByRole("button", { name: "Open App Center", exact: true });
+    await expect(openCenter).toBeVisible();
+    const bounds = await openCenter.boundingBox();
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(320);
+    await openCenter.tap();
+    await expect(page.getByRole("list", { name: "App Center", exact: true })).toBeVisible();
+    expect(written).toEqual([]);
+  });
 });
 
 test("a phone chooses one of the two open pages", async ({ page }) => {

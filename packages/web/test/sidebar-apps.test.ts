@@ -53,7 +53,7 @@ const workbench = (id: string, over: Partial<WorkbenchInfo> = {}): WorkbenchInfo
 
 const key = (id: string, agentId = AGENT_ID) => `${agentId}/${id}`;
 
-/** Open a fixture workbench through the same action used by Agent settings and Browse workbenches. */
+/** Open a fixture workbench through the same action used by Agent settings. */
 function Launchers({ items }: { items: WorkbenchInfo[] }) {
   const restore = useRestoreApp();
   return items.flatMap((item) =>

@@ -128,6 +128,8 @@ export interface WorkbenchAppCenter {
 
 /** One tile of the App Center: a workbench whose manifest does not keep it off. */
 export interface AppCenterShortcut {
+  /** The workbench package's declared name, independent of its Agent-local installation folder. */
+  packageName?: string;
   agentId: string;
   agentName: string;
   workbenchId: string;

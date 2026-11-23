@@ -36,6 +36,8 @@ export abstract class AgentConfig {
     description?: string;
     author: AgentAuthor;
     toolCount: number;
+    /** Package owners from valid stored MCP entries, omitted if the config could not be read. */
+    mcpPluginNames?: string[];
     version: number;
     kernelOutdated: boolean;
     system?: true;
