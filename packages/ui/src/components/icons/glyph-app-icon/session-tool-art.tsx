@@ -22,14 +22,14 @@ export const sessionToolArt = new Map<string, ReactNode>([
         d={APP_MARK_PATHS.terminal.prompt}
         fill="none"
         stroke="white"
-        strokeWidth="2.9"
+        strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <path
         d={APP_MARK_PATHS.terminal.cursor}
         stroke="color-mix(in oklab, var(--ui-icon-tint-green) 45%, white)"
-        strokeWidth="2.8"
+        strokeWidth="2"
         strokeLinecap="round"
       />
     </svg>,
@@ -69,7 +69,7 @@ export const sessionToolArt = new Map<string, ReactNode>([
         fill="none"
         stroke="white"
         strokeOpacity=".85"
-        strokeWidth="1.3"
+        strokeWidth="1.5"
         strokeLinecap="round"
       />
       <path d={APP_MARK_PATHS.browser.needleSouth} fill="white" />
