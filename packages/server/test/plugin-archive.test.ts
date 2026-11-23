@@ -564,12 +564,19 @@ describe("plugin import and export", () => {
     // A shipped plugin exports the same way, its package as the build has it.
     const shipped = await other.get("/api/plugins/a2ui/archive");
     expect(shipped.status).toBe(200);
-    expect(shipped.headers.get("content-disposition")).toMatch(
-      /filename\*=UTF-8''a2ui-v\d+\.\d+\.\d+\.zip/,
+    const shippedFiles = unzipSync(new Uint8Array(await shipped.arrayBuffer()));
+    const manifest = JSON.parse(new TextDecoder().decode(shippedFiles["a2ui/package.json"])) as {
+      name: string;
+      version: string;
+    };
+    expect((await library(other)).find((plugin) => plugin.name === "a2ui")).toMatchObject({
+      package: manifest.name,
+      version: manifest.version,
+    });
+    expect(shipped.headers.get("content-disposition")).toBe(
+      `attachment; filename*=UTF-8''a2ui-v${manifest.version}.zip`,
     );
-    expect(Object.keys(unzipSync(new Uint8Array(await shipped.arrayBuffer())))).toContain(
-      "a2ui/skills/a2ui/SKILL.md",
-    );
+    expect(Object.keys(shippedFiles)).toContain("a2ui/skills/a2ui/SKILL.md");
     expect((await other.get("/api/plugins/nothing-here/archive")).status).toBe(404);
   });
 

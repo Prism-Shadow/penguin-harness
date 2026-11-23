@@ -140,11 +140,12 @@ Agent 还能编写并优化自己的 Skill（[文档](https://penguin.ooo/docs/s
 | 分类 | 插件                                                                       |
 | -------------------- | ----------------------------------------------------------------------------- |
 | Agent 自进化 | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
-| 办公效率 | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `trace-lookup`, `agent-company`, `penguin-support` |
-| 实用工具 | `first-workbench-guide`, `fridge-keeper`, `action-minutes` |
-| 娱乐 | `tabletop-desk`, `party-charades`, `daily-draw` |
-| 软件开发 | `software-development`, `use-claude-code` |
+| 办公效率 | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `goal`, `trace-lookup`, `agent-company`, `penguin-support` |
+| 实用工具 | `first-workbench-guide` |
+| 软件开发 | `software-development` |
 | AI 应用开发 | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
+
+A2UI、外部插件移植和 Firecrawl 从 [PenguinHarness Apps](https://github.com/Prism-Shadow/penguin-harness-apps) 随产品分发。其他来自该仓库的工作台和技能可在插件市场按需安装。
 
 ## 支持的模型
 

@@ -19,6 +19,10 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@penguinharness/a2ui": "https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz",
+    "@penguinharness/humanizer": "https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/humanizer-0.2.19-rc.1.tgz",
+    "@penguinharness/use-claude-code": "https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-claude-code-0.2.19-rc.1.tgz",
+    "@penguinharness/use-firecrawl": "https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz",
     "@playwright/test": "^1.61.1",
     "@penguinharness/ace-rsi-toolkit": "https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz",
     "@penguinharness/ape-rsi-toolkit": "https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ape-rsi-toolkit-0.2.19-rc.1.tgz",

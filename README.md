@@ -140,11 +140,12 @@ Agents can also write and optimize their own Skills ([docs](https://penguin.ooo/
 | Category             | Plugins                                                                       |
 | -------------------- | ----------------------------------------------------------------------------- |
 | Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
-| Office Productivity  | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `trace-lookup`, `agent-company`, `penguin-support` |
-| Utilities | `first-workbench-guide`, `fridge-keeper`, `action-minutes` |
-| Entertainment | `tabletop-desk`, `party-charades`, `daily-draw` |
-| Software Development | `software-development`, `use-claude-code`                              |
+| Office Productivity  | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `goal`, `trace-lookup`, `agent-company`, `penguin-support` |
+| Utilities | `first-workbench-guide` |
+| Software Development | `software-development` |
 | AI App Development   | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
+
+A2UI, External Plugin Porting and Firecrawl ship with the product from [PenguinHarness Apps](https://github.com/Prism-Shadow/penguin-harness-apps). Its other workbenches and Skills can be installed through the plugin marketplace.
 
 ## Supported models
 
