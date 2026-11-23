@@ -255,12 +255,10 @@ test("a workbench hidden from the sidebar leaves the list, and its row's Open, A
   const more = settings.getByRole("button", { name: "更多 Clear" });
   const menu = settings.getByRole("menu", { name: "更多 Clear" });
   const sidebar = menu.getByRole("menuitemcheckbox", { name: "展示到侧边栏" });
-  const appCenter = menu.getByRole("menuitemcheckbox", { name: "展示到应用中心" });
+  const hide = settings.getByRole("button", { name: "从应用中心隐藏 Clear" });
   try {
     await more.focus();
     await settings.keyboard.press("Enter");
-    await expect(appCenter).toBeFocused();
-    await settings.keyboard.press("ArrowDown");
     await expect(sidebar).toBeFocused();
     await expect(sidebar).toBeChecked();
     // A pick writes and closes the menu.
@@ -273,7 +271,7 @@ test("a workbench hidden from the sidebar leaves the list, and its row's Open, A
     await more.click();
     await expect(menu).toBeInViewport({ ratio: 1 });
     await expect(sidebar).not.toBeChecked();
-    await expect(appCenter).toBeChecked();
+    await expect(hide).toBeVisible();
     await settings.keyboard.press("Escape");
     await settings.setViewportSize({ width: 1280, height: 900 });
 

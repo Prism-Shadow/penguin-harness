@@ -1154,11 +1154,10 @@ export const en: Strings = {
     importOverwriteAction: "Overwrite",
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "Export",
-    /** Whether the workbench has a shortcut in the App Center: the words beside the row's switch (which flip it too), its accessible name with the title, and the More menu's checkable row. */
-    showInAppCenter: "Show in the App Center",
-    /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
-    showInAppCenterHint:
-      "When on, this workbench appears as an app on the App Center page: every member of the Project sees its icon there and opens it with one click, without starting a chat first. Turning it off only takes the shortcut off the App Center; the workbench, its data and its versions are untouched. Flipping the switch rewrites penguin.appCenter.show in the workbench's package.json and is recorded as a version.",
+    appCenterVisibility: (shown: boolean): string =>
+      shown ? "Hide from App Center" : "Unhide in App Center",
+    appCenterVisibilityHint:
+      "Changes the App Center shortcut for everyone in this Project. The workbench keeps its data and version history.",
     /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
     showInSidebar: "Show in the sidebar",
     /** The row's text button: opens the workbench beside a new chat. */
