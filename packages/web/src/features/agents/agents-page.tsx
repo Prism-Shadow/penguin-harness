@@ -605,7 +605,7 @@ export function AgentsPage() {
             <AgentApiMark enabled={a.apiEnabled} />
             <span
               className="max-w-full truncate font-mono text-xs text-fg-subtle"
-              title={a.agentId}
+              data-tooltip={a.agentId}
             >
               {a.agentId}
             </span>
