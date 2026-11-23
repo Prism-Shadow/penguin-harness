@@ -305,7 +305,11 @@ function BrowserFollower() {
         void refreshBrowserStatus();
       }
       const conversation = currentDockScope();
-      const onScreen = { conversation, browserShown: isTabShown(BROWSER_TAB) };
+      const onScreen = {
+        conversation,
+        browserShown:
+          isTabShown(BROWSER_TAB) || (browserState().scope === conversation && hasVisibleSlot()),
+      };
       if (shouldReveal(event, onScreen, revealed)) {
         revealed.add(conversation);
         openPanel(BROWSER_TAB);

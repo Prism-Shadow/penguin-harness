@@ -203,6 +203,10 @@ function BrowserSurface({
   useEffect(() => {
     if (blankOnScreen !== null && !typingElsewhere(rootRef.current)) addressRef.current?.focus();
   }, [blankOnScreen]);
+  const firstTabAvailable = canOfferFirstTab(state, {
+    conversation: state.scope,
+    browserShown: active && windowShown,
+  });
   const newTab = () => void openBrowserTab(undefined, state, group);
 
   const navigate = (url: string) => {
@@ -242,6 +246,7 @@ function BrowserSurface({
       <BrowserToolbar
         tab={tab}
         address={address}
+        addressPending={tab === null && !firstTabAvailable}
         activity={currentActivity(state)}
         loadWarning={loadWarningText(state.metrics, state.tabs.length)}
         hostsPage={guestForTab(state, tabId) !== null}
@@ -263,10 +268,7 @@ function BrowserSurface({
         data-testid="builtin-browser-viewport"
         className="relative min-h-0 flex-1 overflow-hidden"
       >
-        {canOfferFirstTab(state, {
-          conversation: state.scope,
-          browserShown: active && windowShown,
-        }) && (
+        {firstTabAvailable && (
           <div className="flex h-full items-center justify-center">
             <Button size="sm" onClick={newTab}>
               {S.builtinBrowser.newTab}
