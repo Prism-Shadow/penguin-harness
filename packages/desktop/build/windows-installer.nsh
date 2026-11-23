@@ -49,12 +49,14 @@ Var PHPathErrorText
     Push $0
     Call PHIsRoot
     Pop $1
+    ReadEnvStr $2 "USERPROFILE"
     ${If} $0 == ""
     ${OrIf} $1 != 0
     ${OrIf} $0 == "$PROGRAMFILES"
     ${OrIf} $0 == "$PROGRAMFILES64"
     ${OrIf} $0 == "$LOCALAPPDATA"
     ${OrIf} $0 == "$LOCALAPPDATA\Programs"
+    ${OrIf} $0 == $2
     ${OrIf} $0 == "$APPDATA"
     ${OrIf} $0 == "$DESKTOP"
     ${OrIf} $0 == "$DOCUMENTS"
@@ -73,6 +75,9 @@ Var PHPathErrorText
   Var PHProgramPreview
   Var PHInvalidText
 
+  ; electron-builder defines its registry keys inside the standard installer
+  ; body, after this include. Emit their consumers once that header is ready.
+  !macro customHeader
   Function PHCheckRegisteredTargets
     Push $0
     Push $1
@@ -121,6 +126,8 @@ accepted:
     Pop $0
     ClearErrors
   FunctionEnd
+
+  !macroend
 
   !macro customInit
     Call PHCheckRegisteredTargets

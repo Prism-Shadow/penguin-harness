@@ -7,7 +7,9 @@ module.exports = async function inventory({ electronPlatformName, appOutDir, pac
   if (electronPlatformName !== "win32") return;
   const files = [];
   async function list(directory) {
-    for (const entry of await fs.readdir(path.join(appOutDir, directory), { withFileTypes: true })) {
+    for (const entry of await fs.readdir(path.join(appOutDir, directory), {
+      withFileTypes: true,
+    })) {
       const relative = path.join(directory, entry.name);
       if (entry.isDirectory()) await list(relative);
       else if (entry.isFile()) files.push(relative.split(path.sep).join("\\"));
