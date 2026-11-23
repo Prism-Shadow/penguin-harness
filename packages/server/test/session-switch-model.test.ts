@@ -634,6 +634,31 @@ describe("POST /switch-model", () => {
     expect(usageModels()).toEqual([A.modelId, B.modelId]);
   });
 
+  it("reports a deferred refusal once per attempt, without exposing provider details", async () => {
+    const gate = gatePromise();
+    const fake = switchFake(A, { kind: "throw", error: new Error("private provider diagnostic") });
+    fake.run = async function* () {
+      await gate.promise;
+      yield assistantText("complete");
+    };
+    adopt(fake);
+    await submit("active task");
+    expect((await optIn(B)).status).toBe(202);
+    expect((await getInfo()).modelSwitchFailure).toBeUndefined();
+    gate.resolve();
+    await expect.poll(async () => (await getInfo()).modelSwitchFailure).toBeDefined();
+    const failure = (await getInfo()).modelSwitchFailure;
+    expect(failure).toEqual({ ...B, id: expect.any(String) });
+    expect((await getInfo()).modelSwitchFailure).toEqual(failure);
+    expect(await getInfo()).toMatchObject(A);
+    const outsider = await provisionUser(t.app, "outside_switch");
+    const denied = await apiClient(t.app, outsider.cookie).get(`/api/sessions/${SID}`);
+    expect(denied.status).toBe(404);
+    expect(await denied.text()).not.toContain(failure!.id);
+    expect((await optIn(A)).status).toBe(200);
+    expect((await getInfo()).modelSwitchFailure).toBeUndefined();
+  });
+
   it("a compaction that gets no summary still switches, by Trace handoff: its end is completed with the error pair, the handoff follows the record, the row moves, and the compaction request bills to the previous model", async () => {
     adopt(
       switchFake(A, {
@@ -737,6 +762,7 @@ describe("POST /switch-model", () => {
       error_message: OPEN_FAILURE,
     });
     expect(feed.rowAtUpdate).toEqual([]);
+    expect((await getInfo()).modelSwitchFailure).toEqual({ ...B, id: expect.any(String) });
     expect(row()).toMatchObject(A);
     expect(fake.modelId).toBe(A.modelId);
     expect(heard).toEqual([]);
@@ -767,6 +793,7 @@ describe("POST /switch-model", () => {
 
     expect((await api.post(`/api/sessions/${SID}/abort`, {})).status).toBe(202);
     await waitFor(() => feed.states().includes("idle"));
+    expect((await getInfo()).modelSwitchFailure).toBeUndefined();
     expect(fake.signals[0]!.aborted).toBe(true);
     const last = feed.messages[feed.messages.length - 1]!;
     expect((last.payload as { status: string }).status).toBe("aborted");

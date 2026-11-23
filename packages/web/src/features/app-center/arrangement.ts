@@ -40,21 +40,19 @@ export interface LocatedShortcut extends AppCenterShortcut {
   system?: SystemShortcut;
 }
 
-/** Visible installations of the same workbench belonging to different Agent instances. */
+/** Visible installations of one workbench offered by different Agents on the same machine. */
 export function duplicateWorkbenchOwners(shortcuts: readonly LocatedShortcut[]): Set<string> {
   const groups = new Map<string, { owners: Set<string>; apps: string[] }>();
   for (const app of shortcuts) {
-    if (app.system) continue;
+    if (app.system || (!app.plugin && !app.packageName)) continue;
     // Installed plugin contributions keep their own folder names under each Agent. A loose
     // workbench can be imported into different folders while retaining its package name.
     const identity = app.plugin
       ? ["plugin", app.plugin, app.workbenchId]
-      : app.packageName
-        ? ["package", app.packageName]
-        : ["title", app.title.normalize("NFKC").trim().toLowerCase()];
-    const key = JSON.stringify(identity);
+      : ["package", app.packageName];
+    const key = JSON.stringify([app.machineId ?? null, ...identity]);
     const group = groups.get(key) ?? { owners: new Set<string>(), apps: [] };
-    group.owners.add(JSON.stringify([app.machineId ?? null, app.agentId]));
+    group.owners.add(app.agentId);
     group.apps.push(appKeyOf(app));
     groups.set(key, group);
   }

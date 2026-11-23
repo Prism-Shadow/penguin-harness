@@ -1,3 +1,5 @@
+import { useContext } from "react";
+import { PageIdentity } from "../../lib/page-focus";
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { panelLabel, type DockPanelBodyProps, type PanelId } from "../dock/index";
@@ -13,7 +15,8 @@ function draftPlaceholder(id: PanelId) {
     />
   );
 }
-function WorkspacePanelBody({ active }: DockPanelBodyProps) {
+function WorkspacePanelBody({ active, scope }: DockPanelBodyProps) {
+  const host = useContext(PageIdentity)?.sessionHost;
   const {
     selected,
     draft,
@@ -44,12 +47,16 @@ function WorkspacePanelBody({ active }: DockPanelBodyProps) {
   if (!selected) return draftPlaceholder("workspace");
   return (
     <WorkspaceBrowser
-      scope={{ kind: "session", sessionId: selected.sessionId }}
+      scope={{
+        kind: "session",
+        sessionId: selected.sessionId,
+        machineId: scope ? scope.machineId : host?.machineId,
+      }}
       workspacePath={selected.workspace}
       openRequest={fileOpenRequest}
       active={active}
       reloadSignal={settledTurnSignal}
-      onAddReference={addComposerReference}
+      onAddReference={selected.archived ? undefined : addComposerReference}
     />
   );
 }

@@ -564,6 +564,7 @@ export class SessionService {
     agentId: string,
     opts: {
       paging?: SessionListPaging;
+      search?: string;
       order?: SessionListOrder;
       category?: SessionCategory;
       workspaceGroup?: string;
@@ -589,9 +590,16 @@ export class SessionService {
     } = opts;
     const { rows, orgIds, traces } = await this.walkRows(projectId, agentId, excludeOrg === true);
 
-    const sorted = [...rows.values()].sort(
-      order === "activity" ? compareActivityDesc : compareCreatedDesc,
-    );
+    const needle = opts.search?.trim().toLowerCase();
+    const candidates = [...rows.values()];
+    const matches = needle
+      ? candidates.filter((row) =>
+          [row.title, row.sessionId, row.workspace, row.agentId].some((value) =>
+            value?.toLowerCase().includes(needle),
+          ),
+        )
+      : candidates;
+    const sorted = matches.sort(order === "activity" ? compareActivityDesc : compareCreatedDesc);
     // The rows a cursor leaves to serve are a suffix of the activity order: those from `start` on.
     const before = paging && "before" in paging ? paging.before : undefined;
     let start = 0;

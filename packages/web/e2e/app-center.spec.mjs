@@ -790,7 +790,8 @@ test("duplicate workbenches show their Agent on desktop, in a folder, and on a p
         await expect(picture).toHaveAttribute("src", /\/agents\/library_b\/avatar\?rev=/);
         await expect.poll(() => picture.evaluate((img) => img.naturalWidth)).toBe(1);
       } else {
-        await expect(badge).toHaveText("A");
+        await expect(badge.locator("svg [data-variant]").first()).toBeAttached();
+        await expect(badge).toHaveText("");
       }
       await tile(id).getByRole("button").click();
       await expect(page.locator(`[data-workspace-page="app:${id}"]`)).toBeVisible();
