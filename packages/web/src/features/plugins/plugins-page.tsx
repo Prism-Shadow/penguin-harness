@@ -642,10 +642,14 @@ export function PluginsPage() {
     setPendingServerUninstall({ specifier, name, machineId, holders: null, error: null });
     api.getPluginHolders(specifier, server).then(
       (holders) =>
-        setPendingServerUninstall((p) => (p?.specifier === specifier ? { ...p, holders } : p)),
+        setPendingServerUninstall((p) =>
+          p?.specifier === specifier && p.machineId === machineId ? { ...p, holders } : p,
+        ),
       (e: unknown) =>
         setPendingServerUninstall((p) =>
-          p?.specifier === specifier ? { ...p, error: apiErrorText(e) } : p,
+          p?.specifier === specifier && p.machineId === machineId
+            ? { ...p, error: apiErrorText(e) }
+            : p,
         ),
     );
   };
@@ -1243,7 +1247,7 @@ export function PluginsPage() {
       onImportFile: () => setImportOpen(true),
       onInstallServer: () => installServer(row),
       onAskAdmin: () => askAdmin(row),
-      ...(isAdmin
+      ...(isAdmin && rowMachine !== undefined && live
         ? {
             onServerUninstall: () =>
               askServerUninstall(
@@ -1569,12 +1573,22 @@ export function PluginsPage() {
           busy={serverUninstalling}
           confirmDisabled={
             pendingServerUninstall.holders === null ||
+            pendingServerUninstall.holders.shipped ||
             pendingServerUninstall.holders.shared.length > 0
           }
           onClose={() => setPendingServerUninstall(null)}
           onConfirm={() => void runServerUninstall()}
         >
-          <ServerUninstallBody target={pendingServerUninstall} />
+          <ServerUninstallBody
+            target={pendingServerUninstall}
+            retry={() =>
+              askServerUninstall(
+                pendingServerUninstall.specifier,
+                pendingServerUninstall.name,
+                pendingServerUninstall.machineId,
+              )
+            }
+          />
         </ConfirmModal>
       )}
       {repairModal}
@@ -1867,7 +1881,9 @@ export function PluginsHeaderActions({
  */
 function ServerUninstallBody({
   target,
+  retry,
 }: {
+  retry: () => void;
   target: {
     name: string;
     holders: PluginHoldersResponse | null;
@@ -1877,8 +1893,18 @@ function ServerUninstallBody({
   const words = S.plugins.installModel;
   const holders = target.holders;
   if (target.error !== null) {
-    return <p className="text-sm">{target.error}</p>;
+    return (
+      <div className="space-y-2">
+        <p role="alert" className="text-sm">
+          {target.error}
+        </p>
+        <Button size="sm" onClick={retry}>
+          {S.common.retry}
+        </Button>
+      </div>
+    );
   }
+  if (holders?.shipped) return <p className="text-sm">{S.plugins.libraryBuiltinHint}</p>;
   if (holders !== null && holders.shared.length > 0) {
     return (
       <p className="text-sm">

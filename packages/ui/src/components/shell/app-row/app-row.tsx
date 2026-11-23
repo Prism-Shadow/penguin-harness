@@ -3,8 +3,6 @@
  * Center's tile wears for the same states, at a row's size. A click opens the app; the row is
  * selected while the app's window is the one on screen.
  *
- * - Running (its window open, shown or minimized): a short bar under the icon in the `success`
- *   ink, as a taskbar marks a running app (the tone the Web App names `busy`).
  * - Building: the icon dims under a turning ring; the row does not open (`aria-disabled`), the way
  *   the tile does not, unless the app is already running and has a window to bring back.
  * - Failed: the icon dims and a warning mark sits on its corner; the row still opens.
@@ -39,7 +37,7 @@ export interface AppRowProps {
   /** The app's key, written on the row for the app and its tests to find it by. */
   appKey: string;
   /** Page lists can reorder the row or drop its page onto a pane. */
-  drag?: Pick<HTMLAttributes<HTMLLIElement>, "draggable" | "onDragStart" | "onDragOver" | "onDrop">;
+  drag?: Pick<HTMLAttributes<HTMLElement>, "draggable" | "onDragStart" | "onDragOver" | "onDrop">;
   /** The app's icon, drawn by the caller at `APP_ROW_ICON_PX`. */
   icon: ReactNode;
   /** The app's name in the reader's language. */
@@ -58,6 +56,8 @@ export interface AppRowProps {
   build?: "ready" | "building" | "failed";
   /** The row's menu. */
   menuActions: readonly RowActionItem[];
+  /** Useful window controls placed directly after More, including on touch devices. */
+  windowActions?: readonly RowActionItem[];
   /** The "more" button's name and hint. */
   moreLabel: string;
   onOpen: () => void;
@@ -75,6 +75,7 @@ export function AppRow({
   running = false,
   build = "ready",
   menuActions,
+  windowActions,
   moreLabel,
   onOpen,
 }: AppRowProps) {
@@ -90,7 +91,7 @@ export function AppRow({
     action.onSelect();
   };
   return (
-    <li className="relative" {...drag}>
+    <li className="relative" onDragOver={drag?.onDragOver} onDrop={drag?.onDrop}>
       <div
         ref={ctx.rowRef}
         {...ctx.rowProps}
@@ -100,6 +101,8 @@ export function AppRow({
       >
         <button
           type="button"
+          draggable={drag?.draggable}
+          onDragStart={drag?.onDragStart}
           data-app-row={appKey}
           aria-current={active ? "page" : undefined}
           aria-disabled={closed || undefined}
@@ -130,12 +133,6 @@ export function AppRow({
                 <GlyphIcon d={ICONS.triangleAlert} size={ICON_SIZE.rowMark} />
               </span>
             )}
-            {running && (
-              <span
-                data-running=""
-                className="pointer-events-none absolute -bottom-1 left-1/2 h-[2px] w-2.5 -translate-x-1/2 rounded-full bg-tone-success-emphasis"
-              />
-            )}
           </span>
           <span
             className={`min-w-0 flex-1 truncate font-sans text-sm ${
@@ -150,8 +147,21 @@ export function AppRow({
             </span>
           )}
         </button>
-        <div className="invisible flex h-6 shrink-0 items-center group-hover:visible group-focus-within:visible [&_button]:pointer-events-auto [&_button]:opacity-100">
-          <RowHoverActions actions={[]} moreLabel={moreLabel} onMore={ctx.openAt} />
+        <div
+          className={
+            windowActions
+              ? "flex shrink-0 items-center [&_button]:pointer-events-auto [&_button]:size-7 [&_button]:opacity-100 pointer-coarse:[&_button]:size-10"
+              : "invisible flex h-6 shrink-0 items-center group-hover:visible group-focus-within:visible [&_button]:pointer-events-auto [&_button]:opacity-100"
+          }
+          onPointerDown={(event) => event.stopPropagation()}
+          onTouchStart={(event) => event.stopPropagation()}
+        >
+          <RowHoverActions
+            actions={windowActions ?? []}
+            moreFirst
+            moreLabel={moreLabel}
+            onMore={ctx.openAt}
+          />
         </div>
         <Dropdown
           open={ctx.open}

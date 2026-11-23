@@ -1,7 +1,7 @@
 ---
 name: computer-use
 description: "Operate the desktop apps on the user's computer from the shell with `penguin computer`: read an app's window as an accessibility tree, click, type, select, toggle and wait through each element's accessibility API, take window screenshots, and launch or quit apps, on macOS, Windows and Linux. Use it for any task in a desktop app (not a website) that the user asks you to do on their computer, such as working a calculator, filling a native form, or reading a value from a settings window."
-version: 2026.11.20.4
+version: 2026.11.23.1
 ---
 
 # Computer use
@@ -36,7 +36,7 @@ Exit code 0 and `data.penguin.ready: true` mean you can start. Otherwise read `d
 - `admin_only`: see above.
 - `checks`: `data.penguin.checks` lists what is missing (`ok: false`), each with what to do: on macOS the Accessibility permission for PenguinHarness (the card has **Open System Settings**), on Linux a desktop session with a window manager, on Windows the signed-in user's desktop.
 
-`data.penguin.settings` says what the administrator allows beyond the defaults: `allowMembers`, `physicalInput`, `clipboardRead`, `notificationRead` (all off unless allowed), and `pauseWhileUserActive` (on unless turned off).
+`data.penguin.settings` says what the administrator allows beyond the defaults: `allowMembers`, `physicalInput`, `clipboardRead`, `notificationRead` (all off unless allowed), and `pauseWhileUserActive` (off unless enabled).
 
 `data.penguin.desktop` is the desktop right now: `focused` (the focused window: `app`, `windowId`, `title`), `displays` (each display's `bounds`; see below), and `userIdleSeconds` with `userActive` — how long ago the person at this computer last used the keyboard or mouse (`null` where it cannot be read, with `idleUnknown` saying why).
 
@@ -52,7 +52,7 @@ So:
 
 - **Before keyboard input** — `press`, and `type` or `set-value` where the app needs real keys — run `penguin computer list-windows` and check the target window shows `"is_focused": true`. If not, ask the user, then `penguin computer focus-window --window-id <id>` and check again. The plugin refuses `press` to a window that is not focused (`window_not_focused`, naming the `focus-window` to run) and never takes focus silently.
 - **Read back after every action** — `get`, `is`, a fresh snapshot or `wait`. An action's `ok` says agent-desktop delivered it, not that the app did what you wanted.
-- **When the person is active, stop and ask.** If `status` shows `userActive: true` (or `userIdleSeconds` near 0), or window positions keep changing between your reads, they are working: say what you were about to do and wait for them. While they are active the plugin refuses commands that change the desktop with `user_active` (an administrator can turn this off); reading — snapshots, `list-*`, `get` — still works.
+- **When the person is active, stop and ask.** If `status` shows `userActive: true` (or `userIdleSeconds` near 0), or window positions keep changing between your reads, they are working: say what you were about to do and wait for them. When an administrator enables **Pause while the user is active**, the plugin refuses commands that change the desktop with `user_active` during user input; reading — snapshots, `list-*`, `get` — still works.
 - **Several displays**: `penguin computer list-displays` gives each display's `bounds`; window bounds and coordinates are in that shared space, so a window can be on another display (x beyond the first display's width) or move to one. Read positions again before anything that depends on them; never reuse an old coordinate.
 
 ## The loop

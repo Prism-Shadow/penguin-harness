@@ -23,8 +23,8 @@ const zh = {
     thisServer: "本机",
     myProjects: "我的 Project",
     used: (size: string): string => `已用 ${size}`,
-    /** The size before anything has been measured. */
-    notMeasured: "—",
+    firstMeasurement: "正在测量存储空间…",
+    unavailable: "还没有可用的测量结果。",
     /** The bar's and its legend's accessible name. */
     usageLabel: "空间占用",
     measuredAt: (when: string): string => `测量于 ${when}`,
@@ -148,7 +148,8 @@ const en: typeof zh = {
     thisServer: "This server",
     myProjects: "My Projects",
     used: (size: string): string => `${size} used`,
-    notMeasured: "—",
+    firstMeasurement: "Measuring storage space…",
+    unavailable: "No storage measurement is available yet.",
     usageLabel: "Storage used",
     measuredAt: (when: string): string => `Measured ${when}`,
     measuring: "Measuring…",

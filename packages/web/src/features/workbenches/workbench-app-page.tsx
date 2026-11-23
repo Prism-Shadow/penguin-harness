@@ -128,7 +128,7 @@ export function WorkbenchAppPage() {
         </div>
       )}
       {tab ? (
-        <WorkbenchFrame projectId={projectId} tab={tab} />
+        <WorkbenchFrame projectId={projectId} agentId={agentId} tab={tab} />
       ) : (
         <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
           <span>

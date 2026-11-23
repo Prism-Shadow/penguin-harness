@@ -112,16 +112,12 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
             onSelect: () => open(row),
           },
       ...layoutActions(workspace, page, onNavigate),
-      ...(page.kind === "window"
-        ? [
-            {
-              id: "fullscreen",
-              label: S.appCenter.windowFullScreen,
-              glyph: ICONS.square,
-              onSelect: act(() => workspace.fullScreen(page)),
-            },
-          ]
-        : []),
+      {
+        id: "fullscreen",
+        label: S.appCenter.windowFullScreen,
+        glyph: ICONS.square,
+        onSelect: act(() => workspace.fullScreen(page)),
+      },
       {
         id: "close",
         label: S.common.close,
@@ -237,6 +233,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
           className="max-h-[min(8rem,18dvh)] space-y-px overflow-y-auto md:max-h-[min(12rem,25dvh)]"
         >
           {visible.map((row) => {
+            const actions = menuOf(row);
             const state = S.appCenter.running;
             const name = S.sidebarApps.rowName(row.title, row.agentName, state);
             return (
@@ -277,7 +274,10 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
                 active={workspace.current?.id === row.page.id}
                 running
                 build={row.build}
-                menuActions={menuOf(row)}
+                menuActions={actions}
+                windowActions={actions.filter(
+                  (item) => item.id === "fullscreen" || item.id === "close",
+                )}
                 moreLabel={S.chat.moreActions}
                 onOpen={() => open(row)}
               />

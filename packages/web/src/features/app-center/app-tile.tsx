@@ -13,8 +13,8 @@
  *   trail's sentence: the App Center's nav entry carries the same dot, and the page clears it
  *   (lib/system-app-notes.ts). A folder holding such an app wears the dot too, with the
  *   sentences of the apps inside, so the trail never ends at a closed folder.
- * - An app that is running behind the grid (its window minimized) has a short bar under its
- *   icon, as a taskbar marks a running app, and its name and hint say so; a click brings its
+ * - An app that is running behind the grid (its window minimized) keeps its running state in its
+ *   accessible name and hint; a click brings its
  *   window back, even while it builds. A folder holding one has the same bar, and says how many.
  *   A system app runs like any app when it opens in a window (a server module's iframe page);
  *   one that opens as its own page never runs.
@@ -47,7 +47,7 @@ import {
   UpdateDot,
 } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { toneDot, toneInk } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import { skillTileColor } from "../skills";
 import type { GridApp, GridFolder, LocatedShortcut, Side } from "./arrangement";
 
@@ -121,17 +121,6 @@ function DropLine({ side }: { side: Side }) {
       className={`pointer-events-none absolute inset-y-2 z-raised w-0.5 rounded-full bg-accent ${
         side === "before" ? "-left-2" : "-right-2"
       }`}
-    />
-  );
-}
-
-/** The bar under an icon whose app (or one of whose apps) is running; the tile says it in words. */
-function RunningMark() {
-  return (
-    <span
-      aria-hidden
-      data-running=""
-      className={`pointer-events-none absolute -bottom-2 left-1/2 h-[3px] w-3.5 -translate-x-1/2 rounded-full ${toneDot.busy}`}
     />
   );
 }
@@ -292,7 +281,6 @@ export function AppTile({
                 </span>
               )}
               {note !== null && <TileDot />}
-              {running && <RunningMark />}
             </AppIconShape>
             <TileName fade={inFolder}>{title}</TileName>
             {shortcut.machineLabel && (
@@ -367,7 +355,7 @@ export function FolderTile({
             }}
             className={`${TILE_BUTTON} ${lifted ? "opacity-40" : ""}`}
           >
-            {/* The dot and the running bar sit outside the folder's square, which clips its previews. */}
+            {/* The update dot sits outside the folder's square, which clips its previews. */}
             <span className="relative block">
               {/* The open folder unfolds from this square, its apps from their previews in it. */}
               <AppIconShape
@@ -386,7 +374,6 @@ export function FolderTile({
                 ))}
               </AppIconShape>
               {notes.length > 0 && <TileDot />}
-              {running > 0 && <RunningMark />}
             </span>
             <TileName>{folder.name}</TileName>
           </button>

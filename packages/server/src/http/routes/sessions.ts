@@ -78,6 +78,7 @@ import { sseEndpoint, streamRevocation } from "../sse.js";
 import {
   badRequest,
   listingViewOfRequest,
+  optionalBoolean,
   optionalEnum,
   optionalSessionListPagingQuery,
   optionalString,
@@ -1591,7 +1592,8 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       provider: requireString(body, "provider", { minLen: 1 }),
       modelId: requireString(body, "modelId", { minLen: 1 }),
     };
-    const outcome = await deps.manager.startSwitch(row.sessionId, ref);
+    const whenIdle = optionalBoolean(body, "whenIdle");
+    const outcome = await deps.manager.startSwitch(row.sessionId, ref, whenIdle);
     if (!outcome.switched) {
       return c.json({ sessionId: outcome.sessionId } satisfies TaskCreateResponse, 202);
     }

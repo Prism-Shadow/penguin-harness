@@ -81,6 +81,11 @@ export function getChatModel(current = null) {
   return askChatModel("get", current);
 }
 
+/** This Agent's effective thinking level and the localized choices offered in chat. */
+export function getChatThinkingOptions() {
+  return askChatModel("thinking", null);
+}
+
 /** Opens this Project's native Models page. The provider configuration stays in the host. */
 export function openModelSettings() {
   return askChatModel("settings", null);
@@ -122,6 +127,7 @@ function askChatModel(op, current) {
       stop();
       if (typeof data.error === "string") reject(new Error(data.error));
       else if (op === "settings") resolve();
+      else if (op === "thinking") resolve(data.thinking || null);
       else resolve(data.model || null);
     }
     window.addEventListener("message", onReply);

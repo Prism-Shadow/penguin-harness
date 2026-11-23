@@ -42,14 +42,17 @@ export function PageSlot({
   const { layout, current } = workspace;
   const page = layout.pages.find((item) => item.id === id);
   const side = layout.visible.indexOf(id);
-  const pair = sessionAppPair(layout);
+  const fullScreen = !!workspace.exitFullScreen;
+  const pair = fullScreen ? null : sessionAppPair(layout);
   const docked = pair?.app.id === id;
-  const split = !pair && !narrow && layout.visible.length === 2;
+  const split = !pair && !narrow && !fullScreen && layout.visible.length === 2;
   const shown =
     !!current &&
-    (docked
-      ? !!bounds && bounds.width > 0 && bounds.height > 0 && !contextualDockPage(pair.app.path)
-      : side >= 0 && (!!pair || !narrow || id === layout.focus));
+    (fullScreen
+      ? id === current.id
+      : docked
+        ? !!bounds && bounds.width > 0 && bounds.height > 0 && !contextualDockPage(pair.app.path)
+        : side >= 0 && (!!pair || !narrow || id === layout.focus));
   const focused = shown && layout.focus === id;
   const style: CSSProperties =
     docked && bounds

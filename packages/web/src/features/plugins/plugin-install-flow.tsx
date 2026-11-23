@@ -80,6 +80,9 @@ export interface InstallFlowProps {
   onImportFile?: () => void;
   /** Installs (or, for `enable`, enables) it on the server. */
   onServer: () => void;
+  /** Opens the existing administrator confirmation for this server. */
+  onRemoveServer?: () => void;
+  machineLabel?: string;
   /** Asks an admin to install it on the server (a member). */
   onAsk: () => Promise<void>;
   /** Step 2's body: the Agents. Null while the server's copy is not read yet. */
@@ -90,7 +93,8 @@ export interface InstallFlowProps {
 export function InstallFlow(props: InstallFlowProps) {
   const words = S.plugins.installModel;
   const serverDone = props.server === "done";
-  const [step, setStep] = useState<1 | 2>(serverDone && props.steps === 2 ? 2 : 1);
+  const [selected, setStep] = useState<1 | 2>(serverDone && props.steps === 2 ? 2 : 1);
+  const step = serverDone && props.steps === 2 ? selected : 1;
   const [asked, setAsked] = useState(false);
   const [asking, setAsking] = useState(false);
   // The server step completing moves the flow on by itself.
@@ -124,7 +128,7 @@ export function InstallFlow(props: InstallFlowProps) {
             <ol className="flex items-center gap-3 text-xs">
               {stepLabels.map((label, i) => {
                 const n = i + 1;
-                const done = n === 1 && (serverDone || asked);
+                const done = n === 1 && serverDone;
                 return (
                   <li
                     key={label}
@@ -162,6 +166,9 @@ export function InstallFlow(props: InstallFlowProps) {
           </div>
         )}
 
+        {props.machineLabel && (
+          <p className="text-xs text-fg-muted">{S.chat.machineTag(props.machineLabel)}</p>
+        )}
         {step === 1 ? (
           <div className="space-y-3 text-sm">
             {props.server === "install" && (
@@ -216,7 +223,22 @@ export function InstallFlow(props: InstallFlowProps) {
                   {words.askAdmin}
                 </Button>
               )}
-              {(serverDone || asked || props.server === "held") && (
+              {serverDone && props.onRemoveServer && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={props.busy || props.blocked}
+                  onClick={props.onRemoveServer}
+                >
+                  {words.uninstallServer}
+                </Button>
+              )}
+              {serverDone && props.steps === 2 && (
+                <Button size="sm" onClick={() => setStep(2)}>
+                  {words.toAgents}
+                </Button>
+              )}
+              {((serverDone && props.steps === 1) || asked || props.server === "held") && (
                 <Button size="sm" onClick={props.onClose}>
                   {words.finish}
                 </Button>
@@ -226,6 +248,9 @@ export function InstallFlow(props: InstallFlowProps) {
         ) : (
           <div className="space-y-2">
             {props.agents ?? <p className="py-1.5 text-xs text-fg-muted">{S.common.loading}</p>}
+            <Button size="sm" onClick={() => setStep(1)}>
+              {words.backToServer}
+            </Button>
           </div>
         )}
       </div>

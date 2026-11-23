@@ -156,12 +156,7 @@ function useWorkGroupState(
     durationMs,
     pending: items.some((item) => needsAction(item, ctx)) || revealedForFind,
     stepNavigation: {
-      previous: S.chat.previousWorkStep,
-      next: S.chat.nextWorkStep,
-      latest: S.chat.latestWorkStep,
-      waiting: S.chat.waitingWorkStep,
-      stepWords: S.chat.workStepWords,
-      jump: S.chat.workStepJump,
+      count: S.chat.workGroupSteps(items.length),
       elapsed: S.chat.workElapsed,
       revealAll: revealedForFind,
     },
@@ -191,6 +186,7 @@ export function SessionWorkGroup({
       rows={items.map((item) => ({
         key: item.id,
         summary: () => stepSummary(item, ctx, appearance?.toolAliases ?? false),
+        active: itemActive(item, ctx) || needsAction(item, ctx),
         needsAction: needsAction(item, ctx),
         content: <MessageItem item={item} ctx={ctx} />,
       }))}

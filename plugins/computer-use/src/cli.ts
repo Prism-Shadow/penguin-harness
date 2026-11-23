@@ -31,8 +31,8 @@
  *
  *   user_active          a command that changes the desktop is refused while that person used the
  *                        keyboard or mouse less than USER_ACTIVE_SECONDS ago (idle.ts) — input the
- *                        plugin itself sent excepted — unless an administrator turned "Pause while
- *                        the user is active" off. An idle time that cannot be read pauses nothing.
+ *                        plugin itself sent excepted — when an administrator turned "Pause while
+ *                        the user is active" on. An idle time that cannot be read pauses nothing.
  *   window_not_focused   keystrokes (`press`, `key-down`, `key-up`) go to whichever window has
  *                        focus, so the named window must be the focused one; the refusal names the
  *                        `focus-window` to run first. Focus is never taken silently.

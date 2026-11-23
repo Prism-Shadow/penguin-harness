@@ -276,6 +276,7 @@ describe("record dialogs", () => {
       await mount(
         withPrompt(
           h(SavedPrompts, {
+            locale: "en",
             readComposerText: () => "Summarize the diff",
             onFill: () => {},
           }),
@@ -295,7 +296,7 @@ describe("record dialogs", () => {
           ? apiError(500, "internal")
           : json({ prefs: { draftShortcuts: [stored] } });
       });
-      await mount(h(SavedPrompts, { readComposerText: () => "", onFill: () => {} }));
+      await mount(h(SavedPrompts, { locale: "en", readComposerText: () => "", onFill: () => {} }));
       await waitFor(() => hasButton(s.retry));
       expect(hasButton(s.new)).toBe(false);
       expect(hasButton(s.manage)).toBe(false);
