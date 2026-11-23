@@ -566,6 +566,7 @@ export const en: Strings = {
     launcherClose: "Close",
     launcherPending: "a subagent awaits approval",
     launcherPanels: "Shortcuts",
+    openAppCenter: "Open App Center",
     launcherHide: "Hide launcher",
     launcherHiddenToast: "Launcher hidden — turn it back on in Settings › Appearance",
     fullscreen: "Full screen",
@@ -1175,7 +1176,6 @@ export const en: Strings = {
     leftPane: "Left pane",
     rightPane: "Right pane",
     restore: "Restore",
-    browse: "Browse workbenches",
     workbenches: "Workbenches",
     left: "Open on the left",
     right: "Open on the right",
@@ -2565,7 +2565,7 @@ export const en: Strings = {
     /** Save-time detection came back empty: the save proceeds on the compatible client. */
     detectFellBack: "Protocol not detected; saved as OpenAI Chat Completions",
     addProtocolHintDetect:
-      "Pick the protocol from the base URL field's suffix (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions / Google GenAI / MMSP), or press Detect to probe the endpoint for one of the first three — saving without one detects it first",
+      "Choose a protocol from the base URL field's suffix. Detect checks OpenAI Responses, Anthropic Messages, OpenAI Chat Completions, and Google GenAI. Select MMSP manually. Saving without a protocol runs detection first.",
     vision: "Vision support",
     /** Detect action beside the vision switch. */
     detectVision: "Detect",

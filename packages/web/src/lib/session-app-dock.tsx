@@ -26,8 +26,9 @@ export function sessionAppPair(layout: PageLayout) {
   const app = session === a ? b : a;
   return session &&
     app &&
-    sessionToolTarget(app.path) !== null &&
-    (app.kind === "window" || app.kind === "system" || app.kind === "workbenches")
+    ((app.catalogDock && app.kind === "catalog") ||
+      ((app.catalogDock || sessionToolTarget(app.path) !== null) &&
+        (app.kind === "window" || app.kind === "system" || app.kind === "workbenches")))
     ? { session, app }
     : null;
 }
@@ -50,7 +51,7 @@ export function registerSessionAppDockAdapter(adapter: ContextualPage) {
   };
 }
 export function existingDockPanel(page: OpenPage) {
-  return contextual?.existingPanelId?.(page) ?? null;
+  return page.resourceHost ? null : (contextual?.existingPanelId?.(page) ?? null);
 }
 export function contextualDockPage(path: string) {
   return contextual?.resolve(path) ?? null;
@@ -162,6 +163,17 @@ export function SessionAppDockBody({
   sessionId: string;
   active: boolean;
 }) {
+  const chat = useContext(ChatSessionContext);
+  const resource = page.resourceHost;
+  if (resource && chat && contextual?.resolve(page.path)) {
+    return (
+      <PageIdentity.Provider value={{ ...page, sessionHost: resource }}>
+        <ChatSessionContext.Provider value={{ ...chat, selected: resource.session }}>
+          <contextual.Body page={page} sessionId={resource.session.sessionId} active={active} />
+        </ChatSessionContext.Provider>
+      </PageIdentity.Provider>
+    );
+  }
   if (contextual?.resolve(page.path))
     return <contextual.Body page={page} sessionId={sessionId} active={active} />;
   // Reparenting a running iframe reloads its document. Its original shell slot follows

@@ -68,7 +68,8 @@ export interface Workspace {
   exitFullScreen?: () => void;
   swap(): void;
   reorder(id: string, before: string): void;
-  browse(sessionId: string, agentId: string, machineId: string | null): void;
+  openAppCenterBesideSession(sessionId: string, source?: SessionLocation): void;
+  openFromAppCenter(page: OpenPage, replace?: boolean): boolean;
   separate(page: OpenPage): void;
 }
 const Context = createContext<Workspace | null>(null);
@@ -94,8 +95,11 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
   const path = location.pathname + location.search + location.hash;
   const params = new URLSearchParams(location.search);
   const toolSession = sessionToolTarget(path);
-  const beside = toolSession === undefined ? params.get("beside") : toolSession;
-  params.delete("beside");
+  const beside = params.get("beside") ?? toolSession;
+  const fromCatalog = !!params.get("beside") && params.get("fromCatalog") === "1";
+  const hostMachine = params.get("besideMachine");
+  const dockProject = params.get("besideProject");
+  for (const key of ["beside", "fromCatalog", "besideMachine", "besideProject"]) params.delete(key);
   const contentPath =
     location.pathname + (params.size ? "?" + params.toString() : "") + location.hash;
   const directoryAgent = params.get("workbenches");
@@ -117,6 +121,7 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       ? scopedChatId(hostProject, params.get("machine") || null, sessionId)
       : null;
   const hosts = useRef(new Map<string, OpenPage>());
+  const resourceOwners = useRef(new Map<string, NonNullable<OpenPage["resourceHost"]>>());
   let current: OpenPage | null = null;
   if (win)
     current = {
@@ -152,6 +157,13 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       path: contentPath,
       title: localizedText(locale, sys.title, sys.titleZh),
     };
+  if (fromCatalog && current) {
+    current = {
+      ...current,
+      catalogDock: true,
+      resourceHost: resourceOwners.current.get(current.id),
+    };
+  }
   const [layout, setLayout] = useState<PageLayout>(() =>
     current ? visitPage(emptyLayout, current) : emptyLayout,
   );
@@ -188,6 +200,7 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       pending.current = null;
       bySession.current.clear();
       hosts.current.clear();
+      resourceOwners.current.clear();
       readNumber.current++;
       setLayout(current ? visitPage(emptyLayout, current) : emptyLayout);
     }
@@ -221,20 +234,22 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       // Keeping a bound workbench beside the catalog would reattach its previous Session.
       const previousPair = sessionAppPair(ref.current);
       const leavingDock =
-        !beside && current.kind !== "session" && previousPair && current.id !== previousPair.app.id;
+        !beside &&
+        current.kind !== "session" &&
+        previousPair &&
+        (current.id !== previousPair.app.id || current.kind === "catalog");
       if (
         leavingDock ||
-        (toolSession !== undefined && (!toolSession || !hosts.current.has(current.id)))
+        (toolSession !== undefined &&
+          ((!toolSession && !fromCatalog) || (toolSession && !hosts.current.has(current.id))))
       ) {
         next = { ...next, visible: [current.id], focus: current.id, right: [] };
-      } else if (beside && current.kind !== "session" && current.kind !== "catalog") {
-        const session = hosts.current.get(current.id) ??
-          pageForDrag("chat:" + beside) ?? {
-            id: "chat:" + beside,
-            kind: "session" as const,
-            title: S.chat.defaultSessionTitle,
-            path: "/chat/" + encodeURIComponent(beside),
-          };
+      } else if (
+        beside &&
+        current.kind !== "session" &&
+        (fromCatalog || current.kind !== "catalog")
+      ) {
+        const session = sessionAt(beside, current.id);
         next = paired(next, session, current);
       } else if (current.kind === "session") {
         const attached = next.pages.find((p) => p.id === bySession.current.get(current.id));
@@ -250,7 +265,7 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
     const fallback =
       currentId === "chat:new" || next.minimized.includes("chat:new") ? "/apps" : "/chat/new";
     const focused = next.pages.find((entry) => entry.id === next.focus);
-    if (focused && sessionToolTarget(focused.path) === null)
+    if (focused && !focused.catalogDock && sessionToolTarget(focused.path) === null)
       next = { ...next, visible: [focused.id], right: [] };
     const pair = sessionAppPair(next);
     let to = next.pages.find((entry) => entry.id === next.focus)?.path ?? fallback;
@@ -262,6 +277,20 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       };
       const target = new URL(pair.app.path, window.location.origin);
       target.searchParams.set("beside", pageSessionId(pair.session));
+      if (pair.app.catalogDock) {
+        target.searchParams.set("fromCatalog", "1");
+        const owner = pair.session.sessionHost;
+        if (owner) {
+          target.searchParams.set("besideProject", owner.session.projectId);
+          target.searchParams.set("besideMachine", owner.machineId ?? "");
+        } else {
+          const source = new URL(pair.session.path, window.location.origin).searchParams;
+          if (source.has("project") && source.has("machine")) {
+            target.searchParams.set("besideProject", source.get("project")!);
+            target.searchParams.set("besideMachine", source.get("machine")!);
+          }
+        }
+      }
       to = target.pathname + target.search + target.hash;
     }
     if (path === to) {
@@ -284,6 +313,37 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
         title: session.title ?? S.chat.defaultSessionTitle,
         path: "/chat/" + encodeURIComponent(session.sessionId),
       };
+  }
+  function sessionAt(id: string, appId: string): OpenPage {
+    const known = hosts.current.get(appId);
+    if (
+      known &&
+      pageSessionId(known) === id &&
+      (!dockProject ||
+        (known.sessionHost?.session.projectId === dockProject &&
+          (known.sessionHost.machineId ?? "") === hostMachine))
+    )
+      return known;
+    const path = "/chat/" + encodeURIComponent(id);
+    if (fromCatalog && dockProject && hostMachine !== null) {
+      const key = scopedChatId(dockProject, hostMachine || null, id);
+      return (
+        pageForDrag(key) ?? {
+          id: key,
+          kind: "session",
+          title: S.chat.defaultSessionTitle,
+          path: path + "?" + new URLSearchParams({ project: dockProject, machine: hostMachine }),
+        }
+      );
+    }
+    return (
+      pageForDrag("chat:" + id) ?? {
+        id: "chat:" + id,
+        kind: "session",
+        title: S.chat.defaultSessionTitle,
+        path,
+      }
+    );
   }
   function paired(base: PageLayout, session: OpenPage, app: OpenPage): PageLayout {
     const visited = visitPage(visitPage(base, session), app);
@@ -309,17 +369,48 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
 
   function openBesideSession(id: string, page: OpenPage, source?: SessionLocation) {
     const target = sessionToolTarget(page.path);
-    if (target === null) {
+    if (target === null && !page.catalogDock) {
       whole(page);
       return;
     }
     if (
       !id ||
       page.kind === "session" ||
-      page.kind === "catalog" ||
-      (target !== undefined && target !== id)
+      (page.kind === "catalog" && !page.catalogDock) ||
+      (target != null && target !== id)
     )
       return;
+    // A directory opened from a conversation selects the resource owner, while its
+    // original conversation keeps the composer, transcript and physical dock.
+    const catalogSession =
+      fromCatalog &&
+      target &&
+      source?.session &&
+      (pair?.app.catalogDock && sessionToolTarget(pair.app.path) === null
+        ? pair.session
+        : currentId === page.id && beside
+          ? sessionAt(beside, page.id)
+          : undefined);
+    if (
+      catalogSession &&
+      source?.session &&
+      source.projectId === projectId &&
+      source.session.projectId === projectId &&
+      source.session.sessionId === target
+    ) {
+      const resource = {
+        session: source.session,
+        machineId: source.machineId,
+        isolatedDraft: true,
+      };
+      resourceOwners.current.set(page.id, resource);
+      hosts.current.set(page.id, catalogSession);
+      go(
+        paired(ref.current, catalogSession, { ...page, catalogDock: true, resourceHost: resource }),
+        currentId === page.id,
+      );
+      return;
+    }
     const sequence = ++readNumber.current;
     function attach(session: OpenPage) {
       if (source || session.sessionHost) {
@@ -405,6 +496,10 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
         });
   }
   const focus = (page: OpenPage) => {
+    if (pair && pair.app.id === page.id && pair.app.catalogDock) {
+      openPanel(dockPageKey(page.id), "right");
+      return;
+    }
     if (pair && pair.app.id === page.id) {
       openBesideSession(pageSessionId(pair.session), page);
       return;
@@ -541,16 +636,14 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       });
   };
   const reorder = (id: string, before: string) => publish(reorderPage(ref.current, id, before));
-  const browse = (sessionId: string, agentId: string, machineId: string | null) => {
-    const params = new URLSearchParams({ workbenches: agentId });
-    if (machineId) params.set("machine", machineId);
-    openBesideSession(sessionId, {
-      id: "workbenches:" + agentId + ":" + (machineId ?? ""),
-      kind: "workbenches",
-      title: S.pageWorkspace.workbenches,
-      path: "/apps?" + params,
-    });
-  };
+  const openAppCenterBesideSession = (id: string, source?: SessionLocation) =>
+    openBesideSession(id, { ...catalog, catalogDock: true }, source);
+  function openFromAppCenter(page: OpenPage, replace = false) {
+    if (pair?.app.kind !== "catalog" || !pair.app.catalogDock) return false;
+    hosts.current.set(page.id, pair.session);
+    go(paired(ref.current, pair.session, { ...page, catalogDock: true }), replace);
+    return true;
+  }
   const separate = (page: OpenPage) => {
     window.open(page.path, "_blank", "noopener");
   };
@@ -579,7 +672,8 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
           : {}),
         swap,
         reorder,
-        browse,
+        openAppCenterBesideSession,
+        openFromAppCenter,
         separate,
       }}
     >
