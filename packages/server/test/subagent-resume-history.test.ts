@@ -23,9 +23,11 @@ const usage = { prompt_tokens: 4, cached_tokens: 0, response_tokens: 4, thoughts
 
 it("addresses and stops original child Sessions by true ID across authorized parents and a cold restart", async () => {
   const pending = new Map<string, { name: string; args: Record<string, unknown> }>();
+  let deletedInputs = 0;
   const provider = await startMmspServer((request) => {
     const last = request.messages.at(-1);
     const texts = last?.content_items.map((item) => item.text ?? "").join(" ") ?? "";
+    if (texts.trim() === "MUST_NOT_RECREATE_THE_CHILD") deletedInputs++;
     if (texts.trim().startsWith("HOLD_UNTIL_ABORT")) return { hang: true };
     for (const [key, tool] of pending) {
       if (texts.trim() !== key || !request.config.tools) continue;
@@ -315,6 +317,22 @@ it("addresses and stops original child Sessions by true ID across authorized par
     expect(forkRoster.status).toBe(200);
     expect(await forkRoster.json()).toEqual({ items: [], nextCursor: null });
     expect(await roster()).toEqual(initial);
+    // A live parent's remembered child cannot supersede the authenticated Session index
+    // after an explicit deletion. Do not run or register the old object again.
+    const removed = ids[1]!;
+    expect((await client.delete("/api/sessions/" + removed)).status).toBe(204);
+    await task("DELETED_CHILD", "input_subagent", {
+      subagent_id: removed,
+      prompt: "MUST_NOT_RECREATE_THE_CHILD",
+      yield_time_ms: 250,
+    });
+    expect(host.deps.sessionsRepo.findById(removed)).toBeFalsy();
+    expect(deletedInputs).toBe(0);
+    expect(
+      payloads(await trace(parent)).some((item) =>
+        item.output?.includes("unknown subagent_id " + removed),
+      ),
+    ).toBe(true);
   } finally {
     await host.cleanup();
     await provider.close();

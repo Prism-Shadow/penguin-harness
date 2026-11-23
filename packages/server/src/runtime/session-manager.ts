@@ -1037,7 +1037,10 @@ export class SessionManager {
     const target = targets[0];
     const local =
       target && this.subagentsOf(callerId).some((child) => child.sessionId === target.sessionId);
-    if (!target) return null;
+    if (!target)
+      throw new Error(
+        `unknown subagent_id ${address} (no accessible subagent Session has this ID or suffix)`,
+      );
     const own =
       !local &&
       (await this.deps.traces?.ownedSubagents(caller))?.some(
