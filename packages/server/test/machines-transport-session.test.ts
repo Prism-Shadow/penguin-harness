@@ -28,6 +28,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
+import { shQuote } from "../src/machines/commands.js";
 import {
   SESSION_GROUP,
   attachSessionRegistry,
@@ -149,14 +150,20 @@ exit 1
     expect(spawns()).toHaveLength(1);
     expect(sessionOf("ssh:nas")?.pid).toBe(a.ok ? a.session.pid : -1);
 
-    let started = Date.now();
-    await Promise.all([conn.exec("sleep 0.2"), conn.exec("sleep 0.2")]);
-    expect(Date.now() - started).toBeGreaterThanOrEqual(380);
-    // A different machine is a different session: those run side by side.
+    const gate = shQuote(path.join(stubBin, "release"));
+    const finished = shQuote(path.join(stubBin, "finished"));
+    const started = Promise.withResolvers<void>();
+    const first = conn.stream(
+      `echo waiting; while test -d ${shQuote(stubBin)} && ! test -f ${gate}; do sleep 0.05; done; touch ${finished}`,
+      { input: Buffer.alloc(0), onLine: (line) => line === "waiting" && started.resolve() },
+    );
+    await started.promise;
+    // The second command on this machine must see the first one finish. Only the other
+    // machine can release it while the first machine's queue is occupied.
+    const queued = conn.exec(`test -f ${finished}`);
     const other = connectionTo({ alias: "build-box", user: "deploy" });
-    started = Date.now();
-    await Promise.all([conn.exec("sleep 0.2"), other.exec("sleep 0.2")]);
-    expect(Date.now() - started).toBeLessThan(380);
+    const results = await Promise.all([first, queued, other.exec(`touch ${gate}`)]);
+    expect(results.map((result) => result.code)).toEqual([0, 0, 0]);
     expect(spawns()).toHaveLength(2);
   });
 
