@@ -66,6 +66,7 @@ on:
         required: true
 
 env:
+  PENGUIN_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   # Bundled Node runtime version (official nodejs.org dist, aligned with engines >=24).
   NODE_RUNTIME_VERSION: v24.18.0
   # Bundled POSIX shell for the Windows package: Git for Windows' MinGit, whose usr/bin/sh.exe

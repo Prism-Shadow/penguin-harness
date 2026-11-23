@@ -114,14 +114,19 @@ async function stageSources(releaseArchive) {
       included.map((source) => source.name),
     );
   } else {
-    const manifest = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf8"));
-    const url =
-      "https://github.com/Prism-Shadow/penguin-harness/releases/download/v" +
-      manifest.version +
-      "/agent-state-git-sources.tar";
+    const tag = process.env.PENGUIN_RELEASE_TAG;
+    const release = tag
+      ? [
+          "https://github.com/Prism-Shadow/penguin-harness/releases/download/" +
+            encodeURIComponent(tag) +
+            "/agent-state-git-sources.tar",
+          "",
+        ]
+      : [];
     await fs.writeFile(
       path.join(legal, "SOURCES.txt"),
-      [url, "", ...sources.map((source) => source.checksum + "  " + source.url)].join("\n") + "\n",
+      [...release, ...sources.map((source) => source.checksum + "  " + source.url)].join("\n") +
+        "\n",
     );
   }
 }

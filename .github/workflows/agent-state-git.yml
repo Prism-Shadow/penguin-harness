@@ -20,7 +20,10 @@ jobs:
           node-version: 24
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @penguinharness/agent-state-git... build
-      - run: pnpm --dir plugins/agent-state-git pack --pack-destination "${{ runner.temp }}/git-plugin"
+      - name: Pack with a product tag distinct from the plugin manifest version
+        env:
+          PENGUIN_RELEASE_TAG: v9.8.7-rc.1
+        run: pnpm --dir plugins/agent-state-git pack --pack-destination "${{ runner.temp }}/git-plugin"
       - uses: actions/upload-artifact@v4
         with:
           name: agent-state-git-tarball
@@ -56,4 +59,5 @@ jobs:
         run: |
           mkdir offline
           npm install --prefix offline --offline --ignore-scripts --no-audit --no-fund "$PWD"/package-input/*.tgz
+          grep -Fx "https://github.com/Prism-Shadow/penguin-harness/releases/download/v9.8.7-rc.1/agent-state-git-sources.tar" offline/node_modules/@penguinharness/agent-state-git/dist/sources/SOURCES.txt
           node plugins/agent-state-git/test/packed.mjs offline/node_modules/@penguinharness/agent-state-git
