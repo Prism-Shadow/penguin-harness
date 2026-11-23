@@ -1,3 +1,4 @@
+import { pageSessionId } from "../../lib/page-layout";
 /**
  * Keeps the dock's scope on the conversation on screen (`WebAppModule.layers`, mounted once beside
  * every page). The docks belong to the conversation they were arranged in, so switching Sessions
@@ -8,20 +9,21 @@
  * plain one: it has to land before the chat page's docks paint, or the outgoing conversation's
  * docks flash on the incoming one.
  */
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { useMatch } from "react-router";
 import { useProject } from "../../state/project";
 import { announceDockScope } from "./dock-listeners";
 import { usePageWorkspace } from "../../lib/page-workspace";
 import { sessionAppPair, dockPageKey } from "../../lib/session-app-dock";
-import { setDockScope, openPanel, detachDockPage } from "./dock-state";
+import { setDockScope, openPanel, panelDock, detachDockPage } from "./dock-state";
 
 export function DockScope() {
   const sessionRoute = useMatch("/chat/:sessionId")?.params.sessionId;
   const workspace = usePageWorkspace();
   const pair = workspace?.current && sessionAppPair(workspace.layout);
-  const scope = pair ? pair.session.id.slice(5) : (sessionRoute ?? null);
+  const scope = pair ? pageSessionId(pair.session) : (sessionRoute ?? null);
   const appId = pair ? pair.app.id : null;
+  const previousScope = useRef<string | null>(null);
   const { currentProject } = useProject();
   useLayoutEffect(() => {
     const projectId = currentProject?.projectId ?? null;
@@ -31,10 +33,12 @@ export function DockScope() {
     setDockScope(dockScope);
   }, [scope, currentProject?.projectId]);
   useLayoutEffect(() => {
+    const sameScope = previousScope.current === scope;
+    previousScope.current = scope;
     if (!appId || !scope) return;
     const key = dockPageKey(appId);
     detachDockPage(key, scope);
-    openPanel(key, "right");
+    if (!panelDock(key) || sameScope) openPanel(key, "right");
   }, [appId, scope]);
   return null;
 }

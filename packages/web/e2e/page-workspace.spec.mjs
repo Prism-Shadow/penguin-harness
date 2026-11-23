@@ -126,8 +126,8 @@ test("a workbench shares the session viewport and its iframe survives changing p
   const app = slot(page, "app:penguin_support/support");
   await expect(chat).toHaveAttribute("data-pane", "left");
   await expect(app).toHaveAttribute("data-pane", "right");
-  await expect(page.getByRole("region", { name: "Left pane", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Right pane", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Left pane", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Right pane", exact: true })).toHaveCount(0);
   const dockTab = page.getByRole("tab", { name: /Support/ });
   await expect(dockTab).toBeVisible();
   const frame = app.locator("iframe").first();
@@ -229,4 +229,31 @@ test("a fresh sidebar gains its first conversation only after sending", async ({
   );
   await expect(generic).toHaveCount(0);
   await expect(apps(page)).toHaveCount(0);
+});
+
+test("an archived Session’s native app deep link uses its own dock and leaves its archive state intact", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1360, height: 820 });
+  const [key] = await start(page, "archivedappdock");
+  const id = key.slice(5);
+  await expect(
+    await page.request.patch("/api/sessions/" + id, { data: { archived: true } }),
+  ).toBeOK();
+  await page.goto("/apps");
+  await page.goto("/models?beside=" + encodeURIComponent(id));
+  const chat = slot(page, key);
+  await expect(chat.getByText(/This chat is archived/)).toBeVisible();
+  const dock = chat.getByTestId("dock");
+  await expect(dock.getByRole("tab", { name: /Models|Model Library/ })).toBeVisible();
+  await expect(slot(page, "app:system_agent/models")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Right pane", exact: true })).toHaveCount(0);
+  const stored = await (await page.request.get("/api/sessions/" + id)).json();
+  expect(stored.session?.archived ?? stored.archived).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(chat.locator('[data-testid="dock"][data-position="bottom"]')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/apps$/);
+  await expect(page.getByRole("list", { name: "App Center" })).toBeVisible();
 });

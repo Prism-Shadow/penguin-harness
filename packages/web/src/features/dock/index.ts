@@ -1,6 +1,12 @@
 export { docksOnScreen } from "./dock-state";
 
-export { openPanel } from "./dock-state";
+export {
+  clearDockPages,
+  detachDockPage,
+  dockActiveKey,
+  openPanel,
+  setSessionPanelOpener,
+} from "./dock-state";
 
 export { dockWorkspace } from "./dock-terminal";
 

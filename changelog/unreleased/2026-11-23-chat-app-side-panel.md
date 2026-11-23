@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#1732](https://github.com/Prism-Shadow/penguin-harness/pull/1732)
 
 [中文版](2026-11-23-chat-app-side-panel.zh.md)
 

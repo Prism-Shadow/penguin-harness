@@ -602,28 +602,37 @@ function insertTab(tab: DockTab, position: DockPosition): void {
   activate(position, key);
 }
 
-/**
- * Removes a tab wherever it lives; the dock falls back to its last remaining tab, and
- * removing the LAST tab puts the dock away — from the user's seat the × closed the
- * content, so no empty surface (nor a surprise picker) should linger.
- */
-/** Remove a window-local app tab from conversations other than its current host. */
-export function detachDockPage(key: string, except?: string) {
-  if (!key.startsWith(":")) return;
+/** Remove transient app tabs while retaining the conversation's own panel arrangement. */
+function detachPages(matches: (key: string) => boolean, except?: string): void {
   let changed = false;
   for (const [owner, entry] of Object.entries({ ...scopes, [scope]: layout })) {
     if (owner === except) continue;
     for (const area of [entry.right, entry.bottom]) {
-      if (!area.tabs.some((tab) => tabKey(tab) === key)) continue;
-      area.tabs = area.tabs.filter((tab) => tabKey(tab) !== key);
-      if (area.active === key) area.active = area.tabs.length ? tabKey(area.tabs.at(-1)!) : null;
-      if (!area.tabs.length) area.open = false;
+      const tabs = area.tabs.filter((tab) => !matches(tabKey(tab)));
+      if (tabs.length === area.tabs.length) continue;
+      area.tabs = tabs;
+      if (area.active && matches(area.active)) {
+        const previous = beforePage.get(area);
+        const priorApp = tabs.findLast((tab) => !isPanelId(tabKey(tab)));
+        const priorPanel = tabs.find((tab) => tabKey(tab) === previous?.active);
+        const selected = priorApp ?? priorPanel ?? tabs.at(-1);
+        area.active = selected ? tabKey(selected) : null;
+        if (!priorApp && previous) area.open = previous.open;
+      }
+      if (!tabs.length) area.open = false;
       changed = true;
     }
   }
   if (changed) commit();
 }
+export function detachDockPage(key: string, except?: string): void {
+  if (key.startsWith(":")) detachPages((candidate) => candidate === key, except);
+}
+export function clearDockPages(): void {
+  detachPages((key) => key.startsWith(":"));
+}
 
+/** Closing the last tab also hides its dock. */
 export function removeTab(key: string): void {
   const found = findTab(key);
   if (!found) return;
@@ -763,12 +772,18 @@ export function panelDock(id: PanelId): DockPosition | null {
   return tabHome(id);
 }
 
+let sessionPanelOpener: ((id: PanelId) => boolean) | null = null;
+export function setSessionPanelOpener(opener: typeof sessionPanelOpener): void {
+  sessionPanelOpener = opener;
+}
+
 /**
  * Puts a panel on screen: adds its tab (to `position`, or where it already lives, or `fallback` —
  * the panel's own default edge, the right dock unless its definition names another) and
  * activates it. Idempotent when already shown.
  */
 export function openPanel(id: PanelId, position?: DockPosition, fallback?: DockPosition): void {
+  if (isPanelId(id) && sessionPanelOpener?.(id)) return;
   const target = position ?? panelDock(id) ?? fallback ?? "right";
   insertTab({ kind: "panel", panel: id }, target);
   commit();

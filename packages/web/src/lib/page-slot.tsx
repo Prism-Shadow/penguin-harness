@@ -6,7 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { useDockBounds, sessionAppPair, slotDomId, contextualDockPage } from "./session-app-dock";
-import { PaneFocus } from "./page-focus";
+import { PaneFocus, PageIdentity } from "./page-focus";
 import { usePageWorkspace } from "./page-workspace";
 import { PAGE_DRAG_TYPE } from "./page-layout";
 
@@ -114,13 +114,15 @@ export function PageSlot({
         setDropSide(null);
       }}
     >
-      <PaneFocus.Provider value={focused}>
-        {keepRunning ? (
-          children
-        ) : (
-          <Activity mode={shown ? "visible" : "hidden"}>{children}</Activity>
-        )}
-      </PaneFocus.Provider>
+      <PageIdentity.Provider value={page}>
+        <PaneFocus.Provider value={focused}>
+          {keepRunning ? (
+            children
+          ) : (
+            <Activity mode={shown ? "visible" : "hidden"}>{children}</Activity>
+          )}
+        </PaneFocus.Provider>
+      </PageIdentity.Provider>
       {shown && dropSide !== null && (
         <div
           aria-hidden

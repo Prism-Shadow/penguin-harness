@@ -647,3 +647,31 @@ describe("fullscreen", () => {
     expect(responsive.fullscreenDock()).toBeNull();
   });
 });
+
+it("offers only explicit registered panel opens to the Session workbench adapter", () => {
+  const take = vi.fn((id: string) => id === "workspace");
+  dock.setSessionPanelOpener(take);
+  try {
+    dock.openPanel("workspace");
+    expect(dock.panelDock("workspace")).toBeNull();
+    dock.openPanel("memory");
+    dock.openPanel(":app:custom");
+    dock.activateTab("memory");
+    expect(take.mock.calls).toEqual([["workspace"], ["memory"]]);
+    expect(dock.isTabShown("memory")).toBe(true);
+  } finally {
+    dock.setSessionPanelOpener(null);
+  }
+});
+
+it("removing app tabs restores the user's last active ordinary panel", () => {
+  dock.openPanel("memory");
+  dock.openPanel("agents");
+  dock.activateTab("memory");
+  dock.openPanel(":app:first");
+  dock.openPanel(":app:second");
+  dock.detachDockPage(":app:second");
+  expect(dock.dockActiveKey("right")).toBe(":app:first");
+  dock.clearDockPages();
+  expect(dock.dockActiveKey("right")).toBe("memory");
+});

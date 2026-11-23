@@ -1,3 +1,4 @@
+import { pageSessionId } from "../../lib/page-layout";
 /**
  * One dock surface (dock-state.ts owns the arrangement): a tab strip across the top and
  * the active tab's body below — or, while the open dock has no tabs, a centered picker
@@ -178,6 +179,9 @@ function PanelBody({
   active: boolean;
   fullscreen: boolean;
 }) {
+  const workspace = usePageWorkspace();
+  const appId = dockPageId(id);
+  const page = appId && workspace?.layout.pages.find((p) => p.id === appId);
   const handle = useMemo<DockPanelHandle>(
     () => ({
       id,
@@ -192,20 +196,20 @@ function PanelBody({
         else if (fullscreenDock() === position) setDockFullscreen(null);
       },
       // The tab's × path: a close guard the body registered (unsaved text) asks first.
-      close: () => closeWhenAllowed(id),
+      close: () => {
+        if (page && workspace) workspace.close(page.id);
+        else closeWhenAllowed(id);
+      },
     }),
-    [id, position, merged, active, fullscreen],
+    [id, position, merged, active, fullscreen, page, workspace],
   );
-  const workspace = usePageWorkspace();
-  const appId = dockPageId(id);
-  const page = appId && workspace?.layout.pages.find((p) => p.id === appId);
   const session = workspace && sessionAppPair(workspace.layout)?.session;
   const Body = dockPanelDefinition(id)?.Body;
   return (
     <DockPanelProvider handle={handle}>
       {page && session ? (
         <CrashBoundary resetKey={id}>
-          <SessionAppDockBody page={page} sessionId={session.id.slice(5)} active={active} />
+          <SessionAppDockBody page={page} sessionId={pageSessionId(session)} active={active} />
         </CrashBoundary>
       ) : Body !== undefined ? (
         // A panel that crashes (a plugin's, or one of ours) takes down its own tab, not the
@@ -272,7 +276,7 @@ export function DockPanel({
   const selectTab = (key: string) => {
     const page = pageOf(key);
     const session = workspace && sessionAppPair(workspace.layout)?.session;
-    if (page && session && workspace) workspace.openBesideSession(session.id.slice(5), page);
+    if (page && session && workspace) workspace.openBesideSession(pageSessionId(session), page);
     activateTab(key);
   };
   // Hiding puts the surface away and nothing else — every body stays mounted at zero size —

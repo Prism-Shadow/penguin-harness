@@ -17,6 +17,7 @@ import { sessionAppPair } from "../../lib/session-app-dock";
 import { PageSlot, useNarrow } from "../../lib/page-slot";
 import { useRunningAppRecords } from "../../lib/running-apps";
 import { usePageWorkspace } from "../../lib/page-workspace";
+import { ScopedChat } from "./scoped-chat";
 import { WorkbenchDirectory } from "./workbench-directory";
 
 function PaneHeader({ side }: { side: 0 | 1 }) {
@@ -214,15 +215,14 @@ export function PageArea({
             {page.kind === "workbenches" ? (
               <WorkbenchDirectory path={page.path} />
             ) : (
-              <PageRoute
-                path={page.path}
-                active={
-                  page.path === here ||
-                  (page.id === current?.id && !location.search.includes("beside="))
-                }
-                location={location}
-                renderRoute={renderRoute}
-              />
+              <ScopedChat page={page}>
+                <PageRoute
+                  path={page.path}
+                  active={page.path === here || page.id === current?.id}
+                  location={location}
+                  renderRoute={renderRoute}
+                />
+              </ScopedChat>
             )}
           </ErrorBoundary>
         </PageSlot>

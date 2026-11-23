@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { pageSessionId } from "../../lib/page-layout";
+import { useEffect, useState, type ReactNode } from "react";
 import { EmptyState, MenuItem, Spinner } from "@prismshadow/penguin-ui";
 import { getWorkbenches } from "../../api/endpoints";
-import { locatedAppKey } from "../../lib/app-center-path";
-import { appWindowPath } from "../../lib/app-center-path";
+import { locatedAppKey, appWindowPath } from "../../lib/app-center-path";
 import { sessionAppPair } from "../../lib/session-app-dock";
 import { usePageWorkspace } from "../../lib/page-workspace";
 import { localizedText } from "../../lib/skill-use";
@@ -15,7 +15,6 @@ import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { TileIcon } from "../app-center";
 import { useSafeMode } from "../../rescue/safe-mode";
-import type { ReactNode } from "react";
 
 export function WorkbenchDirectory({ path }: { path: string }) {
   const { currentProject } = useProject();
@@ -86,7 +85,7 @@ export function WorkbenchDirectory({ path }: { path: string }) {
                     return;
                   }
                   launchApp({ key, projectId, shortcut });
-                  workspace.openBesideSession(pair.session.id.slice(5), {
+                  workspace.openBesideSession(pageSessionId(pair.session), {
                     id: "app:" + key,
                     kind: "window",
                     title,

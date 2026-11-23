@@ -1,6 +1,14 @@
 import { useLayoutEffect, useRef, useSyncExternalStore, type ComponentType } from "react";
 import type { OpenPage, PageLayout } from "./page-layout";
 
+/** Undefined is an ordinary page. A Session workbench with no target opens its Session directory. */
+export function sessionToolTarget(path: string): string | null | undefined {
+  const url = new URL(path, "http://localhost");
+  return /^\/session-tools\/[^/]+\/?$/.test(url.pathname)
+    ? url.searchParams.get("session") || null
+    : undefined;
+}
+
 export function sessionAppPair(layout: PageLayout) {
   if (layout.visible.length !== 2) return null;
   const [a, b] = layout.visible.map((id) => layout.pages.find((page) => page.id === id));
@@ -8,6 +16,7 @@ export function sessionAppPair(layout: PageLayout) {
   const app = session === a ? b : a;
   return session &&
     app &&
+    sessionToolTarget(app.path) !== null &&
     (app.kind === "window" || app.kind === "system" || app.kind === "workbenches")
     ? { session, app }
     : null;
