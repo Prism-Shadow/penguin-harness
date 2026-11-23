@@ -30,7 +30,7 @@ vi.mock("@prismshadow/mmsp", async (importOriginal) => {
 
 const { GenerativeModel } = await import("../src/llm/generative-model.js");
 
-const OPENCODE_GO = "https://opencode.ai/zen/go/v1";
+const OPENCODE_GO = "https://opencode.ai/inference/go/openai/v1";
 
 /** The `defaultHeaders` of the client the last constructed model built. */
 function lastHeaders(): Record<string, string> | undefined {

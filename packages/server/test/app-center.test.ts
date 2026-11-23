@@ -655,6 +655,29 @@ describe("the App Center", { timeout: 30_000 }, () => {
     expect(await ids()).not.toContain(`${DEFAULTED}/quiet`);
   });
 
+  it("lists explicitly hidden workbenches separately, including disabled ones, without showing or enabling them", async () => {
+    const base = `/api/projects/${PROJECT}/agents/${AGENT}/workbenches/hidden`;
+    const hidden = async () => {
+      const res = await member.get(`/api/projects/${PROJECT}/app-center/hidden`);
+      expect(res.status).toBe(200);
+      return ((await res.json()) as AppCenterResponse).shortcuts.map(
+        (x) => `${x.agentId}/${x.workbenchId}`,
+      );
+    };
+    expect(await hidden()).toContain(`${AGENT}/hidden`);
+    expect(await hidden()).not.toContain(`${DEFAULTED}/plain`);
+    const off = await owner.put(base + "/enabled", { enabled: false });
+    expect(off.status).toBe(200);
+    try {
+      expect(await hidden()).toContain(`${AGENT}/hidden`);
+      expect((await member.patch(base + "/app-center", { show: true })).status).toBe(200);
+      expect(await hidden()).not.toContain(`${AGENT}/hidden`);
+      expect(await ids()).not.toContain(`${AGENT}/hidden`);
+    } finally {
+      await owner.patch(base + "/app-center", { show: false });
+      await owner.put(base + "/enabled", { enabled: true });
+    }
+  });
   it.each(MALFORMED.map(([id]) => id))(
     "gives a workbench whose declaration does not hold up (%s) no shortcut",
     async (id) => {

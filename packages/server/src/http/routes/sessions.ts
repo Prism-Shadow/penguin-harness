@@ -1325,6 +1325,37 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     return c.json((await recalledResponse(recall)) satisfies RecalledMessageResponse);
   });
 
+  app.get("/:sessionId/subagents", async (c) => {
+    const row = resolveSession(c);
+    const raw = c.req.query("limit") ?? "25";
+    if (!/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > 100)
+      throw badRequest("limit must be an integer from 1 to 100.");
+    const before = c.req.query("before");
+    if (before !== undefined && !/^\d+\.\d+$/.test(before))
+      throw badRequest("Invalid subagent cursor.");
+    const all = (await deps.traceService.ownedSubagents(row)).reverse();
+    const [beforeFile, beforeOrdinal] = (before ?? "").split(".").map(Number);
+    const candidates =
+      before === undefined
+        ? all
+        : all.filter((item) => {
+            const [file, ordinal] = item.position.split(".").map(Number);
+            return file! < beforeFile! || (file === beforeFile && ordinal! < beforeOrdinal!);
+          });
+    const page = candidates.slice(0, Number(raw));
+    const items = page.map(({ sessionId, agentId, spawnedAt, title, turnKey }) => ({
+      sessionId,
+      agentId,
+      spawnedAt,
+      title,
+      turnKey,
+    }));
+    return c.json({
+      items,
+      nextCursor: candidates.length > page.length ? page.at(-1)!.position : null,
+    });
+  });
+
   // Panel message to one subagent child of this session (#272): a user input on the child,
   // whatever its state — steering while it runs, a follow-up run while it is idle, a revival
   // (resume-session semantics) when it was released — the same core channel input_subagent

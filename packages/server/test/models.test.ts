@@ -269,10 +269,17 @@ describe("models preset & catalog enrichment", () => {
     // A row that speaks another protocol than its group, or on another path, stores exactly
     // that difference: OpenCode Go's Messages rows their protocol and endpoint, its Chat
     // Completions rows their protocol on the group's endpoint. Go rows follow the shared MMSP connection.
-    const messagesRow = pick(body, "opencode-go", "qwen3.8-max");
+    // Both Qwen Max versions are served by Go. New Projects seed the newer Max tier,
+    // while the catalog retains its predecessor and its native settings for saved Projects.
+    expect(catalogEntryFor("opencode-go", "qwen3.8-max")).toMatchObject({
+      retired: true,
+      clientType: "ant-messages",
+      baseUrl: "https://opencode.ai/inference/go/anthropic",
+    });
+    const messagesRow = pick(body, "opencode-go", "qwen4-max");
     expect(messagesRow.clientType).toBe("ant-messages");
     expect(messagesRow.effective).toMatchObject({
-      baseUrl: catalogEntryFor("opencode-go", "qwen3.8-max")!.baseUrl,
+      baseUrl: catalogEntryFor("opencode-go", "qwen4-max")!.baseUrl,
       baseUrlSource: "model",
       clientTypeSource: "model",
     });
@@ -2527,7 +2534,7 @@ describe("preset sync: add new models / restore defaults", () => {
       // OpenRouter, pointed at a proxy: one preset dropped.
       .filter(without("openrouter", ["anthropic/claude-opus-4.8"]))
       // OpenCode Go, on its catalog endpoint: a Messages preset dropped.
-      .filter(without("opencode-go", ["qwen3.8-max"]))
+      .filter(without("opencode-go", ["qwen4-max"]))
       // TokenDance, its base URL cleared: one preset dropped.
       .filter(without("tokendance", ["glm-5.3"]))
       // Fireworks, its table cleared but its models kept: one preset dropped.
@@ -2565,11 +2572,9 @@ describe("preset sync: add new models / restore defaults", () => {
       baseUrlSource: "provider",
       apiKeySource: "provider",
     });
-    const messages = pick(body, "opencode-go", "qwen3.8-max");
+    const messages = pick(body, "opencode-go", "qwen4-max");
     expect(messages.clientType).toBe("ant-messages");
-    expect(messages.credential?.baseUrl).toBe(
-      catalogEntryFor("opencode-go", "qwen3.8-max")!.baseUrl,
-    );
+    expect(messages.credential?.baseUrl).toBe(catalogEntryFor("opencode-go", "qwen4-max")!.baseUrl);
     // A table lacking the field: the row carries the catalog's value itself, so it never
     // falls to the client's default endpoint with the group's key.
     const glm = pick(body, "tokendance", "glm-5.3");
@@ -2639,7 +2644,7 @@ describe("preset sync: add new models / restore defaults", () => {
         if (isPair("penguin-go", "go-only-model")(m)) return { ...m, discount: 0.25 };
         if (isPair(retired.provider, retired.modelId)(m)) return { ...m, discount: 0.5 };
         // Its own endpoint dropped: it would run on the group's Chat Completions path.
-        if (isPair("opencode-go", "qwen3.8-max")(m)) return { ...m, baseUrl: null };
+        if (isPair("opencode-go", "qwen4-max")(m)) return { ...m, baseUrl: null };
         return m;
       });
     const put = await api.put(url(), {

@@ -13,9 +13,11 @@ import { ErrorBoundary } from "../../rescue/error-boundary";
 import { RescuePanel } from "../../rescue/rescue-panel";
 import { S } from "../../lib/strings";
 import { PAGE_DRAG_TYPE } from "../../lib/page-layout";
+import { sessionAppPair } from "../../lib/session-app-dock";
 import { PageSlot, useNarrow } from "../../lib/page-slot";
 import { useRunningAppRecords } from "../../lib/running-apps";
 import { usePageWorkspace } from "../../lib/page-workspace";
+import { ScopedChat } from "./scoped-chat";
 import { WorkbenchExitBall } from "../workbenches";
 import { WorkbenchDirectory } from "./workbench-directory";
 
@@ -122,7 +124,15 @@ function PageRoute({
   const entry = useRef<Location | null>(null);
   if (active) {
     const resumeDraft = location.pathname === "/chat/new" && location.state?.workspaceRequest;
-    if (!resumeDraft || !entry.current) entry.current = location;
+    if (!resumeDraft || !entry.current) {
+      const address = new URL(path, window.location.origin);
+      entry.current = {
+        ...location,
+        pathname: address.pathname,
+        search: address.search,
+        hash: address.hash,
+      };
+    }
   }
   return renderRoute(entry.current ?? path);
 }
@@ -156,7 +166,7 @@ export function PageArea({
     };
   }, []);
   const { current, layout } = workspace;
-  const split = !!current && !narrow && layout.visible.length === 2;
+  const split = !!current && !narrow && layout.visible.length === 2 && !sessionAppPair(layout);
   // A pointer landing inside a live frame transfers focus to its browsing context, so
   // its pointer event never reaches the wrapper in this document.
   useEffect(() => {
@@ -206,12 +216,14 @@ export function PageArea({
             {page.kind === "workbenches" ? (
               <WorkbenchDirectory path={page.path} />
             ) : (
-              <PageRoute
-                path={page.path}
-                active={page.path === here}
-                location={location}
-                renderRoute={renderRoute}
-              />
+              <ScopedChat page={page}>
+                <PageRoute
+                  path={page.path}
+                  active={page.path === here || page.id === current?.id}
+                  location={location}
+                  renderRoute={renderRoute}
+                />
+              </ScopedChat>
             )}
           </ErrorBoundary>
         </PageSlot>

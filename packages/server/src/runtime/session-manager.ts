@@ -131,7 +131,7 @@ import { loopbackHostRoles } from "../services/preview-token.js";
 import { agentNoProxy } from "../net/proxy.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
-import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-trace";
+import type { TraceIndex, TraceIndexStore, Traces } from "@prismshadow/penguin-library-trace";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
@@ -375,6 +375,7 @@ export interface UsageRecorderLike {
 }
 
 export interface SessionManagerDeps {
+  traces?: Pick<Traces, "ownedSubagents">;
   /** The in-memory state this manager works on (see agent-state.ts). Optional: a manager built without one — unit tests — gets an empty state of its own. */
   state?: AgentStateStore;
   sessions: SessionIndex;
@@ -725,11 +726,17 @@ export class SessionManager {
     // runtimes, and the one dropped from the table would escape the Session's deletion.
     const entry = await this.withLock(sessionId, () => this.ensureEntry(sessionId));
     entry.lastActivityMs = Date.now();
-    const childRow = this.deps.sessions.findById(childSessionId);
-    const resume =
-      childRow && childRow.projectId === entry.projectId
-        ? { agentId: childRow.agentId }
-        : undefined;
+    const parent = this.deps.sessions.findById(sessionId);
+    let resume: { agentId: string; subagentId?: string } | undefined;
+    if (
+      parent &&
+      !entry.session.listBackgroundSubagents?.().some((child) => child.sessionId === childSessionId)
+    ) {
+      const owned = await this.deps.traces?.ownedSubagents(parent);
+      const child = owned?.find((row) => row.sessionId === childSessionId);
+      if (child?.agentId)
+        resume = { agentId: child.agentId, ...(child.alias ? { subagentId: child.alias } : {}) };
+    }
     return (
       (await entry.session.sendToBackgroundSubagent?.(childSessionId, messages, {
         ...(resume ? { resume } : {}),
@@ -898,6 +905,17 @@ export class SessionManager {
    *   channel so every Session list shows which rows still own background work.
    */
   private registerNoticeListener(sessionId: string, session: RuntimeSession): void {
+    session.setSubagentResolver?.(async (handle) => {
+      const parent = this.deps.sessions.findById(sessionId);
+      if (!parent) return null;
+      const children = await this.deps.traces?.ownedSubagents(parent);
+      const owned = children?.find(
+        (child) => child.alias === handle || (child.sessionId === handle && child.alias !== null),
+      );
+      return owned?.alias
+        ? { sessionId: owned.sessionId, agentId: owned.agentId, alias: owned.alias }
+        : null;
+    });
     session.onBackgroundNotice?.(
       () => void this.state.current?.startBackgroundNoticeTask(sessionId),
     );
@@ -3065,6 +3083,7 @@ export class SessionsModule {
   @Use() private readonly modelScopeAuth!: ModelScopeAuth;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly traceIndex!: TraceIndex;
+  @Use() private readonly traces!: Traces;
   @Use() private readonly traceStore!: TraceIndexStore;
   @Use(SandboxModule) private readonly sandbox!: Sandbox;
   /** The Sandbox card's presets live in the sandbox's settings group. */
@@ -3179,6 +3198,7 @@ export class SessionsModule {
     const manager = new SessionManager({
       state: this.state as AgentStateStore,
       sessions: sessionsRepo,
+      traces: this.traces,
       channels,
       root: config.root,
       loader: this.sessionLoaders.create(config.root, sources, {

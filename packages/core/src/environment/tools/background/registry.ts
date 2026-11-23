@@ -105,10 +105,10 @@ export class BackgroundRegistry<T extends BackgroundTask> {
    * the tail of a child Session id, so the tool handle correlates with the message origin/
    * frontend nesting label); falls back to random if omitted or on collision.
    */
-  register(task: T, preferredSuffix?: string): string {
+  register(task: T, preferredSuffix?: string, reserved?: (id: string) => boolean): string {
     this.ensureActive();
     let id = preferredSuffix ? `${this.idPrefix}-${preferredSuffix}` : this.randomId();
-    while (this.tasks.has(id)) id = this.randomId();
+    while (this.tasks.has(id) || reserved?.(id)) id = this.randomId();
     task.lastUsed = Date.now();
     this.tasks.set(id, task);
     this.changeListener?.();

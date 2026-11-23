@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import type { Location } from "react-router";
 import type { ReactNode } from "react";
 import { PageWorkspace, usePageWorkspace } from "../lib/page-workspace";
+import * as dock from "../features/dock";
 import { PageArea } from "../features/page-workspace";
 import { AppShell, Drawer, MobileTopBar, Notice, UpdateDot } from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
@@ -49,7 +50,7 @@ interface LayoutProps {
 }
 export function AppLayout(props: LayoutProps) {
   return (
-    <PageWorkspace>
+    <PageWorkspace dock={dock}>
       <ShellLayout {...props} />
     </PageWorkspace>
   );

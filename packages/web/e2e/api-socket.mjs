@@ -34,7 +34,7 @@ function socketFrame(message) {
  *   and path here, the way the server would, without forwarding it. Faked answers are not
  *   recorded in `answers`.
  */
-export async function watchSocket(page) {
+export async function watchSocket(page, { forwardPath } = {}) {
   const calls = [];
   const answers = [];
   const callHooks = [];
@@ -92,8 +92,13 @@ export async function watchSocket(page) {
         const held = holds.findIndex((hold) => hold.path === call.path);
         const holdMs = held === -1 ? 0 : holds.splice(held, 1)[0].ms;
         const delay = holdMs + (slowdown === null ? 0 : await slowdown(call));
-        if (delay > 0) setTimeout(() => server.send(message), delay);
-        else server.send(message);
+        const path = forwardPath?.(call.path) ?? call.path;
+        const forwarded =
+          path === call.path
+            ? message
+            : JSON.stringify({ ...frame, call: { ...frame.call, path } });
+        if (delay > 0) setTimeout(() => server.send(forwarded), delay);
+        else server.send(forwarded);
       });
       server.onMessage((message) => {
         const frame = socketFrame(message);
