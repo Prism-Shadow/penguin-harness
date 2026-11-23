@@ -219,7 +219,9 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
       let next = visitPage(ref.current, current);
       // Leaving a conversation dock through an ordinary link opens that destination alone.
       // Keeping a bound workbench beside the catalog would reattach its previous Session.
-      const leavingDock = !beside && current.kind !== "session" && sessionAppPair(ref.current);
+      const previousPair = sessionAppPair(ref.current);
+      const leavingDock =
+        !beside && current.kind !== "session" && previousPair && current.id !== previousPair.app.id;
       if (
         leavingDock ||
         (toolSession !== undefined && (!toolSession || !hosts.current.has(current.id)))
