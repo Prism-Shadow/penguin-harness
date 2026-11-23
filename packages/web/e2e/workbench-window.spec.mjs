@@ -166,7 +166,7 @@ const frameSurface = (page) =>
     };
   });
 
-test("the sidebar's row opens the app's window over the conversation, minimize keeps it running, close returns", async ({
+test("the workbench opened beside a conversation returns to its directory on minimize and close", async ({
   page,
 }) => {
   await openChat(page);
@@ -186,9 +186,14 @@ test("the sidebar's row opens the app's window over the conversation, minimize k
     .evaluate((f) => (f.contentWindow.__tag = "kept"));
 
   await action(page, "最小化");
-  await expect(page).toHaveURL(`${BASE}/chat/${sessionId}`);
+  await expect(page).toHaveURL(`${BASE}/apps?workbenches=default_agent`);
   // Exact: the Trace dock's row for the reply previews the same text.
-  await expect(page.getByText(REPLY, { exact: true })).toBeVisible();
+  await expect(
+    page
+      .locator(`[data-workspace-page="chat:${sessionId}"]`)
+      .getByText(REPLY, { exact: true })
+      .first(),
+  ).toBeVisible();
   await expect(row(page)).toHaveAttribute("aria-label", "Window demo，运行中");
 
   await row(page).click();
@@ -199,8 +204,18 @@ test("the sidebar's row opens the app's window over the conversation, minimize k
   ).resolves.toBe("kept");
 
   await action(page, "关闭");
-  await expect(page).toHaveURL(`${BASE}/chat/${sessionId}`);
+  await expect(page).toHaveURL(`${BASE}/apps?workbenches=default_agent`);
   await expect(page.locator("iframe[title='Clear']")).toHaveCount(0);
+  const sessionRow = page
+    .getByRole("navigation", { name: "打开的页面" })
+    .locator(`[data-app-row="chat:${sessionId}"]`);
+  await sessionRow.hover();
+  await sessionRow
+    .locator("xpath=ancestor::li")
+    .getByRole("button", { name: /页面操作/ })
+    .click();
+  await page.getByRole("menuitem", { name: "整页显示", exact: true }).click();
+  await expect(page).toHaveURL(`${BASE}/chat/${sessionId}`);
   await expect(dockAt(page, "right")).toBeVisible();
 });
 

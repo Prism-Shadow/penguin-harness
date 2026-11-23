@@ -312,6 +312,8 @@ it("keeps remote and local pages with the same Agent and workbench ID distinct",
   await until(() => row(remote) !== null && frameOf("Board") !== null);
   expect(whereIs(router)).toBe("/apps?app=" + encodeURIComponent(remote));
   expect(frameOf("Board")!.getAttribute("src")).toContain("/server/m1/");
+  expect(row(remote)?.textContent).toContain("Board [SSH: box]");
+  expect(row(remote)?.getAttribute("aria-label")).toContain("Board [SSH: box]");
   await pageAction("Board", en.appCenter.windowMinimize);
   await launch(key("board"));
   await until(() => row(key("board")) !== null);

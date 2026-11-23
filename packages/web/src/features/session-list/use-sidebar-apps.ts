@@ -7,6 +7,8 @@ import { systemShortcutsOf } from "../app-center";
 import { usePageAgent } from "../../lib/page-agent";
 import { useRunningAppRecords } from "../../lib/running-apps";
 import { localizedText } from "../../lib/skill-use";
+import { nameOnMachine } from "../../lib/workspace-machines";
+import { useMachines } from "../../state/machines";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 
@@ -36,6 +38,7 @@ export function useSidebarApps(pages: readonly OpenPage[] | undefined) {
       : currentAgent && projectId
         ? { projectId, agentId: currentAgent.agentId, machineId: null }
         : null;
+  const machines = useMachines().state;
   const systems = useSystemApps();
   const running = useRunningAppRecords();
   const { locale } = useLocale();
@@ -43,6 +46,7 @@ export function useSidebarApps(pages: readonly OpenPage[] | undefined) {
   const agentMachine = agent?.machineId;
   const rows = useMemo(() => {
     if (!projectId || !pages) return [];
+    const labels = new Map(machines?.machines.map((item) => [item.machineId, item.alias]));
     const installedSystems = new Map(
       systemShortcutsOf(systems, projectId).map((shortcut) => [
         systemAppKey(shortcut.workbenchId),
@@ -72,7 +76,10 @@ export function useSidebarApps(pages: readonly OpenPage[] | undefined) {
         agentId: shortcut.agentId,
         workbenchId: shortcut.workbenchId,
         machineId,
-        title: localizedText(locale, shortcut.title, shortcut.titleZh),
+        title: nameOnMachine(
+          localizedText(locale, shortcut.title, shortcut.titleZh),
+          machineId === null ? null : (labels.get(machineId) ?? shortcut.machineLabel ?? machineId),
+        ),
         icon: shortcut.icon ?? null,
         ...(shortcut.system && { system: shortcut.system }),
         agentName:
@@ -81,6 +88,6 @@ export function useSidebarApps(pages: readonly OpenPage[] | undefined) {
       });
     }
     return rows;
-  }, [projectId, pages, systems, running, locale, agents, agentId, agentMachine]);
+  }, [projectId, pages, systems, running, locale, agents, agentId, agentMachine, machines]);
   return { agent, rows };
 }

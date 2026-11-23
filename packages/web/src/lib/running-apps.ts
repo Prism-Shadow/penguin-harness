@@ -15,9 +15,8 @@
  * - for the App Center and the windows' host, the records and the calls that change them.
  *
  * An app ends when the viewer closes it, when its workbench is gone (its window learns it,
- * app-center-windows.tsx), with its Project left, or with the app shell. An app a list stops
- * showing keeps running: the App Center hides a workbench the sidebar may still open, and the
- * sidebar lists one Agent's apps at a time.
+ * app-center-windows.tsx), with its Project left, or with the app shell. A change to App Center
+ * visibility leaves open apps running.
  *
  * Nothing here is saved: a reload starts with no app running.
  */
@@ -35,7 +34,11 @@ import type { SystemShortcut } from "./system-apps";
  * A running app's App Center shortcut, with the machine its Agent lives on (none: this server), and
  * for a system app that opens in the window, the document its window draws.
  */
-export type RunningShortcut = AppCenterShortcut & { machineId?: string; system?: SystemShortcut };
+export type RunningShortcut = AppCenterShortcut & {
+  machineId?: string;
+  machineLabel?: string;
+  system?: SystemShortcut;
+};
 
 /** One running app as its window's host keeps it. */
 export interface RunningAppRecord {
