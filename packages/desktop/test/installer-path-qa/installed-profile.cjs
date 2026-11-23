@@ -6,6 +6,7 @@ const { spawnSync } = require("node:child_process");
 const { createRequire } = require("node:module");
 const web = createRequire(path.resolve("packages/web/package.json"));
 const { _electron } = createRequire(web.resolve("@playwright/test"))("playwright");
+const { startMmspServer, textReply } = require(path.resolve("packages/server/test/fixtures/mmsp-server.ts"));
 const [mode, program, record, expectedProfile, expectedData] = process.argv.slice(2);
 assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.PH_DISPOSABLE_WINDOWS, "yes");
@@ -18,6 +19,10 @@ const env = { ...process.env, PENGUIN_SEED_ADMIN_PASSWORD: phase.password };
 const cut = (p) => path.normalize(p).toLowerCase().replace(/[\\/]+$/, "");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function run() {
+  const answer = "The original installation received the attachment.";
+  const modelServer = await startMmspServer(() => textReply(answer, {
+    prompt_tokens: 3, cached_tokens: 0, response_tokens: 3, thoughts_tokens: 0,
+  }));
   const desktop = await _electron.launch({ executablePath: path.join(program, "PenguinHarness.exe"), env, timeout: 90000 });
   try {
     const page = await desktop.firstWindow({ timeout: 90000 });
@@ -46,7 +51,10 @@ async function run() {
       phase.project = projects.projects[0].projectId;
       const project = "/api/projects/" + phase.project;
       const model = { provider: "custom", modelId: "installer-fixture" };
-      await api("PUT", project + "/models", { defaultModel: model, models: [{ ...model, contextWindow: 32000, baseUrl: "http://127.0.0.1:1", apiKey: "installer-fixture", pricing: { cacheRead: 1, cacheWrite: 1, output: 1 } }] });
+      await api("PUT", project + "/models", {
+        providers: { custom: { clientType: "mmsp", baseUrl: modelServer.baseUrl, apiKey: "fixture" } },
+        defaultModel: model, models: [{ ...model, contextWindow: 32000 }],
+      });
       const created = await (await api("POST", project + "/agents/default_agent/sessions", model)).json();
       phase.sid = created.session.sessionId;
       const sid = "/api/sessions/" + phase.sid;
@@ -72,6 +80,8 @@ async function run() {
     const sid = "/api/sessions/" + phase.sid;
     const restored = (await (await api("GET", sid)).json()).session;
     assert.equal(restored.sessionId, phase.sid);
+    await page.goto(base + "/chat/" + phase.sid);
+    await page.getByText(answer, { exact: true }).first().waitFor({ timeout: 60000 });
     const attachment = await (await api("GET", sid + "/scratchpad/acceptance.txt")).body();
     assert.deepEqual(attachment, asset);
     const file = await (await api("GET", sid + "/files/content?path=installer-marker.txt")).body();
@@ -98,6 +108,7 @@ async function run() {
     console.log(mode + ": original account, Session, attachment, Electron preference, workspace and installed CLI verified.");
   } finally {
     await desktop.close();
+    await modelServer.close();
     await sleep(1200);
   }
 }
