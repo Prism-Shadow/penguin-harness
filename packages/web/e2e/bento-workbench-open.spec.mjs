@@ -26,9 +26,11 @@ test("the source desktop renders the start page and reopens the actual Bento edi
   const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-bento-render-"));
   const shell = await _electron.launch({
     executablePath: require("electron"),
-    args: [desktop, "--user-data-dir=" + path.join(scratch, "profile")],
+    cwd: desktop,
+    args: [".", "--user-data-dir=" + path.join(scratch, "profile")],
     env: {
       ...process.env,
+      ELECTRON_ENABLE_LOGGING: "1",
       PENGUIN_HOME: path.join(scratch, "data"),
       PENGUIN_SEED_ADMIN_PASSWORD: "penguin-2026",
       XDG_CONFIG_HOME: path.join(scratch, "prefs"),

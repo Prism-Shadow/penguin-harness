@@ -9,7 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        bento: [current, previous]
+        bento: [current, previous, fixed]
     runs-on: windows-latest
     timeout-minutes: 25
     env:
@@ -23,6 +23,12 @@ jobs:
         if: matrix.bento == 'previous'
         shell: bash
         run: git checkout 9abf561e6^ -- plugins/use-bento-slides
+      - name: Check out the candidate from the pull request
+        if: matrix.bento == 'fixed'
+        shell: bash
+        run: |
+          git fetch origin refs/pull/1719/head
+          git checkout e1f5b353f -- plugins/use-bento-slides packages/web/e2e/bento-templates.spec.mjs
       - name: Identify workbench version
         shell: bash
         run: node -p "JSON.stringify([require('./plugins/use-bento-slides/package.json').version,require('./plugins/use-bento-slides/workbenches/slides/package.json').penguin.version])"
@@ -37,6 +43,10 @@ jobs:
           node -p 'JSON.stringify({ platform:process.platform, arch:process.arch, node:process.version })'
           git config --get core.autocrlf || true
           SKIP_BUILD=1 bash packages/web/e2e/run.sh bento-workbench-open.spec.mjs --grep "the Slides window and full page"
+      - name: Candidate template creation and marked deck
+        if: matrix.bento == 'fixed'
+        shell: bash
+        run: SKIP_BUILD=1 bash packages/web/e2e/run.sh bento-templates.spec.mjs
       - name: Keep browser evidence
         if: always()
         shell: bash
