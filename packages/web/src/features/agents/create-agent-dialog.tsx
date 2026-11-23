@@ -20,8 +20,7 @@
  * and it decides whether the id is free. A new location drops the plugins
  * and the directory picked for the old one, which would name things the new one may not have.
  *
- * The plugins start ticked with the library's default-install ones (`PluginItem.defaultInstall`:
- * goal mode and Plan mode), which the user may untick. Until the plugin field is touched it
+ * The plugins start ticked with the library's default-install ones (`PluginItem.defaultInstall`), which the user may untick. Until the plugin field is touched it
  * follows the location's library as it arrives; Create then sends the list on screen together with
  * `defaultPlugins: false`, so the server installs exactly what was shown. With no library to show
  * and nothing picked, it sends neither, and the server adds its defaults.

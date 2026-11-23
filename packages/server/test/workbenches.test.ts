@@ -1349,7 +1349,7 @@ describe("Agent State in an existing Project", () => {
       const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
       const agentId = "after_upgrade";
       const base = `/api/projects/${projectId}/agents`;
-      expect((await admin.post(base, { agentId, defaultPlugins: false })).status).toBe(201);
+      expect((await admin.post(base, { agentId })).status).toBe(201);
       const workbench = path.join(agentStateDir(t.root, projectId, agentId), "workbenches", "demo");
       await writeDemo(workbench);
       const url = `${base}/${agentId}/workbenches`;

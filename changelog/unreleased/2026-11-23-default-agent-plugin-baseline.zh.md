@@ -6,3 +6,5 @@
 - **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1783
 
 新 Project 的默认 Agent 预装 Agent 公司、电脑操作技能、持续学习和企鹅支持。电脑操作的桌面服务仍需管理员启用。新 Project 启用工作台历史的原生 Git 模块。已有 Project 保留原有模块配置，其中新建的普通 Agent 也会把工作台修改记入自己的 Git 历史。
+
+创建普通 Agent 时不预选可选插件。Goal 与 Plan 可在创建时选中，也可稍后安装。

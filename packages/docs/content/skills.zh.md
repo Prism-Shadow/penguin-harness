@@ -259,12 +259,12 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `storage` | [设置 › 存储空间](/settings#存储空间)与 [`penguin storage`](/cli#penguin-storage)：数据根按分类、Project 与 Agent 的空间占用，以及先审阅再删除的草稿区、孤立临时工作区与缓存清理。预装：每个 Project 都列入的服务端模块、页面、命令，以及让 Agent 告诉你空间被什么占用的 Skill（它自己从不删除任何东西） |
 | | `use-bento-slides` | Bento 幻灯片，含 `bento-slides` Skill 与幻灯片[工作台](#workbench-插件)（AI PPT）：你在 Bento 编辑器里修改文稿的同时，Agent 修改同一份文稿，双方的修改都会保留。该 Skill 也编写单文件 `.bento.html` 文稿，支持素材到图表的映射、morph 过渡和状态幻灯片（预装） |
 | | `humanizer` | 去除任何语言文字中的 AI 写作痕迹，改写成书籍、报纸和百科全书的语体（不预装：需要时从插件库安装） |
-| | `goal` | [目标模式](/goal-mode)背后的 stop 钩子：让 Session 持续朝着目标推进，直到完成、受阻或 Token 预算耗尽（预装，每个新建的 Agent 也都装上） |
-| | `plan` | 计划模式：输入框 **+** 菜单里的开关。开着时，每条消息后面都附上一段提示，请 Agent 先和你讨论目标、可选做法与取舍，方向谈定后再动手；不限制任何工具（预装，每个新建的 Agent 也都装上） |
-| | `continual-learning` | Task 运行超过 30 轮才结束时，把 Task 的精简摘录交给后台子 Agent，由它把有长期价值的发现沉淀到 Agent 的 Skill 中（不预装） |
+| | `goal` | [目标模式](/goal-mode)背后的 stop 钩子：让 Session 持续朝着目标推进，直到完成、受阻或 Token 预算耗尽（新初始化的 `default_agent` 预装；已有的 Agent 从插件库安装） |
+| | `plan` | 计划模式：输入框 **+** 菜单里的开关。开着时，每条消息后面都附上一段提示，请 Agent 先和你讨论目标、可选做法与取舍，方向谈定后再动手；不限制任何工具（新初始化的 `default_agent` 预装；已有的 Agent 从插件库安装） |
+| | `continual-learning` | Task 运行超过 30 轮才结束时，把 Task 的精简摘录交给后台子 Agent，由它把有长期价值的发现沉淀到 Agent 的 Skill 中（新初始化的 `default_agent` 预装；已有的 Agent 从插件库安装） |
 | | `trace-lookup` | 在会话的 Trace 文件里查回更早的内容：先搜出某个细节所在的行，再只读这几行；用于压缩摘要或模型切换指向 Agent 所接续的上一段上下文的 Trace 时（新初始化的 `default_agent` 预装；已有的 Agent 从插件库安装） |
-| | `agent-company` | [公司模式](/company-mode)的完整工具包，包含七个 Skill：`company-setup`（与用户一起创建组织：一次问一个问题、给出摘要供确认，然后执行 `penguin org create`；从不招聘，也不提交工单）、`company-employee`（每个工位 Session 和工单 Session 都要遵循的协议：触发块、工单看板、阻塞、重负载或不可逆的工作先向董事会请示、频道礼仪、预算）、`company-ceo`（把使命拆解为工单、招聘、划分 Workspace、审查、向董事会汇报）、`company-hr`（日历排班、招聘与离职、评估）、`company-finance`（预算、每日审计、告警与暂停）、`company-research`（科研组织的作者与审稿人：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环、只保留能提升指标的改动，每个结论都交给一个设法推翻它的审稿人）和 `company-mirror`（数字分身公司：每位真实同事对应一个分身，绑定到这位同事的机器人，只传话、不开工单）。不预装：组织在创建 CEO、招聘员工时会安装它；需要能创建组织的 Agent 则从插件库安装 |
-| | `penguin-support` | PenguinHarness 产品客服，包含 `penguin-support` Skill（依据官方文档和源码解答产品问题、排查故障）和客服[工作台](#workbench-插件)：问题列表、新建问题弹窗，以及支持追问的对话详情。不预装：默认 Project 的内置客服 Agent「PenguinHarness Support」自带该插件，其他 Agent 可从插件库安装 |
+| | `agent-company` | [公司模式](/company-mode)的完整工具包，包含七个 Skill：`company-setup`（与用户一起创建组织：一次问一个问题、给出摘要供确认，然后执行 `penguin org create`；从不招聘，也不提交工单）、`company-employee`（每个工位 Session 和工单 Session 都要遵循的协议：触发块、工单看板、阻塞、重负载或不可逆的工作先向董事会请示、频道礼仪、预算）、`company-ceo`（把使命拆解为工单、招聘、划分 Workspace、审查、向董事会汇报）、`company-hr`（日历排班、招聘与离职、评估）、`company-finance`（预算、每日审计、告警与暂停）、`company-research`（科研组织的作者与审稿人：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环、只保留能提升指标的改动，每个结论都交给一个设法推翻它的审稿人）和 `company-mirror`（数字分身公司：每位真实同事对应一个分身，绑定到这位同事的机器人，只传话、不开工单）。组织在创建 CEO、招聘员工时会安装它；需要能创建组织的 Agent 则从插件库安装 |
+| | `penguin-support` | PenguinHarness 产品客服，包含 `penguin-support` Skill（依据官方文档和源码解答产品问题、排查故障）和客服[工作台](#workbench-插件)：问题列表、新建问题弹窗，以及支持追问的对话详情。默认 Project 的内置客服 Agent「PenguinHarness Support」自带该插件，其他 Agent 可从插件库安装 |
 | 实用工具 | `fridge-keeper` | 按位置、数量和保质期记录食材。 |
 | | `action-minutes` | 记录会议决定、跟进行动项并导出纪要。 |
 | 娱乐 | `tabletop-desk` | 管理出场顺序、掷骰并记录场景笔记。 |

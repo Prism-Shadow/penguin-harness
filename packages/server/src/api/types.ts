@@ -1281,8 +1281,8 @@ export interface AgentCreateRequest {
    */
   plugins?: string[];
   /**
-   * Whether the library's default-install plugins (those whose card sets `defaultInstall`: goal
-   * mode and Plan mode) join `plugins`; omitted = true. A client that sends the complete list it
+   * Whether the library's default-install plugins (those whose card sets `defaultInstall`)
+   * join `plugins`; omitted = true. A client that sends the complete list it
    * showed the user, as the Web App's create dialog does, sends false with it.
    */
   defaultPlugins?: boolean;

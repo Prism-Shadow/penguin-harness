@@ -1,14 +1,4 @@
-/**
- * The plugins every new Agent gets: the library's cards with `defaultInstall` (goal mode and Plan
- * mode in the shipped library), through the create route the Web App's dialog and the CLI use.
- *
- * - Given a create that names no plugins, the new Agent has the goal and plan hook packages.
- * - Given picked plugins, the defaults join them; a default picked by name is installed once.
- * - Given `defaultPlugins: false`, the Agent has exactly the plugins named, none for none.
- * - Given an Agent imported from a package, it keeps the plugins the package carries: an import
- *   moves an existing Agent, and gets no defaults.
- * - The library listing marks the default-install plugins, so a client can show them ticked.
- */
+/** Plugin selection on the create route shared by the Web App, CLI and recruitment. */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AgentPluginsInstallResponse, PluginLibraryResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
@@ -16,7 +6,7 @@ import type { TestApp } from "./helpers.js";
 
 const AGENTS = "/api/projects/default_project/agents";
 
-describe("the plugins every new Agent gets", () => {
+describe("plugin selection for ordinary new Agents", () => {
   let t: TestApp;
   let admin: ReturnType<typeof apiClient>;
 
@@ -42,13 +32,14 @@ describe("the plugins every new Agent gets", () => {
     return ((await res.json()) as AgentPluginsInstallResponse).skills.map((s) => s.name);
   };
 
-  it("installs goal and plan on an Agent created without a plugin list", async () => {
+  it("creates an ordinary Agent without optional plugins when none were selected", async () => {
     await create({ agentId: "plain_one" });
-    expect(await hooksOf("plain_one")).toEqual(["goal", "plan"]);
+    expect(await hooksOf("plain_one")).toEqual([]);
+    expect(await skillsOf("plain_one")).toEqual([]);
   });
 
-  it("adds them to the picked plugins, installing a default that was also picked once", async () => {
-    await create({ agentId: "picked_one", plugins: ["trace-lookup", "goal"] });
+  it("installs explicitly selected modes and skills", async () => {
+    await create({ agentId: "picked_one", plugins: ["trace-lookup", "plan", "goal"] });
     expect(await hooksOf("picked_one")).toEqual(["goal", "plan"]);
     expect(await skillsOf("picked_one")).toContain("trace-lookup");
   });
@@ -78,14 +69,15 @@ describe("the plugins every new Agent gets", () => {
     expect(await hooksOf("imported_one")).toEqual([]);
   });
 
-  it("marks the default-install plugins in the library listing", async () => {
+  it("keeps optional modes discoverable and unselected in the creation catalog", async () => {
     const res = await admin.get("/api/plugins");
     const listed = ((await res.json()) as PluginLibraryResponse).groups.flatMap((g) => g.plugins);
+    expect(listed.map((plugin) => plugin.name)).toEqual(expect.arrayContaining(["goal", "plan"]));
     expect(
       listed
         .filter((p) => p.defaultInstall === true)
         .map((p) => p.name)
         .sort(),
-    ).toEqual(["goal", "plan"]);
+    ).toEqual([]);
   });
 });

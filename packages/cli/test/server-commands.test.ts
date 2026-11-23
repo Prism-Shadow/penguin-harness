@@ -356,7 +356,7 @@ describe("penguin agent / project", () => {
     const sent = server.requests
       .filter((r) => r.method === "POST" && r.path.endsWith("/agents"))
       .map((r) => [r.body?.agentId, r.body?.defaultPlugins]);
-    // Without the flag the CLI says nothing, and the server adds goal and plan.
+    // Without the flag the CLI leaves the library defaults to the server.
     expect(sent).toEqual([
       ["lean", false],
       ["usual", undefined],

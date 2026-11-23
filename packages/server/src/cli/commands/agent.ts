@@ -18,7 +18,7 @@
  * `create` mirrors the Web dialog's fields: id (required), display name, description,
  * and library plugins to seed (comma-separated names; unknown names are rejected by the
  * server before anything is created). The server adds the library's default-install plugins
- * (goal and plan) to them unless `--no-default-plugins` is given, which sends
+ * to them unless `--no-default-plugins` is given, which sends
  * `defaultPlugins: false`. It also says who is creating the agent: `--author`
  * when given, else `agent` inside a Session (PENGUIN_SESSION_ID set, so the command is an
  * agent's), else nothing, which the server records as `user`.

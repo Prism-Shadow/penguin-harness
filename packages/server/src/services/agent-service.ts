@@ -806,8 +806,7 @@ export class AgentService implements AgentLifecycle {
    * of initialization, so an Agent never survives with only part of its picked set. They are
    * resolved before anything is created, so an unknown name creates no directory at all. The
    * library's default-install plugins join them (seedPluginNames) unless `defaultPlugins` is
-   * false: every new Agent has goal mode and Plan mode, whose hooks do nothing until the mode
-   * is picked. The system Agent is provisioned by core's presets, never through here.
+   * false. The system Agent is provisioned by core's presets, never through here.
    *
    * `archive` is an Agent package (the import route's): the fresh Agent takes its State, name,
    * description and version instead of the template's, and its Traces land once the State is
