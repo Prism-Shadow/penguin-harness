@@ -1,18 +1,7 @@
 /**
- * The sidebar's 「应用」 group, at the top of the scroll area under the three nav rows and above the
- * conversations (PRFC-0033): the apps of the Agent the page works under, then any other app still
- * running in a window, each marked running (use-sidebar-apps.ts). It is not there while the Agent
- * has no app in the sidebar and nothing runs.
- *
- * - A row opens the app in the App Center's window over the main area (lib/running-apps.ts):
- *   the same live window when the app runs, and closing or minimizing it returns to the page the
- *   row was clicked on. The row is selected while its window is on screen. It carries the tile's
- *   marks: running, building (it does not open until built, unless it runs) and failed.
- * - A row's menu: Open; Remove from sidebar (the Workbenches row's 「展示到侧边栏」, the
- *   installation's setting every member shares), for a row the Agent's setting lists; View in
- *   agent settings.
- * - The header folds the group like a conversation group's, remembered in this browser, and its
- *   action opens the Agent's Workbenches sub-page.
+ * The sidebar Apps group lists the Agent's workbenches and the current Project's open apps.
+ * Opening a running row selects its workspace page. The same page owns minimize, restore and
+ * close, whether it renders a native route, a contributed iframe or an Agent workbench.
  */
 import { useState } from "react";
 import { useNavigate } from "react-router";
@@ -32,6 +21,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { agentSettingsPath } from "../../lib/agent-location";
+import { usePageWorkspace } from "../../lib/page-workspace";
 import { useRestoreApp } from "../../lib/running-apps";
 import { S } from "../../lib/strings";
 import { toastApiError } from "../../lib/toast-api-error";
@@ -67,7 +57,11 @@ function stateOf(row: SidebarAppRow): string | null {
 }
 
 export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
-  const { agent, rows, reload } = useSidebarApps();
+  const workspace = usePageWorkspace();
+  const { agent, pagesByKey, rows, reload } = useSidebarApps(
+    workspace?.layout.pages,
+    workspace?.current?.id,
+  );
   const restore = useRestoreApp();
   const navigate = useNavigate();
   const [folded, setFolded] = useState(readFolded);
@@ -75,7 +69,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
   const [query, setQuery] = useState("");
   const [sorting, setSorting] = useState(false);
   const [sort, setSort] = useState<"default" | "name" | "running">("default");
-  if (agent === null || rows.length === 0) return null;
+  if (rows.length === 0) return null;
   const visible = rows.filter((row) =>
     row.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
   );
@@ -91,36 +85,80 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
     onNavigate?.();
   };
   const open = (row: SidebarAppRow) => {
-    restore(row.key, row.shortcut ?? undefined);
+    const page = pagesByKey.get(row.key);
+    if (page && workspace) workspace.focus(page);
+    else restore(row.key, row.shortcut ?? undefined);
     onNavigate?.();
   };
-  const removeFromSidebar = (row: SidebarAppRow) =>
+  const removeFromSidebar = (row: SidebarAppRow) => {
+    if (!agent) return;
     void api
       .setWorkbenchSidebar(agent.projectId, row.agentId, row.workbenchId, false, row.machineId)
       .then(reload, toastApiError);
-  const menuOf = (row: SidebarAppRow): RowActionItem[] => [
-    { id: "open", label: S.sidebarApps.open, glyph: ICONS.appWindow, onSelect: () => open(row) },
-    // Only the Agent's setting lists a row; one shown because it runs has nothing to remove.
-    ...(row.shortcut !== null
-      ? [
-          {
-            id: "remove",
-            label: S.sidebarApps.removeFromSidebar,
-            glyph: ICONS.eyeOff,
-            onSelect: () => removeFromSidebar(row),
-          },
-        ]
-      : []),
-    {
-      id: "settings",
-      label: S.sidebarApps.viewInSettings,
-      glyph: ICONS.gear,
-      onSelect: () => go(agentSettingsPath(row.agentId, row.machineId, "workbenches")),
-    },
-  ];
-
+  };
+  const menuOf = (row: SidebarAppRow): RowActionItem[] => {
+    const page = pagesByKey.get(row.key);
+    const actions: RowActionItem[] = [];
+    if (page && workspace) {
+      const act = (fn: () => void) => () => {
+        fn();
+        onNavigate?.();
+      };
+      actions.push(
+        workspace.layout.visible.includes(page.id)
+          ? {
+              id: "minimize",
+              label: S.appCenter.windowMinimize,
+              glyph: ICONS.minus,
+              onSelect: act(() => workspace.minimize(page.id)),
+            }
+          : {
+              id: "restore",
+              label: S.pageWorkspace.restore,
+              glyph: ICONS.appWindow,
+              onSelect: () => open(row),
+            },
+        {
+          id: "fullscreen",
+          label: page.kind === "system" ? S.pageWorkspace.whole : S.appCenter.windowFullScreen,
+          glyph: ICONS.square,
+          onSelect: act(() =>
+            page.kind === "system" ? workspace.whole(page) : workspace.fullScreen(page),
+          ),
+        },
+        {
+          id: "close",
+          label: S.common.close,
+          glyph: ICONS.cross,
+          onSelect: act(() => workspace.close(page.id)),
+        },
+      );
+    } else {
+      actions.push({
+        id: "open",
+        label: S.sidebarApps.open,
+        glyph: ICONS.appWindow,
+        onSelect: () => open(row),
+      });
+    }
+    if (row.shortcut)
+      actions.push({
+        id: "remove",
+        label: S.sidebarApps.removeFromSidebar,
+        glyph: ICONS.eyeOff,
+        onSelect: () => removeFromSidebar(row),
+      });
+    if (!row.system)
+      actions.push({
+        id: "settings",
+        label: S.sidebarApps.viewInSettings,
+        glyph: ICONS.gear,
+        onSelect: () => go(agentSettingsPath(row.agentId, row.machineId, "workbenches")),
+      });
+    return actions;
+  };
   return (
-    <div className="pt-2.5">
+    <nav aria-label={S.sidebarApps.title} className="pt-2.5">
       <SidebarListHeader
         label={S.sidebarApps.title}
         searching={searching}
@@ -181,11 +219,13 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
             ))}
           </Menu>
         </Dropdown>
-        <SidebarControl
-          glyph={ICONS.gear}
-          label={S.sidebarApps.manage}
-          onClick={() => go(agentSettingsPath(agent.agentId, agent.machineId, "workbenches"))}
-        />
+        {agent && (
+          <SidebarControl
+            glyph={ICONS.gear}
+            label={S.sidebarApps.manage}
+            onClick={() => go(agentSettingsPath(agent.agentId, agent.machineId, "workbenches"))}
+          />
+        )}
       </SidebarListHeader>
       <Fold open={!folded || searching}>
         {visible.length === 0 && (
@@ -203,6 +243,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
                   <TileIcon
                     shortcut={{
                       workbenchId: row.workbenchId,
+                      ...(row.system && { system: row.system }),
                       ...(row.icon !== null ? { icon: row.icon } : {}),
                     }}
                     title={row.title}
@@ -222,6 +263,6 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
           })}
         </ul>
       </Fold>
-    </div>
+    </nav>
   );
 }

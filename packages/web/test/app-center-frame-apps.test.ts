@@ -26,6 +26,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { ContributionsResponse } from "@prismshadow/penguin-server/api";
 import { AppCenterPage } from "../src/features/app-center/app-center-page";
 import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
+import { MainSidebarApps } from "../src/features/session-list/main-sidebar-apps";
 import { SystemAppPage } from "../src/features/app-center/system-app-page";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -34,7 +35,7 @@ import { ThemeProvider } from "../src/state/theme";
 import { pageTableFor } from "../src/web-app/contributions";
 import { ShellRoutes } from "../src/web-app/router";
 import { PROJECT_ID, agentServer, buttonIn, mountAgentApp, whereIs } from "./helpers/agent-app";
-import { button, click, run, settle, unmountAll, waitFor } from "./helpers/dom";
+import { button, click, menuItem, run, settle, unmountAll, waitFor } from "./helpers/dom";
 import { SYSTEM_APP_PAGES } from "./helpers/system-app-pages";
 
 const KEY = "system_agent/reports";
@@ -104,7 +105,10 @@ async function open(at = "/apps") {
       // Every other page of the table, as the shell mounts them: the redirect lives there.
       { path: "*", element: h(ThemeProvider, null, h(ShellRoutes)) },
     ],
-    layers: [h(ThemeProvider, null, h(WorkspaceWindows)), h(SwitchLanguage)],
+    layers: [
+      h(ThemeProvider, null, h(WorkspaceWindows, null, h(MainSidebarApps))),
+      h(SwitchLanguage),
+    ],
   });
   await until(() => tile() !== null || windowOf() !== null);
   return router;
@@ -184,6 +188,35 @@ it("opens the app's window from its tile, and minimize keeps the same frame runn
 
   await pageAction("Reports", en.appCenter.windowClose);
   expect(app.isConnected).toBe(false);
+});
+
+it("keeps a contributed app in Apps until its window closes", async () => {
+  const router = await open();
+  const rows = () =>
+    document.querySelectorAll<HTMLButtonElement>(
+      `nav[aria-label="${en.sidebarApps.title}"] [data-app-row="${KEY}"]`,
+    );
+  const action = async (label: string) => {
+    await click(
+      rows()[0]!.closest("li")!.querySelector(`button[aria-label="${en.chat.moreActions}"]`)!,
+    );
+    await click(menuItem(label));
+  };
+  expect(rows()).toHaveLength(0);
+  const documentFrame = await openWindow();
+  await post(documentFrame, { type: "penguin:location", at: "/quarter" });
+  expect(rows()).toHaveLength(1);
+  expect(rows()[0]!.getAttribute("aria-current")).toBe("page");
+  await action(en.appCenter.windowMinimize);
+  expect(rows()).toHaveLength(1);
+  expect(reachable(documentFrame)).toBe(false);
+  await action(en.pageWorkspace.restore);
+  expect(whereIs(router)).toBe(windowAt("/quarter"));
+  expect(frame()).toBe(documentFrame);
+  await action(en.common.close);
+  expect(rows()).toHaveLength(0);
+  expect(documentFrame.isConnected).toBe(false);
+  expect(tile()).not.toBeNull();
 });
 
 it("leads the page's address and every address under it into the window, replacing the entry", async () => {

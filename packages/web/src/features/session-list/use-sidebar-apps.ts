@@ -3,7 +3,7 @@
  * under — the open conversation's own, on the machine it runs on (lib/page-agent.ts); once that
  * page is gone (an app's window covers it), the same while it is still the current Agent; else
  * the Project's current Agent on this server — then every other app still running in a window
- * (lib/running-apps.ts), marked so.
+ * and the open system pages the viewer can access in this Project.
  *
  * - The Agent's apps are the ones its server lists for the sidebar (`GET …/workbenches?view=sidebar`:
  *   those that run, have a page and are shown in the sidebar, read from the files with nothing
@@ -17,6 +17,9 @@
  */
 import { useMemo } from "react";
 import type { AppCenterShortcut, IconRef } from "@prismshadow/penguin-server/api";
+import type { OpenPage } from "../../lib/page-layout";
+import { systemAppKey, useSystemApps, type SystemShortcut } from "../../lib/system-apps";
+import { systemShortcutsOf } from "../app-center/system-tiles";
 import { locatedAppKey } from "../../lib/app-center-path";
 import { useAgentApps } from "../../lib/use-agent-apps";
 import { usePageAgent, type PageAgent } from "../../lib/page-agent";
@@ -34,6 +37,7 @@ export interface SidebarAppRow {
   /** In the reader's language. */
   title: string;
   icon: IconRef | null;
+  system?: SystemShortcut;
   /**
    * Shown in the sidebar by its Agent's setting, with the shortcut its window starts from; null
    * for an app listed only because it runs.
@@ -44,16 +48,24 @@ export interface SidebarAppRow {
   build: AppCenterShortcut["build"];
   /** Its window is open, shown or minimized. */
   running: boolean;
-  /** Its window is the one on screen. */
+  /** Its page is focused. */
   shown: boolean;
 }
 
-export function useSidebarApps(): {
-  agent: PageAgent | null;
-  rows: readonly SidebarAppRow[];
-  /** Reads the Agent's list again (after a write the server announces anyway). */
-  reload: () => void;
-} {
+export function useSidebarApps(
+  pages: readonly OpenPage[] | undefined,
+  focusedId: string | undefined,
+) {
+  const systems = useSystemApps();
+  const pagesByKey = useMemo(
+    () =>
+      new Map(
+        pages
+          ?.filter((p) => p.kind === "system" || p.kind === "window")
+          .map((p) => [p.id.slice(4), p]),
+      ),
+    [pages],
+  );
   const { currentProject, currentAgent, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const page = usePageAgent();
@@ -100,7 +112,7 @@ export function useSidebarApps(): {
       return local === undefined ? app.agentName : agentDisplayName(local);
     };
     const others: SidebarAppRow[] = running
-      .filter((app) => !listed.has(app.key))
+      .filter((app) => !app.system && !listed.has(app.key))
       .map((app) => ({
         key: app.key,
         agentId: app.agentId,
@@ -117,8 +129,29 @@ export function useSidebarApps(): {
         running: true,
         shown: app.shown,
       }));
-    return [...own, ...others];
-  }, [apps, running, locale, agents, agent]);
+    const builtins: SidebarAppRow[] = [];
+    if (projectId !== null) {
+      for (const shortcut of systemShortcutsOf(systems, projectId)) {
+        const key = systemAppKey(shortcut.workbenchId);
+        if (!pagesByKey.has(key) || listed.has(key)) continue;
+        builtins.push({
+          key,
+          agentId: shortcut.agentId,
+          workbenchId: shortcut.workbenchId,
+          machineId: null,
+          title: localizedText(locale, shortcut.title, shortcut.titleZh),
+          icon: null,
+          system: shortcut.system!,
+          shortcut: null,
+          agentName: null,
+          build: shortcut.build,
+          running: true,
+          shown: focusedId === "app:" + key,
+        });
+      }
+    }
+    return [...own, ...others, ...builtins];
+  }, [apps, running, locale, agents, agent, systems, projectId, pagesByKey, focusedId]);
 
-  return { agent, rows, reload: () => void read() };
+  return { agent, pagesByKey, rows, reload: () => void read() };
 }

@@ -37,6 +37,7 @@ import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { WORKBENCH_UPDATED_EVENT } from "../src/lib/workbench-tabs";
 import { useProject } from "../src/state/project";
+import { SYSTEM_APP_PAGES } from "./helpers/system-app-pages";
 import { ThemeProvider } from "../src/state/theme";
 import {
   AGENT_ID,
@@ -94,11 +95,12 @@ const HERE = "/chat/here";
 
 async function open(
   workbenches: WorkbenchInfo[],
-  options: { second?: WorkbenchInfo[]; at?: string } = {},
+  options: { second?: WorkbenchInfo[]; at?: string; admin?: boolean } = {},
 ) {
   setActiveStrings(en);
   const server = agentServer(undefined, {
     workbenches,
+    admin: options.admin ?? true,
     moreAgents: [{ agentId: "second", name: "Second" }],
     otherWorkbenches: { second: options.second ?? [] },
     machines: [{ machineId: "m1", alias: "box", agents: [AGENT_ID] }],
@@ -106,7 +108,12 @@ async function open(
   const router = await mountAgentApp(h(ThemeProvider, null, h(AppCenterPage)), {
     route: "/apps",
     at: options.at ?? HERE,
+    pages: SYSTEM_APP_PAGES,
     extra: [
+      ...SYSTEM_APP_PAGES.filter((p) => p.app || p.key === "benchmark-detail").map((p) => ({
+        path: p.path,
+        element: h("p", null, p.key),
+      })),
       { path: HERE, element: h(Conversation, { agentId: AGENT_ID, machineId: null }) },
       { path: "/chat/second", element: h(Conversation, { agentId: "second", machineId: null }) },
       {
@@ -115,7 +122,7 @@ async function open(
       },
     ],
     // Beside every page, as the shell mounts them: the windows' layer and the sidebar.
-    layers: [h(ThemeProvider, null, h(WorkspaceWindows)), h(MainSidebarApps), h(SwitchAgent)],
+    layers: [h(ThemeProvider, null, h(WorkspaceWindows, null, h(MainSidebarApps))), h(SwitchAgent)],
   });
   current = router;
   return { server, router };
@@ -251,7 +258,12 @@ it("lists another Agent's running app after the Agent's own, says whose it is, w
   await until(() => rows().includes("Notes"));
   expect(rows()).toEqual(["Notes", running("Board", "Helper")]);
   await openMenu(key("board"));
-  expect(menuLabels()).toEqual([en.sidebarApps.open, en.sidebarApps.viewInSettings]);
+  expect(menuLabels()).toEqual([
+    en.pageWorkspace.restore,
+    en.appCenter.windowFullScreen,
+    en.common.close,
+    en.sidebarApps.viewInSettings,
+  ]);
 });
 
 it("removes a row from the sidebar through the installation's setting", async () => {
@@ -358,4 +370,38 @@ it("switches subpages in a multi-page workbench", async () => {
   await click(buttonIn(bar, "Solid"));
   expect(windowOf("Clear")!.querySelector("iframe")!.getAttribute("title")).toBe("Solid");
   expect(buttonIn(bar, "Solid").getAttribute("aria-pressed")).toBe("true");
+});
+
+it("lists each opened native app once in Apps and restores its last address", async () => {
+  const { router } = await open([], { at: "/apps" });
+  expect(group()).toBeNull();
+  for (const name of ["models", "plugins", "machines", "usage", "benchmark"]) {
+    await run(() => router.navigate("/" + name));
+    expect(
+      group()?.querySelector(`[data-app-row="system_agent/${name}"]`)?.getAttribute("aria-current"),
+    ).toBe("page");
+  }
+  await run(() => router.navigate("/benchmark/sample?agentId=helper"));
+  const app = "system_agent/benchmark";
+  expect(group()?.querySelectorAll(`[data-app-row="${app}"]`)).toHaveLength(1);
+  await openMenu(app);
+  await click(menuItem(en.appCenter.windowMinimize));
+  expect(whereIs(router)).not.toContain("/benchmark");
+  expect(row(app)?.getAttribute("aria-current")).toBeNull();
+  await openMenu(app);
+  await click(menuItem(en.pageWorkspace.restore));
+  expect(whereIs(router)).toBe("/benchmark/sample?agentId=helper");
+  await openMenu(app);
+  await click(menuItem(en.common.close));
+  expect(row(app)).toBeNull();
+  await run(() => router.navigate("/apps"));
+  expect(document.querySelector(`li[data-app="${app}"]`)).not.toBeNull();
+});
+
+it("limits native Apps rows to the viewer's released pages even on direct navigation", async () => {
+  const { router } = await open([], { at: "/machines", admin: false });
+  expect(group()).toBeNull();
+  await run(() => router.navigate("/models"));
+  expect(row("system_agent/models")).not.toBeNull();
+  expect(row("system_agent/machines")).toBeNull();
 });
