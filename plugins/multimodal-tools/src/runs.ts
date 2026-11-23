@@ -10,7 +10,7 @@
 import { randomUUID } from "node:crypto";
 import type { UniConfig, UniMessage, UsageMetadata } from "@prismshadow/mmsp";
 import type { ModelRef, ModelRequests } from "./host.js";
-import { failureReason, ToolError } from "./errors.js";
+import { emptyTranscriptUsage, failureReason, ToolError } from "./errors.js";
 import { extensionOf, playable } from "./media.js";
 import { PACKAGE, type Operation, type ResultKind } from "./operations.js";
 import type { ToolStore } from "./store.js";
@@ -221,13 +221,17 @@ export class Runs {
   private async finish(task: RunTask, record: RunRecord, signal: AbortSignal): Promise<Finished> {
     let files: GeneratedFile[] = [];
     try {
-      const out = await this.collect(task, signal);
+      const out = await this.collect(task, signal).catch((err: unknown): Output => {
+        const usage = task.operation === "s2t" ? emptyTranscriptUsage(err) : undefined;
+        if (usage === undefined) throw err;
+        return { text: "", sources: [], media: [], usage };
+      });
       record.usage = out.usage;
       if (out.text !== "") record.text = out.text;
       if (task.result === "sources") record.sources = out.sources;
       if (task.result === "image" || task.result === "video" || task.result === "audio") {
         files = this.generated(task, record, out);
-      } else if (task.result === "text" && out.text.trim() === "") {
+      } else if (task.result === "text" && task.operation !== "s2t" && out.text.trim() === "") {
         throw new ToolError(502, "empty_result", "The model returned no text.");
       }
       signal.throwIfAborted();
