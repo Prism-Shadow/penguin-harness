@@ -34,6 +34,7 @@ import type {
   UiPrefs,
 } from "@prismshadow/penguin-server/api";
 import { BrowserExtensionsRepo } from "@prismshadow/penguin-library-machine/browser-extensions";
+import { readResourceLimit } from "@prismshadow/penguin-library-setting/resource-limits";
 import { BROWSER_EXTENSIONS_KEY } from "@prismshadow/penguin-library-setting/repos/server-settings";
 import { ensureInstallId, shellPortOf, userChannelKey } from "@prismshadow/penguin-server/plugin";
 import type {
@@ -204,6 +205,7 @@ export class BuiltinBrowserRoutes {
     const browser = new BuiltinBrowser({
       port,
       root: this.paths.root,
+      maxOpen: () => readResourceLimit(settings, "browserMaxOpen"),
       projectOf: (sessionId) => this.sessions.findById(sessionId)?.projectId ?? null,
       publish: (event) => {
         try {

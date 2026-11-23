@@ -485,7 +485,7 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 - `PUT /models` 还会使 Project 缓存的 Session 运行时失效，生效值的语义与 vault 更新相同。已经开始的运行不会切换，但 Project 内任何 Session 的下一个 Task 都会重新加载运行时，读取新的 `api_key` / `base_url`。这条路由还会向 Project 已打开的 Session 通道发布 `credentials_updated` 事件（参见[流式传输（SSE）](#流式传输sse)）。模型响应带有 `updatedAt`，即配置文件的修改时间；Web App 拿它和最近一次认证失败的时间对比，决定那次失败导致禁用的输入框是否继续保持禁用。
 - `PUT /models` 新加入的条目若在厂商分组中、而模型 ID 无法路由，返回 `400` `model_not_routable`；若在只承载自带预置模型的内置分组中，返回 `400` `model_not_addable`。两者都在 `details.provider` 与 `details.modelId` 中给出该条目。
 - `PUT /models/default` 只修改默认模型，无需重发模型表或凭证。这对组合必须指向一条已配置的条目，否则返回 400。已有的 Session 沿用创建时的模型，因此这条路由既不会使运行时失效，也不会发布 `credentials_updated`。
-- `POST /models/detect` 依次探测 `openai-responses`、`ant-messages`、`openai-chat`。先按输入原样尝试 URL（做归一化，去掉粘贴进来的端点路径），再尝试为同一 URL 加上或去掉 `/v1`，并报告第一个命中的协议及提供这个协议的 base URL：`{baseUrl, apiKey?, …}` → `{detected?, baseUrl?, probes}`。
+- `POST /models/detect` 依次探测 `openai-responses`、`ant-messages`、`openai-chat` 和 `google-genai`。先尝试归一化后的 base URL，再尝试为同一 URL 加上或去掉 `/v1`。Google 探测需要通过 `GET /v1beta/models?pageSize=1` 成功读取模型列表。使用 MMSP 或 Vertex 服务账号时，请手动选择协议。请求是 `{baseUrl, apiKey?, …}`，响应是 `{detected?, baseUrl?, probes}`。
 - `POST /models/list` 返回端点在检测到的协议下提供的模型 id：`{baseUrl, clientType, apiKey?}` → `{ok, models?, unsupported?, message?}`。
 - `POST /models/detect-vision` 用这个模型的凭证发送一张 1x1 图片，这是一次真实计费的补全请求：`{provider, modelId, apiKey?, baseUrl?, clientType?}` → `{outcome: supported|unsupported|failed, message?}`。
 
