@@ -313,6 +313,7 @@ export function PluginsTab({
 
   /** A part's puzzle: the Plugins sub-page, its search cleared, the plugin's row marked. No detail opens. */
   const showPlugin = (name: string) => {
+    setOpenPart(null);
     setQuery("");
     markPlugin(name);
     onSubPage("plugins");
@@ -483,6 +484,10 @@ export function PluginsTab({
     ),
   };
 
+  const openWorkbench =
+    openPart?.kind === "workbench"
+      ? lists?.workbenches.workbenches.find((workbench) => workbench.id === openPart.name)
+      : undefined;
   return (
     <div className="space-y-4">
       <SubPageBar
@@ -513,17 +518,21 @@ export function PluginsTab({
 
       {skillRows.modals}
       {hookRows.modals}
-      {workbenchRows.modals}
 
-      {openPart !== null && lists !== null && (
+      {openPart !== null && lists !== null && (openPart.kind !== "workbench" || openWorkbench) && (
         <PartFilesDialog
           projectId={projectId}
           machineId={machineId}
           stateDir={lists.stateDir}
           part={openPart}
+          actions={
+            openWorkbench ? workbenchRows.detailActions(openWorkbench, openPart.title) : undefined
+          }
           onClose={() => setOpenPart(null)}
         />
       )}
+
+      {workbenchRows.modals}
 
       {importing === "skill" && (
         <SkillImportDialog

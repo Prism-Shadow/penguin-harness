@@ -1,7 +1,7 @@
 /**
  * The pieces of a workbench's row (the Plugins tab's Workbenches sub-page, agent-workbenches.tsx)
  * that say what they do: the workbench's mark, its switches with their words beside them, and the
- * "More" menu that holds the row's less frequent actions.
+ * "More" menu in its file details.
  *
  * - The mark is the workbench's own App Center icon when its manifest names one that reads clean
  *   (an image the server serves; a monochrome one drawn in the tile's ink), else its plugin's
@@ -73,13 +73,6 @@ export function LabelledSwitch({
       {children}
     </label>
   );
-}
-
-/** One of a workbench's display settings (the App Center's, the sidebar's), as a control shows it. */
-export interface SettingControl {
-  checked: boolean;
-  disabled: boolean;
-  onChange: (show: boolean) => void;
 }
 
 export function WorkbenchRowMenu({

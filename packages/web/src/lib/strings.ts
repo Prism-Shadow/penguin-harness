@@ -1255,10 +1255,6 @@ export const zh = {
     importOverwriteAction: "覆盖导入",
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "打包导出",
-    appCenterVisibility: (shown: boolean): string =>
-      shown ? "从应用中心隐藏" : "在应用中心取消隐藏",
-    appCenterVisibilityHint:
-      "更改所有 Project 成员看到的应用中心入口。工作台的数据和历史版本会保留。",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "打开",
     /** The row's "⋯" button, which holds its other actions. */
@@ -1342,6 +1338,9 @@ export const zh = {
     /** The name a new folder is given: two tiles dropped together, or the dialog's starting name. */
     newFolder: "新建分组",
     /** The page header's button that opens the new-folder dialog. */
+    hiddenWorkbenches: "已隐藏的工作台",
+    noHiddenWorkbenches: "没有隐藏的工作台。",
+    restoreWorkbench: "恢复显示",
     newFolderAction: "新建分组",
     menu: {
       open: "打开",
