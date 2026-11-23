@@ -15,7 +15,7 @@
  * 4. Installed into a project, a TSX file passing components valid props compiles under `tsc`
  *    and each line of one passing a wrong prop (the package's own type, and a dependency's) fails
  *    with TS2322; the rolled-up declarations themselves check, and none names a package the
- *    build bundles (`@prismshadow/a2ui`, `@prismshadow/chat-markdown`, both devDependencies) or
+ *    build bundles (`@prismshadow/a2ui`, a devDependency) or
  *    `@prismshadow/penguin-core`.
  * 5. Components rendered with `react-dom/server` use only classes `styles.css` has a rule for.
  * 6. The runtime's manifest names files that exist, its modules import nothing a page's import

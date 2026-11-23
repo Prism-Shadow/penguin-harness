@@ -30,7 +30,7 @@
 import { describe, expect, it } from "vitest";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
-import { remarkChatMarkdown } from "../src/index.js";
+import { remarkChatMarkdown } from "../src/markdown/index.js";
 
 interface Node {
   type: string;

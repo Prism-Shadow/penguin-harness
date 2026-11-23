@@ -451,21 +451,6 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  packages/a2ui:
-    devDependencies:
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.13.3
-      tsup:
-        specifier: ^8.3.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
-
   library/workspace:
     dependencies:
       '@prismshadow/penguin-core':
@@ -481,6 +466,21 @@ importers:
       tsup:
         specifier: ^8
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+
+  packages/a2ui:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/amsp:
     devDependencies:
@@ -501,7 +501,7 @@ importers:
         version: 1.61.1
       '@prismshadow/penguin-server':
         specifier: workspace:*
-        version: file:packages/server
+        version: file:packages/server(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@types/chrome':
         specifier: ^0.3.4
         version: 0.3.4
@@ -517,52 +517,6 @@ importers:
       ws:
         specifier: ^8.18.3
         version: 8.21.0
-
-  packages/chat-markdown:
-    dependencies:
-      mdast-util-gfm-footnote:
-        specifier: ^2.1.0
-        version: 2.1.0(supports-color@10.2.2)
-      mdast-util-gfm-strikethrough:
-        specifier: ^2.0.0
-        version: 2.0.0(supports-color@10.2.2)
-      mdast-util-gfm-table:
-        specifier: ^2.0.0
-        version: 2.0.0(supports-color@10.2.2)
-      mdast-util-gfm-task-list-item:
-        specifier: ^2.0.0
-        version: 2.0.0(supports-color@10.2.2)
-      micromark-extension-cjk-friendly:
-        specifier: ^2.0.2
-        version: 2.0.2(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))
-      micromark-extension-gfm-footnote:
-        specifier: ^2.1.0
-        version: 2.1.0
-      micromark-extension-gfm-strikethrough:
-        specifier: ^2.1.0
-        version: 2.1.0
-      micromark-extension-gfm-table:
-        specifier: ^2.1.1
-        version: 2.1.1
-      micromark-extension-gfm-task-list-item:
-        specifier: ^2.1.0
-        version: 2.1.0
-    devDependencies:
-      remark-parse:
-        specifier: ^11.0.0
-        version: 11.0.0(supports-color@10.2.2)
-      tsup:
-        specifier: ^8.3.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-      unified:
-        specifier: ^11.0.5
-        version: 11.0.5
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/cli:
     dependencies:
@@ -691,7 +645,7 @@ importers:
         version: link:../core
       '@prismshadow/penguin-server':
         specifier: workspace:*
-        version: file:packages/server(supports-color@10.2.2)(zod@4.6.7)
+        version: file:packages/server(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)
       commander:
         specifier: ^13.0.0
         version: 13.1.0
@@ -898,7 +852,7 @@ importers:
     devDependencies:
       '@prismshadow/penguin-cli':
         specifier: workspace:*
-        version: file:packages/cli(supports-color@10.2.2)
+        version: file:packages/cli(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -1307,9 +1261,6 @@ importers:
       '@prismshadow/amsp':
         specifier: workspace:*
         version: link:../amsp
-      '@prismshadow/chat-markdown':
-        specifier: workspace:*
-        version: link:../chat-markdown
       '@prismshadow/mmsp':
         specifier: ^0.5.12
         version: 0.5.12(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -1340,6 +1291,33 @@ importers:
       isomorphic-git:
         specifier: ^1.44.0
         version: 1.44.10
+      mdast-util-gfm-footnote:
+        specifier: ^2.1.0
+        version: 2.1.0(supports-color@10.2.2)
+      mdast-util-gfm-strikethrough:
+        specifier: ^2.0.0
+        version: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-table:
+        specifier: ^2.0.0
+        version: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-task-list-item:
+        specifier: ^2.0.0
+        version: 2.0.0(supports-color@10.2.2)
+      micromark-extension-cjk-friendly:
+        specifier: ^2.0.2
+        version: 2.0.2(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))
+      micromark-extension-gfm-footnote:
+        specifier: ^2.1.0
+        version: 2.1.0
+      micromark-extension-gfm-strikethrough:
+        specifier: ^2.1.0
+        version: 2.1.0
+      micromark-extension-gfm-table:
+        specifier: ^2.1.1
+        version: 2.1.1
+      micromark-extension-gfm-task-list-item:
+        specifier: ^2.1.0
+        version: 2.1.0
       minimatch:
         specifier: ^10.2.6
         version: 10.2.6
@@ -1584,9 +1562,6 @@ importers:
       '@prismshadow/a2ui':
         specifier: workspace:*
         version: link:../a2ui
-      '@prismshadow/chat-markdown':
-        specifier: workspace:*
-        version: link:../chat-markdown
       '@prismshadow/penguin-theme-pack':
         specifier: workspace:*
         version: link:../theme-pack
@@ -1614,6 +1589,9 @@ importers:
       react-dom:
         specifier: ^19.1.0
         version: 19.2.7(react@19.2.7)
+      remark-parse:
+        specifier: ^11.0.0
+        version: 11.0.0(supports-color@10.2.2)
       rollup:
         specifier: ^4.40.0
         version: 4.62.0
@@ -1629,6 +1607,9 @@ importers:
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
+      unified:
+        specifier: ^11.0.5
+        version: 11.0.5
       vite:
         specifier: ^7.3.7
         version: 7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0)
@@ -3433,10 +3414,6 @@ packages:
     resolution: {directory: packages/amsp, type: directory}
     engines: {node: '>=24'}
 
-  '@prismshadow/chat-markdown@file:packages/chat-markdown':
-    resolution: {directory: packages/chat-markdown, type: directory}
-    engines: {node: '>=24'}
-
   '@prismshadow/mmsp@0.5.12':
     resolution: {integrity: sha512-3mX+UEJcmraSCI3gX3+lxkqOiSMLKnQB3JaOufsy70AX4F4VfrAI+XY0PoDwnMlo1eklR1mElWj3AtSZWq6ovw==}
 
@@ -3456,12 +3433,14 @@ packages:
   '@prismshadow/penguin-library-agent-api@file:library/agent-api':
     resolution: {directory: library/agent-api, type: directory}
     engines: {node: '>=24'}
+
   '@prismshadow/penguin-library-agent@file:library/agent':
     resolution: {directory: library/agent, type: directory}
 
   '@prismshadow/penguin-library-auth@file:library/auth':
     resolution: {directory: library/auth, type: directory}
     engines: {node: '>=24'}
+
   '@prismshadow/penguin-library-benchmark@file:library/benchmark':
     resolution: {directory: library/benchmark, type: directory}
 
@@ -3516,11 +3495,13 @@ packages:
   '@prismshadow/penguin-library-workbench@file:library/workbench':
     resolution: {directory: library/workbench, type: directory}
     engines: {node: '>=24'}
+
+  '@prismshadow/penguin-library-workspace@file:library/workspace':
+    resolution: {directory: library/workspace, type: directory}
+
   '@prismshadow/penguin-server@file:packages/server':
     resolution: {directory: packages/server, type: directory}
     engines: {node: '>=24'}
-  '@prismshadow/penguin-library-workspace@file:library/workspace':
-    resolution: {directory: library/workspace, type: directory}
 
   '@prismshadow/penguin-theme-pack@file:packages/theme-pack':
     resolution: {directory: packages/theme-pack, type: directory}
@@ -8275,38 +8256,6 @@ snapshots:
 
   '@prismshadow/amsp@file:packages/amsp': {}
 
-  '@prismshadow/chat-markdown@file:packages/chat-markdown':
-    dependencies:
-      mdast-util-gfm-footnote: 2.1.0(supports-color@10.2.2)
-      mdast-util-gfm-strikethrough: 2.0.0(supports-color@10.2.2)
-      mdast-util-gfm-table: 2.0.0(supports-color@10.2.2)
-      mdast-util-gfm-task-list-item: 2.0.0(supports-color@10.2.2)
-      micromark-extension-cjk-friendly: 2.0.2(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))
-      micromark-extension-gfm-footnote: 2.1.0
-      micromark-extension-gfm-strikethrough: 2.1.0
-      micromark-extension-gfm-table: 2.1.1
-      micromark-extension-gfm-task-list-item: 2.1.0
-    transitivePeerDependencies:
-      - micromark
-      - micromark-util-types
-      - supports-color
-
-  '@prismshadow/chat-markdown@file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)':
-    dependencies:
-      mdast-util-gfm-footnote: 2.1.0(supports-color@10.2.2)
-      mdast-util-gfm-strikethrough: 2.0.0(supports-color@10.2.2)
-      mdast-util-gfm-table: 2.0.0(supports-color@10.2.2)
-      mdast-util-gfm-task-list-item: 2.0.0(supports-color@10.2.2)
-      micromark-extension-cjk-friendly: 2.0.2(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))
-      micromark-extension-gfm-footnote: 2.1.0
-      micromark-extension-gfm-strikethrough: 2.1.0
-      micromark-extension-gfm-table: 2.1.1
-      micromark-extension-gfm-task-list-item: 2.1.0
-    transitivePeerDependencies:
-      - micromark
-      - micromark-util-types
-      - supports-color
-
   '@prismshadow/mmsp@0.5.12(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.6.7)
@@ -8412,7 +8361,7 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/penguin-cli@file:packages/cli(supports-color@10.2.2)':
+  '@prismshadow/penguin-cli@file:packages/cli(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
       '@penguinharness/a2ui': file:plugins/a2ui
@@ -8556,6 +8505,7 @@ snapshots:
       - utf-8-validate
       - ws
       - zod
+
   '@prismshadow/penguin-library-agent@file:library/agent(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -8571,7 +8521,6 @@ snapshots:
       - utf-8-validate
       - ws
       - zod
-
 
   '@prismshadow/penguin-library-auth@file:library/auth(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
@@ -8596,6 +8545,7 @@ snapshots:
       - utf-8-validate
       - ws
       - zod
+
   '@prismshadow/penguin-library-benchmark@file:library/benchmark(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -8611,7 +8561,6 @@ snapshots:
       - utf-8-validate
       - ws
       - zod
-
 
   '@prismshadow/penguin-library-cli@file:library/cli(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
@@ -8649,20 +8598,6 @@ snapshots:
   '@prismshadow/penguin-library-db@file:library/db(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)':
     dependencies:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-      - ws
-      - zod
-
-  '@prismshadow/penguin-library-http@file:library/http(supports-color@10.2.2)':
-    dependencies:
-      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-library-auth': file:library/auth(supports-color@10.2.2)(ws@8.21.0)
-      fflate: 0.8.3
-      hono: 4.13.13
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -8743,7 +8678,7 @@ snapshots:
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-library-agent-api': file:library/agent-api(supports-color@10.2.2)
       '@prismshadow/penguin-library-db': file:library/db(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)
+      '@prismshadow/penguin-library-http': file:library/http(supports-color@10.2.2)(ws@8.21.0)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -8895,7 +8830,6 @@ snapshots:
       - ws
       - zod
 
-
   '@prismshadow/penguin-server@file:packages/server':
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
@@ -8939,7 +8873,6 @@ snapshots:
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/chat-markdown': file:packages/chat-markdown
       '@prismshadow/mmsp': 0.5.12(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
       '@types/node': 24.13.3
@@ -8950,6 +8883,15 @@ snapshots:
       fflate: 0.8.3
       hono: 4.13.13
       isomorphic-git: 1.44.10
+      mdast-util-gfm-footnote: 2.1.0(supports-color@10.2.2)
+      mdast-util-gfm-strikethrough: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-table: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-task-list-item: 2.0.0(supports-color@10.2.2)
+      micromark-extension-cjk-friendly: 2.0.2(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))
+      micromark-extension-gfm-footnote: 2.1.0
+      micromark-extension-gfm-strikethrough: 2.1.0
+      micromark-extension-gfm-table: 2.1.1
+      micromark-extension-gfm-task-list-item: 2.1.0
       minimatch: 10.2.6
       node-pty: 1.1.0
       remark-parse: 11.0.0(supports-color@10.2.2)
@@ -9015,7 +8957,6 @@ snapshots:
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/mmsp': 0.5.12(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@types/node': 24.13.3
@@ -9026,6 +8967,15 @@ snapshots:
       fflate: 0.8.3
       hono: 4.13.13
       isomorphic-git: 1.44.10
+      mdast-util-gfm-footnote: 2.1.0(supports-color@10.2.2)
+      mdast-util-gfm-strikethrough: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-table: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-task-list-item: 2.0.0(supports-color@10.2.2)
+      micromark-extension-cjk-friendly: 2.0.2(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))
+      micromark-extension-gfm-footnote: 2.1.0
+      micromark-extension-gfm-strikethrough: 2.1.0
+      micromark-extension-gfm-table: 2.1.1
+      micromark-extension-gfm-task-list-item: 2.1.0
       minimatch: 10.2.6
       node-pty: 1.1.0
       remark-parse: 11.0.0(supports-color@10.2.2)
@@ -9048,7 +8998,7 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@prismshadow/penguin-server@file:packages/server(supports-color@10.2.2)(zod@4.6.7)':
+  '@prismshadow/penguin-server@file:packages/server(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)(zod@4.6.7)':
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
@@ -9091,7 +9041,6 @@ snapshots:
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
-      '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/mmsp': 0.5.12(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
       '@types/node': 24.13.3
@@ -9102,6 +9051,15 @@ snapshots:
       fflate: 0.8.3
       hono: 4.13.13
       isomorphic-git: 1.44.10
+      mdast-util-gfm-footnote: 2.1.0(supports-color@10.2.2)
+      mdast-util-gfm-strikethrough: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-table: 2.0.0(supports-color@10.2.2)
+      mdast-util-gfm-task-list-item: 2.0.0(supports-color@10.2.2)
+      micromark-extension-cjk-friendly: 2.0.2(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))
+      micromark-extension-gfm-footnote: 2.1.0
+      micromark-extension-gfm-strikethrough: 2.1.0
+      micromark-extension-gfm-table: 2.1.1
+      micromark-extension-gfm-task-list-item: 2.1.0
       minimatch: 10.2.6
       node-pty: 1.1.0
       remark-parse: 11.0.0(supports-color@10.2.2)
