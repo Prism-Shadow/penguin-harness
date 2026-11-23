@@ -265,6 +265,7 @@ export async function buildBuiltinPlugins({ log = () => {}, root = ROOT, env = p
     shipped: builtinNames,
   });
   const h = createHash("sha256").update(`pack ${PACK_FORMAT}\0`);
+  h.update(process.env.PENGUIN_RELEASE_TAG || "").update("\0");
   h.update(lockCacheInput(lock, closure)).update("\0");
   for (const plugin of [...plugins, ...offline]) {
     h.update(plugin.name).update("\0");

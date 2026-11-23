@@ -45,7 +45,6 @@ import {
   Button,
   Card,
   ConfirmModal,
-  CopyButton,
   GlyphIcon,
   FieldLabel,
   ICON_SIZE,
@@ -98,7 +97,8 @@ import {
 } from "./tools-form";
 
 import { PluginsTab } from "./plugins-tab";
-import { SystemAgentApps, SystemAgentOverview } from "./system-agent-settings";
+import { AgentStateSection } from "./agent-overview-fields";
+import { SystemAgentOverview } from "./system-agent-settings";
 import {
   PLUGIN_PARAM,
   SUBPAGE_TABS,
@@ -430,12 +430,12 @@ export function AgentSettingsPage() {
               <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
             </div>
           )}
-          {tab === "plugins" && system && <SystemAgentApps />}
-          {tab === "plugins" && !system && (
+          {tab === "plugins" && (
             <PluginsTab
               key={`${projectId}:${machineId ?? ""}:${agentId}`}
               agentId={agentId}
-              subPage={subPage}
+              system={system}
+              subPage={system && subPage === "hooks" ? "plugins" : subPage}
               onSubPage={switchTab}
               onConfigChanged={refreshConfig}
             />
@@ -648,57 +648,18 @@ function OverviewTab({
       </Select>
       <SaveRow dirty={form.dirty} valid busy={saving} onSave={submit} onReset={form.reset} />
 
-      {/* Agent State section (ruled, the skills import modal's section family — no card
-          boxes; per user feedback the sections separate with a top rule and the values
-          carry the visual weight): title row with the transfer actions on the right (export
-          is available to any member; a replace overwrites the entire Agent State, so it is
-          visible only to owners), labeled value rows below — light
-          text-xs labels over dark font-semibold values. */}
-      <section className="border-t border-gray-200 pt-4 dark:border-gray-800">
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <p className="flex items-center gap-1.5 text-sm font-medium">
-            {S.agent.stateTitle}
-            <InfoPopover label={S.agent.stateTitle}>{S.agent.transferDesc}</InfoPopover>
-          </p>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button size="sm" onClick={() => setExportOpen(true)}>
-              {S.agent.exportOpen}
+      <AgentStateSection data={data}>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button size="sm" onClick={() => setExportOpen(true)}>
+            {S.agent.exportOpen}
+          </Button>
+          {isOwner && (
+            <Button size="sm" onClick={() => setReplaceOpen(true)}>
+              {S.agent.replaceOpen}
             </Button>
-            {isOwner && (
-              <Button size="sm" onClick={() => setReplaceOpen(true)}>
-                {S.agent.replaceOpen}
-              </Button>
-            )}
-          </div>
+          )}
         </div>
-        <div className="mt-3 space-y-3">
-          <div>
-            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {S.agent.stateVersion}
-            </p>
-            <p className="mt-0.5 font-mono text-sm font-semibold">v{data.config.version}</p>
-          </div>
-          {/* State path row (the chat details card's Session id convention): selectable mono
-              text with the shared CopyButton beside it; the path wraps, so it is always shown
-              whole. */}
-          <div>
-            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {S.agent.stateDir}
-            </p>
-            <div className="flex items-start gap-1.5">
-              <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5">
-                {data.stateDir}
-              </span>
-              <CopyButton
-                text={data.stateDir}
-                label={S.agent.copyStateDir}
-                size="sm"
-                className="shrink-0"
-              />
-            </div>
-          </div>
-        </div>
-      </section>
+      </AgentStateSection>
 
       {/* Kernel section (same ruled family as Agent State — no lone card): the defaults
           generation the config is based on, with its two maintenance actions in the title

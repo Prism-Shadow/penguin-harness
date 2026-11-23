@@ -91,7 +91,7 @@ function PartGroup({
   children,
 }: {
   kind: keyof typeof MANAGED_ON;
-  onManage: (to: PluginsSubPage | "tools") => void;
+  onManage: ((to: PluginsSubPage | "tools") => void) | undefined;
   children: ReactNode;
 }) {
   const label = S.agentPlugins.partKinds[kind];
@@ -99,9 +99,11 @@ function PartGroup({
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
         <h4 className="text-xs font-medium text-fg-muted">{label}</h4>
-        <Button size="sm" variant="ghost" onClick={() => onManage(MANAGED_ON[kind])}>
-          {S.agentPlugins.managePart[kind]}
-        </Button>
+        {onManage && (
+          <Button size="sm" variant="ghost" onClick={() => onManage(MANAGED_ON[kind])}>
+            {S.agentPlugins.managePart[kind]}
+          </Button>
+        )}
       </div>
       <FactList label={label}>{children}</FactList>
     </div>
@@ -129,8 +131,8 @@ export function AgentPartsSection({
   locale: "zh" | "en";
   /** The plugin's server module on the Agent's server, when it ships one. */
   module: AgentModule | undefined;
-  actions: AgentPluginActions;
-  onManage: (to: PluginsSubPage | "tools") => void;
+  actions: AgentPluginActions | undefined;
+  onManage: ((to: PluginsSubPage | "tools") => void) | undefined;
   /** Reads the lists again: a server's vault keys were set. */
   onReload: () => void;
 }) {
@@ -227,13 +229,15 @@ export function AgentPartsSection({
               glyph={ICONS.server}
               name={S.agentPlugins.module.title}
               trailing={
-                <ModuleActionButton
-                  entry={entry}
-                  title={title}
-                  module={module}
-                  actions={actions}
-                  variant="ghost"
-                />
+                actions && (
+                  <ModuleActionButton
+                    entry={entry}
+                    title={title}
+                    module={module}
+                    actions={actions}
+                    variant="ghost"
+                  />
+                )
               }
             >
               <ModuleStatusMark mark={module.mark} onMachine={module.onMachine} words="fact" />
@@ -281,14 +285,14 @@ export function AgentPluginDetail({
   agentName: string;
   isOwner: boolean;
   locale: "zh" | "en";
-  actions: AgentPluginActions;
+  actions: AgentPluginActions | undefined;
   /** The plugin's server module on the Agent's server, for a plugin the Agent carries that ships one. */
   module?: AgentModule | undefined;
   onClose: () => void;
-  onManage: (to: PluginsSubPage | "tools") => void;
+  onManage: ((to: PluginsSubPage | "tools") => void) | undefined;
   onReload: () => void;
 }) {
-  const footer = agentPluginActions(entry, title, isOwner, actions);
+  const footer = actions ? agentPluginActions(entry, title, isOwner, actions) : [];
   // The market's curation, as the Plugins page last read it: the same cover here as there. A
   // server without one (404) leaves the generated cover.
   const market = useRead(pluginMarket, MARKET_KEY, () => api.getPluginMarket()).value;

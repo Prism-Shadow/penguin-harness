@@ -502,6 +502,41 @@ describe("StreamRenderer", () => {
     expect(stripAnsi(text())).toBe("[stats] context 4k (+4k) · tokens 4k (+4k) · 3s (+3s)\n");
   });
 
+  it.each(["en", "zh"] as const)(
+    "uses the current parent window and the complete context for %s",
+    (lang) => {
+      const { stream, text } = collector();
+      const renderer = new StreamRenderer(stream, getMessages(lang));
+      const head = (window: number | string) =>
+        sessionMeta({
+          session_id: "parent",
+          provider: "custom",
+          model_id: "selected-model",
+          model_context_window: window,
+          system_prompt: "",
+          agent_state: "/agent",
+          workspace: "/work",
+          source: "user",
+        });
+      renderer.handle(head(64000));
+      renderer.handle(usage(8500, 8500));
+      renderer.endTask(1300);
+      renderer.handle(usage(0, 8500));
+      renderer.endTask(1000);
+      renderer.handle(head(32000));
+      renderer.handle(usage(8000, 16500));
+      renderer.endTask(1000);
+      renderer.handle(head("unknown"));
+      renderer.handle(usage(7000, 23500));
+      renderer.endTask(1000);
+      const stats = stripAnsi(text()).trimEnd().split("\n");
+      expect(stats[0]).toContain("8.5k (+8.5k, 13%)");
+      expect(stats[1]).toContain("0 (-8.5k, 0%)");
+      expect(stats[2]).toContain("8k (+8k, 25%)");
+      expect(stats[3]).toContain("7k (-1k)");
+    },
+  );
+
   it("does not print token_usage per turn; endTask prints [stats] line with per-task deltas", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
@@ -510,7 +545,7 @@ describe("StreamRenderer", () => {
         session_id: "s",
         provider: "custom",
         model_id: "m",
-        model_context_window: 1,
+        model_context_window: 32000,
         system_prompt: "sp",
         agent_state: "/a",
         workspace: "/w",
@@ -537,7 +572,7 @@ describe("StreamRenderer", () => {
     // per-task delta 5.5k (1500 + 4000), elapsed 2.3s (first task: session equals the delta);
     // this also implies session_meta is not rendered (no /w or similar field appears in the output).
     expect(stripAnsi(text())).toBe(
-      "[stats] context 4k (+4k) · tokens 12k (+5.5k) · 2.3s (+2.3s)\n",
+      "[stats] context 4k (+4k, 13%) · tokens 12k (+5.5k) · 2.3s (+2.3s)\n",
     );
   });
 

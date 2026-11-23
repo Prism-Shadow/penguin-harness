@@ -183,6 +183,8 @@ export type ServerEvent =
   | {
       type: "task_state";
       state: SessionStatus;
+      /** The active context's configured model window when known to this runtime. */
+      contextWindow?: number | string;
       queued?: number;
       /** Steering messages queued but not yet delivered (absent = none): lets the composer's hint and its content survive reloads. */
       pendingSteering?: PendingSteeringInfo[];

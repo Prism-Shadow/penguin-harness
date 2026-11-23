@@ -8,7 +8,7 @@
  *   while hidden and reattaches on reopen;
  * - the terminal panel holds the conversation's shells as tabs of its own: its "+" starts
  *   another and shows it, a shell tab's × asks and kills the shell, and killing the last one
- *   closes the panel (and the dock with its last tab);
+ *   leaves an empty group ready for the next explicit create;
  * - tabs of different kinds mix in one strip with always-visible per-tab ×s: a panel
  *   tab's × closes the panel, the last tab closing puts the dock away;
  * - a whole dock moves to the other edge via its header button, a single tab via drag
@@ -130,7 +130,7 @@ async function waitForShell(page, tag) {
   await expect.poll(() => screenText(page), { timeout: 30000 }).toMatch(new RegExp(`${tag}$`, "m"));
 }
 
-test("Ctrl+` opens a shell in the bottom dock; hiding keeps it running, reopening reattaches", async ({
+test("Ctrl+` opens the terminal group in the bottom dock; hiding keeps it running, reopening reattaches", async ({
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
@@ -149,6 +149,8 @@ test("Ctrl+` opens a shell in the bottom dock; hiding keeps it running, reopenin
   // Open with the keyboard, like Codex/VS Code.
   await page.keyboard.press("Control+Backquote");
   await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 10000 });
+  await expect(shellTabs(page)).toHaveCount(0);
+  await page.getByTestId("terminal-new-tab").click();
   await waitForShell(page, "DOCK_UP_1");
   await runInTerminal(page, "echo DOCK_KEEPS_RUNNING");
   await expect.poll(() => screenText(page), { timeout: 15000 }).toContain("DOCK_KEEPS_RUNNING");
@@ -169,9 +171,10 @@ test("Ctrl+` opens a shell in the bottom dock; hiding keeps it running, reopenin
   await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("DOCK_KEEPS_RUNNING");
 
   // A shell tab's × (always visible) asks first — killing ends the shell for real — and
-  // confirming kills it; the last shell gone closes the panel, and the dock with its last tab.
+  // confirming kills it and leaves the empty group available.
   await killTabConfirmed(page, shellTabs(page));
-  await expect(anyDock(page)).toHaveCount(0);
+  await expect(shellTabs(page)).toHaveCount(0);
+  await expect(page.getByTestId("terminal-new-tab")).toBeVisible();
   await expect
     .poll(
       async () => {
@@ -334,6 +337,7 @@ test("tabs of every kind share a dock: switch, close a panel tab, terminals numb
   await expect(right.locator('[data-tab-id="terminal"][data-active="true"]')).toBeVisible({
     timeout: 20000,
   });
+  await page.getByTestId("terminal-new-tab").click();
   await waitForShell(page, "MIXED_DOCK");
   // The dock's strip lists both panels; the shell's own tab carries its stable `N:` seq prefix.
   await expect(right.locator('[data-testid="dock-tab"]')).toHaveCount(2);
@@ -474,6 +478,8 @@ test("each conversation manages its own tabs: nothing leaks, and each side survi
   await openViaPicker(page, "right", "workspace");
   await page.keyboard.press("Control+Backquote");
   await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 20000 });
+  await expect(shellTabs(page)).toHaveCount(0);
+  await page.getByTestId("terminal-new-tab").click();
   await waitForShell(page, "SCOPED_SHELL");
   const shellId = await shellTabs(page).getAttribute("data-tab-id");
 
@@ -518,10 +524,12 @@ test("a shell belongs to its conversation: another's panel never lists it, the o
   const shellOfA = await opened({ cwd: "~", sessionId: sidA });
   await opened({ cwd: "~" });
 
-  // B: its terminal panel lists neither, and starts a shell of B's own.
+  // B lists neither existing shell. Open a shell explicitly in B.
   await page.goto(`${BASE}/chat/${sidB}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
   await page.keyboard.press("Control+Backquote");
+  await expect(shellTabs(page)).toHaveCount(0);
+  await page.getByTestId("terminal-new-tab").click();
   await expect(shellTabs(page)).toHaveCount(1, { timeout: 20000 });
   const shellOfB = await shellTabs(page).getAttribute("data-tab-id");
   expect(shellOfB).not.toBe(shellOfA);
@@ -542,7 +550,7 @@ test("a shell belongs to its conversation: another's panel never lists it, the o
   await killAllTerminals(page.request);
 });
 
-test("the terminal panel's + starts another shell and shows it; ending the last closes the panel", async ({
+test("the terminal panel's + starts another shell and shows it; ending the last leaves the group open", async ({
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
@@ -552,6 +560,8 @@ test("the terminal panel's + starts another shell and shows it; ending the last 
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
   await page.keyboard.press("Control+Backquote");
+  await expect(shellTabs(page)).toHaveCount(0);
+  await page.getByTestId("terminal-new-tab").click();
   await expect(shellTabs(page)).toHaveCount(1, { timeout: 20000 });
   await waitForShell(page, "FIRST_SHELL");
 
@@ -563,11 +573,12 @@ test("the terminal panel's + starts another shell and shows it; ending the last 
   await shellTabs(page).first().locator('[role="tab"]').click();
   await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("FIRST_SHELL");
 
-  // `exit` in one leaves the other; ending the last with its × closes the panel and the dock.
+  // `exit` in one leaves the other; ending the last leaves the group open.
   await runInTerminal(page, "exit");
   await expect(shellTabs(page)).toHaveCount(1, { timeout: 40000 });
   await killTabConfirmed(page, shellTabs(page));
-  await expect(anyDock(page)).toHaveCount(0);
+  await expect(shellTabs(page)).toHaveCount(0);
+  await expect(page.getByTestId("terminal-new-tab")).toBeVisible();
 });
 
 test("a new shell starts in the conversation's Workspace, not at home", async ({ page }) => {
@@ -589,6 +600,8 @@ test("a new shell starts in the conversation's Workspace, not at home", async ({
   await page.getByPlaceholder(/输入消息/).waitFor();
   await page.keyboard.press("Control+Backquote");
   await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 20000 });
+  await expect(shellTabs(page)).toHaveCount(0);
+  await page.getByTestId("terminal-new-tab").click();
   await waitForShell(page, "WS_CWD");
 
   await runInTerminal(page, "pwd");
@@ -628,13 +641,14 @@ test("a failed shell create surfaces as a toast, and a later attempt recovers", 
   await page.getByPlaceholder(/输入消息/).waitFor();
   await page.keyboard.press("Control+Backquote");
 
+  await page.getByTestId("terminal-new-tab").click();
   // The failure says WHY instead of doing nothing — the server's message included.
   await expect(page.getByText("posix_spawn failed (mock)")).toBeVisible({ timeout: 10000 });
-  await expect(anyDock(page)).toHaveCount(0);
+  await expect(page.getByTestId("terminal-new-tab")).toBeVisible();
 
   // Server recovers (unroute) → the next attempt starts a real shell.
   await page.unroute("**/api/terminals");
-  await page.keyboard.press("Control+Backquote");
+  await page.getByTestId("terminal-new-tab").click();
   await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 20000 });
   await waitForShell(page, "RECOVERED");
   await killAllTerminals(page.request);

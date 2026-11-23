@@ -26,6 +26,7 @@ import {
   browserState,
   dispatchBrowser,
 } from "../../../plugins/browser-automation/src/web/browser-store";
+import { publishBuiltinBrowserEvent } from "../../../plugins/browser-automation/src/web/browser-events";
 import { guestKey } from "../../../plugins/browser-automation/src/web/browser-state";
 import {
   dockVersion,
@@ -253,4 +254,45 @@ it("opens no page in the Session switched to when the one left showed the browse
   await act(async () => {
     setDockScope(null);
   });
+});
+
+it("keeps a visible Session browser workbench in place when its new page arrives", async () => {
+  const sessionId = "visible-browser-workbench";
+  const scope = { projectId: "p", machineId: null, agentId: "a", sessionId };
+  stubFetch((request) =>
+    request.path.endsWith("/status")
+      ? json({ available: true, backend: "builtin", tabs: [], activeTabId: null })
+      : new Response(null, { status: 204 }),
+  );
+  setDockScope(sessionId);
+  dispatchBrowser({ type: "supported", supported: true });
+  const rendered = await mount(
+    createElement(
+      Fragment,
+      null,
+      createElement(BuiltinBrowserLayer),
+      createElement(BuiltinBrowserPanel, { scope, active: true }),
+    ),
+  );
+  const address = () => rendered.container.querySelector<HTMLInputElement>('[role="combobox"]');
+  expect(address()?.disabled).toBe(false);
+  expect(browserState().scope).toBe(sessionId);
+  await act(async () => {
+    publishBuiltinBrowserEvent({
+      type: "builtin_browser_open",
+      requestId: "first-page",
+      sessionId,
+      partition,
+      url: "about:blank",
+      activate: true,
+    });
+  });
+  expect(isTabShown("builtin-browser")).toBe(false);
+  expect(address()?.disabled).toBe(true);
+  await act(async () => {
+    dispatchBrowser({ type: "attached", key: guestKey("first-page"), tabId: 31 });
+    snapshot([tab(31, sessionId)], 31);
+  });
+  expect(address()?.disabled).toBe(false);
+  await act(async () => setDockScope(null));
 });

@@ -43,6 +43,7 @@ export type {
   DockPanelBody,
   DockPanelData,
   DockPanelDefinition,
+  SessionWorkbenchScope,
   DockScopeChange,
   DockScopeListener,
   LinkAction,

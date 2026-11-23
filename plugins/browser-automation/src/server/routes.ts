@@ -266,6 +266,42 @@ export function builtinBrowserRoutes(
         ),
       );
     });
+    const groupPath = "/projects/:projectId/session-resources/:sessionId/tabs";
+    const groupActor = (c: Context<AppEnv>, projectId: string, sessionId: string) => {
+      requireHuman(c);
+      const actor = actorOf(c, sessionId);
+      management.access.requireProjectAccess(actor.userId, projectId);
+      if (management.sessions.findById(sessionId)?.projectId !== projectId)
+        throw new HttpError(404, "session_not_found", "Session is unavailable.");
+      return actor;
+    };
+    app.get(groupPath, (c) => {
+      const { projectId, sessionId } = c.req.param();
+      const actor = groupActor(c, projectId, sessionId);
+      return c.json({
+        tabs: browser.managedTabs(actor).filter((tab) => tab.sessionId === sessionId),
+      });
+    });
+    app.post(groupPath, async (c) => {
+      const { projectId, sessionId } = c.req.param();
+      const actor = groupActor(c, projectId, sessionId);
+      const body = await jsonBody(c);
+      return c.json(
+        { tab: await browser.openManagedTab(actor, sessionId, optString(body, "url")) },
+        201,
+      );
+    });
+    app.post(`${groupPath}/:tab/activate` as const, async (c) => {
+      const { projectId, sessionId, tab } = c.req.param();
+      await browser.activateManagedTab(groupActor(c, projectId, sessionId), Number(tab), sessionId);
+      return c.body(null, 204);
+    });
+    app.delete(`${groupPath}/:tab` as const, async (c) => {
+      const { projectId, sessionId, tab } = c.req.param();
+      const actor = groupActor(c, projectId!, sessionId!);
+      await browser.closeManagedTab(actor, Number(tab), sessionId!);
+      return c.body(null, 204);
+    });
     app.post(path + "/close", async (c) => {
       requireHuman(c);
       const actor = actorOf(c, undefined);

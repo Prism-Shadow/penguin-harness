@@ -158,6 +158,7 @@ import type {
 import { isThemeId } from "@prismshadow/penguin-ui";
 // The catalog decides which groups publish a balance, as it does on the server.
 import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
+import { agentPluginGroups } from "../../../../web/src/features/plugins/agent-plugin-groups";
 import { declaredServerModules } from "../../../../web/src/lib/module-gate";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
@@ -896,8 +897,25 @@ router
 // ---------------------------------------------------------------------------------------------
 
 router
-  .get("/api/projects/:projectId/agents", ({ store }): AgentsResponse => ({
-    agents: store.f.agents,
+  .get("/api/projects/:projectId/agents", (ctx): AgentsResponse => ({
+    agents: ctx.store.f.agents.map((agent) => {
+      const installed = ctx.store.f.installed[agent.agentId];
+      const groups = agentPluginGroups(
+        ctx.store.f.library.groups,
+        {
+          skills: installed?.skills ?? [],
+          hooks: installed?.hooks ?? [],
+          mcpServers: ctx.store.f.agentConfigs[agent.agentId]
+            ? mcpServerItems({ ...ctx, params: { ...ctx.params, agentId: agent.agentId } })
+            : [],
+          workbenches: installed?.pluginWorkbenches ?? [],
+          modules: [],
+        },
+        installed?.workbenches ?? [],
+        [],
+      );
+      return { ...agent, pluginCount: groups.groups.length };
+    }),
   }))
   .post("/api/projects/:projectId/agents", ({ store, body }): unknown => {
     const { agentId, name, description } = record(body);
@@ -918,6 +936,7 @@ router
       vaultKeyCount: 0,
       scheduleCount: 0,
       workbenchCount: 0,
+      pluginCount: 0,
       skillCount: 0,
       hookCount: 0,
       pluginUpdates: [],
@@ -3020,6 +3039,16 @@ function browserUnavailable(): never {
   );
 }
 
+const managedSessionTabs =
+  "/api/builtin-browser/projects/:projectId/session-resources/:sessionId/tabs";
+
+function managedBrowserUnavailable({ store, params }: Ctx): never {
+  if (store.session(params.sessionId!)?.projectId !== params.projectId) {
+    return fail(404, "session_not_found", "Session is unavailable.");
+  }
+  return fail(503, "browser_unavailable", "The built-in browser requires the desktop app.");
+}
+
 /** A pairing code's shape: 43 base64url characters. */
 const DEMO_PAIRING_CODE = "demo-pairing-code-for-the-gallery-0123456789";
 
@@ -3047,6 +3076,10 @@ router
     enabled: true,
   }))
   .delete("/api/builtin-browser/extension/:id", () => notFound("Paired Chrome"))
+  .get(managedSessionTabs, managedBrowserUnavailable)
+  .post(managedSessionTabs, managedBrowserUnavailable)
+  .post(managedSessionTabs + "/:tab/activate", managedBrowserUnavailable)
+  .delete(managedSessionTabs + "/:tab", managedBrowserUnavailable)
   .post("/api/builtin-browser/tabs/:tab/navigate", browserUnavailable)
   .post("/api/builtin-browser/tabs", browserUnavailable)
   .post("/api/builtin-browser/tabs/session", browserUnavailable)

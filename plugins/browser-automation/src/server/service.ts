@@ -180,6 +180,7 @@ export function homepageUrl(raw: unknown): string | null {
 }
 
 export interface BuiltinBrowserDeps {
+  maxOpen?: () => number;
   /** The shell's message port; null when this server is not the desktop shell's child. */
   port: BrowserShellPort | null;
   projectOf?(sessionId: string): string | null;
@@ -243,6 +244,7 @@ export class BuiltinBrowser {
             link: new ShellLink(deps.port, deps.timing, now, deps.log),
             publish: deps.publish,
             history: this.history,
+            ...(deps.maxOpen ? { maxOpen: deps.maxOpen } : {}),
             partition: (sessionId, projectId) => this.partition(sessionId, projectId),
             ...(deps.systemMemory ? { systemMemory: deps.systemMemory } : {}),
             ...(deps.platform !== undefined ? { platform: deps.platform } : {}),
@@ -357,6 +359,18 @@ export class BuiltinBrowser {
   /** The Project manager only operates on the built-in guests, regardless of the selected backend. */
   managedTabs(actor: Actor): BuiltinBrowserTab[] {
     return this.builtinRuntime(actor).tabs.list();
+  }
+
+  openManagedTab(actor: Actor, sessionId: string, url?: string): Promise<BuiltinBrowserTab> {
+    return this.builtinRuntime(actor).openTab({
+      sessionId,
+      ...(url === undefined ? {} : { url }),
+      activate: true,
+    });
+  }
+
+  activateManagedTab(actor: Actor, id: number, sessionId: string): Promise<BuiltinBrowserTab> {
+    return this.builtinRuntime(actor).activate(String(id), sessionId);
   }
 
   closeManagedTab(actor: Actor, tabId: number, sessionId: string): Promise<void> {

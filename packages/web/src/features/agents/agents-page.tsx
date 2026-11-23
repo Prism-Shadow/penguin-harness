@@ -215,7 +215,7 @@ export function AgentNameLink({
   onFollow: (() => void) | null;
 }) {
   // min-w-0: a flex child does not shrink below its content by default, and a long name must truncate.
-  const className = "min-w-0 truncate text-base font-bold";
+  const className = "min-w-0 break-words text-base font-bold [overflow-wrap:anywhere]";
   if (onFollow === null) return <span className={className}>{name}</span>;
   return (
     <Link
@@ -422,7 +422,15 @@ export function AgentsPage() {
   const openSettingsTab = (
     agentId: string,
     tab:
-      "overview" | "tools" | "vault" | "schedules" | "skills" | "hooks" | "workbenches" | "memory",
+      | "overview"
+      | "tools"
+      | "vault"
+      | "schedules"
+      | "plugins"
+      | "skills"
+      | "hooks"
+      | "workbenches"
+      | "memory",
     machineId: string | null = null,
   ) => {
     // The current Agent is one of THIS server's: a machine's Agent never becomes it.
@@ -524,6 +532,8 @@ export function AgentsPage() {
     // The system Agent holds no conversation and no data of its own to export: its card keeps
     // only its settings, and its words come from the dictionary.
     const system = isSystemAgent(a);
+    const pluginCount =
+      "pluginCount" in a && typeof a.pluginCount === "number" ? a.pluginCount : undefined;
     const machineId = on?.machine.machineId ?? null;
     /** Whether the server holding the Agent can be acted on right now (this one always can). */
     const reachable = on === null || on.live;
@@ -547,13 +557,8 @@ export function AgentsPage() {
         dimmed={!reachable}
         framed={framed}
       >
-        {/* Info column: once it can't fit within 14rem, everything after it
-                    (sparkline/buttons) wraps as a whole. The avatar counts as the first line
-                    (same line as the name); description/stats share the same left edge as the
-                    avatar (the column's left edge) */}
-        <div className="min-w-[14rem] flex-1">
-          {/* Title line: small avatar + name (+ the machine's SSH address) + agentId + version badge */}
-          <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-[1_1_18rem]">
+          <div className="flex min-w-0 items-start gap-2">
             <AgentAvatar
               id={a.agentId}
               size={18}
@@ -572,12 +577,14 @@ export function AgentsPage() {
                     : () => {}
               }
             />
+          </div>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             {/* The machine the Agent lives on, written as a machine's Workspace group writes it;
                 its hint says what that means. A machine out of reach adds the lifted plug, its
                 reason in the hint; one whose list is still being read adds nothing. */}
             {on !== null && (
               <span
-                className="shrink-0 font-mono text-xs normal-case text-gray-400 dark:text-gray-500"
+                className="max-w-full truncate font-mono text-xs normal-case text-fg-subtle"
                 data-tooltip={S.agent.onMachineHint(on.machine.label)}
                 data-tooltip-extra
               >
@@ -596,7 +603,10 @@ export function AgentsPage() {
               </span>
             )}
             <AgentApiMark enabled={a.apiEnabled} />
-            <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
+            <span
+              className="max-w-full truncate font-mono text-xs text-fg-subtle"
+              data-tooltip={a.agentId}
+            >
               {a.agentId}
             </span>
             {system ? (
@@ -619,22 +629,6 @@ export function AgentsPage() {
           <p className="mt-1.5 min-h-4 truncate text-xs text-gray-500 dark:text-gray-400">
             {system ? S.agent.systemDescription : (a.description ?? "")}
           </p>
-          {/* The system Agent's one count: the system apps this viewer sees, which its settings'
-              Workbenches sub-page lists. */}
-          {system && (
-            <div className="mt-1.5 flex items-center text-xs text-gray-500 dark:text-gray-400">
-              <button
-                type="button"
-                className={STAT_LINK_CLASS}
-                data-tooltip={S.agent.systemAppCount(systemAppCount)}
-                aria-label={S.agent.systemAppCount(systemAppCount)}
-                onClick={() => openSettingsTab(a.agentId, "workbenches", machineId)}
-              >
-                <GlyphIcon d={ICONS.tiles} size={ICON_SIZE.inlineGlyph} />
-                {systemAppCount}
-              </button>
-            </div>
-          )}
           {/* An employee's organizations, one line each: the building every company
                       surface wears, then `<organization> · <title>`. */}
           {employments.map((e) => (
@@ -646,21 +640,8 @@ export function AgentsPage() {
               <span className="min-w-0 truncate">{S.agent.employmentLine(e.orgName, e.title)}</span>
             </p>
           ))}
-          {/* Stats on their own line: same color/font size as the description; each
-                      item hugs its content, with spacing left to the container's uniform
-                      gap-x-4; meaning folded into the hover title. Tool/skill/hook/memory/
-                      vault/schedule counts are buttons deep-linking to the matching settings tab,
-                      listed in the settings tabs' order (also for built-in Agents — their
-                      Settings entry point has no gating either); session count and
-                      last-modified stay plain text.
-                      flex-wrap is load-bearing: every item is shrink-0 (a count must not be
-                      cut in half) and the row has no scroll box, so with nowrap the seven
-                      items simply spill past the card's padding once the info column is
-                      narrower than they are — a phone. Wrapping spends a second line instead,
-                      and never triggers where the row already fits. None on the system
-                      Agent's card: every count there describes a runtime it never runs. */}
-          {!system && (
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-subtle">
+            {!system && (
               <span
                 className="inline-flex shrink-0 items-center gap-1 tabular-nums"
                 data-tooltip={S.agent.sessionCount(a.sessionCount)}
@@ -668,32 +649,43 @@ export function AgentsPage() {
                 <GlyphIcon d={CARD_ICONS.sessions} size={ICON_SIZE.inlineGlyph} />
                 {a.sessionCount}
               </span>
-              {(
+            )}
+            {(
+              [
+                ["tools", STAT_ICONS.toolCalls, a.toolCount, S.agent.toolCount(a.toolCount)],
                 [
-                  ["tools", STAT_ICONS.toolCalls, a.toolCount, S.agent.toolCount(a.toolCount)],
-                  ["skills", CARD_ICONS.skills, a.skillCount, S.skills.skillCount(a.skillCount)],
-                  ["hooks", ICONS.fishHook, a.hookCount, S.hooks.hookCount(a.hookCount)],
-                  [
-                    "workbenches",
-                    ICONS.anvil,
-                    a.workbenchCount ?? 0,
-                    S.workbenches.count(a.workbenchCount ?? 0),
-                  ],
-                  ["memory", CARD_ICONS.memory, a.memoryCount, S.agent.memoryCount(a.memoryCount)],
-                  [
-                    "vault",
-                    CARD_ICONS.vaultKeys,
-                    a.vaultKeyCount,
-                    S.agent.vaultKeyCount(a.vaultKeyCount),
-                  ],
-                  [
-                    "schedules",
-                    CARD_ICONS.schedules,
-                    a.scheduleCount,
-                    S.agent.scheduleCount(a.scheduleCount),
-                  ],
-                ] as const
-              ).map(([tab, glyph, count, label]) => (
+                  "plugins",
+                  ICONS.puzzle,
+                  pluginCount ?? "—",
+                  pluginCount === undefined
+                    ? S.agent.pluginCountUnknown
+                    : S.plugins.pluginCount(pluginCount),
+                ],
+                ["skills", CARD_ICONS.skills, a.skillCount, S.skills.skillCount(a.skillCount)],
+                ["hooks", ICONS.fishHook, a.hookCount, S.hooks.hookCount(a.hookCount)],
+                [
+                  "workbenches",
+                  ICONS.anvil,
+                  a.workbenchCount ?? 0,
+                  S.workbenches.count(a.workbenchCount ?? 0),
+                ],
+                ["memory", CARD_ICONS.memory, a.memoryCount, S.agent.memoryCount(a.memoryCount)],
+                [
+                  "vault",
+                  CARD_ICONS.vaultKeys,
+                  a.vaultKeyCount,
+                  S.agent.vaultKeyCount(a.vaultKeyCount),
+                ],
+                [
+                  "schedules",
+                  CARD_ICONS.schedules,
+                  a.scheduleCount,
+                  S.agent.scheduleCount(a.scheduleCount),
+                ],
+              ] as const
+            )
+              .filter(([tab]) => !system || tab === "skills" || tab === "plugins")
+              .map(([tab, glyph, count, label]) => (
                 <button
                   key={tab}
                   type="button"
@@ -707,6 +699,18 @@ export function AgentsPage() {
                   {count}
                 </button>
               ))}
+            {system ? (
+              <button
+                type="button"
+                className={STAT_LINK_CLASS}
+                aria-label={S.agent.systemAppCount(systemAppCount)}
+                data-tooltip={S.agent.systemAppCount(systemAppCount)}
+                onClick={() => openSettingsTab(a.agentId, "workbenches", machineId)}
+              >
+                <GlyphIcon d={ICONS.tiles} size={ICON_SIZE.inlineGlyph} />
+                {systemAppCount}
+              </button>
+            ) : (
               <span
                 className="inline-flex shrink-0 items-center gap-1"
                 data-tooltip={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}
@@ -715,8 +719,8 @@ export function AgentsPage() {
                 <GlyphIcon d={STAT_ICONS.elapsed} size={ICON_SIZE.inlineGlyph} />
                 {a.updatedAt ? formatRelativeDays(a.updatedAt, locale) : "—"}
               </span>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Session activity sparkline, GitHub Pulse style: daily active Session counts
@@ -738,7 +742,7 @@ export function AgentsPage() {
         )}
 
         {/* Button group to the right of the sparkline: "New Chat" shows text, the rest are square icon buttons (tooltip shows the full name) */}
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex max-w-full flex-wrap items-center gap-2">
           {!system && (
             <Button
               size="sm"
