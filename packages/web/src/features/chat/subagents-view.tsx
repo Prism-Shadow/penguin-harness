@@ -386,7 +386,7 @@ export function SubagentsView({
               <MessageStream
                 key={active.sessionId}
                 items={activeModel.items}
-                version={version}
+                version={embedded ? (embedded.lastActivityLocalMs ?? embedded.items.length) : 0}
                 ctx={childCtx}
                 onAddExcerpt={addChildExcerpt}
                 findRegion="subagent"

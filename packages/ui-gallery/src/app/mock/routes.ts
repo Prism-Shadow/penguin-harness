@@ -1655,6 +1655,47 @@ router
     if (!row || row.status === "idle") fail(409, "not_running", "No Task is running.");
     return empty(202);
   })
+  .get("/api/sessions/:sessionId/subagents", (ctx) => {
+    const history = transcriptOf(ctx).history;
+    const children = new Map<
+      string,
+      {
+        sessionId: string;
+        agentId: string | null;
+        spawnedAt: string;
+        title: string | null;
+        turnKey: string;
+        position: string;
+      }
+    >();
+    let turn: string | undefined;
+    history.forEach((entry, i) => {
+      if (!entry.origin?.length && payloadOf(entry)?.type === "task_begin") turn = String(i);
+      if (entry.type !== "session_meta" || entry.origin?.length !== 1) return;
+      const id = entry.origin[0]!;
+      if (children.has(id)) return;
+      const row = ctx.store.session(id);
+      turn ??= String(i);
+      children.set(id, {
+        sessionId: id,
+        agentId: row?.agentId ?? null,
+        title: row?.title ?? null,
+        spawnedAt: entry.timestamp,
+        turnKey: turn,
+        position: String(i),
+      });
+    });
+    const ordered = [...children.values()].reverse();
+    const before = ctx.query.get("before");
+    const start = before === null ? 0 : ordered.findIndex((child) => child.position === before) + 1;
+    if (before !== null && start === 0) fail(400, "bad_request", "Unknown cursor");
+    const limit = Math.max(1, Number(ctx.query.get("limit")) || 32);
+    const page = ordered.slice(start, start + limit);
+    return {
+      items: page.map(({ position: _, ...item }) => item),
+      nextCursor: start + page.length < ordered.length ? page.at(-1)!.position : null,
+    };
+  })
   .post(
     "/api/sessions/:sessionId/subagents/:childSessionId/message",
     (): SubagentMessageResponse => ({

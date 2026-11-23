@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1734](https://github.com/Prism-Shadow/penguin-harness/pull/1734)
 
 [中文版](2026-11-23-child-agent-history.zh.md)
 

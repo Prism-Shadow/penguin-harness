@@ -5774,7 +5774,7 @@ Benchmark：
     latestTurn: "最新一轮",
     topologyLabel: "调用关系",
     mainSessionNote: "主会话请在对话区查看",
-    empty: "本次任务尚未派生子智能体",
+    empty: "这个会话还没有子智能体",
     nodeRunning: "运行中",
     nodeDone: "已完成",
     /** Identity-strip jump: opens the selected subagent's own Session in the chat area. */
