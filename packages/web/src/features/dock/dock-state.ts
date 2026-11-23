@@ -204,6 +204,52 @@ function sanitizeScope(key: string, stored: unknown): ScopeLayout {
   };
 }
 
+// Window-local running apps occupy ordinary dock tabs while attached. Only the
+// original panel IDs belong in a saved conversation arrangement.
+const beforePage = new WeakMap<DockAreaState, { active: string | null; open: boolean }>();
+const beforePageFocus = new WeakMap<ScopeLayout, DockPosition>();
+// A contextual workbench can temporarily present a native panel already in this layout.
+// Its stored tab and the user's chosen edge stay intact while the app occupies the right dock.
+const panelLoans = new WeakMap<ScopeLayout, Map<string, string>>();
+export function borrowedDockPanel(key: string): string | undefined {
+  return panelLoans.get(layout)?.get(key);
+}
+
+export function openDockPage(key: string, nativeId: string | null): void {
+  if (nativeId && isPanelId(nativeId) && panelDock(nativeId)) {
+    const loans = panelLoans.get(layout) ?? new Map<string, string>();
+    loans.set(key, nativeId);
+    panelLoans.set(layout, loans);
+    instant += 1;
+  }
+  openPanel(key, "right");
+}
+
+function storedArea(area: DockAreaState) {
+  const tabs = area.tabs.map(tabKey).filter(isPanelId);
+  const transient = area.active !== null && !isPanelId(area.active);
+  const prior = transient ? beforePage.get(area) : undefined;
+  const prefer = prior?.active ?? area.active;
+  return {
+    tabs,
+    active: prefer && tabs.includes(prefer) ? prefer : (tabs.at(-1) ?? null),
+    open: prior?.open ?? area.open,
+  };
+}
+
+function savedScope(s: ScopeLayout) {
+  const right = storedArea(s.right),
+    bottom = storedArea(s.bottom);
+  if (!right.tabs.length && !bottom.tabs.length && !right.open && !bottom.open) return null;
+  const active = s[s.focus].active;
+  return {
+    right,
+    bottom,
+    focus: active && !isPanelId(active) ? (beforePageFocus.get(s) ?? s.focus) : s.focus,
+    ...(s.shell !== null ? { shell: s.shell } : {}),
+  };
+}
+
 interface StoredLayout {
   scopes: Record<string, unknown>;
   bottomRatio: unknown;
@@ -223,6 +269,8 @@ function loadStored(): { scopes: Record<string, ScopeLayout>; bottomRatio: numbe
 
 let { scopes, bottomRatio: ratio } = loadStored();
 let scope = NO_SCOPE;
+/** A qualified window owns its layout separately from the historical bare Session id. */
+const windowScopes = new Map<string, string>();
 // Unpacked into a local rather than read through `scopes[scope]` everywhere: the reads
 // are on every render path, and one live object per scope keeps switching cheap.
 let layout: ScopeLayout = scopes[scope] ?? emptyScope();
@@ -251,29 +299,25 @@ function persist(): void {
     const { [scope]: _previous, ...rest } = scopes;
     scopes = { ...rest, [scope]: layout };
   }
-  const keys = Object.keys(scopes);
-  if (keys.length > MAX_SCOPES) {
-    scopes = Object.fromEntries(keys.slice(keys.length - MAX_SCOPES).map((k) => [k, scopes[k]!]));
-  }
   writeScopes();
 }
 
-/** The scope map and the size preference, as storage holds them. */
+/** The size limit applies to saved layouts. A window-only tab cannot evict a saved conversation. */
 function writeScopes(): void {
-  writeJson(LAYOUT_KEY, {
-    scopes: Object.fromEntries(
-      Object.entries(scopes).map(([key, s]) => [
-        key,
-        {
-          right: { ...s.right, tabs: s.right.tabs.map(tabKey) },
-          bottom: { ...s.bottom, tabs: s.bottom.tabs.map(tabKey) },
-          focus: s.focus,
-          ...(s.shell !== null ? { shell: s.shell } : {}),
-        },
-      ]),
-    ),
-    bottomRatio: ratio,
-  });
+  const saved: Record<string, NonNullable<ReturnType<typeof savedScope>>> = {};
+  for (const [key, s] of Object.entries(scopes)) {
+    if (windowScopes.has(key)) continue;
+    const value = savedScope(s);
+    if (value) saved[key] = value;
+  }
+  const keys = Object.keys(saved);
+  for (const key of keys.slice(0, Math.max(0, keys.length - MAX_SCOPES))) {
+    delete saved[key];
+    const entry = scopes[key]!;
+    if (![...entry.right.tabs, ...entry.bottom.tabs].some((t) => !isPanelId(tabKey(t))))
+      delete scopes[key];
+  }
+  writeJson(LAYOUT_KEY, { scopes: saved, bottomRatio: ratio });
 }
 
 const listeners = new Set<() => void>();
@@ -326,8 +370,9 @@ export function subscribeDock(listener: () => void): () => void {
  * placeholder — /chat resolves to a Session a moment after it loads) is handed to the
  * conversation that is chosen, never clobbering one that has an arrangement of its own.
  */
-export function setDockScope(next: string | null): void {
-  switchScope(next ?? NO_SCOPE, scope === NO_SCOPE);
+export function setDockScope(next: string | null, windowKey?: string): void {
+  if (next && windowKey) windowScopes.set(windowKey, next);
+  switchScope(windowKey ?? next ?? NO_SCOPE, !windowKey && scope === NO_SCOPE);
 }
 
 /**
@@ -386,8 +431,12 @@ function switchScope(target: string, mayHandOver: boolean): void {
 }
 
 /** The scope on screen (tests and diagnostics; components never need it). */
+export function matchesDockOwner(sessionId: string, pageId?: string): boolean {
+  return scope === (pageId?.startsWith("scoped-chat:") ? pageId : sessionId);
+}
+
 export function currentDockScope(): string {
-  return scope;
+  return windowScopes.get(scope) ?? scope;
 }
 
 /**
@@ -488,21 +537,32 @@ export interface DockView {
  * bottom view listing every open dock's tabs (bottom's first — it is the surface the
  * merged view inherits). An open dock with no tabs renders its picker.
  */
+function projectedView(position: DockPosition): DockView {
+  const { tabs, active } = area(position);
+  const loans = panelLoans.get(layout);
+  if (!loans?.size) return { position, merged: false, tabs, activeKey: active };
+  const borrowed = new Set(loans.values());
+  const shown = tabs.filter((tab) => !borrowed.has(tabKey(tab)));
+  const activeKey = active && borrowed.has(active) ? (shown.at(-1)?.panel ?? null) : active;
+  return { position, merged: false, tabs: shown, activeKey };
+}
+
 export function dockViews(): DockView[] {
-  if (!narrow) {
-    return (["right", "bottom"] as const).filter(isDockVisible).map((position) => ({
-      position,
-      merged: false,
-      tabs: area(position).tabs,
-      activeKey: area(position).active,
-    }));
-  }
-  if (!isDockVisible("right") && !isDockVisible("bottom")) return [];
-  const tabs = [
-    ...(isDockVisible("bottom") ? layout.bottom.tabs : []),
-    ...(isDockVisible("right") ? layout.right.tabs : []),
+  const views = (["right", "bottom"] as const)
+    .filter(isDockVisible)
+    .map(projectedView)
+    .filter((view) => view.tabs.length || !hasTabs(view.position));
+  if (!narrow || !views.length) return views;
+  const selected =
+    views.find((view) => view.position === layout.focus && view.activeKey) ?? views[0]!;
+  return [
+    {
+      position: "bottom",
+      merged: true,
+      tabs: views.reverse().flatMap((view) => view.tabs),
+      activeKey: selected.activeKey,
+    },
   ];
-  return [{ position: "bottom", merged: true, tabs, activeKey: mergedActiveKey(isDockVisible) }];
 }
 
 /**
@@ -515,12 +575,13 @@ export function dockViews(): DockView[] {
 export function closedDockView(position: DockPosition): DockView | null {
   if (narrow) {
     if (position === "right" || isDockVisible("right") || isDockVisible("bottom")) return null;
-    const tabs = [...layout.bottom.tabs, ...layout.right.tabs];
+    const tabs = [...projectedView("bottom").tabs, ...projectedView("right").tabs];
     if (tabs.length === 0) return null;
     return { position: "bottom", merged: true, tabs, activeKey: mergedActiveKey(hasTabs) };
   }
   if (isDockVisible(position) || !hasTabs(position)) return null;
-  return { position, merged: false, tabs: area(position).tabs, activeKey: area(position).active };
+  const view = projectedView(position);
+  return view.tabs.length ? view : null;
 }
 
 /** Whether a tab is the one actually on screen (narrow-aware — what a toggle closes). */
@@ -555,6 +616,13 @@ export function activateTab(key: string): void {
 
 function insertTab(tab: DockTab, position: DockPosition): void {
   const key = tabKey(tab);
+  if (!isPanelId(key)) {
+    const area = layout[position];
+    if (!area.active || isPanelId(area.active))
+      beforePage.set(area, { active: area.active, open: area.open });
+    if (!layout[layout.focus].active || isPanelId(layout[layout.focus].active!))
+      beforePageFocus.set(layout, layout.focus);
+  }
   const existing = findTab(key);
   if (existing && existing.position !== position) {
     layout[existing.position].tabs = layout[existing.position].tabs.filter(
@@ -571,11 +639,55 @@ function insertTab(tab: DockTab, position: DockPosition): void {
   activate(position, key);
 }
 
-/**
- * Removes a tab wherever it lives; the dock falls back to its last remaining tab, and
- * removing the LAST tab puts the dock away — from the user's seat the × closed the
- * content, so no empty surface (nor a surprise picker) should linger.
- */
+/** Remove transient app tabs while retaining the conversation's own panel arrangement. */
+function detachPages(matches: (key: string) => boolean, except?: string): void {
+  let changed = false;
+  for (const [owner, entry] of Object.entries({ ...scopes, [scope]: layout })) {
+    if (owner === except) continue;
+    const loans = panelLoans.get(entry);
+    for (const key of loans?.keys() ?? []) {
+      if (matches(key)) {
+        loans!.delete(key);
+        instant += 1;
+      }
+    }
+    const focused = entry[entry.focus].active;
+    for (const area of [entry.right, entry.bottom]) {
+      const tabs = area.tabs.filter((tab) => !matches(tabKey(tab)));
+      if (tabs.length === area.tabs.length) continue;
+      area.tabs = tabs;
+      if (area.active && matches(area.active)) {
+        const previous = beforePage.get(area);
+        const priorApp = tabs.findLast((tab) => !isPanelId(tabKey(tab)));
+        const priorPanel = tabs.find((tab) => tabKey(tab) === previous?.active);
+        const selected = priorApp ?? priorPanel ?? tabs.at(-1);
+        area.active = selected ? tabKey(selected) : null;
+        if (!priorApp && previous) area.open = previous.open;
+      }
+      if (!tabs.length) area.open = false;
+      changed = true;
+    }
+    if (focused && matches(focused) && !entry[entry.focus].active?.startsWith(":"))
+      entry.focus = beforePageFocus.get(entry) ?? entry.focus;
+  }
+  if (changed) commit();
+}
+export function detachDockPage(key: string, except?: string): void {
+  if (key.startsWith(":")) detachPages((candidate) => candidate === key, except);
+}
+export function clearDockPages(): void {
+  detachPages((key) => key.startsWith(":"));
+  for (const key of windowScopes.keys()) delete scopes[key];
+  if (windowScopes.has(scope)) {
+    scope = NO_SCOPE;
+    layout = scopes[scope] ?? emptyScope();
+    reconcileFullscreen();
+    notify();
+  }
+  windowScopes.clear();
+}
+
+/** Closing the last tab also hides its dock. */
 export function removeTab(key: string): void {
   const found = findTab(key);
   if (!found) return;
@@ -715,12 +827,27 @@ export function panelDock(id: PanelId): DockPosition | null {
   return tabHome(id);
 }
 
+let sessionPanelOpener: ((id: PanelId) => boolean) | null = null;
+export function setSessionPanelOpener(opener: typeof sessionPanelOpener): void {
+  sessionPanelOpener = opener;
+}
+
 /**
  * Puts a panel on screen: adds its tab (to `position`, or where it already lives, or `fallback` —
  * the panel's own default edge, the right dock unless its definition names another) and
  * activates it. Idempotent when already shown.
  */
 export function openPanel(id: PanelId, position?: DockPosition, fallback?: DockPosition): void {
+  if (isPanelId(id) && sessionPanelOpener?.(id)) return;
+  openNativePanel(id, position, fallback);
+}
+
+/** A user choosing a panel within a particular dock keeps that physical placement. */
+export function openNativePanel(
+  id: PanelId,
+  position?: DockPosition,
+  fallback?: DockPosition,
+): void {
   const target = position ?? panelDock(id) ?? fallback ?? "right";
   insertTab({ kind: "panel", panel: id }, target);
   commit();

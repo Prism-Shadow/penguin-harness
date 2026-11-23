@@ -1,3 +1,4 @@
+import { pageSessionId } from "../../lib/page-layout";
 /**
  * One dock surface (dock-state.ts owns the arrangement): a tab strip across the top and
  * the active tab's body below — or, while the open dock has no tabs, a centered picker
@@ -82,6 +83,20 @@ import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
 import { DockPanelTitle } from "../../lib/dock-panel-empty";
 import { DockPanelProvider, type DockPanelHandle } from "./panel-context";
 
+import { usePageWorkspace } from "../../lib/page-workspace";
+import {
+  dockPageId,
+  sessionAppPair,
+  SessionAppDockBody,
+  ScopedPanelSession,
+} from "../../lib/session-app-dock";
+import {
+  DockPanelArea,
+  NativePanelSlot,
+  useNativePanelSlots,
+  type PanelBodyProps,
+} from "./dock-panel-bodies";
+import type { ComponentProps } from "react";
 import { panelGlyph, panelLabel } from "./panel-meta";
 import {
   dockPanelDefinition,
@@ -94,6 +109,7 @@ import { composerHeight, useComposerHeight } from "./composer-height";
 
 import {
   activateTab,
+  borrowedDockPanel,
   bottomRatio,
   currentDockScope,
   dockVersion,
@@ -101,7 +117,7 @@ import {
   hideView,
   moveDock,
   moveTab,
-  openPanel,
+  openNativePanel,
   removeTab,
   reorderDock,
   resetBottomRatio,
@@ -163,19 +179,11 @@ function measureColumn(): { host: number; area: number } {
  * closable from the strip; the body appears the moment the definition is registered, since the
  * dock re-renders on registration.
  */
-function PanelBody({
-  id,
-  position,
-  merged,
-  active,
-  fullscreen,
-}: {
-  id: PanelId;
-  position: DockPosition;
-  merged: boolean;
-  active: boolean;
-  fullscreen: boolean;
-}) {
+function PanelBody({ id, position, merged, active, fullscreen, loanKey }: PanelBodyProps) {
+  const workspace = usePageWorkspace();
+  const ownerId = dockPageId(loanKey ?? id);
+  const owner = workspace?.layout.pages.find((item) => item.id === ownerId);
+  const page = loanKey ? undefined : owner;
   const handle = useMemo<DockPanelHandle>(
     () => ({
       id,
@@ -190,29 +198,43 @@ function PanelBody({
         else if (fullscreenDock() === position) setDockFullscreen(null);
       },
       // The tab's × path: a close guard the body registered (unsaved text) asks first.
-      close: () => closeWhenAllowed(id),
+      close: () => {
+        if (ownerId && workspace) workspace.close(ownerId);
+        else closeWhenAllowed(id);
+      },
     }),
-    [id, position, merged, active, fullscreen],
+    [id, position, merged, active, fullscreen, ownerId, workspace],
   );
+  const session = workspace && sessionAppPair(workspace.layout)?.session;
   const Body = dockPanelDefinition(id)?.Body;
   return (
     <DockPanelProvider handle={handle}>
-      {Body !== undefined ? (
-        // A panel that crashes (a plugin's, or one of ours) takes down its own tab, not the
-        // conversation beside it.
-        <CrashBoundary resetKey={id}>
-          {/* The panel's name, which a contributed body's draft placeholder wears as its title. */}
-          <DockPanelTitle.Provider value={panelLabel(id)}>
-            <Body active={active} />
-          </DockPanelTitle.Provider>
-        </CrashBoundary>
-      ) : (
-        <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto p-4">
-          <EmptyState title={S.dock.panelUnavailable} />
-        </div>
-      )}
+      <ScopedPanelSession path={owner?.path}>
+        {page && session ? (
+          <CrashBoundary resetKey={id}>
+            <SessionAppDockBody page={page} sessionId={pageSessionId(session)} active={active} />
+          </CrashBoundary>
+        ) : Body !== undefined ? (
+          // A panel that crashes (a plugin's, or one of ours) takes down its own tab, not the
+          // conversation beside it.
+          <CrashBoundary resetKey={id}>
+            {/* The panel's name, which a contributed body's draft placeholder wears as its title. */}
+            <DockPanelTitle.Provider value={panelLabel(id)}>
+              <Body active={active} />
+            </DockPanelTitle.Provider>
+          </CrashBoundary>
+        ) : (
+          <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto p-4">
+            <EmptyState title={S.dock.panelUnavailable} />
+          </div>
+        )}
+      </ScopedPanelSession>
     </DockPanelProvider>
   );
+}
+
+export function ChatDockArea(props: Omit<ComponentProps<typeof DockPanelArea>, "Body">) {
+  return <DockPanelArea {...props} Body={PanelBody} />;
 }
 
 export interface DockPanelProps {
@@ -238,6 +260,7 @@ export function DockPanel({
   // what re-renders the strip when a definition arrives for a tab it already shows.
   const offered = useDockPanels();
   const { position, merged, tabs, activeKey } = view;
+  const nativeSlots = useNativePanelSlots();
   const horizontal = position === "bottom";
   const other: DockPosition = position === "right" ? "bottom" : "right";
   const [addOpen, setAddOpen] = useState(false);
@@ -252,7 +275,19 @@ export function DockPanel({
   // editor holding unsaved text), which asks first: the tab's × is the one gesture here that
   // really unmounts a body. Closing the terminal panel's tab leaves its shells running — its
   // own strip's × is what ends one.
-  const closeTab = useCallback((tab: DockTab) => closeWhenAllowed(tabKey(tab)), []);
+  const workspace = usePageWorkspace();
+  const pageOf = (key: string) => workspace?.layout.pages.find((p) => p.id === dockPageId(key));
+  const closeTab = (tab: DockTab) => {
+    const page = pageOf(tabKey(tab));
+    if (page && workspace) workspace.close(page.id);
+    else closeWhenAllowed(tabKey(tab));
+  };
+  const selectTab = (key: string) => {
+    const page = pageOf(key);
+    const session = workspace && sessionAppPair(workspace.layout)?.session;
+    if (page && session && workspace) workspace.openBesideSession(pageSessionId(session), page);
+    activateTab(key);
+  };
   // Hiding puts the surface away and nothing else — every body stays mounted at zero size —
   // so there is nothing to ask about, however much unsaved work a tab is holding.
   const hide = useCallback(() => hideView(view), [view]);
@@ -513,7 +548,7 @@ export function DockPanel({
     // The merged view has no edge of its own to insist on — the panel's existing tab (or
     // its own default edge) decides, which is also where it lands when the window widens
     // back out.
-    openPanel(definition.id, merged ? undefined : position, definition.defaultPosition);
+    openNativePanel(definition.id, merged ? undefined : position, definition.defaultPosition);
   };
 
   const addMenu = (
@@ -606,7 +641,7 @@ export function DockPanel({
   // the puzzle piece while no definition is registered).
   const stripTabs: DockTabItem[] = tabs.map((tab) => ({
     key: tabKey(tab),
-    label: panelLabel(tab.panel),
+    label: pageOf(tab.panel)?.title ?? panelLabel(tab.panel),
     glyph: panelGlyph(tab.panel, ICON_SIZE.inlineGlyph),
     badge: panelBadges?.[tab.panel] === true,
     closeLabel: S.dock.closeTab,
@@ -628,7 +663,7 @@ export function DockPanel({
       glyph: <GlyphIcon d={definition.glyph} size={ICON_SIZE.iconButton} />,
       ...(chord !== null ? { keys: chordKeys(chord) } : {}),
       onChoose: () =>
-        openPanel(definition.id, merged ? undefined : position, definition.defaultPosition),
+        openNativePanel(definition.id, merged ? undefined : position, definition.defaultPosition),
     };
   };
   // The picker leads with the panels that ask to (`lead`): what a conversation most often opens.
@@ -645,19 +680,24 @@ export function DockPanel({
       <div className="relative min-h-0 flex-1">
         {tabs.map((tab) => {
           const key = tabKey(tab);
+          const native = borrowedDockPanel(key) ?? key;
           const active = key === activeKey;
           return (
             <div key={key} className={active ? "flex h-full min-h-0 flex-col" : "hidden"}>
               {/* A hidden dock's shown tab is no more on screen than a covered one: the
                   bodies gate their polling and their reload-on-return on this, and a
                   collapsed dock should cost nothing while it is away. */}
-              <PanelBody
-                id={tab.panel}
-                position={position}
-                merged={merged}
-                active={active && open}
-                fullscreen={fullscreen}
-              />
+              {nativeSlots && !native.startsWith(":") ? (
+                <NativePanelSlot id={native} />
+              ) : (
+                <PanelBody
+                  id={tab.panel}
+                  position={position}
+                  merged={merged}
+                  active={active && open}
+                  fullscreen={fullscreen}
+                />
+              )}
             </div>
           );
         })}
@@ -703,7 +743,7 @@ export function DockPanel({
         <DockTabs
           tabs={stripTabs}
           active={activeKey}
-          onSelect={activateTab}
+          onSelect={selectTab}
           onClose={closeByKey}
           coarse={coarsePointer}
           stripRef={stripRef}
