@@ -3292,6 +3292,9 @@ export const en: Strings = {
     /** Listed, but the process could not load it: the reason, not a success. */
     deploymentFailedToast: (name: string, reason: string) => `${name} failed to load: ${reason}`,
     /** A server module's install / removal confirm: what it does, then what it costs, in small type below. */
+    packageUpdateFailed: (name: string, reason: string) => `Couldn’t update ${name}. ${reason}`,
+    packageUpdated: (name: string, version: string) =>
+      `Updated ${name} to v${version} in the plugin library`,
     updatePackageTo: (version: string) => `Update to v${version}`,
     applyConfirmInstall: (name: string) => `Install ${name}`,
     applyConfirmRemove: (name: string) => `Remove ${name}`,

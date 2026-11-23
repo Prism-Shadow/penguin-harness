@@ -21,7 +21,13 @@ export {
 } from "./agent-plugin-writes";
 export type { AgentTarget } from "./agent-plugin-writes";
 
-export { LIBRARY_KEY, MARKET_KEY, pluginLibrary, pluginMarket } from "./plugin-reads";
+export {
+  LIBRARY_KEY,
+  MARKET_KEY,
+  pluginLibrary,
+  pluginMarket,
+  useLocalPluginIndex,
+} from "./plugin-reads";
 
 export { artOf, isSelected } from "./plugin-market";
 
@@ -48,3 +54,5 @@ export type { PluginRow } from "./plugin-groups";
 export { agentPluginGroups, hasParts } from "./agent-plugin-groups";
 
 export type { AgentPluginGroup, AgentPluginGroups, AgentPluginStatus } from "./agent-plugin-groups";
+
+export { PackageUpdateDialog, packageUpdate, type PackageUpdate } from "./plugin-package-update";

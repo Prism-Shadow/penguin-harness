@@ -88,6 +88,7 @@ import { downloadArchive } from "../agents/archive-download";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName } from "../../state/project";
 import { SkillTile } from "../skills";
+import { packageUpdate } from "./plugin-package-update";
 import { MarketPluginCard } from "./plugin-market-card";
 import type { InstallStage } from "../../api/endpoints";
 import {
@@ -493,9 +494,9 @@ export function PluginCard(props: PluginCardProps) {
     // module's enable and disable for this Project, and the uninstall from the server.
     if (where === "hero" && mod !== undefined && props.isAdmin) {
       const localInstall = props.showPackageUpdates ? mod.entry?.localInstall : undefined;
-      const update = localInstall?.updateAvailable ? mod.entry : undefined;
-      if (update !== undefined) {
-        const label = S.plugins.updatePackageTo(update.version);
+      const update = localInstall ? packageUpdate(mod.entry) : null;
+      if (update !== null) {
+        const label = S.plugins.updatePackageTo(update.to);
         out.push(
           <EntityCardAction
             key="package-update"
@@ -506,7 +507,7 @@ export function PluginCard(props: PluginCardProps) {
             words={words}
             busy={props.busy}
             disabled={props.blocked}
-            onClick={() => props.onModuleApply(true, update.version)}
+            onClick={() => props.onModuleApply(true, update.to)}
           />,
         );
       }
@@ -825,11 +826,10 @@ export function PluginCard(props: PluginCardProps) {
   if (props.marketCard) {
     const mod = row.module;
     const local = props.showPackageUpdates ? mod?.entry?.localInstall : undefined;
-    const release = mod?.entry?.version;
-    const downloadUpdate =
-      Boolean(local?.updateAvailable) && release !== undefined && props.isAdmin;
+    const release = local ? packageUpdate(mod?.entry) : null;
+    const downloadUpdate = release !== null && props.isAdmin;
     const agentPackage = plugin !== undefined && agentInstallable(plugin);
-    const updateAgent = currentId !== undefined && behind.includes(currentId);
+    const updateAgents = behind.filter((key) => !usage?.lastSeen?.includes(key));
     const download = !agentPackage && mod?.state === "none" && !local?.libraryOnly;
     // How many Agents carry it, across the Project: the install action's one state. Installed
     // anywhere, it is that count; installed nowhere, it is Install. Either opens the install
@@ -844,8 +844,8 @@ export function PluginCard(props: PluginCardProps) {
     const installLabel = () => {
       if (props.busy) return installStepWords(props.progress, props.stage, true);
       // The badge keeps the local version. Name the destination only when it differs.
-      if (downloadUpdate && release !== undefined) return S.plugins.updatePackageTo(release);
-      if (updateAgent) return S.skills.updateAction;
+      if (downloadUpdate) return S.plugins.updatePackageTo(release.to);
+      if (updateAgents.length > 0) return S.skills.updateAction;
       if (agentPackage) return count > 0 ? S.plugins.marketAgentInstalls(count) : S.skills.install;
       if (serverInstalled) return S.plugins.marketServerInstalled;
       if (mod && mod.state !== "none" && !agentPackage) return S.plugins.status[status];
@@ -885,8 +885,8 @@ export function PluginCard(props: PluginCardProps) {
             disabled: props.pending === true || (props.blocked && !props.busy) || memberHeld,
             ...(memberHeld ? { hint: S.plugins.installModel.adminOnly } : {}),
             onClick: () => {
-              if (downloadUpdate) props.onModuleApply(true, release);
-              else if (updateAgent && !props.busy) setPendingUpdate([currentId!]);
+              if (downloadUpdate) props.onModuleApply(true, release.to);
+              else if (updateAgents.length > 0 && !props.busy) setPendingUpdate(updateAgents);
               else if (flows) setInstallOpen(true);
               else setDetailOpen(true);
             },
