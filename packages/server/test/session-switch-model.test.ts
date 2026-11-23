@@ -110,6 +110,14 @@ interface SwitchFake extends RuntimeSession {
   ended: boolean;
 }
 
+function gatePromise() {
+  let resolve = () => {};
+  const promise = new Promise<void>((release) => {
+    resolve = release;
+  });
+  return { promise, resolve };
+}
+
 /** Settles when `signal` fires. */
 const aborted = (signal: AbortSignal): Promise<void> =>
   new Promise<void>((resolve) => {
@@ -459,8 +467,8 @@ describe("POST /switch-model", () => {
     api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text }], queueIfBusy: true });
 
   it("hands off at the choice's position among queued tasks and exposes the latest confirmed target", async () => {
-    const gate = Promise.withResolvers<void>();
-    const handoff = Promise.withResolvers<void>();
+    const gate = gatePromise();
+    const handoff = gatePromise();
     const fake = switchFake(A, { kind: "stream", status: "completed", gate: handoff.promise });
     const models: string[] = [];
     fake.run = async function* (_input, opts) {
@@ -490,7 +498,7 @@ describe("POST /switch-model", () => {
   });
 
   it("rejects an unavailable target without overwriting a valid choice, and lets a user cancel before the handoff", async () => {
-    const gate = Promise.withResolvers<void>();
+    const gate = gatePromise();
     const fake = switchFake(A, { kind: "inline" });
     fake.run = async function* () {
       await gate.promise;
@@ -514,9 +522,9 @@ describe("POST /switch-model", () => {
   });
 
   it("applies a selection even if the task finishes during target validation", async () => {
-    const gate = Promise.withResolvers<void>();
-    const validating = Promise.withResolvers<void>();
-    const valid = Promise.withResolvers<void>();
+    const gate = gatePromise();
+    const validating = gatePromise();
+    const valid = gatePromise();
     const fake = switchFake(A, { kind: "inline" });
     fake.run = async function* () {
       await gate.promise;
@@ -539,7 +547,7 @@ describe("POST /switch-model", () => {
   });
 
   it("does not interrupt an issued handoff when a new choice is made in the meantime", async () => {
-    const gate = Promise.withResolvers<void>();
+    const gate = gatePromise();
     const fake = switchFake(A, { kind: "stream", status: "completed", gate: gate.promise });
     adopt(fake);
     await optIn(B);
