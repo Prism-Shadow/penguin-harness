@@ -22,6 +22,36 @@ import { setWebLocale } from "@prismshadow/penguin-web-plugin/host";
 
 export const zh = {
   appName: "PenguinHarness",
+  firstWorkbench: {
+    updateNeeded: "此智能体安装的是旧版引导。更新后即可使用对话回复生成清单。",
+    update: "更新此智能体的引导",
+    updateWarning:
+      "用库中的版本替换此智能体的引导代码？本地编辑过的引导代码将被覆盖。引导进度和清单数据会保留。",
+    updateUnavailable: "此服务端的插件库还没有新版引导。",
+    title: "我的第一个工作台",
+    help: "用自己的对话生成清单，安装后测试。",
+    resume: "开始或继续引导",
+    later: "收起",
+    refresh: "重新读取",
+    loading: "正在读取…",
+    generating: "正在生成清单…",
+    waitReply: "请等待此智能体的对话完成一条回复。",
+    models: "打开模型库配置服务商，然后在对话输入框旁选择模型。",
+    chat: "在输入框旁选择模型，发送你想做成清单的任务，读完回复后继续。",
+    reply: "用于生成的回复",
+    feedback: "清单修改意见",
+    modelSettings: "打开模型库",
+    toChat: "前往对话",
+    useReply: "使用这段对话",
+    retryChat: "重试已保存的请求",
+    generate: "生成清单",
+    verified: "测试通过。清单已保存、完成并删除测试条目。",
+    install: "安装清单",
+    open: "打开清单",
+    test: "测试清单",
+    testItem: "引导测试条目",
+    download: "下载插件",
+  },
 
   voice: {
     /** The Project settings page of the multimodal models. */
@@ -682,6 +712,7 @@ export const zh = {
     launcherPanels: "快捷方式",
     /** The fan's last entry: puts the launcher away until Appearance settings bring it back. */
     openAppCenter: "打开应用中心",
+    launcherShow: "显示快捷方式",
     launcherHide: "隐藏悬浮球",
     launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
     /** The dock header's fullscreen toggle while the dock is at its usual size. */
@@ -1280,7 +1311,7 @@ export const zh = {
     importLoadFailedToast: (error: string): string => `工作台已导入，但加载失败：${error}`,
     importOverwriteAction: "覆盖导入",
     /** The row's More menu: downloads the workbench's source as a zip. */
-    exportWorkbench: "打包导出",
+    exportWorkbench: "下载到本地（ZIP）",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "打开",
     /** The row's "⋯" button, which holds its other actions. */

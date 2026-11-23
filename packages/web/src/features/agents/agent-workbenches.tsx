@@ -28,23 +28,13 @@
  * before overwriting and an overwrite keeps the workbench's data. Export downloads the source as
  * a zip that imports back unchanged.
  */
-import { useState } from "react";
 import type { ReactNode } from "react";
 import { locatedAppKey } from "../../lib/app-center-path";
 import { useRestoreApp } from "../../lib/running-apps";
 import { shortcutOfWorkbench } from "../../lib/workbench-shortcut";
-import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
-import {
-  Button,
-  ConfirmModal,
-  GlyphAction,
-  ICONS,
-  ListRow,
-  Modal,
-  Switch,
-} from "@prismshadow/penguin-ui";
+import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
+import { Button, GlyphAction, ICONS, ListRow, Switch } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { formatDateTime } from "../../lib/format";
 import { useInstantSetting } from "../../lib/instant-setting";
 import { S } from "../../lib/strings";
 import { workbenchTabsOf } from "../../lib/workbench-tabs";
@@ -52,18 +42,12 @@ import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { localizedText } from "../../lib/skill-use";
-import { toastApiError } from "../../lib/toast-api-error";
-import { downloadArchive } from "./archive-download";
+import { useWorkbenchActions } from "../workbenches";
 import { ChatOrZipImportDialog } from "./chat-or-zip-import-dialog";
 import { buildWorkbenchImportPrompt } from "./workbench-import";
 import { cardBodyClick } from "../../lib/card-open";
 import type { PartRef, PartSource } from "./plugins-subpages";
-import { LabelledSwitch, WorkbenchMark, WorkbenchRowMenu } from "./workbench-row";
-
-/** The row of the newest version holding the workbench's current files; -1 when none does. */
-function currentVersionAt(history: { workbench: WorkbenchInfo; versions: WorkbenchVersion[] }) {
-  return history.versions.findIndex((version) => version.revision === history.workbench.revision);
-}
+import { LabelledSwitch, WorkbenchMark } from "./workbench-row";
 
 /** What a workbench row needs of the tab around it. */
 export interface WorkbenchRowsOptions {
@@ -166,37 +150,7 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
   const restore = useRestoreApp();
   const local = agents.find((agent) => agent.agentId === agentId);
   const agentName = machineId === null && local ? agentDisplayName(local) : agentId;
-  const [busy, setBusy] = useState(false);
-  const [history, setHistory] = useState<{
-    workbench: WorkbenchInfo;
-    versions: WorkbenchVersion[];
-  } | null>(null);
-  const [confirm, setConfirm] = useState<{ workbench: WorkbenchInfo; revision?: string } | null>(
-    null,
-  );
-  const act = async (action: () => Promise<unknown>) => {
-    setBusy(true);
-    try {
-      await action();
-      await onChanged();
-    } catch (err) {
-      toastApiError(err);
-    } finally {
-      setBusy(false);
-    }
-  };
-  /** The shared archive download (archive-download.ts); a failure surfaces as a toast. */
-  const exportWorkbench = async (workbench: WorkbenchInfo) => {
-    if (!projectId) return;
-    try {
-      await downloadArchive(
-        api.workbenchArchiveUrl(projectId, agentId, workbench.id, machineId),
-        workbench.id,
-      );
-    } catch (err) {
-      toastApiError(err);
-    }
-  };
+  const { menu, modals } = useWorkbenchActions({ projectId, agentId, machineId }, onChanged);
 
   const row = (workbench: WorkbenchInfo) => {
     const first = workbenchTabsOf([workbench])[0];
@@ -226,6 +180,7 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
             {S.workbenches.openAction}
           </Button>
         )}
+        {menu(workbench, title, running, source?.title)}
       </>
     );
     return (
@@ -255,111 +210,10 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
             onClick={() => onShowPlugin(source.name)}
           />
         )}
-        <WorkbenchRowMenu
-          title={title}
-          disabled={busy}
-          onReload={
-            running
-              ? () =>
-                  void act(() => api.reloadWorkbench(projectId!, agentId, workbench.id, machineId))
-              : undefined
-          }
-          onHistory={() =>
-            void act(async () =>
-              setHistory({
-                workbench,
-                versions: (
-                  await api.getWorkbenchHistory(projectId!, agentId, workbench.id, machineId)
-                ).versions,
-              }),
-            )
-          }
-          onExport={() => void exportWorkbench(workbench)}
-          onRemove={() => setConfirm({ workbench })}
-        />
+        {menu(workbench, title, running, source?.title)}
       </>
     );
   };
-
-  /** The plugin the workbench being removed came from: the confirmation says where to get it back. */
-  const removingSource =
-    confirm !== null && confirm.revision === undefined ? sourceOf(confirm.workbench.id) : undefined;
-  const modals = projectId !== null && (
-    <>
-      <Modal
-        open={history !== null}
-        title={S.workbenches.history}
-        onClose={() => setHistory(null)}
-        widthClass="sm:max-w-2xl"
-      >
-        {history?.versions.length === 0 && (
-          <p className="text-sm text-fg-muted">{S.workbenches.noHistory}</p>
-        )}
-        <ul className="divide-y divide-line">
-          {history?.versions.map((version, index) => (
-            <li key={version.commit} className="flex flex-wrap items-center gap-3 py-3 text-sm">
-              <span className="font-mono">{version.revision}</span>
-              <span className="text-fg-muted">{formatDateTime(version.savedAt)}</span>
-              <span className="flex-1" />
-              {/* A restore records an old revision again: only its newest entry is the current one. */}
-              {index === currentVersionAt(history) ? (
-                <span>{S.workbenches.current}</span>
-              ) : (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() =>
-                    setConfirm({ workbench: history.workbench, revision: version.revision })
-                  }
-                >
-                  {S.workbenches.restore}
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
-      </Modal>
-      <ConfirmModal
-        open={confirm !== null}
-        title={confirm?.revision ? S.workbenches.restoreTitle : S.workbenches.remove}
-        confirmLabel={confirm?.revision ? S.workbenches.restore : S.workbenches.removeYes}
-        cancelLabel={S.workbenches.removeNo}
-        tone={confirm?.revision ? "primary" : "danger"}
-        busy={busy}
-        onClose={() => {
-          if (!busy) setConfirm(null);
-        }}
-        onConfirm={() =>
-          void act(async () => {
-            if (!confirm) return;
-            if (confirm.revision)
-              await api.rollbackWorkbench(
-                projectId,
-                agentId,
-                confirm.workbench.id,
-                confirm.revision,
-                machineId,
-              );
-            else await api.removeWorkbench(projectId, agentId, confirm.workbench.id, machineId);
-            setConfirm(null);
-            setHistory(null);
-          })
-        }
-      >
-        {confirm?.revision ? (
-          S.workbenches.restoreConfirm(confirm.revision)
-        ) : (
-          <div className="space-y-2">
-            <p>{S.workbenches.removeConfirm}</p>
-            {removingSource !== undefined && (
-              <p>{S.agentPlugins.partFromPluginNote(removingSource.title)}</p>
-            )}
-          </div>
-        )}
-      </ConfirmModal>
-    </>
-  );
 
   return { row, detailActions, modals };
 }

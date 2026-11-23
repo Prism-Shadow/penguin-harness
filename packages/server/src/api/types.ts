@@ -3643,6 +3643,8 @@ export interface PluginItem {
   quickStart?: QuickStartItem;
   /** The card's `composerMode`: an Agent with the hook package gets it as a switch in the composer's "+" menu (sent as `TaskCreateRequest.promptHooks`). */
   composerMode?: true;
+  /** Optional slash name contributed by this composer mode. */
+  composerCommand?: string;
   /** The card's `defaultInstall`: every new Agent gets the plugin (see `AgentCreateRequest.defaultPlugins`); absent on a server that predates the field, and for a plugin an admin installed. */
   defaultInstall?: true;
   /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (its mcpServers contributions); `[]` without any. */
