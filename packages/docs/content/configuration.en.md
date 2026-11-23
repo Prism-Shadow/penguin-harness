@@ -195,7 +195,7 @@ Each connection field of a model resolves on its own; the first non-empty value 
 | `client_type` | model entry → group → none: routed by `model_id` |
 | `api_key` | model entry → group, where its key reaches the model → none: the client's own environment variable, only with no `base_url` or the client's default endpoint (see [Provider credential variables](#provider-credential-variables)) |
 
-The file is the only source of these values. The built-in catalog is a reference: it is written into the file when a Project is created and by the Models page's **Add new models** and **Restore defaults**, and it is never read when a request is built. A key belongs to the endpoint it was issued for: the group key reaches a model only when the model has no `base_url` of its own, or its own has the same origin (scheme, host and port) as the group's `base_url`. OpenCode Go's Anthropic Messages rows, at `https://opencode.ai/zen/go` beside the group's `https://opencode.ai/zen/go/v1`, take it; custom's Atria Dawn, which carries its own endpoint, does not.
+The file is the only source of these values. The built-in catalog is a reference: it is written into the file when a Project is created and by the Models page's **Add new models** and **Restore defaults**, and it is never read when a request is built. A key belongs to the endpoint it was issued for: the group key reaches a model only when the model has no `base_url` of its own, or its own has the same origin (scheme, host and port) as the group's `base_url`. OpenCode Go's Anthropic Messages rows, at `https://opencode.ai/inference/go/anthropic` beside the group's `https://opencode.ai/inference/go/openai/v1`, take it; custom's Atria Dawn, which carries its own endpoint, does not.
 
 ### New chat defaults
 
