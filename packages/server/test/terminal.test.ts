@@ -554,7 +554,7 @@ describePty("terminal API", () => {
       const start = async (sessionId: string) => {
         const result = await api.post("/api/terminals", { sessionId, cwd: t.root });
         expect(result.status).toBe(201);
-        return (await result.json()).id as string;
+        return ((await result.json()) as { id: string }).id;
       };
       const kept = await start(parent);
       await start(child);
