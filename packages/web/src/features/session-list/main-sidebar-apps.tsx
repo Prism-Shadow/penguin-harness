@@ -3,7 +3,7 @@
  * Opening a running row selects its workspace page. The same page owns minimize, restore and
  * close, whether it renders a native route, a contributed iframe or an Agent workbench.
  */
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   APP_ROW_ICON_PX,
@@ -69,6 +69,17 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
   const [query, setQuery] = useState("");
   const [sorting, setSorting] = useState(false);
   const [sort, setSort] = useState<"default" | "name" | "running">("default");
+  const list = useRef<HTMLUListElement>(null);
+  useLayoutEffect(() => {
+    const box = list.current;
+    const active = box?.querySelector('[aria-current="page"]');
+    if (!box || !active || !box.clientHeight || box.scrollHeight <= box.clientHeight) return;
+    // Reveal an app selected through another entry without moving the sidebar's other groups.
+    const bounds = box.getBoundingClientRect();
+    const item = active.getBoundingClientRect();
+    if (item.top < bounds.top) box.scrollTop += item.top - bounds.top;
+    else if (item.bottom > bounds.bottom) box.scrollTop += item.bottom - bounds.bottom;
+  }, [workspace?.current?.id, rows.length, folded, searching, sort]);
   if (rows.length === 0) return null;
   const visible = rows.filter((row) =>
     row.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
@@ -231,7 +242,11 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
         {visible.length === 0 && (
           <p className="px-2.5 pt-2 text-xs text-fg-muted">{S.sidebarApps.noMatches}</p>
         )}
-        <ul aria-label={S.sidebarApps.title} className="space-y-px">
+        <ul
+          ref={list}
+          aria-label={S.sidebarApps.title}
+          className="max-h-[min(8rem,18dvh)] space-y-px overflow-y-auto md:max-h-[min(12rem,25dvh)]"
+        >
           {visible.map((row) => {
             const state = stateOf(row);
             const name = S.sidebarApps.rowName(row.title, row.agentName, state);

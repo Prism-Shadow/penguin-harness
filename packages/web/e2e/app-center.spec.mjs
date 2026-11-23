@@ -154,6 +154,23 @@ export default {
 } satisfies WorkbenchPackage;
 `;
 
+async function importApp(request, base, title) {
+  const id = title.toLowerCase();
+  const imported = await request.post(`${base}/archive`, {
+    data: {
+      overwrite: true,
+      dataBase64: zip({
+        [`${id}/package.json`]: JSON.stringify(manifest(title)),
+        [`${id}/index.ts`]: INDEX,
+        [`${id}/ui/index.html`]: `<!doctype html><html><body><h1>${title}</h1>
+            <a href="#read">Read</a><a href="#review">Review</a><a href="#saved">Saved</a>
+            </body></html>`,
+      }).toString("base64"),
+    },
+  });
+  expect(imported.ok(), await imported.text()).toBeTruthy();
+}
+
 test.beforeAll(async ({ browser }) => {
   const seed = await browser.newPage();
   await provisionAndLogin(seed.request, U, P);
@@ -174,22 +191,7 @@ test.beforeAll(async ({ browser }) => {
     expect(hidden.ok(), await hidden.text()).toBeTruthy();
   }
   const base = `${project}/agents/default_agent/workbenches`;
-  for (const title of APPS) {
-    const id = title.toLowerCase();
-    const imported = await seed.request.post(`${base}/archive`, {
-      data: {
-        overwrite: true,
-        dataBase64: zip({
-          [`${id}/package.json`]: JSON.stringify(manifest(title)),
-          [`${id}/index.ts`]: INDEX,
-          [`${id}/ui/index.html`]: `<!doctype html><html><body><h1>${title}</h1>
-            <a href="#read">Read</a><a href="#review">Review</a><a href="#saved">Saved</a>
-            </body></html>`,
-        }).toString("base64"),
-      },
-    });
-    expect(imported.ok(), await imported.text()).toBeTruthy();
-  }
+  for (const title of APPS) await importApp(seed.request, base, title);
   await seed.close();
 });
 
@@ -483,4 +485,70 @@ test("searching, sorting and folding sidebar directories keeps the open page and
   await expect(open.getByRole("listitem")).toHaveCount(count);
   await expect(editor).toHaveValue("Keep this draft while looking for an app");
   await expect(page).toHaveURL(/\/chat\/new$/);
+});
+
+test("many open apps scroll inside Apps while the workspace and directory search remain reachable", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await provisionAndLogin(page.request, "sidebarlonglist", P);
+  await setAccountPrefs(page.request, { lang: "en" });
+  const { projects } = await (await page.request.get("/api/projects")).json();
+  const base = `/api/projects/${projects[0].projectId}/agents/default_agent/workbenches`;
+  const titles = Array.from(
+    { length: 30 },
+    (_, index) => "Notebook-" + String(index + 1).padStart(2, "0"),
+  );
+  for (const title of titles) await importApp(page.request, base, title);
+  await page.goto("/apps");
+  const group = page.getByRole("navigation", { name: "Apps", exact: true });
+  const list = group.getByRole("list", { name: "Apps", exact: true });
+  for (const title of titles) {
+    const row = list.locator(`[data-app-row="default_agent/${title.toLowerCase()}"]`);
+    await expect(row).toBeEnabled();
+    await row.click();
+    await expect(row).toHaveAttribute("aria-current", "page");
+  }
+  const count = await list.getByRole("listitem").count();
+  expect(count).toBeGreaterThanOrEqual(30);
+  const bounds = () =>
+    list.evaluate((el) => ({
+      height: el.clientHeight,
+      content: el.scrollHeight,
+      offset: el.scrollTop,
+    }));
+  const desktop = await bounds();
+  expect(desktop.content).toBeGreaterThan(desktop.height * 3);
+  expect(desktop.offset).toBeGreaterThan(0);
+  const workspaces = page.getByRole("button", { name: "Workspaces", exact: true });
+  await expect(workspaces).toBeInViewport();
+  await page.setViewportSize({ width: 390, height: 700 });
+  await page
+    .getByRole("banner")
+    .getByRole("button", { name: /^Sessions/ })
+    .click();
+  expect((await bounds()).height).toBeLessThan(desktop.height);
+  // In a short drawer, reaching the next group takes at most a few rows of outer scrolling,
+  // regardless of how many apps are running. The rest of the app list scrolls independently.
+  const gap = await workspaces.evaluate((button) => {
+    const scroll = button.closest(".overflow-y-auto");
+    const distance = Math.max(
+      0,
+      button.getBoundingClientRect().bottom - scroll.getBoundingClientRect().bottom,
+    );
+    const row = document.querySelectorAll('nav[aria-label="Apps"] li > div');
+    const height = [...row].find((node) => node.clientHeight > 0).clientHeight;
+    scroll.scrollBy(0, distance + 1);
+    return distance / height;
+  });
+  expect(gap).toBeLessThanOrEqual(3);
+  await expect(workspaces).toBeInViewport();
+  await group.getByRole("button", { name: "Search apps" }).click();
+  const search = group.getByRole("searchbox", { name: "Search apps" });
+  await search.fill("Notebook-01");
+  await expect(list.getByRole("listitem")).toHaveCount(1);
+  await expect(list.getByRole("button", { name: /Notebook-01/ })).toBeVisible();
+  await expect(page).toHaveURL(/notebook-30/);
+  await search.press("Escape");
+  await expect(list.getByRole("listitem")).toHaveCount(count);
 });
