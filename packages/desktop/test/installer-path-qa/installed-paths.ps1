@@ -24,6 +24,12 @@ function Run-Profile([string]$Mode,[string]$Program,[string]$Profile,[string]$Da
   node packages/desktop/test/installer-path-qa/installed-profile.cjs $Mode $Program (Join-Path $root 'case.json') $Profile $Data
   if ($LASTEXITCODE -ne 0) { throw "Installed application phase failed: $Mode" }
 }
+function ProgramEntries([string]$Dir) {
+  @(Get-ChildItem -LiteralPath $Dir -Recurse -Force | ForEach-Object {
+    $kind=if ($_.PSIsContainer) {'D'} else {'F'}
+    "$kind`t$($_.FullName.Substring($Dir.Length+1).ToLowerInvariant())"
+  })
+}
 try {
   foreach ($letter in $letters) {
     $physical = Join-Path $root "volume-$letter"
@@ -59,6 +65,7 @@ try {
   Move-Item -LiteralPath $program -Destination $legacyBackup
   Run-Installer $OldInstaller "/S /currentuser /D=$program" $true
   Check ([IO.File]::ReadAllText((Join-Path $legacyBackup 'personal-legacy-document.txt')) -ceq 'belongs to the installer fixture user') 'explicit legacy backup kept intact'
+  $originalProgramEntries=ProgramEntries $program
   Run-Profile 'seed' $program $defaultProfile $defaultData
   $db = Join-Path $defaultData 'web.db'
   Check ([IO.File]::Exists($db)) 'old installation produced a real database'
@@ -69,7 +76,27 @@ try {
   Run-Installer $Installer "/S /currentuser /DATADIR=$unrelated /D=$program" $false
   Check (!(Test-Path -LiteralPath $pointer) -and ([IO.File]::ReadAllText($occupiedFile) -ceq 'keep')) 'rejected target leaves previous root and unrelated file intact'
   Run-Profile 'old' $program $defaultProfile $defaultData
-  Run-Installer $Installer "/S /currentuser /DATADIR=`"$target`" /D=$program" $true
+  try {
+    Run-Installer $Installer "/S /currentuser /DATADIR=`"$target`" /D=$program" $true
+  } catch {
+    Write-Host 'The production installer refused the chosen empty destination. Inspecting the same synthetic profile.'
+    if (Test-Path $program) {
+      Compare-Object $originalProgramEntries (ProgramEntries $program) | Select-Object -First 25 | Format-Table | Out-Host
+      $emptyInventory=Join-Path $root 'candidate-empty-inventory.txt'
+      [IO.File]::WriteAllText($emptyInventory,'')
+      $uninstallName=@(Get-ChildItem $program -File -Filter '*uninstall*.exe')[0].Name
+      & powershell -NoProfile -ExecutionPolicy Bypass -File packages/desktop/build/windows-legacy-program.ps1 -ProgramDirectory $program -Inventory $emptyInventory -Uninstaller $uninstallName -Version '0.2.18'
+      Write-Host "Exact official v0.2.18 legacy inventory recognition exit: $LASTEXITCODE"
+    }
+    & powershell -NoProfile -ExecutionPolicy Bypass -File packages/desktop/build/windows-data/Setup.ps1 -Action Check -ProgramDirectory $program -Destination $target
+    $checkCode=$LASTEXITCODE
+    Write-Host "Read-only data migration validation exit: $checkCode"
+    if ($checkCode -eq 0 -and !(Test-Path $pointer)) {
+      & powershell -NoProfile -ExecutionPolicy Bypass -File packages/desktop/build/windows-data/Setup.ps1 -Action Apply -ProgramDirectory $program -Destination (Join-Path $other 'Diagnostic-only transfer')
+      Write-Host "Diagnostic-only data transfer exit: $LASTEXITCODE"
+    }
+    throw
+  }
   Check ([IO.File]::ReadAllText($pointer).Trim() -eq $target) 'verified data location published'
   $copyData = Join-Path $target 'data'
   $copyProfile = Join-Path $target 'desktop'
