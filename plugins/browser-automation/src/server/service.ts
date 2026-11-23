@@ -361,6 +361,18 @@ export class BuiltinBrowser {
     return this.builtinRuntime(actor).tabs.list();
   }
 
+  openManagedTab(actor: Actor, sessionId: string, url?: string): Promise<BuiltinBrowserTab> {
+    return this.builtinRuntime(actor).openTab({
+      sessionId,
+      ...(url === undefined ? {} : { url }),
+      activate: true,
+    });
+  }
+
+  activateManagedTab(actor: Actor, id: number, sessionId: string): Promise<BuiltinBrowserTab> {
+    return this.builtinRuntime(actor).activate(String(id), sessionId);
+  }
+
   closeManagedTab(actor: Actor, tabId: number, sessionId: string): Promise<void> {
     return this.builtinRuntime(actor).close(String(tabId), sessionId);
   }
