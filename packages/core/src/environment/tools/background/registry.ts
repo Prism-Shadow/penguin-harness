@@ -109,6 +109,13 @@ export class BackgroundRegistry<T extends BackgroundTask> {
     this.ensureActive();
     let id = preferredSuffix ? `${this.idPrefix}-${preferredSuffix}` : this.randomId();
     while (this.tasks.has(id) || reserved?.(id)) id = this.randomId();
+    return this.registerAs(task, id);
+  }
+
+  /** Register an already-identified task without allocating a second identity. */
+  registerAs(task: T, id: string): string {
+    this.ensureActive();
+    if (this.tasks.has(id)) throw new Error("Task is already registered: " + id);
     task.lastUsed = Date.now();
     this.tasks.set(id, task);
     this.changeListener?.();

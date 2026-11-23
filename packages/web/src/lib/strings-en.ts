@@ -583,6 +583,10 @@ export const en: Strings = {
     toolUnavailable: "This Session workbench is unavailable.",
     chooseSession: "Choose a Session",
     searchSessions: "Search all Sessions",
+    searchActiveSessions: "Search Sessions with open terminals",
+    noOpenTerminals: "No open terminals",
+    startSessionTerminal:
+      "To start a terminal, open a conversation and choose Terminal from its shortcuts.",
     emptySessions: "No matching Sessions.",
     openTerminals: (count: number) => `${count} open ${count === 1 ? "terminal" : "terminals"}`,
     openBrowserPages: (count: number) => `${count} open ${count === 1 ? "page" : "pages"}`,
@@ -1211,7 +1215,7 @@ export const en: Strings = {
       `The workbench was imported, but it failed to load: ${error}`,
     importOverwriteAction: "Overwrite",
     /** The row's More menu: downloads the workbench's source as a zip. */
-    exportWorkbench: "Export",
+    exportWorkbench: "Download ZIP",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "Open",
     /** The row's "⋯" button, which holds its other actions. */
@@ -4161,7 +4165,7 @@ export const en: Strings = {
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "New chat in this workspace",
     start: {
-      tagline: "Create your first Agent OS",
+      tagline: "Create your first self-evolving agent OS.",
       shuffle: "Shuffle suggestions",
       moreExamples: "More examples",
       examplesTitle: "Examples and shortcuts",

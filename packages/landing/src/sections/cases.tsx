@@ -4,6 +4,7 @@
  * (what it shows is the video's accessible name), captioned with what five sample reviews cost in
  * model calls.
  */
+import { AppGenerationDiagram } from "../components/application-diagrams";
 import { S } from "../lib/strings";
 import { useSiteLocale } from "@prismshadow/penguin-ui/site";
 import type { SiteLocale as Locale } from "@prismshadow/penguin-ui/site";
@@ -26,6 +27,7 @@ export function Cases() {
 
   return (
     <Section id="cases" title={c.title} subtitle={[c.a2app, c.subtitle]}>
+      <AppGenerationDiagram />
       <figure className="mx-auto max-w-5xl">
         <div className="mx-auto mb-5 w-full max-w-4xl rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-left dark:border-gray-800 dark:bg-gray-900">
           <p className="text-sm leading-6 whitespace-pre-wrap text-gray-800 dark:text-gray-200">

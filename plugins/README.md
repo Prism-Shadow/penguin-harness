@@ -9,11 +9,12 @@ Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugin/
 | Category | Plugins |
 | --- | --- |
 | Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
-| Office Productivity | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `storage`, `use-bento-slides`, `humanizer`, `goal`, `plan`, `continual-learning`, `trace-lookup`, `agent-company`, `penguin-support`, `multimodal-tools` |
-| Utilities | `first-workbench-guide`, `fridge-keeper`, `action-minutes`, `reading-desk` |
-| Entertainment | `tabletop-desk`, `party-charades`, `daily-draw` |
-| Software Development | `software-development`, `use-claude-code` |
+| Office Productivity | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `storage`, `use-bento-slides`, `goal`, `plan`, `trace-lookup`, `agent-company`, `penguin-support`, `multimodal-tools` |
+| Utilities | `first-workbench-guide` |
+| Software Development | `software-development` |
 | AI App Development | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
+
+The host pins the A2UI, External Plugin Porting and Firecrawl packages from [PenguinHarness Apps](https://github.com/Prism-Shadow/penguin-harness-apps). Their versioned releases carry the same Skill identifiers as the bundled library.
 
 `multimodal-tools` is library content and a server module at once: its Skill teaches an Agent `penguin tools …`, and its server module serves those commands, declares the Project's tool-model bindings and calls the bound models through the platform's `ProjectModelRequests`; installing it on an Agent brings the module along (PRFC-0031).
 

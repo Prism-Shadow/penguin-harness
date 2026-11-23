@@ -664,6 +664,9 @@ export const zh = {
     toolUnavailable: "此会话工作台暂不可用。",
     chooseSession: "选择会话",
     searchSessions: "搜索全部会话",
+    searchActiveSessions: "搜索有运行中终端的会话",
+    noOpenTerminals: "没有运行中的终端",
+    startSessionTerminal: "要新建终端，请打开一个会话，从快捷方式中选择「终端」。",
     emptySessions: "未找到匹配的会话。",
     openTerminals: (count: number) => `${count} 个已打开的终端`,
     openBrowserPages: (count: number) => `${count} 个已打开的页面`,
@@ -1311,7 +1314,7 @@ export const zh = {
     importLoadFailedToast: (error: string): string => `工作台已导入，但加载失败：${error}`,
     importOverwriteAction: "覆盖导入",
     /** The row's More menu: downloads the workbench's source as a zip. */
-    exportWorkbench: "打包导出",
+    exportWorkbench: "下载到本地（ZIP）",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "打开",
     /** The row's "⋯" button, which holds its other actions. */
@@ -4357,7 +4360,7 @@ export const zh = {
     newSessionInWorkspace: "在此工作区新建对话",
     /** The start page's dashboard (features/chat/start-dashboard.tsx): three counts beside the brand, and the examples block under the composer. */
     start: {
-      tagline: "创建你的第一个 Agent OS",
+      tagline: "创建你的第一个自进化 Agent OS",
       shuffle: "换一组示例",
       moreExamples: "更多示例",
       examplesTitle: "示例与快捷指令",

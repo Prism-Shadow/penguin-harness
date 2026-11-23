@@ -52,17 +52,16 @@ export const zh = {
   hero: {
     /** Two clauses keep the emphasized phrases and punctuation in each locale's reading order. */
     positioning: {
-      growthLead: "让软件",
-      growth: "持续成长",
-      growthEnd: "，",
+      growthLead: "从",
+      growth: "许愿式编程",
       separator: "",
-      reachLead: "让进化",
-      reach: "触手可及",
-      reachEnd: "",
+      reachLead: "到",
+      reach: "许愿式调优",
     },
-    /** The grey line under the slogan. */
-    subtitle: "开箱即用的 Agent 自进化框架",
+    subtitle: "企业级 AI 应用的统一自进化底座",
     downloadCta: "下载桌面版",
+    productHuntBadge: "PenguinHarness Product Hunt 徽章",
+    watchaBadge: "PenguinHarness 观猹徽章",
     cliInstall: "命令行安装",
     stats: [
       { value: "跨平台部署", label: "Linux、Windows、macOS" },
@@ -185,6 +184,10 @@ export const zh = {
 
   /** The self-evolution loop and its three recorded numbers (sections/self-improve.tsx). */
   selfImprove: {
+    toolkit:
+      "RSI 工具包改的是 Agent 的 Harness，也就是它的提示词和 Skill，模型保持不动，每一处改动都在 Benchmark 上度量效果。",
+    evaluate: "评估",
+    optimize: "优化",
     title: "多智能体协同的自进化框架",
     subtitle:
       "默认由 General Agent 运行优化 Skill，每一轮只改被测 Agent 的一处；Evaluator 子 Agent 运行评估 Skill，在 Benchmark 的每个题目上给修改后的 Agent 打分。",
@@ -261,10 +264,12 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   cases: {
+    os: "创建你的第一个自进化 Agent OS",
+    apps: ["文档问答", "投资分析", "法务助手"],
     title: "A2APP：一句话 + 0.6 元构建法务应用",
     /** The subtitle's first line, saying what A2APP is; `subtitle` is its second. */
     a2app:
-      "A2APP 是智能体自己的小应用，就是聊天旁边的一个标签页，会调用智能体完成工作。在聊天里说一句话就能修改它，改完立即重新加载，旧版本也会保留。",
+      "每个 Agent 都能有自己的工作台。Agent 按你的要求把它搭出来，之后也照样开口修改。工作台显示在对话旁边，每次修改都会热更新到已打开的标签页。",
     subtitle:
       "用一句话描述需求，PenguinHarness 就能构建法务智能体应用：上传合同、识别风险并生成审阅报告。",
     prompt:

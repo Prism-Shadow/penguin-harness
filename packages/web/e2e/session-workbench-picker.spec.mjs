@@ -34,7 +34,7 @@ test("an App Center workbench lists archived Sessions and closes only their sele
   await page.setViewportSize({ width: 375, height: 750 });
   await page.goto("/apps");
   await terminalTile.click();
-  await expect(page.getByText("No matching Sessions.", { exact: true })).toBeVisible();
+  await expect(page.getByText("No open terminals", { exact: true })).toBeVisible();
   expect(await counts()).toEqual({});
   await page.goBack();
 
@@ -97,12 +97,12 @@ test("an App Center workbench lists archived Sessions and closes only their sele
     .toEqual({ [first.sessionId]: 2, [second.sessionId]: 1, [child.sessionId]: 1 });
   await page.goto("/apps");
   await terminalTile.click();
-  const search = page.getByRole("textbox", { name: "Search all Sessions" });
+  const search = page.getByRole("searchbox", { name: "Search Sessions with open terminals" });
   await expect(search).toBeVisible();
   const old = page.getByRole("button", { name: /Prior terminal/ });
   await expect(old).toContainText("Archived");
   await expect(old).toContainText("2 open terminals");
-  await expect(page.getByRole("checkbox", { name: /Select Session No terminal/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /No terminal/ })).toHaveCount(0);
   const childRow = page.getByRole("button").filter({ hasText: child.sessionId });
   await expect(childRow).toContainText("Subagent");
   await expect(childRow).toContainText("1 open terminal");
@@ -180,7 +180,8 @@ test("an App Center workbench lists archived Sessions and closes only their sele
   await expect(page.getByRole("dialog")).toContainText(child.title || child.sessionId);
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
   await expect.poll(counts).toEqual({ [second.sessionId]: 1 });
-  await expect(old).toContainText("0 open terminals");
+  await expect(old).toHaveCount(0);
+  await expect(childRow).toHaveCount(0);
   await search.fill("Working terminal");
   await expect(old).toHaveCount(0);
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -220,18 +221,12 @@ test("an App Center workbench lists archived Sessions and closes only their sele
     await tab.getByTestId("dock-tab-close").click();
     await expect(composer).toHaveValue("Keep my draft while browsing");
   }
-  // Opening an empty group lists its shells. Only the explicit New action starts one.
-  await page.goto("/apps");
-  await terminalTile.click();
-  await page
-    .getByRole("region", { name: "Terminal", exact: true })
-    .getByRole("button", { name: /No terminal/ })
-    .click();
+  // Only explicitly opening this Session's terminal starts its first shell.
+  await page.goto("/chat/" + none.sessionId);
+  await page.getByRole("button", { name: "Shortcuts", exact: true }).click();
+  await page.getByTestId("dock-launcher-open-terminal").click();
   const group = page.locator('[data-testid="terminal-panel"]:visible');
-  await expect(group.getByTestId("terminal-new-tab")).toBeEnabled();
-  await expect(group.getByTestId("terminal-tab")).toHaveCount(0);
-  expect(await counts()).toEqual({ [second.sessionId]: 1 });
-  await group.getByTestId("terminal-new-tab").click();
+  await expect(group.getByTestId("terminal-tab")).toHaveCount(1);
   await expect.poll(counts).toEqual({ [second.sessionId]: 1, [none.sessionId]: 1 });
   const shell = await group.getByTestId("terminal-tab").getAttribute("data-tab-id");
   await page

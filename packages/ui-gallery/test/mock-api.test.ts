@@ -28,6 +28,7 @@ import { ApiError, UNMOCKED } from "../src/app/mock/errors";
 import { IDS } from "../src/app/mock/ids";
 import { answerAsResponse } from "../src/app/mock/fetch-shim";
 import { router } from "../src/app/mock/routes";
+import { openMachineEvents, openUserEvents } from "../src/app/mock/sse";
 import { resetStore } from "../src/app/mock/store";
 
 type AnyFn = (...args: unknown[]) => unknown;
@@ -100,6 +101,66 @@ describe("the mocked API", () => {
     }
     expect(gaps, "wrappers with no mock route").toEqual([]);
     expect(crashes, "handlers that threw something other than an ApiError").toEqual([]);
+  });
+
+  it("lists and announces a Session only on the machine that owns its workspace", async () => {
+    const store = resetStore({ lang: "en", signedIn: true, freshProject: true });
+    const remote = store.f.machines.machines.find((m) => !m.local && m.api && m.machineId)!;
+    const machineId = remote.machineId!;
+    const agentId = IDS.agents.general;
+    const workspace = "/home/demo/shared";
+    const req = { agentId, limit: 20, withCounts: true, workspaceGroup: workspace };
+    const localEvents: string[] = [];
+    const remoteEvents: string[] = [];
+    const localSub = openUserEvents({
+      onRecord: () => undefined,
+      onServerEvent: (event) => {
+        if (event.type === "session_created") localEvents.push(event.sessionId);
+      },
+    });
+    const machineSub = openMachineEvents(IDS.project, {
+      onMachineEvent: (owner, event) => {
+        if (event.type === "session_created") remoteEvents.push(owner + "/" + event.sessionId);
+      },
+    });
+    try {
+      const { session: local } = await api.createSession(IDS.project, agentId, { workspace }, null);
+      const list = (owner: string | null) => api.batchSessions(IDS.project, [req], owner);
+      expect((await list(machineId)).results[0]).toMatchObject({
+        sessions: [],
+        workspaceCounts: {},
+      });
+      const { session: other } = await api.createSession(
+        IDS.project,
+        agentId,
+        { workspace },
+        machineId,
+      );
+      expect((await list(null)).results[0]).toMatchObject({
+        sessions: [{ sessionId: local.sessionId }],
+        workspaceCounts: { [workspace]: { active: 1 } },
+      });
+      expect((await list(remote.id)).results[0]).toMatchObject({
+        sessions: [{ sessionId: other.sessionId }],
+        workspaceCounts: { [workspace]: { active: 1 } },
+      });
+      expect(localEvents).toEqual([local.sessionId]);
+      expect(remoteEvents).toEqual([machineId + "/" + other.sessionId]);
+      expect((await api.getSession(other.sessionId)).session.workspace).toBe(workspace);
+      await expect(api.getSession(other.sessionId, null)).rejects.toMatchObject({ status: 404 });
+      const wrongMachine = await answerAsResponse(
+        "GET",
+        "/server/" + machineId + "/api/sessions/" + local.sessionId,
+        undefined,
+      );
+      expect(wrongMachine.status).toBe(404);
+      await expect(api.batchSessions("other-project", [req], machineId)).rejects.toMatchObject({
+        status: 404,
+      });
+    } finally {
+      localSub.close();
+      machineSub.close();
+    }
   });
 
   it("reports the unavailable desktop backend for a managed Session page", async () => {

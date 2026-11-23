@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
  * change without it moving. (The reverse — moving it with no default change — is inert rather
  * than an error: nothing is keyed by version, so there is no table to fall out of sync with.)
  */
-export const KERNEL_VERSION = "2026-11-12";
+export const KERNEL_VERSION = "2026-11-23";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -249,15 +249,17 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   sections, with hand-off files under the Session's scratchpad (`{{SCRATCHPAD_DIR}}`), each
  *   under a new name, written in the same reply when it can, aiming at about three tool rounds
  *   and naming no limit. The runtime tab moved. Never released; only dev builds carry it.
- * - `2026-11-12` (current) — the compaction's texts are configuration: `compaction.reminder`
+ * - `2026-11-12` — the compaction's texts are configuration: `compaction.reminder`
  *   (the line after each tool round) and `compaction.handoff_note` (the note a context opens
  *   with when no summary could be had) joined the section, and the prompt no longer says the
  *   harness lists the tool calls it ran under the summary. The runtime tab moved.
+ * - `2026-11-23` (current) — the subagent tools describe addressing an authorized child
+ *   Session by its full ID or an unambiguous suffix. The tools tab moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
   prompt: "3ab519fe2fb0394ffe061eb239d70dfbd21fa27e413f25cebaf73e9b307d0077",
   runtime: "9ab165938ad24e6f4471495826c0fcf941fbf706fad1d598eefe5deee80f5045",
-  tools: "3ee93edff7292412e9b0bbaff6cc64ee53127299450e6738fbd2e7448e148d5b",
+  tools: "8a5bc6ee7233d992aa09448e71533234b306daa637d2018d9a5785b950d743cc",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
   memory: "a9614cd7bd07f576edbcfc311c32c2fa40a57807a26e069a90c3e526dac272b6",
   vault: "19bd36a6d4ab442b66583c423450602b817990a9a79bafa21c9b6137fb6b47d8",
@@ -300,6 +302,7 @@ export const KERNEL_SUPERSEDED_TAB_HASHES: KernelSupersededTabHashes = {
     "8bbd336ff1f3fc283c4e11e54d43dd2bfe4ba2458577bf9eb3b6e3d7be4f3cde", // before the kill tools folded into the input tools
     "c24bcf47b1377e9da4dcfb69a1f7240dcdbfff2d420df5db0a5eaec2b7d4087d", // before the image tools folded into read_file
     "a5e067fe58899be651c3c0541f587b2d5999030dc3008a39737a8fe21f5f7a23", // read_file's description named `prompt`, before the argument went text-only
+    "3ee93edff7292412e9b0bbaff6cc64ee53127299450e6738fbd2e7448e148d5b", // before using the child Session ID as its address
   ],
   memory: [
     "c28acdda755552967cd0c99ba4ced407eddfa843b3dce228a965da4674676dc7", // before #397 named when a fact is worth saving

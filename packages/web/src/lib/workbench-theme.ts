@@ -337,7 +337,8 @@ export function applyWorkbenchTheme(doc: Document, theme: WorkbenchTheme): void 
   // First in the head, so the page's own rules come after it and win.
   if (
     head.querySelector(`link[${PENGUIN_UI_ATTR}]`) === null &&
-    head.querySelector(`link[href="${WORKBENCH_THEME_HREF}"]`) === null
+    head.querySelector(`link[href="${WORKBENCH_THEME_HREF}"]`) === null &&
+    head.querySelector("link[data-workbench-base]") === null
   ) {
     const link = doc.createElement("link");
     link.rel = "stylesheet";

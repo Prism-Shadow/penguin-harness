@@ -3,12 +3,17 @@
  * in each. Reopening the reader at a different width restores the paragraph and its notes.
  */
 import { readFile, readdir } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
 import { zip } from "./workbench-zip.mjs";
 
 const base = process.env.BASE_URL;
-const source = new URL("../../../plugins/reading-desk/workbenches/reading/", import.meta.url);
+const manifest = createRequire(import.meta.url).resolve(
+  "@penguinharness/reading-desk/package.json",
+);
+const source = new URL("workbenches/reading/", pathToFileURL(manifest));
 
 test("finds an imported book and resumes the annotated paragraph across screens", async ({
   page,

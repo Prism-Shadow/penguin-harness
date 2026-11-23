@@ -597,7 +597,7 @@ async function drive(
 }
 
 function extractSubagentId(text: string): string {
-  const m = text.match(/subagent_id (subagent-[0-9a-f]+)/);
+  const m = text.match(/subagent_id ([0-9a-f]{8})/);
   expect(m, `expected a subagent_id in: ${JSON.stringify(text)}`).toBeTruthy();
   return m![1]!;
 }

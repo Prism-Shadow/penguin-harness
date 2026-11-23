@@ -309,18 +309,28 @@ test("a late Agent list of the Project just left never shows under the new one",
     localStorage.setItem("penguin.lastProjectId", projectId);
   }, a);
 
-  // A's first Agent list is held back until after the switch to B has been answered: the call
-  // frame waits here for three seconds, then goes to the server like any other, and the answer
-  // awaited below is that call's own frame coming back.
-  frames.hold(`/api/projects/${a}/agents`, 3_000);
-  const lateAnswer = frames.nextAnswer((call) => call.path === `/api/projects/${a}/agents`);
+  // Release precisely the first A list after B renders, even on a slow runner.
+  const agentsPath = `/api/projects/${a}/agents`;
+  const firstCall = frames.nextCall((call) => call.path === agentsPath);
+  const gate = Promise.withResolvers();
+  frames.slowDown(async (call) => {
+    if (call.path === agentsPath) {
+      frames.slowDown(null);
+      await gate.promise;
+    }
+    return 0;
+  });
 
-  await page.goto("/agents");
-  await switchProject(page, "Alpha Project", "Beta Project");
   const main = page.getByRole("main");
-  await expect(main.getByText("Beta Agent", { exact: true })).toBeVisible();
-
-  // A's answer lands now, after B's: it must change nothing on screen.
+  await page.goto("/agents");
+  const held = await firstCall;
+  const lateAnswer = frames.nextAnswer((call) => call.id === held.id);
+  try {
+    await switchProject(page, "Alpha Project", "Beta Project");
+    await expect(main.getByText("Beta Agent", { exact: true })).toBeVisible();
+  } finally {
+    gate.resolve();
+  }
   await lateAnswer;
   await page.waitForTimeout(1_500);
   await expect(main.getByText("Beta Agent", { exact: true })).toBeVisible();

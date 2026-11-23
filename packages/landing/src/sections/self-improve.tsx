@@ -13,6 +13,7 @@
  * panel, the recorded demo of a decision agent's round (what it shows is the video's accessible
  * name), captioned with what its test runs cost.
  */
+import { AgentEvaluationDiagram } from "../components/application-diagrams";
 import { useEffect, useRef } from "react";
 import { S } from "../lib/strings";
 import { useVisibleActivity } from "../lib/visible-activity";
@@ -558,6 +559,7 @@ export function SelfImprove() {
   const demo = DEMO[locale];
   return (
     <Section id="self-evolution" title={c.title} subtitle={c.subtitle}>
+      <AgentEvaluationDiagram />
       <div className="rounded-2xl bg-gray-50 p-5 sm:p-8 dark:bg-gray-900">
         <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-10">
           <MobileEvolutionFlow />

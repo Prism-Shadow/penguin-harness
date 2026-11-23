@@ -198,7 +198,7 @@ export function createSubagentTool(
           status: "completed",
           note:
             `[subagent running in background with subagent_id ${id}; its completion will arrive ` +
-            `as a user message — no need to poll. Use input_subagent to interact (abort: true stops its current run)]`,
+            `as a user message — no need to poll. Use input_subagent to interact (abort: true stops its current run). Session ID: ${session.sessionId}]`,
         };
       }
 
@@ -246,20 +246,23 @@ export function createSubagentTool(
                 `do not poll it or send it input — its completion will arrive on its own as a ` +
                 `[background_task_done] user message. Move on to other work, or end the turn if ` +
                 `nothing else is pending; input_subagent with abort: true still stops its current ` +
-                `run if the user asks]`,
+                `run if the user asks. Session ID: ${session.sessionId}]`,
             };
           }
           return {
             status: "completed",
             note:
               `[subagent running with subagent_id ${id}; use input_subagent to poll for progress ` +
-              `or send a follow-up prompt]` +
+              `or send a follow-up prompt. Session ID: ${session.sessionId}]` +
               approvalHint(session),
           };
         }
         // Finished within the window: report the terminal state; releasing the child session is
-        // handled uniformly in `finally` (never registered, so no subagent_id).
-        return resultForSubagentExit(session.exit);
+        // handled in `finally`; retain its identity for follow-ups.
+        const completed = resultForSubagentExit(session.exit);
+        const address = manager.remember(session);
+        const identity = `[subagent idle with subagent_id ${address}; Session ID: ${session.sessionId}]`;
+        return { ...completed, note: completed.note ? completed.note + " " + identity : identity };
       } finally {
         signal?.removeEventListener("abort", onAbort);
         if (!registered) session.kill();

@@ -569,12 +569,6 @@ importers:
       '@modelcontextprotocol/client':
         specifier: ^2.3.1
         version: 2.3.1
-      '@penguinharness/a2ui':
-        specifier: workspace:*
-        version: link:../../plugins/a2ui
-      '@penguinharness/action-minutes':
-        specifier: workspace:*
-        version: link:../../plugins/action-minutes
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
@@ -587,69 +581,39 @@ importers:
       '@penguinharness/browser-automation':
         specifier: workspace:*
         version: link:../../plugins/browser-automation
-      '@penguinharness/continual-learning':
-        specifier: workspace:*
-        version: link:../../plugins/continual-learning
-      '@penguinharness/daily-draw':
-        specifier: workspace:*
-        version: link:../../plugins/daily-draw
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
       '@penguinharness/first-workbench-guide':
         specifier: workspace:*
         version: link:../../plugins/first-workbench-guide
-      '@penguinharness/fridge-keeper':
-        specifier: workspace:*
-        version: link:../../plugins/fridge-keeper
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
-      '@penguinharness/humanizer':
-        specifier: workspace:*
-        version: link:../../plugins/humanizer
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
       '@penguinharness/multimodal-tools':
         specifier: workspace:*
         version: link:../../plugins/multimodal-tools
-      '@penguinharness/party-charades':
-        specifier: workspace:*
-        version: link:../../plugins/party-charades
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
       '@penguinharness/plan':
         specifier: workspace:*
         version: link:../../plugins/plan
-      '@penguinharness/reading-desk':
-        specifier: workspace:*
-        version: link:../../plugins/reading-desk
-      '@penguinharness/skill-porting':
-        specifier: workspace:*
-        version: link:../../plugins/skill-porting
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
       '@penguinharness/storage':
         specifier: workspace:*
         version: link:../../plugins/storage
-      '@penguinharness/tabletop-desk':
-        specifier: workspace:*
-        version: link:../../plugins/tabletop-desk
       '@penguinharness/trace-lookup':
         specifier: workspace:*
         version: link:../../plugins/trace-lookup
       '@penguinharness/use-bento-slides':
         specifier: workspace:*
         version: link:../../plugins/use-bento-slides
-      '@penguinharness/use-claude-code':
-        specifier: workspace:*
-        version: link:../../plugins/use-claude-code
-      '@penguinharness/use-firecrawl':
-        specifier: workspace:*
-        version: link:../../plugins/use-firecrawl
       '@prismshadow/a2ui':
         specifier: workspace:*
         version: link:../a2ui
@@ -678,6 +642,9 @@ importers:
         specifier: ^2.5.0
         version: 2.9.0
     devDependencies:
+      '@penguinharness/a2ui':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
       '@penguinharness/ace-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz
@@ -699,6 +666,9 @@ importers:
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-rrsi-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-rrsi-rsi-toolkit-0.2.19-rc.1.tgz
+      '@penguinharness/skill-porting':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz
       '@penguinharness/skilladam-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-skilladam-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-skilladam-rsi-toolkit-0.2.19-rc.1.tgz
@@ -708,6 +678,9 @@ importers:
       '@penguinharness/trace-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-trace-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-trace-rsi-toolkit-0.2.19-rc.1.tgz
+      '@penguinharness/use-firecrawl':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
@@ -784,12 +757,6 @@ importers:
 
   packages/desktop:
     dependencies:
-      '@penguinharness/a2ui':
-        specifier: workspace:*
-        version: link:../../plugins/a2ui
-      '@penguinharness/action-minutes':
-        specifier: workspace:*
-        version: link:../../plugins/action-minutes
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
@@ -802,70 +769,43 @@ importers:
       '@penguinharness/browser-automation':
         specifier: workspace:*
         version: link:../../plugins/browser-automation
-      '@penguinharness/continual-learning':
-        specifier: workspace:*
-        version: link:../../plugins/continual-learning
-      '@penguinharness/daily-draw':
-        specifier: workspace:*
-        version: link:../../plugins/daily-draw
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
       '@penguinharness/first-workbench-guide':
         specifier: workspace:*
         version: link:../../plugins/first-workbench-guide
-      '@penguinharness/fridge-keeper':
-        specifier: workspace:*
-        version: link:../../plugins/fridge-keeper
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
-      '@penguinharness/humanizer':
-        specifier: workspace:*
-        version: link:../../plugins/humanizer
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
       '@penguinharness/multimodal-tools':
         specifier: workspace:*
         version: link:../../plugins/multimodal-tools
-      '@penguinharness/party-charades':
-        specifier: workspace:*
-        version: link:../../plugins/party-charades
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
       '@penguinharness/plan':
         specifier: workspace:*
         version: link:../../plugins/plan
-      '@penguinharness/reading-desk':
-        specifier: workspace:*
-        version: link:../../plugins/reading-desk
-      '@penguinharness/skill-porting':
-        specifier: workspace:*
-        version: link:../../plugins/skill-porting
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
       '@penguinharness/storage':
         specifier: workspace:*
         version: link:../../plugins/storage
-      '@penguinharness/tabletop-desk':
-        specifier: workspace:*
-        version: link:../../plugins/tabletop-desk
       '@penguinharness/trace-lookup':
         specifier: workspace:*
         version: link:../../plugins/trace-lookup
       '@penguinharness/use-bento-slides':
         specifier: workspace:*
         version: link:../../plugins/use-bento-slides
-      '@penguinharness/use-claude-code':
-        specifier: workspace:*
-        version: link:../../plugins/use-claude-code
-      '@penguinharness/use-firecrawl':
-        specifier: workspace:*
-        version: link:../../plugins/use-firecrawl
     devDependencies:
+      '@penguinharness/a2ui':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
       '@penguinharness/ace-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz
@@ -887,6 +827,9 @@ importers:
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-rrsi-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-rrsi-rsi-toolkit-0.2.19-rc.1.tgz
+      '@penguinharness/skill-porting':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz
       '@penguinharness/skilladam-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-skilladam-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-skilladam-rsi-toolkit-0.2.19-rc.1.tgz
@@ -896,6 +839,9 @@ importers:
       '@penguinharness/trace-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-trace-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-trace-rsi-toolkit-0.2.19-rc.1.tgz
+      '@penguinharness/use-firecrawl':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
       '@prismshadow/penguin-cli':
         specifier: workspace:*
         version: file:packages/cli(supports-color@10.2.2)
@@ -1011,14 +957,11 @@ importers:
         version: 4.0.1(supports-color@10.2.2)
     devDependencies:
       '@penguinharness/a2ui':
-        specifier: workspace:*
-        version: link:../../plugins/a2ui
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
       '@penguinharness/ace-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz
-      '@penguinharness/action-minutes':
-        specifier: workspace:*
-        version: link:../../plugins/action-minutes
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
@@ -1043,12 +986,6 @@ importers:
       '@penguinharness/computer-use':
         specifier: workspace:*
         version: link:../../plugins/computer-use
-      '@penguinharness/continual-learning':
-        specifier: workspace:*
-        version: link:../../plugins/continual-learning
-      '@penguinharness/daily-draw':
-        specifier: workspace:*
-        version: link:../../plugins/daily-draw
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
@@ -1058,15 +995,9 @@ importers:
       '@penguinharness/first-workbench-guide':
         specifier: workspace:*
         version: link:../../plugins/first-workbench-guide
-      '@penguinharness/fridge-keeper':
-        specifier: workspace:*
-        version: link:../../plugins/fridge-keeper
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
-      '@penguinharness/humanizer':
-        specifier: workspace:*
-        version: link:../../plugins/humanizer
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
@@ -1079,9 +1010,6 @@ importers:
       '@penguinharness/opro-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-opro-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-opro-rsi-toolkit-0.2.19-rc.1.tgz
-      '@penguinharness/party-charades':
-        specifier: workspace:*
-        version: link:../../plugins/party-charades
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
@@ -1091,9 +1019,6 @@ importers:
       '@penguinharness/plan':
         specifier: workspace:*
         version: link:../../plugins/plan
-      '@penguinharness/reading-desk':
-        specifier: workspace:*
-        version: link:../../plugins/reading-desk
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-rrsi-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-rrsi-rsi-toolkit-0.2.19-rc.1.tgz
@@ -1110,8 +1035,8 @@ importers:
         specifier: workspace:*
         version: link:../../plugins/sandbox-wsl
       '@penguinharness/skill-porting':
-        specifier: workspace:*
-        version: link:../../plugins/skill-porting
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz
       '@penguinharness/skilladam-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-skilladam-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-skilladam-rsi-toolkit-0.2.19-rc.1.tgz
@@ -1124,9 +1049,6 @@ importers:
       '@penguinharness/storage':
         specifier: workspace:*
         version: link:../../plugins/storage
-      '@penguinharness/tabletop-desk':
-        specifier: workspace:*
-        version: link:../../plugins/tabletop-desk
       '@penguinharness/trace-lookup':
         specifier: workspace:*
         version: link:../../plugins/trace-lookup
@@ -1136,12 +1058,9 @@ importers:
       '@penguinharness/use-bento-slides':
         specifier: workspace:*
         version: link:../../plugins/use-bento-slides
-      '@penguinharness/use-claude-code':
-        specifier: workspace:*
-        version: link:../../plugins/use-claude-code
       '@penguinharness/use-firecrawl':
-        specifier: workspace:*
-        version: link:../../plugins/use-firecrawl
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
@@ -1190,12 +1109,6 @@ importers:
       '@larksuiteoapi/node-sdk':
         specifier: ^1.73.0
         version: 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
-      '@penguinharness/a2ui':
-        specifier: workspace:*
-        version: link:../../plugins/a2ui
-      '@penguinharness/action-minutes':
-        specifier: workspace:*
-        version: link:../../plugins/action-minutes
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
@@ -1208,69 +1121,39 @@ importers:
       '@penguinharness/browser-automation':
         specifier: workspace:*
         version: link:../../plugins/browser-automation
-      '@penguinharness/continual-learning':
-        specifier: workspace:*
-        version: link:../../plugins/continual-learning
-      '@penguinharness/daily-draw':
-        specifier: workspace:*
-        version: link:../../plugins/daily-draw
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
       '@penguinharness/first-workbench-guide':
         specifier: workspace:*
         version: link:../../plugins/first-workbench-guide
-      '@penguinharness/fridge-keeper':
-        specifier: workspace:*
-        version: link:../../plugins/fridge-keeper
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
-      '@penguinharness/humanizer':
-        specifier: workspace:*
-        version: link:../../plugins/humanizer
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
       '@penguinharness/multimodal-tools':
         specifier: workspace:*
         version: link:../../plugins/multimodal-tools
-      '@penguinharness/party-charades':
-        specifier: workspace:*
-        version: link:../../plugins/party-charades
       '@penguinharness/penguin-support':
         specifier: workspace:*
         version: link:../../plugins/penguin-support
       '@penguinharness/plan':
         specifier: workspace:*
         version: link:../../plugins/plan
-      '@penguinharness/reading-desk':
-        specifier: workspace:*
-        version: link:../../plugins/reading-desk
-      '@penguinharness/skill-porting':
-        specifier: workspace:*
-        version: link:../../plugins/skill-porting
       '@penguinharness/software-development':
         specifier: workspace:*
         version: link:../../plugins/software-development
       '@penguinharness/storage':
         specifier: workspace:*
         version: link:../../plugins/storage
-      '@penguinharness/tabletop-desk':
-        specifier: workspace:*
-        version: link:../../plugins/tabletop-desk
       '@penguinharness/trace-lookup':
         specifier: workspace:*
         version: link:../../plugins/trace-lookup
       '@penguinharness/use-bento-slides':
         specifier: workspace:*
         version: link:../../plugins/use-bento-slides
-      '@penguinharness/use-claude-code':
-        specifier: workspace:*
-        version: link:../../plugins/use-claude-code
-      '@penguinharness/use-firecrawl':
-        specifier: workspace:*
-        version: link:../../plugins/use-firecrawl
       '@prismshadow/a2ui':
         specifier: workspace:*
         version: link:../a2ui
@@ -1347,6 +1230,9 @@ importers:
         specifier: ^2.5.0
         version: 2.9.0
     devDependencies:
+      '@penguinharness/a2ui':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
       '@penguinharness/ace-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz
@@ -1368,6 +1254,9 @@ importers:
       '@penguinharness/rrsi-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-rrsi-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-rrsi-rsi-toolkit-0.2.19-rc.1.tgz
+      '@penguinharness/skill-porting':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz
       '@penguinharness/skilladam-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-skilladam-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-skilladam-rsi-toolkit-0.2.19-rc.1.tgz
@@ -1377,6 +1266,9 @@ importers:
       '@penguinharness/trace-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-trace-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-trace-rsi-toolkit-0.2.19-rc.1.tgz
+      '@penguinharness/use-firecrawl':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
       '@prismshadow/penguin-hmr':
         specifier: workspace:*
         version: file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.6.7)
@@ -1648,6 +1540,9 @@ importers:
         specifier: ^19.1.0
         version: 19.2.7(react@19.2.7)
     devDependencies:
+      '@penguinharness/a2ui':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz
       '@penguinharness/ace-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz
@@ -1660,6 +1555,9 @@ importers:
       '@penguinharness/default-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz
+      '@penguinharness/humanizer':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/humanizer-0.2.19-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/humanizer-0.2.19-rc.1.tgz
       '@penguinharness/openskill-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-openskill-rsi-toolkit-0.2.22-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-openskill-rsi-toolkit-0.2.22-rc.1.tgz
@@ -1681,6 +1579,12 @@ importers:
       '@penguinharness/trace-rsi-toolkit':
         specifier: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-trace-rsi-toolkit-0.2.19-rc.1.tgz
         version: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-trace-rsi-toolkit-0.2.19-rc.1.tgz
+      '@penguinharness/use-claude-code':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-claude-code-0.2.19-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-claude-code-0.2.19-rc.1.tgz
+      '@penguinharness/use-firecrawl':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
@@ -1784,6 +1688,9 @@ importers:
         specifier: ^5.0.15
         version: 5.0.15(@types/react@19.2.17)(react@19.2.7)
     devDependencies:
+      '@penguinharness/reading-desk':
+        specifier: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/reading-desk-0.2.20-rc.1.tgz
+        version: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/reading-desk-0.2.20-rc.1.tgz
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
@@ -1841,18 +1748,6 @@ importers:
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
-
-  plugins/a2ui:
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(ws@8.21.0)
-
-  plugins/action-minutes:
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(ws@8.21.0)
 
   plugins/agent-company:
     devDependencies:
@@ -1986,18 +1881,6 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  plugins/continual-learning:
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(ws@8.21.0)
-
-  plugins/daily-draw:
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(ws@8.21.0)
-
   plugins/data-analysis:
     devDependencies:
       '@prismshadow/penguin-core':
@@ -2028,29 +1911,11 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  plugins/fridge-keeper:
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(ws@8.21.0)
-
   plugins/goal:
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
-
-  plugins/humanizer:
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(ws@8.21.0)
-      '@prismshadow/skills':
-        specifier: workspace:*
-        version: link:../../packages/skills
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   plugins/model-development:
     devDependencies:
@@ -2088,12 +1953,6 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  plugins/party-charades:
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(ws@8.21.0)
-
   plugins/penguin-support:
     devDependencies:
       '@prismshadow/penguin-core':
@@ -2123,15 +1982,6 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(ws@8.21.0)
-
-  plugins/reading-desk:
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(ws@8.21.0)
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   plugins/sandbox-bwrap:
     devDependencies:
@@ -2193,18 +2043,6 @@ importers:
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
-
-  plugins/skill-porting:
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(ws@8.21.0)
-      '@prismshadow/skills':
-        specifier: workspace:*
-        version: link:../../packages/skills
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -2284,12 +2122,6 @@ importers:
         specifier: ^5.0.15
         version: 5.0.15(@types/react@19.2.17)(react@19.2.7)
 
-  plugins/tabletop-desk:
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(ws@8.21.0)
-
   plugins/trace-lookup:
     devDependencies:
       '@prismshadow/penguin-core':
@@ -2303,30 +2135,6 @@ importers:
         version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
 
   plugins/use-bento-slides:
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(ws@8.21.0)
-      '@prismshadow/skills':
-        specifier: workspace:*
-        version: link:../../packages/skills
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
-
-  plugins/use-claude-code:
-    devDependencies:
-      '@prismshadow/penguin-core':
-        specifier: workspace:*
-        version: file:packages/core(ws@8.21.0)
-      '@prismshadow/skills':
-        specifier: workspace:*
-        version: link:../../packages/skills
-      vitest:
-        specifier: ^4.1.12
-        version: 4.1.12(@types/node@24.13.3)(@vitest/coverage-v8@4.1.12)(jsdom@30.1.2(@noble/hashes@1.8.0))(vite@7.3.7(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))
-
-  plugins/use-firecrawl:
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
@@ -3276,15 +3084,13 @@ packages:
     resolution: {integrity: sha512-ODOov0sGMJMf3jPonOkgGqPknTsu+DdQ7kD++gz8aI+aFMOMHFbWAA2taqXXVTdP+OTOQR/znGvSpmkeI0WTYQ==}
     engines: {node: '>=14.18.0'}
 
-  '@penguinharness/a2ui@file:plugins/a2ui':
-    resolution: {directory: plugins/a2ui, type: directory}
+  '@penguinharness/a2ui@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz':
+    resolution: {integrity: sha512-3IkgCwIXJ5IS6qYbjZehSdQQKi4wFhKPuxhDZnr1ZCoUY7H4YmsHkN3+L832gGeT0Gc7sZ0FZy2CVnPomrmZgA==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz}
+    version: 0.2.19-rc.1
 
   '@penguinharness/ace-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz':
     resolution: {integrity: sha512-DpBCmhf7WMe8nWpY72HSqn0QOzX0GQmz0B68JKkgWi2vAn0YZ3WEYjRvgYESJyw+52c15uLK9n9TKZCDILQ/5A==, tarball: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz}
     version: 0.2.19-rc.1
-
-  '@penguinharness/action-minutes@file:plugins/action-minutes':
-    resolution: {directory: plugins/action-minutes, type: directory}
 
   '@penguinharness/agent-company@file:plugins/agent-company':
     resolution: {directory: plugins/agent-company, type: directory}
@@ -3307,12 +3113,6 @@ packages:
     resolution: {directory: plugins/browser-automation, type: directory}
     engines: {node: '>=24'}
 
-  '@penguinharness/continual-learning@file:plugins/continual-learning':
-    resolution: {directory: plugins/continual-learning, type: directory}
-
-  '@penguinharness/daily-draw@file:plugins/daily-draw':
-    resolution: {directory: plugins/daily-draw, type: directory}
-
   '@penguinharness/data-analysis@file:plugins/data-analysis':
     resolution: {directory: plugins/data-analysis, type: directory}
 
@@ -3323,14 +3123,12 @@ packages:
   '@penguinharness/first-workbench-guide@file:plugins/first-workbench-guide':
     resolution: {directory: plugins/first-workbench-guide, type: directory}
 
-  '@penguinharness/fridge-keeper@file:plugins/fridge-keeper':
-    resolution: {directory: plugins/fridge-keeper, type: directory}
-
   '@penguinharness/goal@file:plugins/goal':
     resolution: {directory: plugins/goal, type: directory}
 
-  '@penguinharness/humanizer@file:plugins/humanizer':
-    resolution: {directory: plugins/humanizer, type: directory}
+  '@penguinharness/humanizer@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/humanizer-0.2.19-rc.1.tgz':
+    resolution: {integrity: sha512-sY3x2kDWPXyZ2tLaNyQHQUir9f5FQirGswFrG3o/4kepBCL0jPx2UqyPgSeELnysUSRnGmTW1NpF5dZik0e6lg==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/humanizer-0.2.19-rc.1.tgz}
+    version: 0.2.19-rc.1
 
   '@penguinharness/model-development@file:plugins/model-development':
     resolution: {directory: plugins/model-development, type: directory}
@@ -3347,24 +3145,23 @@ packages:
     resolution: {integrity: sha512-6/iivl8G9oQo0tIX4z1ij5ApuabwUyHLxIQz9SSLH6fUkScyWeAv/Iwp06Iq6lGeq2D6hTTTprFden0PqYs7wg==, tarball: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-opro-rsi-toolkit-0.2.19-rc.1.tgz}
     version: 0.2.19-rc.1
 
-  '@penguinharness/party-charades@file:plugins/party-charades':
-    resolution: {directory: plugins/party-charades, type: directory}
-
   '@penguinharness/penguin-support@file:plugins/penguin-support':
     resolution: {directory: plugins/penguin-support, type: directory}
 
   '@penguinharness/plan@file:plugins/plan':
     resolution: {directory: plugins/plan, type: directory}
 
-  '@penguinharness/reading-desk@file:plugins/reading-desk':
-    resolution: {directory: plugins/reading-desk, type: directory}
+  '@penguinharness/reading-desk@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/reading-desk-0.2.20-rc.1.tgz':
+    resolution: {integrity: sha512-T05sqSKexXuzolnNzDd3rcGmC+iSp1Dg8IVzJUa5iyNnRpMh82N8swB9PF2JxCFZuAjqLHJPatDTtLd8aCQWAw==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/reading-desk-0.2.20-rc.1.tgz}
+    version: 0.2.20-rc.1
 
   '@penguinharness/rrsi-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-rrsi-rsi-toolkit-0.2.19-rc.1.tgz':
     resolution: {integrity: sha512-COEVelrAsmkwjFYez/F8g5FqlmFW106zhZdFk32DUIzLoDIagdfLMPcBRhGrn4lZEMb4C2hmI70hexjOD+9gZw==, tarball: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-rrsi-rsi-toolkit-0.2.19-rc.1.tgz}
     version: 0.2.19-rc.1
 
-  '@penguinharness/skill-porting@file:plugins/skill-porting':
-    resolution: {directory: plugins/skill-porting, type: directory}
+  '@penguinharness/skill-porting@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz':
+    resolution: {integrity: sha512-Ik19f4k0DtYkNzkp80tz1NRZFj9E+muU3T6KJEU3PJjUbablQCuE+g6n2rIFwD3VY76CMZewwkpS4ZilPBAAZA==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz}
+    version: 0.2.19-rc.1
 
   '@penguinharness/skilladam-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-skilladam-rsi-toolkit-0.2.19-rc.1.tgz':
     resolution: {integrity: sha512-PbSfpqZjs0UPr8JC8EZkyBoH6x8U3nTybyr1j4lauYfoQNABKP6TBRx/2rc3C+NXwK2u1/mY2h66EEkRsopqEg==, tarball: https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-skilladam-rsi-toolkit-0.2.19-rc.1.tgz}
@@ -3381,9 +3178,6 @@ packages:
     resolution: {directory: plugins/storage, type: directory}
     engines: {node: '>=24'}
 
-  '@penguinharness/tabletop-desk@file:plugins/tabletop-desk':
-    resolution: {directory: plugins/tabletop-desk, type: directory}
-
   '@penguinharness/trace-lookup@file:plugins/trace-lookup':
     resolution: {directory: plugins/trace-lookup, type: directory}
 
@@ -3394,11 +3188,13 @@ packages:
   '@penguinharness/use-bento-slides@file:plugins/use-bento-slides':
     resolution: {directory: plugins/use-bento-slides, type: directory}
 
-  '@penguinharness/use-claude-code@file:plugins/use-claude-code':
-    resolution: {directory: plugins/use-claude-code, type: directory}
+  '@penguinharness/use-claude-code@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-claude-code-0.2.19-rc.1.tgz':
+    resolution: {integrity: sha512-hOiy0gRywIBCZxWXMsh5fHJJYt45ofKJ/F9VsaVdxeFEIN9t22lvNo1bBj8oRVY/bLW3PpnhI/0qX/jmhS0aFg==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-claude-code-0.2.19-rc.1.tgz}
+    version: 0.2.19-rc.1
 
-  '@penguinharness/use-firecrawl@file:plugins/use-firecrawl':
-    resolution: {directory: plugins/use-firecrawl, type: directory}
+  '@penguinharness/use-firecrawl@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz':
+    resolution: {integrity: sha512-wcHwnfCSkv8e42C/mMP9CI6OscKKdCVm4rnxN+W+cLihqFlgfCogrVre+PGNnKgd1RFY/v0l1KyATlk0Iqgw1Q==, tarball: https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz}
+    version: 0.2.19-rc.1
 
   '@playwright/test@1.61.1':
     resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
@@ -8177,11 +7973,9 @@ snapshots:
       tslib: 2.8.1
       webcrypto-core: 1.9.2
 
-  '@penguinharness/a2ui@file:plugins/a2ui': {}
+  '@penguinharness/a2ui@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/a2ui-0.2.19-rc.1.tgz': {}
 
   '@penguinharness/ace-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-ace-rsi-toolkit-0.2.19-rc.1.tgz': {}
-
-  '@penguinharness/action-minutes@file:plugins/action-minutes': {}
 
   '@penguinharness/agent-company@file:plugins/agent-company': {}
 
@@ -8195,21 +7989,15 @@ snapshots:
 
   '@penguinharness/browser-automation@file:plugins/browser-automation': {}
 
-  '@penguinharness/continual-learning@file:plugins/continual-learning': {}
-
-  '@penguinharness/daily-draw@file:plugins/daily-draw': {}
-
   '@penguinharness/data-analysis@file:plugins/data-analysis': {}
 
   '@penguinharness/default-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-default-rsi-toolkit-0.2.19-rc.1.tgz': {}
 
   '@penguinharness/first-workbench-guide@file:plugins/first-workbench-guide': {}
 
-  '@penguinharness/fridge-keeper@file:plugins/fridge-keeper': {}
-
   '@penguinharness/goal@file:plugins/goal': {}
 
-  '@penguinharness/humanizer@file:plugins/humanizer': {}
+  '@penguinharness/humanizer@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/humanizer-0.2.19-rc.1.tgz': {}
 
   '@penguinharness/model-development@file:plugins/model-development': {}
 
@@ -8219,17 +8007,15 @@ snapshots:
 
   '@penguinharness/opro-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-opro-rsi-toolkit-0.2.19-rc.1.tgz': {}
 
-  '@penguinharness/party-charades@file:plugins/party-charades': {}
-
   '@penguinharness/penguin-support@file:plugins/penguin-support': {}
 
   '@penguinharness/plan@file:plugins/plan': {}
 
-  '@penguinharness/reading-desk@file:plugins/reading-desk': {}
+  '@penguinharness/reading-desk@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/reading-desk-0.2.20-rc.1.tgz': {}
 
   '@penguinharness/rrsi-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-rrsi-rsi-toolkit-0.2.19-rc.1.tgz': {}
 
-  '@penguinharness/skill-porting@file:plugins/skill-porting': {}
+  '@penguinharness/skill-porting@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/skill-porting-0.2.19-rc.1.tgz': {}
 
   '@penguinharness/skilladam-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-skilladam-rsi-toolkit-0.2.19-rc.1.tgz': {}
 
@@ -8239,17 +8025,15 @@ snapshots:
 
   '@penguinharness/storage@file:plugins/storage': {}
 
-  '@penguinharness/tabletop-desk@file:plugins/tabletop-desk': {}
-
   '@penguinharness/trace-lookup@file:plugins/trace-lookup': {}
 
   '@penguinharness/trace-rsi-toolkit@https://github.com/Prism-Shadow/penguin-harness-rsi-platform/releases/download/v0.1.0-rc.2/penguinharness-trace-rsi-toolkit-0.2.19-rc.1.tgz': {}
 
   '@penguinharness/use-bento-slides@file:plugins/use-bento-slides': {}
 
-  '@penguinharness/use-claude-code@file:plugins/use-claude-code': {}
+  '@penguinharness/use-claude-code@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-claude-code-0.2.19-rc.1.tgz': {}
 
-  '@penguinharness/use-firecrawl@file:plugins/use-firecrawl': {}
+  '@penguinharness/use-firecrawl@https://github.com/Prism-Shadow/penguin-harness-apps/releases/download/v2026.11.23-rc.6/use-firecrawl-0.2.19-rc.1.tgz': {}
 
   '@playwright/test@1.61.1':
     dependencies:
@@ -8339,33 +8123,21 @@ snapshots:
   '@prismshadow/penguin-cli@file:packages/cli':
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
-      '@penguinharness/a2ui': file:plugins/a2ui
-      '@penguinharness/action-minutes': file:plugins/action-minutes
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
       '@penguinharness/browser-automation': file:plugins/browser-automation
-      '@penguinharness/continual-learning': file:plugins/continual-learning
-      '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
-      '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
-      '@penguinharness/party-charades': file:plugins/party-charades
       '@penguinharness/penguin-support': file:plugins/penguin-support
       '@penguinharness/plan': file:plugins/plan
-      '@penguinharness/reading-desk': file:plugins/reading-desk
-      '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/software-development': file:plugins/software-development
       '@penguinharness/storage': file:plugins/storage
-      '@penguinharness/tabletop-desk': file:plugins/tabletop-desk
       '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
-      '@penguinharness/use-claude-code': file:plugins/use-claude-code
-      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/mmsp': 0.5.12(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
@@ -8389,33 +8161,21 @@ snapshots:
   '@prismshadow/penguin-cli@file:packages/cli(supports-color@10.2.2)':
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
-      '@penguinharness/a2ui': file:plugins/a2ui
-      '@penguinharness/action-minutes': file:plugins/action-minutes
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
       '@penguinharness/browser-automation': file:plugins/browser-automation
-      '@penguinharness/continual-learning': file:plugins/continual-learning
-      '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
-      '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
-      '@penguinharness/party-charades': file:plugins/party-charades
       '@penguinharness/penguin-support': file:plugins/penguin-support
       '@penguinharness/plan': file:plugins/plan
-      '@penguinharness/reading-desk': file:plugins/reading-desk
-      '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/software-development': file:plugins/software-development
       '@penguinharness/storage': file:plugins/storage
-      '@penguinharness/tabletop-desk': file:plugins/tabletop-desk
       '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
-      '@penguinharness/use-claude-code': file:plugins/use-claude-code
-      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/mmsp': 0.5.12(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -8849,33 +8609,21 @@ snapshots:
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
       '@larksuiteoapi/node-sdk': 1.73.0
-      '@penguinharness/a2ui': file:plugins/a2ui
-      '@penguinharness/action-minutes': file:plugins/action-minutes
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
       '@penguinharness/browser-automation': file:plugins/browser-automation
-      '@penguinharness/continual-learning': file:plugins/continual-learning
-      '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
-      '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
-      '@penguinharness/party-charades': file:plugins/party-charades
       '@penguinharness/penguin-support': file:plugins/penguin-support
       '@penguinharness/plan': file:plugins/plan
-      '@penguinharness/reading-desk': file:plugins/reading-desk
-      '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/software-development': file:plugins/software-development
       '@penguinharness/storage': file:plugins/storage
-      '@penguinharness/tabletop-desk': file:plugins/tabletop-desk
       '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
-      '@penguinharness/use-claude-code': file:plugins/use-claude-code
-      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/chat-markdown': file:packages/chat-markdown
@@ -8915,33 +8663,21 @@ snapshots:
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
-      '@penguinharness/a2ui': file:plugins/a2ui
-      '@penguinharness/action-minutes': file:plugins/action-minutes
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
       '@penguinharness/browser-automation': file:plugins/browser-automation
-      '@penguinharness/continual-learning': file:plugins/continual-learning
-      '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
-      '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
-      '@penguinharness/party-charades': file:plugins/party-charades
       '@penguinharness/penguin-support': file:plugins/penguin-support
       '@penguinharness/plan': file:plugins/plan
-      '@penguinharness/reading-desk': file:plugins/reading-desk
-      '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/software-development': file:plugins/software-development
       '@penguinharness/storage': file:plugins/storage
-      '@penguinharness/tabletop-desk': file:plugins/tabletop-desk
       '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
-      '@penguinharness/use-claude-code': file:plugins/use-claude-code
-      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)
@@ -8981,33 +8717,21 @@ snapshots:
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.13.13)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
-      '@penguinharness/a2ui': file:plugins/a2ui
-      '@penguinharness/action-minutes': file:plugins/action-minutes
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
       '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
       '@penguinharness/browser-automation': file:plugins/browser-automation
-      '@penguinharness/continual-learning': file:plugins/continual-learning
-      '@penguinharness/daily-draw': file:plugins/daily-draw
       '@penguinharness/data-analysis': file:plugins/data-analysis
       '@penguinharness/first-workbench-guide': file:plugins/first-workbench-guide
-      '@penguinharness/fridge-keeper': file:plugins/fridge-keeper
       '@penguinharness/goal': file:plugins/goal
-      '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/multimodal-tools': file:plugins/multimodal-tools
-      '@penguinharness/party-charades': file:plugins/party-charades
       '@penguinharness/penguin-support': file:plugins/penguin-support
       '@penguinharness/plan': file:plugins/plan
-      '@penguinharness/reading-desk': file:plugins/reading-desk
-      '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/software-development': file:plugins/software-development
       '@penguinharness/storage': file:plugins/storage
-      '@penguinharness/tabletop-desk': file:plugins/tabletop-desk
       '@penguinharness/trace-lookup': file:plugins/trace-lookup
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
-      '@penguinharness/use-claude-code': file:plugins/use-claude-code
-      '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
       '@prismshadow/a2ui': file:packages/a2ui
       '@prismshadow/amsp': file:packages/amsp
       '@prismshadow/chat-markdown': file:packages/chat-markdown(micromark-util-types@2.0.2)(micromark@4.0.2(supports-color@10.2.2))(supports-color@10.2.2)

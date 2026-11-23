@@ -38,6 +38,7 @@
 
 <p align="center">
   <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
+  <a href="https://watcha.cn/products/penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness Watcha badge" width="250" src="https://watcha.cn/api/v2/products/penguinharness/badge?style=1&amp;dark=false" /></a>
 </p>
 
 <p align="center">English | <a href="README.zh.md">简体中文</a></p>
@@ -140,11 +141,12 @@ Agents can also write and optimize their own Skills ([docs](https://penguin.ooo/
 | Category             | Plugins                                                                       |
 | -------------------- | ----------------------------------------------------------------------------- |
 | Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
-| Office Productivity  | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `trace-lookup`, `agent-company`, `penguin-support` |
-| Utilities | `first-workbench-guide`, `fridge-keeper`, `action-minutes` |
-| Entertainment | `tabletop-desk`, `party-charades`, `daily-draw` |
-| Software Development | `software-development`, `use-claude-code`                              |
+| Office Productivity  | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `goal`, `trace-lookup`, `agent-company`, `penguin-support` |
+| Utilities | `first-workbench-guide` |
+| Software Development | `software-development` |
 | AI App Development   | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
+
+A2UI, External Plugin Porting and Firecrawl ship with the product from [PenguinHarness Apps](https://github.com/Prism-Shadow/penguin-harness-apps). Its other workbenches and Skills can be installed through the plugin marketplace.
 
 ## Supported models
 
