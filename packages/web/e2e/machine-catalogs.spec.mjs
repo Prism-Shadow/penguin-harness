@@ -340,3 +340,73 @@ test("two machines can open and close the same workbench independently in Apps",
   await expect(row("slow")).toHaveCount(1);
   await expect(page.locator(`iframe[src*="/server/fast${uiPath}"]`)).toHaveCount(0);
 });
+
+test("workbench avatars identify distinct Agents on the same machine", async ({ page }) => {
+  await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
+  await setAccountPrefs(page.request, { lang: "zh" });
+  const frame = await watchSocket(page);
+  const list = await (await page.request.get(agents)).json();
+  const penguin = list.agents.find((agent) => agent.agentId === "default_agent");
+  const writer = { ...penguin, agentId: "writer", name: "Writer" };
+  const office = machine("office", "Lab");
+  const desk = { ...shortcut, plugin: "workspace-tools" };
+  const otherDesk = { ...desk, agentId: writer.agentId, agentName: writer.name };
+  const notes = { ...desk, workbenchId: "notes" };
+  const unique = { ...desk, workbenchId: "calendar" };
+  const remote = (path) => "/server/office" + path;
+  const remoteDesk = { ...desk, workbenchId: "review" };
+  const remoteWriter = { ...otherDesk, workbenchId: "review" };
+  const picturePath = remote(agents + "/default_agent/avatar") + "?rev=office-picture";
+  await page.route(
+    (url) => url.pathname + url.search === picturePath,
+    (route) =>
+      route.fulfill({
+        contentType: "image/png",
+        body: Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+          "base64",
+        ),
+      }),
+  );
+  frame.answer(
+    "GET",
+    machinesPath,
+    ok({ machines: [office], imageVersion: "1", job: null, jobs: [] }),
+  );
+  frame.answer("GET", apps, ok({ shortcuts: [desk, otherDesk, notes, unique], layout: null }));
+  frame.answer("GET", agents, ok({ agents: [penguin, writer] }));
+  frame.answer(
+    "GET",
+    remote(apps),
+    ok({ shortcuts: [desk, notes, remoteDesk, remoteWriter], layout: null }),
+  );
+  frame.answer(
+    "GET",
+    remote(agents),
+    ok({ agents: [{ ...penguin, avatarRev: "office-picture" }, writer] }),
+  );
+  const tile = (key) => page.locator(`[data-app="${key}"]`);
+  for (const width of [1280, 375]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/apps");
+    await expect(tile("office:default_agent/desk")).toBeVisible();
+    for (const id of ["default_agent/desk", "writer/desk"]) {
+      const owner = tile(id).locator("[data-workbench-owner]");
+      await expect(owner.locator("svg [data-variant]").first()).toBeAttached();
+      await expect(owner).toHaveText("");
+    }
+    const picture = tile("office:default_agent/review").locator("[data-workbench-owner] img");
+    await expect(picture).toHaveAttribute("src", picturePath);
+    await expect.poll(() => picture.evaluate((img) => img.naturalWidth)).toBe(1);
+    await expect(tile("office:writer/review").locator("[data-workbench-owner] svg")).toBeVisible();
+    for (const id of [
+      "office:default_agent/desk",
+      "default_agent/notes",
+      "office:default_agent/notes",
+      "default_agent/calendar",
+    ]) {
+      await expect(tile(id)).toBeVisible();
+      await expect(tile(id).locator("[data-workbench-owner]")).toHaveCount(0);
+    }
+  }
+});

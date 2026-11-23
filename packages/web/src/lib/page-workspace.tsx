@@ -60,6 +60,7 @@ export interface Workspace {
   openBesideSession(sessionId: string, page: OpenPage, source?: SessionLocation): void;
   focus(page: OpenPage): void;
   place(page: OpenPage, side: 0 | 1, before?: string): void;
+  dockRunningApp(session: OpenPage, app: OpenPage): void;
   close(id: string): void;
   minimize(id: string): void;
   whole(page: OpenPage): void;
@@ -668,6 +669,7 @@ export function PageWorkspace({ children, dock }: { children?: ReactNode; dock: 
         openBesideSession,
         focus,
         place,
+        dockRunningApp: (session, app) => go(paired(ref.current, session, app)),
         whole,
         close,
         minimize,

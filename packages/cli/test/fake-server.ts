@@ -387,11 +387,13 @@ export class FakeServer {
   plugins: {
     listed: Json[];
     library: Json[];
+    agentHooks: Map<string, string[]>;
     install: (specifier: string) => { status?: number; body: unknown };
     archive: (body: Json) => { status?: number; body: unknown };
   } = {
     listed: [],
     library: [],
+    agentHooks: new Map(),
     install: (specifier) => ({
       status: 400,
       body: {
@@ -1960,6 +1962,12 @@ export class FakeServer {
       return status === 204 ? new Response(null, { status }) : this.json(answer.body ?? {}, status);
     }
 
+    const agentPlugins = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/plugins$/.exec(apiPath);
+    if (agentPlugins && method === "GET") {
+      const hooks =
+        this.plugins.agentHooks.get(agentPlugins.slice(1).map(decodeURIComponent).join("/")) ?? [];
+      return this.json({ skills: [], hooks: hooks.map((name) => ({ name })) });
+    }
     if (apiPath === "/api/plugins" && method === "GET") {
       return this.json({
         groups: [{ id: "other", title: "Other", plugins: this.plugins.library }],

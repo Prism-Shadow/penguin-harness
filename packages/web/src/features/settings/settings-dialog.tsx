@@ -276,7 +276,7 @@ export function SettingsDialog({
         onSelect={goTo}
       >
         {current === "profile" && <ProfileSection />}
-        {current === "general" && <GeneralSection />}
+        {current === "general" && <GeneralSection onOpenGuide={requestClose} />}
         {current === "appearance" && <AppearanceSection />}
         {current === "shortcuts" && <ShortcutsSection />}
         {current === "archived" && <ArchivedSessionsSection />}

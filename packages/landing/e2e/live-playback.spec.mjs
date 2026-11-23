@@ -4,7 +4,6 @@
  * The AMSP player has independent pause and resume controls.
  */
 import { test, expect } from "@playwright/test";
-import serverPackage from "../../server/package.json" with { type: "json" };
 
 const composer = '[data-slot="composer"] textarea';
 
@@ -93,44 +92,22 @@ test("the live homepage preview uses the new chat header and shortcut strip", as
   expect(await frame.locator(composer).evaluate((el) => getComputedStyle(el).resize)).toBe("none");
 });
 
-for (const [lang, name, instruction, download] of [
-  [
-    "en",
-    "Your first workbench",
-    /in your installed copy of PenguinHarness/i,
-    "Download PenguinHarness",
-  ],
-  ["zh", "我的第一个工作台", /在已安装的 PenguinHarness 中/, "下载 PenguinHarness"],
-]) {
-  test(`opens the installed guide's download instructions (${lang})`, async ({ page }) => {
+for (const lang of ["en", "zh"]) {
+  test(`the homepage keeps the App Center and skips setup prompts (${lang})`, async ({ page }) => {
     const { frame } = await openHero(page, lang);
-    const play = page.getByRole("button", {
-      name: lang === "en" ? "Play demo" : "播放演示",
-      exact: true,
-    });
     await expect(frame.getByRole("dialog")).toHaveCount(0);
     await frame
       .getByRole("link", { name: lang === "en" ? /^App Center(?: ·|$)/ : /^应用中心(?: ·|$)/ })
       .click();
-    const tile = frame
-      .locator('li[data-app="default_agent/first-workbench-guide"] > button')
-      .first();
-    if (!("@penguinharness/first-workbench-guide" in serverPackage.dependencies)) {
-      await expect(tile).toHaveCount(0);
-      return;
-    }
-    await tile.click();
-    const guide = frame.getByRole("region", { name, exact: true });
-    await expect(guide.getByText(instruction)).toBeVisible();
-    const link = guide.getByRole("link", { name: download });
-    await expect(play).toBeVisible();
-    await page.clock.fastForward(30_000);
-    await expect(link).toBeVisible();
-    const opened = page.waitForEvent("popup");
-    await link.click();
-    const downloads = await opened;
-    await expect(downloads).toHaveURL(/\/download\/?$/);
-    await expect(downloads.getByRole("heading", { name: "macOS", exact: true })).toBeVisible();
+    await expect(frame.locator('li[data-app="default_agent/slides"]')).toBeVisible();
+    await expect(frame.locator('li[data-app="default_agent/first-workbench-guide"]')).toHaveCount(
+      0,
+    );
+    await expect(
+      frame.getByRole("region", {
+        name: lang === "en" ? "Your first workbench" : "我的第一个工作台",
+      }),
+    ).toHaveCount(0);
   });
 }
 

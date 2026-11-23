@@ -87,15 +87,19 @@ it("matches visible workbench sources across Agents while preserving every insta
   const sibling = { ...secondPack, workbenchId: "timer" };
   expect(
     duplicateWorkbenchOwners([first, second, other, remote, pack, secondPack, sibling]),
-  ).toEqual(new Set([first, second, remote, pack, secondPack].map(appKeyOf)));
+  ).toEqual(new Set([first, second, pack, secondPack].map(appKeyOf)));
   expect(duplicateWorkbenchOwners([first, { ...first, workbenchId: "another-install" }])).toEqual(
     new Set(),
   );
+  const otherRemote = { ...second, machineId: "office", machineLabel: "Laptop" };
+  expect(duplicateWorkbenchOwners([first, remote, otherRemote])).toEqual(new Set());
+  const remotePair = { ...second, machineId: "laptop", machineLabel: "Office" };
+  expect(duplicateWorkbenchOwners([first, remote, otherRemote, remotePair])).toEqual(
+    new Set([remote, remotePair].map(appKeyOf)),
+  );
   const titled = { ...shortcut("old-a", "alpha"), title: "  Shared  " };
   const paired = { ...shortcut("old-b", "beta"), title: "SHARED" };
-  expect(duplicateWorkbenchOwners([titled, paired, shortcut("unique", "beta")])).toEqual(
-    new Set([appKeyOf(titled), appKeyOf(paired)]),
-  );
+  expect(duplicateWorkbenchOwners([titled, paired, shortcut("unique", "beta")])).toEqual(new Set());
 });
 
 describe("arrange", () => {

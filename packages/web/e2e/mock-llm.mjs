@@ -246,6 +246,23 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    if (json.model === "claude-guide-checklist") {
+      const design = {
+        title: "Seed exchange",
+        items: [
+          { group: "Materials", task: "Count packets", doneWhen: "Packet count is recorded" },
+          { group: "Materials", task: "Label trays", doneWhen: "Every tray has a label" },
+          { group: "Guests", task: "Confirm arrivals", doneWhen: "The sign-in sheet is ready" },
+        ],
+      };
+      const text = flat.includes("Return only JSON with this shape")
+        ? JSON.stringify(design)
+        : "Count the seed packets and label each tray.";
+      block(res, 0, { type: "text", text: "" }, [{ type: "text_delta", text }]);
+      messageStop(res, "end_turn", 26);
+      return;
+    }
+
     if (json.model === "claude-bento-first" || json.model === "claude-bento-second") {
       block(res, 0, { type: "text", text: "" }, [
         { type: "text_delta", text: "Served by " + json.model },

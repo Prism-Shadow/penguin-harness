@@ -56,6 +56,8 @@ export default {
           api: {
             main: {
               async handle(req): Promise<WorkbenchResponse> {
+                if (req.path === "/capabilities" && req.method === "GET")
+                  return { body: { fromConversation: true } };
                 const route = /^\/guides\/([a-f0-9]{32})(?:\/(plugin\.zip|installation))?$/.exec(
                   req.path,
                 );
@@ -115,21 +117,28 @@ export default {
                     request?: string;
                     lang?: string;
                     feedback?: string;
+                    answer?: string;
                   } | null;
                   const chat = input?.action === "chat";
-                  if (!chat && input?.action !== "generate")
+                  const fromChat = input?.action === "generate-from-chat";
+                  if (!chat && !fromChat && input?.action !== "generate")
                     return { status: 400, body: { error: "invalid" } };
                   if (chat && guide && guide.phase !== "chat-error") return { body: guide };
                   if (!chat && guide && ["ready", "generating"].includes(guide.phase))
                     return { body: guide };
-                  if (!chat && (!guide || !["answered", "design-error"].includes(guide.phase)))
+                  if (
+                    !chat &&
+                    ((!guide && !fromChat) ||
+                      (guide && !["answered", "design-error"].includes(guide.phase)))
+                  )
                     return { status: 409, body: { error: "chat-first" } };
                   let prompt: string;
-                  if (chat) {
+                  if (chat || (fromChat && !guide)) {
                     if (
                       !text(input?.model?.modelId, 512) ||
                       !text(input.model.provider, 512) ||
-                      !text(input.request, 4000)
+                      !text(input.request, 4000) ||
+                      (fromChat && !text(input.answer, 24000))
                     )
                       return { status: 400, body: { error: "invalid" } };
                     const model = { provider: input.model.provider, modelId: input.model.modelId };
@@ -143,8 +152,12 @@ export default {
                       request: input.request.trim(),
                       lang: input.lang === "zh" ? "zh" : "en",
                       sessionId: session.sessionId,
-                      phase: "chatting",
+                      phase: fromChat ? "answered" : "chatting",
+                      ...(fromChat ? { answer: input.answer } : {}),
                     };
+                  }
+                  if (!guide) return { status: 409, body: { error: "chat-first" } };
+                  if (chat) {
                     prompt =
                       "The user is making a checklist for their work. Respond directly to their request with a short practical plan. Stay in this conversation and use no tools.\n\n" +
                       guide.request;
@@ -154,7 +167,7 @@ export default {
                       (typeof input.feedback !== "string" || input.feedback.length > 2000)
                     )
                       return { status: 400, body: { error: "invalid" } };
-                    guide = { ...guide!, phase: "generating", error: undefined };
+                    guide = { ...guide, phase: "generating", error: undefined };
                     prompt = [
                       "Turn the user's request and our preceding discussion into a checklist app for their specific situation. Use no tools.",
                       'Return only JSON with this shape: {"title":"...","items":[{"group":"...","task":"...","doneWhen":"..."}]}',
@@ -162,6 +175,10 @@ export default {
                       guide.lang === "zh"
                         ? "Write the content in Simplified Chinese."
                         : "Write the content in English.",
+                      fromChat
+                        ? "User request and visible answer from their conversation:\n" +
+                          JSON.stringify({ request: guide.request, answer: guide.answer })
+                        : "",
                       input?.feedback ? "The user's revisions: " + input.feedback : "",
                     ].join("\n");
                   }
