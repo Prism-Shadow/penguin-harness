@@ -19,6 +19,7 @@
  * Every agent action names a tab (`active` included), makes it the active one, and is
  * bracketed by `builtin_browser_activity` events so the window can show the agent at work.
  */
+import { DEFAULT_BROWSER_LIMIT } from "@prismshadow/penguin-library-setting/resource-limits";
 import os from "node:os";
 import type {
   BrowserBackend,
@@ -71,7 +72,7 @@ export interface BrowserTiming extends ShellLinkTiming, ActionTiming {
  * shopping and news sites held 3.3 GB between them (measured on Linux), which is already more
  * than an 8 GB laptop can spare; the load warning speaks up well before this.
  */
-export const MAX_TABS = 20;
+export const MAX_TABS = DEFAULT_BROWSER_LIMIT;
 /** A page may open this many tabs (popups, target=_blank) in any POPUP_WINDOW_MS; more are dropped. */
 const POPUP_LIMIT = 3;
 const POPUP_WINDOW_MS = 5_000;
@@ -126,6 +127,7 @@ const CHROME_REFUSED_METHODS = new Set([
 ]);
 
 export interface BackendRuntimeDeps {
+  maxOpen?: () => number;
   link: BrowserLink;
   /** The events this backend's windows hear: every admin's (built-in), or its user's (chrome). */
   publish(event: BuiltinBrowserServerEvent): void;
@@ -240,11 +242,12 @@ export class BrowserBackendRuntime {
   }): Promise<BuiltinBrowserTab> {
     await this.ready();
     const url = await this.newTabUrl(opts.url);
-    if (this.tabsHeld() >= MAX_TABS) {
+    const limit = this.deps.maxOpen?.() ?? MAX_TABS;
+    if (this.tabsHeld() >= limit) {
       throw new HttpError(
         409,
         "too_many_tabs",
-        `${capitalized(browserLabel(this.backend))} holds ${MAX_TABS} tabs, the most it keeps; close some first (penguin browser close <tab-id>).`,
+        `${capitalized(browserLabel(this.backend))} holds ${limit} tabs, the most it keeps; close some first (penguin browser close <tab-id>).`,
       );
     }
     const activate = opts.activate !== false;
@@ -514,7 +517,10 @@ export class BrowserBackendRuntime {
       ...(sessionId !== undefined ? { sessionId } : {}),
     });
     const tabId = await this.tabs.waitForClaim(request.requestId, this.timing.openClaimMs);
-    if (tabId === null) throw new BrowserUnavailableError("no_window");
+    if (tabId === null) {
+      this.tabs.cancelUnclaimed(request.requestId);
+      throw new BrowserUnavailableError("no_window");
+    }
     if (!this.tabs.has(tabId)) await this.refreshTabs().catch(() => undefined);
     return tabId;
   }
@@ -666,12 +672,13 @@ export class BrowserBackendRuntime {
     const recent = (this.popups.get(event.openerTabId) ?? []).filter(
       (at) => now - at < POPUP_WINDOW_MS,
     );
-    const full = this.tabsHeld() >= MAX_TABS;
+    const limit = this.deps.maxOpen?.() ?? MAX_TABS;
+    const full = this.tabsHeld() >= limit;
     if (full || recent.length >= POPUP_LIMIT) {
       this.popups.set(event.openerTabId, recent);
       this.deps.log(
         `builtin browser: dropped a popup of tab ${event.openerTabId}: ${
-          full ? `the browser holds ${MAX_TABS} tabs` : `more than ${POPUP_LIMIT} in 5 s`
+          full ? `the browser holds ${limit} tabs` : `more than ${POPUP_LIMIT} in 5 s`
         }`,
       );
       return;

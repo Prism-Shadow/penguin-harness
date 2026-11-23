@@ -180,6 +180,7 @@ export function homepageUrl(raw: unknown): string | null {
 }
 
 export interface BuiltinBrowserDeps {
+  maxOpen?: () => number;
   /** The shell's message port; null when this server is not the desktop shell's child. */
   port: BrowserShellPort | null;
   projectOf?(sessionId: string): string | null;
@@ -243,6 +244,7 @@ export class BuiltinBrowser {
             link: new ShellLink(deps.port, deps.timing, now, deps.log),
             publish: deps.publish,
             history: this.history,
+            ...(deps.maxOpen ? { maxOpen: deps.maxOpen } : {}),
             partition: (sessionId, projectId) => this.partition(sessionId, projectId),
             ...(deps.systemMemory ? { systemMemory: deps.systemMemory } : {}),
             ...(deps.platform !== undefined ? { platform: deps.platform } : {}),

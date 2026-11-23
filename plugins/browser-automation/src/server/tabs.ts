@@ -324,6 +324,15 @@ export class TabRegistry {
     });
   }
 
+  /** Release a failed explicit open; a late guest is rejected by the normal claim protocol. */
+  cancelUnclaimed(requestId: string): void {
+    const state = this.opens.get(requestId);
+    if (!state || state.claimedTabId !== null) return;
+    this.opens.delete(requestId);
+    for (const waiter of state.waiters) waiter(null);
+    state.waiters.clear();
+  }
+
   /** The open requests no window has claimed yet: tabs on their way. */
   pendingOpens(): number {
     this.prune();

@@ -536,6 +536,37 @@ describePty("terminal API", () => {
     }
   });
 
+  it("counts concurrent shell creation per user, keeps live shells after lowering the cap and releases the slot on exit", async () => {
+    const t = await createTestApp();
+    try {
+      const api = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+      expect((await api.put("/api/admin/settings", { terminalMaxOpen: 2 })).status).toBe(200);
+      const start = () => api.post("/api/terminals", { cwd: t.root });
+      const attempts = await Promise.all([start(), start(), start()]);
+      expect(attempts.map((r) => r.status).sort()).toEqual([201, 201, 429]);
+      const ids = await Promise.all(
+        attempts
+          .filter((r) => r.status === 201)
+          .map(async (r) => ((await r.json()) as { id: string }).id),
+      );
+      expect((await api.put("/api/admin/settings", { terminalMaxOpen: 1 })).status).toBe(200);
+      const alive = async () =>
+        (
+          (await (await api.get("/api/terminals")).json()) as { terminals: { alive: boolean }[] }
+        ).terminals.filter((pty) => pty.alive).length;
+      expect(await alive()).toBe(2);
+      expect((await start()).status).toBe(429);
+      const { provisionUser } = await import("./helpers.js");
+      const other = apiClient(t.app, (await provisionUser(t.app, "other_pty")).cookie);
+      expect((await other.post("/api/terminals", { cwd: t.root })).status).toBe(201);
+      for (const id of ids) expect((await api.delete(`/api/terminals/${id}`)).status).toBe(204);
+      await vi.waitFor(async () => expect(await alive()).toBe(0), { timeout: 10_000 });
+      expect((await start()).status).toBe(201);
+    } finally {
+      await t.cleanup();
+    }
+  });
+
   it("files a shell under the conversation that opened it, and only its user can refile it", async () => {
     const t = await createTestApp();
     try {

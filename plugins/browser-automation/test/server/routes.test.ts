@@ -74,6 +74,7 @@ interface Harness {
 function mount(
   opts: {
     shell?: FakeShell | null;
+    maxOpen?: () => number;
     admin?: boolean;
     human?: boolean;
     projectOf?: (sessionId: string) => string | null;
@@ -90,6 +91,7 @@ function mount(
   const browser = new BuiltinBrowser({
     port: shell?.port ?? null,
     root,
+    ...(opts.maxOpen ? { maxOpen: opts.maxOpen } : {}),
     publish: (event) => {
       events.push(event);
       if (event.type === "builtin_browser_open") {
@@ -318,8 +320,8 @@ describe("tabs", () => {
     });
   });
 
-  it("answers no_window when no window claims the tab", async () => {
-    const h = mount();
+  it("releases the slot and rejects the late guest when no window claims the tab", async () => {
+    const h = mount({ maxOpen: () => 1 });
     const res = await h.call("POST", "/tabs", {});
     expect(res.status).toBe(503);
     expect((await errorOf(res)).error).toMatchObject({
@@ -328,8 +330,9 @@ describe("tabs", () => {
     });
     const open = h.events.find((e) => e.type === "builtin_browser_open");
     expect(open).toMatchObject({ url: "about:blank" });
-    const late = await h.call("POST", "/tabs/claim", { requestId: "gone", tabId: 3 });
+    const late = await h.call("POST", "/tabs/claim", { requestId: open!.requestId, tabId: 3 });
     expect((await errorOf(late)).error.code).toBe("unknown_request");
+    expect((await openOwned(h, 4, "retry")).sessionId).toBe("retry");
   });
 
   it("refuses a page the browser cannot open", async () => {
@@ -1381,6 +1384,26 @@ describe("Session and Project isolation", () => {
         (tab) => tab.id,
       ),
     ).toEqual([11, 14]);
+  });
+
+  it("reserves a managed page before the native window claims it and frees the slot on close", async () => {
+    let limit = 1;
+    const h = mount({ maxOpen: () => limit });
+    const opening = h.nextOpen();
+    const first = h.call("POST", "/tabs", { sessionId: "parent" });
+    const request = await opening;
+    expect((await h.call("POST", "/tabs", { sessionId: "child" })).status).toBe(409);
+    h.shell.show(tab(11));
+    await h.call("POST", "/tabs/claim", { requestId: request.requestId, tabId: 11 });
+    expect((await first).ok).toBe(true);
+    limit = 2;
+    await openOwned(h, 12, "child");
+    limit = 1;
+    expect((await h.call("POST", "/tabs", { sessionId: "child" })).status).toBe(409);
+    h.shell.close(12);
+    expect((await h.call("POST", "/tabs", { sessionId: "child" })).status).toBe(409);
+    h.shell.close(11);
+    expect((await openOwned(h, 13, "child")).sessionId).toBe("child");
   });
 
   it("adopts a draft and its pending popup without moving its storage", async () => {
