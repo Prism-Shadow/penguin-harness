@@ -41,7 +41,7 @@ try {
   [void](New-Item -ItemType Directory -Path $sameName -Force)
   $sentinels = @((Join-Path $drive 'unrelated-root.txt'),(Join-Path $apps 'neighbour.txt'),(Join-Path $other 'unrelated-data-volume.txt'))
   foreach ($sentinel in $sentinels) { [IO.File]::WriteAllText($sentinel, 'preserve me') }
-  & "$PSScriptRoot\wizard.ps1" -Installer $Installer -Drive $drive -Apps $apps -MatchingFolder $sameName
+  & "$PSScriptRoot\wizard.ps1" -Installer $Installer -Drive $drive -Apps $apps -MatchingFolder $sameName -DataDrive $other
   Run-Installer $OldInstaller "/S /currentuser /D=$program" $true
   Check ([IO.File]::Exists((Join-Path $program 'PenguinHarness.exe'))) 'real release installed at the explicit program location'
   Run-Profile 'seed' $program $defaultProfile $defaultData

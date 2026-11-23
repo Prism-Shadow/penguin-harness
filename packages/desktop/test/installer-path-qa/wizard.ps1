@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Installer,[Parameter(Mandatory)][string]$Drive,[Parameter(Mandatory)][string]$Apps,[Parameter(Mandatory)][string]$MatchingFolder)
+param([Parameter(Mandatory)][string]$Installer,[Parameter(Mandatory)][string]$Drive,[Parameter(Mandatory)][string]$Apps,[Parameter(Mandatory)][string]$MatchingFolder,[Parameter(Mandatory)][string]$DataDrive)
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
 Add-Type @'
@@ -49,10 +49,23 @@ foreach ($selected in @($Drive,$Apps,$MatchingFolder)) {
   } 'native folder picker'
   # Browse opens at the typed path. Accept the actual selection with the shell dialog button.
   Click (Match-Node $dialog 'Button' '^OK$')
-  $want=if ((Split-Path -Leaf $selected.TrimEnd('\')) -ieq 'penguinharness') {$selected} else {Join-Path $selected 'penguinharness'}
+  $want=if ([IO.Path]::GetFileName($selected.TrimEnd('\')) -ieq 'penguinharness') {$selected} else {Join-Path $selected 'penguinharness'}
   Spin { if ($value.Current.Value.TrimEnd('\') -ieq $want.TrimEnd('\') -and (Match-Node $wizard 'Text' ([regex]::Escape($want)))) {$true} } 'computed install target' | Out-Null
   Write-Output "Verified Browse selection $selected -> $want"
 }
+Click (Match-Node $wizard 'Button' '^Next')
+$another=Spin { Match-Node $wizard 'RadioButton' '^Use another data directory$' } 'independent data location page'
+Click $another
+$dataEdit=Spin { Match-Node $wizard 'Edit' '.*' } 'data directory edit'
+$dataValue=$dataEdit.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern)
+$dataValue.SetValue($DataDrive)
+Click (Match-Node $wizard 'Button' '^Browse')
+$picker=Spin {
+  $choices=@(Items $top $children) + @(Items $wizard $children)
+  $choices | Where-Object {$_.Current.ClassName -eq '#32770' -and $_.Current.NativeWindowHandle -ne $wizard.Current.NativeWindowHandle -and (Match-Node $_ 'Button' '^OK$')} | Select-Object -First 1
+} 'native data directory picker'
+Click (Match-Node $picker 'Button' '^OK$')
+Spin { if ($dataValue.Current.Value -ieq (Join-Path $DataDrive 'PenguinHarnessData')) {$true} } 'safe folder for data on a different volume' | Out-Null
 Click (Match-Node $wizard 'Button' '^Cancel$')
 Start-Sleep -Milliseconds 300
 $confirm=@(Items $top $children) + @(Items $wizard $children) | Where-Object { $_.Current.ClassName -eq '#32770' -and (Match-Node $_ 'Button' '^Yes$') } | Select-Object -First 1

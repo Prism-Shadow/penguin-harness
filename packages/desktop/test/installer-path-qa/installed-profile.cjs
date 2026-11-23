@@ -5,7 +5,7 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { createRequire } = require("node:module");
 const web = createRequire(path.resolve("packages/web/package.json"));
-const { _electron } = web("@playwright/test");
+const { _electron } = createRequire(web.resolve("@playwright/test"))("playwright");
 const [mode, program, record, expectedProfile, expectedData] = process.argv.slice(2);
 assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.PH_DISPOSABLE_WINDOWS, "yes");
@@ -38,7 +38,7 @@ async function run() {
       phase.project = projects.projects[0].projectId;
       const project = "/api/projects/" + phase.project;
       const model = { provider: "custom", modelId: "installer-fixture" };
-      await api("PUT", project + "/models", { defaultModel: model, models: [{ ...model, protocol: "openai", contextWindow: 32000, baseUrl: "http://127.0.0.1:1", apiKey: "installer-fixture", pricing: { cacheRead: 1, cacheWrite: 1, output: 1 } }] });
+      await api("PUT", project + "/models", { defaultModel: model, models: [{ ...model, contextWindow: 32000, baseUrl: "http://127.0.0.1:1", apiKey: "installer-fixture", pricing: { cacheRead: 1, cacheWrite: 1, output: 1 } }] });
       const created = await (await api("POST", project + "/agents/default_agent/sessions", model)).json();
       phase.sid = created.session.sessionId;
       const sid = "/api/sessions/" + phase.sid;
