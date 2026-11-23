@@ -27,6 +27,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { parseDocument } from "yaml";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -37,6 +38,7 @@ import {
   loadPreinstalledPlugins,
   pluginContentVersion,
   skillsDir,
+  systemConfigPath,
   usePushedPluginLibrary,
 } from "@prismshadow/penguin-core";
 import type {
@@ -171,6 +173,28 @@ describe("skills api", () => {
     expect(multiple).not.toHaveProperty("mcpPluginNames");
     expect(multiple).not.toHaveProperty("pluginNames");
     expect(await summary("other_count")).toMatchObject({ pluginCount: 1 });
+
+    // Two MCP servers can come from the same package, and the Agent can also configure its own.
+    const configPath = systemConfigPath(t.root, projectId, "counted");
+    const config = parseDocument(await fs.readFile(configPath, "utf8"));
+    const stdio = { command: "unused-for-listing" };
+    config.setIn(
+      ["tools", "mcpServers"],
+      [
+        { name: "first", plugin: "detached-package", config: stdio },
+        { name: "second", plugin: "detached-package", config: stdio },
+        { name: "already-counted", plugin: "agent-development", config: stdio },
+        { name: "handwritten", config: stdio },
+      ],
+    );
+    await fs.writeFile(configPath, String(config));
+    expect(await summary("counted")).toMatchObject({ pluginCount: 3 });
+    expect(await summary("other_count")).toMatchObject({ pluginCount: 1 });
+    // A library workbench and Skill installed from the same package add one package.
+    expect((await member.post(plugins("counted"), { names: ["use-bento-slides"] })).status).toBe(
+      201,
+    );
+    expect(await summary("counted")).toMatchObject({ pluginCount: 4 });
 
     // The platform may provision Agent parts on System; project members still cannot mutate it.
     expect(
