@@ -224,6 +224,7 @@ export function toPluginItem(plugin: LibraryPlugin): PluginItem {
       : {}),
     ...(plugin.quickStart !== undefined ? { quickStart: plugin.quickStart } : {}),
     ...(plugin.composerMode ? { composerMode: true as const } : {}),
+    ...(plugin.composerCommand ? { composerCommand: plugin.composerCommand } : {}),
     ...(plugin.defaultInstall ? { defaultInstall: true as const } : {}),
     mcpServers: plugin.mcpServers.map(toPluginMcpServerItem),
     modules: plugin.modules,
