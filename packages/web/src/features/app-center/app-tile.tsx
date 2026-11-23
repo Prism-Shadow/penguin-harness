@@ -94,7 +94,8 @@ export function TileIcon({
   title: string;
   size?: number;
 }) {
-  if (shortcut.system !== undefined) return <GlyphAppIcon d={shortcut.system.glyph} size={size} />;
+  if (shortcut.system !== undefined)
+    return <GlyphAppIcon appKey={shortcut.workbenchId} d={shortcut.system.glyph} size={size} />;
   const letter = (
     <span
       aria-hidden
