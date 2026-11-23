@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** fix
 - **Scope:** `web`, `docs`
+- **PR:** [#1787](https://github.com/Prism-Shadow/penguin-harness/pull/1787)
 
 [English](2026-11-23-model-groups-start-collapsed.md)
 
