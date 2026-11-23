@@ -153,6 +153,11 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
    * deleted still probes, still fails, and still redirects — one tick later than before.
    */
   const probeKey = projectId && routeSessionId ? sessionProbeKey(projectId, routeSessionId) : null;
+  const [offlineOwner, setOfflineOwner] = useState<{
+    key: string;
+    machineId: string;
+    alias: string;
+  } | null>(null);
   const [probeFailedKey, setProbeFailedKey] = useState<string | null>(null);
   /** The probe that failed did so with a 404: the server has no such Session for this user. */
   const [probeMissingKey, setProbeMissingKey] = useState<string | null>(null);
@@ -258,6 +263,8 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
     setFetchedSession,
     listed,
     probeKey,
+    offlineOwner: offlineOwner?.key === probeKey ? offlineOwner : null,
+    setOfflineOwner,
     probeFailedKey,
     setProbeFailedKey,
     probeMissingKey,

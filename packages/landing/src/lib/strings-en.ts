@@ -176,6 +176,8 @@ export const en: Strings = {
   live: {
     open: "Open in Theme Packs",
     loading: "Loading the live demo…",
+    playDemo: "Play demo",
+    stopDemo: "Stop demo",
     evolutionFrame: "A self-evolution round in a conversation (live demo)",
   },
 
@@ -440,6 +442,8 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
       title: "Plugins",
       description:
         "The PenguinHarness plugin library: self-evolution toolkits, Skills, Hooks and workbenches.",
+      directoryUnavailable: "The plugin directory could not be loaded.",
+      retryDirectory: "Retry",
       facetCategory: "Category",
       facetContents: "Contents",
       facetAuthor: "Author",

@@ -20,6 +20,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "../../../web/src/app";
 import { bootWeb } from "../../../web/src/web-root";
+import { dismissOnboarding } from "../../../web/src/lib/model-onboarding";
 import { requestSettings, requestSettingsPage } from "../../../web/src/lib/settings-request";
 import type { HostSettingsSectionKey } from "../../../web/src/lib/settings-sections";
 import "./app.css";
@@ -55,8 +56,11 @@ const store = getStore({
   signedIn: !params.signedOut,
   notices: params.notices === true,
   embedded: params.embedded === true,
+  freshProject: params.freshProject === true,
   evolutionDemo: params.autoplay === "evolution",
 });
+// Each homepage frame has its own storage. A stopped run returns to a usable new chat.
+if (params.freshProject) dismissOnboarding(store.f.project.projectId);
 installFetchShim();
 
 // Framed, a focus must not scroll the page around the frame: the chat composer focuses itself
@@ -105,6 +109,7 @@ if (params.autoplay === "evolution") {
     rsiPrompt(params.lang),
     store.evolutionPlayback,
     () => store.clearEvolutionRounds(),
+    params.freshProject === true,
   );
   import.meta.hot?.dispose(dispose);
 }

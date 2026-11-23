@@ -54,6 +54,7 @@ import {
 import * as api from "../../api/endpoints";
 import { useAgentLocation } from "../../lib/agent-location";
 import { useInstantSetting } from "../../lib/instant-setting";
+import { onPluginsChanged } from "../../lib/project-change-events";
 import { useOnPluginModulesChanged } from "../../lib/plugin-modules";
 import {
   publishMachineAgentsChanged,
@@ -235,6 +236,14 @@ export function PluginsTab({
     }
   }, [load, projectId, machineId, reloadAgents]);
 
+  useEffect(
+    () =>
+      onPluginsChanged((changedProject) => {
+        if (machineId === null && changedProject === projectId) void changed();
+      }),
+    [changed, machineId, projectId],
+  );
+
   const catalog: AgentPluginGroups | null =
     lists === null
       ? null
@@ -404,6 +413,7 @@ export function PluginsTab({
   const body: Record<PluginsSubPage, () => ReactNode> = {
     plugins: () => (
       <AgentPluginsPage
+        key={JSON.stringify([projectId, machineId, agentId])}
         target={{ projectId, agentId, machineId }}
         agentName={agentName}
         machineLabel={machineLabel}

@@ -12,8 +12,6 @@
  */
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 
-const BUILTIN_AGENT_IDS: ReadonlySet<string> = new Set(["default_agent", "penguin_support"]);
-
 /** The id the server reserves for the system Agent: its system apps' App Center keys start with it. */
 export const SYSTEM_AGENT_ID = "system_agent";
 
@@ -27,7 +25,7 @@ export function isSystemAgent(agent: Pick<AgentSummary, "system">): boolean {
 
 /** Whether the Agent is a built-in Agent. */
 export function isBuiltinAgent(agent: AgentFacts): boolean {
-  return isSystemAgent(agent) || BUILTIN_AGENT_IDS.has(agent.agentId);
+  return isSystemAgent(agent) || agent.agentId === "default_agent";
 }
 
 /** Whether the Agent can be picked for a conversation or any other run: every Agent but the system Agent. */

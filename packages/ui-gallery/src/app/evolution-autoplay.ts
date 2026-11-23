@@ -2,15 +2,16 @@
 import { S } from "../../../web/src/lib/strings";
 import { IDS } from "./mock/ids";
 import type { EvolutionClock } from "./evolution-clock";
-import { EVOLUTION_CONTROL, EVOLUTION_STATE } from "./evolution-messages";
 
 export function installEvolutionAutoplay(
   win: Window & typeof globalThis,
   prompt: string,
   playback: EvolutionClock,
   clearPreviousRound: () => void,
+  playOnce = false,
 ): () => void {
-  if (win.matchMedia("(prefers-reduced-motion: reduce)").matches) return () => undefined;
+  if (!playOnce && win.matchMedia("(prefers-reduced-motion: reduce)").matches)
+    return () => undefined;
   const doc = win.document;
   const letters = Array.from(prompt);
   const setValue = Object.getOwnPropertyDescriptor(
@@ -19,7 +20,6 @@ export function installEvolutionAutoplay(
   )!.set!;
   let visible = false;
   let stopped = false;
-  let paused = false;
   let sent = false;
   let destination: "result" | "center" | "detail" | "chart" | "replay" | "restart" = "result";
   let index = 0;
@@ -39,19 +39,7 @@ export function installEvolutionAutoplay(
     doc.removeEventListener("keydown", takeOver, true);
     doc.removeEventListener("input", takeOver, true);
     win.removeEventListener("pagehide", stop);
-    win.removeEventListener("message", control);
     playback.setPaused(false);
-    win.parent.postMessage({ type: EVOLUTION_STATE, state: "finished" }, win.location.origin);
-  };
-  const control = (event: MessageEvent) => {
-    if (event.source !== win.parent || event.origin !== win.location.origin) return;
-    if (event.data?.type !== EVOLUTION_CONTROL || typeof event.data.paused !== "boolean") return;
-    paused = event.data.paused;
-    sync();
-    win.parent.postMessage(
-      { type: EVOLUTION_STATE, state: event.data.paused ? "paused" : "playing" },
-      win.location.origin,
-    );
   };
   const takeOver = (event: Event) => {
     if (event.isTrusted) stop();
@@ -148,6 +136,10 @@ export function installEvolutionAutoplay(
       const chart = doc.querySelector("main svg.ui-chart");
       if (chart) {
         revealChart(chart);
+        if (playOnce) {
+          stop();
+          return;
+        }
         destination = "replay";
         timer = playback.schedule(advance, 4000);
       }
@@ -183,7 +175,7 @@ export function installEvolutionAutoplay(
     }
   };
   function sync() {
-    playback.setPaused(paused || !visible || doc.hidden);
+    playback.setPaused(!visible || doc.hidden);
     queue();
   }
   function queue() {
@@ -211,7 +203,5 @@ export function installEvolutionAutoplay(
   doc.addEventListener("keydown", takeOver, true);
   doc.addEventListener("input", takeOver, true);
   win.addEventListener("pagehide", stop, { once: true });
-  win.addEventListener("message", control);
-  win.parent.postMessage({ type: EVOLUTION_STATE, state: "ready" }, win.location.origin);
   return stop;
 }

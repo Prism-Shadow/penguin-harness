@@ -260,7 +260,9 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
    * machines not answering, which is every row restored from the cache. Reading either as
    * "gone" is what drops the reader into the draft page mid-conversation.
    */
-  const routeSessionOwner = routeSessionId ? machineForSession(routeSessionId) : null;
+  const routeSessionOwner = routeSessionId
+    ? (machineForSession(routeSessionId) ?? scope.offlineOwner?.machineId ?? null)
+    : null;
 
   /**
    * The ssh alias of the machine a Session is on, or null for this server's own. Falls back
@@ -280,12 +282,30 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
     !isSessionDeleted(routeSessionId) &&
     (routeSessionOwner === null
       ? machinesUnreachable
-      : offlineMachineIds.includes(routeSessionOwner));
+      : offlineMachineIds.includes(routeSessionOwner) || scope.offlineHistory?.connected === false);
+  // A failed metadata lookup while the owner was away cannot settle a deep link.
+  // Give that lookup a fresh attempt when its owner returns, including the render
+  // before the effect clears the failed key.
+  const awayProbe = useRef<string | null>(null);
+  const ownerReturned = !!probeKey && awayProbe.current === probeKey && !routeSessionUnowned;
+  useEffect(() => {
+    if (routeSessionOwner && routeSessionUnowned) {
+      awayProbe.current = probeKey;
+    } else {
+      awayProbe.current = null;
+      if (ownerReturned) {
+        setProbeFailedKey(null);
+        setProbeMissingKey(null);
+      }
+    }
+  }, [probeKey, routeSessionOwner, routeSessionUnowned, ownerReturned]);
   // Read from `listed`, never from `selected`: the held Session above keeps the conversation
   // on screen through a refetch, but it must not tell the probe that the row is loaded — a
   // Session that really is gone has to keep probing until the lookup fails and releases both.
   const routeSessionPending =
-    !!routeSessionId && listed === null && (probeFailedKey !== probeKey || routeSessionUnowned);
+    !!routeSessionId &&
+    listed === null &&
+    (probeFailedKey !== probeKey || routeSessionUnowned || ownerReturned);
   /**
    * The lookup has failed and the only servers that could still answer for this Session are
    * out of reach. It is not gone — so the redirect must not fire and the row must not be
@@ -327,6 +347,7 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
       async () => sessionForProject((await api.getSession(routeSessionId)).session, projectId),
       {
         found: (session, listLoading) => {
+          scope.setOfflineOwner(null);
           setFetchedSession(session);
           // add() invalidates a reload in flight. During the sidebar's first load that threw
           // the whole load away, leaving the list on this one row and still loading; the
@@ -340,6 +361,22 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
         // Only once the list has settled: a failure while it loads is not a verdict, and
         // this effect re-runs when it settles and asks again.
         gone: (cause) => {
+          // A known owner is authoritative on a deep link, even before the sidebar's
+          // machine lists settle. A machine_no_answer only names a possible owner.
+          if (
+            cause instanceof ApiError &&
+            cause.code === "not_connected" &&
+            cause.details?.machineId
+          ) {
+            const machineId = cause.details.machineId;
+            scope.setOfflineOwner({
+              key: probeKey,
+              machineId,
+              alias: cause.details.alias ?? machineId,
+            });
+          } else if (cause instanceof ApiError && [401, 403, 404].includes(cause.status)) {
+            scope.setOfflineOwner(null);
+          }
           setProbeFailedKey(probeKey);
           // Only an answer that the Session does not exist settles it as missing; a failure to
           // get any answer is not that, and keeps the old way on.
@@ -357,6 +394,7 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
     probeKey,
     sessionsLoading,
     routeSessionPending,
+    ownerReturned,
     selected,
     addSession,
     isSessionDeleted,

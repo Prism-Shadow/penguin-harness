@@ -18,21 +18,13 @@
  */
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
-import {
-  ICONS,
-  LoadFailed,
-  RetryStatus,
-  exceptionReport,
-  isReportable,
-} from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
+import { ICONS, LoadFailed, exceptionReport, isReportable } from "@prismshadow/penguin-ui";
+import { HistoryMachineRetry } from "./history-machine-retry";
 import { machineLink } from "../../lib/machine-link";
 import { machineForSession } from "../../lib/session-machines";
 import { S } from "../../lib/strings";
 import { useMachines } from "../../state/machines";
-import { retryStatus } from "../machines/machine-card";
 import { machineAway } from "./machine-away";
-import { toastApiError } from "../../lib/toast-api-error";
 
 export function HistoryLoadFailed({
   projectId,
@@ -86,21 +78,6 @@ export function HistoryLoadFailed({
     );
   }
 
-  const entry = away.machine;
-  // The Machines page's presses: the server tries the connection now, or stops trying. A refusal
-  // is said and rejects, so the press can be made again.
-  const ask = async (
-    send: (projectId: string, machineId: string) => ReturnType<typeof api.reconnectMachine>,
-  ): Promise<void> => {
-    if (projectId === null || entry === null) return;
-    try {
-      machines.accept(await send(projectId, entry.id));
-    } catch (err) {
-      toastApiError(err);
-      throw err;
-    }
-  };
-
   return (
     <LoadFailed
       glyph={ICONS.server}
@@ -109,17 +86,7 @@ export function HistoryLoadFailed({
       action={{ label: S.chat.machineAway.openMachines, onClick: () => navigate("/machines") }}
       details={{ title: S.chat.machineAway.details, text: error }}
     >
-      {away.retry !== null && (
-        <RetryStatus
-          {...retryStatus(away.retry, {
-            onRetry: () => ask(api.reconnectMachine),
-            onStop: () => ask(api.stopReconnectingMachine),
-            held: false,
-            size: "sm",
-          })}
-          className="justify-center text-left"
-        />
-      )}
+      {away.retry !== null && <HistoryMachineRetry projectId={projectId} away={away} />}
     </LoadFailed>
   );
 }

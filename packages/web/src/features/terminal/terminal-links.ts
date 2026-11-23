@@ -3,13 +3,8 @@
  *
  * Two kinds arrive here and both used to be broken:
  *
- * - **A URL in the output**, found by the web-links addon. Its built-in handler opens a
- *   BLANK window first (`window.open()` with no argument), clears `opener`, then assigns
- *   `location.href`. In a browser that is a way to get an opener-less tab; inside the
- *   desktop shell it is a link to `about:blank`, which the shell's window-open handler sees
- *   as an external address and hands to the system browser — so the address bar said
- *   `about:` and the real link never opened. `noopener` on a real `window.open` does the
- *   same job in one step, and hands the shell the address it is actually meant to route.
+ * - **A URL in the output**, identified across wrapped buffer rows. Opening the real URL
+ *   directly lets the desktop shell hand that address to the system browser.
  * - **An OSC 8 hyperlink**, which is how a program that knows it is on a capable terminal
  *   writes a link — `gh`, and the agent CLIs printing a pull request. xterm routes those to
  *   `linkHandler`, and with none set it falls back to a `confirm()` warning.

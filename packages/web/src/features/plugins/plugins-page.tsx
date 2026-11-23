@@ -107,6 +107,7 @@ import { readKey, useRead } from "../../lib/read-store";
 import { MachinePicker, type MachineChoice } from "../machines";
 import { DRAFT_SESSION_ID, draftKey, loadDraft, saveDraft, prepareNewChatDraft } from "../chat";
 import { localizedText } from "../../lib/skill-use";
+import { PackageUpdateDialog, packageUpdate, type PackageUpdate } from "./plugin-package-update";
 import { usePluginRepair } from "./plugin-repair";
 import { useMachineMarkets } from "./machine-markets";
 import {
@@ -147,6 +148,7 @@ import {
   pluginIndex,
   pluginLibrary,
   pluginMarket,
+  useLocalPluginIndex,
 } from "./plugin-reads";
 import { notifyPluginsChanged } from "../../lib/project-change-events";
 import {
@@ -189,8 +191,7 @@ import { toldFailure } from "../../lib/failure";
 
 const NO_INSTALLS: AgentInstalls = { skills: new Map(), hooks: new Map(), mcp: new Map() };
 
-/** How soon the registry is read again while the server is still reading one of its sources. */
-export const INDEX_RECHECK_MS = 3_000;
+export { INDEX_RECHECK_MS } from "./plugin-reads";
 
 /** This server's reads are read again on every visit, however recent the last answer. */
 const EVERY_VISIT = { minAgeMs: 0 };
@@ -288,7 +289,7 @@ export function PluginsPage() {
   );
   const deployment = deploymentRead.value;
   /** The registry, as last answered; a failed re-read keeps the rows it listed. */
-  const registry = useRead(pluginIndex, INDEX_KEY, () => api.getPluginIndex(), EVERY_VISIT);
+  const registry = useLocalPluginIndex(true);
   const index = registry.value?.plugins ?? (registry.error !== null ? [] : null);
   /**
    * Sources that answered with nothing. A published index that is down shortens the list
@@ -507,14 +508,6 @@ export function PluginsPage() {
       ? machineMarkets.find((m) => m.machineId === row.origin!.machineId)?.runningPending === true
       : fallbackKey !== null && fallback.value === null && fallback.error === null);
 
-  // While a source of the registry is still being read, it is read again every
-  // INDEX_RECHECK_MS until it has answered or failed; the rows already listed stay meanwhile.
-  useEffect(() => {
-    if (registry.reading || indexPending === 0) return;
-    const recheck = setTimeout(() => pluginIndex.invalidate(INDEX_KEY), INDEX_RECHECK_MS);
-    return () => clearTimeout(recheck);
-  }, [registry.reading, indexPending]);
-
   /**
    * A server module change waiting for its confirmation (null = none). Applying one
    * re-assembles the App for every Project on the server; the runs in flight carry on, but it
@@ -527,8 +520,7 @@ export function PluginsPage() {
     /** The build ships it: the change enables or disables its module for this Project. */
     shipped: boolean;
     version?: string;
-    previousVersion?: string;
-    resourceOnly?: boolean;
+    release?: PackageUpdate | null;
     projectId: string;
     machineId: string;
   } | null>(null);
@@ -1275,12 +1267,7 @@ export function PluginsPage() {
             install,
             shipped: row.module.shipped,
             version,
-            ...(ownPackage && version && row.module.entry?.localInstall?.updateAvailable
-              ? {
-                  previousVersion: row.module.entry.localInstall.version,
-                  resourceOnly: row.module.entry.localInstall.libraryOnly,
-                }
-              : {}),
+            ...(ownPackage && version ? { release: packageUpdate(row.module.entry) } : {}),
             projectId,
             machineId: rowMachine,
           });
@@ -1516,64 +1503,59 @@ export function PluginsPage() {
 
       {/* A server module change: what it does is said before it runs, and what it costs in
           small type under it. An install is primary; a removal is danger. */}
-      {pendingApply !== null && canApply(pendingApply) && (
+      {pendingApply?.release && canApply(pendingApply) && isAdmin && (
+        <PackageUpdateDialog
+          projectId={pendingApply.projectId}
+          title={pendingApply.name}
+          release={pendingApply.release}
+          onClose={() => setPendingApply(null)}
+          onUpdated={() => void reloadAgents().catch(() => undefined)}
+        />
+      )}
+      {pendingApply !== null && !pendingApply.release && canApply(pendingApply) && (
         <ConfirmModal
           open
           title={
-            pendingApply.previousVersion && pendingApply.version
-              ? S.plugins.updatePackageTo(pendingApply.version)
-              : pendingApply.shipped
-                ? pendingApply.install
-                  ? S.plugins.installModel.enableTitle(pendingApply.name)
-                  : S.plugins.installModel.disableTitle(pendingApply.name)
-                : pendingApply.install
-                  ? S.plugins.applyConfirmInstall(pendingApply.name)
-                  : S.plugins.applyConfirmRemove(pendingApply.name)
+            pendingApply.shipped
+              ? pendingApply.install
+                ? S.plugins.installModel.enableTitle(pendingApply.name)
+                : S.plugins.installModel.disableTitle(pendingApply.name)
+              : pendingApply.install
+                ? S.plugins.applyConfirmInstall(pendingApply.name)
+                : S.plugins.applyConfirmRemove(pendingApply.name)
           }
           tone={pendingApply.install ? "primary" : "danger"}
           {...(pendingApply.install ? { glyph: ICONS.server } : {})}
           confirmLabel={
-            pendingApply.previousVersion
-              ? S.skills.updateAction
-              : pendingApply.shipped
-                ? pendingApply.install
-                  ? S.plugins.installModel.enableModule
-                  : S.plugins.installModel.disableModule
-                : pendingApply.install
-                  ? S.plugins.installModel.installServer
-                  : S.plugins.uninstall
+            pendingApply.shipped
+              ? pendingApply.install
+                ? S.plugins.installModel.enableModule
+                : S.plugins.installModel.disableModule
+              : pendingApply.install
+                ? S.plugins.installModel.installServer
+                : S.plugins.uninstall
           }
           cancelLabel={S.common.cancel}
           busy={pendingSpecifier !== null}
           onClose={() => setPendingApply(null)}
           onConfirm={() => void runDeploymentInstall(pendingApply)}
         >
-          {pendingApply.resourceOnly && pendingApply.previousVersion && pendingApply.version ? (
-            <p>
-              {S.plugins.packageUpdateBody(
-                pendingApply.name,
-                pendingApply.previousVersion,
-                pendingApply.version,
-              )}
-            </p>
-          ) : (
-            <ModuleApplyBody
-              mode={
-                pendingApply.shipped
-                  ? pendingApply.install
-                    ? "enable"
-                    : "disable"
-                  : pendingApply.install
-                    ? "install"
-                    : "remove"
-              }
-              name={
-                pendingApply.version
-                  ? `${pendingApply.name} v${pendingApply.version}`
-                  : pendingApply.name
-              }
-            />
-          )}
+          <ModuleApplyBody
+            mode={
+              pendingApply.shipped
+                ? pendingApply.install
+                  ? "enable"
+                  : "disable"
+                : pendingApply.install
+                  ? "install"
+                  : "remove"
+            }
+            name={
+              pendingApply.version
+                ? `${pendingApply.name} v${pendingApply.version}`
+                : pendingApply.name
+            }
+          />
         </ConfirmModal>
       )}
       {/* From the server: it leaves every Agent first, which the confirm names before it runs. */}

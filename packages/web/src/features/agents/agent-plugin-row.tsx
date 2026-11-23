@@ -196,14 +196,16 @@ export function agentPluginActions(
     );
     return out;
   }
-  if (entry.status === "update" || entry.status === "incomplete") {
+  const release = actions.releaseFor(entry);
+  if (release || entry.status === "update" || entry.status === "incomplete") {
+    const label = release ? S.plugins.updatePackageTo(release.to) : S.skills.updateAction;
     out.push(
       <EntityCardAction
         key="update"
         variant="secondary"
         glyph={ICONS.rotateCw}
-        label={S.skills.updateAction}
-        name={`${S.skills.updateAction} ${title}`}
+        label={label}
+        name={`${label} ${title}`}
         words="always"
         busy={busy}
         disabled={disabled}
@@ -242,6 +244,7 @@ function rowActions(
 ): ReactNode {
   const busy = actions.running === entry.name;
   const disabled = actions.running !== null;
+  const release = actions.releaseFor(entry);
   const worded = (glyph: string, label: string, run: () => void) => (
     <Button
       size="sm"
@@ -258,8 +261,12 @@ function rowActions(
     <>
       {entry.status === "available" &&
         worded(ICONS.download, S.skills.install, () => actions.install(entry))}
-      {(entry.status === "update" || entry.status === "incomplete") &&
-        worded(ICONS.rotateCw, S.skills.updateAction, () => actions.update(entry))}
+      {(release || entry.status === "update" || entry.status === "incomplete") &&
+        worded(
+          ICONS.rotateCw,
+          release ? S.plugins.updatePackageTo(release.to) : S.skills.updateAction,
+          () => actions.update(entry),
+        )}
       <ModuleActionButton entry={entry} title={title} module={module} actions={actions} />
       {isOwner && entry.status !== "available" && (
         <IconButton

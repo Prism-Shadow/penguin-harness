@@ -361,12 +361,8 @@ export function MessageStream({
   outline?: ReactNode;
   /** Scroll-up backfill of older history windows; omitted = the whole transcript is loaded (no top affordance). */
   older?: OlderHistoryControls;
-  /**
-   * Stages text selected in the stream in this conversation's composer, as a chip (the
-   * selection menu's "Add to conversation"). Required: every stream this app renders belongs
-   * to a conversation with a composer.
-   */
-  onAddExcerpt: (reference: ComposerReference) => void;
+  /** Stages a selection in the composer. Read-only transcripts offer Copy alone. */
+  onAddExcerpt?: (reference: ComposerReference) => void;
   /**
    * The find-in-page region this transcript is (`data-find-region`). The main conversation and
    * the subagent panel are two of them, and the bar tells them apart by this value alone

@@ -13,8 +13,8 @@
  */
 import fs from "node:fs/promises";
 import { parse as parseYaml } from "yaml";
-import { BUILTIN_AGENT_IDS, SYSTEM_AGENT_ID } from "./builtin-agents.js";
-import { systemConfigPath } from "./paths.js";
+import { SYSTEM_AGENT_ID } from "./builtin-agents.js";
+import { DEFAULT_AGENT_ID, systemConfigPath } from "./paths.js";
 
 /**
  * Whether `config` (a parsed `system_config.yaml`) makes the Agent `agentId` the system Agent.
@@ -56,7 +56,7 @@ export async function isSystemAgent(
 
 /**
  * Whether the Agent is one of the Project's built-in Agents, which are never deleted:
- * `default_agent`, `penguin_support`, and `system_agent` while it is the system Agent.
+ * `default_agent` and `system_agent` while it is the system Agent.
  */
 export async function isBuiltinAgent(
   root: string,
@@ -64,5 +64,5 @@ export async function isBuiltinAgent(
   agentId: string,
 ): Promise<boolean> {
   if (agentId === SYSTEM_AGENT_ID) return isSystemAgent(root, projectId, agentId);
-  return BUILTIN_AGENT_IDS.includes(agentId);
+  return agentId === DEFAULT_AGENT_ID;
 }

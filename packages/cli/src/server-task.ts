@@ -306,10 +306,12 @@ export async function watchTask(
       if (isHookContinue(msg)) continued = true;
       if (isHookInput(msg) && (round === 0 || continued)) {
         continued = false;
-        if (round > 0) renderer?.endTask(Date.now() - segmentStartedAt);
-        round++;
-        segmentStartedAt = Date.now();
-        opts.goal.out.write(`${dim(t.goalRound(round))}\n`);
+        const now = Date.now();
+        const elapsed = round > 0 ? now - segmentStartedAt : undefined;
+        const label = dim(t.goalRound(++round));
+        segmentStartedAt = now;
+        if (renderer) renderer.printGoalRound(label, elapsed);
+        else opts.goal.out.write(`${label}\n`);
       }
     }
     if (opts.onAssistantText && (msg.origin?.length ?? 0) === 0 && isModelMessage(msg)) {

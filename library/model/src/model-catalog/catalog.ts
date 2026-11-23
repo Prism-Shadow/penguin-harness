@@ -59,8 +59,8 @@
  * (delisted 2026-08-06; the Z.AI direct glm-5.1 remains), the OpenRouter
  * inclusionai/ling-3.0-flash:free listing (delisted from OpenRouter, removed 2026-08-18),
  * embedding models and Bedrock. Direct-vendor ids are
- * auto-routed by MMSP and leave client_type unset; nine gateway groups (OpenRouter,
- * Fireworks AI, SiliconFlow, Atlas Cloud, Runcrate, TokenDance, OpenCode Go, Qwen
+ * auto-routed by MMSP and leave client_type unset; gateway groups (OpenRouter,
+ * Fireworks AI, SiliconFlow, JellyToken, Atlas Cloud, Runcrate, TokenDance, OpenCode Go, Qwen
  * Pay-As-You-Go and Qwen Token Plan) can't be auto-routed, so every gateway row **always
  * pins an explicit client_type** and names its preset base URL. ModelScope's rows pin one
  * protocol too (see below).
@@ -355,6 +355,7 @@ const VLLM_LOCAL_BASE_URL = "http://127.0.0.1:8000/v1";
 /** Preset provider endpoints; only OpenAI-compatible gateways expose theirs as gatewayBaseUrl. */
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
+const JELLYTOKEN_BASE_URL = "https://aiservice.jellytoken.com/v1";
 const QWEN_TOKEN_PLAN_BASE_URL =
   "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1";
 const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
@@ -569,6 +570,16 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     // As TokenDance: Chat Completions throughout, and models added by hand follow the group.
     clientType: "openai-chat",
     addable: true,
+  },
+  {
+    id: "jellytoken",
+    label: "JellyToken",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    apiKeyUrl: "https://www.jellytoken.com/models",
+    modelsUrl: "https://www.jellytoken.com/models",
+    gatewayBaseUrl: JELLYTOKEN_BASE_URL,
+    clientType: "openai-chat",
   },
   {
     id: "atlascloud",
@@ -1960,6 +1971,29 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
   },
+  // JellyToken rates in CNY per million tokens (cache read, input, output).
+  ...(
+    [
+      ["deepseek-v4.1-flash-1017", 0.012, 0.6, 2.4],
+      ["qwen4-max", 0.475, 9.5, 28.5],
+      ["glm-5.3", 1, 4, 10],
+      ["glm-5.3-flash", 0.184, 0.64, 2.24],
+      ["qwen3.8-flash", 0.075, 0.75, 2.25],
+      ["glm-5.3-flashx", 0.4275, 1.5, 5.25],
+      ["doubao-seed-2.1-lite", 0.12, 0.6, 2.025],
+      ["doubao-seed-2-1-pro", 0.9, 4.5, 22.5],
+      ["kimi-k3", 1.5, 15, 75],
+    ] as const
+  ).map(([modelId, cacheRead, input, output]) => ({
+    provider: "jellytoken",
+    modelId,
+    displayName: modelId,
+    contextWindow: 1_000_000,
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: JELLYTOKEN_BASE_URL,
+    pricing: cny(cacheRead, input, output),
+  })),
   // -- Atlas Cloud (gateway: OpenAI-compatible protocol, preset base URL). Read 2026-10-11 from
   // the public catalog API (GET https://api.atlascloud.ai/v1/models, no credential required):
   // the ids exactly as listed, context windows, output limits, input modalities, quantization

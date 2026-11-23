@@ -3,7 +3,8 @@
  * that resolves to `packages/web/src/api/client.ts` or `api/sse.ts` — from the endpoint
  * wrappers, the providers, the features — resolves to the mocks here instead. Matching on
  * the resolved file rather than the specifier text means `./client`, `../api/client` and
- * `../../api/client` are all caught, and nothing else is.
+ * `../../api/client` are all caught. The guide workbench also has a gallery-only stand-in:
+ * the static site can show its installation instructions without a plugin server.
  *
  * Shared by the gallery's Vite config and its vitest config, so the tests that walk the
  * app's endpoint wrappers run them against the mock too. The resolution is path arithmetic
@@ -20,6 +21,7 @@ const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 export const SWAPPED_MODULES: Readonly<Record<string, string>> = {
   [here("../../../../web/src/api/client")]: here("./client.ts"),
   [here("../../../../web/src/api/sse")]: here("./sse.ts"),
+  [here("../../../../web/src/features/workbenches/workbench-frame")]: here("./workbench-frame.tsx"),
 };
 
 /** The mock a relative import from `importer` should resolve to, or null for any other import. */
@@ -27,7 +29,9 @@ export function swappedModuleFor(source: string, importer: string | undefined): 
   if (importer === undefined || !source.startsWith(".")) return null;
   const from = importer.split("?")[0] ?? importer;
   const target = resolve(dirname(from), source).replace(/\.tsx?$/, "");
-  return SWAPPED_MODULES[target] ?? null;
+  const mock = SWAPPED_MODULES[target];
+  // A stand-in can import the original to delegate everything outside its own fixture.
+  return mock === from ? null : (mock ?? null);
 }
 
 export function mockWebNetwork(): {

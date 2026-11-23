@@ -134,6 +134,7 @@ import { S } from "../../lib/strings";
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { formatBytes, humanizeTokens } from "../../lib/format";
 import { useDictation } from "./voice/dictation";
+import { DraftHeightHandle } from "./draft-height-handle";
 import { fitTextarea } from "../../lib/textarea-fit";
 import { useLocale } from "../../state/locale";
 import { useAuth } from "../../state/auth";
@@ -637,6 +638,7 @@ export function ChatInput({
   initialPendingModelRef,
   onPendingModelChange,
   controlRef,
+  resizableDraft = false,
   variant = "session",
 }: {
   status: SessionStatus;
@@ -901,6 +903,8 @@ export function ChatInput({
    * model or agent.
    */
   variant?: "session" | "subagent";
+  /** The start page can give a long draft more writing space. */
+  resizableDraft?: boolean;
   /**
    * Handle for the one thing a parent reaches in and does: the draft screen's example cards
    * fill this composer (see ComposerControl). A ref rather than a `fill` prop because it is a
@@ -1625,7 +1629,7 @@ export function ChatInput({
    */
   const autoGrow = () => {
     const el = textareaRef.current;
-    if (!el) return;
+    if (!el || resizableDraft) return;
     fitTextarea(el, (box) => Math.min(box.scrollHeight, 176));
   };
 
@@ -1641,7 +1645,7 @@ export function ChatInput({
    * nothing left to measure again, the composer stayed expanded after every send. A layout
    * effect runs after the commit by construction, and before paint, so the box never flashes.
    */
-  useLayoutEffect(autoGrow, [text]);
+  useLayoutEffect(autoGrow, [text, resizableDraft]);
 
   // History navigation ends the moment the composer text no longer matches the recalled
   // entry — one rule covering user edits, slash-command rewrites and the post-send clear
@@ -2481,6 +2485,7 @@ export function ChatInput({
           container breakpoints) — the card's width changes with the viewport and with the Files
           panel squeezing it, so viewport breakpoints wouldn't judge it accurately. */}
       <ComposerCard
+        resizeHandle={resizableDraft && <DraftHeightHandle textarea={textareaRef} text={text} />}
         banner={banner}
         attachments={
           // The staged images, then the staged files, as one row of tiles at the top of the

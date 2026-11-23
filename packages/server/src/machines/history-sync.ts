@@ -191,6 +191,9 @@ export interface AssembledWindow {
   response: MessagesResponse;
   /** Parallel to `response.messages`; null where a record names no line (a held input, an older machine's). */
   sources: (BodySource | null)[];
+  /** Number of saved Trace records before pending inputs. Only the history-lines transport knows it. */
+  committedRecords?: number;
+  projectId?: string;
   serverNowMs: number | null;
 }
 
@@ -565,6 +568,12 @@ class HistoryJob {
   }
 
   #failAll(err: Error): void {
+    if (
+      err instanceof HttpError &&
+      (err.code === "machine_refused" || err.code === "session_forbidden")
+    ) {
+      void this.deps.cache.discardWindows(this.machineId, this.sessionId).catch(() => undefined);
+    }
     const stream = this.#stream;
     if (stream?.op !== null && stream?.op !== undefined) this.#settle(stream.op, err);
     for (const op of this.#queue.splice(0)) this.#settle(op, err);
@@ -851,6 +860,9 @@ class HistoryJob {
 
   /** A refusal for one stream: its op fails, and a fill it carried is not asked for again. */
   #refuse(err: HttpError, stream: MachineStream): void {
+    if (err.code === "session_forbidden" || err.code === "session_not_found") {
+      void this.deps.cache.discardWindows(this.machineId, this.sessionId).catch(() => undefined);
+    }
     if (stream.op !== null) this.#settle(stream.op, err);
     if (stream.op === null || stream.fill) {
       for (const waiter of this.#fillWaiters) waiter.reject(err);
@@ -1215,7 +1227,13 @@ class HistoryJob {
       this.sessionId,
       SESSION_ROUTES_BASE,
     );
-    return { response, sources, serverNowMs: envelope.serverNowMs };
+    return {
+      response,
+      sources,
+      committedRecords: records.length,
+      ...(window.projectId !== undefined ? { projectId: window.projectId } : {}),
+      serverNowMs: envelope.serverNowMs,
+    };
   }
 
   /**
@@ -1480,6 +1498,9 @@ export class HistorySync {
             this.#facts.delete(key);
             this.sessionDeleted(machineId, sessionId);
           } else if (asked) {
+            if (fact.kind === "refused") {
+              void this.deps.cache.discardWindows(machineId, sessionId).catch(() => undefined);
+            }
             // A machine that was asked: its word stands, an unclear one too. One that could
             // not be asked (away) cost nothing, and is asked again the moment it is back.
             this.#remember(key, fact);

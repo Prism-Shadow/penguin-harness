@@ -4,10 +4,7 @@
  * and the "Import workbench" dialog. The files are the truth, so the tab reads its lists again
  * after every action.
  *
- * A row says what its controls do (workbench-row.tsx): its two switches carry their words
- * ("Enable", "Show in the App Center"), "Open" is a text button and the way into the app, and the
- * rest — the App Center setting again as a checkable row, reload, version history, export,
- * remove — are the rows of its "More" menu. The title, and a click anywhere else on the row that
+ * A row offers Enable, Open, and the action to hide or unhide the app in the App Center. The title, and a click anywhere else on the row that
  * is not one of its controls, opens the workbench's own files read-only (part-files-dialog.tsx).
  * A workbench a plugin installed carries the puzzle mark after its title, naming the plugin and
  * pointing at its row on the Plugins sub-page, and its removal says which plugin installed it.
@@ -16,10 +13,8 @@
  *   workbenches" is off every row's switch is greyed at its own value, and a server older than
  *   the switches gets none. A workbench that does not run (its own switch or the Agent-wide one
  *   is off) has nothing to open or reload; its history, restore, export and removal stay.
- * - The App Center setting commits at once too, from the switch or from the menu's row — one
- *   setting, two controls: it rewrites `penguin.appCenter.show` in the workbench's package.json,
- *   and the reload that follows (none while it does not run) records the edit as a version. A
- *   refused write puts both back where the file says. A machine's Agent has it as well, written
+ * - The visibility button writes `penguin.appCenter.show` in the manifest. A refused write
+ *   restores the previous action. A machine's Agent has it as well, written
  *   on that machine: the App Center lists a machine's apps for an administrator, and its "Remove
  *   from App Center" is this same setting, so this row is where such an app comes back.
  * - The sidebar setting is the menu's checkable "Show in the sidebar", on every row whose server
@@ -73,11 +68,9 @@ import { buildWorkbenchImportPrompt } from "./workbench-import";
 import { cardBodyClick } from "../../lib/card-open";
 import type { PartRef, PartSource } from "./plugins-subpages";
 import {
-  AppCenterToggle,
   LabelledSwitch,
   WorkbenchMark,
   WorkbenchRowMenu,
-  type AppCenterControl,
   type SettingControl,
 } from "./workbench-row";
 
@@ -160,7 +153,7 @@ function WorkbenchAppCenter({
 }: {
   workbench: WorkbenchInfo;
   options: WorkbenchRowsOptions;
-  children: (appCenter: AppCenterControl) => ReactNode;
+  children: (appCenter: SettingControl) => ReactNode;
 }) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -302,12 +295,11 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
     // The body opens the workbench's files; "Open" stays the way into the app.
     const open = () => onOpenFiles({ kind: "workbench", name: workbench.id, title });
     /** The row's controls, the App Center setting among them, and the sidebar's when it has one. */
-    const controls = (appCenter: AppCenterControl, sidebar: SettingControl | undefined) => (
+    const controls = (appCenter: SettingControl, sidebar: SettingControl | undefined) => (
       <>
         {enabled !== undefined && (
           <WorkbenchSwitch workbench={{ ...workbench, enabled }} title={title} options={options} />
         )}
-        <AppCenterToggle title={title} {...appCenter} />
         {first && running && projectId && (
           <Button
             size="sm"
@@ -322,10 +314,19 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
             {S.workbenches.openAction}
           </Button>
         )}
+        <Button
+          size="sm"
+          disabled={appCenter.disabled}
+          aria-label={`${S.workbenches.appCenterVisibility(appCenter.checked)} ${title}`}
+          data-tooltip={S.workbenches.appCenterVisibilityHint}
+          data-tooltip-extra
+          onClick={() => appCenter.onChange(!appCenter.checked)}
+        >
+          {S.workbenches.appCenterVisibility(appCenter.checked)}
+        </Button>
         <WorkbenchRowMenu
           title={title}
           disabled={busy}
-          appCenter={appCenter}
           sidebar={sidebar}
           onReload={
             running

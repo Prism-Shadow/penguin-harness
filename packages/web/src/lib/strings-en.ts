@@ -1060,6 +1060,8 @@ export const en: Strings = {
     hint: (mod: string): string => `←→ groups / models · ${mod}1–9 jump to a group`,
   },
   workbenches: {
+    configureOnMachine: "Configure models on the machine running this workbench.",
+    openBeforeConfiguring: "Open the workbench before configuring models.",
     title: "Workbenches",
     count: (n: number) => `${n} ${n === 1 ? "workbench" : "workbenches"}`,
     open: "Open workbench",
@@ -1152,11 +1154,10 @@ export const en: Strings = {
     importOverwriteAction: "Overwrite",
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "Export",
-    /** Whether the workbench has a shortcut in the App Center: the words beside the row's switch (which flip it too), its accessible name with the title, and the More menu's checkable row. */
-    showInAppCenter: "Show in the App Center",
-    /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
-    showInAppCenterHint:
-      "When on, this workbench appears as an app on the App Center page: every member of the Project sees its icon there and opens it with one click, without starting a chat first. Turning it off only takes the shortcut off the App Center; the workbench, its data and its versions are untouched. Flipping the switch rewrites penguin.appCenter.show in the workbench's package.json and is recorded as a version.",
+    appCenterVisibility: (shown: boolean): string =>
+      shown ? "Hide from App Center" : "Unhide in App Center",
+    appCenterVisibilityHint:
+      "Changes the App Center shortcut for everyone in this Project. The workbench keeps its data and version history.",
     /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
     showInSidebar: "Show in the sidebar",
     /** The row's text button: opens the workbench beside a new chat. */
@@ -3310,6 +3311,9 @@ export const en: Strings = {
     /** Listed, but the process could not load it: the reason, not a success. */
     deploymentFailedToast: (name: string, reason: string) => `${name} failed to load: ${reason}`,
     /** A server module's install / removal confirm: what it does, then what it costs, in small type below. */
+    packageUpdateFailed: (name: string, reason: string) => `Couldn’t update ${name}. ${reason}`,
+    packageUpdated: (name: string, version: string) =>
+      `Updated ${name} to v${version} in the plugin library`,
     updatePackageTo: (version: string) => `Update to v${version}`,
     applyConfirmInstall: (name: string) => `Install ${name}`,
     applyConfirmRemove: (name: string) => `Remove ${name}`,
@@ -4098,28 +4102,19 @@ export const en: Strings = {
     onMachine: (name: string, machine: string) => `${name} [SSH: ${machine}]`,
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "New chat in this workspace",
-    draftSubtitle: "The most comprehensive agent self-evolution platform",
     start: {
       metrics: {
         agents: "Agents",
         toolkits: "RSI algorithms",
         benchmarks: "Benchmarks",
       },
+      shuffle: "Shuffle suggestions",
       examplesTitle: "Examples and shortcuts",
     },
-    /** Folder names for the start page's collapsible examples (bookmark-style: exactly one open at a time). */
-    exampleFolders: {
-      apps: "Build an AI app from one sentence",
-      webapps: "Web pages and mini games",
-      evolve: "Evaluate and optimize agents",
-      schedules: "Scheduled tasks",
-    },
-    /** Second tooltip line on an example row: the click fills the composer, it does not send. */
-    exampleFillHint: "Click to fill the composer — edit it if you like, then send",
     shortcuts: {
-      folder: "My shortcuts",
+      retry: "Reload my shortcuts",
+      manage: "Manage shortcuts",
       new: "New shortcut",
-      newFromComposer: "Starts from whatever is in the composer",
       createTitle: "New shortcut",
       editTitle: "Edit shortcut",
       titleLabel: "Name",
@@ -4431,6 +4426,7 @@ Scenarios:
     /** Answer-preview placeholder while the latest turn is still running with no reply text yet. */
     outlineAnswering: "Answering…",
     inputPlaceholder: "Type a message. Enter to send, Shift+Enter for newline, paste images",
+    resizeDraft: "Resize draft input",
     inputPlaceholderShort: "Type a message…",
     /** Placeholder while a Task is running (mid-run steering): the message is delivered between turns with the next request. */
     steerPlaceholder: "Message the running agent — delivered with the next turn",
@@ -4623,6 +4619,14 @@ Scenarios:
     statParenClose: ")",
     noSessions: "No Sessions yet",
     /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
+    offlineHistory: {
+      disconnected: (alias: string) => `${alias} is not connected.`,
+      cached: "Showing the conversation from the last sync.",
+      miss: "No cached history is available. The conversation will open when the machine reconnects.",
+      empty: "There were no messages at the last sync.",
+      refreshing: (alias: string) => `${alias} is connected. Updating the conversation.`,
+      failed: "The cached conversation could not be read.",
+    },
     sessionOnOfflineMachine: (machine: string) =>
       `This conversation is on ${machine}, which is not connected right now.`,
     sessionOnQuietMachine: (machine: string) =>

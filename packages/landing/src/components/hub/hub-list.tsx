@@ -5,7 +5,7 @@
  * in the URL, so a filtered list can be linked and Back restores it; the scroll is noted on every
  * click inside the page, so Back returns to it too (lib/hub/back.ts).
  *
- * A page may put a `lead` above its filters and may lay the shown items out in a list of
+ * A page may lay the shown items out in a list of
  * its own (`wrapList`, the Plugins page's cover grid); by default they are cards in two columns.
  */
 import { Fragment, useEffect, useMemo } from "react";
@@ -33,6 +33,7 @@ export interface HubSort<T> {
 
 export function HubList<T>({
   title,
+  className,
   description,
   source,
   items,
@@ -42,10 +43,10 @@ export function HubList<T>({
   sorts = [],
   renderItem,
   wrapList,
-  lead,
   controls,
 }: {
   title: string;
+  className?: string;
   /** One line under the title: what the list holds. */
   description?: string;
   source?: { href: string; label: string };
@@ -58,8 +59,6 @@ export function HubList<T>({
   renderItem: (item: T) => ReactNode;
   /** Lays the shown items out — `renderItem`'s, keyed, in order — in the page's own list. */
   wrapList?: (items: ReactNode[]) => ReactNode;
-  /** Editorial content independent of the results. */
-  lead?: ReactNode;
   /** Extra list controls beside the sort, when this catalogue has them. */
   controls?: ReactNode;
 }) {
@@ -155,8 +154,7 @@ export function HubList<T>({
 
   return (
     <ExternalLinkScope>
-      <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-        {lead && <div className="mb-6">{lead}</div>}
+      <div className={`mx-auto max-w-6xl px-4 pb-12 sm:px-6 ${className ?? "pt-12"}`}>
         <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
           {description && source ? (
             <div className="min-w-0">

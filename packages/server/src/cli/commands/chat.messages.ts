@@ -21,6 +21,7 @@ export interface ChatText {
   chatHints(): string;
 
   confirmExit(): string;
+  steerPrompt(): string;
 
   /** Acknowledgment printed when a line typed mid-run is queued as steering (echoes the text; delivered between turns). */
   steerQueued(text: string): string;
@@ -113,6 +114,7 @@ export const chatEn: ChatText = {
   chatHints: () =>
     "Type a message to start a conversation; end a line with \\; typing while a task runs steers the agent; /goal runs a goal to completion; /compact to compact the context; /clear to start a fresh session; /thinking changes the thinking level; /switch-model <provider> <model_id> switches the model (compacting the context first); /verbose toggles full tool output; /exit to quit; and Ctrl-C interrupts the current conversation.",
 
+  steerPrompt: () => "> Steer ",
   confirmExit: () => "Exit penguin? [y/N] ",
 
   steerQueued: (text) => `» steering queued (delivered with the next turn): ${text}`,
@@ -193,6 +195,7 @@ export const chatZh: ChatText = {
   chatHints: () =>
     "输入消息发起对话；行尾 \\ 续行；运行中输入可插话引导；/goal 以目标模式运行至完成；/compact 压缩上下文；/clear 开启全新会话；/thinking 调整思考等级；/switch-model <provider> <model_id> 切换模型（先压缩上下文）；/verbose 切换完整工具输出；/exit 退出；Ctrl-C 中断对话。",
 
+  steerPrompt: () => "> 插话 ",
   confirmExit: () => "确认退出 penguin？[y/N] ",
 
   steerQueued: (text) => `» 插话已排队（随下一轮送达）：${text}`,

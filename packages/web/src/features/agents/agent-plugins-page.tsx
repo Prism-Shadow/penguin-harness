@@ -46,6 +46,8 @@ import {
   type AgentPluginGroups,
   type AgentTarget,
   type PluginRow,
+  packageUpdate,
+  useLocalPluginIndex,
 } from "../plugins";
 import { agentPluginTitle, useAgentPluginActions } from "./agent-plugin-actions";
 import { AgentPluginRow, type AgentModule } from "./agent-plugin-row";
@@ -105,7 +107,13 @@ export function AgentPluginsPage({
 }) {
   const [folded, setFolded] = useState<ReadonlySet<Section>>(new Set());
   const installs = installed === null ? undefined : installsOf(installed);
+  const registry = useLocalPluginIndex(isAdmin && target.machineId === null);
+  const releaseFor = (entry: AgentPluginGroup) =>
+    entry.plugin && entry.status !== "available" && isAdmin && target.machineId === null
+      ? packageUpdate(registry.value?.plugins.find((item) => item.name === entry.plugin!.package))
+      : null;
   const actions = useAgentPluginActions({
+    releaseFor,
     target,
     agentName,
     machineLabel,
