@@ -26,6 +26,9 @@
 import { BACKGROUND_STORAGE_KEYS, THEME_STORAGE_KEYS } from "../../../ui/src/boot";
 import { LANG_KEY } from "../../../web/src/state/locale-pref";
 
+/** The public frame tells its host that a visitor has taken control. */
+export const DEMO_TAKEN_OVER = "penguin:homepage-demo-taken-over";
+
 /** The frame's document, relative to the gallery's base. */
 export const APP_FRAME_PATH = "/app.html";
 

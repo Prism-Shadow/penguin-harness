@@ -9,14 +9,15 @@
  * - **A guest.** The frame is embedded, so it takes no focus and hands the wheel to the page until
  *   the reader clicks into it (the gallery's guest-frame.ts).
  * - **Phones and touch.** Below `sm` the frame is the gallery's phone window, which the app lays
- *   out as on a phone; a 1280-wide window scaled to a phone would be unreadable. Without a fine
- *   pointer the frame is a picture only (inert): a finger dragging over a full-width frame would
+ *   out as on a phone; a 1280-wide window scaled to a phone would be unreadable. The homepage demo accepts touch. The other frames
+ *   stay pictures without a fine pointer: a finger dragging over a full-width frame would
  *   scroll the app's lists instead of the page. The link in the window bar opens the same surface
  *   in the gallery, full size, for anyone who wants to use it.
  * - **The site's language and mode.** A switch of either points the frame at a new document.
  */
 import { useEffect, useRef, useState } from "react";
 import type { SyntheticEvent } from "react";
+import { DEMO_TAKEN_OVER } from "../../../ui-gallery/src/app/frame";
 import { S } from "../lib/strings";
 import { usePrefersReducedMotion } from "../lib/reduced-motion";
 import { frameSize, gallerySurfaceUrl, liveFrameSrc } from "../lib/live-frame";
@@ -86,7 +87,33 @@ export function LiveAppFrame({
   const [playbackChoice, setPlaybackChoice] = useState<boolean | null>(null);
   const playing = playbackChoice ?? (!!autoplay && !reducedMotion);
   const size = frameSize(phone);
-  const src = liveFrameSrc(surface, locale, dark, playing ? autoplay : undefined, !!autoplay);
+  const runningSrc = liveFrameSrc(surface, locale, dark, autoplay, !!autoplay);
+  const [retainedFrame, setRetainedFrame] = useState<string | null>(null);
+  const [round, setRound] = useState(0);
+  const src =
+    playing || retainedFrame === runningSrc
+      ? runningSrc
+      : liveFrameSrc(surface, locale, dark, undefined, !!autoplay);
+  useEffect(() => {
+    if (retainedFrame && retainedFrame !== runningSrc) setRetainedFrame(null);
+  }, [runningSrc, retainedFrame]);
+  const iframe = useRef<HTMLIFrameElement | null>(null);
+  const interactive = fine || !!autoplay;
+  useEffect(() => {
+    if (!autoplay || !playing) return;
+    const takeOver = (event: MessageEvent) => {
+      if (
+        event.origin !== new URL(runningSrc, window.location.href).origin ||
+        event.source !== iframe.current?.contentWindow ||
+        event.data !== DEMO_TAKEN_OVER
+      )
+        return;
+      setRetainedFrame(runningSrc);
+      setPlaybackChoice(false);
+    };
+    window.addEventListener("message", takeOver);
+    return () => window.removeEventListener("message", takeOver);
+  }, [autoplay, playing, runningSrc]);
   const box = useRef<HTMLDivElement | null>(null);
   const [near, setNear] = useState(false);
   const [width, setWidth] = useState(0);
@@ -159,6 +186,9 @@ export function LiveAppFrame({
         button.scrollIntoView({ block: "start", behavior: reducedMotion ? "instant" : "smooth" });
       }
     }
+    if (!playing) setRound((current) => current + 1);
+    setRetainedFrame(null);
+    setReadySrc(null);
     setPlaybackChoice(!playing);
   };
 
@@ -200,15 +230,16 @@ export function LiveAppFrame({
         {!ready && <span className="sr-only">{S.live.loading}</span>}
         {near && scale > 0 && (
           <iframe
-            key={src}
+            key={`${round}:${src}`}
+            ref={iframe}
             src={src}
             title={title}
             width={size.width}
             height={size.height}
             onLoad={onLoad}
-            inert={!fine}
-            tabIndex={fine ? undefined : -1}
-            className={`absolute top-0 left-0 origin-top-left border-0 transition-opacity duration-300 ${ready ? "opacity-100" : "opacity-0"} ${fine ? "" : "pointer-events-none"}`}
+            inert={!interactive}
+            tabIndex={interactive ? undefined : -1}
+            className={`absolute top-0 left-0 origin-top-left border-0 transition-opacity duration-300 ${ready ? "opacity-100" : "opacity-0"} ${interactive ? "" : "pointer-events-none"}`}
             style={{ transform: `scale(${scale})` }}
           />
         )}
