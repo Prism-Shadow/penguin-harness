@@ -106,10 +106,12 @@ const KEY = "default_agent/window-demo";
 const row = (page) =>
   page.getByRole("navigation", { name: "应用", exact: true }).locator(`[data-app-row="${KEY}"]`);
 async function launchFromChat(page) {
-  await page.getByRole("button", { name: "浏览工作台", exact: true }).click();
+  await page.getByRole("button", { name: "快捷方式", exact: true }).click();
+  await page.getByRole("button", { name: "打开应用中心", exact: true }).click();
   await page
-    .getByRole("region", { name: "工作台", exact: true })
-    .getByRole("button", { name: "Window demo", exact: true })
+    .getByRole("list", { name: "应用中心", exact: true })
+    .locator(`li[data-app="${KEY}"] > button`)
+    .first()
     .click();
 }
 async function action(page, name) {
