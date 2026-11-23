@@ -103,36 +103,30 @@ for (const [theme, mode] of [
   ["doodle", "dark"],
   ["github", "light"],
 ]) {
-  test(`welcome link hover and keyboard focus respect its themed cell in ${theme} ${mode}`, async ({
+  test(`welcome shortcut hover and keyboard focus respect its themed outline in ${theme} ${mode}`, async ({
     page,
   }, info) => {
     await page.goto(`/app.html?route=/chat/new&lang=en&theme=${theme}&mode=${mode}`);
-    const owner = page.locator('.ui-start [data-slot="count"]').nth(1);
-    const link = page.getByRole("link", { name: /RSI algorithms/i });
-    await expect(link).toBeVisible();
-    await owner.evaluate((el, corners) => {
+    const shortcuts = page.locator('.ui-start [data-slot="suggestion"]');
+    const shortcut = shortcuts.nth(1);
+    await expect(shortcut).toBeEnabled();
+    await shortcut.evaluate((el, corners) => {
       el.style.borderRadius = corners;
+      el.dataset.testShortcut = "";
     }, corners);
-    await link.evaluate((el) => {
-      el.dataset.testLink = "";
-    });
-    // A theme may give the interactive link a smaller curve than the cell that owns its fill.
     await page.addStyleTag({
-      content: `
-        [data-test-link]:is(:hover, :focus-visible) { background-color: ${ink} !important; }
-        [data-test-link]:focus-visible { border-radius: 9px 12px 9px 11px !important; }
-      `,
+      content: `[data-test-shortcut]:is(:hover, :focus-visible) { background-color: ${ink} !important; }`,
     });
-    await link.hover();
-    await checkInk(page, owner, info);
-    // Move the pointer away so the keyboard fill is exercised on its own.
+    await shortcut.hover();
+    await checkInk(page, shortcut, info);
     await page.mouse.move(0, 0);
-    await page.locator('.ui-start [data-slot="counts"] a').first().focus();
+    await shortcuts.first().focus();
     await page.keyboard.press("Tab");
-    await expect(link).toBeFocused();
-    await checkInk(page, owner, info);
+    await expect(shortcut).toBeFocused();
+    await checkInk(page, shortcut, info);
     await page.keyboard.press("Enter");
-    await expect(page.getByRole("heading", { name: /^Plugins\b/, level: 1 })).toBeVisible();
+    await expect(shortcut).toHaveAttribute("aria-current", "true");
+    await expect(page.locator(".ui-start textarea")).not.toHaveValue("");
   });
 }
 

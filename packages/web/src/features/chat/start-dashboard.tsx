@@ -1,15 +1,11 @@
-/** The new chat opens on the composer, with suggested and saved prompts immediately below it.
- * Project counts and release information remain available below the shortcuts. */
 import { Fragment, useState } from "react";
 import type { ReactNode } from "react";
 
-import { Link } from "react-router";
 import {
   Button,
   GlyphIcon,
   Heading,
   ICONS,
-  ICON_GAP,
   ICON_SIZE,
   PenguinLogo,
   IconButton,
@@ -17,24 +13,15 @@ import {
 import { VersionStamp } from "../../components/account/version-stamp";
 import { PENGUIN_LOGO_URL } from "../../lib/brand-logo";
 import { S } from "../../lib/strings";
-import { glyphOf } from "../../lib/nav-icons";
 
-import { windowAddress } from "../../lib/app-window-address";
-import { localizedText } from "../../lib/skill-use";
-import { systemAppKey, useSystemApps } from "../../lib/system-apps";
 import { versionBadgeFor } from "../../lib/update-flow";
-import type { StartMetric } from "../../lib/start-metrics";
-import { useStartMetrics } from "../../lib/web-app-pages";
 import { openAppInfo, useUpdateFlow } from "../../lib/use-update-flow";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
 import { pickExamples, type ExampleTaskId } from "./example-tasks";
 import { SavedPrompts } from "./saved-prompts";
-import { useProjectBenchmarks, useRsiToolkits } from "./use-start-dashboard";
 
 export interface StartDashboardProps {
-  projectId: string;
   /** The composer and the pills under it: set between the brand and the examples. */
   composer: ReactNode;
   /** Whether the Agent's Skills have been read: until then nothing knows what a fill would pin. */
@@ -48,62 +35,35 @@ export interface StartDashboardProps {
 }
 
 export function StartDashboard({
-  projectId,
   composer,
   skillsLoaded,
   exampleText = null,
   fill,
   readComposerText,
 }: StartDashboardProps) {
-  const { agents, agentsLoading } = useProject();
-  const toolkits = useRsiToolkits();
-  const benchmarks = useProjectBenchmarks(projectId);
-  const metrics = useStartMetrics();
   return (
-    <div className="ui-start">
-      <div
-        data-slot="brand"
-        className="mb-6 flex flex-wrap items-center justify-center gap-3 text-center"
-      >
-        <div data-slot="brand-mark" className="size-12 shrink-0">
-          <PenguinLogo src={PENGUIN_LOGO_URL} className="h-full w-full rounded-[24%]" />
+    <div className="ui-start anim-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-3 md:px-4">
+      <div className="mx-auto my-auto w-full min-w-0 max-w-3xl shrink-0 py-4">
+        <div data-slot="brand" className="mb-5 flex flex-col items-center gap-1 text-center">
+          <div className="flex items-center justify-center gap-3">
+            <div data-slot="brand-mark" className="size-12 shrink-0">
+              <PenguinLogo src={PENGUIN_LOGO_URL} className="h-full w-full rounded-[24%]" />
+            </div>
+            <Heading level={1} display data-slot="title" className="min-w-0">
+              <AppName />
+            </Heading>
+          </div>
+          <p className="text-sm text-fg-muted">{S.chat.start.tagline}</p>
         </div>
-        <Heading level={1} display data-slot="title" className="min-w-0">
-          <AppName />
-        </Heading>
+        {composer}
+        <ExamplesSection
+          ready={skillsLoaded}
+          fill={fill}
+          exampleText={exampleText}
+          readComposerText={readComposerText}
+        />
       </div>
-      {composer}
-      <ExamplesSection
-        ready={skillsLoaded}
-        fill={fill}
-        exampleText={exampleText}
-        readComposerText={readComposerText}
-      />
-      <div data-slot="counts" className="mx-auto mt-6">
-        <ul className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-          <StatCount
-            glyph={glyphOf("robot")}
-            label={S.chat.start.metrics.agents}
-            to="/agents"
-            value={agentsLoading ? null : agents.length}
-          />
-          <StatCount
-            // The loop every self-evolution toolkit runs; the library holds the toolkits.
-            glyph={ICONS.refresh}
-            label={S.chat.start.metrics.toolkits}
-            to="/plugins"
-            value={toolkits.value?.length ?? null}
-          />
-          <StatCount
-            glyph={glyphOf("trophy")}
-            label={S.chat.start.metrics.benchmarks}
-            to="/benchmark"
-            value={benchmarks.benchmarks?.length ?? null}
-          />
-          {metrics.length > 0 && <ContributedCounts metrics={metrics} />}
-        </ul>
-      </div>
-      <VersionLine />
+      <StartVersionLine />
     </div>
   );
 }
@@ -133,12 +93,15 @@ function AppName() {
 const versionBadgeClass =
   "inline-block whitespace-nowrap align-super text-xs leading-4 text-fg-subtle hover:underline";
 
-/** Release information remains accessible below the prompt shortcuts. */
-function VersionLine() {
+/** The release footer uses the same build date and update action as the account menu. */
+function StartVersionLine() {
   const { locale } = useLocale();
   const { version } = useVersionInfo(true);
   return (
-    <p data-slot="version" className="mt-1 text-center text-xs tabular-nums text-fg-subtle">
+    <p
+      data-slot="version"
+      className="shrink-0 pb-1 pt-3 text-center text-xs tabular-nums text-fg-subtle"
+    >
       {version === null ? (
         "\u00a0"
       ) : (
@@ -191,78 +154,6 @@ function VersionBadge() {
 }
 
 // ---------------------------------------------------------------------------
-// The counts
-// ---------------------------------------------------------------------------
-
-/** The counts server modules contribute, after the page's own, each opening the app it names. */
-function ContributedCounts({ metrics }: { metrics: readonly StartMetric[] }) {
-  const { locale } = useLocale();
-  const systemApps = useSystemApps();
-  /** Where a count leads: the system app it names, in its window when it opens in one. */
-  const addressOf = (key: string | undefined): string | undefined => {
-    const app = key === undefined ? undefined : systemApps.find((one) => one.key === key);
-    if (app === undefined) return undefined;
-    return app.frame !== undefined ? windowAddress(systemAppKey(app.key)) : app.path;
-  };
-  return (
-    <>
-      {metrics.map((metric) => (
-        <StatCount
-          key={metric.id}
-          glyph={glyphOf(metric.icon)}
-          label={localizedText(locale, metric.title, metric.titleZh)}
-          to={addressOf(metric.app)}
-          value={metric.value}
-        />
-      ))}
-    </>
-  );
-}
-
-/**
- * Each count links its icon, label and value to the page that lists the underlying items.
- */
-function StatCount({
-  glyph,
-  label,
-  to,
-  value,
-}: {
-  glyph: string;
-  label: string;
-  /** The page it opens; absent: the count opens nothing. */
-  to?: string | undefined;
-  /** The count; null while it has not arrived. */
-  value: number | null;
-}) {
-  const body = (
-    <>
-      <span className={`inline-flex items-center ${ICON_GAP.row} text-xs text-fg-muted`}>
-        <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
-        {label}
-      </span>
-      <span data-slot="figure" className="text-xs font-semibold tabular-nums text-fg-muted">
-        {value === null ? "—" : value}
-      </span>
-    </>
-  );
-  return (
-    <li data-slot="count" data-clip-surface="" className="min-w-0">
-      {to === undefined ? (
-        <div className="inline-flex min-w-0 items-baseline gap-1 px-1 py-1">{body}</div>
-      ) : (
-        <Link
-          to={to}
-          className="inline-flex min-w-0 items-baseline gap-1 rounded-[inherit] px-1 py-1 transition-colors duration-150 hover:bg-control-hover focus-visible:-outline-offset-2"
-        >
-          {body}
-        </Link>
-      )}
-    </li>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Examples and shortcuts
 // ---------------------------------------------------------------------------
 
@@ -299,7 +190,7 @@ function ExamplesSection({
       data-slot="examples"
       role="group"
       aria-label={S.chat.start.examplesTitle}
-      className="mt-4 flex flex-wrap items-center justify-center gap-2"
+      className="mt-4 flex min-w-0 max-w-full flex-nowrap items-center justify-start gap-2 overflow-x-auto overscroll-x-contain px-1 py-1 sm:justify-center-safe [&>button]:shrink-0"
     >
       {examples.map((task) => {
         const copy = S.chat.exampleTasks[task.id];
@@ -319,7 +210,7 @@ function ExamplesSection({
               />
             }
             onClick={() => fill(copy.prompt, task.skills)}
-            className="min-h-9 max-w-full"
+            className="min-h-9 max-w-full whitespace-nowrap"
           >
             <span className="min-w-0 truncate">{copy.label}</span>
           </Button>

@@ -4301,12 +4301,7 @@ export const zh = {
     newSessionInWorkspace: "在此工作区新建对话",
     /** The start page's dashboard (features/chat/start-dashboard.tsx): three counts beside the brand, and the examples block under the composer. */
     start: {
-      /** What each count counts; the label and the number open the page that lists it. Short: the three share the brand's line. */
-      metrics: {
-        agents: "智能体",
-        toolkits: "自进化算法",
-        benchmarks: "评估集",
-      },
+      tagline: "创建你的第一个 Agent OS",
       shuffle: "换一组示例",
       examplesTitle: "示例与快捷指令",
     },
@@ -4614,7 +4609,7 @@ Benchmark：
     /** Answer-preview placeholder while the latest turn is still running with no reply text yet. */
     outlineAnswering: "回答生成中…",
     inputPlaceholder: "输入消息，Enter 发送，Shift+Enter 换行，可粘贴图片",
-    resizeDraft: "调整草稿输入框高度",
+    resizeDraft: "按 Alt+Shift+上方向键调低输入框，按 Alt+Shift+下方向键调高。",
     inputPlaceholderShort: "输入消息…",
     /** Placeholder while a Task is running (mid-run steering): the message is delivered between turns with the next request. */
     steerPlaceholder: "给运行中的 Agent 留言，随下一轮对话送达",
