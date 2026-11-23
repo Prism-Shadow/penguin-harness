@@ -111,6 +111,43 @@ for (const lang of ["en", "zh"]) {
   });
 }
 
+test("opens the installed workbenches without navigating away from the homepage", async ({
+  page,
+}) => {
+  const { frame } = await openHero(page, "en");
+  await page.clock.resume();
+  const catalog = frame.getByRole("link", { name: /^App Center(?: ·|$)/ }).first();
+  await catalog.click();
+  for (const id of ["default_agent/slides", "default_agent/images", "penguin_support/support"]) {
+    const app = id.split("/")[1];
+    await frame.locator('li[data-app="' + id + '"] > button').click();
+    const workbench = frame
+      .locator('iframe[src*="/demo-workbenches/api/"][src*="/workbenches/' + app + '/ui/"]:visible')
+      .contentFrame();
+    if (app === "slides") {
+      await workbench.locator("[data-open-deck]").first().click();
+      const editor = workbench.locator("iframe#editor").contentFrame();
+      await expect
+        .poll(() => editor.locator("body").evaluate(() => window.bento?.read()?.slides?.length))
+        .toBe(4);
+    } else if (app === "images") {
+      const image = workbench.locator("#stage img");
+      await expect
+        .poll(() => image.evaluate((el) => el.complete && el.naturalWidth))
+        .toBeGreaterThan(0);
+      await workbench.locator("#ideas button").first().click();
+      await expect(workbench.locator("#prompt")).not.toHaveValue("");
+    } else {
+      await workbench.locator("[data-ticket]").first().click();
+      await expect(workbench.locator("#messages")).toContainText("sidebar");
+    }
+    await expect(page.getByRole("button", { name: "Play demo", exact: true })).toBeVisible();
+    await catalog.click();
+    await expect(frame.locator('li[data-app="' + id + '"]')).toBeVisible();
+  }
+  await expect(page).toHaveURL(/\/$/);
+});
+
 test("keeps the visitor's draft on keyboard takeover and replays only on request", async ({
   page,
 }) => {
