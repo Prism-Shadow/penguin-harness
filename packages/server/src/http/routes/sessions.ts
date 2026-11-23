@@ -746,6 +746,7 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       await deps.sessionService.listSessions(projectId, agentId, {
         ...(paging ? { paging } : {}),
         order,
+        ...(c.req.query("search") ? { search: c.req.query("search")! } : {}),
         ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
         ...(rawWorkspaceGroup !== undefined ? { workspaceGroup: rawWorkspaceGroup } : {}),
         ...(rawCounts !== undefined ? { withCounts: true } : {}),

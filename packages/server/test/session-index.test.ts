@@ -220,6 +220,54 @@ describe("session-index", () => {
     expect((await api.get(`${base()}?limit=2&offset=-1`)).status).toBe(400);
   });
 
+  it("searches the full authorized Agent list before paging, including children outside the sidebar categories", async () => {
+    const oldest = "session-2026-07-01-00-00-00-dead0001";
+    const second = "session-2026-07-02-00-00-00-dead0002";
+    for (const [id, at] of [
+      [oldest, "2026-07-01"],
+      [second, "2026-07-02"],
+    ] as const) {
+      const stamp = at + "T00:00:00.000Z";
+      t.deps.sessionsRepo.insert({
+        sessionId: id,
+        projectId,
+        agentId,
+        provider: "custom",
+        modelId: "m1",
+        workspace: "/work/past",
+        title: "Prior child",
+        approvalMode: "allow-all",
+        hasTrace: true,
+        createdAt: stamp,
+        lastActiveAt: stamp,
+      });
+      await writeTraceFile(t.root, projectId, agentId, at, id, 1, [
+        sessionMeta({
+          session_id: id,
+          provider: "custom",
+          model_id: "m1",
+          model_context_window: 1000,
+          system_prompt: "",
+          agent_state: "/tmp/a",
+          workspace: "/work/past",
+          source: "subagent",
+        }),
+      ]);
+    }
+    const get = async (query: string) =>
+      ((await (await api.get(base() + query)).json()) as SessionsResponse).sessions;
+    expect(
+      (await get("?limit=1&order=activity&search=" + encodeURIComponent("PRIOR CHILD")))[0]
+        ?.sessionId,
+    ).toBe(second);
+    expect((await get("?limit=1&order=activity&search=dead0001"))[0]).toMatchObject({
+      sessionId: oldest,
+      source: "subagent",
+    });
+    expect(await get("?limit=1&search=dead0001&category=active")).toHaveLength(0);
+    expect(await get("?limit=1&search=dead0001&category=archived")).toHaveLength(0);
+  });
+
   it("workspaceGroup pages one Workspace group's own stream, temporary workspaces as one group", async () => {
     // Rows are inserted straight into the index: the group filter reads the stored path, and
     // going through create() would only add realpath validation this has nothing to say about.

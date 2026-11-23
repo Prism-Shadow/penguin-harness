@@ -73,6 +73,9 @@ export interface DockPanelDefinition {
   lead?: boolean;
   /** Whether it is offered here; always when absent. */
   offered?: () => boolean;
+  /** Availability in a Session directory, where no conversation has been selected yet. */
+  availableFromAppCenter?: (viewer: { isAdmin: boolean }) => boolean;
+  subscribeAppCenterAvailability?: (listener: () => void) => () => void;
   /** The change feed of `offered`: followed from registration for good, so it must only listen. */
   subscribeOffered?: (listener: () => void) => () => void;
   Body: DockPanelBody;
