@@ -6,7 +6,7 @@
  * network as before.
  */
 import { ApiError } from "./errors";
-import { isApiUrl, splitUrl } from "./router";
+import { isApiUrl } from "./router";
 import type { Method } from "./router";
 import { router } from "./routes";
 import { getStore } from "./store";
@@ -62,12 +62,6 @@ export function installFetchShim(): void {
     const method = (
       init?.method ?? (input instanceof Request ? input.method : "GET")
     ).toUpperCase() as Method;
-    return answerAsResponse(method, splitUrl(url).path + urlQuery(url), bodyOf(init));
+    return answerAsResponse(method, url, bodyOf(init));
   };
-}
-
-function urlQuery(url: string): string {
-  const { query } = splitUrl(url);
-  const qs = query.toString();
-  return qs ? `?${qs}` : "";
 }
