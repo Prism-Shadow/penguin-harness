@@ -55,6 +55,20 @@ test("choosing a model in Slides changes only the presentation's next turn", asy
   await page.goto(BASE + "/app/" + project + "/default_agent/slides/main");
   await app.locator("#recent-decks .file-row button").first().click();
   await app.locator("#chat-model button").click();
+  await page.route(
+    "**/sessions/*/switch-model",
+    (route) =>
+      route.fulfill({
+        status: 403,
+        json: { error: { code: "permission_denied", message: "Permission denied." } },
+      }),
+    { times: 1 },
+  );
+  await picker.getByText("Review", { exact: true }).click();
+  await app.locator('#choice-confirm [value="switch"]').click();
+  await expect(app.locator("#notice")).toContainText("Permission denied.");
+  await expect(app.locator("#chat-model button")).toContainText("Draft");
+  await app.locator("#chat-model button").click();
   await picker.getByText("Review", { exact: true }).click();
   await app.locator('#choice-confirm [value="switch"]').click();
   await expect(app.locator("#chat-model button")).toContainText("Review");
@@ -271,9 +285,9 @@ test("changes a running deck's choices without interrupting or resending its tas
     await wb.locator("#chat-model button").click();
     await page.getByRole("dialog").getByText("Review endpoint", { exact: true }).click();
     await wb.locator('#choice-confirm [value="switch"]').click();
-    await expect(wb.locator("#choice-status")).toContainText(
-      "Using Draft endpoint. Queued switch to Review endpoint.",
-    );
+    await expect(wb.locator("#chat-model button")).toContainText("Review endpoint");
+    await expect(wb.locator("#chat-effort button")).toContainText("high");
+    await expect(wb.getByText(/Queued switch|next request uses the thinking/i)).toHaveCount(0);
     await expect(wb.locator("#prompt")).toHaveValue("Keep this unsent draft.");
     const handler = projectApi + "/agents/default_agent/workbenches/slides/api";
     const { decks } = await (await page.request.get(handler + "/decks")).json();
@@ -281,6 +295,11 @@ test("changes a running deck's choices without interrupting or resending its tas
       (await (await page.request.get(handler + "/ask?deck=" + decks[0].id)).json()).sessionId;
     const original = await current();
     await wb.locator("#send").click();
+    await page.reload();
+    await wb.locator("#recent-decks .file-row button").first().click();
+    await expect(wb.locator("#chat-model button")).toContainText("Review endpoint");
+    await expect(wb.locator("#chat-effort button")).toContainText("high");
+    await expect(wb.locator("#notice")).toBeHidden();
     gate.resolve();
     await expect(wb.locator("#talk")).toContainText("Reviewed on the second endpoint.", {
       timeout: 45000,
@@ -334,3 +353,174 @@ test("changes a running deck's choices without interrupting or resending its tas
     }
   }
 });
+
+for (const strictHost of [false, true]) {
+  test(
+    "a model picked before task acknowledgement hands off the original Session on " +
+      (strictHost ? "an idle-only host" : "a queue-capable host"),
+    async ({ page }) => {
+      const { createServer } = await import("node:http");
+      const { setAccountPrefs } = await import("./account-prefs.mjs");
+      const first = "claude-bento-first";
+      const second = "claude-bento-second";
+      const prompt = "Prepare the weekly inventory slides";
+      const followup = "Add a page for the remaining orders";
+      const releaseTask = Promise.withResolvers();
+      const releaseAck = Promise.withResolvers();
+      const ack = Promise.withResolvers();
+      const arrivals = [];
+      const source = createServer(async (req, res) => {
+        let raw = "";
+        for await (const chunk of req) raw += chunk;
+        const body = JSON.parse(raw);
+        const text = JSON.stringify(body.messages);
+        if (text.includes(prompt) && !text.includes("You are a title generator.")) {
+          arrivals.push(body.model);
+          await releaseTask.promise;
+        }
+        const reply = await fetch(process.env.MOCK_URL + req.url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: raw,
+        });
+        res.writeHead(reply.status, { "content-type": reply.headers.get("content-type") });
+        res.end(Buffer.from(await reply.arrayBuffer()));
+      });
+      await new Promise((resolve) => source.listen(0, "127.0.0.1", resolve));
+      try {
+        await provisionAndLogin(
+          page.request,
+          strictHost ? "bentoidlehandoff" : "bentofirstack",
+          "password123",
+        );
+        await setAccountPrefs(page.request, { lang: "zh" });
+        const { projects } = await (await page.request.get(BASE + "/api/projects")).json();
+        const project = projects[0].projectId;
+        const api = BASE + "/api/projects/" + project;
+        const models = [first, second].map((modelId) => ({
+          provider: "custom",
+          modelId,
+          clientType: "ant-messages",
+          contextWindow: 200000,
+          apiKey: "fixture-credential",
+          baseUrl:
+            modelId === first ? "http://127.0.0.1:" + source.address().port : process.env.MOCK_URL,
+        }));
+        expect(
+          (
+            await page.request.put(api + "/models", {
+              data: { models, defaultModel: { provider: "custom", modelId: first } },
+            })
+          ).ok(),
+        ).toBe(true);
+        expect(
+          (
+            await page.request.post(api + "/agents/default_agent/plugins", {
+              data: { names: ["use-bento-slides"] },
+            })
+          ).ok(),
+        ).toBe(true);
+        await page.goto("/app/" + project + "/default_agent/slides/main");
+        const frame = page.frameLocator("iframe[src*='/workbenches/slides/ui/']:visible");
+        await frame.locator("#start-sample").click();
+        // The server admits the real task while its first HTTP acknowledgement is still in transit.
+        await page.route(
+          "**/workbenches/slides/api/ask",
+          async (route) => {
+            const response = await route.fetch();
+            ack.resolve((await response.json()).sessionId);
+            await releaseAck.promise;
+            await route.fulfill({ response });
+          },
+          { times: 1 },
+        );
+        await frame.locator("#prompt").fill(prompt);
+        await frame.locator("#send").click();
+        const sessionId = await ack.promise;
+        const deck = (
+          await (
+            await page.request.get(api + "/agents/default_agent/workbenches/slides/api/decks")
+          ).json()
+        ).decks[0];
+        await expect.poll(() => arrivals).toEqual([first]);
+        const sessionPath = BASE + "/api/sessions/" + sessionId;
+        const session = async () => (await (await page.request.get(sessionPath)).json()).session;
+        expect((await session()).status).toBe("running");
+        const responses = [];
+        if (strictHost) {
+          // The same HTTP endpoint without the opt-in follows the older host's idle-only contract.
+          await page.route("**/sessions/*/switch-model", async (route) => {
+            const { provider, modelId } = route.request().postDataJSON();
+            const response = await route.fetch({ postData: { provider, modelId } });
+            responses.push(response.status());
+            await route.fulfill({ response });
+          });
+        }
+        const mutations = [];
+        page.on("request", (r) => {
+          if (r.method() === "POST" && r.url().endsWith("/switch-model"))
+            mutations.push(r.postDataJSON());
+        });
+        await frame.locator("#prompt").fill(followup);
+        await frame.locator("#chat-model button").click();
+        await page.getByRole("dialog").getByText(second, { exact: true }).click();
+        const confirm = frame.locator("#choice-confirm");
+        await expect(confirm).toBeVisible();
+        expect(mutations).toEqual([]);
+        await confirm.locator('[value="switch"]').click();
+        if (strictHost) {
+          await expect.poll(() => responses).toEqual([409]);
+          expect((await session()).pendingModel).toBeUndefined();
+        } else {
+          await expect
+            .poll(async () => (await session()).pendingModel)
+            .toEqual({ provider: "custom", modelId: second });
+        }
+        expect(mutations).toEqual([{ provider: "custom", modelId: second, whenIdle: true }]);
+        expect((await session()).modelId).toBe(first);
+        await expect(frame.locator("#chat-model button")).toContainText(second);
+        await expect(frame.getByText(/已排队切换|Queued switch/i)).toHaveCount(0);
+        await expect(frame.locator("#prompt")).toHaveValue(followup);
+        await expect(frame.locator("#notice")).toBeHidden();
+        releaseAck.resolve();
+        if (strictHost) {
+          await expect(frame.locator("#send")).toBeDisabled();
+          // Selecting the running model withdraws the local wait without sending another mutation.
+          await frame.locator("#chat-model button").click();
+          await page.getByRole("dialog").getByText(first, { exact: true }).click();
+          await expect(frame.locator("#send")).toBeEnabled();
+          await expect(frame.locator("#chat-model button")).toContainText(first);
+          expect(responses).toEqual([409]);
+          await frame.locator("#chat-model button").click();
+          await page.getByRole("dialog").getByText(second, { exact: true }).click();
+          await confirm.locator('[value="switch"]').click();
+          await expect.poll(() => responses).toEqual([409, 409]);
+          releaseTask.resolve();
+          await expect.poll(async () => (await session()).modelId, { timeout: 30000 }).toBe(second);
+          expect(responses).toEqual([409, 409, 202]);
+        }
+        await frame.locator("#send").click();
+        releaseTask.resolve();
+        await expect(frame.locator("#talk")).toContainText("Served by " + second, {
+          timeout: 45000,
+        });
+        const talk = await (
+          await page.request.get(
+            api + "/agents/default_agent/workbenches/slides/api/ask?deck=" + deck.id,
+          )
+        ).json();
+        expect(talk.sessionId).toBe(sessionId);
+        expect(talk.messages.filter((m) => m.role === "user").map((m) => m.text)).toEqual([
+          prompt,
+          followup,
+        ]);
+        expect((await session()).modelId).toBe(second);
+      } finally {
+        releaseAck.resolve();
+        releaseTask.resolve();
+        source.closeAllConnections();
+        await new Promise((resolve) => source.close(resolve));
+      }
+    },
+  );
+}

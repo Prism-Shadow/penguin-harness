@@ -822,7 +822,7 @@ async function refreshTalk() {
     if (
       open === deck &&
       revision === talkRevision &&
-      (deck.pendingModel || (talk.status && talk.status !== "idle"))
+      (deck.waitingChoice || deck.pendingModel || (talk.status && talk.status !== "idle"))
     ) {
       talkTimer = setTimeout(() => void refreshTalk(), 4000);
     }
@@ -833,12 +833,17 @@ async function refreshTalk() {
   if (talk.sessionId) {
     try {
       await models.readSessionModel(deck, talk.sessionId);
-    } catch (error) {
-      if (open === deck && deck.pendingModel) notice(S.modelFailed(String(error.message || error)));
+      deck.choiceReadFailed = false;
+    } catch {
+      if (open === deck && !deck.choiceReadFailed && (deck.pendingModel || deck.waitingChoice)) {
+        deck.choiceReadFailed = true;
+        notice(S.choiceReadFailed);
+      }
     }
     if (open !== deck || revision !== talkRevision) return;
   } else if (!talk.sessionId) {
     deck.model = null;
+    deck.waitingChoice = null;
     deck.pendingModel = null;
     deck.effort = null;
   }
@@ -847,9 +852,12 @@ async function refreshTalk() {
     void follow(talk.sessionId);
   if (talk.sessionId === null) stopFollowing();
   // The stream says when a task ends; this is for a server without it, and for a missed end.
-  if (running || deck.pendingModel) {
+  if (running || deck.pendingModel || deck.waitingChoice) {
     if (talk.sessionId) void pendingApprovals(talk.sessionId);
-    talkTimer = setTimeout(() => void refreshTalk(), deck.pendingModel ? 700 : 4000);
+    talkTimer = setTimeout(
+      () => void refreshTalk(),
+      deck.pendingModel || deck.waitingChoice ? 700 : 4000,
+    );
   } else {
     ++approvalRead;
     approvals = [];

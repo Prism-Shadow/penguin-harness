@@ -24,29 +24,18 @@ export function setupModelChoice({
 
   function draw() {
     const deck = currentDeck();
-    const status = currentTalk().status;
     const fallback = defaultModel === null ? S.pickModel : S.defaultModel;
     railModel?.(
-      deck?.model ?? defaultModel,
+      deck?.waitingChoice?.target ?? deck?.pendingModel ?? deck?.model ?? defaultModel,
       fallback,
       S.chooseModel,
-      !deck || !!deck.choosingModel,
+      !deck || !!(deck.choosingModel || deck.retryingChoice),
       !!deck?.choosingModel,
     );
     newModel?.(startModel ?? defaultModel, fallback, S.chooseModel, startPicking, startPicking);
     railEffort?.(thinking, deck?.draftEffort ?? deck?.effort, !deck || !!deck.choosingModel);
     newEffort?.(thinking, startEffort, startPicking);
-    const pending = deck?.pendingModel;
-    const detail = [
-      pending && deck.model ? S.pendingModel(label(deck.model), label(pending)) : "",
-      status && status !== "idle" ? S.effortNext : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-    const line = $("choice-status");
-    line.hidden = !detail;
-    if (line.textContent !== detail) line.textContent = detail;
-    $("send").disabled = !!deck?.savingChoice;
+    $("send").disabled = !!(deck?.savingChoice || deck?.waitingChoice || deck?.retryingChoice);
     $("rail-reset").disabled = !!deck?.savingChoice;
   }
 
@@ -86,6 +75,31 @@ export function setupModelChoice({
     }
   }
 
+  // Only an explicit busy refusal guarantees that the first request was not accepted.
+  // Older hosts can still run the ordinary handoff on this Session once it becomes idle.
+  async function switchModel(api, deck, id, target, waitIfBusy) {
+    try {
+      const { status } = await api.transport.post(sessionPath(id) + "/switch-model", {
+        provider: target.provider,
+        modelId: target.modelId,
+        whenIdle: true,
+      });
+      deck.choiceRead = (deck.choiceRead || 0) + 1;
+      deck.waitingChoice = null;
+      deck.pendingModel = status === 202 ? target : null;
+      if (status === 200) deck.model = target;
+    } catch (error) {
+      if (
+        !waitIfBusy ||
+        error.status !== 409 ||
+        !["task_in_progress", "compacting"].includes(error.code)
+      )
+        throw error;
+      deck.waitingChoice = { id, target };
+    }
+    draw();
+  }
+
   // The session and its label lookup are distinct reads. A slower lookup must not repaint
   // an earlier selection over a later reply, or a conversation that was reset.
   async function readSessionModel(deck, id) {
@@ -107,15 +121,36 @@ export function setupModelChoice({
     const [model, pending] = await Promise.all([named(session), named(session.pendingModel)]);
     if (currentDeck() !== deck || currentTalk().sessionId !== id || deck.choiceRead !== revision)
       return;
+    const previous = deck.pendingModel;
+    const failure = session.modelSwitchFailure;
+    if (failure && failure.id !== deck.seenSwitchFailure && key(previous) === key(failure))
+      notice(S.handoffFailed);
+    deck.seenSwitchFailure = failure?.id;
     deck.model = model;
     deck.pendingModel = pending;
     deck.effort = session.thinkingLevel ?? null;
+    const waiting = deck.waitingChoice;
+    if (waiting && waiting.id !== id) deck.waitingChoice = null;
+    else if (waiting && !deck.choosingModel && session.status === "idle") {
+      deck.waitingChoice = null;
+      if (key(waiting.target) !== key(pending ?? model)) {
+        deck.retryingChoice = true;
+        try {
+          await switchModel(api, deck, id, waiting.target, false);
+        } catch (error) {
+          if (currentDeck() === deck && currentTalk().sessionId === id)
+            notice(S.modelFailed(String(error.message || error)));
+        } finally {
+          deck.retryingChoice = false;
+        }
+      }
+    }
     draw();
   }
 
   async function choose(start, level = null) {
     const deck = currentDeck();
-    if (start ? startPicking : !deck || deck.choosingModel) return;
+    if (start ? startPicking : !deck || deck.choosingModel || deck.retryingChoice) return;
     if (start) startPicking = true;
     else deck.choosingModel = true;
     draw();
@@ -128,7 +163,9 @@ export function setupModelChoice({
       let choice = null;
       if (level === null) {
         choice = await api.chooseChatModel(
-          start ? (startModel ?? defaultModel) : (deck.pendingModel ?? deck.model ?? defaultModel),
+          start
+            ? (startModel ?? defaultModel)
+            : (deck.waitingChoice?.target ?? deck.pendingModel ?? deck.model ?? defaultModel),
         );
         if (!choice) return;
         labels.set(key(choice), label(choice));
@@ -140,30 +177,44 @@ export function setupModelChoice({
       }
       if (currentDeck() !== deck) return;
       const talk = currentTalk();
-      if (choice && key(choice) === key(deck.pendingModel ?? deck.model)) return;
-      if (level !== null && !talk.sessionId && defaultModel === null && !deck.model) {
+      const initialId = talk.sessionId;
+      if (level !== null && !initialId && defaultModel === null && !deck.model) {
         deck.draftEffort = level;
         return;
       }
-      if (talk.messages.some((message) => message.role === "user")) {
+      // The first task can already be running when its acknowledgement has not reached the
+      // rail. This endpoint returns the deck's existing Session or creates its first one.
+      const id = initialId ?? (await ensureSession(deck, choice));
+      const stillHere = () => {
+        const current = currentTalk().sessionId;
+        return currentDeck() === deck && (current === initialId || current === id);
+      };
+      if (!stillHere()) return;
+      const {
+        body: { session },
+      } = await api.transport.get(sessionPath(id));
+      if (!stillHere()) return;
+      if (choice && key(choice) === key(deck.waitingChoice?.target)) return;
+      if (choice && key(choice) === key(session.pendingModel ?? session)) {
+        deck.waitingChoice = null;
+        await refreshTalk();
+        return;
+      }
+      if (
+        session.hasTrace ||
+        session.status !== "idle" ||
+        talk.messages.some((m) => m.role === "user")
+      ) {
         const copy = choice
-          ? key(choice) !== key(deck.model) && S.modelCost(label(choice))
-          : (deck.effort ?? thinking?.defaultLevel) !== level && S.effortCost;
+          ? key(choice) !== key(session) && S.modelCost(label(choice))
+          : (session.thinkingLevel ?? thinking?.defaultLevel) !== level && S.effortCost;
         if (copy && !(await confirm(choice ? S.chooseModel : thinking.title, copy))) return;
       }
-      if (currentDeck() !== deck || currentTalk().sessionId !== talk.sessionId) return;
+      if (!stillHere()) return;
       deck.savingChoice = true;
       draw();
-      const id = talk.sessionId ?? (await ensureSession(deck, choice));
-      if (currentDeck() !== deck) return;
       if (level !== null) await setEffort(api, id, level);
-      else if (talk.sessionId) {
-        await api.transport.post(sessionPath(id) + "/switch-model", {
-          provider: choice.provider,
-          modelId: choice.modelId,
-          whenIdle: true,
-        });
-      }
+      else await switchModel(api, deck, id, choice, true);
       if (deck.draftEffort) {
         await setEffort(api, id, deck.draftEffort);
         deck.draftEffort = null;

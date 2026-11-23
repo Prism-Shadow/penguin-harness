@@ -38,11 +38,11 @@ const en = {
   pickModel: "Choose a model",
   noModel:
     "This Project has no default model yet. Choose a model with the model button, then send again.",
+  choiceReadFailed: "Could not refresh the model selection.",
+  handoffFailed: "The model switch failed.",
   modelFailed: (reason) => `Could not select a model. ${reason}`,
   choiceCancel: "Cancel",
   choiceApply: "Switch",
-  pendingModel: (active, target) => `Using ${active}. Queued switch to ${target}.`,
-  effortNext: "The next request uses the thinking level the model supports.",
   effortCost:
     "Changing the thinking level can invalidate the cached conversation prefix and increase input costs.",
   modelCost: (target) =>
@@ -125,11 +125,11 @@ const zh = {
   defaultModel: "项目默认模型",
   pickModel: "选择模型",
   noModel: "这个项目还没有默认模型。点模型按钮选一个模型，再发送。",
+  choiceReadFailed: "未能刷新模型选择。",
+  handoffFailed: "模型切换失败。",
   modelFailed: (reason) => `未能选择对话模型。${reason}`,
   choiceCancel: "取消",
   choiceApply: "切换",
-  pendingModel: (active, target) => `当前使用 ${active}。已排队切换为 ${target}。`,
-  effortNext: "下次请求按模型支持的思考等级执行。",
   effortCost: "切换思考等级可能使已有对话的前缀缓存失效，增加输入费用。",
   modelCost: (target) => `切换这段对话到 ${target}？交接时可能使用原模型生成对话摘要。`,
   choiceFailed: (reason) => `未能更新对话设置。${reason}`,
