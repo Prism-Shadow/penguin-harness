@@ -1370,6 +1370,14 @@ export class Session {
     return this.environment.detachToolCall?.(toolCallId) ?? "not_running";
   }
 
+  /** End child work before the parent Task finishes its own interrupt cleanup. */
+  disposeSubagents(): Promise<void> {
+    if (this.environment.disposeSubagents) return this.environment.disposeSubagents();
+    for (const child of this.listBackgroundSubagents())
+      this.abortBackgroundSubagentRun(child.sessionId);
+    return Promise.resolve();
+  }
+
   /** Whether a background subagent of this Session is mid-round (see EnvironmentInterface.hasRunningBackgroundSubagents). */
   hasRunningBackgroundSubagents(): boolean {
     return this.environment.hasRunningBackgroundSubagents?.() ?? false;

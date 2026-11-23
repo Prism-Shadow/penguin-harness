@@ -334,12 +334,13 @@ test("tabs of every kind share a dock: switch, close a panel tab, terminals numb
   const right = dockAt(page, "right");
   await expect(right.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
 
-  // The terminal panel into the SAME dock through its own "+" menu; it starts a shell itself.
+  // The right-side shortcut opens this conversation's terminal group. Creating a shell is explicit.
   await right.getByTestId("dock-add").click();
   await page.getByTestId("dock-add-terminal").click();
-  await expect(right.locator('[data-tab-id="terminal"][data-active="true"]')).toBeVisible({
-    timeout: 20000,
-  });
+  const terminalTab = right.locator(
+    `[data-tab-id=":app:session-tool/terminal/${projectId}//${sessionId}"]`,
+  );
+  await expect(terminalTab).toHaveAttribute("data-active", "true");
   await page.getByTestId("terminal-new-tab").click();
   await waitForShell(page, "MIXED_DOCK");
   // The dock's strip lists both panels; the shell's own tab carries its stable `N:` seq prefix.
@@ -351,7 +352,7 @@ test("tabs of every kind share a dock: switch, close a panel tab, terminals numb
   await right.locator('[data-tab-id="workspace"]').click();
   await expect(right.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
   await expect(right.getByRole("button", { name: "刷新" })).toBeVisible();
-  await right.locator('[data-tab-id="terminal"]').click();
+  await terminalTab.click();
   await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("MIXED_DOCK");
 
   // A panel tab's × closes just the panel; the terminal tab remains, dock stays.
@@ -376,7 +377,8 @@ test("a whole dock moves to the other edge; a single tab moves by drag onto the 
   await right.getByTestId("dock-add").click();
   await page.getByTestId("dock-add-trace").click();
   await expect(right.locator('[data-testid="dock-tab"]')).toHaveCount(2);
-  await expect(right.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
+  const traceTab = `[data-tab-id=":app:session-tool/trace/${projectId}//${sessionId}"]`;
+  await expect(right.locator(traceTab)).toHaveAttribute("data-active", "true");
 
   // Header button: the whole dock (both tabs) onto the bottom edge.
   await right.getByTestId("dock-move").click();
@@ -384,7 +386,7 @@ test("a whole dock moves to the other edge; a single tab moves by drag onto the 
   const bottom = dockAt(page, "bottom");
   await expect(bottom.locator('[data-testid="dock-tab"]')).toHaveCount(2);
   // The shown tab (trace, active before the move) stays the shown tab after it.
-  await expect(bottom.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
+  await expect(bottom.locator(traceTab)).toHaveAttribute("data-active", "true");
 
   // Drag the workspace tab out of the strip: the edge overlay appears; dropping on the
   // RIGHT target splits it back out into its own right dock.
@@ -402,7 +404,7 @@ test("a whole dock moves to the other edge; a single tab moves by drag onto the 
   await expect(
     dockAt(page, "right").locator('[data-tab-id="workspace"][data-active="true"]'),
   ).toBeVisible();
-  await expect(bottom.locator('[data-tab-id="trace"]')).toBeVisible();
+  await expect(bottom.locator(traceTab)).toBeVisible();
 });
 
 test("sizes and the arrangement survive a reload; hidden stays hidden", async ({ page }) => {

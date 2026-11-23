@@ -7,20 +7,24 @@
  */
 import type { ReactNode } from "react";
 import { GlyphAppIcon, GlyphIcon, ICON_SIZE } from "@prismshadow/penguin-ui";
-import { panelGlyphPath, panelLabel, type PanelId } from "./panel-registry";
-
 import {
   isSessionWorkbenchKind,
   sessionWorkbenchAppKey,
   sessionWorkbenchEntries,
 } from "../../lib/session-workbenches";
 
+import { panelGlyphPath, panelLabel, type PanelId } from "./panel-registry";
+
 export { panelGlyphPath, panelLabel };
 
 /** The panel's mark, drawn at `size` (an id with no definition yet draws the puzzle piece). */
-export function panelGlyph(id: PanelId, size: number = ICON_SIZE.iconButton): ReactNode {
+export function panelAppGlyph(id: PanelId, size: number): ReactNode {
   if (isSessionWorkbenchKind(id) && sessionWorkbenchEntries[id]) {
     return <GlyphAppIcon appKey={sessionWorkbenchAppKey(id)} d={panelGlyphPath(id)} size={size} />;
   }
-  return <GlyphIcon d={panelGlyphPath(id)} size={size} />;
+  return null;
+}
+
+export function panelGlyph(id: PanelId, size: number = ICON_SIZE.iconButton): ReactNode {
+  return panelAppGlyph(id, size) ?? <GlyphIcon d={panelGlyphPath(id)} size={size} />;
 }

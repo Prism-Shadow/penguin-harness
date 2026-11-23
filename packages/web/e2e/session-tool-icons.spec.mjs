@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { provisionAndLogin } from "./auth.mjs";
+import { ADMIN_ID, ADMIN_PASSWORD, login } from "./auth.mjs";
 import { setAccountPrefs } from "./account-prefs.mjs";
 
 const kinds = ["workspace", "terminal", "builtin-browser"];
@@ -15,7 +15,7 @@ for (const [name, width, themeId, themeMode] of [
     test("the three session tools retain their distinct app marks across launch surfaces", async ({
       page,
     }) => {
-      await provisionAndLogin(page.request, "toolicons" + name, "password123");
+      await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
       await setAccountPrefs(page.request, { lang: "en", themeId, themeMode });
       const { projects } = await (await page.request.get("/api/projects")).json();
       const project = "/api/projects/" + projects[0].projectId;

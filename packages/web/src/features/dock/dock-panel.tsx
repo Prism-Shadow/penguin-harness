@@ -98,7 +98,7 @@ import {
 } from "./dock-panel-bodies";
 import type { ComponentProps } from "react";
 import { sessionWorkbenchKindAt } from "../../lib/session-workbenches";
-import { panelGlyph, panelLabel } from "./panel-meta";
+import { panelAppGlyph, panelGlyph, panelLabel } from "./panel-meta";
 import {
   dockPanelDefinition,
   useDockPanels,
@@ -131,6 +131,7 @@ import {
   type DockTab,
   type DockView,
 } from "./dock-state";
+import { useSessionShortcuts } from "./session-shortcuts";
 import {
   maxWidthFor,
   persistPanelWidth,
@@ -261,6 +262,7 @@ export function DockPanel({
   // what re-renders the strip when a definition arrives for a tab it already shows.
   const offered = useDockPanels();
   const { position, merged, tabs, activeKey } = view;
+  const shortcuts = useSessionShortcuts(offered, merged ? undefined : "right");
   const nativeSlots = useNativePanelSlots();
   const horizontal = position === "bottom";
   const other: DockPosition = position === "right" ? "bottom" : "right";
@@ -570,15 +572,28 @@ export function DockPanel({
       }
     >
       <Menu>
-        {offered.map((definition) => (
-          <MenuItem
-            key={definition.id}
-            data-testid={`dock-add-${definition.id}`}
-            glyph={definition.glyph}
-            label={definition.label()}
-            onSelect={() => openPanelHere(definition)}
-          />
-        ))}
+        {position === "right" || merged
+          ? shortcuts.map((entry) => (
+              <MenuItem
+                key={entry.key}
+                data-testid={`dock-add-${entry.key}`}
+                glyph={panelAppGlyph(entry.key, ICON_SIZE.inlineGlyph) ?? entry.glyph}
+                label={entry.label}
+                onSelect={() => {
+                  setAddOpen(false);
+                  entry.choose();
+                }}
+              />
+            ))
+          : offered.map((definition) => (
+              <MenuItem
+                key={definition.id}
+                data-testid={`dock-add-${definition.id}`}
+                glyph={panelAppGlyph(definition.id, ICON_SIZE.inlineGlyph) ?? definition.glyph}
+                label={definition.label()}
+                onSelect={() => openPanelHere(definition)}
+              />
+            ))}
       </Menu>
     </Dropdown>
   );

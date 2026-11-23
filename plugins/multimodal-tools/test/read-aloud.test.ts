@@ -12,6 +12,7 @@
  * - The audio goes with its Session at the next sweep.
  */
 import fs from "node:fs/promises";
+import { ToolError } from "../src/errors.js";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ProjectAccess, SessionLookup } from "../src/host.js";
@@ -54,7 +55,10 @@ async function setup(reply: (text: string) => Reply, bound: Record<string, typeo
     listByProject: () => [...live].map((sessionId) => ({ sessionId })),
   };
   const access: ProjectAccess = {
-    requireProjectAccess: () => undefined,
+    requireProjectAccess: (id, projectId) => {
+      if (id === "outsider" || projectId !== PROJECT)
+        throw new ToolError(403, "forbidden", "Access denied.");
+    },
     requireProjectOwner: () => undefined,
   };
   const tools = new Tools({
@@ -189,5 +193,55 @@ describe("reading a reply aloud", () => {
     await new ToolStore(root).sweep((_, sessionId) => live.has(sessionId), new Set());
     live.add("s-1");
     expect((await app.request(url)).status).toBe(404);
+  });
+});
+
+describe("a Project's transient speech", () => {
+  const request = (signal?: AbortSignal) => ({
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text: "First paragraph.\n\nLast paragraph." }),
+    signal,
+  });
+
+  it("returns playable bytes with the same Project model and usage identity as tools t2s, without saving them", async () => {
+    const { app, model, root, as } = await setup(() => speech, { t2s: SPEECH });
+    as("member");
+    const response = await app.request(BASE + "/t2s/audio", request());
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("audio/wav");
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(WAV);
+    const ordinary = await app.request(BASE + "/t2s/run", request());
+    expect(ordinary.status).toBe(200);
+    expect(await ordinary.json()).toMatchObject({
+      status: "completed",
+      files: [{ mimeType: "audio/wav", bytes: WAV.length }],
+    });
+    expect(model.received).toHaveLength(2);
+    for (const received of model.received) {
+      expect(received.model).toEqual(SPEECH);
+      expect(received.scope).toEqual({
+        projectId: PROJECT,
+        purpose: "@penguinharness/multimodal-tools:t2s",
+      });
+    }
+    expect(await fs.readdir(root)).toEqual([]);
+    as("outsider");
+    expect((await app.request(BASE + "/t2s/audio", request())).status).toBe(403);
+    expect(model.received).toHaveLength(2);
+  });
+
+  it("cancels the actual model run on disconnect and reports missing configuration", async () => {
+    const { app, model } = await setup(() => ({ hang: true }), { t2s: SPEECH });
+    const controller = new AbortController();
+    const pending = app.request(BASE + "/t2s/audio", request(controller.signal));
+    await expect.poll(() => model.received.length).toBe(1);
+    controller.abort();
+    expect((await pending).status).toBe(409);
+    expect(model.received[0]?.request.signal?.aborted).toBe(true);
+    const unconfigured = await setup(() => speech, {});
+    expect((await unconfigured.app.request(BASE + "/t2s/audio", request())).status).toBe(409);
+    expect(unconfigured.model.received).toHaveLength(0);
   });
 });
