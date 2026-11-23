@@ -12,14 +12,56 @@
  *
  * Compatibility owner: core's `state/layout-migration/` owner, removed with the migration at 1.0.
  */
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { migrateDataRootLayout } from "@prismshadow/penguin-core";
-import { webDbPathStore } from "./web-db-paths.js";
+import {
+  migrateDataRootLayout,
+  relocateProjectWorkspacePaths,
+  windowsDataMoves,
+} from "@prismshadow/penguin-core";
+import { rewriteWebDbPaths, webDbPathStore } from "./web-db-paths.js";
+
+async function alreadyApplied(file: string): Promise<boolean> {
+  try {
+    await fs.access(file);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
 
 export async function migrateDataRoot(
   root: string,
   db: DatabaseSync,
   log: (line: string) => void,
 ): Promise<void> {
+  const moves = windowsDataMoves(root);
+  if (moves.length > 0) {
+    const files = db.prepare("PRAGMA database_list").all();
+    const ownsDb = files.some(
+      (file) =>
+        file.name === "main" &&
+        typeof file.file === "string" &&
+        file.file !== "" &&
+        path.relative(path.join(root, "web.db"), file.file) === "",
+    );
+    const dir = path.dirname(root);
+    const marker = path.join(dir, "windows-project-paths-applied");
+    if (!(await alreadyApplied(marker))) {
+      await relocateProjectWorkspacePaths(root, moves, log);
+      await fs.writeFile(marker, "");
+    }
+    // Only the database copied by Setup belongs to the move. An explicit external database
+    // may be shared with another root. Its untouched copy can still be opened later.
+    if (ownsDb) {
+      const marker = path.join(dir, "windows-database-paths-applied");
+      if (!(await alreadyApplied(marker))) {
+        rewriteWebDbPaths(db, moves);
+        await fs.writeFile(marker, "");
+      }
+    }
+  }
   await migrateDataRootLayout(root, { store: webDbPathStore(db), log });
 }

@@ -42,6 +42,11 @@ function Full-Directory([string]$Path) {
   if ($Path -notmatch '^[A-Za-z]:[\\/]' -or $Path.Substring(2) -match '[:*?"<>|\x00-\x1f]') {
     throw "Select an absolute local drive directory: $Path"
   }
+  foreach ($name in $Path.Substring(3).Split([char[]]'\/')) {
+    if ($name -in @('.','..') -or $name -match '[. ]$|^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])($|\.)') {
+      throw "Select a directory with ordinary Windows names: $Path"
+    }
+  }
   $full = [IO.Path]::GetFullPath($Path.Replace('/','\'))
   if ($full.Length -gt 3) { $full = $full.TrimEnd('\') }
   return $full
