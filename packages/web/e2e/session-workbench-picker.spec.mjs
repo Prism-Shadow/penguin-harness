@@ -220,18 +220,12 @@ test("an App Center workbench lists archived Sessions and closes only their sele
     await tab.getByTestId("dock-tab-close").click();
     await expect(composer).toHaveValue("Keep my draft while browsing");
   }
-  // Opening an empty group lists its shells. Only the explicit New action starts one.
-  await page.goto("/apps");
-  await terminalTile.click();
-  await page
-    .getByRole("region", { name: "Terminal", exact: true })
-    .getByRole("button", { name: /No terminal/ })
-    .click();
+  // Only explicitly opening this Session's terminal starts its first shell.
+  await page.goto("/chat/" + none.sessionId);
+  await page.getByRole("button", { name: "Shortcuts", exact: true }).click();
+  await page.getByTestId("dock-launcher-open-terminal").click();
   const group = page.locator('[data-testid="terminal-panel"]:visible');
-  await expect(group.getByTestId("terminal-new-tab")).toBeEnabled();
-  await expect(group.getByTestId("terminal-tab")).toHaveCount(0);
-  expect(await counts()).toEqual({ [second.sessionId]: 1 });
-  await group.getByTestId("terminal-new-tab").click();
+  await expect(group.getByTestId("terminal-tab")).toHaveCount(1);
   await expect.poll(counts).toEqual({ [second.sessionId]: 1, [none.sessionId]: 1 });
   const shell = await group.getByTestId("terminal-tab").getAttribute("data-tab-id");
   await page

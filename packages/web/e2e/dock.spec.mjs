@@ -149,9 +149,13 @@ test("Ctrl+` opens the terminal group in the right dock; hiding keeps it running
   // Open with the keyboard, like Codex/VS Code.
   await page.keyboard.press("Control+Backquote");
   await expect(dockAt(page, "right")).toBeVisible({ timeout: 10000 });
-  await expect(shellTabs(page)).toHaveCount(0);
-  await page.getByTestId("terminal-new-tab").click();
-  await waitForShell(page, "DOCK_UP_1");
+  await expect(shellTabs(page)).toHaveCount(1, { timeout: 20000 });
+  await expect(terminalBody(page).locator(".xterm-helper-textarea")).toBeFocused({
+    timeout: 20000,
+  });
+  await page.keyboard.type("echo FOCUSED_''TERMINAL");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => screenText(page)).toContain("FOCUSED_TERMINAL");
   await runInTerminal(page, "echo DOCK_KEEPS_RUNNING");
   await expect.poll(() => screenText(page), { timeout: 15000 }).toContain("DOCK_KEEPS_RUNNING");
 
@@ -341,7 +345,7 @@ test("tabs of every kind share a dock: switch, close a panel tab, terminals numb
     `[data-tab-id=":app:session-tool/terminal/${projectId}//${sessionId}"]`,
   );
   await expect(terminalTab).toHaveAttribute("data-active", "true");
-  await page.getByTestId("terminal-new-tab").click();
+  await expect(shellTabs(page)).toHaveCount(1);
   await waitForShell(page, "MIXED_DOCK");
   // The dock's strip lists both panels; the shell's own tab carries its stable `N:` seq prefix.
   await expect(right.locator('[data-testid="dock-tab"]')).toHaveCount(2);
@@ -485,8 +489,7 @@ test("each conversation manages its own tabs: nothing leaks, and each side survi
   await expect(
     dockAt(page, "right").locator('[data-tab-id^=":app:session-tool/terminal"]'),
   ).toBeVisible();
-  await expect(shellTabs(page)).toHaveCount(0);
-  await page.getByTestId("terminal-new-tab").click();
+  await expect(shellTabs(page)).toHaveCount(1, { timeout: 20000 });
   await waitForShell(page, "SCOPED_SHELL");
   const shellId = await shellTabs(page).getAttribute("data-tab-id");
 
@@ -535,8 +538,6 @@ test("a shell belongs to its conversation: another's panel never lists it, the o
   await page.goto(`${BASE}/chat/${sidB}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
   await page.keyboard.press("Control+Backquote");
-  await expect(shellTabs(page)).toHaveCount(0);
-  await page.getByTestId("terminal-new-tab").click();
   await expect(shellTabs(page)).toHaveCount(1, { timeout: 20000 });
   const shellOfB = await shellTabs(page).getAttribute("data-tab-id");
   expect(shellOfB).not.toBe(shellOfA);
@@ -567,8 +568,6 @@ test("the terminal panel's + starts another shell and shows it; ending the last 
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
   await page.keyboard.press("Control+Backquote");
-  await expect(shellTabs(page)).toHaveCount(0);
-  await page.getByTestId("terminal-new-tab").click();
   await expect(shellTabs(page)).toHaveCount(1, { timeout: 20000 });
   await waitForShell(page, "FIRST_SHELL");
 
@@ -607,8 +606,7 @@ test("a new shell starts in the conversation's Workspace, not at home", async ({
   await page.getByPlaceholder(/输入消息/).waitFor();
   await page.keyboard.press("Control+Backquote");
   await expect(dockAt(page, "right")).toBeVisible({ timeout: 20000 });
-  await expect(shellTabs(page)).toHaveCount(0);
-  await page.getByTestId("terminal-new-tab").click();
+  await expect(shellTabs(page)).toHaveCount(1, { timeout: 20000 });
   await waitForShell(page, "WS_CWD");
 
   await runInTerminal(page, "pwd");
@@ -630,7 +628,7 @@ test("a failed shell create surfaces as a toast, and a later attempt recovers", 
   const sessionId = await createSession(page.request, projectId);
 
   // Make terminal creation fail the way a broken pty does server-side (spawn failure).
-  await page.route("**/api/terminals", (route) => {
+  await page.route("**/session-resources/*/open", (route) => {
     if (route.request().method() === "POST") {
       return route.fulfill({
         status: 500,
@@ -648,13 +646,12 @@ test("a failed shell create surfaces as a toast, and a later attempt recovers", 
   await page.getByPlaceholder(/输入消息/).waitFor();
   await page.keyboard.press("Control+Backquote");
 
-  await page.getByTestId("terminal-new-tab").click();
   // The failure says WHY instead of doing nothing — the server's message included.
   await expect(page.getByText("posix_spawn failed (mock)")).toBeVisible({ timeout: 10000 });
   await expect(page.getByTestId("terminal-new-tab")).toBeVisible();
 
   // Server recovers (unroute) → the next attempt starts a real shell.
-  await page.unroute("**/api/terminals");
+  await page.unroute("**/session-resources/*/open");
   await page.getByTestId("terminal-new-tab").click();
   await expect(dockAt(page, "right")).toBeVisible({ timeout: 20000 });
   await waitForShell(page, "RECOVERED");

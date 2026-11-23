@@ -7,8 +7,8 @@
  * The strip lists exactly the conversation's live shells as the server reports them, on its
  * machine (dock-terminal.ts `ownTerminals`): a shell opened for it on another device shows up
  * here too, and no other conversation's ever does. The shown one is kept per conversation in the
- * dock store, falling back to the newest. An empty group offers the same New terminal action
- * as the tab strip. Closing the last shell leaves the group available.
+ * dock store, falling back to the newest. An explicitly opened Session panel starts its first shell
+ * if necessary. Closing the last shell leaves the tab strip available.
  *
  * The screen is the pooled xterm view (terminal-view-pool.tsx), adopted by DOM handoff and
  * claimed only while this body is on screen, so tab churn never reconnects a shell and a hidden
@@ -72,6 +72,9 @@ function TerminalScreen({ id, active }: { id: string; active: boolean }) {
     const release = claimTerminalView(id);
     const container = terminalViewContainer(id);
     body.appendChild(container);
+    container
+      .querySelector<HTMLTextAreaElement>(".xterm-helper-textarea")
+      ?.focus({ preventScroll: true });
     return () => {
       if (container.parentElement === body) body.removeChild(container);
       release();
@@ -97,9 +100,20 @@ export function TerminalPanel({
   const sessionId = scope?.sessionId ?? current;
   useSyncExternalStore(subscribeTerminals, liveTerminals);
   useSyncExternalStore(subscribeDock, dockVersion);
-  // Another client may have opened or closed shells since the last background poll.
+  const latestScope = useRef(scope);
+  latestScope.current = scope;
+  // A scoped page is opened explicitly beside its Session. Polls, a hidden panel and the
+  // resource directory never allocate. Closing the last tab does not re-run this effect.
   useEffect(() => {
-    if (active && sessionId) void refreshTerminals();
+    if (!active || !sessionId) return;
+    let left = false;
+    const group = latestScope.current;
+    void refreshTerminals().then(() => {
+      if (!left && group && ownTerminals(group).length === 0) void createShell(group, true);
+    });
+    return () => {
+      left = true;
+    };
   }, [active, sessionId, scope?.machineId, scope?.projectId]);
   const shells = ownTerminals(scope);
   const shown = shownTerminalId(scope);
@@ -141,7 +155,7 @@ export function TerminalPanel({
 
   return (
     <div data-testid="terminal-panel" className="flex h-full min-h-0 flex-col">
-      {items.length > 0 && (
+      {(scope || items.length > 0) && (
         <PanelTabs
           tabs={items}
           active={shown}
@@ -161,7 +175,7 @@ export function TerminalPanel({
       )}
       {shown !== null ? (
         <TerminalScreen key={shown} id={shown} active={active} />
-      ) : (
+      ) : scope ? null : (
         <div className={`flex min-h-0 flex-1 items-center justify-center ${chrome.surface}`}>
           <Button
             size="sm"

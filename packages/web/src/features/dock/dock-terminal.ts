@@ -187,7 +187,10 @@ function isBadCwd(err: unknown): boolean {
  * carry the error, and a swallowed create looks like nothing happened, which is exactly
  * how a server-side spawn failure used to present. Resolves whether a shell started.
  */
-export async function createShell(group?: SessionWorkbenchScope): Promise<boolean> {
+export async function createShell(
+  group?: SessionWorkbenchScope,
+  reuseSession = false,
+): Promise<boolean> {
   const sessionId = group?.sessionId ?? dockSessionId();
   if (sessionId === null) return false;
   // The machine is named explicitly: there is no terminal id yet for the routing rule to
@@ -196,8 +199,13 @@ export async function createShell(group?: SessionWorkbenchScope): Promise<boolea
   const workspace = group ? (group.workspace ?? null) : conversation.workspace;
   const create = (cwd: string): Promise<TerminalInfo> =>
     fetchJson<TerminalInfo>(
-      "/api/terminals",
-      { method: "POST", body: JSON.stringify({ cwd, sessionId }) },
+      reuseSession && group
+        ? `/api/terminals/projects/${encodeURIComponent(group.projectId)}/session-resources/${encodeURIComponent(group.sessionId)}/open`
+        : "/api/terminals",
+      {
+        method: "POST",
+        ...(reuseSession && group ? {} : { body: JSON.stringify({ cwd, sessionId }) }),
+      },
       machine,
     );
   try {
@@ -205,7 +213,7 @@ export async function createShell(group?: SessionWorkbenchScope): Promise<boolea
     try {
       created = await create(workspace ?? HOME_CWD);
     } catch (err) {
-      if (workspace === null || !isBadCwd(err)) throw err;
+      if (reuseSession || workspace === null || !isBadCwd(err)) throw err;
       console.warn(`[terminal] Workspace unusable as cwd, opening in ${HOME_CWD}:`, err);
       // Home is still home ON THAT MACHINE: a Workspace that has gone is no reason to put
       // the shell on a different computer from the conversation it belongs to.
@@ -223,7 +231,7 @@ export async function createShell(group?: SessionWorkbenchScope): Promise<boolea
     // means the server answering is older than the terminal API (the desktop shell also
     // attaches to an already-running server rather than starting its own).
     const detail =
-      err instanceof HttpStatusError && err.status === 404
+      err instanceof HttpStatusError && err.status === 404 && !message.includes("session_not_found")
         ? `${message} — ${S.terminal.noTerminalApi}`
         : message;
     console.error("[terminal] create failed:", detail);

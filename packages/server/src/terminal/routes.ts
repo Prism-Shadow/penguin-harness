@@ -159,6 +159,29 @@ export function terminalRoutes(
         ),
       );
     });
+    app.post(path + "/:sessionId/open", gate, async (c) => {
+      const userId = c.var.user.userId;
+      const session = readableSession(
+        resourceAccess.sessions.findById(c.req.param("sessionId")!),
+        { userId },
+        resourceAccess.access,
+      );
+      if (session.projectId !== c.req.param("projectId")) {
+        throw new HttpError(
+          404,
+          "session_not_found",
+          "Session does not exist or you do not have access.",
+        );
+      }
+      const options = { ownerUserId: userId, sessionId: session.sessionId, reuseSession: true };
+      try {
+        return json((await manager.create({ ...options, cwd: session.workspace })).info());
+      } catch (error) {
+        // A deleted Workspace still permits a shell in this machine's home directory.
+        if (!(error instanceof HttpError) || !error.code.startsWith("cwd_not_")) throw error;
+        return json((await manager.create({ ...options, cwd: "~" })).info());
+      }
+    });
     app.post(path + "/close", gate, async (c) => {
       const userId = c.var.user.userId;
       const body = await readBody(c.req.raw);
