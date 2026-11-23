@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** feature
 - **Scope:** Server
+- **PR:** [#1744](https://github.com/Prism-Shadow/penguin-harness/pull/1744)
 
 [中文版](2026-11-23-agent-plugin-summary.zh.md)
 
