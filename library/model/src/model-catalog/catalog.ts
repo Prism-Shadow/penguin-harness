@@ -2304,6 +2304,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
+    // TokenDance's 2026-11-23 list price and 50% promotion for Chat Completions.
+    modelId: "hy4-flash",
+    displayName: "Hy4 Flash",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.02, 0.5, 2),
+    discount: 0.5,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
     // The same upstream model as the OpenRouter `tencent/hy4-preview` row above, reached
     // through a second seller: each row records what its own seller charges, so the two must
     // not be made to agree (the qwen3.8-flash pair below states the same rule). TokenDance
@@ -2465,6 +2477,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(1.5, 12, 36),
     discount: 0.1,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    modelId: "qwen4-max",
+    displayName: "Qwen4 Max",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.5, 10, 30),
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
