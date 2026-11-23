@@ -14,7 +14,7 @@
  *   creates joins the list installed while the list stays open;
  * - Quick invoke is gated on the currently selected agent having the skill installed (here the
  *   current agent is default_agent; its button is disabled for a preinstall:false skill like
- *   remote-claude-code the current agent lacks);
+ *   company-setup the current agent lacks);
  * - "Quick invoke" navigates to /chat/new (default_agent), **prefilling** the invoke text in the
  *   UI language (zh: "使用 X 技能") and preselecting that skill — the toolbar's skill dropdown
  *   button shows a count badge of 1, and that item shows as selected in the menu;
@@ -145,10 +145,10 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
 
   // Quick invoke opens a draft on the currently selected Agent (default_agent here), so it's
   // gated on that Agent having one of the plugin's skills: default_agent ships every preinstalled
-  // plugin (data-analysis is enabled), while remote-claude-code is preinstall:false and
+  // plugin (data-analysis is enabled), while company-setup is preinstall:false and
   // absent from it, so its button is disabled.
   await expect(page.getByRole("button", { name: "快速开始 data-analysis" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "快速开始 use-claude-code" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "快速开始 agent-company" })).toBeDisabled();
 
   // The plugin's icon, on the tile beside its name in the detail: the DTO names the icon by URL,
   // and a monochrome one is drawn as a mask in the text colour (an aria-hidden span over a hidden

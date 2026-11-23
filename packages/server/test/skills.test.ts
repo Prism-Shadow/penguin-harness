@@ -324,7 +324,10 @@ describe("skills api", () => {
     const body = (await res.json()) as AgentSkillsResponse;
     // loadPreinstalledSkills keeps loadLibrarySkills' name sort, matching the installed-list ordering.
     expect(body.skills.map((s) => s.name)).toEqual(preinstalledSkillNames());
-    // use-claude-code and humanizer ship in the library marked `preinstall: false`: their skills are not present here.
+    // The externally shipped defaults keep their Skill names. Optional Apps are absent.
+    expect(body.skills.map((s) => s.name)).toEqual(
+      expect.arrayContaining(["a2ui", "plugin-porting", "firecrawl"]),
+    );
     expect(body.skills.map((s) => s.name)).not.toContain("remote-claude-code");
     expect(body.skills.map((s) => s.name)).not.toContain("humanizer");
     // The installed list likewise passes through the Chinese and short descriptions
@@ -336,29 +339,24 @@ describe("skills api", () => {
       expect(skill.icon?.url, skill.name).toContain(`/skills/${skill.name}/icon?rev=`);
     }
 
-    // Manual install from the library still works for a preinstall:false skill.
-    const manual = await member.post(plugins("default_agent"), {
-      names: ["use-claude-code"],
-    });
+    // Optional library Skills still require an explicit install.
+    const manual = await member.post(plugins("default_agent"), { names: ["agent-company"] });
     expect(manual.status).toBe(201);
-    const withManual = (await manual.json()) as AgentSkillsResponse;
-    expect(withManual.skills.map((s) => s.name)).toContain("remote-claude-code");
-    // A multi-file skill: the file its SKILL.md references is installed alongside SKILL.md,
-    // byte-identical to the library source (subdirectory preserved).
-    const aux = "reference/persistent-session.md";
-    const refPath = path.join(
-      skillsDir(t.root, projectId, "default_agent"),
-      "remote-claude-code",
-      "reference",
-      "persistent-session.md",
-    );
-    expect(await fs.readFile(refPath, "utf8")).toBe(
-      librarySkill("remote-claude-code")!.skill.files![aux],
+    expect(((await manual.json()) as AgentSkillsResponse).skills.map((s) => s.name)).toContain(
+      "company-setup",
     );
 
     await createPlainAgent("fresh_agent");
     const fresh = (await (await member.get(base("fresh_agent"))).json()) as AgentSkillsResponse;
     expect(fresh.skills).toEqual([]);
+    expect((await member.post(plugins("fresh_agent"), { names: ["skill-porting"] })).status).toBe(
+      201,
+    );
+    const aux = "scripts/normalize-skills.mjs";
+    const refPath = path.join(skillsDir(t.root, projectId, "fresh_agent"), "plugin-porting", aux);
+    expect(await fs.readFile(refPath, "utf8")).toBe(
+      librarySkill("plugin-porting")!.skill.files![aux],
+    );
   });
 
   it("agent create seeds the picked library skills; the files land verbatim and the card count follows", async () => {
