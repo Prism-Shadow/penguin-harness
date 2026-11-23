@@ -1198,6 +1198,8 @@ export interface AgentSummary {
   scheduleCount: number;
   /** Workbench folders with a manifest, including ones with a load error. */
   workbenchCount: number;
+  /** Distinct installed plugin packages on this Agent. Older servers and unreadable configurations omit it. */
+  pluginCount?: number;
   /** Installed Skill count (number of agent_state/skills/<name>/ directories with a SKILL.md). */
   skillCount: number;
   /** Installed hook-package count (number of agent_state/hooks/<name>/ directories with a hooks.json). */

@@ -712,9 +712,10 @@ test("only open workbenches appear across the App Center, Session directory and 
   await expect(rows).toHaveCount(1);
 
   await page.getByText("Directory inspection", { exact: true }).first().click();
-  await page.getByRole("button", { name: "Browse workbenches" }).click();
-  const directory = page.getByRole("region", { name: "Workbenches" });
-  const secondApp = directory.getByRole("button", { name: "Cabinet30", exact: true });
+  await page.getByRole("button", { name: "Shortcuts", exact: true }).click();
+  await page.getByRole("button", { name: "Open App Center", exact: true }).click();
+  const directory = page.getByRole("list", { name: "App Center", exact: true });
+  const secondApp = directory.locator('li[data-app="default_agent/cabinet30"] > button').first();
   await expect(secondApp).toBeVisible();
   await expect(rows).toHaveCount(1);
   await secondApp.click();

@@ -136,6 +136,7 @@ describe("the mocked API", () => {
       IDS.agents.notes,
       IDS.agents.general,
     ]);
+    expect(agents.agents.every((agent) => Number.isInteger(agent.pluginCount))).toBe(true);
     const projectId = store.f.project.projectId;
     const agentId = IDS.agents.docs;
     expect(await api.getAgentPlugins(projectId, agentId, null)).toEqual({
