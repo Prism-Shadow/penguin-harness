@@ -491,9 +491,7 @@ export interface HostedSubagentAccess {
   }): Promise<{ action?: string; text?: string; running: boolean }>;
 }
 
-export type SubagentResolver = (
-  handle: string,
-) => Promise<{
+export type SubagentResolver = (handle: string) => Promise<{
   sessionId: string;
   agentId: string | null;
   alias: string;

@@ -233,9 +233,6 @@ test("subagent renders as a chip; the panel shows the call graph and child conve
     .poll(async () => (await childOf())?.title ?? null, { timeout: 10000 })
     .toBe("Subagent TODO summary");
   const child = await childOf();
-  await graph.getByRole("button", { name: /General Agent/ }).nth(1).click();
-  await page.getByTestId("dock").getByRole("button", { name: "复制 Session ID", exact: true }).click();
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(child.sessionId);
 
   // --- The child's OWN Trace session_meta records source=subagent: written by core's spawn
   // site, the single source of truth (the server's registration fallback cannot mask this —
@@ -522,4 +519,25 @@ test("a fork can read the copied messages without acquiring its source's child i
   const dock = page.getByTestId("dock");
   await expect(dock.getByTestId("subagent-open-session")).toHaveCount(0);
   await expect(dock.getByText("这个会话还没有子智能体")).toBeVisible();
+});
+
+test("the Agent panel copies the complete ID of the original child Session", async ({ page }) => {
+  const { sessionId } = await provisionSession(page, "childcopy");
+  await page.goto(BASE + "/chat/" + sessionId);
+  const composer = page.locator('[data-slot="composer"]:not([data-testid="dock"] *)').first();
+  await composer.locator("textarea").fill("run a subagent");
+  await composer.getByRole("button", { name: "发送", exact: true }).click();
+  await revealChip(page);
+  await chipOf(page).click();
+  const response = await page.request.get(BASE + "/api/sessions/" + sessionId + "/subagents");
+  expect(response.ok()).toBe(true);
+  const { items } = await response.json();
+  expect(items).toHaveLength(1);
+  const childId = items[0].sessionId;
+  expect(childId).not.toBe(sessionId);
+  await page
+    .getByTestId("dock")
+    .getByRole("button", { name: "复制 Session ID", exact: true })
+    .click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(childId);
 });

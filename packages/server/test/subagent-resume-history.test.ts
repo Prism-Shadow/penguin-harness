@@ -236,7 +236,8 @@ it("addresses and stops original child Sessions by true ID across authorized par
       "/api/projects/" + foreignProject + "/agents/" + agent + "/sessions",
       { approvalMode: "allow-all" },
     );
-    const foreignId = ((await foreign.json()) as { session: { sessionId: string } }).session.sessionId;
+    const foreignId = ((await foreign.json()) as { session: { sessionId: string } }).session
+      .sessionId;
     pending.set("VISITOR_ACCESS", {
       name: "input_subagent",
       args: { subagent_id: ids[0], prompt: "DELIVERY_FORBIDDEN", yield_time_ms: 250 },
