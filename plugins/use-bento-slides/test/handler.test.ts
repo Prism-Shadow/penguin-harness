@@ -77,7 +77,11 @@ async function fakeHost({ withFolders = true } = {}) {
       return now;
     },
     sessionTitle: () => null,
-    async sessionResult() {
+    async sessionResult(): Promise<{
+      status: "completed" | "failed";
+      text: string;
+      error: string | null;
+    }> {
       return { status: "completed", text: "The chart on slide 3 now shows Q1 to Q4.", error: null };
     },
     subscribe: () => () => undefined,
@@ -243,6 +247,52 @@ describe("a page listening for changes", () => {
 });
 
 describe("asking the Agent", () => {
+  it("does not attach the previous abort to a retry while the host is admitting it", async () => {
+    const { host, status } = await fakeHost();
+    const { call } = mount(host);
+    await call("POST", "/decks", { id: "draft", text: deckText("draft") });
+    await call("POST", "/ask", { deck: "draft", text: "First edit" });
+    status.set("session-1", "idle");
+    const result = vi.spyOn(host, "sessionResult").mockResolvedValue({
+      status: "failed",
+      text: "",
+      error: "Task aborted",
+    });
+    expect((await call("GET", "/ask", null, { deck: "draft" })).body.messages.at(-1).text).toBe(
+      "Task aborted",
+    );
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const run = host.run.bind(host);
+    vi.spyOn(host, "run").mockImplementationOnce(async (...args) => {
+      entered.resolve();
+      await release.promise;
+      return run(...args);
+    });
+    const retry = call("POST", "/ask", { deck: "draft", text: "Try again" });
+    await entered.promise;
+    const snapshot = call("GET", "/ask", null, { deck: "draft" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    release.resolve();
+    expect((await retry).status).toBe(200);
+    expect((await snapshot).body.messages.at(-1)).toMatchObject({
+      role: "user",
+      text: "Try again",
+    });
+    status.set("session-1", "idle");
+    result.mockResolvedValue({ status: "completed", text: "Deck updated.", error: null });
+    expect((await call("GET", "/ask", null, { deck: "draft" })).body).toMatchObject({
+      sessionId: "session-1",
+      status: "idle",
+      messages: [
+        { role: "user", text: "First edit" },
+        { role: "error", text: "Task aborted" },
+        { role: "user", text: "Try again" },
+        { role: "assistant", text: "Deck updated." },
+      ],
+    });
+  });
+
   it("keeps the chosen provider and model per deck across simultaneous opens, runs and a reload", async () => {
     const { host, picked, runs } = await fakeHost();
     const { call } = mount(host);

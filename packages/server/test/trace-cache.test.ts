@@ -128,6 +128,27 @@ afterEach(async () => {
 });
 
 describe("the hub's copy of a machine's Trace lines", () => {
+  it("counts saved display windows after reopening and discards them on a Trace reset", async () => {
+    const file = traceFile(1);
+    const cache = new TraceCache(root);
+    await cache.reconcile(M, S, [fact(file.bytes, 1)]);
+    const owner = { userId: "reader", projectId: "project" };
+    const text = line(0);
+    const window = {
+      windowId: "w",
+      text,
+      page: { windowId: "w", bytes: Buffer.byteLength(text), count: 1, serverNowMs: null },
+    };
+    await cache.saveWindow(M, S, owner, window);
+    const reopened = new TraceCache(root);
+    expect(await reopened.readWindow(M, S, owner)).toEqual(window);
+    expect(reopened.usedBytes).toBe(cache.usedBytes);
+    expect(reopened.usedBytes).toBeGreaterThan(Buffer.byteLength(text));
+    await reopened.reconcile(M, S, [fact(file.bytes, 1, { reset: true })]);
+    expect(await reopened.readWindow(M, S, owner)).toBeNull();
+    expect(reopened.usedBytes).toBe(0);
+  });
+
   it("merges the newest lines and the ones before them into one run that reads back byte for byte", async () => {
     const file = traceFile(6);
     const cache = new TraceCache(root);

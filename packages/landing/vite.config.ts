@@ -37,4 +37,5 @@ export default defineConfig({
   // Preview serves the assembled site, whose gallery is in dist/gallery: no pass-through (the
   // preview server would otherwise inherit the dev one's).
   preview: { proxy: {} },
+  build: { manifest: true },
 });

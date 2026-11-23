@@ -31,7 +31,7 @@ async function openSupportRow(page) {
   await page.goto(`${BASE}${SUPPORT}`);
 }
 
-test("the App Center opens Support windowed and full screen, and its switch takes the tile off and back", async ({
+test("the App Center opens Support windowed and full screen, and Hide and Unhide remove and restore its tile", async ({
   page,
 }) => {
   await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
@@ -71,12 +71,20 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await expect(page).toHaveURL(`${BASE}/apps`);
 
   await openSupportRow(page);
-  const toggle = page.getByRole("switch", { name: "Show in the App Center Support" });
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
-  await toggle.click();
-  // The reload behind the switch compiles the workbench: the row reads back once it is done.
-  await expect(toggle).toHaveAttribute("aria-checked", "false", { timeout: 30_000 });
-  await expect(toggle).toBeEnabled({ timeout: 30_000 });
+  const title = page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("button", { name: "Hide from App Center Support" }) })
+    .getByRole("button", { name: /^Support(?: |$)/ })
+    .first();
+  await title.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Support" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  const hide = page.getByRole("button", { name: "Hide from App Center Support" });
+  const unhide = page.getByRole("button", { name: "Unhide in App Center Support" });
+  await hide.focus();
+  await page.keyboard.press("Enter");
+  await expect(unhide).toBeEnabled({ timeout: 30_000 });
 
   await page.goto(`${BASE}/apps`);
   await expect(grid).toBeVisible();
@@ -90,9 +98,9 @@ test("the App Center opens Support windowed and full screen, and its switch take
   await expect(page.getByRole("button", { name: "Create with AI" })).toBeVisible();
 
   await openSupportRow(page);
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-checked", "true", { timeout: 30_000 });
-  await expect(toggle).toBeEnabled({ timeout: 30_000 });
+  await unhide.focus();
+  await page.keyboard.press("Space");
+  await expect(hide).toBeEnabled({ timeout: 30_000 });
   await page.goto(`${BASE}/apps`);
   await expect(grid.getByRole("button", { name: /^Support/ })).toBeVisible();
 });
@@ -408,4 +416,56 @@ test("a system app's tile opens its page, where the App Center stays lit", async
   // A Benchmark's own page lies under the Evaluation Center's.
   await page.goto(`${BASE}/benchmark/no-such-benchmark`);
   await expect(appCenter).toHaveAttribute("aria-current", "page");
+});
+
+test("searching, sorting and folding sidebar directories keeps the open page and its draft", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, U, P);
+  await setAccountPrefs(page.request, { lang: "en" });
+  const { projects } = await (await page.request.get("/api/projects")).json();
+  const model = { provider: "custom", modelId: "sidebar-test" };
+  const configured = await page.request.put(`/api/projects/${projects[0].projectId}/models`, {
+    data: {
+      defaultModel: model,
+      models: [
+        { ...model, apiKey: "sk-mock", baseUrl: process.env.MOCK_URL, contextWindow: 200000 },
+      ],
+    },
+  });
+  expect(configured.ok(), await configured.text()).toBeTruthy();
+  await page.goto("/chat/new");
+  const side = page.getByRole("complementary");
+  const apps = side.getByRole("list", { name: "Apps", exact: true });
+  const rows = apps.getByRole("listitem");
+  await expect.poll(() => rows.count()).toBeGreaterThan(1);
+  const editor = page.getByRole("main").locator("textarea").first();
+  await editor.fill("Keep this draft while looking for an app");
+  const open = side.getByRole("navigation", { name: "Open pages" });
+  const count = await open.getByRole("listitem").count();
+  await side.getByRole("button", { name: "Search apps", exact: true }).click();
+  const query = side.getByRole("searchbox", { name: "Search apps" });
+  await query.fill("gamma");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText(/gamma/i);
+  await query.fill("no such workspace application");
+  await expect(side.getByText("No matching apps")).toBeVisible();
+  await query.press("Escape");
+  await expect(query).toHaveCount(0);
+  await side.getByRole("button", { name: "Sort apps", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Name", exact: true }).click();
+  const names = await rows.locator("button[data-app-row] > .truncate").allTextContents();
+  expect(names.length).toBeGreaterThan(1);
+  expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+  const foldApps = side.getByRole("button", { name: "Apps", exact: true });
+  const foldWorkspaces = side.getByRole("button", { name: "Workspaces", exact: true });
+  await foldApps.click();
+  await expect(foldWorkspaces).toHaveAttribute("aria-expanded", "true");
+  await foldWorkspaces.click();
+  await foldApps.click();
+  await expect(foldWorkspaces).toHaveAttribute("aria-expanded", "false");
+  await expect(rows.first()).toBeVisible();
+  await expect(open.getByRole("listitem")).toHaveCount(count);
+  await expect(editor).toHaveValue("Keep this draft while looking for an app");
+  await expect(page).toHaveURL(/\/chat\/new$/);
 });

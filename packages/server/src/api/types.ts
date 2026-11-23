@@ -2536,6 +2536,8 @@ export interface HistoryStub {
 
 /** The machine leg's first event, `window`. */
 export interface HistoryLinesWindow {
+  /** The Session's owning Project, for the hub's offline access check. Older machines omit it. */
+  projectId?: string;
   /** What `/messages` answers beside the records, captured before any file is read. */
   envelope: {
     page?: MessagesPageInfo;

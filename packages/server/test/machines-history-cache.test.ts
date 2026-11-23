@@ -4,6 +4,9 @@
  * and the hub's copy of its Trace lines lives under a temp directory (machines/history-sync.ts,
  * trace-cache.ts, history-routes.ts).
  *
+ * - An explicit offline open replays the last tail to the same reader without a dial. A page
+ *   of older records cannot replace it, and a miss, forbidden project or deletion reveals no records.
+ *
  * - Given a window read through the hub, then its progress counts up to a total that does not
  *   move, then come its page, records and done — the records the machine's own `/messages`
  *   answers, elided — and the hub's copy of the file equals the machine's, byte for byte.
@@ -43,6 +46,7 @@ import path from "node:path";
 import { serve } from "@hono/node-server";
 import {
   assistantText,
+  partialText,
   imageUrlMessage,
   sessionMeta,
   subagentEvent,
@@ -61,8 +65,10 @@ import type {
   HistoryRecords,
   MessagesResponse,
 } from "../src/api/types.js";
+import { committedWindow } from "../src/machines/offline-history.js";
+import { serializeWindow } from "../src/services/history-stream.js";
 import { machineHistory } from "../src/machines/history-routes.js";
-import type { MachineHistory } from "../src/machines/history-routes.js";
+import type { HistoryCaller, MachineHistory } from "../src/machines/history-routes.js";
 import type { HistorySync } from "../src/machines/history-sync.js";
 import { MachineSockets } from "../src/machines/machine-sockets.js";
 import { machinesProxy } from "../src/machines/proxy.js";
@@ -168,12 +174,13 @@ let hub: {
   sync: HistorySync;
   sockets: MachineSockets;
   history: MachineHistory;
-  get: (remote: string) => Promise<Response>;
+  get: (remote: string, caller?: HistoryCaller) => Promise<Response>;
   cacheFile: (sid: string, index?: number) => string;
 };
 let onFrame: (frame: { k: string; off: number; bytes: number }) => void;
 /** Whether the hub has a forward to the machine; with none, only its copy can answer. */
 let connected = true;
+let targetLookups = 0;
 /** The Projects the hub has config for (an analysis is priced here only for those). */
 let hubProjects = new Set<string>();
 
@@ -184,16 +191,19 @@ beforeEach(async () => {
   hubProjects = new Set([PROJECT]);
   const sockets = new MachineSockets(() => undefined);
   const traces = path.join(hubRoot, `h-${Math.random().toString(36).slice(2)}`);
-  const target = async () =>
-    connected
+  const target = async () => {
+    targetLookups++;
+    return connected
       ? { agent: new http.Agent(), port: link.port, cookie, adoptedAt: null, session: 1 }
       : null;
+  };
   const { history, sync } = machineHistory({
     cache: new TraceCache(traces),
     sockets,
     target,
     analyze: (projectId, records) => machine.deps.traceService.analyzeRecords(projectId, records),
     hasProject: (projectId) => hubProjects.has(projectId),
+    accessible: (_userId, projectId) => hubProjects.has(projectId),
     log: () => undefined,
     tuning: {
       observe: (frame) => {
@@ -207,8 +217,8 @@ beforeEach(async () => {
     sync,
     sockets,
     history,
-    get: async (remote) =>
-      (await proxy(new Request(`http://localhost/server/${MACHINE}${remote}`)))!,
+    get: async (remote, caller) =>
+      (await proxy(new Request(`http://localhost/server/${MACHINE}${remote}`), caller))!,
     cacheFile: (sid, index = 1) =>
       path.join(
         traces,
@@ -296,6 +306,60 @@ async function machineWindow(sid: string, query: string): Promise<unknown[]> {
 }
 
 describe("a machine Session's history through the hub's copy", () => {
+  it("keeps committed messages in an offline window and drops a live fragment and held input", () => {
+    const committed = assistantText("saved reply");
+    const held = userText("pending only");
+    const online = serializeWindow(
+      {
+        messages: [committed, held],
+        live: { cursor: "event-1", fragments: [partialText("start", "still streaming")] },
+      },
+      () => null,
+      1000,
+    );
+    const offline = committedWindow(online, 1);
+    expect(offline.page).not.toHaveProperty("live");
+    expect(offline.page.count).toBe(1);
+    expect(JSON.parse(offline.text.trim())).toEqual(committed);
+  });
+
+  it("serves the last tail offline only to its reader and makes no connection on a hit or miss", async () => {
+    const sid = uniqueSessionId();
+    await machineSession(sid, [meta(sid), ...tasks(5)]);
+    const owner = { userId: "admin", projectId: PROJECT };
+    const stream = async (query: string, caller = owner) => {
+      const reader = eventReader(await hub.get(`/api/sessions/${sid}/history?${query}`, caller));
+      await reader.finished;
+      return reader.named();
+    };
+    const live = await stream("tailLimit=2");
+    const page = JSON.parse(live.find((event) => event.event === "page")!.data);
+    expect(page.page.before).toBeTruthy();
+    await stream(`before=${page.page.before}&limit=1`);
+    connected = false;
+    const before = targetLookups;
+    const saved = await stream("cached=1");
+    expect(saved.map((event) => event.event)).toEqual(["page", "records", "done"]);
+    expect(windowRecords(saved)).toEqual(windowRecords(live));
+    expect(JSON.parse(saved[0]!.data)).not.toHaveProperty("live");
+    for (const caller of [
+      { ...owner, userId: "another" },
+      { ...owner, projectId: "another" },
+    ]) {
+      const miss = await stream("cached=1", caller);
+      expect(miss.map((event) => event.event)).toEqual(["error"]);
+      expect(JSON.parse(miss[0]!.data).code).toBe("history_cache_miss");
+    }
+    hubProjects.clear();
+    const revoked = await stream("cached=1");
+    expect(revoked.map((event) => event.event)).toEqual(["error"]);
+    hubProjects.add(PROJECT);
+    hub.history.sessionDeleted(MACHINE, sid);
+    const gone = await stream("cached=1");
+    expect(gone.map((event) => event.event)).toEqual(["error"]);
+    expect(targetLookups).toBe(before);
+  });
+
   it("counts its progress to a fixed total, then sends the window, and keeps the file byte for byte", async () => {
     const sid = uniqueSessionId();
     const file = await machineSession(sid, [meta(sid), ...tasks(6)]);

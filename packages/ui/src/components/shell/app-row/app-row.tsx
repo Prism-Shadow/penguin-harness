@@ -18,7 +18,7 @@
  * (`useRowContextMenu`, the conversation rows' pattern); a hold's replayed click does not also
  * open the app.
  */
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
@@ -38,6 +38,8 @@ const RING_PX = APP_ROW_ICON_PX + 6;
 export interface AppRowProps {
   /** The app's key, written on the row for the app and its tests to find it by. */
   appKey: string;
+  /** Page lists can reorder the row or drop its page onto a pane. */
+  drag?: Pick<HTMLAttributes<HTMLLIElement>, "draggable" | "onDragStart" | "onDragOver" | "onDrop">;
   /** The app's icon, drawn by the caller at `APP_ROW_ICON_PX`. */
   icon: ReactNode;
   /** The app's name in the reader's language. */
@@ -61,6 +63,7 @@ export interface AppRowProps {
 
 export function AppRow({
   appKey,
+  drag,
   icon,
   name,
   label,
@@ -84,7 +87,7 @@ export function AppRow({
     action.onSelect();
   };
   return (
-    <li className="relative">
+    <li className="relative" {...drag}>
       <div
         ref={ctx.rowRef}
         {...ctx.rowProps}

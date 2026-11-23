@@ -1154,11 +1154,10 @@ export const en: Strings = {
     importOverwriteAction: "Overwrite",
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "Export",
-    /** Whether the workbench has a shortcut in the App Center: the words beside the row's switch (which flip it too), its accessible name with the title, and the More menu's checkable row. */
-    showInAppCenter: "Show in the App Center",
-    /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
-    showInAppCenterHint:
-      "When on, this workbench appears as an app on the App Center page: every member of the Project sees its icon there and opens it with one click, without starting a chat first. Turning it off only takes the shortcut off the App Center; the workbench, its data and its versions are untouched. Flipping the switch rewrites penguin.appCenter.show in the workbench's package.json and is recorded as a version.",
+    appCenterVisibility: (shown: boolean): string =>
+      shown ? "Hide from App Center" : "Unhide in App Center",
+    appCenterVisibilityHint:
+      "Changes the App Center shortcut for everyone in this Project. The workbench keeps its data and version history.",
     /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
     showInSidebar: "Show in the sidebar",
     /** The row's text button: opens the workbench beside a new chat. */
@@ -1170,7 +1169,27 @@ export const en: Strings = {
     /** The full page's way out when it was opened from the App Center. */
     exitToAppCenter: "Exit full page (back to the App Center)",
   },
+  pageWorkspace: {
+    open: "Open pages",
+    browse: "Browse workbenches",
+    workbenches: "Workbenches",
+    left: "Open on the left",
+    right: "Open on the right",
+    whole: "Show full page",
+    swap: "Swap panes",
+    separate: "Open in a new window",
+    actions: "Page actions",
+    up: "Move up",
+    down: "Move down",
+    resize: "Resize panes",
+    empty: "This Agent has no workbenches to open.",
+    panePages: "Pages in this pane",
+  },
   sidebarApps: {
+    search: "Search apps",
+    sort: "Sort apps",
+    noMatches: "No matching apps",
+    order: { default: "Directory order", name: "Name", running: "Running first" },
     title: "Apps",
     manage: "Manage apps",
     open: "Open",
@@ -4596,6 +4615,14 @@ Scenarios:
     statParenClose: ")",
     noSessions: "No Sessions yet",
     /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
+    offlineHistory: {
+      disconnected: (alias: string) => `${alias} is not connected.`,
+      cached: "Showing the conversation from the last sync.",
+      miss: "No cached history is available. The conversation will open when the machine reconnects.",
+      empty: "There were no messages at the last sync.",
+      refreshing: (alias: string) => `${alias} is connected. Updating the conversation.`,
+      failed: "The cached conversation could not be read.",
+    },
     sessionOnOfflineMachine: (machine: string) =>
       `This conversation is on ${machine}, which is not connected right now.`,
     sessionOnQuietMachine: (machine: string) =>

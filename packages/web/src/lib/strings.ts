@@ -1255,11 +1255,10 @@ export const zh = {
     importOverwriteAction: "覆盖导入",
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "打包导出",
-    /** Whether the workbench has a shortcut in the App Center: the words beside the row's switch (which flip it too), its accessible name with the title, and the More menu's checkable row. */
-    showInAppCenter: "展示到应用中心",
-    /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
-    showInAppCenterHint:
-      "打开后，这个工作台会作为一个应用出现在「应用中心」页面：Project 的每个成员都能在那里看到它的图标，点一下即可打开使用，不必先进入对话。关闭只是把入口从应用中心撤下，工作台本身、它的数据与历史版本都不受影响。拨动开关会改写工作台 package.json 中的 penguin.appCenter.show，并记为一个版本。",
+    appCenterVisibility: (shown: boolean): string =>
+      shown ? "从应用中心隐藏" : "在应用中心取消隐藏",
+    appCenterVisibilityHint:
+      "更改所有 Project 成员看到的应用中心入口。工作台的数据和历史版本会保留。",
     /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
     showInSidebar: "展示到侧边栏",
     /** The row's text button: opens the workbench beside a new chat. */
@@ -1272,7 +1271,27 @@ export const zh = {
     exitToAppCenter: "退出全页模式（回到应用中心）",
   },
   /** The sidebar's app list, under the nav and above the conversations (main-sidebar-apps.tsx). */
+  pageWorkspace: {
+    open: "打开的页面",
+    browse: "浏览工作台",
+    workbenches: "工作台",
+    left: "在左侧打开",
+    right: "在右侧打开",
+    whole: "整页显示",
+    swap: "交换两侧",
+    separate: "在新窗口打开",
+    actions: "页面操作",
+    up: "向上移动",
+    down: "向下移动",
+    resize: "调整页面宽度",
+    empty: "此 Agent 没有可打开的工作台。",
+    panePages: "此侧的页面",
+  },
   sidebarApps: {
+    search: "搜索应用",
+    sort: "应用排序",
+    noMatches: "没有匹配的应用",
+    order: { default: "目录顺序", name: "按名称", running: "运行中的优先" },
     title: "应用",
     /** The group header's action: the Agent's Workbenches sub-page. */
     manage: "管理应用",
@@ -4808,6 +4827,14 @@ Benchmark：
     statParenClose: "）",
     noSessions: "还没有 Session",
     /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
+    offlineHistory: {
+      disconnected: (alias: string) => `${alias} 未连接。`,
+      cached: "正在显示上次同步的对话记录。",
+      miss: "本地没有这段对话的缓存。连接恢复后会自动打开。",
+      empty: "上次同步时还没有消息。",
+      refreshing: (alias: string) => `${alias} 已连接，正在更新对话记录。`,
+      failed: "暂时无法读取本地对话记录。",
+    },
     sessionOnOfflineMachine: (machine: string) => `这个对话在 ${machine} 上，当前没有连接。`,
     /** The routed conversation's machine is connected and did not answer in time. */
     sessionOnQuietMachine: (machine: string) =>

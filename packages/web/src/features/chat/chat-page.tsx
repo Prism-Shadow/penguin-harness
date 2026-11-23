@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { AppWindow, Skeleton, WallpaperSurface, WindowStack } from "@prismshadow/penguin-ui";
+import { usePaneFocus } from "../../lib/page-focus";
 import { publishPageAgent } from "../../lib/page-agent";
 import { useChatController } from "./session/use-chat-controller";
 import { createMainChatView } from "./body/main-chat-view";
@@ -10,16 +11,17 @@ import { renderMainChatDialogs } from "./session/main-chat-dialogs";
 
 /** Composition only: one controller, original guard, exact main render fragments. */
 export function ChatPage() {
+  const focused = usePaneFocus();
   const controller = useChatController();
   const { projectId, pageAgentId, pageMachineId } = controller;
   // The sidebar's app list follows the Agent this page renders under, on the server it lives on:
   // a conversation on a machine runs that machine's copy (lib/page-agent.ts).
   useEffect(
     () =>
-      projectId && pageAgentId
+      focused && projectId && pageAgentId
         ? publishPageAgent({ projectId, agentId: pageAgentId, machineId: pageMachineId })
         : undefined,
-    [projectId, pageAgentId, pageMachineId],
+    [focused, projectId, pageAgentId, pageMachineId],
   );
   if (!projectId || (!controller.draft && !pageAgentId)) {
     return (
@@ -49,7 +51,7 @@ export function ChatPage() {
             projectId={projectId}
             server={pageMachineId}
             sessionId={controller.draft ? undefined : controller.selected?.sessionId}
-            active
+            active={focused}
           >
             {renderMainChatBody(view)}
           </VoiceScope>
