@@ -197,6 +197,27 @@ describe("the Storage page", () => {
     await waitFor(() => t.deps.manager.statusOf(sessionId) === "running");
   }
 
+  it("lets concurrent waiting readers see the completed measurement and refreshes the same scope", async () => {
+    const client = await admin();
+    const first = await json<StorageUsage>(client.get("/api/me/storage"));
+    expect(first.measuring).toBe(true);
+    const read = () => json<StorageUsage>(client.get("/api/me/storage?wait=1"));
+    const [a, b] = await Promise.all([read(), read()]);
+    expect(a.measuredAt).not.toBeNull();
+    expect(b).toEqual(a);
+    const sample = path.join(traces(), "storage-size-sample");
+    await put(sample, 300);
+    const refresh = await json<StorageUsage>(client.post("/api/me/storage/refresh"));
+    expect(refresh.measuring).toBe(true);
+    expect(refresh.categories).toEqual(a.categories);
+    const result = await read();
+    expect(result.measuring).toBe(false);
+    expect(result.categories.traces).toBe(a.categories.traces + 300);
+    await fs.unlink(sample);
+    await client.post("/api/me/storage/refresh");
+    expect((await read()).categories.traces).toBe(a.categories.traces);
+  });
+
   it("counts each byte in its category, per Project, per Agent and server-wide; a member sees their own Project only", async () => {
     const client = await admin();
     const peer = await member("st_member");

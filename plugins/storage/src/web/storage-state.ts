@@ -4,8 +4,8 @@
  *
  * - The page reads the usage when it opens, and again after a cleanup (the server measures what
  *   the cleanup touched); Refresh asks the server to measure again.
- * - While a measurement is under way (`measuring`), the page asks again every
- *   {@link STORAGE_POLL_MS} until one answer says it has ended. The numbers on screen stay until
+ * - While a measurement is under way, a bounded read waits for the shared result.
+ *   The numbers on screen stay until
  *   a new answer replaces them. A failed read keeps them too and asks again after a longer pause.
  * - Only the newest request's answer lands: a read that a Refresh overtook is dropped, and its
  *   poll with it. Closing the page stops the polling.
@@ -60,7 +60,7 @@ export function createStorageStore(
       stopPolling();
       timer = setTimeout(() => {
         timer = null;
-        void ask(() => api.getStorageUsage(), true);
+        void ask(() => api.getStorageUsage(true), true);
       }, ms);
     };
 
@@ -71,15 +71,19 @@ export function createStorageStore(
      */
     const ask = async (request: () => Promise<StorageUsage>, polling: boolean) => {
       const g = ++gen;
+      const started = Date.now();
       stopPolling();
+      if (!polling) set({ loadError: null });
       try {
         const usage = await request();
         if (g !== gen) return;
         set({ usage, loadError: null });
-        if (usage.measuring) schedule(STORAGE_POLL_MS);
+        // First wait immediately. Space repeated reads if a server answers before the wait expires.
+        if (usage.measuring)
+          schedule(polling ? Math.max(0, STORAGE_POLL_MS - (Date.now() - started)) : 0);
       } catch (err) {
         if (g !== gen) return;
-        if (get().usage === null) set({ loadError: apiErrorText(err) });
+        if (get().usage?.measuredAt == null) set({ loadError: apiErrorText(err) });
         else if (!polling) onError(apiErrorText(err), err);
         if (get().usage?.measuring === true) schedule(STORAGE_POLL_RETRY_MS);
       }
