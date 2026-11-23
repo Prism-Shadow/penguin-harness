@@ -20,6 +20,19 @@ test("saved prompts survive a shuffle and can be managed from a phone", async ({
   const setup = page.getByRole("dialog");
   await setup.getByRole("button", { name: "Later" }).click();
   const shortcuts = page.getByRole("group", { name: "Examples and shortcuts" });
+  await expect(page.getByText("Create your first Agent OS", { exact: true })).toBeVisible();
+  await expect(page.locator('[data-slot="count"]')).toHaveCount(0);
+  const bounds = await shortcuts.evaluate((el) => ({
+    width: el.clientWidth,
+    scroll: el.scrollWidth,
+    centers: [...el.querySelectorAll(":scope > button")].map((button) => {
+      const rect = button.getBoundingClientRect();
+      return rect.y + rect.height / 2;
+    }),
+  }));
+  expect(bounds.scroll).toBeGreaterThan(bounds.width);
+  expect(Math.max(...bounds.centers) - Math.min(...bounds.centers)).toBeLessThan(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const draft = page.locator('[data-slot="composer"] textarea').first();
   await shortcuts.getByRole("button", { name: "Reading notes" }).click();
   await expect(draft).toHaveValue("Summarize my reading notes.");
@@ -46,4 +59,42 @@ test("saved prompts survive a shuffle and can be managed from a phone", async ({
   await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
   await expect(shortcuts.getByRole("button", { name: "Book notes" })).toHaveCount(0);
   await expect(shortcuts.getByRole("button", { name: "New shortcut" })).toBeVisible();
+});
+
+test("long shortcut names fit one keyboard-accessible row on a desktop", async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 700 });
+  await provisionAndLogin(page.request, "longshortcuts", "password123");
+  const longName = "笔记".repeat(10) + " report";
+  await setAccountPrefs(page.request, {
+    lang: "en",
+    draftShortcuts: [
+      { id: "sc-chinese", title: longName, prompt: "A longer Chinese shortcut" },
+      {
+        id: "sc-english",
+        title: "Quarterly report and follow-up",
+        prompt: "A longer English shortcut",
+      },
+    ],
+  });
+  await page.goto("/chat/new");
+  await page.getByRole("dialog").getByRole("button", { name: "Later" }).click();
+  const strip = page.getByRole("group", { name: "Examples and shortcuts" });
+  const end = strip.getByRole("button", { name: "Manage shortcuts" });
+  const first = strip.locator("button").first();
+  await first.focus();
+  for (let i = 0; i < 12 && !(await end.evaluate((el) => el === document.activeElement)); i++)
+    await page.keyboard.press("Tab");
+  await expect(end).toBeFocused();
+  await expect(end).toBeInViewport();
+  const saved = strip.getByRole("button", { name: longName, exact: true });
+  await saved.click();
+  await expect(page.locator('[data-slot="composer"] textarea')).toHaveValue(
+    "A longer Chinese shortcut",
+  );
+  const brand = await page.locator('[data-slot="brand"]').boundingBox(),
+    box = await page.locator('[data-slot="composer"]').boundingBox(),
+    footer = await page.locator('[data-slot="version"]').boundingBox();
+  expect(brand.y + brand.height).toBeLessThanOrEqual(box.y);
+  expect(footer.y).toBeGreaterThan(box.y + box.height);
+  expect(footer.y + footer.height).toBeGreaterThan(640);
 });

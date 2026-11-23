@@ -1,8 +1,4 @@
-/**
- * A long start-page draft grows, then accepts a mouse or keyboard resize without replacing the
- * selection. Clearing it gives the page back its space. On a short touch viewport a finger drag
- * resizes the field and the send action is reachable beside it.
- */
+/** The new-chat textarea follows its content and viewport while keeping keyboard resizing. */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
 
@@ -26,59 +22,39 @@ async function openDraft(page, userId) {
   return page.locator('[data-slot="composer"] textarea');
 }
 
-test("a long draft can be resized with the mouse and arrow keys and shrinks again", async ({
+test("a long draft grows, accepts keyboard resizing and shrinks after clearing", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  const box = await openDraft(page, "draft_height_mouse");
+  const box = await openDraft(page, "keyboard_draft_size");
   const short = await height(box);
   await box.fill(lines);
   await expect.poll(() => height(box)).toBeGreaterThan(short * 3);
-  const automatic = await height(box);
+  const auto = await height(box);
   await box.evaluate((el) => el.setSelectionRange(11, 17));
-  const grip = page.getByRole("separator", { name: "调整草稿输入框高度" });
-  await grip.click({ trial: true });
-  const rect = await grip.boundingBox();
-  await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2 + 84, { steps: 4 });
-  await page.mouse.up();
-  await expect.poll(() => height(box)).toBeGreaterThan(automatic + 60);
+  await box.press("Alt+Shift+ArrowDown");
+  await expect.poll(() => height(box)).toBeGreaterThan(auto);
   expect(await box.evaluate((el) => [el.selectionStart, el.selectionEnd])).toEqual([11, 17]);
-  const adjusted = await height(box);
-  await grip.press("ArrowUp");
-  await expect.poll(() => height(box)).toBeLessThan(adjusted);
-  await expect(box).toHaveValue(lines);
-  await box.fill("Short again");
+  await box.press("Alt+Shift+ArrowUp");
+  await expect.poll(() => height(box)).toBe(auto);
+  expect(await box.evaluate((el) => getComputedStyle(el).resize)).toBe("none");
+  await expect(page.locator('[data-slot="composer"] [role="separator"]')).toHaveCount(0);
+  await box.fill("");
   await expect.poll(() => height(box)).toBe(short);
 });
 
-test.describe("a short touch viewport", () => {
-  test.use({ viewport: { width: 390, height: 440 }, hasTouch: true, isMobile: true });
-  test("a finger resizes the draft and its toolbar stays reachable", async ({ page, context }) => {
-    const box = await openDraft(page, "draft_height_touch");
-    await box.fill(lines);
-    const before = await height(box);
-    const grip = page.getByRole("separator", { name: "调整草稿输入框高度" });
-    await grip.scrollIntoViewIfNeeded();
-    await grip.click({ trial: true });
-    const rect = await grip.boundingBox();
-    const x = rect.x + rect.width / 2;
-    const y = rect.y + rect.height / 2;
-    const cdp = await context.newCDPSession(page);
-    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
-    await cdp.send("Input.dispatchTouchEvent", {
-      type: "touchMove",
-      touchPoints: [{ x, y: y - 40 }],
-    });
-    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-    await expect.poll(() => height(box)).toBeLessThan(before - 20);
-    const send = page.getByRole("button", { name: "发送", exact: true });
-    await page.locator('[data-slot="composer"]').scrollIntoViewIfNeeded();
-    await expect(send).toBeInViewport({ ratio: 1 });
-    await expect(box).toBeInViewport({ ratio: 1 });
-    await expect(box).toHaveValue(lines);
-    await send.tap();
-    await expect(page).toHaveURL(/\/chat\/[^/?#]+/);
-  });
+test("a short phone viewport scrolls a long draft and leaves the toolbar reachable", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 780 });
+  const box = await openDraft(page, "phone_draft_size");
+  await box.fill(lines);
+  const tall = await height(box);
+  await box.focus();
+  await page.setViewportSize({ width: 390, height: 430 });
+  await expect.poll(() => height(box)).toBeLessThan(tall);
+  expect(await box.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await page.locator('[data-slot="composer"] button').last().scrollIntoViewIfNeeded();
+  await expect(page.locator('[data-slot="composer"] button').last()).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
