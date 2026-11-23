@@ -89,9 +89,7 @@ const isBare = (spec) => !spec.startsWith(".") && !isAbsolute(spec) && !spec.sta
 /**
  * The published JS bundles the A2UI grammar. The chat dialect’s micromark dependencies stay imports.
  */
-const isBundled = (spec) =>
-  spec === "@prismshadow/a2ui" ||
-  spec.startsWith("@prismshadow/a2ui/");
+const isBundled = (spec) => spec === "@prismshadow/a2ui" || spec.startsWith("@prismshadow/a2ui/");
 
 /** Keeps every npm dependency an import of the published modules. */
 const externalDependencies = {
