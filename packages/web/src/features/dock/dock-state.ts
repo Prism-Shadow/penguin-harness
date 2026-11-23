@@ -283,21 +283,27 @@ let fullscreenByLayout = new WeakMap<ScopeLayout, DockPosition>();
 
 /** Whether a scope's arrangement is worth a storage entry at all. */
 function scopeIsEmpty(s: ScopeLayout): boolean {
-  return s.right.tabs.length === 0 && s.bottom.tabs.length === 0 && !s.right.open && !s.bottom.open;
+  return (
+    s.shell === null &&
+    s.right.tabs.length === 0 &&
+    s.bottom.tabs.length === 0 &&
+    !s.right.open &&
+    !s.bottom.open
+  );
 }
 
 /** Writes the live layout back into the scope map and persists it. */
-function persist(): void {
+function persist(owner = scope, arrangement = layout): void {
   // An untouched scope is not worth a storage entry: visiting a conversation without ever
   // opening a dock would otherwise leave one behind for every conversation visited.
-  if (scopeIsEmpty(layout)) {
-    const { [scope]: _dropped, ...rest } = scopes;
+  if (scopeIsEmpty(arrangement)) {
+    const { [owner]: _dropped, ...rest } = scopes;
     scopes = rest;
   } else {
     // Re-inserted last so key order is least-recently-touched first, which is what the cap
     // below evicts by.
-    const { [scope]: _previous, ...rest } = scopes;
-    scopes = { ...rest, [scope]: layout };
+    const { [owner]: _previous, ...rest } = scopes;
+    scopes = { ...rest, [owner]: arrangement };
   }
   writeScopes();
 }
@@ -860,15 +866,17 @@ export function closePanel(id: PanelId): void {
 // ---------------------------------------------------------------------------- terminals
 
 /** The shell the terminal panel shows in this conversation; null for its default (the newest). */
-export function shownShell(): string | null {
-  return layout.shell;
+export function shownShell(owner = scope): string | null {
+  return owner === scope ? layout.shell : (scopes[owner]?.shell ?? null);
 }
 
 /** Makes `id` the terminal panel's shown shell here (null: back to the newest). */
-export function setShownShell(id: string | null): void {
-  if (layout.shell === id) return;
-  layout.shell = id;
-  commit();
+export function setShownShell(id: string | null, owner = scope): void {
+  const arrangement = owner === scope ? layout : (scopes[owner] ?? emptyScope());
+  if (arrangement.shell === id) return;
+  arrangement.shell = id;
+  persist(owner, arrangement);
+  notify();
 }
 
 /**

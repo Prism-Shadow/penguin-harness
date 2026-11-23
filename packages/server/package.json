@@ -82,7 +82,7 @@
     "typecheck": "pnpm gen:ifaces && tsc --noEmit -p tsconfig.json",
     "gen:ifaces": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --sources src --sources test --sources ../../library --out src/ifaces.json",
     "test": "pnpm gen:ifaces && vitest run --passWithNoTests",
-    "build": "pnpm gen:ifaces && node ../../scripts/run-with-env.mjs NODE_OPTIONS=--max-old-space-size=4096 -- tsup"
+    "build": "pnpm gen:ifaces && node ../../scripts/run-with-env.mjs NODE_OPTIONS=--max-old-space-size=4096 -- tsup && node ../../scripts/stage-release-library.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",

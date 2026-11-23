@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Segmented } from "@prismshadow/penguin-ui";
 import type { LocatedShortcut } from "./arrangement";
 import { S } from "../../lib/strings";
 import { localizedText } from "../../lib/skill-use";
-import { workbenchAppPath } from "../../lib/workbench-tabs";
+import { useInstallManifest, workbenchAppPath } from "../../lib/workbench-tabs";
+import { useDocumentTitle } from "../../lib/use-document-title";
+import { usePaletteActions } from "../../lib/palette-actions";
 import { useLocale } from "../../state/locale";
 import { useAppPageTab, WorkbenchFrame } from "../workbenches";
 import { FrameAppBody } from "./frame-app-body";
@@ -16,8 +18,41 @@ interface WindowProps {
   title: string;
   /** Opens the full page at `path`: the page the window shows. */
   onFullScreen: (path: string) => void;
+  exitFullScreen?: () => void;
   /** The app's workbench is gone (removed, or its Agent with it). */
   onGone: () => void;
+}
+
+function FullScreenActions({ title, exit }: { title: string; exit: () => void }) {
+  useDocumentTitle(title);
+  const actions = useMemo(
+    () => [
+      {
+        id: "exit-full-page",
+        label: S.workbenches.exitToWindow,
+        keywords: ["exit", "full page"],
+        run: exit,
+      },
+    ],
+    [exit],
+  );
+  usePaletteActions(actions);
+  return null;
+}
+
+function InstallManifest({
+  projectId,
+  shortcut,
+  tab,
+}: Pick<WindowProps, "projectId" | "shortcut"> & { tab?: string }) {
+  useInstallManifest(
+    projectId,
+    shortcut.agentId,
+    shortcut.workbenchId,
+    tab,
+    shortcut.machineId ?? null,
+  );
+  return null;
 }
 
 export function AppCenterWindow(props: WindowProps) {
@@ -25,6 +60,9 @@ export function AppCenterWindow(props: WindowProps) {
   if (src === undefined) return <AgentWorkbenchWindow {...props} />;
   return (
     <section aria-label={props.title} className="relative h-full min-h-0">
+      {props.exitFullScreen && (
+        <FullScreenActions title={props.title} exit={props.exitFullScreen} />
+      )}
       <FrameAppBody
         appKey={props.appKey}
         projectId={props.projectId}
@@ -61,7 +99,13 @@ function AgentWorkbenchWindow(props: WindowProps) {
   useEffect(() => setSelectedAppPath(props.appKey, path), [props.appKey, path]);
   return (
     <section aria-label={props.title} className="flex h-full min-h-0 flex-col">
-      {pages.length >= 2 && shown && (
+      {props.exitFullScreen && (
+        <>
+          <FullScreenActions title={shown?.title ?? props.title} exit={props.exitFullScreen} />
+          <InstallManifest projectId={projectId} shortcut={shortcut} tab={shown?.key} />
+        </>
+      )}
+      {!props.exitFullScreen && pages.length >= 2 && shown && (
         <div className="shrink-0 overflow-x-auto px-2 py-1">
           <Segmented
             options={pages.map((page) => ({

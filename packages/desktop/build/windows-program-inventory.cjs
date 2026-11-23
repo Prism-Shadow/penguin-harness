@@ -3,11 +3,13 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
-module.exports = async function inventory({ electronPlatformName, appOutDir, packager }) {
+module.exports = async function inventory({ electronPlatformName, appOutDir }) {
   if (electronPlatformName !== "win32") return;
   const files = [];
   async function list(directory) {
-    for (const entry of await fs.readdir(path.join(appOutDir, directory), { withFileTypes: true })) {
+    for (const entry of await fs.readdir(path.join(appOutDir, directory), {
+      withFileTypes: true,
+    })) {
       const relative = path.join(directory, entry.name);
       if (entry.isDirectory()) await list(relative);
       else if (entry.isFile()) files.push(relative.split(path.sep).join("\\"));
@@ -15,7 +17,9 @@ module.exports = async function inventory({ electronPlatformName, appOutDir, pac
     }
   }
   await list("");
-  const cache = path.join(packager.projectDir, "node_modules/.cache/penguin-windows-install");
+  const cache = path.join(__dirname, "generated");
   await fs.mkdir(cache, { recursive: true });
-  await fs.writeFile(path.join(cache, "program-files.txt"), files.sort().join("\n"), "utf8");
+  const inventoryFile = path.join(cache, "program-files.txt");
+  await fs.writeFile(inventoryFile, files.sort().join("\n"), "utf8");
+  console.info(`Wrote ${files.length} Windows program files to ${inventoryFile}`);
 };

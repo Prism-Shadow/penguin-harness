@@ -69,6 +69,7 @@ function bulkSocket(count: number, event: string = EVENT, beatMs?: number) {
   const ws = new StandInSocket();
   const route = { released: false, waits: 0, answer: null as StreamAnswer | null };
   serveApiSocket(ws as unknown as WebSocket, {
+    sessionIsLive: () => true,
     fetch: async () => Response.json({ ok: true }),
     fetchStream: async (_request, answer) => {
       route.answer = answer;
@@ -220,6 +221,7 @@ describe("acknowledged flow on the API socket", () => {
   it("a beating stream with nothing to say sends a ping once per beat of quiet", async () => {
     const ws = new StandInSocket();
     serveApiSocket(ws as unknown as WebSocket, {
+      sessionIsLive: () => true,
       fetch: async () => Response.json({}),
       fetchStream: async (_request, answer) => {
         answer.start(200, { "content-type": "text/event-stream" });
@@ -248,6 +250,7 @@ describe("acknowledged flow on the API socket", () => {
     const ws = new StandInSocket();
     let finish: () => void = () => {};
     serveApiSocket(ws as unknown as WebSocket, {
+      sessionIsLive: () => true,
       fetch: async () =>
         new Response(
           new ReadableStream({

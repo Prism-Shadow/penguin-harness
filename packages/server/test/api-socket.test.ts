@@ -5,16 +5,18 @@
  * as index.ts attaches it. What is pinned: the handshake's gate (cookie, origin), that a call
  * answers exactly as its HTTP twin and is addressed to the origin the socket was opened on,
  * which paths never ride the socket, that a stream endpoint arrives as frames and a cancel
- * releases it, and that a malformed frame closes the socket rather than being guessed at.
+ * releases it, that a malformed frame closes the socket rather than being guessed at, and that
+ * a socket whose login was revoked is closed on its next call or beat.
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { serve } from "@hono/node-server";
 import type { Server as HttpServer } from "node:http";
 import { WebSocket } from "ws";
-import { createTestApp, loginAdmin } from "./helpers.js";
+import { apiClient, createTestApp, loginAdmin, loginUser, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { attachTerminalWebSocket } from "../src/terminal/ws.js";
 import { apiSocketPath } from "../src/socket/ref.js";
+import { HEARTBEAT_MS } from "../src/socket/serve.js";
 
 let t: TestApp;
 let port: number;
@@ -233,6 +235,41 @@ describe("calls", () => {
     send(s.ws, { id: 1, call: { method: "GET", path: "/api/me" } });
     expect((await s.closed()).code).toBe(1002);
   });
+});
+
+describe("a revoked login", () => {
+  // HTTP refuses the cookie the moment its login is gone; the socket it opened carries the same
+  // routes, so it is closed too — on its next call, or at the latest on its next beat.
+  it.each(["call", "beat"] as const)(
+    "closes its socket on the next %s, and a fresh sign-in connects again",
+    async (trigger) => {
+      const userId = `revoked_${trigger}`;
+      const old = await provisionUser(t.app, userId);
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      const s = await open({ cookie: old.cookie });
+      if (!("ws" in s)) throw new Error("handshake refused");
+      try {
+        send(s.ws, { id: 1, call: { method: "GET", path: "/api/me" } });
+        expect(await s.next()).toMatchObject({ id: 1, status: 200 });
+        const reset = await apiClient(t.app, cookie).post(`/api/admin/users/${userId}/password`, {
+          password: "new-password-456",
+        });
+        expect(reset.status).toBe(204);
+        if (trigger === "call") send(s.ws, { id: 2, call: { method: "GET", path: "/api/me" } });
+        else await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+        expect((await s.closed()).code).toBe(1008);
+      } finally {
+        vi.useRealTimers();
+        s.ws.close();
+      }
+      const fresh = await loginUser(t.app, userId, "new-password-456");
+      const again = await open({ cookie: fresh.cookie });
+      if (!("ws" in again)) throw new Error("fresh sign-in refused");
+      send(again.ws, { id: 1, call: { method: "GET", path: "/api/me" } });
+      expect(await again.next()).toMatchObject({ id: 1, status: 200 });
+      again.ws.close();
+    },
+  );
 });
 
 describe("streams", () => {

@@ -2,7 +2,7 @@
  * External built-in plugins (PRFC-0036): `@penguinharness/*` packages published from their own
  * repositories and shipped preinstalled like the `plugins/*` packages of this one.
  *
- * Each is pinned to one exact version in the `dependencies` of the three host packages —
+ * Each is pinned to one exact npm version (dependencies) or release asset (devDependencies) in each host —
  * packages/server (the plugin library and the built-in prefix), packages/cli (the npm CLI's
  * library) and packages/desktop — and pnpm-lock.yaml records the sha512 of the tarball that
  * version is: the one lock. A plugin of this repository is a `workspace:` dependency of the
@@ -12,9 +12,9 @@
  * locked tarball this module finds and checks, trying in order:
  *
  *   1. `PENGUIN_PLUGIN_TARBALLS=<dir>`: the file `npm pack` names, `penguinharness-<name>-<version>.tgz`;
- *   2. npm: `npm pack <name>@<version>`, which reads npm's cache before its registry — a cache
+ *   2. A release URL pin downloads its exact asset. For npm version pins: `npm pack <name>@<version>`, which reads npm's cache before its registry — a cache
  *      warmed with `npm cache add <name>@<version>` builds offline;
- *   3. the github channel of the version's entry in the plugin index (scripts/lib/plugin-index.mjs).
+ *      the github channel of the version's entry in the plugin index (scripts/lib/plugin-index.mjs).
  *
  * A source that cannot supply the tarball hands over to the next; a tarball whose sha512 is not
  * the lock's fails the build wherever it came from. pnpm's store is not a source: it keeps a
@@ -26,7 +26,7 @@ import fsp from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { fetchFromGithubChannel, pluginIndexUrl } from "./plugin-index.mjs";
+import { fetchFromGithubChannel, fetchReleaseAsset, pluginIndexUrl } from "./plugin-index.mjs";
 import { run } from "./run-command.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -41,11 +41,23 @@ const SCOPE = "@penguinharness/";
 /** One exact semver version: what a pin is. */
 const EXACT = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
+/** Release-only content is a direct build input. Published host packages carry it in dist. */
+export function releaseDependencies(pkg) {
+  return Object.fromEntries(
+    Object.entries(pkg.devDependencies ?? {}).filter(
+      ([name, source]) =>
+        name.startsWith(SCOPE) &&
+        typeof source === "string" &&
+        source.startsWith("https://github.com/"),
+    ),
+  );
+}
+
 /** The external `@penguinharness/*` dependencies a host's package.json names: name → range. */
 function externalRanges(root, host) {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, host, "package.json"), "utf8"));
   return new Map(
-    Object.entries(pkg.dependencies ?? {}).filter(
+    Object.entries({ ...pkg.dependencies, ...releaseDependencies(pkg) }).filter(
       ([name, range]) => name.startsWith(SCOPE) && !String(range).startsWith("workspace:"),
     ),
   );
@@ -54,22 +66,34 @@ function externalRanges(root, host) {
 /** What pnpm-lock.yaml resolves `name` to for `host`: its version and that version's integrity. */
 function lockedFor(lock, host, name) {
   // `0.1.0(<peers>)` → `0.1.0`, as scripts/lib/locked-prefix.mjs reads a ref.
-  const version = lock.importers?.[host]?.dependencies?.[name]?.version?.replace(/\(.*$/, "");
-  const integrity =
-    version === undefined
-      ? undefined
-      : lock.packages?.[`${name}@${version}`]?.resolution?.integrity;
-  return { version, integrity };
+  const importer = lock.importers?.[host];
+  const ref = (
+    importer?.dependencies?.[name] ?? importer?.devDependencies?.[name]
+  )?.version?.replace(/\(.*$/, "");
+  const entry = lock.packages?.[`${name}@${ref}`];
+  return {
+    ref,
+    version: entry?.version ?? ref,
+    integrity: entry?.resolution?.integrity,
+    asset: entry?.resolution?.tarball,
+  };
 }
 
 /** Why `host`'s pin of `name` cannot be shipped, or null. */
 function pinFault(lock, host, name, range) {
-  if (!EXACT.test(range)) {
+  const release =
+    /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/releases\/download\/v[\w.-]+\/[\w.@+-]+\.tgz$/.test(
+      range,
+    );
+  if (!EXACT.test(range) && !release) {
     return `${host} names ${name} "${range}": an external built-in plugin is pinned to one exact version`;
   }
-  const { version, integrity } = lockedFor(lock, host, name);
-  if (version !== range) {
-    return `pnpm-lock.yaml resolves ${name} for ${host} to ${version ?? "nothing"}, not ${range}: run pnpm install`;
+  const { ref, version, integrity, asset } = lockedFor(lock, host, name);
+  if (ref !== range) {
+    return `pnpm-lock.yaml resolves ${name} for ${host} to ${ref ?? "nothing"}, not ${range}: run pnpm install`;
+  }
+  if (release && (asset !== range || !EXACT.test(version))) {
+    return `pnpm-lock.yaml must record the same release asset and its package version for ${name}`;
   }
   if (!integrity?.startsWith("sha512-")) {
     return `pnpm-lock.yaml records no sha512 integrity for ${name}@${range}`;
@@ -90,7 +114,8 @@ export function externalPins(root, lock) {
   )) {
     const fault = pinFault(lock, PREFIX_HOST, name, range);
     if (fault !== null) throw new Error(fault);
-    pins.push({ name, version: range, integrity: lockedFor(lock, PREFIX_HOST, name).integrity });
+    const { version, integrity, asset } = lockedFor(lock, PREFIX_HOST, name);
+    pins.push({ name, version, integrity, ...(range === asset && { asset }) });
   }
   return pins;
 }
@@ -168,11 +193,19 @@ export async function lockedTarball(pin, { into, env = process.env }) {
   const tried = [];
   const dir = env.PENGUIN_PLUGIN_TARBALLS;
   if (dir) {
-    const file = path.resolve(dir, name);
-    if (fs.existsSync(file)) return checked(pin, file, `PENGUIN_PLUGIN_TARBALLS (${file})`);
+    const names = pin.asset ? [path.basename(new URL(pin.asset).pathname), name] : [name];
+    for (const candidate of names) {
+      const file = path.resolve(dir, candidate);
+      if (fs.existsSync(file)) return checked(pin, file, `PENGUIN_PLUGIN_TARBALLS (${file})`);
+    }
     tried.push(`PENGUIN_PLUGIN_TARBALLS: no ${name} in ${path.resolve(dir)}`);
   }
   const target = path.join(into, name);
+  if (pin.asset) {
+    const { bytes } = await fetchReleaseAsset(pin.asset);
+    await fsp.writeFile(target, bytes);
+    return checked(pin, target, pin.asset);
+  }
   try {
     // A registry spec is packed as the registry serves it: the published tarball, byte for byte.
     await run(

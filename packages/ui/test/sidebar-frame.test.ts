@@ -115,6 +115,23 @@ describe("SidebarListHeader", () => {
       }),
     );
 
+  it.each([true, false])(
+    "places the workspace disclosure after the label when open is %s",
+    (open) => {
+      const html = renderStatic(
+        createElement(SidebarListHeader, {
+          label: "Apps",
+          fold: { open, toggle: () => {} },
+          children: createElement("button", null, "Search"),
+        }),
+      );
+      const toggle = html.match(/<button[^>]*aria-label="Apps"[^>]*>(.*?)<\/button>/)?.[1] ?? "";
+      expect(html).toContain(`aria-expanded="${open}"`);
+      expect(toggle).toMatch(/>Apps<\/span><svg/);
+      expect(classTokens(toggle).includes("rotate-90")).toBe(open);
+    },
+  );
+
   it("sets its label on the eyebrow hook", () => {
     const tokens = classTokens(header(false));
     expect(tokens).toContain("ui-eyebrow");
