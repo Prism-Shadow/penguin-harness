@@ -157,7 +157,7 @@ test("the account's display setting changes saved history and survives a differe
   await openSteps(group);
   await expect(rows).toHaveCount(4);
   await expectFoldedBodies(group);
-  await expect(group.locator("[data-step-navigation]")).toHaveCount(0);
+  await expect(group.locator("[data-step-count]")).toHaveCount(0);
   await changeActivityDisplay(page, userId, "展开");
   await openSteps(group);
   await expect(rows).toHaveCount(4);
@@ -165,14 +165,11 @@ test("the account's display setting changes saved history and survives a differe
   await expect(group.getByText("entry 2", { exact: true })).toBeVisible();
   await changeActivityDisplay(page, userId, "紧凑");
 
-  const nav = group.locator("[data-step-navigation]");
-  await expect(nav).toContainText("第 5 步");
+  const count = group.locator("[data-step-count]");
+  await expect(count).toHaveText("4 步");
   await expect(group.locator("[data-step-terminal]")).toBeVisible();
   await expect(rows).toHaveCount(0);
   await expectFoldedBodies(group);
-  await group.getByRole("button", { name: "上一步" }).click();
-  await expect(nav).toContainText("第 4 步");
-  await expect(rows).toHaveCount(0);
   await openSteps(group);
   await expect(rows).toHaveCount(4);
   await expectFoldedBodies(group);
@@ -181,12 +178,12 @@ test("the account's display setting changes saved history and survives a differe
 
   await setAccountPrefs(page.request, { themeId: "github" });
   await page.reload();
-  await expect(nav).toContainText("第 5 步");
+  await expect(count).toHaveText("4 步");
   await expect(rows).toHaveCount(0);
   await expect(page.getByText("Both tools finished.", { exact: true })).toHaveCount(1);
 });
 
-test("compact navigation stays on one line while the run advances and preserves a reader's earlier page", async ({
+test("compact activity follows two approvals while preserving the first reader's open details", async ({
   page,
   context,
 }) => {
@@ -195,11 +192,9 @@ test("compact navigation stays on one line while the run advances and preserves 
   await changeActivityDisplay(page, userId, "紧凑");
   await send(page, "activity pages test");
   const group = activityRoot(page),
-    nav = group.locator("[data-step-navigation]"),
+    count = group.locator("[data-step-count]"),
     rows = activityRows(group);
-  const previous = group.getByRole("button", { name: "上一步" }),
-    next = group.getByRole("button", { name: "下一步" });
-  await expect(nav).toContainText("第 2 步");
+  await expect(count).toHaveText("2 步");
   // The run waits on an approval: the line opens by itself, so Allow and Deny show at once.
   await expect(rows).toHaveCount(2);
   await expect(group.getByRole("button", { name: "允许", exact: true })).toBeVisible();
@@ -212,68 +207,33 @@ test("compact navigation stays on one line while the run advances and preserves 
   const reviewer = await context.newPage();
   await reviewer.goto(`/chat/${sessionId}`);
   const reviewing = activityRoot(reviewer);
-  await previous.click();
-  await expect(nav).toContainText("第 1 步");
-  await openSteps(group);
-  await expect(rows).toHaveCount(2);
-  await expect(rows.first()).not.toContainText("I will check");
-  await expect(group.getByRole("button", { name: "允许", exact: true })).toBeVisible();
   await rows.locator("button[aria-expanded]").first().click();
   await expect(group.getByText("I will check the first entry.", { exact: true })).toBeVisible();
 
-  // A second, real reader approves the very same Session. Neither advancing nor finishing
-  // the run may take the first reader off their chosen page.
+  // The second reader approves the same Session while the first keeps the original thinking open.
   await openSteps(reviewing);
   const allow = reviewing.getByRole("button", { name: "允许", exact: true });
   if (!(await allow.isVisible()))
     await activityRows(reviewing).locator("button[aria-expanded]").first().click();
   await allow.click();
-  await expect(reviewing.locator("[data-step-navigation]")).toContainText("第 4 步");
-  await expect(nav).toContainText("第 1 步");
+  await expect(count).toHaveText("4 步");
   await expect(group.getByText("I will check the first entry.", { exact: true })).toBeVisible();
   await group.locator("[data-group-header]").click();
   await expect(rows).toHaveCount(0);
-  for (const width of [320, 390]) {
-    await page.setViewportSize({ width, height: 844 });
-    const head = group.locator("[data-group-header]");
-    const [labelBox, navBox] = await Promise.all([head.boundingBox(), nav.boundingBox()]);
-    expect(Math.abs(labelBox.y + labelBox.height / 2 - navBox.y - navBox.height / 2)).toBeLessThan(
-      3,
-    );
-    await expect
-      .poll(() =>
-        nav.locator("button:enabled").evaluateAll((buttons) =>
-          buttons.every((button) => {
-            const r = button.getBoundingClientRect();
-            return button.contains(
-              document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2),
-            );
-          }),
-        ),
-      )
-      .toBe(true);
-    await next.focus();
-    await page.keyboard.press("ArrowRight");
-    await expect(nav).toContainText("第 2 步");
-    await previous.click();
-    await expect(nav).toContainText("第 1 步");
-  }
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await expect(reviewing.locator("[data-step-navigation]")).toContainText("第 4 步");
   await openSteps(reviewing);
   if (!(await allow.isVisible()))
     await activityRows(reviewing).locator("button[aria-expanded]").first().click();
   await allow.click();
   await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
-  await expect(nav).toContainText("第 1 步");
+  await expect(count).toHaveText("4 步");
   await expect(rows).toHaveCount(0);
-  await expect(reviewing.locator("[data-step-navigation]")).toContainText("第 5 步");
+  await expect(reviewing.locator("[data-step-terminal]")).toBeVisible();
   await reviewer.close();
 });
 
-test("reopened ten-step work shows tool context, the same total and every row on each page", async ({
+test("reopened ten-step history keeps its compact header together on desktop and narrow screens", async ({
   page,
-}, testInfo) => {
+}) => {
   await createSession(page, "smokeworkhistory", "allow-all", "doodle");
   await setAccountPrefs(page.request, { activityDisplayMode: "compact", toolAliases: false });
   await page.reload();
@@ -281,104 +241,44 @@ test("reopened ten-step work shows tool context, the same total and every row on
   await expect(page.getByText("The review notes are ready.", { exact: true })).toBeVisible();
   const group = activityRoot(page),
     head = group.locator("[data-group-header]"),
-    nav = group.locator("[data-step-navigation]");
-  const elapsed = group.locator("[data-step-elapsed]"),
+    count = head.locator("[data-step-count]"),
+    elapsed = head.locator("[data-step-elapsed]"),
+    arrow = head.locator('[data-slot="toggle"]'),
     rows = activityRows(group);
-  await page.clock.install();
-  for (const [lang, previous, next, latest, step, jump, step3] of [
-    ["zh", "上一步", "下一步", "最新步骤", "第 10 步", "跳转到步骤", "第 3 步"],
-    ["en", "Previous step", "Next step", "Latest step", "Step 10", "Go to step", "Step 3"],
+  for (const [lang, n] of [
+    ["zh", "10 步"],
+    ["en", "10 steps"],
   ]) {
     await setAccountPrefs(page.request, { lang });
     await page.reload();
-    await expect(group.locator("[data-step-terminal]")).toBeVisible();
-    const time = await elapsed.locator(".font-mono").innerText();
-    await group.getByRole("button", { name: previous, exact: true }).click();
-    await expect(nav).toHaveAttribute("aria-label", step);
+    await expect(head).toHaveAttribute("data-step-terminal", "true");
     await expect(head).toContainText("read_file");
     await expect(head).toContainText("核对本周评审记录");
     await expect(head).toContainText("…/每周 总结/评审 记录.md");
+    await expect(count).toHaveText(n);
     await expect(rows).toHaveCount(0);
-    await group.screenshot({ path: testInfo.outputPath(`step-10-${lang}.png`) });
-    const nextButton = nav.getByRole("button", { name: next, exact: true });
-    const latestButton = nav.getByRole("button", { name: latest, exact: true });
-    const readout = nav.locator("[aria-live]");
-    const number = nav.getByRole("textbox", { name: jump, exact: true });
-    const fontOf = (el) =>
-      el.evaluate((node) => {
-        const style = getComputedStyle(node);
-        return `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-      });
-    for (const width of [375, 320]) {
-      await page.setViewportSize({ width, height: 780 });
-      const [box, positionBox, nextBox, latestBox, elapsedBox] = await Promise.all(
-        [group.locator("[data-step-head]"), readout, nextButton, latestButton, elapsed].map((el) =>
+    const time = await elapsed.locator(".font-mono").innerText();
+    for (const width of [1280, 390, 320]) {
+      await page.setViewportSize({ width, height: 800 });
+      const [box, title, tally, clock, toggle] = await Promise.all(
+        [head, head.locator('[data-slot="label"]'), count, elapsed, arrow].map((el) =>
           el.boundingBox(),
         ),
       );
-      expect(positionBox.x + positionBox.width).toBeLessThanOrEqual(nextBox.x + 1);
-      expect(nextBox.x + nextBox.width).toBeLessThanOrEqual(latestBox.x + 1);
-      // The total sits after the pager, at the end of the line.
-      expect(latestBox.x + latestBox.width).toBeLessThanOrEqual(elapsedBox.x + 1);
-      expect(elapsedBox.x + elapsedBox.width).toBeLessThanOrEqual(
-        Math.min(width, box.x + box.width) + 1,
-      );
-      // The step number turns editable in place: same box, same type as the words around it.
-      await expect(number).toHaveValue("10");
-      expect(await fontOf(number)).toBe(await fontOf(readout));
-      const resting = await number.boundingBox();
-      await number.click();
-      await expect(number).toBeFocused();
-      expect(await number.boundingBox()).toEqual(resting);
-      await page.keyboard.press("Escape");
-      await nav.getByRole("button", { name: previous, exact: true }).focus();
-      await page.keyboard.press("Tab");
-      await expect(number).toBeFocused();
-      await page.keyboard.press("Tab");
-      await expect(nextButton).toBeFocused();
-      await page.keyboard.press("Tab");
-      await expect(latestButton).toBeFocused();
+      for (const part of [tally, clock, toggle]) {
+        expect(part.x).toBeGreaterThanOrEqual(box.x);
+        expect(part.x + part.width).toBeLessThanOrEqual(Math.min(width, box.x + box.width) + 1);
+        expect(Math.abs(part.y + part.height / 2 - (title.y + title.height / 2))).toBeLessThan(5);
+      }
+      expect(clock.x - tally.x - tally.width).toBeLessThan(18);
+      expect(toggle.x - clock.x - clock.width).toBeLessThan(18);
+      await expect(head.locator("button,input")).toHaveCount(0);
     }
-    const label = head.locator('[data-slot="label"]');
-    const visibleName = await label.evaluate((el) => {
-      const text = el.getBoundingClientRect();
-      const strip = el.parentElement.getBoundingClientRect();
-      return Math.min(text.right, strip.right) - Math.max(text.left, strip.left);
-    });
-    expect(visibleName).toBeGreaterThan(30);
-    await page.screenshot({ path: testInfo.outputPath(`step-10-phone-${lang}.png`) });
-    const path = head.locator('[data-tooltip-content="code"]');
-    await path.evaluate((el) => {
-      const strip = el.parentElement;
-      strip.scrollLeft = strip.scrollWidth;
-    });
-    await expect(path).toBeInViewport();
-    await path.evaluate((el) => {
-      el.parentElement.scrollLeft = 0;
-    });
-    // A step typed into the readout is the page shown; Escape puts the shown one back.
-    await number.fill("3");
-    await number.press("Enter");
-    await expect(nav).toHaveAttribute("aria-label", step3);
-    await expect(rows).toHaveCount(0);
-    await number.fill("1");
-    await number.press("Escape");
-    await expect(number).toHaveValue("3");
-    await expect(nav).toHaveAttribute("aria-label", step3);
-    await head.click();
+    await head.focus();
+    await page.keyboard.press("Enter");
     await expect(rows).toHaveCount(10);
-    const first = rows.first();
-    await first.locator("button[aria-expanded]").first().click();
-    await expect(first).toContainText("Reviewing item 1.");
-    await latestButton.click();
-    await expect(latestButton).toBeHidden();
-    await expect(group.locator("[data-step-terminal]")).toBeVisible();
-    await expect(rows).toHaveCount(10);
-    await expect(first).toContainText("Reviewing item 1.");
+    await rows.first().locator("button[aria-expanded]").first().click();
+    await expect(rows.first()).toContainText("Reviewing item 1.");
     await expect(elapsed.locator(".font-mono")).toHaveText(time);
-    await page.clock.fastForward(3000);
-    await expect(elapsed.locator(".font-mono")).toHaveText(time);
-    await page.setViewportSize({ width: 1280, height: 1120 });
-    await group.screenshot({ path: testInfo.outputPath(`full-history-${lang}.png`) });
   }
 });
