@@ -194,10 +194,10 @@ API key、base URL 与协议始终可见；上下文窗口、**最大输出长�
 
 ### 探测原理
 
-- 探测请求是请求体为 `{}` 的最小无效请求，不消耗 Token，也不需要有效的模型 id：返回的错误若符合协议自身的格式，就证明路由存在；返回 `404` 或 `405`，说明路径没有提供服务；HTML 或网关杂讯一律不算数。
-- 探测用的 URL 和认证头，与保存后 MMSP 客户端实际使用的完全一致：OpenAI 系协议用 `Authorization: Bearer`，`ant-messages` 用 `x-api-key` 加 `Authorization: Bearer` 和 `anthropic-version`。所以检测出的协议一定真实可用。
-- 服务端按四步选取探测凭据：优先用弹窗里填写的 API key，其次用这个条目已保存的 key，再次用分组密钥，最后对每次探测，仅当 URL 是该协议客户端自己的缺省端点时，使用它读取的环境变量（`https://api.openai.com/v1` 用 `OPENAI_API_KEY`，`https://api.anthropic.com` 用 `ANTHROPIC_API_KEY`）。这些值不会传到浏览器，也不会出现在响应里。
-- 除此之外匿名探测。完全没有凭据也能检测，因为协议格式的 `401` 同样能识别路由；你的厂商 key 不会发往你输入的其他 URL。
+- 探测 OpenAI Responses、Anthropic Messages 和 OpenAI Chat Completions 时，服务端发送请求体为 `{}` 的 `POST` 请求。符合协议格式的校验或鉴权错误可以用来识别路由，无需模型 ID。`404`、`405`、HTML 页面和通用网关鉴权错误都不能作为识别依据。
+- Google GenAI 发送 `GET /v1beta/models?pageSize=1`，成功读取符合 Google 格式的模型列表后才确认协议。有 API key 时，通过 `x-goog-api-key` 请求头发送。使用 Vertex 服务账号时，请手动选择 Google GenAI。检测期间，服务账号 JSON 保留在本地。
+- OpenAI 探测用 `Authorization: Bearer` 发送 API key。Anthropic 探测通过 `x-api-key` 和 `Authorization: Bearer` 发送 key，同时附带 `anthropic-version`。
+- 服务端依次使用弹窗中填写的 key、模型已保存的 key 和分组已保存的 key。探测客户端默认地址时，还可以使用对应的环境变量。`https://api.openai.com/v1` 对应 `OPENAI_API_KEY`，`https://api.anthropic.com` 对应 `ANTHROPIC_API_KEY`，`https://generativelanguage.googleapis.com` 对应 `GEMINI_API_KEY`。没有可用的 key 时，服务端会匿名探测。
 - 在这些分组里，不会从模型 id 推断任何东西。在自定义分组里输入 `claude-sonnet-5`，不会因此选用 Anthropic 客户端或它的 `ANTHROPIC_*` key：自定义分组一律回退到 `openai-chat`，API key 提示也照此显示。供应商分组和网关分组不受影响：它们的模型按 id 或按分组上存的协议路由。
 - 在检测功能出现之前创建的条目，保留 `client_type = "openai"`，它至今仍是 `openai-chat` 的别名。只有手动选择协议、或某次检测生效时，才会改写这个值。旧的非标准协议值以只读方式显示：「协议：{t}（沿用原配置，不可修改）」。
 - 检测也可以通过 `POST /api/projects/:id/models/detect` 调用（仅 owner 可用），参见 [Server API](/server-api)。
