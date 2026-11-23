@@ -67,7 +67,10 @@ function internalRoute(href: string): string | null {
     return null;
   }
   const to = `${url.pathname}${url.search}${url.hash}`;
-  if (url.pathname.startsWith("/chat/") && url.pathname.length > "/chat/".length) return to;
+  // `/chat/<sessionId>` is one non-empty segment — the id carries no `/`, so `/chat/`, `/chat//`
+  // and `/chat/x/y` are not routes.
+  const chatId = url.pathname.slice("/chat/".length);
+  if (url.pathname.startsWith("/chat/") && chatId !== "" && !chatId.includes("/")) return to;
   if (url.pathname === "/org" || url.pathname.startsWith("/org/")) return to;
   return null;
 }
