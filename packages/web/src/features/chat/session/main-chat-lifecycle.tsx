@@ -394,13 +394,13 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
   // the direct lookup fails, and one the lookup says does not exist is not replaced at all.
   useEffect(() => {
     if (sessionsLoading || draft) return;
-    if (routeOutcome !== "redirect") return;
+    if (!scope.paneFocused || routeOutcome !== "redirect") return;
     // An organization's desk or ticket Session is never auto-opened: landing in one by default
     // would put the user inside a conversation the scheduler drives, and company mode's own
     // groups are where it is reached.
     const last = latestConversation(withoutOrgSessions(sessions));
     navigate(last ? `/chat/${last.sessionId}` : `/chat/${DRAFT_SESSION_ID}`, { replace: true });
-  }, [sessionsLoading, draft, routeOutcome, sessions, navigate]);
+  }, [scope.paneFocused, sessionsLoading, draft, routeOutcome, sessions, navigate]);
 
   // Sync task_state to the sidebar list badge.
   //

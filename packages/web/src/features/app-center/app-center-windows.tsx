@@ -14,7 +14,7 @@
  * signing out, a reload) unmounts this layer and ends them all, so nothing is ever listed as
  * running with nothing behind it.
  */
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { AppWindow } from "@prismshadow/penguin-ui";
 import { APP_CENTER_PATH } from "../../lib/app-center-path";
@@ -31,15 +31,30 @@ import { localizedText } from "../../lib/skill-use";
 import { systemAppFullPage } from "../../lib/system-apps";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
+import { PageSlot } from "../page-workspace/page-area";
+import { usePageWorkspace } from "../page-workspace/context";
+import { appTriggerId } from "./app-tile";
 import { AppCenterWindow } from "./app-center-window";
 
 export function AppCenterWindows() {
+  const workspace = usePageWorkspace();
   const apps = useRunningAppRecords();
   const projectId = useProject().currentProject?.projectId ?? null;
   const { locale } = useLocale();
   const location = useLocation();
   const navigate = useNavigate();
   const front = windowInFront(location);
+  const previousFront = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const previous = previousFront.current;
+    previousFront.current = front;
+    if (previous !== null && front === null && location.pathname === APP_CENTER_PATH) {
+      const ticket = requestAnimationFrame(() =>
+        document.getElementById(appTriggerId(previous))?.focus({ preventScroll: true }),
+      );
+      return () => cancelAnimationFrame(ticket);
+    }
+  }, [front, location.pathname]);
 
   useEffect(() => {
     if (projectId !== null) keepProjectApps(projectId);
@@ -56,33 +71,45 @@ export function AppCenterWindows() {
     <>
       {apps.map((app) =>
         app.projectId !== projectId ? null : (
-          <AppWindow key={app.key} shown={app.key === front}>
-            <AppCenterWindow
-              appKey={app.key}
-              projectId={app.projectId}
-              shortcut={app.shortcut}
-              title={localizedText(locale, app.shortcut.title, app.shortcut.titleZh)}
-              onMinimize={leave}
-              onFullScreen={(path) =>
-                openFullPage(
-                  navigate,
-                  app.shortcut.system?.frame !== undefined ? fullPageOf(app) : path,
-                  `${APP_CENTER_PATH}${location.search}`,
-                  {
-                    fromWindow: true,
-                  },
-                )
+          <PageSlot key={app.key} id={"app:" + app.key} keepRunning>
+            <AppWindow
+              shown={
+                workspace
+                  ? !!workspace.current && workspace.layout.visible.includes("app:" + app.key)
+                  : app.key === front
               }
-              onClose={() => {
-                closeApp(app.key);
-                leave();
-              }}
-              onGone={() => {
-                closeApp(app.key);
-                if (app.key === front) leave();
-              }}
-            />
-          </AppWindow>
+            >
+              <AppCenterWindow
+                appKey={app.key}
+                projectId={app.projectId}
+                shortcut={app.shortcut}
+                title={localizedText(locale, app.shortcut.title, app.shortcut.titleZh)}
+                onMinimize={leave}
+                onFullScreen={(path) =>
+                  openFullPage(
+                    navigate,
+                    app.shortcut.system?.frame !== undefined ? fullPageOf(app) : path,
+                    `${APP_CENTER_PATH}${location.search}`,
+                    {
+                      fromWindow: true,
+                    },
+                  )
+                }
+                onClose={() => {
+                  if (workspace) workspace.close("app:" + app.key);
+                  else {
+                    closeApp(app.key);
+                    leave();
+                  }
+                }}
+                onGone={() => {
+                  closeApp(app.key);
+                  if (workspace) workspace.close("app:" + app.key);
+                  else if (app.key === front) leave();
+                }}
+              />
+            </AppWindow>
+          </PageSlot>
         ),
       )}
     </>

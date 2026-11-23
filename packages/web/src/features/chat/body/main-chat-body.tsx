@@ -205,7 +205,9 @@ export function renderMainChatBody(scope: MainChatView) {
                             )}
                             {/* The right dock's floating launcher: rides this body's right edge
                               while that dock is hidden, and opens its panels in one click. */}
-                            <DockLauncher agentsPending={anySubagentPending} />
+                            {scope.paneFocused && (
+                              <DockLauncher agentsPending={anySubagentPending} />
+                            )}
                             <RequestFailureDialog
                               failure={failureShown}
                               sessionId={selected?.sessionId ?? null}
@@ -278,7 +280,7 @@ export function renderMainChatBody(scope: MainChatView) {
                 )}
               </ChatDropRegion>
 
-              {archivedRow === null && rightMount.view && (
+              {scope.paneFocused && archivedRow === null && rightMount.view && (
                 <DockPanel
                   view={rightMount.view}
                   open={rightMount.open}
@@ -288,7 +290,7 @@ export function renderMainChatBody(scope: MainChatView) {
               )}
             </div>
 
-            {archivedRow === null && bottomMount.view && (
+            {scope.paneFocused && archivedRow === null && bottomMount.view && (
               <DockPanel
                 view={bottomMount.view}
                 open={bottomMount.open}

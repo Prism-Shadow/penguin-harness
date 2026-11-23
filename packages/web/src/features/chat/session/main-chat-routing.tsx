@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../../lib/strings";
+import { usePaneFocus } from "../../../lib/page-focus";
 import { useDocumentTitle } from "../../../lib/use-document-title";
 import type { MemoryLocateTarget } from "../../../lib/amsp/memory-changes";
 import { DRAFT_SESSION_ID, parkedDraftIdOf } from "../draft-sessions";
@@ -20,6 +21,7 @@ import type { useMainChatInputs } from "./main-chat-inputs";
 export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) {
   const { location, params, projectId, agentId, sessions, isSessionDeleted } = scope;
 
+  const paneFocused = usePaneFocus();
   const routeSessionId = params.sessionId ?? null;
   // The docks' arrangement lives in the dock store (features/dock) — tabs, active tab,
   // sizes, all global and persisted. This page re-renders on any dock change and owns only
@@ -213,13 +215,13 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
   // publishes the draft's Workspace instead (a child effect runs before this one, so this must
   // yield rather than clobber it).
   useEffect(() => {
-    if (draft) return;
+    if (draft || !paneFocused) return;
     setDockConversation({
       sessionId: selected?.sessionId ?? null,
       workspace: selected?.workspace ?? null,
       machineId: selected === null ? null : machineForSession(selected.sessionId),
     });
-  }, [draft, selected]);
+  }, [draft, selected, paneFocused]);
 
   // Currently effective model (session state, the model reference comes from the Session DTO): model selection in draft state is handled internally by DraftView.
   const activeModelRef = selected
@@ -230,6 +232,7 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
   useDocumentTitle(routed ? (routed.title ?? S.chat.defaultSessionTitle) : S.nav.chat);
   return {
     ...scope,
+    paneFocused,
     routeSessionId,
     fileOpenRequest,
     setFileOpenRequest,
