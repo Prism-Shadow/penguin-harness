@@ -27,7 +27,6 @@ import { FRAME_TEXT_BUDGET } from "@prismshadow/penguin-library-http/socket-line
 import { formatSseEvent } from "@prismshadow/penguin-library-http/socket-sse-text";
 import { answerOf } from "@prismshadow/penguin-library-http/socket-stream-answer";
 import type { StreamAnswer } from "@prismshadow/penguin-library-http/socket-stream-answer";
-import type { MessagesPageRequest } from "./trace.js";
 import type {
   HistoryMessage,
   HistoryPage,
@@ -35,6 +34,7 @@ import type {
   HistoryRecords,
   HistoryStreamError,
   HistoryStreamEvent,
+  MessagesPageRequest,
   MessagesResponse,
 } from "./trace.js";
 import { MESSAGES_PAGE_MAX_BYTES } from "./trace-service.js";

@@ -22,12 +22,14 @@ import type { AmspRecord } from "@prismshadow/penguin-core";
 import type { SessionStatus, LiveRun, RunStart } from "@prismshadow/penguin-library-session";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import { badRequest, parseNonNegativeInt } from "@prismshadow/penguin-library-http/validate";
-import type { MessagesPageRequest, MessagesPageResult, Traces } from "./trace.js";
 import type {
   HistoryMessage,
   MessagesLiveTail,
   MessagesPageInfo,
+  MessagesPageRequest,
+  MessagesPageResult,
   MessagesResponse,
+  Traces,
 } from "./trace.js";
 import { decodeCursor } from "./message-window.js";
 import { withImagesByReference } from "./trace-images.js";

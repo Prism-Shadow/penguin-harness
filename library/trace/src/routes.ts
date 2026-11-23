@@ -30,9 +30,13 @@ import type { EventSink } from "@prismshadow/penguin-library-http/event-stream";
 import { FRAME_TEXT_BUDGET } from "@prismshadow/penguin-library-http/socket-line-frames";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { SessionIndex } from "@prismshadow/penguin-library-session";
-import type { SessionCategory, TraceImportResponse } from "./trace.js";
-import type { Traces } from "./trace.js";
-import type { HistoryProgress, HistoryRecords } from "./trace.js";
+import type {
+  HistoryProgress,
+  HistoryRecords,
+  SessionCategory,
+  TraceImportResponse,
+  Traces,
+} from "./trace.js";
 import {
   HeldWindows,
   openHistoryOut,

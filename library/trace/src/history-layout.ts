@@ -14,9 +14,14 @@
  * of one file into runs, with byte offsets from that file's line index.
  */
 import type { AmspRecord } from "@prismshadow/penguin-core";
-import type { RecordSource } from "./trace.js";
 import { historyFileKey, parseHistoryFileKey } from "./history-wire.js";
-import type { HistoryFileKey, HistoryMessage, HistorySegment, HistoryStub } from "./trace.js";
+import type {
+  HistoryFileKey,
+  HistoryMessage,
+  HistorySegment,
+  HistoryStub,
+  RecordSource,
+} from "./trace.js";
 
 /** One file's record offsets by ordinal (trace-line-index.ts's `starts`/`ends`). */
 export interface LineOffsets {

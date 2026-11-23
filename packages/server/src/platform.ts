@@ -37,8 +37,11 @@ import {
   MessagingTaskRunner,
   QQScan,
 } from "@prismshadow/penguin-library-messaging/bridge";
-import { DefaultMessagingTuning, MessagingModule } from "./runtime/messaging/module.js";
-import { MessagingAccountsModule } from "./runtime/messaging/module.js";
+import {
+  DefaultMessagingTuning,
+  MessagingAccountsModule,
+  MessagingModule,
+} from "./runtime/messaging/module.js";
 import { FeishuSdkProvider } from "@prismshadow/penguin-library-messaging/feishu-connector";
 import { TelegramTransportProvider } from "@prismshadow/penguin-library-messaging/telegram-connector";
 import { QQTransportProvider } from "@prismshadow/penguin-library-messaging/qq-connector";

@@ -50,6 +50,8 @@ import type {
   RuntimeSession,
   SessionBackgroundTasks,
   SwitchModelOpts,
+  SessionSandbox,
+  ApprovalMode,
 } from "@prismshadow/penguin-library-session";
 import type {
   ServerEvent,
@@ -116,15 +118,28 @@ import type { LiveRun, LiveTail } from "./live-tail.js";
 import { unrunSource } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
-import { Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
-import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
-import type { ClassCtx, Json, Opaque } from "@prismshadow/penguin-core/kernel";
+import {
+  Component,
+  Interface,
+  Module,
+  Provide,
+  Use,
+  type ClassCtx,
+  type Json,
+  type Opaque,
+} from "@prismshadow/penguin-core/kernel";
 import { Sandbox, SandboxModule } from "../sandbox/service.js";
 import { agentWritableRoots } from "../workbenches/data-dirs.js";
 import { SANDBOX_GROUP } from "../sandbox/settings-store.js";
 import { sandboxEnabledOf, sandboxPresetsOf, sandboxStartOf } from "../sandbox/settings-policy.js";
 import { PluginConfig } from "../plugin/config.js";
-import { SessionService } from "../services/session-service.js";
+import {
+  SessionService,
+  type ArchivedRow,
+  type SessionListOrder,
+  type SessionListPaging,
+  type SessionService as SessionServiceImpl,
+} from "../services/session-service.js";
 import { ModelScopeAuth } from "../services/modelscope-auth-service.js";
 import { TitleGenerator } from "./title-generator.js";
 import { loopbackHostRoles } from "../services/preview-token.js";
@@ -133,14 +148,7 @@ import type { SandboxService } from "../sandbox/service.js";
 import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import type { SessionSource } from "@prismshadow/amsp";
 import type { SessionCategory, SessionCategoryCounts, SessionInfo } from "../api/types.js";
-import type { SessionSandbox } from "@prismshadow/penguin-library-session";
 import type { ListingView } from "@prismshadow/penguin-library-trace/listing";
-import type {
-  ArchivedRow,
-  SessionListOrder,
-  SessionListPaging,
-} from "../services/session-service.js";
-import type { ApprovalMode } from "@prismshadow/penguin-library-session";
 import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
 import type { TraceIndex, TraceIndexStore } from "@prismshadow/penguin-library-trace";
 import type { Settings } from "@prismshadow/penguin-library-setting";

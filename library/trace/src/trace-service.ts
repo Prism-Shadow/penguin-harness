@@ -34,6 +34,9 @@ import type {
   MessagesPageRequest,
   MessagesPageResult,
   RecordSource,
+  SessionCategoryCounts,
+  HistoryMessage,
+  TracePosition,
   WindowPriorStats,
   TraceIndex,
   TraceIndexStore,
@@ -64,7 +67,6 @@ import {
 } from "@prismshadow/penguin-core";
 import type { CompactionMode, AmspRecord } from "@prismshadow/penguin-core";
 import { promptLabel } from "./trace-prompt-label.js";
-import type { SessionCategoryCounts, HistoryMessage, TracePosition } from "./trace.js";
 import type { SessionRow } from "@prismshadow/penguin-library-session/repos/sessions";
 import type { TraceFileRow, TraceSessionRow } from "./repos/trace-index.js";
 import { HttpError } from "@prismshadow/penguin-library-http/errors";

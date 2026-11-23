@@ -4,10 +4,10 @@
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { Opaque } from "@prismshadow/penguin-core/kernel";
-import type { OrgCacheRepo } from "./organizations.js";
 import type {
   OrgBudgetStateRow,
   OrgCalendarStateRow,
+  OrgCacheRepo,
   OrgDeskNoticeRow,
   OrgSessionOwner,
   OrgSessionRow,

@@ -77,29 +77,35 @@ import type { AmspRecord } from "@prismshadow/penguin-core";
 import { toFallbackMarkdown } from "@prismshadow/a2ui";
 import type { MessagingDeliveryError, MessagingRuntimeStatus } from "./vocabulary.js";
 import type { MessagingBindingRow } from "./repos/messaging-bindings.js";
-import type { QQScanPoll } from "./qq-scan.js";
+import type { QQScanPoll, QQScanService } from "./qq-scan.js";
 import {
   INLINE_IMAGE_MAX_BYTES,
   toAttachmentLimits,
 } from "@prismshadow/penguin-library-setting/attachment-limits";
 import type { AttachmentLimits } from "@prismshadow/penguin-library-setting/attachment-limits";
-import { attachFilesToInput, removeAttachments } from "./task-attachments.js";
-import type { AttachedFiles, TaskAttachment } from "./task-attachments.js";
-import type { ChannelEvent } from "@prismshadow/penguin-library-session";
+import {
+  attachFilesToInput,
+  removeAttachments,
+  type AttachedFiles,
+  type TaskAttachment,
+} from "./task-attachments.js";
+import type { ChannelEvent, RecallStore, SessionIndex } from "@prismshadow/penguin-library-session";
 import type { MessagingChannels } from "./ports.js";
-import { MESSAGE_MAX } from "@prismshadow/penguin-library-observability";
-import type { ErrorSink } from "@prismshadow/penguin-library-observability";
+import {
+  MESSAGE_MAX,
+  type ErrorSink,
+  type Errors,
+} from "@prismshadow/penguin-library-observability";
 import { recallStoreOf } from "./recall.js";
-import type { RecallStore } from "@prismshadow/penguin-library-session";
-import type {
-  MessagingChannelConnector,
-  MessagingClient,
-  MessagingInboundFile,
-  MessagingInboundImage,
-  MessagingInboundMessage,
-  MessagingSendNote,
+import {
+  type MessagingChannelConnector,
+  type MessagingClient,
+  type MessagingInboundFile,
+  type MessagingInboundImage,
+  type MessagingInboundMessage,
+  type MessagingSendNote,
+  MessagingReplyHeldError,
 } from "./connector.js";
-import { MessagingReplyHeldError } from "./connector.js";
 import { messagingErrorKind } from "./error-kind.js";
 import { chunkMarkdown } from "./markdown.js";
 import {
@@ -112,10 +118,6 @@ import {
 import { replyFileMentions } from "./reply-files.js";
 import { Interface, Slot } from "@prismshadow/penguin-core/kernel";
 
-import type { QQScanService } from "./qq-scan.js";
-import type { Access } from "@prismshadow/penguin-library-project";
-import type { SessionIndex } from "@prismshadow/penguin-library-session";
-import type { Errors } from "@prismshadow/penguin-library-observability";
 import type { WorkspaceFiles } from "@prismshadow/penguin-library-workspace";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { MessagingBindings } from "./messaging.js";

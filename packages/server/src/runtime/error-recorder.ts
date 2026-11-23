@@ -55,18 +55,20 @@ import { formatLocalDate } from "../internal/dates.js";
 import { isHttpError } from "../http/errors.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
-import { ErrorLog, Errors } from "@prismshadow/penguin-library-observability";
-import type {
-  ErrorSource,
-  ErrorKind,
-  ErrorRecordArgs,
+import {
+  ErrorLog,
+  Errors,
+  MESSAGE_MAX,
+  type ErrorSink,
+  type ErrorSource,
+  type ErrorKind,
+  type ErrorRecordArgs,
 } from "@prismshadow/penguin-library-observability";
 
 /** Attribution context (all optional: the login endpoint has no Project, and process-level fallback has no request at all). Lives with the Errors contract (library/observability); re-exported for the recorder's callers. */
 export type { ErrorContext } from "@prismshadow/penguin-library-observability";
 
 /** Message truncation length and the one-sided sink type: live with the Errors contract (library/observability, services+http+cli restack S8); re-exported for the recorder's callers. */
-import { MESSAGE_MAX, type ErrorSink } from "@prismshadow/penguin-library-observability";
 
 /** Short-window dedup window: the same (source, code, Project) is persisted at most once per window (see the file header's tradeoff). */
 export const DEDUP_WINDOW_MS = 2000;
