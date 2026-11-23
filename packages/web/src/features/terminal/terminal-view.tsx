@@ -23,6 +23,7 @@ import type { ITheme, Terminal as XTerminal } from "@xterm/xterm";
 import { TerminalOpcode, encodeFrame, encodeResize } from "./terminal-frames";
 import { TerminalConnection } from "./terminal-connection";
 import { LinkClickTracker, openTerminalLink, positionFromPointer } from "./terminal-links";
+import { terminalUrlProvider } from "./terminal-url-provider";
 import { writeClipboard } from "../../lib/clipboard";
 import { TerminalKeyBar, type TerminalControl } from "./terminal-keybar";
 import { NO_MODIFIERS, applyModifiers, hasModifier, type TerminalModifiers } from "./terminal-keys";
@@ -47,7 +48,6 @@ function loadXterm() {
   return Promise.all([
     import("@xterm/xterm"),
     import("@xterm/addon-fit"),
-    import("@xterm/addon-web-links"),
     import("@xterm/addon-clipboard"),
   ]);
 }
@@ -310,7 +310,7 @@ export function TerminalView({
     };
 
     async function startTerminal(container: HTMLDivElement): Promise<() => void> {
-      const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { ClipboardAddon }] = await loadXterm();
+      const [{ Terminal }, { FitAddon }, { ClipboardAddon }] = await loadXterm();
       let disposed = false;
       let exited = false;
 
@@ -343,15 +343,7 @@ export function TerminalView({
       });
       const fit = new FitAddon();
       term.loadAddon(fit);
-      // Same arrangement for URLs found in the output: the addon reports, the tracker
-      // decides. Its built-in handler would also have opened a blank window first, which
-      // the desktop shell reads as a link to about:blank.
-      term.loadAddon(
-        new WebLinksAddon(() => {}, {
-          hover: (_event, text, range) => links.hover(text, range),
-          leave: () => links.leave(),
-        }),
-      );
+      term.registerLinkProvider(terminalUrlProvider(term, links));
       // OSC 52: a program's own copy reaches the system clipboard — what tmux's copy mode
       // does on every copy, and what makes a selection inside tmux land where a person
       // expects it. WRITE only. The addon's default provider also answers a program's
