@@ -57,6 +57,7 @@ import {
 import { useSessionPanelOpener } from "./session-panel-opener";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
+import { panelAppGlyph } from "./panel-meta";
 import { useSessionShortcuts } from "./session-shortcuts";
 import { useDockPanels } from "./panel-registry";
 import { dockVersion, isDockVisible, isNarrow, subscribeDock } from "./dock-state";
@@ -398,13 +399,14 @@ function FloatingLauncher({
   const entries: FanEntry[] = shortcuts.map((entry) => ({
     key: entry.key,
     label: entry.label,
-    glyphAt: (size) => (
-      <GlyphIcon
-        d={entry.glyph}
-        size={size}
-        className={entry.key === "hide" ? toneInk.muted : undefined}
-      />
-    ),
+    glyphAt: (size) =>
+      panelAppGlyph(entry.key, size) ?? (
+        <GlyphIcon
+          d={entry.glyph}
+          size={size}
+          className={entry.key === "hide" ? toneInk.muted : undefined}
+        />
+      ),
     badge: entry.key === "agents" && agentsPending,
     testId: entry.key === "hide" ? "dock-launcher-hide" : `dock-launcher-open-${entry.key}`,
     choose: () => {

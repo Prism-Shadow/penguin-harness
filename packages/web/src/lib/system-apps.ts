@@ -24,6 +24,7 @@ import { useLocale } from "../state/locale";
 import { useSessionWorkbenchPanels } from "./dock-panel-registry";
 import {
   isSessionWorkbenchKind,
+  sessionWorkbenchAppKey,
   sessionWorkbenchEntries,
   sessionWorkbenchPath,
 } from "./session-workbenches";
@@ -124,7 +125,7 @@ export function useSystemApps(): readonly SystemApp[] {
         isSessionWorkbenchKind(panel.id) && sessionWorkbenchEntries[panel.id]
           ? [
               {
-                key: "session-tools-" + panel.id,
+                key: sessionWorkbenchAppKey(panel.id),
                 path: sessionWorkbenchPath(panel.id),
                 title: panel.label(),
                 icon:
