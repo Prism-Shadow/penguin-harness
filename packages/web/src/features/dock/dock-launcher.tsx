@@ -44,6 +44,8 @@ import {
   ICON_SIZE,
   LauncherBall,
   LauncherFan,
+  MenuItem,
+  menuPanelClass,
   SPRING_DEFAULT,
   SPRING_MOMENTUM,
   createSpringDriver,
@@ -119,6 +121,7 @@ interface FanState {
   /** The geometry the arc was laid out for, frozen at the moment it opened. */
   top: number;
   bodyHeight: number;
+  bodyWidth: number;
 }
 
 interface FanEntry {
@@ -206,6 +209,7 @@ function FloatingLauncher({
       phase: "open",
       top: drivers.current?.y.value ?? 0,
       bodyHeight: bodyHeightRef.current,
+      bodyWidth: rootRef.current?.parentElement?.clientWidth ?? 0,
     });
   }, [setFan]);
 
@@ -419,7 +423,7 @@ function FloatingLauncher({
       (host.session.sessionId === selected.sessionId &&
         host.session.projectId === selected.projectId))
   ) {
-    entries.push({
+    entries.unshift({
       key: "app-center",
       label: S.dock.openAppCenter,
       glyphAt: (size) => <GlyphIcon d={ICONS.tiles} size={size} />,
@@ -472,6 +476,14 @@ function FloatingLauncher({
   // Where each entry sits on the arc, for the geometry the fan opened with. The count is
   // the one being rendered, so a terminal appearing or leaving mid-fan re-spreads the arc.
   const slots = fan === null ? [] : fanLayout(fan.top, fan.bodyHeight, entries.length);
+  const listWidth = fan ? fan.bodyWidth - EDGE_INSET - LAUNCHER_SIZE - 16 : 0;
+  const needsList = slots.some(({ x, y }, i) => {
+    const prior = slots[i - 1];
+    return (
+      -x + FAN_ENTRY_SIZE / 2 > listWidth + LAUNCHER_SIZE / 2 ||
+      (prior && Math.hypot(x - prior.x, y - prior.y) < FAN_ENTRY_SIZE)
+    );
+  });
 
   return (
     <div
@@ -483,7 +495,31 @@ function FloatingLauncher({
       className="absolute top-0 z-window-overlay"
       style={{ right: EDGE_INSET, width: LAUNCHER_SIZE, height: LAUNCHER_SIZE }}
     >
-      {fan !== null && (
+      {fan !== null && needsList && (
+        <div
+          ref={fanRef}
+          role="group"
+          aria-label={S.dock.launcherPanels}
+          data-testid="dock-launcher-fan"
+          className={`ui-glass ${menuPanelClass} absolute right-full mr-2 overscroll-contain`}
+          style={{
+            top: 4 - fan.top,
+            width: Math.min(220, listWidth),
+            maxHeight: fan.bodyHeight - 8,
+          }}
+        >
+          {entries.map((entry) => (
+            <MenuItem
+              key={entry.key}
+              label={entry.label}
+              glyph={entry.glyphAt(ICON_SIZE.launcherEntry)}
+              data-testid={entry.testId}
+              onSelect={entry.choose}
+            />
+          ))}
+        </div>
+      )}
+      {fan !== null && !needsList && (
         <LauncherFan
           fanRef={fanRef}
           label={S.dock.launcherPanels}
