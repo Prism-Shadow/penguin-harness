@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** feature
 - **Scope:** `web`, `server`
+- **PR:** [#1738](https://github.com/Prism-Shadow/penguin-harness/pull/1738)
 
 [中文版](2026-11-23-admin-resource-limits.zh.md)
 
