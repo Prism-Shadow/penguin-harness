@@ -77,7 +77,7 @@ export function installEvolutionAutoplay(
     sent = true;
     button.click();
   };
-  const revealChart = (chart: Element) => {
+  const revealChart = (chart: Element, center = false) => {
     for (
       let parent = chart.parentElement;
       parent && parent !== doc.body;
@@ -89,7 +89,7 @@ export function installEvolutionAutoplay(
       ) {
         const rect = chart.getBoundingClientRect();
         const box = parent.getBoundingClientRect();
-        if (rect.top < box.top + 48 || rect.bottom > box.bottom - 16)
+        if (center || rect.top < box.top + 48 || rect.bottom > box.bottom - 16)
           parent.scrollTop +=
             rect.top - box.top - Math.max(64, (parent.clientHeight - rect.height) / 2);
         break;
@@ -190,7 +190,7 @@ export function installEvolutionAutoplay(
       // The narrower dock lays the chart out in a different scrolling viewport.
       const chart = shown('[data-pane="right"] svg.ui-chart');
       if (chart) {
-        revealChart(chart);
+        revealChart(chart, true);
         stop();
       }
     } else if (destination === "replay") {
