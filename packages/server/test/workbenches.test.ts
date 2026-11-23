@@ -80,6 +80,7 @@ import {
   serverAppDir,
   sharedWorkbenchDirs,
   workbenchStateDir,
+  type PluginTables,
 } from "@prismshadow/penguin-core";
 import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { IfaceTable, ModuleDef } from "@prismshadow/penguin-core/kernel";
@@ -819,13 +820,22 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
   let dir: string;
   let editors = 0;
   let agentId: string;
+  let existingPlugins: PluginTables;
   const logged: string[] = [];
 
   beforeAll(async () => {
-    t = await createTestApp({ log: (line) => logged.push(line) });
-    owner = apiClient(t.app, (await provisionUser(t.app, "owner")).cookie);
+    const log = (line: string) => logged.push(line);
+    t = await createTestApp({ durableDatabase: true, log });
+    const { cookie } = await provisionUser(t.app, "owner");
+    owner = apiClient(t.app, cookie);
     const created = await owner.post("/api/projects", { projectId: PROJECT, name: "wf" });
     expect(created.status, await created.text()).toBe(201);
+    existingPlugins = await t.deps.projectConfigService.getPluginTables(PROJECT);
+    const tables = [existingPlugins.all, ...Object.values(existingPlugins.machines)];
+    expect(tables.every((table) => !("@penguinharness/agent-state-git" in table))).toBe(true);
+    // Agents created after this cold boot inherit the existing Project's history configuration.
+    t = await restartTestApp(t, { log });
+    owner = apiClient(t.app, cookie);
   });
   afterAll(async () => {
     await t.cleanup();
@@ -925,6 +935,18 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     const v2 = await reload();
     expect(v2.revision).not.toBe(v1!.revision);
     expect(v2.uiRev).not.toBe(v1!.uiRev);
+    const gitdir = path.join(agent, "agent_state.git");
+    const [latest, initial] = await git.log({ fs: nodeFs, gitdir, depth: 2 });
+    expect(latest!.commit.parent).toContain(initial!.oid);
+    expect(latest!.commit.message).toContain("workbench demo");
+    const { blob } = await git.readBlob({
+      fs: nodeFs,
+      gitdir,
+      oid: latest!.oid,
+      filepath: "workbenches/demo/ui/index.html",
+    });
+    expect(Buffer.from(blob).toString("utf8")).toBe("<h1>demo v2</h1>");
+    expect(await t.deps.projectConfigService.getPluginTables(PROJECT)).toEqual(existingPlugins);
     expect(
       (await (await owner.get(`${base}/demo/api/`)).json()) as { greeting: string },
     ).toMatchObject({
@@ -1331,49 +1353,6 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     expect((await owner.delete(`${base}/demo`)).status).toBe(404);
     // The removal is a commit of its own: the history walk stops there.
     expect(await versions()).toEqual([]);
-  });
-});
-
-describe("Agent State in an existing Project", () => {
-  it("records edits for a newly created Agent when the Project has no native Git module", async () => {
-    let t = await createTestApp({ durableDatabase: true });
-    try {
-      const projectId = "existing_project";
-      const before = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-      expect((await before.post("/api/projects", { projectId })).status).toBe(201);
-      const tables = await t.deps.projectConfigService.getPluginTables(projectId);
-      const configured = [tables.all, ...Object.values(tables.machines)];
-      expect(configured.every((table) => !("@penguinharness/agent-state-git" in table))).toBe(true);
-
-      t = await restartTestApp(t);
-      const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
-      const agentId = "after_upgrade";
-      const base = `/api/projects/${projectId}/agents`;
-      expect((await admin.post(base, { agentId })).status).toBe(201);
-      const workbench = path.join(agentStateDir(t.root, projectId, agentId), "workbenches", "demo");
-      await writeDemo(workbench);
-      const url = `${base}/${agentId}/workbenches`;
-      const [first] = await listOf(admin, url);
-      expect(first?.error).toBe(null);
-      const edited = "<main>Saved after upgrade</main>";
-      await fs.writeFile(path.join(workbench, "ui", "index.html"), edited);
-      expect((await admin.post(`${url}/demo/reload`)).status).toBe(200);
-
-      const gitdir = path.join(agentDir(t.root, projectId, agentId), "agent_state.git");
-      const [latest, initial] = await git.log({ fs: nodeFs, gitdir, depth: 2 });
-      expect(latest!.commit.parent).toContain(initial!.oid);
-      expect(latest!.commit.message).toContain("workbench demo");
-      const { blob } = await git.readBlob({
-        fs: nodeFs,
-        gitdir,
-        oid: latest!.oid,
-        filepath: "workbenches/demo/ui/index.html",
-      });
-      expect(Buffer.from(blob).toString("utf8")).toBe(edited);
-      expect(await t.deps.projectConfigService.getPluginTables(projectId)).toEqual(tables);
-    } finally {
-      await t.cleanup();
-    }
   });
 });
 
