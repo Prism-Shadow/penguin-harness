@@ -167,11 +167,14 @@ The **Models** page reloads the table on every visit, so the new group is there 
 
 Models in **Custom** and in groups you created speak one of MMSP's generic protocols, and the dialog can find out which one a base URL serves. A new custom model starts with no protocol selected: the suffix at the right edge of the base URL field reads **Select protocol**.
 
-To detect the protocol, select **Detect** at the top-right of the base URL field. It is always available, and no API key is needed. The server probes the URL with three cheap requests, in this order, and applies the first protocol the endpoint serves:
+To detect the protocol, select **Detect** at the top-right of the base URL field. The server tries these requests in order and applies the first protocol it detects.
 
 1. `openai-responses`: `POST {base}/responses` (OpenAI Responses API)
 2. `ant-messages`: `POST {base}/v1/messages` (Anthropic Messages API)
 3. `openai-chat`: `POST {base}/chat/completions`
+4. `google-genai`: `GET {base}/v1beta/models?pageSize=1`
+
+Google GenAI detection requires a successful model list response. Enter an API key if the endpoint requires one. For a Google service account, select Google GenAI manually.
 
 A message names the protocol found, for example "Detected {name}; applied". The result lives only in the suffix, which shows the protocol path.
 
@@ -179,22 +182,22 @@ Detection tolerates common base URL mistakes:
 
 - one `/v1` too many (`https://host/v1/v1`);
 - one too few (`https://host` for an API served under `https://host/v1`);
-- a whole endpoint URL pasted from a provider's documentation (`/chat/completions`, `/responses`, `/messages`).
+- a whole endpoint URL pasted from a provider's documentation (`/chat/completions`, `/responses`, `/messages`, `/v1beta/models`).
 
-It probes the cleaned-up base first, then its neighbouring form: the trailing `/v1` is removed if the URL has one, added if it does not. Each form is tried against the three protocols in order, six short probes at most. The base URL field is then rewritten to the form that answered: "Detected {protocol}; base URL normalized to {url}".
+It probes the cleaned-up base first, then its neighbouring form: the trailing `/v1` is removed if the URL has one, added if it does not. Each form is tried against the four protocols in order. The base URL field is then rewritten to the form that answered: "Detected {protocol}; base URL normalized to {url}".
 
-To set the protocol by hand, select the suffix. The menu lists **OpenAI Responses** (`/responses`), **Anthropic Messages** (`/v1/messages`), **OpenAI Chat Completions** (`/chat/completions`), **Google GenAI (generateContent)** (`/v1beta/models`) and **MMSP** (`/stream`, an MMSP server), each with the path the client appends to your URL. Detection never picks the last two: choose them here. A protocol you pick wins over detection, so an endpoint whose protocol you know never has to be probed.
+To set the protocol by hand, select the suffix. The menu lists **OpenAI Responses** (`/responses`), **Anthropic Messages** (`/v1/messages`), **OpenAI Chat Completions** (`/chat/completions`), **Google GenAI (generateContent)** (`/v1beta/models`) and **MMSP** (`/stream`, an MMSP server), each with the path the client appends to your URL. Choose MMSP manually. A protocol you pick wins over detection, so an endpoint whose protocol you know never has to be probed.
 
-If detection finds nothing, the suffix turns amber and a message says "Could not detect the protocol. Please check the API key and the base URL." This happens when the endpoint is unreachable, timed out, answered with something that is not an API, or serves none of the three paths. The endpoint still reports each probe's outcome for debugging.
+If detection finds nothing, the suffix turns amber and a message says "Could not detect the protocol. Please check the API key and the base URL." The endpoint reports each probe's outcome for debugging.
 
 Detection never blocks a save. If you select **Confirm** while neither the model nor its group sets a protocol, detection runs first and the button reads **Detecting…**. A hit is saved without a message. If nothing is found, the model is still saved, on OpenAI Chat Completions, with the message "Protocol not detected; saved as OpenAI Chat Completions".
 
 ### How probing works
 
-- Probes are minimal invalid requests with `{}` bodies. They cost no Tokens and need no valid model id: an error in the protocol's own shape proves the route exists, a `404` or `405` means the path is not served, and HTML or gateway noise counts for nothing.
-- The probed URLs and auth headers are exactly what the MMSP client uses after saving: `Authorization: Bearer` for the OpenAI protocols, and `x-api-key` plus `Authorization: Bearer` and `anthropic-version` for `ant-messages`. A detected protocol is one that will really work.
-- The server picks the probe credential in four steps: the API key typed in the dialog, else the key already stored for the entry, else the group key, else, for each probe, the environment variable its protocol's client reads, only when the URL is that client's own default endpoint (`OPENAI_API_KEY` at `https://api.openai.com/v1`, `ANTHROPIC_API_KEY` at `https://api.anthropic.com`). None of these values reach the browser or the response.
-- Otherwise the probes go out anonymously. Detection works with no credential at all, since a protocol-shaped `401` identifies the route, and your vendor key is never sent to any other URL you typed.
+- The OpenAI Responses, Anthropic Messages, and OpenAI Chat Completions probes send `POST` requests with `{}` bodies. A protocol-specific validation or authentication error can identify the route without a model ID. A `404`, `405`, HTML page, or generic gateway authentication error provides no evidence.
+- Google GenAI sends `GET /v1beta/models?pageSize=1` and requires a successful Google model list response. If an API key is available, the probe sends it in `x-goog-api-key`. For Vertex service account credentials, select Google GenAI manually. The service account JSON stays local during detection.
+- The OpenAI probes send API keys in `Authorization: Bearer`. The Anthropic probe uses `x-api-key` and `Authorization: Bearer` for the key and also sends `anthropic-version`.
+- The server uses the key entered in the dialog, the model's stored key, or the group's stored key, in that order. Each probe can fall back to the corresponding environment variable at the client's default URL. Use `OPENAI_API_KEY` for `https://api.openai.com/v1`, `ANTHROPIC_API_KEY` for `https://api.anthropic.com`, and `GEMINI_API_KEY` for `https://generativelanguage.googleapis.com`. With no key available, the server probes anonymously.
 - Nothing is inferred from the model id in these groups. Typing `claude-sonnet-5` into a custom group does not select the Anthropic client or its `ANTHROPIC_*` key: custom groups fall back to `openai-chat`, and the API key hint follows that. Vendor and gateway groups are not affected: their models route by id or by the protocol stored on the group.
 - Entries created before detection existed keep `client_type = "openai"`, which is still an alias of `openai-chat`. They are rewritten only when you pick a protocol or a detection applies. An older, non-standard protocol value is shown read-only: "Protocol: {t} (kept as configured; not editable)".
 - Detection is available as `POST /api/projects/:id/models/detect` (owner only); see [Server API](/server-api).
@@ -626,7 +629,7 @@ Each `ModelEntry` has these fields:
 | `model_id` | Upstream request id |
 | `context_window` | Context window (tokens). Load-bearing, not just display: each request's effective output cap and the compaction threshold are derived from it, so requests never ask for more output than the window still fits. Unset (or implausibly small, under 4096): the output clamp turns off and compaction derives from an assumed 128000 — set the real value for models with smaller windows. The Web dialog writes 1,000,000 when a model that is not in the catalog leaves the field blank (a hand-added entry is a known model, not an unknown window); narrow it when the endpoint serves less. `penguin config model add` writes no default at all when `--context-window` is omitted |
 | `max_tokens` | Optional per-model output cap (max output tokens per request). When set it overrides the agent's `model.max_tokens`; unset inherits it. The cap is a ceiling, not the literal wire value: each request sends `min(max_tokens, context_window − estimated input − safety margin)`, so small-window models work without hand-tuning it. Omitting the field on a Web full-table save clears it |
-| `client_type` | MMSP client type: a generic protocol client (`openai-chat` for Chat Completions, `openai-responses` for the Responses API, `ant-messages` for Anthropic Messages, …) or a vendor's official client (`deepseek-official`, `anthropic-official`, …). When omitted, the model follows its group's; with neither, MMSP routes the model id by the vendor family it begins with (`gpt-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`). Custom endpoints use one of the generic protocol clients the Web dialog offers: those three, `google-genai` (Google's generateContent) or `mmsp` (an MMSP server); it can detect which of the three a base URL serves. The pre-0.4.2 spelling `openai` is a deprecated alias and is normalized to `openai-chat` when the config is read |
+| `client_type` | MMSP client type: a generic protocol client (`openai-chat` for Chat Completions, `openai-responses` for the Responses API, `ant-messages` for Anthropic Messages, …) or a vendor's official client (`deepseek-official`, `anthropic-official`, …). When omitted, the model follows its group's; with neither, MMSP routes the model id by the vendor family it begins with (`gpt-`, `claude-`, `gemini-`, `glm-`, `kimi-`, `deepseek-`, `minimax-`). Custom endpoints use one of the generic protocol clients the Web dialog offers: those three, `google-genai` (Google's generateContent) or `mmsp` (an MMSP server). The dialog can detect the OpenAI protocols, Anthropic Messages, and Google GenAI. The pre-0.4.2 spelling `openai` is a deprecated alias and is normalized to `openai-chat` when the config is read |
 | `display_name` | Display name |
 | `vision` | Whether image input is supported, default true |
 | `fast_mode` | Optional fast mode (off by default): opts the model's Session requests into the provider's faster serving tier at premium pricing. Only `true` is ever persisted — omitting the field on a Web full-table save clears it. Models without a fast tier reject requests carrying it (see [Fast mode](#fast-mode)) |

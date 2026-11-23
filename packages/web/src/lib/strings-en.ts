@@ -2563,7 +2563,7 @@ export const en: Strings = {
     /** Save-time detection came back empty: the save proceeds on the compatible client. */
     detectFellBack: "Protocol not detected; saved as OpenAI Chat Completions",
     addProtocolHintDetect:
-      "Pick the protocol from the base URL field's suffix (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions / Google GenAI / MMSP), or press Detect to probe the endpoint for one of the first three — saving without one detects it first",
+      "Choose a protocol from the base URL field's suffix. Detect checks OpenAI Responses, Anthropic Messages, OpenAI Chat Completions, and Google GenAI. Select MMSP manually. Saving without a protocol runs detection first.",
     vision: "Vision support",
     /** Detect action beside the vision switch. */
     detectVision: "Detect",
