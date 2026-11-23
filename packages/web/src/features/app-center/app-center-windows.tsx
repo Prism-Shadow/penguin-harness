@@ -1,18 +1,8 @@
 /**
- * The App Center's windows, one per running app (lib/running-apps.ts), hosted in a layer over the
- * page area (a `WebAppModule.layers` contribution with `area: "page"`) rather than inside the App
- * Center page. The page unmounts when the viewer goes to another one; this layer does not, so an
- * app minimized there keeps running meanwhile and is the same live window when it comes back.
- *
- * A window is in front only on the App Center, while `?app=` names it. Every other one is
- * minimized: mounted and laid out at the area's size, but neither painted nor reachable
- * (`AppWindow`), so what runs in its frame — its state, timers, sound and connections — carries
- * on. Minimize and Back leave a window alike, back to the page it was opened or brought back from
- * (lib/app-window-address.ts); Close ends the app and unmounts its frame. An app whose workbench is
- * gone ends too, as its window learns it; one a list no longer shows does not (lib/running-apps.ts).
- * Switching Project ends the previous Project's apps, and leaving the app shell (the full page,
- * signing out, a reload) unmounts this layer and ends them all, so nothing is ever listed as
- * running with nothing behind it.
+ * Each running app keeps one live window in the shell across route changes, including when
+ * minimized or moved between panes. Closing its page ends the app and removes its frame;
+ * closing a Session page beside it leaves it running. Switching Project or leaving the shell
+ * releases these windows.
  */
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -31,8 +21,8 @@ import { localizedText } from "../../lib/skill-use";
 import { systemAppFullPage } from "../../lib/system-apps";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { PageSlot } from "../page-workspace/page-area";
-import { usePageWorkspace } from "../page-workspace/context";
+import { PageSlot } from "../../lib/page-slot";
+import { usePageWorkspace } from "../../lib/page-workspace";
 import { appTriggerId } from "./app-tile";
 import { AppCenterWindow } from "./app-center-window";
 
@@ -84,7 +74,7 @@ export function AppCenterWindows() {
                 projectId={app.projectId}
                 shortcut={app.shortcut}
                 title={localizedText(locale, app.shortcut.title, app.shortcut.titleZh)}
-                onMinimize={leave}
+                onMinimize={() => (workspace ? workspace.minimize("app:" + app.key) : leave())}
                 onFullScreen={(path) =>
                   openFullPage(
                     navigate,

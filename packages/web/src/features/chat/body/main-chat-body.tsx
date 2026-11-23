@@ -1,3 +1,4 @@
+import { Activity } from "react";
 import { WallpaperSurface, Button, EmptyState, Skeleton } from "@prismshadow/penguin-ui";
 import { S } from "../../../lib/strings";
 import { MessageStream } from "../message-stream";
@@ -120,32 +121,33 @@ export function renderMainChatBody(scope: MainChatView) {
                         }}
                       />
                     ) : selected ? (
-                      stream.error ? (
-                        // History failed to load: say why and offer the way on, instead of staying on
-                        // a misleading empty state — for a conversation on a machine out of reach,
-                        // the machine's state rather than the transport's error.
-                        <HistoryLoadFailed
-                          projectId={projectId}
-                          sessionId={selected.sessionId}
-                          error={stream.error}
-                          cause={stream.errorCause}
-                          onRetry={stream.retry}
-                        />
-                      ) : stream.loading ? (
-                        // The skeleton, and past a second, for a conversation on a machine, how far
-                        // its newest messages have come over and how the link stands.
-                        <HistoryLoading
-                          projectId={projectId}
-                          sessionId={selected.sessionId}
-                          progress={stream.transfer.window}
-                          onRetryNow={stream.retryNow}
-                        />
-                      ) : (
-                        // The empty state shares the same structure as the message stream (message
-                        // area + bottom input area): only the message area's content differs, and
-                        // ChatInput always mounts in the same JSX slot, so it isn't unmounted and
-                        // recreated when the first message arrives (preserving draft/focus).
-                        <>
+                      <>
+                        {stream.error ? (
+                          // History failed to load: say why and offer the way on, instead of staying on
+                          // a misleading empty state — for a conversation on a machine out of reach,
+                          // the machine's state rather than the transport's error.
+                          <HistoryLoadFailed
+                            projectId={projectId}
+                            sessionId={selected.sessionId}
+                            error={stream.error}
+                            cause={stream.errorCause}
+                            onRetry={stream.retry}
+                          />
+                        ) : stream.loading ? (
+                          // The skeleton, and past a second, for a conversation on a machine, how far
+                          // its newest messages have come over and how the link stands.
+                          <HistoryLoading
+                            projectId={projectId}
+                            sessionId={selected.sessionId}
+                            progress={stream.transfer.window}
+                            onRetryNow={stream.retryNow}
+                          />
+                        ) : null}
+                        {/* A resumed pane reopens its stream. Keep the composer mounted while
+                          history loads so its unsent text, files and selection survive. */}
+                        <Activity mode={stream.loading || stream.error ? "hidden" : "visible"}>
+                          {/* The empty state shares the same structure as the message stream (message
+                           area + bottom input area). The first message leaves the composer in place. */}
                           {/* `relative`: the floating dock launcher below anchors to this body —
                             the region between the toolbar and the composer — so clamping to
                             it keeps the launcher off both. On a phone the ball rides over the
@@ -237,8 +239,8 @@ export function renderMainChatBody(scope: MainChatView) {
                               {input}
                             </div>
                           </WallpaperSurface>
-                        </>
-                      )
+                        </Activity>
+                      </>
                     ) : routeSessionOffline ? (
                       <EmptyState
                         title={

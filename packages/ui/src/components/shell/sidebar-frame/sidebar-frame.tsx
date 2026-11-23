@@ -198,7 +198,7 @@ export function SidebarListHeader({
           disabled={searching}
           className={`flex min-w-0 items-center gap-1 overflow-hidden px-1 text-left ${searching ? "invisible" : ""}`}
         >
-          <span className={`shrink-0 transition-transform ${fold.open ? "" : "-rotate-90"}`}>
+          <span className={`shrink-0 ${fold.open ? "" : "-rotate-90"}`}>
             <ChevronDown />
           </span>
           <Text as="span" variant="eyebrow" className="truncate">

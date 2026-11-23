@@ -1,114 +1,14 @@
-import {
-  Activity,
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { DockTabs, GlyphIcon, ICONS, ResizeHandle } from "@prismshadow/penguin-ui";
 import { Outlet, useLocation, type Location } from "react-router";
 import { ErrorBoundary } from "../../rescue/error-boundary";
 import { RescuePanel } from "../../rescue/rescue-panel";
 import { S } from "../../lib/strings";
-import { PaneFocus } from "../../lib/page-focus";
+import { PAGE_DRAG_TYPE } from "../../lib/page-layout";
+import { PageSlot, useNarrow } from "../../lib/page-slot";
 import { useRunningAppRecords } from "../../lib/running-apps";
-import { usePageWorkspace } from "./context";
+import { usePageWorkspace } from "../../lib/page-workspace";
 import { WorkbenchDirectory } from "./workbench-directory";
-import { PAGE_DRAG_TYPE } from "./pages";
-
-const narrowQuery = "(max-width: 767px)";
-function listen(resize: () => void) {
-  const media = window.matchMedia(narrowQuery);
-  media.addEventListener("change", resize);
-  return () => media.removeEventListener("change", resize);
-}
-function useNarrow() {
-  return useSyncExternalStore(
-    listen,
-    () => window.matchMedia(narrowQuery).matches,
-    () => false,
-  );
-}
-
-/** Positioned siblings keep their React and iframe instances when they change sides. */
-export function PageSlot({
-  id,
-  keepRunning = false,
-  children,
-}: {
-  id: string;
-  keepRunning?: boolean;
-  children: ReactNode;
-}) {
-  const workspace = usePageWorkspace();
-  const narrow = useNarrow();
-  const [dropSide, setDropSide] = useState<0 | 1 | null>(null);
-  if (!workspace) return children;
-  const { layout, current } = workspace;
-  const page = layout.pages.find((item) => item.id === id);
-  const side = layout.visible.indexOf(id);
-  const split = !narrow && layout.visible.length === 2;
-  const shown = !!current && side >= 0 && (!narrow || id === layout.focus);
-  const focused = shown && layout.focus === id;
-  const style: CSSProperties = split
-    ? {
-        left: side === 1 ? "var(--workspace-divider)" : 0,
-        right: side === 1 ? 0 : "calc(100% - var(--workspace-divider))",
-        top: "var(--workspace-tabs-height)",
-      }
-    : {};
-  const activate = () => {
-    if (page && shown && !focused) workspace.focus(page);
-  };
-  return (
-    <div
-      data-workspace-page={id}
-      data-pane={shown ? (split ? (side === 1 ? "right" : "left") : "full") : undefined}
-      className={`absolute inset-0 min-w-0 bg-canvas ${shown ? "" : "invisible pointer-events-none"}`}
-      inert={!shown}
-      style={style}
-      onPointerDownCapture={activate}
-      onFocusCapture={activate}
-      onDragOver={(event) => {
-        if (!shown || narrow || !event.dataTransfer.types.includes(PAGE_DRAG_TYPE)) return;
-        event.preventDefault();
-        const box = event.currentTarget.getBoundingClientRect();
-        setDropSide(
-          split ? (side === 1 ? 1 : 0) : event.clientX - box.left < box.width / 2 ? 0 : 1,
-        );
-      }}
-      onDragLeave={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropSide(null);
-      }}
-      onDrop={(event) => {
-        const dragged = layout.pages.find(
-          (item) => item.id === event.dataTransfer.getData(PAGE_DRAG_TYPE),
-        );
-        if (dragged && dropSide !== null) {
-          event.preventDefault();
-          workspace.place(dragged, dropSide);
-        }
-        setDropSide(null);
-      }}
-    >
-      <PaneFocus.Provider value={focused}>
-        {keepRunning ? (
-          children
-        ) : (
-          <Activity mode={shown ? "visible" : "hidden"}>{children}</Activity>
-        )}
-      </PaneFocus.Provider>
-      {shown && dropSide !== null && (
-        <div
-          aria-hidden
-          className={`pointer-events-none absolute inset-y-0 z-10 border-2 border-accent bg-accent/10 ${split ? "inset-x-0" : dropSide === 0 ? "left-0 w-1/2" : "right-0 w-1/2"}`}
-        />
-      )}
-    </div>
-  );
-}
 
 function PaneTabs({ side }: { side: 0 | 1 }) {
   const workspace = usePageWorkspace()!;
@@ -116,6 +16,20 @@ function PaneTabs({ side }: { side: 0 | 1 }) {
   const pages = layout.pages.filter((page) => layout.right.includes(page.id) === (side === 1));
   return (
     <div
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes(PAGE_DRAG_TYPE)) event.preventDefault();
+      }}
+      onDrop={(event) => {
+        const id = event.dataTransfer.getData(PAGE_DRAG_TYPE);
+        const page = layout.pages.find((item) => item.id === id);
+        if (!page) return;
+        event.preventDefault();
+        const target =
+          event.target instanceof Element
+            ? event.target.closest<HTMLElement>("[data-tab-id]")
+            : null;
+        workspace.place(page, side, target?.dataset.tabId);
+      }}
       className="absolute top-0 flex min-w-0 items-center border-b border-line bg-surface-muted px-1"
       style={{
         height: "var(--workspace-tabs-height)",
@@ -134,6 +48,10 @@ function PaneTabs({ side }: { side: 0 | 1 }) {
               size={14}
             />
           ),
+          onDragStart(event) {
+            event.dataTransfer.setData(PAGE_DRAG_TYPE, page.id);
+            event.dataTransfer.effectAllowed = "move";
+          },
           closeLabel: S.common.close,
         }))}
         active={layout.visible[side]!}
@@ -160,6 +78,21 @@ export function PageArea({
   const narrow = useNarrow();
   const root = useRef<HTMLElement>(null);
   const [divider, setDivider] = useState(50);
+  const [draggingPage, setDraggingPage] = useState(false);
+  useEffect(() => {
+    const start = (event: DragEvent) => {
+      if (event.dataTransfer?.types.includes(PAGE_DRAG_TYPE)) setDraggingPage(true);
+    };
+    const end = () => setDraggingPage(false);
+    document.addEventListener("dragstart", start);
+    document.addEventListener("dragend", end);
+    document.addEventListener("drop", end);
+    return () => {
+      document.removeEventListener("dragstart", start);
+      document.removeEventListener("dragend", end);
+      document.removeEventListener("drop", end);
+    };
+  }, []);
   const { current, layout } = workspace;
   const split = !!current && !narrow && layout.visible.length === 2;
   // A pointer landing inside a live frame transfers focus to its browsing context, so
@@ -189,7 +122,7 @@ export function PageArea({
     <main
       ref={root}
       data-page-viewport
-      className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
+      className={`relative min-h-0 min-w-0 flex-1 overflow-hidden ${draggingPage ? "[&_iframe]:pointer-events-none" : ""}`}
       style={
         { "--workspace-divider": divider + "%", "--workspace-tabs-height": "2rem" } as CSSProperties
       }
@@ -215,7 +148,7 @@ export function PageArea({
         <>
           <PaneTabs side={0} />
           <PaneTabs side={1} />
-          <div className="absolute inset-y-0 z-10" style={{ left: "var(--workspace-divider)" }}>
+          <div className="absolute inset-y-0 z-sticky" style={{ left: "var(--workspace-divider)" }}>
             <ResizeHandle
               axis="x"
               label={S.pageWorkspace.resize}

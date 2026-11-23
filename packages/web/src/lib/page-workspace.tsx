@@ -8,13 +8,13 @@ import {
   type ReactNode,
 } from "react";
 import { matchPath, useLocation, useNavigate } from "react-router";
-import { leaveWindow, windowInFront } from "../../lib/app-window-address";
-import { closeApp, useRunningAppRecords } from "../../lib/running-apps";
-import { useSystemApps } from "../../lib/system-apps";
-import { localizedText } from "../../lib/skill-use";
-import { S } from "../../lib/strings";
-import { useLocale } from "../../state/locale";
-import { useSessions } from "../../state/sessions";
+import { leaveWindow, windowInFront } from "./app-window-address";
+import { closeApp, useRunningAppRecords } from "./running-apps";
+import { useSystemApps } from "./system-apps";
+import { localizedText } from "./skill-use";
+import { S } from "./strings";
+import { useLocale } from "../state/locale";
+import { useSessions } from "../state/sessions";
 import {
   closePage,
   emptyLayout,
@@ -23,18 +23,19 @@ import {
   visitPage,
   type OpenPage,
   type PageLayout,
-} from "./pages";
+} from "./page-layout";
 
 interface Workspace {
   layout: PageLayout;
   current: OpenPage | null;
   focus(page: OpenPage): void;
-  place(page: OpenPage, side: 0 | 1): void;
+  place(page: OpenPage, side: 0 | 1, before?: string): void;
   close(id: string): void;
+  minimize(id: string): void;
   whole(page: OpenPage): void;
   swap(): void;
   reorder(id: string, before: string): void;
-  browse(agentId: string, machineId: string | null): void;
+  browse(sessionId: string, agentId: string, machineId: string | null): void;
   separate(page: OpenPage): void;
 }
 const Context = createContext<Workspace | null>(null);
@@ -48,6 +49,8 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
   const systems = useSystemApps();
   const { locale } = useLocale();
   const path = location.pathname + location.search + location.hash;
+  const params = new URLSearchParams(location.search);
+  const directoryAgent = params.get("workbenches");
   const win = windowInFront(location);
   const sessionId = matchPath("/chat/:sessionId", location.pathname)?.params.sessionId;
   const catalog: OpenPage = {
@@ -78,13 +81,9 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
       title:
         sessions.find((row) => row.sessionId === sessionId)?.title ?? S.chat.defaultSessionTitle,
     };
-  else if (location.pathname === "/apps" && new URLSearchParams(location.search).has("workbenches"))
+  else if (location.pathname === "/apps" && directoryAgent)
     current = {
-      id:
-        "workbenches:" +
-        new URLSearchParams(location.search).get("workbenches") +
-        ":" +
-        (new URLSearchParams(location.search).get("machine") ?? ""),
+      id: "workbenches:" + directoryAgent + ":" + (params.get("machine") ?? ""),
       kind: "workbenches",
       title: S.pageWorkspace.workbenches,
       path,
@@ -106,38 +105,75 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
     ref.current = next;
     setLayout(next);
   }, []);
+  // Selecting a tab goes through the same leave guard as an ordinary link. Keep its
+  // arrangement and any window to close pending until that history entry really arrives.
+  const pending = useRef<{ to: string; token: number; layout: PageLayout; closed?: string } | null>(
+    null,
+  );
+  const ticket = useRef(0);
   const currentId = current?.id;
   const title = current?.title;
   useLayoutEffect(() => {
-    if (current) publish(visitPage(ref.current, current));
-  }, [path, currentId, title, publish]);
-  function go(next: PageLayout, replace = false) {
-    const page = next.pages.find((entry) => entry.id === next.focus);
-    publish(next);
-    const to = page?.path ?? "/chat/new";
-    if (path !== to) void navigate(to, { replace });
+    const request = pending.current;
+    const arrived =
+      request?.to === path &&
+      (request.token === 0 || location.state?.workspaceRequest === request.token);
+    if (arrived && request) {
+      pending.current = null;
+      if (request.closed) closeApp(request.closed);
+      publish(current ? visitPage(request.layout, current) : request.layout);
+    } else if (current) {
+      publish(visitPage(ref.current, current));
+    }
+  }, [path, location.key, currentId, title, publish]);
+  function go(next: PageLayout, replace = false, closed?: string) {
+    const to = next.pages.find((entry) => entry.id === next.focus)?.path ?? "/chat/new";
+    if (path === to) {
+      if (closed) closeApp(closed);
+      publish(next);
+      return;
+    }
+    const token = ++ticket.current;
+    pending.current = { to, token, layout: next, ...(closed ? { closed } : {}) };
+    void navigate(to, { replace, state: { workspaceRequest: token } });
   }
   const focus = (page: OpenPage) => go(visitPage(ref.current, page));
-  const place = (page: OpenPage, side: 0 | 1) => go(placePage(ref.current, page, side));
-  const close = (id: string) => {
+  const place = (page: OpenPage, side: 0 | 1, before?: string) => {
+    const layout = placePage(ref.current, page, side);
+    go(before ? reorderPage(layout, page.id, before) : layout);
+  };
+  const dismiss = (id: string, keepOpen: boolean) => {
     const before = ref.current;
     const page = before.pages.find((entry) => entry.id === id);
     if (!page) return;
-    if (page.kind === "window") closeApp(id.slice(4));
-    const next = closePage(before, id);
+    const closed = !keepOpen && page.kind === "window" ? id.slice(4) : undefined;
+    const removed = closePage(before, id);
+    const next = keepOpen
+      ? { ...removed, pages: before.pages, right: removed.visible.length === 2 ? before.right : [] }
+      : removed;
     if (
       currentId === id &&
       page.kind === "window" &&
       before.visible.length === 1 &&
-      (!next.focus ||
+      (keepOpen ||
+        !next.focus ||
         next.pages.find((item) => item.id === next.focus)?.path ===
           (location.state?.returnTo ?? "/apps"))
     ) {
-      publish(next);
+      const to =
+        location.state?.returnTo ??
+        next.pages.find((item) => item.id === next.focus)?.path ??
+        "/apps";
+      pending.current = { to, token: 0, layout: next, ...(closed ? { closed } : {}) };
       leaveWindow(navigate, location);
-    } else if (currentId === id) go(next, true);
-    else publish(next);
+    } else if (currentId === id) go(next, true, closed);
+    else {
+      if (closed) closeApp(closed);
+      publish(next);
+    }
   };
+  const close = (id: string) => dismiss(id, false);
+  const minimize = (id: string) => dismiss(id, true);
   const whole = (page: OpenPage) =>
     go({ ...visitPage(ref.current, page), visible: [page.id], right: [] });
   const swap = () => {
@@ -150,17 +186,22 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
       });
   };
   const reorder = (id: string, before: string) => publish(reorderPage(ref.current, id, before));
-  const browse = (agentId: string, machineId: string | null) => {
+  const browse = (sessionId: string, agentId: string, machineId: string | null) => {
     const params = new URLSearchParams({ workbenches: agentId });
     if (machineId) params.set("machine", machineId);
-    place(
-      {
-        id: "workbenches:" + agentId + ":" + (machineId ?? ""),
-        kind: "workbenches",
-        title: S.pageWorkspace.workbenches,
-        path: "/apps?" + params,
-      },
-      1,
+    const session = ref.current.pages.find((page) => page.id === "chat:" + sessionId);
+    const base = session ? placePage(ref.current, session, 0) : ref.current;
+    go(
+      placePage(
+        base,
+        {
+          id: "workbenches:" + agentId + ":" + (machineId ?? ""),
+          kind: "workbenches",
+          title: S.pageWorkspace.workbenches,
+          path: "/apps?" + params,
+        },
+        1,
+      ),
     );
   };
   const separate = (page: OpenPage) => {
@@ -168,7 +209,19 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
   };
   return (
     <Context.Provider
-      value={{ layout, current, focus, place, whole, close, swap, reorder, browse, separate }}
+      value={{
+        layout,
+        current,
+        focus,
+        place,
+        whole,
+        close,
+        minimize,
+        swap,
+        reorder,
+        browse,
+        separate,
+      }}
     >
       {children}
     </Context.Provider>

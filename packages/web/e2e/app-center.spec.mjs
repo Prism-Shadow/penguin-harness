@@ -409,3 +409,55 @@ test("a system app's tile opens its page, where the App Center stays lit", async
   await page.goto(`${BASE}/benchmark/no-such-benchmark`);
   await expect(appCenter).toHaveAttribute("aria-current", "page");
 });
+
+test("searching, sorting and folding sidebar directories keeps the open page and its draft", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, U, P);
+  await setAccountPrefs(page.request, { lang: "en" });
+  const { projects } = await (await page.request.get("/api/projects")).json();
+  const model = { provider: "custom", modelId: "sidebar-test" };
+  const configured = await page.request.put(`/api/projects/${projects[0].projectId}/models`, {
+    data: {
+      defaultModel: model,
+      models: [
+        { ...model, apiKey: "sk-mock", baseUrl: process.env.MOCK_URL, contextWindow: 200000 },
+      ],
+    },
+  });
+  expect(configured.ok(), await configured.text()).toBeTruthy();
+  await page.goto("/chat/new");
+  const side = page.getByRole("complementary");
+  const apps = side.getByRole("list", { name: "Apps", exact: true });
+  const rows = apps.getByRole("listitem");
+  await expect.poll(() => rows.count()).toBeGreaterThan(1);
+  const editor = page.getByRole("main").locator("textarea").first();
+  await editor.fill("Keep this draft while looking for an app");
+  const open = side.getByRole("navigation", { name: "Open pages" });
+  const count = await open.getByRole("listitem").count();
+  await side.getByRole("button", { name: "Search apps", exact: true }).click();
+  const query = side.getByRole("searchbox", { name: "Search apps" });
+  await query.fill("gamma");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText(/gamma/i);
+  await query.fill("no such workspace application");
+  await expect(side.getByText("No matching apps")).toBeVisible();
+  await query.press("Escape");
+  await expect(query).toHaveCount(0);
+  await side.getByRole("button", { name: "Sort apps", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Name", exact: true }).click();
+  const names = await rows.locator("button[data-app-row] > .truncate").allTextContents();
+  expect(names.length).toBeGreaterThan(1);
+  expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+  const foldApps = side.getByRole("button", { name: "Apps", exact: true });
+  const foldWorkspaces = side.getByRole("button", { name: "Workspaces", exact: true });
+  await foldApps.click();
+  await expect(foldWorkspaces).toHaveAttribute("aria-expanded", "true");
+  await foldWorkspaces.click();
+  await foldApps.click();
+  await expect(foldWorkspaces).toHaveAttribute("aria-expanded", "false");
+  await expect(rows.first()).toBeVisible();
+  await expect(open.getByRole("listitem")).toHaveCount(count);
+  await expect(editor).toHaveValue("Keep this draft while looking for an app");
+  await expect(page).toHaveURL(/\/chat\/new$/);
+});

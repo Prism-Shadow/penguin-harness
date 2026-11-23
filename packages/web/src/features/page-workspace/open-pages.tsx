@@ -13,9 +13,9 @@ import { useSystemApps } from "../../lib/system-apps";
 import { glyphOf } from "../../lib/nav-icons";
 import { S } from "../../lib/strings";
 import { TileIcon } from "../app-center";
-import { usePageWorkspace } from "./context";
+import { usePageWorkspace } from "../../lib/page-workspace";
 
-import { PAGE_DRAG_TYPE } from "./pages";
+import { PAGE_DRAG_TYPE } from "../../lib/page-layout";
 export function OpenPages({ onNavigate }: { onNavigate?: () => void }) {
   const workspace = usePageWorkspace();
   const records = useRunningAppRecords();
@@ -98,50 +98,48 @@ export function OpenPages({ onNavigate }: { onNavigate?: () => void }) {
               },
             ];
             return (
-              <li
+              <AppRow
                 key={page.id}
-                data-open-page={page.id}
-                draggable
-                onDragStart={(event) => {
-                  event.dataTransfer.setData(PAGE_DRAG_TYPE, page.id);
-                  event.dataTransfer.effectAllowed = "move";
+                drag={{
+                  draggable: true,
+                  onDragStart(event) {
+                    event.dataTransfer.setData(PAGE_DRAG_TYPE, page.id);
+                    event.dataTransfer.effectAllowed = "move";
+                  },
+                  onDragOver(event) {
+                    if (event.dataTransfer.types.includes(PAGE_DRAG_TYPE)) event.preventDefault();
+                  },
+                  onDrop(event) {
+                    const id = event.dataTransfer.getData(PAGE_DRAG_TYPE);
+                    if (id) {
+                      event.preventDefault();
+                      reorder(id, page.id);
+                    }
+                  },
                 }}
-                onDragOver={(event) => {
-                  if (event.dataTransfer.types.includes(PAGE_DRAG_TYPE)) event.preventDefault();
-                }}
-                onDrop={(event) => {
-                  const id = event.dataTransfer.getData(PAGE_DRAG_TYPE);
-                  if (id) {
-                    event.preventDefault();
-                    reorder(id, page.id);
-                  }
-                }}
-              >
-                <AppRow
-                  appKey={page.id}
-                  name={page.title}
-                  active={workspace.current?.id === page.id}
-                  icon={
-                    app ? (
-                      <TileIcon shortcut={app.shortcut} title={page.title} size={APP_ROW_ICON_PX} />
-                    ) : (
-                      <GlyphIcon
-                        d={
-                          sys
-                            ? glyphOf(sys.icon)
-                            : page.kind === "session"
-                              ? ICONS.bubbleLines
-                              : ICONS.tiles
-                        }
-                        size={APP_ROW_ICON_PX}
-                      />
-                    )
-                  }
-                  onOpen={act(() => focus(page))}
-                  moreLabel={words.actions + " · " + page.title}
-                  menuActions={actions}
-                />
-              </li>
+                appKey={page.id}
+                name={page.title}
+                active={workspace.current?.id === page.id}
+                icon={
+                  app ? (
+                    <TileIcon shortcut={app.shortcut} title={page.title} size={APP_ROW_ICON_PX} />
+                  ) : (
+                    <GlyphIcon
+                      d={
+                        sys
+                          ? glyphOf(sys.icon)
+                          : page.kind === "session"
+                            ? ICONS.bubbleLines
+                            : ICONS.tiles
+                      }
+                      size={APP_ROW_ICON_PX}
+                    />
+                  )
+                }
+                onOpen={act(() => focus(page))}
+                moreLabel={words.actions + " · " + page.title}
+                menuActions={actions}
+              />
             );
           })}
         </ul>

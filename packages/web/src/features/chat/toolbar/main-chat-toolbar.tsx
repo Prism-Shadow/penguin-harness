@@ -1,4 +1,4 @@
-import { BrowseWorkbenches } from "../../page-workspace/browse-workbenches";
+import { BrowseWorkbenches } from "./browse-workbenches";
 import { machineForSession } from "../../../lib/session-machines";
 import { renderMainSessionDetails } from "./main-session-details";
 import {
@@ -76,6 +76,7 @@ export function renderMainChatToolbar(scope: MainChatView) {
               — the toolbar reads and drives the dock store directly; this page only feeds
               the pending-approval dot. */}
           <BrowseWorkbenches
+            sessionId={selected.sessionId}
             agentId={selected.agentId}
             machineId={machineForSession(selected.sessionId)}
           />

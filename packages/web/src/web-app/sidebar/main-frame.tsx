@@ -1,4 +1,4 @@
-import { OpenPages } from "../../features/page-workspace/open-pages";
+import { OpenPages } from "../../features/page-workspace";
 import type { ReactNode } from "react";
 import {
   MainSidebarFragments,
