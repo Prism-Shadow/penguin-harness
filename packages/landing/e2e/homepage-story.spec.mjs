@@ -42,8 +42,22 @@ for (const [lang, headline, subtitle, apps, steps] of [
       for (const app of apps)
         await expect(page.locator("#cases figure").getByText(app, { exact: true })).toBeVisible();
       const loops = page.locator("#self-evolution figure").first();
-      for (const algorithm of ["OPRO", "ACE"]) {
-        const lane = loops.locator("ol").filter({ hasText: algorithm });
+      for (const [target, suite, algorithm] of [
+        [apps[0], "rag-bench-essential", "OPRO"],
+        [lang === "en" ? "Software engineering" : "软件工程", "deep-swe", "ACE"],
+      ]) {
+        const agent = loops.locator("dl").filter({ hasText: target });
+        await expect(agent.locator("dd")).toHaveText(target);
+        const lane = agent.locator("+ ol");
+        await expect(lane.getByText(algorithm, { exact: true })).toBeVisible();
+        const labels = lane.getByText(suite, { exact: true });
+        await expect(labels).toHaveCount(2);
+        const size = await labels.first().evaluate((el) => ({
+          font: parseFloat(getComputedStyle(el).fontSize),
+          fits: el.scrollWidth <= el.clientWidth,
+        }));
+        expect(size.font).toBeGreaterThanOrEqual(12);
+        expect(size.fits).toBe(true);
         await expect(lane.getByText(steps[0], { exact: true })).toHaveCount(2);
         await expect(lane.getByText(steps[1], { exact: true })).toHaveCount(1);
       }

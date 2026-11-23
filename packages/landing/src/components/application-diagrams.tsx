@@ -129,9 +129,10 @@ export function AgentEvaluationDiagram() {
       <div className="grid gap-4 sm:grid-cols-2">
         {routes.map(({ name, suite, optimizer }) => (
           <div key={suite} className={`rounded-xl px-3 pt-3 pb-2 ${PAPER}`}>
-            <p className="text-xs font-semibold sm:text-sm">
-              {c.nodeTarget} · {name}
-            </p>
+            <dl className="flex flex-wrap items-baseline gap-x-2 text-xs sm:text-sm">
+              <dt className="text-gray-600 dark:text-gray-400">{c.nodeTarget}</dt>
+              <dd className="font-semibold">{name}</dd>
+            </dl>
             <ol className="mt-3 flex items-start justify-between gap-1 text-center">
               {[
                 [c.evaluate, suite],
@@ -142,7 +143,7 @@ export function AgentEvaluationDiagram() {
                   <span className="block text-xs font-semibold text-brand-700 dark:text-brand-300">
                     {action}
                   </span>
-                  <span className="mt-1 block font-mono text-[10px] leading-tight break-words text-gray-600 sm:text-xs dark:text-gray-400">
+                  <span className="mt-1 block font-mono text-xs leading-tight break-words text-gray-600 dark:text-gray-400">
                     {target}
                   </span>
                   {index < 2 && (
