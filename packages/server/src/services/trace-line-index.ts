@@ -50,6 +50,13 @@ export interface TraceLineIndexEntry {
   /** The last record is an unterminated tail, re-read on the next growth. */
   provisionalTail: boolean;
   /** The `subagent` records, in file order: the ordinal, the child Session and when it was written. */
+  /** Sparse parent records used to group children and confirm issued tool handles. */
+  childContext: Array<{
+    ordinal: number;
+    kind: "task" | "spawn" | "handle";
+    id: string;
+    alias?: string;
+  }>;
   pointers: Array<{ ordinal: number; sessionId: string; timestamp: string }>;
 }
 
@@ -176,6 +183,7 @@ export class TraceLineIndex {
         scanned: 0,
         provisionalTail: false,
         pointers: [],
+        childContext: [],
       };
       await this.scan(path, entry, stat.size);
     } else if (stat.size > entry.size) {
@@ -190,6 +198,7 @@ export class TraceLineIndex {
           scanned: 0,
           provisionalTail: false,
           pointers: [],
+          childContext: [],
         };
         await this.scan(path, entry, stat.size);
       }
@@ -222,9 +231,38 @@ export class TraceLineIndex {
       entry.starts.pop();
       entry.ends.pop();
       if (entry.pointers.at(-1)?.ordinal === entry.starts.length) entry.pointers.pop();
+      if (entry.childContext.at(-1)?.ordinal === entry.starts.length) entry.childContext.pop();
       entry.provisionalTail = false;
     }
     const add = (record: unknown, start: number, end: number): void => {
+      const rec = record as Partial<AmspRecord> | null;
+      if (rec && !rec.origin?.length) {
+        const payload = rec.payload as
+          { type?: string; name?: string; tool_call_id?: string; output?: unknown } | undefined;
+        const ordinal = entry.starts.length;
+        if (rec.type === "event_msg" && payload?.type === "task_begin")
+          entry.childContext.push({ ordinal, kind: "task", id: "" });
+        if (
+          rec.type === "model_msg" &&
+          payload?.type === "tool_call" &&
+          payload.name === "run_subagent" &&
+          typeof payload.tool_call_id === "string"
+        )
+          entry.childContext.push({ ordinal, kind: "spawn", id: payload.tool_call_id });
+        if (
+          rec.type === "model_msg" &&
+          payload?.type === "tool_call_output" &&
+          typeof payload.output === "string" &&
+          typeof payload.tool_call_id === "string"
+        ) {
+          const alias =
+            /(?:^|\n)\[(?:subagent running(?: in background)?|moved to the background by the user) with subagent_id (subagent-[a-f0-9]{8});[^\n]*\]$/.exec(
+              payload.output,
+            )?.[1];
+          if (alias)
+            entry.childContext.push({ ordinal, kind: "handle", id: payload.tool_call_id, alias });
+        }
+      }
       const pointer = pointerOf(record);
       if (pointer !== null) entry.pointers.push({ ordinal: entry.starts.length, ...pointer });
       entry.starts.push(start);

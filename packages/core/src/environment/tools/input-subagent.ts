@@ -29,7 +29,6 @@ import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import {
   DEFAULT_SUBAGENT_POLL_YIELD_MS,
   DEFAULT_SUBAGENT_YIELD_MS,
-  ManagedSubagentSession,
   resultForSubagentExit,
 } from "./subagent/index.js";
 import { approvalHint } from "./run-subagent.js";
@@ -74,30 +73,45 @@ export function createInputSubagentTool(
         // left the registry (idle release) resumes through the runner — the same revival the
         // panel gets. Only an id this parent never allocated, or a missing/failed resume,
         // still errors.
-        const clue = manager.releasedInfo(subagentId);
         const runner = services?.subagentRunner;
-        if (clue && runner?.resume && !manager.isDisposed && manager.makeRoom()) {
-          try {
-            const handle = await runner.resume({
-              sessionId: clue.sessionId,
-              ...(clue.agentId !== undefined ? { agentId: clue.agentId } : {}),
-            });
-            const revived = new ManagedSubagentSession(handle, {
-              ...(clue.agentId !== undefined ? { resumeAgentId: clue.agentId } : {}),
-            });
-            manager.track(revived);
-            manager.register(revived); // The id derives from the session tail: same handle as before.
-            session = revived;
-            yield delta(`[subagent ${subagentId} resumed]\n`);
-          } catch {
-            session = undefined;
+        try {
+          const clue =
+            manager.releasedInfo(subagentId) ?? (await manager.resolveHistorical?.(subagentId));
+          if (clue?.agentId === null) {
+            yield delta(
+              `[input_subagent error: the original child for ${subagentId} is missing and cannot be resumed]`,
+            );
+            return { status: "fatal" };
           }
+          if (clue && runner) {
+            if (!manager.bySessionId(clue.sessionId) && !manager.makeRoom()) {
+              yield delta(
+                `[input_subagent error: all subagent slots are busy; retry when one becomes idle]`,
+              );
+              return { status: "fatal" };
+            }
+            session =
+              (await manager.restore(
+                {
+                  sessionId: clue.sessionId,
+                  ...(clue.agentId !== undefined ? { agentId: clue.agentId } : {}),
+                },
+                runner,
+                subagentId,
+              )) ?? undefined;
+            if (session) yield delta(`[subagent ${subagentId} resumed]\n`);
+          }
+        } catch (err) {
+          yield delta(
+            `[input_subagent error: cannot resume ${subagentId}: ${err instanceof Error ? err.message : String(err)}]`,
+          );
+          return { status: "fatal" };
         }
       }
       if (!session) {
         yield delta(
           `[input_subagent error: unknown subagent_id ${subagentId} ` +
-            `(not from this conversation, or its session could not be resumed)]`,
+            `(no unique surviving child could be verified for this handle in this conversation)]`,
         );
         return { status: "fatal" };
       }

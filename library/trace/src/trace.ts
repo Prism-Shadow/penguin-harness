@@ -605,10 +605,26 @@ export abstract class TraceIndex {
   abstract removeProject(projectId: string): void;
 }
 
+export interface OwnedSubagent {
+  sessionId: string;
+  agentId: string | null;
+  spawnedAt: string;
+  position: string;
+  turnKey: string;
+  alias: string | null;
+  title: string | null;
+}
+
 /** Traces: the mechanism TraceService implements. */
 @Interface()
 export abstract class Traces {
   abstract observeShardRead?: ((path: string) => void) | undefined;
+  abstract ownedSubagents(parent: {
+    projectId: string;
+    agentId: string;
+    sessionId: string;
+    createdAt: string;
+  }): Promise<OwnedSubagent[]>;
   abstract subagentChildren(
     projectId: string,
     agentId: string,
