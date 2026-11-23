@@ -13,9 +13,10 @@ import { latestConversation, withoutOrgSessions } from "../../../lib/session-gro
 import { noteSessionSeen } from "../../../lib/session-seen";
 import { latestTaskHasSubagent, taskStartCount } from "../agent-topology";
 import { DRAFT_SESSION_ID } from "../draft-sessions";
-import { matchesSessionId, routeSessionOutcome, sessionForProject } from "../session-project";
+import { routeSessionOutcome, sessionForProject } from "../session-project";
 import { RouteProbe } from "../route-probe";
-import { machineForSession } from "../../../lib/session-machines";
+import { machineForSession, rememberSessionMachine } from "../../../lib/session-machines";
+import { createSourceListing, resolveRouteLookupId } from "./short-id-lookup";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "../chat-defaults-event";
 import { goalPluginGate } from "../goal-plugin-gate";
 import { usePromptModes, useSessionSwitches } from "../prompt-modes";
@@ -49,6 +50,7 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
     sessions,
     sessionsLoading,
     machineLabels,
+    machineIds,
     machinesUnreachable,
     offlineMachineIds,
     reloadSessions,
@@ -361,25 +363,25 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
     // lifetime to one run is what made a deep link issue a dozen identical requests. One
     // lookup per Session in flight, the list's loading read when it settles, and an answer
     // about a Session the route has left dropped: see route-probe.ts.
-    let lookupId = routeSessionId;
-    for (const orgSnap of company.orgSessions.values()) {
-      const deskHit = orgSnap.desks.find((d) => matchesSessionId(d.sessionId, routeSessionId));
-      if (deskHit) {
-        lookupId = deskHit.sessionId;
-        break;
-      }
-      for (const t of orgSnap.tickets) {
-        const ticketHit = t.sessions.find((s) => matchesSessionId(s.sessionId, routeSessionId));
-        if (ticketHit) {
-          lookupId = ticketHit.sessionId;
-          break;
-        }
-      }
-      if (lookupId !== routeSessionId) break;
-    }
+    const listing = createSourceListing(projectId, api);
     routeProbe.run(
       probeKey,
-      async () => sessionForProject((await api.getSession(lookupId)).session, projectId),
+      async () => {
+        // A full id is asked for as it stands. A short id is resolved first — freshly, over
+        // what the Project's servers answer for right now, so a cold start resolves like a
+        // warm one and no loaded page or snapshot takes part — and only a unique readable
+        // Session opens. No unique answer: the route id is asked for as it stands, which no
+        // server holds a row for, and the 404 the page already owns up to is the refusal.
+        const lookup = await resolveRouteLookupId(routeSessionId, machineIds, listing);
+        if (lookup !== null && typeof lookup.machineId === "string") {
+          rememberSessionMachine(lookup.sessionId, lookup.machineId);
+        }
+        const asked = lookup ?? { sessionId: routeSessionId };
+        return sessionForProject(
+          (await api.getSession(asked.sessionId, asked.machineId)).session,
+          projectId,
+        );
+      },
       {
         found: (session, listLoading) => {
           setFetchedSession(session);
@@ -415,6 +417,7 @@ export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscr
     selected,
     addSession,
     isSessionDeleted,
+    machineIds,
   ]);
   // The row found during the list's first load, added once the list has settled and only if
   // it did not bring the row itself (one beyond the first page, or an organization's row,
