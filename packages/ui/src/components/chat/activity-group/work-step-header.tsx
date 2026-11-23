@@ -40,6 +40,7 @@ export function WorkStepHeader({
     <>
       <ActivityMarkSlot mark={<StatusIcon state={summary.state} label={summary.stateLabel} />} />
       <span
+        data-step-summary=""
         className={`flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap sm:gap-2 ${live ? "w-56 max-w-[50%]" : ""}`}
       >
         <span

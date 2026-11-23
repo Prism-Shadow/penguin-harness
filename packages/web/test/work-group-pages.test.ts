@@ -202,13 +202,17 @@ describe("work display modes", () => {
       expect(header().textContent).not.toContain("资");
       item.argumentsText = JSON.stringify({ description: "核对会议记录", file_path: path });
       await view.rerender(group([item]));
+      const details = () => header().querySelectorAll('[data-step-summary] [data-slot="detail"]');
+      expect(details()).toHaveLength(2);
       expect(header().textContent).toContain("…/每周 计划/项目  记录.md");
       expect(
         header().querySelector('[data-tooltip-content="code"]')?.getAttribute("data-tooltip"),
       ).toBe(path);
       item.argumentsText = JSON.stringify({ description: path, file_path: path });
       await view.rerender(group([item]));
-      expect(header().querySelectorAll('[data-slot="detail"]')).toHaveLength(1);
+      expect(details()).toHaveLength(1);
+      expect(details()[0]!.getAttribute("data-tooltip-content")).toBe("code");
+      expect(details()[0]!.getAttribute("data-tooltip")).toBe(path);
       expect(rows()).toHaveLength(0);
     },
   );
