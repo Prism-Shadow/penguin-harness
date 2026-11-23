@@ -185,6 +185,7 @@ export function createMainChatView(
         : {})}
       goalPlugin={goalPlugin}
       switches={switches}
+      initialSteeringSkills={sessionDraft.steeringSkills}
       onSkillsChange={onDraftSkillsChange}
       onHandoff={onHandoff}
       initialText={sessionDraft.text ?? ""}
