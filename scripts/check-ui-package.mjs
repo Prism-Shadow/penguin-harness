@@ -222,9 +222,12 @@ try {
     ...result.extra.map((d) => say(d)),
   ];
 
-  const declarations = ["dist/index.d.ts", "dist/a2ui.d.ts", "dist/highlighter.d.ts"].map((file) =>
-    join(installed, file),
-  );
+  const declarations = [
+    "dist/index.d.ts",
+    "dist/a2ui.d.ts",
+    "dist/chat-markdown.d.ts",
+    "dist/highlighter.d.ts",
+  ].map((file) => join(installed, file));
   const npmResult = compile(
     project,
     {
