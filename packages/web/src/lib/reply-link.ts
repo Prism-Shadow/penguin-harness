@@ -26,6 +26,7 @@
  */
 import type { MouseEvent } from "react";
 import { toWorkspaceRelative } from "./file-path";
+import { isPlainClick } from "./shortcuts/plain-click";
 
 export type ReplyLink =
   | { kind: "external" }
@@ -37,12 +38,39 @@ export type ReplyLink =
 /** A URL scheme, as the URL parser reads one: a letter, then letters, digits, `+`, `.` or `-`, then `:`. */
 const SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
 
-/** An internal SPA route (`/chat/<sessionId>` or `/org…`), or a localhost URL pointing to one. */
-const APP_ROUTE_RE = /^\/(?:chat\/[^\s/?#]+|org(?:\/[^\s?#]*)?)(?:[?#].*)?$/;
-const LOCALHOST_ROUTE_RE =
-  /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?(\/(?:chat\/[^\s/?#]+|org(?:\/[^\s?#]*)?)(?:[?#].*)?)$/i;
+/**
+ * The hosts a link may point at and still count as the App's own: the dev server and the
+ * desktop shell serve the SPA from localhost. The names are compared against the URL parser's
+ * normalized form — case, default ports and IPv4 spellings are the parser's work — never
+ * against the href's raw text, so `HTTP://LOCALHOST:80/…`, `//localhost/…` and
+ * `http://127.0.0.1/…` all count, while `localhost.evil.com`, `localhost:80@evil.com` and
+ * `localhost.` stay external.
+ */
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
-import { isPlainClick } from "./shortcuts/plain-click";
+/**
+ * The internal SPA route an href holds, when it holds one — `/chat/<sessionId>`, `/org…`, or a
+ * localhost URL pointing at either. WHATWG-parsed, so the decision runs on the parsed URL, not
+ * the raw string: a path that normalizes into a route (`/chat/../chat/x`) is one, a path that
+ * normalizes out of both families (`/chat/` alone, `/chat/x/../..`) is not, and anything that
+ * is neither rooted nor carries a scheme is a Workspace file candidate and skips this entirely.
+ */
+function internalRoute(href: string): string | null {
+  if (!href.startsWith("/") && !SCHEME_RE.test(href)) return null;
+  let url: URL;
+  try {
+    url = new URL(href, "http://localhost/");
+  } catch {
+    return null;
+  }
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || !LOCAL_HOSTS.has(url.hostname)) {
+    return null;
+  }
+  const to = `${url.pathname}${url.search}${url.hash}`;
+  if (url.pathname.startsWith("/chat/") && url.pathname.length > "/chat/".length) return to;
+  if (url.pathname === "/org" || url.pathname.startsWith("/org/")) return to;
+  return null;
+}
 
 const EXTERNAL: ReplyLink = { kind: "external" };
 const NONE: ReplyLink = { kind: "none" };
@@ -62,9 +90,8 @@ export function resolveReplyLink(href: string | undefined, workspace: string | n
     const id = decode(href.slice(1));
     return id === null || id === "" ? NONE : { kind: "anchor", id };
   }
-  const localRoute = LOCALHOST_ROUTE_RE.exec(href);
-  if (localRoute !== null) return { kind: "route", to: localRoute[1]! };
-  if (APP_ROUTE_RE.test(href)) return { kind: "route", to: href };
+  const route = internalRoute(href);
+  if (route !== null) return { kind: "route", to: route };
   if (href.startsWith("//") || SCHEME_RE.test(href)) return EXTERNAL;
   const decoded = decode(href.replace(/[?#].*$/, ""));
   if (decoded === null) return NONE;

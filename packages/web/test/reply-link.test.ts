@@ -109,10 +109,18 @@ describe("resolveReplyLink", () => {
       kind: "route",
       to: "/chat/session-2026-11-19-09-52-07-48a86320",
     });
+    expect(resolveReplyLink("/chat/2556a209", WS)).toEqual({ kind: "route", to: "/chat/2556a209" });
+    expect(resolveReplyLink("/org", WS)).toEqual({ kind: "route", to: "/org" });
     expect(resolveReplyLink("/org/tickets", WS)).toEqual({
       kind: "route",
       to: "/org/tickets",
     });
+    expect(resolveReplyLink("/org/tickets?state=open#top", WS)).toEqual({
+      kind: "route",
+      to: "/org/tickets?state=open#top",
+    });
+    // Localhost forms: the URL parser's normalization is what the host check reads, so case,
+    // default ports and protocol-relative spellings all land on the route; query and hash ride.
     expect(resolveReplyLink("http://localhost:17469/chat/2556a209", WS)).toEqual({
       kind: "route",
       to: "/chat/2556a209",
@@ -122,6 +130,48 @@ describe("resolveReplyLink", () => {
     ).toEqual({
       kind: "route",
       to: "/chat/session-2026-11-19-09-52-07-48a86320",
+    });
+    expect(resolveReplyLink("HTTP://LOCALHOST/chat/x?y=1#z", WS)).toEqual({
+      kind: "route",
+      to: "/chat/x?y=1#z",
+    });
+    expect(resolveReplyLink("http://localhost/chat/../chat/x", WS)).toEqual({
+      kind: "route",
+      to: "/chat/x",
+    });
+    expect(resolveReplyLink("//localhost:17469/org/tickets", WS)).toEqual({
+      kind: "route",
+      to: "/org/tickets",
+    });
+  });
+
+  it("an href on another host stays external, however much it resembles a local route", () => {
+    for (const href of [
+      "https://evil.com/chat/session-2026-11-19-09-52-07-48a86320",
+      "//evil.com/chat/x",
+      "http://localhost.evil.com/chat/x",
+      "http://127.0.0.1.evil.com/chat/x",
+      "http://localhost@evil.com/chat/x",
+      "http://localhost:80@evil.com/chat/x",
+      "http://localhost./chat/x",
+      "https://example.com/org/tickets",
+    ]) {
+      expect(resolveReplyLink(href, WS)).toEqual({ kind: "external" });
+    }
+  });
+
+  it("a path that is not an app route goes on to the file sorting, as before", () => {
+    // The URL parser normalizes these first: what is left is outside both route families.
+    expect(resolveReplyLink("/chat/", WS)).toEqual({ kind: "none" });
+    expect(resolveReplyLink("/chat", WS)).toEqual({ kind: "none" });
+    expect(resolveReplyLink("/chat/x/../..", WS)).toEqual({ kind: "none" });
+    expect(resolveReplyLink("http://localhost/chat/x/../../etc", WS)).toEqual({
+      kind: "external",
+    });
+    expect(resolveReplyLink("http://localhost/file.md", WS)).toEqual({ kind: "external" });
+    expect(resolveReplyLink(`${WS}/out/pelican-bike.html`, WS)).toEqual({
+      kind: "file",
+      path: "out/pelican-bike.html",
     });
   });
 });
@@ -216,5 +266,48 @@ describe("replyLinkBehavior", () => {
     expect(event.preventDefault).toHaveBeenCalledOnce();
     expect(openRoute).toHaveBeenCalledExactlyOnceWith("/chat/session-2026-11-19-09-52-07-48a86320");
     expect(openFile).not.toHaveBeenCalled();
+  });
+
+  it("a localhost route navigates in-place on a plain click and is the browser's on a modified one", () => {
+    const openRoute = vi.fn();
+    const href = "http://localhost:17469/chat/2556a209";
+    const behavior = replyLinkBehavior(href, { workspace: WS, openFile: vi.fn(), openRoute });
+    // Plain: in place, on the path the URL parser normalized out of the href.
+    const plain = click();
+    behavior.onClick!(plain);
+    expect(plain.preventDefault).toHaveBeenCalledOnce();
+    expect(openRoute).toHaveBeenCalledExactlyOnceWith("/chat/2556a209");
+    // Ctrl (or any modifier): the browser's own gesture — new tab, nothing prevented.
+    const modified = Object.assign(click(), { ctrlKey: true });
+    behavior.onClick!(modified);
+    expect(modified.preventDefault).not.toHaveBeenCalled();
+    expect(openRoute).toHaveBeenCalledOnce();
+  });
+
+  it("a localhost route without openRoute walks the History API in place", () => {
+    const pushState = vi.fn();
+    const dispatched: unknown[] = [];
+    vi.stubGlobal("window", {
+      history: { pushState },
+      dispatchEvent: (event: unknown) => {
+        dispatched.push(event);
+        return true;
+      },
+    });
+    vi.stubGlobal("PopStateEvent", class PopStateEvent {
+      constructor(
+        public type: string,
+        public init?: unknown,
+      ) {}
+    });
+    const behavior = replyLinkBehavior("http://localhost:17469/chat/2556a209", {
+      workspace: WS,
+      openFile: vi.fn(),
+    });
+    behavior.onClick!(click());
+    expect(pushState).toHaveBeenCalledExactlyOnceWith({}, "", "/chat/2556a209");
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0]).toBeInstanceOf(PopStateEvent);
+    expect((dispatched[0] as { type: string }).type).toBe("popstate");
   });
 });
