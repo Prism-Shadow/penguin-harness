@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1764
 
 [中文版](2026-11-23-right-dock-app-center.zh.md)
 

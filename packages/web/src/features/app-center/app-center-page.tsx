@@ -501,11 +501,7 @@ export function AppCenterPage() {
             )}
             {grid === null ? (
               error === null && (
-                <ul
-                  className={gridClass}
-                  aria-busy
-                  aria-label={S.appCenter.loading}
-                >
+                <ul className={gridClass} aria-busy aria-label={S.appCenter.loading}>
                   {[0, 1, 2, 3].map((i) => (
                     <li key={i} className="flex flex-col items-center gap-2 p-2">
                       <AppIconShape>
@@ -536,10 +532,7 @@ export function AppCenterPage() {
                     {...drag.areaProps({ kind: "end" }, () => true)}
                     className="relative flex-1 pb-6"
                   >
-                    <ul
-                      className={gridClass}
-                      aria-label={S.appCenter.title}
-                    >
+                    <ul className={gridClass} aria-label={S.appCenter.title}>
                       {grid.map((item) =>
                         item.type === "app" ? (
                           appTile(item, null)
