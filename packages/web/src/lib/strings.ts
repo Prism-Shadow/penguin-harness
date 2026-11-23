@@ -4300,6 +4300,7 @@ export const zh = {
     start: {
       tagline: "创建你的第一个 Agent OS",
       shuffle: "换一组示例",
+      moreExamples: "更多示例",
       examplesTitle: "示例与快捷指令",
     },
     shortcuts: {
@@ -4330,7 +4331,7 @@ export const zh = {
      */
     exampleTasks: {
       game: {
-        label: "企鹅滑雪大冒险小游戏",
+        label: "企鹅滑雪",
         desc: "滑雪大冒险式的 2D 小游戏：企鹅踩着滑雪板冲下陡坡，飞过坡顶在空中翻滚得分，摔倒了爬起来接着滑",
         prompt:
           "做一个类似《滑雪大冒险》（Ski Safari）的 2D 小游戏：一只可爱的南极企鹅踩着醒目的滑雪板往山下滑。" +
@@ -4342,7 +4343,7 @@ export const zh = {
           "完成后在浏览器里自测一次，并告诉我怎么打开和怎么玩。",
       },
       gamecenter: {
-        label: "多智能体搭建小游戏中心",
+        label: "迷你游戏厅",
         desc: "并行产出 10 个玩法互不重复的纯前端小游戏，配一个统一风格的索引首页",
         prompt: `用多智能体并行搭建一个网页小游戏中心：10 个玩法互不重复的纯前端小游戏，外加一个索引首页。
 
@@ -4364,7 +4365,7 @@ export const zh = {
 - 在浏览器里逐个自测，确认都能开始、能结束、能重开，然后告诉我怎么打开。`,
       },
       lol: {
-        label: "英雄联盟音乐播放器",
+        label: "英雄联盟音乐",
         desc: "用 SoundCloud Widget API 播放历届 Worlds 主题曲，单文件即开即用",
         prompt: `用 SoundCloud Widget API（见 https://developers.soundcloud.com/docs/api/html5-widget）做一个英雄联盟 Worlds 主题曲播放器，单文件 index.html，file:// 打开即用。
 
@@ -4394,7 +4395,7 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
 完成后在浏览器打开 index.html 自测一次。`,
       },
       rhythmRunner: {
-        label: "企鹅音乐节奏跑酷小游戏",
+        label: "节奏跑酷",
         desc: "喵斯快跑式的节奏跑酷：接上方音符时企鹅飞起来，接下方音符时趴上雪橇贴地滑行",
         prompt:
           "做一个喵斯快跑（Muse Dash）式的音乐节奏跑酷小游戏：主角是一只企鹅，自动向前跑；" +
@@ -4404,7 +4405,7 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
           "纯前端单文件，file:// 直接打开即玩。",
       },
       ragDocsExpert: {
-        label: "一句话生成 RAG 文档专家",
+        label: "文档问答",
         desc: "新建文档专家智能体，在专属工作台检索文档、提问并查看来源引用",
         prompt:
           "用 PenguinHarness 的 Plugin 能力新建 Claude Code 文档专家智能体，并给它做一个 Agent Workbench 标签页：" +
@@ -4412,7 +4413,7 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
           "完成后告诉我如何进入该智能体、新建对话并打开工作台使用。",
       },
       investmentCopilot: {
-        label: "一句话生成投资分析助理",
+        label: "投资分析",
         desc: "新建投资分析智能体，在专属工作台看行情、查公司并追问市场因素",
         prompt:
           "用 PenguinHarness 的 Plugin 能力新建投资分析智能体，并给它做一个 Agent Workbench 标签页：" +
@@ -4421,7 +4422,7 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
           "完成后告诉我如何进入该智能体、新建对话并打开工作台使用。",
       },
       legalDesk: {
-        label: "一句话构建法务智能体应用",
+        label: "法务助手",
         desc: "新建法务智能体，在专属工作台上传合同、查看处理状态并下载审阅报告",
         prompt:
           "用 PenguinHarness 的 Plugin 能力新建法务智能体，并给它做一个 Agent Workbench 标签页：" +
@@ -4429,7 +4430,7 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
           "适配明暗主题。完成后告诉我如何进入该智能体、新建对话并打开工作台使用。",
       },
       agentBenchmarkBuild: {
-        label: "构建通用决策智能体和评测基准",
+        label: "决策评测",
         desc: "创建一个通用决策 Agent，并用足球、售后和投资任务检验它",
         prompt: `请依次使用 \`agent-initialization\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
 
@@ -4450,7 +4451,7 @@ Benchmark：
 3. 根据投资策略、历史市场与当前指标选择投资动作。`,
       },
       agentOptimization: {
-        label: "优化决策智能体",
+        label: "优化智能体",
         desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
         prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
 
@@ -4462,7 +4463,7 @@ Benchmark：
 - candidate_round_limit：\`5\``,
       },
       benchmarkImport: {
-        label: "导入 GDPEVO Essential 服务工单处理评测集",
+        label: "导入工单评测",
         desc: "导入 GDPEVO Essential 服务工单处理场景的训练集与测试集：在训练集上优化 Agent，再到没见过的测试题上检验提升",
         prompt:
           "用 `benchmark-design` 导入训练集及配对测试集：" +
@@ -4470,7 +4471,7 @@ Benchmark：
           "本项目已有则告知，不要覆盖。",
       },
       dailyPlan: {
-        label: "每天早 9 点的计划对话",
+        label: "每日计划",
         desc: "每天 09:00 在同一个会话里聊当天计划，并回顾昨天的进展",
         prompt:
           "建一个定时任务：每天早上 9 点在这个会话里和我聊今天的计划。" +
@@ -4478,14 +4479,14 @@ Benchmark：
           "我确认后写成清单。",
       },
       githubDigest: {
-        label: "每天汇总 GitHub 项目状态",
+        label: "GitHub简报",
         desc: "定时跑一遍仓库的 Issue、PR 与 CI，日报结尾给出按优先级排序的建议",
         prompt:
           "建一个定时任务：每天早上用 gh 汇总一个 GitHub 仓库的 Issue、PR 与 CI 状态，" +
           "挑出停滞的、待评审的和挂掉的，结尾给出按优先级排序的建议，每条说清为什么排在这个位置。",
       },
       memoryReview: {
-        label: "每周五晚回顾并记录 Memory",
+        label: "每周记忆回顾",
         desc: "周五傍晚一起过一遍这周值得长期记住的事，确认后由你写进 Memory",
         prompt:
           "建一个定时任务：每周五傍晚在这个会话里和我过一遍这周值得长期记住的事。" +

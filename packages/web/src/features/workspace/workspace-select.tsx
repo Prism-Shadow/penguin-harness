@@ -24,7 +24,7 @@ import { baseName } from "./workspace-finder-model";
  * that draws the edge of what a person presses draws the capsule's too.
  */
 export const pillClass =
-  "flex max-w-64 items-center gap-1.5 rounded-[var(--ui-radius-pill)] border border-line-emphasis " +
+  "flex min-w-0 max-w-[min(16rem,100%)] items-center gap-1.5 rounded-[var(--ui-radius-pill)] border border-line-emphasis " +
   "bg-control py-1 pl-1.5 pr-2 text-xs text-fg-muted transition-colors duration-150 " +
   "hover:bg-control-hover hover:text-fg";
 

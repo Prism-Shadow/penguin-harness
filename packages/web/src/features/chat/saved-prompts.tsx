@@ -1,5 +1,5 @@
 /** Account shortcuts sit beside suggestions. The editor saves their title and prompt together. */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Button,
   ConfirmModal,
@@ -7,8 +7,8 @@ import {
   ICONS,
   IconButton,
   ICON_SIZE,
-  Modal,
   PlusIcon,
+  Modal,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -23,13 +23,18 @@ import {
 } from "./user-shortcuts";
 import { toastApiError } from "../../lib/toast-api-error";
 
+import { PromptButton, shortPromptTitle, type PromptAction } from "./prompt-action-row";
 import { ShortcutDialog } from "./shortcut-dialog";
 
 export function SavedPrompts({
   exampleText,
   readComposerText,
   onFill,
+  renderActions,
+  locale,
 }: {
+  locale: string;
+  renderActions?: (actions: PromptAction[]) => ReactNode;
   exampleText?: string | null;
   /** The composer's current text, read at click time — a new shortcut starts from what was typed. */
   readComposerText: () => string;
@@ -100,56 +105,37 @@ export function SavedPrompts({
     return true;
   };
 
+  const actions: PromptAction[] = shortcuts.map((shortcut) => ({
+    id: "saved/" + shortcut.id,
+    label: shortcut.title,
+    preview: shortPromptTitle(shortcut.title, locale),
+    hint: shortcut.title,
+    slot: "saved-prompt",
+    current: shortcut.prompt === exampleText,
+    glyph: shortcut.prompt === exampleText ? ICONS.check : ICONS.zap,
+    run: () => onFill(shortcut.prompt),
+  }));
+  if (readFailed)
+    actions.push({
+      id: "retry",
+      label: S.chat.shortcuts.retry,
+      run: () => {
+        setReadFailed(false);
+        setReadAttempt((attempt) => attempt + 1);
+      },
+    });
+  if (loaded)
+    actions.push({
+      id: "manage",
+      label: shortcuts.length ? S.chat.shortcuts.manage : S.chat.shortcuts.new,
+      glyph: shortcuts.length ? ICONS.pencil : ICONS.plus,
+      run: () => (shortcuts.length ? setManaging(true) : startCreate()),
+    });
   return (
     <>
-      {shortcuts.map((shortcut) => (
-        <Button
-          key={shortcut.id}
-          size="sm"
-          className="min-h-9 max-w-full"
-          data-slot="saved-prompt"
-          aria-current={shortcut.prompt === exampleText || undefined}
-          title={shortcut.prompt}
-          onClick={() => onFill(shortcut.prompt)}
-          leading={
-            <GlyphIcon
-              d={shortcut.prompt === exampleText ? ICONS.check : ICONS.zap}
-              size={ICON_SIZE.inlineGlyph}
-            />
-          }
-        >
-          <span className="min-w-0 truncate">{shortcut.title}</span>
-        </Button>
-      ))}
-      {readFailed && (
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            setReadFailed(false);
-            setReadAttempt((attempt) => attempt + 1);
-          }}
-        >
-          {S.chat.shortcuts.retry}
-        </Button>
-      )}
-      {loaded && (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="min-h-9"
-          leading={
-            shortcuts.length ? (
-              <GlyphIcon d={ICONS.pencil} size={ICON_SIZE.inlineGlyph} />
-            ) : (
-              <PlusIcon size={ICON_SIZE.inlineGlyph} />
-            )
-          }
-          onClick={() => (shortcuts.length ? setManaging(true) : startCreate())}
-        >
-          {shortcuts.length ? S.chat.shortcuts.manage : S.chat.shortcuts.new}
-        </Button>
-      )}
+      {renderActions
+        ? renderActions(actions)
+        : actions.map((action) => <PromptButton key={action.id} action={action} />)}
       <Modal
         open={managing}
         title={S.chat.shortcuts.manage}
@@ -159,7 +145,7 @@ export function SavedPrompts({
         <ul>
           {shortcuts.map((shortcut) => (
             <li key={shortcut.id} className="flex items-center gap-2 py-1">
-              <span className="min-w-0 flex-1 break-words">{shortcut.title}</span>
+              <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{shortcut.title}</span>
               <IconButton
                 label={S.common.edit}
                 variant="ghost"
