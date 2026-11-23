@@ -79,9 +79,9 @@ FunctionEnd
 ; cross UAC in NSIS registers and reach PowerShell through its own environment.
 Function PHDataHelper
   InitPluginsDir
-  File /oname=$PLUGINSDIR\ph-data-setup.ps1 "${BUILD_RESOURCES_DIR}/windows-data/Setup.ps1"
-  File /oname=$PLUGINSDIR\Paths.ps1 "${BUILD_RESOURCES_DIR}/windows-data/Paths.ps1"
-  File /oname=$PLUGINSDIR\Copy.ps1 "${BUILD_RESOURCES_DIR}/windows-data/Copy.ps1"
+  File /oname=$PLUGINSDIR\ph-data-setup.ps1 "${BUILD_RESOURCES_DIR}\windows-data\Setup.ps1"
+  File /oname=$PLUGINSDIR\Paths.ps1 "${BUILD_RESOURCES_DIR}\windows-data\Paths.ps1"
+  File /oname=$PLUGINSDIR\Copy.ps1 "${BUILD_RESOURCES_DIR}\windows-data\Copy.ps1"
   System::Call 'kernel32::SetEnvironmentVariableW(w "PH_SETUP_PROGRAM", w r1)i'
   System::Call 'kernel32::SetEnvironmentVariableW(w "PH_SETUP_DATA", w r2)i'
   nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\ph-data-setup.ps1" -Action $3'
