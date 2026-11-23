@@ -24,6 +24,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
+import { setAccountPrefs } from "./account-prefs.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
@@ -426,9 +427,21 @@ test("previous and next turns retain the original child through another send and
   const previous = dock.getByRole("button", { name: "上一轮", exact: true });
   const next = dock.getByRole("button", { name: "下一轮", exact: true });
   await expect(previous).toBeEnabled();
+  const readout = dock.locator('[aria-live="polite"]').filter({ hasText: /^第 \d+ 页$/ });
+  await expect(readout).toHaveText("第 2 页");
+  await expect(next).toBeDisabled();
+  const title = await dock.getByText("调用关系", { exact: true }).boundingBox();
+  const pageNumber = await readout.boundingBox();
+  expect(pageNumber.x).toBeGreaterThan(title.x + title.width);
+  expect(
+    Math.abs(pageNumber.y + pageNumber.height / 2 - (title.y + title.height / 2)),
+  ).toBeLessThan(3);
   const secondId = await identity.getAttribute("data-tooltip");
   expect(secondId).not.toBe(firstId);
-  await previous.click();
+  await previous.focus();
+  await page.keyboard.press("Enter");
+  await expect(readout).toHaveText("第 1 页");
+  await expect(previous).toBeDisabled();
   await expect(identity).toHaveAttribute("data-tooltip", firstId);
   await graph.getByRole("button").last().focus();
   await send("run another subagent", 3);
@@ -479,6 +492,29 @@ test("previous and next turns retain the original child through another send and
   await expect(cold.getByTestId("dock").getByText(CHILD_PROMPT)).toBeVisible();
   await cold.getByTestId("subagent-open-session").click();
   await expect(cold).toHaveURL(new RegExp(`/chat/${firstId}$`));
+
+  await setAccountPrefs(cold.request, { lang: "en" });
+  await cold.setViewportSize({ width: 1000, height: 750 });
+  await cold.goto(`${BASE}/chat/${sessionId}`);
+  const narrow = cold
+    .getByTestId("dock")
+    .filter({ has: cold.getByText("Call graph", { exact: true }) });
+  const previousEn = narrow.getByRole("button", { name: "Previous turn", exact: true });
+  if (!(await previousEn.isVisible())) await cold.getByTestId("dock-toggle-right").click();
+  await expect(previousEn).toBeVisible();
+  await expect(narrow.getByText("Page 3", { exact: true })).toBeVisible();
+  await previousEn.focus();
+  await cold.keyboard.press("Space");
+  const englishPage = narrow.getByText("Page 2", { exact: true });
+  await expect(englishPage).toBeVisible();
+  const headingBox = await narrow.getByText("Call graph", { exact: true }).boundingBox();
+  const narrowBox = await narrow.boundingBox();
+  const readoutBox = await englishPage.boundingBox();
+  expect(narrowBox.width).toBeLessThan(480);
+  expect(readoutBox.x).toBeGreaterThan(headingBox.x + headingBox.width);
+  expect(
+    Math.abs(readoutBox.y + readoutBox.height / 2 - (headingBox.y + headingBox.height / 2)),
+  ).toBeLessThan(3);
 });
 
 test("a fork can read the copied messages without acquiring its source's child in the Agents panel", async ({

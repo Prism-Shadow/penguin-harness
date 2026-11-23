@@ -5727,6 +5727,7 @@ Benchmark：
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
+    page: (n: number) => `第 ${n} 页`,
     previousTurn: "上一轮",
     nextTurn: "下一轮",
     latestTurn: "最新一轮",

@@ -5481,6 +5481,7 @@ Scenarios:
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
+    page: (n: number) => `Page ${n}`,
     previousTurn: "Previous turn",
     nextTurn: "Next turn",
     latestTurn: "Latest turn",
