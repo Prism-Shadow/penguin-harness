@@ -28,6 +28,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { libraryParts } from "@prismshadow/penguin-core";
 
 const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const { FAR_SIDE_SCRIPTS } = await import(
@@ -120,14 +121,18 @@ for (const app of dirs) {
   // The plugin library travels as electron-builder's collected dependencies, at the app root's
   // node_modules: the packed server resolves each package by name from there, and a plugin
   // that did not make it in is simply absent from every Agent's library, with nothing else
-  // failing. Each one is its manifest (package.json) beside the skills, hooks or workbenches it ships.
+  // failing. Verify each package's actual declarations, including server-only modules.
   const pluginFiles = pluginNames.map((name) => `node_modules/${name}/package.json`);
   for (const name of pluginNames) {
-    const content = ["skills", "hooks", "workbenches"].map((sub) =>
-      path.join(app, "node_modules", name, sub),
-    );
-    if (!content.some((dir) => fs.existsSync(dir))) {
-      problems.push(`${app}: node_modules/${name} carries no skills/, hooks/ or workbenches/.`);
+    const dir = path.join(app, "node_modules", name);
+    const parts = libraryParts(dir);
+    if (!Object.values(parts).some(Boolean)) {
+      problems.push(`${dir}: no declared Agent contributions or loadable server module.`);
+    }
+    for (const sub of ["skills", "hooks", "workbenches"]) {
+      if (parts[sub] && !fs.existsSync(path.join(dir, sub))) {
+        problems.push(`${dir}: missing declared ${sub}/.`);
+      }
     }
   }
   for (const rel of [
@@ -201,6 +206,16 @@ for (const app of dirs) {
   }
   ran += 1;
   console.log(`[verify-packed-cli] ${app}: penguin --version -> ${printed}`);
+  // Exercise the native engine from the server's installed prefix, with no PATH Git or network.
+  const gitSmoke = spawnSync(
+    process.execPath,
+    [
+      path.resolve(pkgDir, "../../plugins/agent-state-git/test/packed.mjs"),
+      path.join(app, "plugins/node_modules/@penguinharness/agent-state-git"),
+    ],
+    { stdio: "inherit" },
+  );
+  if (gitSmoke.status !== 0) problems.push(`${app}: native Git failed to save and read a version.`);
 }
 
 if (ran === 0 && problems.length === 0) {
