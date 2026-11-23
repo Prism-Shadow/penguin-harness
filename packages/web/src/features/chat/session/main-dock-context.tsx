@@ -32,7 +32,10 @@ export interface ChatDockState {
   /** The subagents panel's model view: the live model with the backfilled windows merged in. */
   panelModel: StreamModel;
   /** The stream's repaint signal, its run state and the runtime's live subagent children. */
-  stream: Pick<SessionStreamState, "version" | "taskState" | "subagents">;
+  stream: Pick<
+    SessionStreamState,
+    "version" | "taskState" | "subagents" | "subscriptionGeneration"
+  >;
   /** The main conversation's render context (origin []); a child conversation derives its own. */
   ctx: StreamRenderContext;
   /** Jump command: select this child conversation in the agents tab. */

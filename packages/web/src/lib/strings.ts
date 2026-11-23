@@ -5769,6 +5769,9 @@ Benchmark：
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
+    previousTurn: "上一轮",
+    nextTurn: "下一轮",
+    latestTurn: "最新一轮",
     topologyLabel: "调用关系",
     mainSessionNote: "主会话请在对话区查看",
     empty: "本次任务尚未派生子智能体",

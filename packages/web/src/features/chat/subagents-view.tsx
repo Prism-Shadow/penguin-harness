@@ -6,19 +6,8 @@
  * streaming, nested tool cards, chips for deeper spawns, and pending approvals all keep
  * working inside the panel.
  *
- * Which Task: the most recent SUBAGENT-BEARING one by default — a plain user message never
- * wipes the graph; a new Task takes over the moment it spawns its own child (see
- * extractTopology). A chip click pins `taskScope` to that chip's Task instead (the chat
- * page's subagentTaskScope), so a chip on an older turn shows that turn's HISTORICAL graph
- * via extractTopologyForChild — falling back to the default scope when the anchor is no
- * longer referenced (e.g. a resync swapped the model).
- *
- * Selection: an explicit chip click (focusRequest) or a node click wins; with no explicit
- * choice the first child of the displayed Task is auto-focused (so opening the panel while a
- * subagent is spawning immediately shows it). Selecting the root shows a note instead of
- * duplicating the main transcript. A focused child outside the displayed Task keeps its
- * conversation visible (found by walking the origin chain); the graph simply has no
- * highlighted node.
+ * The durable parent index supplies turn boundaries and child identities across all history.
+ * A loaded conversation contributes live content, liveness and its nested call graph.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 
@@ -38,6 +27,7 @@ import {
   GlyphIcon,
   ICONS,
   ICON_SIZE,
+  Pager,
   StatusIcon,
   Text,
 } from "@prismshadow/penguin-ui";
@@ -49,7 +39,7 @@ import { ChatInput, type ComposerControl } from "./chat-input";
 
 import type { PermissionPick } from "../../lib/permission-level";
 import { noteSessionSeen } from "../../lib/session-seen";
-import { machineForSession } from "../../lib/session-machines";
+import { machineForSession, rememberSessionMachine } from "../../lib/session-machines";
 import { useAgentAvatarSrc } from "../../lib/agent-avatar";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -62,6 +52,7 @@ import {
   type TopologyNode,
 } from "./agent-topology";
 
+import { useChildSessions, useChildTranscript } from "./use-child-sessions";
 import { AgentTopologyView } from "./agent-topology-view";
 import { MessageStream, type StreamRenderContext } from "./message-stream";
 import { useAgentSkills } from "./use-agent-skills";
@@ -83,6 +74,7 @@ export function SubagentsView({
   focusRequest,
   taskScope,
   subagents,
+  connection = 0,
   models,
   approvalMode,
   approvalModes,
@@ -102,6 +94,7 @@ export function SubagentsView({
   taskScope: { anchorSessionId: string } | null;
   /** Live subagent children from the server's task_state (structural liveness): overrides the topology's text heuristics; empty for dead runtimes. */
   subagents: SubagentRuntimeInfo[];
+  connection?: number;
   /** Project model list (the child composer's locked-model badge and context-window lookup). */
   models: ModelInfo[];
   /** The PARENT session's approval mode — child approvals are judged by it (the same value the main composer edits). */
@@ -126,9 +119,11 @@ export function SubagentsView({
     childComposerRef.current?.addReference(reference);
   }, []);
 
+  const [anchor, setAnchor] = useState<string | null>(taskScope?.anchorSessionId ?? null);
   // A chip click focuses that child (fresh-object identity: re-clicking the same chip re-fires).
   useEffect(() => {
     if (focusRequest) {
+      setAnchor(focusRequest.origin[0] ?? focusRequest.sessionId);
       setSelected({ sessionId: focusRequest.sessionId, origin: focusRequest.origin });
     }
   }, [focusRequest]);
@@ -140,28 +135,91 @@ export function SubagentsView({
     [subagents],
   );
 
-  const nodes = useMemo(
-    () =>
-      // A pinned scope (chip click) shows THAT Task's graph — historical or latest alike; when
-      // its anchor is no longer referenced in the stream, fall back to the latest Task.
-      (taskScope
-        ? extractTopologyForChild(
-            model,
-            session.sessionId,
-            taskRunning,
-            taskScope.anchorSessionId,
-            liveStates,
-          )
-        : null) ?? extractTopology(model, session.sessionId, taskRunning, liveStates),
-    // version is the model's change signal (items mutate in place).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [model, version, session.sessionId, taskRunning, taskScope, liveStates],
+  const latest = useMemo(
+    () => extractTopology(model, session.sessionId, taskRunning, liveStates),
+    [model, version, session.sessionId, taskRunning, liveStates],
   );
+  const change = JSON.stringify([
+    ...latest.filter((node) => node.depth === 1).map((node) => node.sessionId),
+    ...liveStates.keys(),
+    taskRunning,
+  ]);
+  const history = useChildSessions(session.sessionId, change, connection, anchor);
+  const index = anchor
+    ? history.turns.findIndex((turn) => turn.some((child) => child.sessionId === anchor))
+    : 0;
+  const turn = history.turns[index];
+  const liveAnchor = latest.find((node) => node.depth === 1)?.sessionId;
+  const pendingLive =
+    !!liveAnchor &&
+    !history.turns.some((group) => group.some((child) => child.sessionId === liveAnchor));
+  const nodes = useMemo(() => {
+    const lookup = anchor ?? (pendingLive ? liveAnchor : turn?.[0]?.sessionId);
+    const graph = lookup
+      ? extractTopologyForChild(model, session.sessionId, taskRunning, lookup, liveStates)
+      : null;
+    if (!turn || (!anchor && pendingLive)) return graph ?? latest;
+    const root = graph?.[0] ?? { ...latest[0]!, running: index === 0 && taskRunning };
+    const result = [root];
+    const ids = new Set(turn.map((child) => child.sessionId));
+    // A stored historical turn can be wholly outside the parent's current transcript window.
+    const detailed =
+      graph ??
+      turn
+        .map((child) =>
+          model.subagents.has(child.sessionId)
+            ? extractTopologyForChild(
+                model,
+                session.sessionId,
+                taskRunning,
+                child.sessionId,
+                liveStates,
+              )
+            : null,
+        )
+        .find(Boolean);
+    for (const node of detailed?.slice(1) ?? []) {
+      if (ids.has(node.origin[0]!)) result.push(node);
+    }
+    const visible = new Set(result.map((node) => node.sessionId));
+    for (const child of turn) {
+      if (!visible.has(child.sessionId))
+        result.push({
+          sessionId: child.sessionId,
+          agentId: child.agentId,
+          description: child.title,
+          origin: [child.sessionId],
+          parentId: session.sessionId,
+          spawnThinkingLevel: null,
+          depth: 1,
+          running: liveStates.get(child.sessionId) ?? false,
+          startedMs: Date.parse(child.spawnedAt),
+        });
+    }
+    return result;
+  }, [
+    model,
+    latest,
+    liveAnchor,
+    anchor,
+    pendingLive,
+    turn,
+    index,
+    session.sessionId,
+    taskRunning,
+    liveStates,
+  ]);
+  const chooseTurn = (i: number) => {
+    const target = history.turns[i]?.[0];
+    if (!target) return;
+    setSelected(null);
+    setAnchor(i === 0 ? null : target.sessionId);
+  };
 
   // No explicit selection yet: auto-focus the displayed Task's first child (null when none spawned).
   const firstChild = nodes.find((n) => n.depth > 0) ?? null;
   const active: Selection | null =
-    selected ??
+    (selected && nodes.some((node) => node.sessionId === selected.sessionId) ? selected : null) ??
     (firstChild ? { sessionId: firstChild.sessionId, origin: firstChild.origin } : null);
 
   const labelFor = (node: TopologyNode): string => {
@@ -171,7 +229,11 @@ export function SubagentsView({
       return agent ? (agent.name?.length ? agent.name : agent.agentId) : session.agentId;
     }
     // Last-resort label is the short session id, not a generic word: two unknown children must stay distinguishable in the graph.
-    return resolveAgentLabel(node, agents, sessions) ?? shortSessionId(node.sessionId);
+    return (
+      resolveAgentLabel(node, agents, sessions) ??
+      node.description ??
+      shortSessionId(node.sessionId)
+    );
   };
   /** A node's Agent's own picture, the Agent found as the label finds it (the root is this Session's). */
   const avatarFor = (node: TopologyNode): string | undefined => {
@@ -186,7 +248,13 @@ export function SubagentsView({
 
   const isRoot = active !== null && active.origin.length === 0;
   const activeNode = active ? (nodes.find((n) => n.sessionId === active.sessionId) ?? null) : null;
-  const activeModel = active && !isRoot ? modelAtOrigin(model, active.origin) : null;
+  const embedded = active && !isRoot ? modelAtOrigin(model, active.origin) : null;
+  const machine = machineForSession(session.sessionId);
+  const childRead = useChildTranscript(
+    active && !isRoot && !embedded ? active.sessionId : null,
+    machine,
+  );
+  const activeModel = embedded ?? childRead?.model ?? null;
   const activeLabel = activeNode
     ? labelFor(activeNode)
     : active
@@ -214,7 +282,8 @@ export function SubagentsView({
     if (!active) return;
     const row = sessions.find((s) => s.sessionId === active.sessionId);
     if (row) noteSessionSeen(row.projectId, row.sessionId, row.lastActiveAt);
-    const agentId = row?.agentId ?? activeModel?.meta?.agentId ?? null;
+    rememberSessionMachine(active.sessionId, machine);
+    const agentId = row?.agentId ?? activeModel?.meta?.agentId ?? activeNode?.agentId ?? null;
     if (agentId !== null) setCurrentAgentId(agentId);
     navigate(`/chat/${active.sessionId}`);
   };
@@ -226,6 +295,29 @@ export function SubagentsView({
         <Text variant="eyebrow" className="mb-1.5">
           {S.subagentPanel.topologyLabel}
         </Text>
+        {history.turns.length > 1 && index >= 0 && (
+          <Pager
+            page={history.turns.length - 1 - index}
+            pageCount={history.turns.length}
+            previousLabel={S.subagentPanel.previousTurn}
+            nextLabel={S.subagentPanel.nextTurn}
+            lastPageLabel={S.subagentPanel.latestTurn}
+            readout={
+              index === 0
+                ? S.subagentPanel.latestTurn
+                : new Date(turn![0]!.spawnedAt).toLocaleDateString()
+            }
+            onChange={(next) => chooseTurn(history.turns.length - 1 - next)}
+          />
+        )}
+        {history.error && (
+          <div role="status" className="text-xs text-fg-muted">
+            {history.error}{" "}
+            <button type="button" onClick={history.retry}>
+              {S.common.retry}
+            </button>
+          </div>
+        )}
         {nodes.length > 1 ? (
           <div className="max-h-48 overflow-y-auto">
             <AgentTopologyView
@@ -244,7 +336,7 @@ export function SubagentsView({
       {/* Selected conversation (or the root note / empty state). */}
       {active === null ? (
         <div className="min-h-0 flex-1">
-          <EmptyState title={S.subagentPanel.empty} />
+          <EmptyState title={history.busy ? S.common.loading : S.subagentPanel.empty} />
         </div>
       ) : isRoot ? (
         <div className="flex min-h-0 flex-1 items-center justify-center p-4">
@@ -252,20 +344,15 @@ export function SubagentsView({
             {S.subagentPanel.mainSessionNote}
           </p>
         </div>
-      ) : activeModel === null ? (
-        // The chain broke (e.g. a resync swapped in a fresh model and this child hasn't re-streamed yet).
-        <div className="min-h-0 flex-1">
-          <EmptyState title={S.subagentPanel.empty} />
-        </div>
       ) : (
         <>
           {/* Slim identity strip for the conversation below. The spawning call's description
               belongs to its node in the graph above, not here — one line, one place. */}
           <div className="flex shrink-0 items-center gap-2 border-b border-gray-100 px-3 py-1.5 dark:border-gray-800/60">
             <AgentAvatar
-              id={activeModel.meta?.agentId ?? active.sessionId}
+              id={activeModel?.meta?.agentId ?? activeNode?.agentId ?? active.sessionId}
               size={16}
-              src={avatarSrc(activeModel.meta?.agentId ?? "", machineForSession(active.sessionId))}
+              src={avatarSrc(activeModel?.meta?.agentId ?? activeNode?.agentId ?? "", machine)}
             />
             <span className="min-w-0 truncate text-xs font-semibold text-gray-700 dark:text-gray-300">
               {activeLabel}
@@ -295,7 +382,7 @@ export function SubagentsView({
           </div>
           <div className="min-h-0 flex-1">
             {/* Keyed by child: switching nodes resets scroll-follow instead of carrying the old position over. */}
-            {childCtx && (
+            {activeModel && childCtx ? (
               <MessageStream
                 key={active.sessionId}
                 items={activeModel.items}
@@ -304,26 +391,30 @@ export function SubagentsView({
                 onAddExcerpt={addChildExcerpt}
                 findRegion="subagent"
               />
+            ) : (
+              <EmptyState title={childRead?.error ?? S.common.loading} />
             )}
           </div>
           {/* Keyed by child too: switching nodes must not carry a half-typed message over. */}
-          <SubagentComposer
-            key={`composer-${active.sessionId}`}
-            controlRef={childComposerRef}
-            sessionId={session.sessionId}
-            childSessionId={active.sessionId}
-            running={activeRunning}
-            meta={activeModel.meta}
-            contextNow={activeModel.stats.contextNow}
-            deliveredInputs={countDeliveredInputs(activeModel)}
-            models={models}
-            approvalMode={approvalMode}
-            approvalModes={approvalModes}
-            sandbox={session.sandbox}
-            onChangePermission={onChangePermission}
-            modeSaving={modeSaving}
-            fallbackThinkingLevel={activeNode?.spawnThinkingLevel ?? parentThinkingLevel}
-          />
+          {activeModel && (
+            <SubagentComposer
+              key={`composer-${active.sessionId}`}
+              controlRef={childComposerRef}
+              sessionId={session.sessionId}
+              childSessionId={active.sessionId}
+              running={activeRunning}
+              meta={activeModel.meta}
+              contextNow={activeModel.stats.contextNow}
+              deliveredInputs={countDeliveredInputs(activeModel)}
+              models={models}
+              approvalMode={approvalMode}
+              approvalModes={approvalModes}
+              sandbox={session.sandbox}
+              onChangePermission={onChangePermission}
+              modeSaving={modeSaving}
+              fallbackThinkingLevel={activeNode?.spawnThinkingLevel ?? parentThinkingLevel}
+            />
+          )}
         </>
       )}
     </div>

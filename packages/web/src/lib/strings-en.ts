@@ -5520,6 +5520,9 @@ Scenarios:
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
+    previousTurn: "Previous turn",
+    nextTurn: "Next turn",
+    latestTurn: "Latest turn",
     topologyLabel: "Call graph",
     mainSessionNote: "The main conversation stays in the chat area",
     empty: "No subagents in the current task yet",
