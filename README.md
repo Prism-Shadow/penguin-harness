@@ -141,7 +141,7 @@ Agents can also write and optimize their own Skills ([docs](https://penguin.ooo/
 | -------------------- | ----------------------------------------------------------------------------- |
 | Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`, `skilladam-rsi-toolkit`, `skillopt-rsi-toolkit`, `openskill-rsi-toolkit`, `trace-rsi-toolkit`, `rrsi-rsi-toolkit` |
 | Office Productivity  | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `trace-lookup`, `agent-company`, `penguin-support` |
-| Utilities | `fridge-keeper`, `action-minutes` |
+| Utilities | `first-workbench-guide`, `fridge-keeper`, `action-minutes` |
 | Entertainment | `tabletop-desk`, `party-charades`, `daily-draw` |
 | Software Development | `software-development`, `use-claude-code`                              |
 | AI App Development   | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
