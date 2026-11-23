@@ -18,6 +18,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { stageReleaseLibrary } from "../../../scripts/stage-release-library.mjs";
 import { compilePushBundle, pushBundleOptions } from "../../../scripts/push-bundle.mjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { pluginPackage, skillFile } from "./helpers/plugin-packages.js";
@@ -156,6 +157,34 @@ describe("the plugin library's host package", () => {
     const program = path.join(other, "serve.mjs");
     fs.writeFileSync(program, script(inlined));
     expect(run(program)).toEqual({ loaded: true, names: ["goal"] });
+  });
+
+  it("loads a release-only Skill from the shipped host after build dependencies are removed", async () => {
+    const host = path.join(scratch, "release-host");
+    const dependency = path.join(host, "node_modules", "@penguinharness", "humanizer");
+    HUMANIZER_PLUGIN(dependency);
+    const manifest = path.join(host, "package.json");
+    const dependencyName = "@penguinharness/humanizer";
+    fs.writeFileSync(
+      manifest,
+      JSON.stringify({
+        name: "release-host",
+        devDependencies: {
+          [dependencyName]:
+            "https://github.com/example/content/releases/download/v1.0.0/humanizer.tgz",
+        },
+      }),
+    );
+    await stageReleaseLibrary(host);
+    const installedSkill = fs.readFileSync(path.join(dependency, "skills/humanizer/SKILL.md"));
+    fs.rmSync(path.join(host, "node_modules"), { recursive: true });
+    fs.writeFileSync(manifest, JSON.stringify({ name: "release-host" }));
+    const program = path.join(host, "dist/serve.mjs");
+    fs.writeFileSync(program, script(bundle));
+    expect(run(program)).toEqual({ loaded: true, names: ["humanizer"] });
+    expect(
+      fs.readFileSync(path.join(host, "dist/release-library/humanizer/skills/humanizer/SKILL.md")),
+    ).toEqual(installedSkill);
   });
 
   it("prefers the library a push carried over the one installed beside the program", () => {
