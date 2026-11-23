@@ -484,3 +484,49 @@ test("searching, sorting and folding sidebar directories keeps the open page and
   await expect(editor).toHaveValue("Keep this draft while looking for an app");
   await expect(page).toHaveURL(/\/chat\/new$/);
 });
+
+test("a multi-page workbench keeps its own selector above the active document", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, "atlasreader", P);
+  await setAccountPrefs(page.request, { lang: "en" });
+  const { projects } = await (await page.request.get("/api/projects")).json();
+  const definition = manifest("Atlas");
+  definition.penguin.modules[0].contributes["WebModule.sessionTabs"].push({
+    id: "atlas.map",
+    key: "map",
+    title: "Map",
+    renderer: { iframe: { src: "ui/map.html" } },
+  });
+  const archive = zip({
+    "atlas/package.json": JSON.stringify(definition),
+    "atlas/index.ts": INDEX,
+    "atlas/ui/index.html": "<h1>Field notes</h1>",
+    "atlas/ui/map.html": "<h1>Relief map</h1>",
+  });
+  await expect(
+    await page.request.post(
+      `/api/projects/${projects[0].projectId}/agents/default_agent/workbenches/archive`,
+      {
+        data: { dataBase64: archive.toString("base64") },
+      },
+    ),
+  ).toBeOK();
+  await page.goto("/apps");
+  await page
+    .getByRole("list", { name: "App Center" })
+    .getByRole("button", { name: /^Atlas/ })
+    .click();
+  const app = page.getByRole("region", { name: "Atlas" });
+  const frame = app.frameLocator("iframe");
+  await expect(frame.getByRole("heading", { name: "Field notes" })).toBeVisible();
+  const map = app.getByRole("button", { name: "Map", exact: true });
+  await map.focus();
+  await page.keyboard.press("Enter");
+  await expect(map).toHaveAttribute("aria-pressed", "true");
+  await expect(frame.getByRole("heading", { name: "Relief map" })).toBeVisible();
+  const control = await map.boundingBox();
+  const document = await app.locator("iframe").boundingBox();
+  expect(control.y + control.height).toBeLessThanOrEqual(document.y + 1);
+  await expect(app.getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
+});
