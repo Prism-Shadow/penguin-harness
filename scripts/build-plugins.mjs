@@ -294,6 +294,11 @@ export async function buildBuiltinPlugins({ log = () => {}, root = ROOT, env = p
         const { file, source } = await lockedTarball(pin, { into: fetched, env });
         const dir = path.join(fetched, String(i));
         const manifest = await unpackPackage(file, dir);
+        if (manifest.name !== pin.name || manifest.version !== pin.version) {
+          throw new Error(
+            `Expected ${pin.name}@${pin.version}, the asset contains ${manifest.name}@${manifest.version}`,
+          );
+        }
         // A package without one carries content alone: the library reads it from the hosts'
         // node_modules (scripts/library-payload.mjs), and the prefix holds server modules.
         if (manifest.main === undefined && manifest.exports === undefined) {

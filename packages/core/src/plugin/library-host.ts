@@ -219,8 +219,18 @@ function findHost(program: string | null): HostPackage | null {
 function readDependencies(pkg: HostPackage): Record<string, string> {
   const parsed = JSON.parse(fs.readFileSync(path.join(pkg.root, "package.json"), "utf8")) as {
     dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
   };
-  return parsed.dependencies ?? {};
+  const releaseContent = Object.entries(parsed.devDependencies ?? {}).filter(
+    ([name, source]) =>
+      name.startsWith(PLUGIN_PKG_PREFIX) && source.startsWith("https://github.com/"),
+  );
+  const manifest = path.join(pkg.root, "dist", "release-library", "package.json");
+  const packed = fs.existsSync(manifest)
+    ? (JSON.parse(fs.readFileSync(manifest, "utf8")) as { dependencies: Record<string, string> })
+        .dependencies
+    : {};
+  return { ...parsed.dependencies, ...Object.fromEntries(releaseContent), ...packed };
 }
 
 /** The shipped plugins' roots, name → root: every `@penguinharness/*` dependency of the host, resolved through Node. */
@@ -231,7 +241,14 @@ function pluginRoots(): Map<string, LibraryRoot> {
     if (!dep.startsWith(PLUGIN_PKG_PREFIX)) continue;
     let manifest: string;
     try {
-      manifest = pkg.require.resolve(`${dep}/package.json`);
+      const packed = path.join(
+        pkg.root,
+        "dist",
+        "release-library",
+        dep.slice(PLUGIN_PKG_PREFIX.length),
+        "package.json",
+      );
+      manifest = fs.existsSync(packed) ? packed : pkg.require.resolve(`${dep}/package.json`);
     } catch (err) {
       // A declared plugin that Node cannot find is a broken install (the deployment did not
       // carry the package), not a smaller library.
