@@ -23,7 +23,6 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { PluginModuleStatus } from "@prismshadow/penguin-server/api";
-import { PackageUpdateDialog, type PackageUpdate } from "../plugins/plugin-package-update";
 import { ConfirmModal, ICONS, toastSuccess } from "@prismshadow/penguin-ui";
 import { toastInstall } from "../../lib/agent-plugin-install";
 import { S } from "../../lib/strings";
@@ -41,6 +40,8 @@ import {
   type AgentInstalls,
   type AgentPluginGroup,
   type AgentTarget,
+  PackageUpdateDialog,
+  type PackageUpdate,
 } from "../plugins";
 import { toastFailure } from "../../lib/toast-api-error";
 import { toldFailure } from "../../lib/failure";

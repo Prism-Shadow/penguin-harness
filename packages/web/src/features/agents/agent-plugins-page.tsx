@@ -36,8 +36,6 @@ import type { ReactNode } from "react";
 import type { AgentPluginsInstallResponse, PluginGroupItem } from "@prismshadow/penguin-server/api";
 import { CollapsibleSection, SettingsEmpty, Waiting } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { useLocalPluginIndex } from "../plugins/plugin-reads";
-import { packageUpdate } from "../plugins/plugin-package-update";
 import {
   agentModuleMark,
   installsOf,
@@ -48,6 +46,8 @@ import {
   type AgentPluginGroups,
   type AgentTarget,
   type PluginRow,
+  packageUpdate,
+  useLocalPluginIndex,
 } from "../plugins";
 import { agentPluginTitle, useAgentPluginActions } from "./agent-plugin-actions";
 import { AgentPluginRow, type AgentModule } from "./agent-plugin-row";
