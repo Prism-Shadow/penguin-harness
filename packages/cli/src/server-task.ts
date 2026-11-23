@@ -32,6 +32,7 @@ import { dim } from "./render.js";
 interface ServerEventFrame {
   type: string;
   state?: "idle" | "running" | "compacting";
+  contextWindow?: number | string;
   toolCall?: AmspRecord<ToolCallPayload>;
   origin?: string[];
 }
@@ -282,7 +283,10 @@ export async function watchTask(
     if (frame === null) break;
     if (frame.event === "server_event") {
       const ev = JSON.parse(frame.data) as ServerEventFrame;
-      if (ev.type === "task_state" && ev.state === "idle") break;
+      if (ev.type === "task_state") {
+        if (ev.contextWindow !== undefined) renderer?.setContextWindow(ev.contextWindow);
+        if (ev.state === "idle") break;
+      }
       if (ev.type === "approval_request") answerApproval(ev);
       if (ev.type === "goal_finished") {
         const finished = ev as unknown as GoalFinishedEvent;

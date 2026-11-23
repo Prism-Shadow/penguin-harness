@@ -18,7 +18,7 @@
  *
  * The colour and the accessory hash the Agent's id — never its display name — so they survive
  * renames, and every drawing paints the same colours, the same face and the same accessory, so
- * they survive theme switches too. No initial is drawn: every place an avatar sits shows the
+ * they survive theme switches too. The standalone avatar has no initial: each such placement shows the
  * Agent's name beside it or on hover, and at the 14–18 px most avatars are drawn at, a letter and
  * a penguin do not both fit.
  */
@@ -26,6 +26,7 @@ import { useState } from "react";
 import { agentAccessory } from "./agent-accessory";
 import { AGENT_AVATAR_VARIANTS, AGENT_AVATAR_VARIANT_NAMES } from "./agent-avatar-variants";
 import type { AgentAvatarVariant } from "./agent-avatar-variants";
+import { avatarInitial, avatarTile } from "./avatar";
 import { agentColors } from "./agent-palette";
 
 /** The Agent tile's corner at `size` px: the flat drawing's `rx="5"` on its 24-unit box. */
@@ -37,6 +38,7 @@ export function AgentAvatar({
   className,
   variant,
   src,
+  fallbackName,
 }: {
   id: string;
   size?: number;
@@ -45,6 +47,8 @@ export function AgentAvatar({
   variant?: AgentAvatarVariant;
   /** The Agent's own picture, as a URL; absent — or once it fails to load — the default is drawn. */
   src?: string | undefined;
+  /** Use a legible initial when this avatar is a small badge over another icon. */
+  fallbackName?: string;
 }) {
   /** The picture that failed to load: a new `src` is tried afresh. */
   const [failed, setFailed] = useState<string | null>(null);
@@ -67,6 +71,25 @@ export function AgentAvatar({
   const colors = agentColors(id);
   const accessory = agentAccessory(id);
   const drawn = variant === undefined ? AGENT_AVATAR_VARIANT_NAMES : [variant];
+  if (fallbackName !== undefined) {
+    const tile = avatarTile(id);
+    return (
+      <span
+        aria-hidden
+        className={`inline-flex shrink-0 items-center justify-center font-bold ${className ?? ""}`}
+        style={{
+          width: size,
+          height: size,
+          fontSize: Math.round(size * 0.66),
+          borderRadius: agentTileRadius(size),
+          color: tile.ink,
+          backgroundColor: tile.bg,
+        }}
+      >
+        {avatarInitial(fallbackName, id)}
+      </span>
+    );
+  }
   return (
     <svg
       width={size}

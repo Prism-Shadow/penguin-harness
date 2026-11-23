@@ -315,6 +315,8 @@ export interface SessionBackgroundTasks {
 /** Minimal interface for a runtime Session (satisfied by core Session; tests may inject a fake implementation). */
 export interface RuntimeSession {
   readonly sessionId: string;
+  /** Core's current context header, available even when a CLI attaches after its first Task. */
+  readonly metaMessage?: AmspRecord;
   run(newMessages: AmspRecord[], opts: RunOpts): AsyncGenerator<AmspRecord>;
   compact(opts: RunOpts): AsyncGenerator<AmspRecord>;
   /**
