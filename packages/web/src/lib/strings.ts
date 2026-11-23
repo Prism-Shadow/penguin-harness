@@ -664,6 +664,7 @@ export const zh = {
     /** The fan of entries the launcher opens (its accessible group name). */
     launcherPanels: "快捷方式",
     /** The fan's last entry: puts the launcher away until Appearance settings bring it back. */
+    openAppCenter: "打开应用中心",
     launcherHide: "隐藏悬浮球",
     launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
     /** The dock header's fullscreen toggle while the dock is at its usual size. */
@@ -1277,7 +1278,6 @@ export const zh = {
     leftPane: "左侧页面",
     rightPane: "右侧页面",
     restore: "恢复",
-    browse: "浏览工作台",
     workbenches: "工作台",
     left: "在左侧打开",
     right: "在右侧打开",

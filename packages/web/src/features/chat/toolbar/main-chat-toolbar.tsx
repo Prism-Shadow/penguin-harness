@@ -1,5 +1,3 @@
-import { BrowseWorkbenches } from "./browse-workbenches";
-import { machineForSession } from "../../../lib/session-machines";
 import { renderMainSessionDetails } from "./main-session-details";
 import {
   Dot,
@@ -75,11 +73,6 @@ export function renderMainChatToolbar(scope: MainChatView) {
               placement actions and pin toggles. Every entry is a dock tab (features/dock)
               — the toolbar reads and drives the dock store directly; this page only feeds
               the pending-approval dot. */}
-          <BrowseWorkbenches
-            sessionId={selected.sessionId}
-            agentId={selected.agentId}
-            machineId={machineForSession(selected.sessionId)}
-          />
           <DockToggles agentsPending={anySubagentPending} />
 
           {/* Conversation index fallback: exactly when the gutter tick rail can't show

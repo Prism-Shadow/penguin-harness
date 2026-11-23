@@ -138,10 +138,12 @@ test("sidebar minimize restores the same workbench and close ends its frame", as
   await page.goto("/chat/" + notes.id);
   const chat = slot(page, notes.key);
   await chat.locator(composer).fill("Keep this triage note");
-  await chat.getByRole("button", { name: "Browse workbenches" }).click();
+  await chat.getByRole("button", { name: "Shortcuts", exact: true }).click();
+  await chat.getByRole("button", { name: "Open App Center", exact: true }).click();
   await page
-    .getByRole("region", { name: "Workbenches" })
-    .getByText("Support", { exact: true })
+    .getByRole("list", { name: "App Center", exact: true })
+    .locator('li[data-app="penguin_support/support"] > button')
+    .first()
     .click();
   const appKey = "app:penguin_support/support";
   const app = slot(page, appKey);
@@ -167,10 +169,12 @@ test("sidebar minimize restores the same workbench and close ends its frame", as
   expect(original.isDetached()).toBe(true);
   await expect(page.locator(`button[data-session-id="${notes.id}"]`)).toHaveCount(1);
   await expect(chat.locator(composer)).toHaveValue("Keep this triage note");
-  await chat.getByRole("button", { name: "Browse workbenches" }).click();
+  await chat.getByRole("button", { name: "Shortcuts", exact: true }).click();
+  await chat.getByRole("button", { name: "Open App Center", exact: true }).click();
   await page
-    .getByRole("region", { name: "Workbenches" })
-    .getByText("Support", { exact: true })
+    .getByRole("list", { name: "App Center", exact: true })
+    .locator('li[data-app="penguin_support/support"] > button')
+    .first()
     .click();
   await fromRow(page, target, "Open full screen");
   const fullPath = /\/app\/default_project\/penguin_support\/support(?:\/support)?$/;
