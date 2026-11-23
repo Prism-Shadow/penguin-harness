@@ -167,6 +167,8 @@ export class AgentConfigService implements AgentConfig {
     description?: string;
     author: AgentAuthor;
     toolCount: number;
+    /** Package owners from valid stored MCP entries, omitted if the config could not be read. */
+    mcpPluginNames?: string[];
     version: number;
     kernelOutdated: boolean;
     system?: true;
@@ -181,6 +183,18 @@ export class AgentConfigService implements AgentConfig {
         ...(typeof parsed.description === "string" ? { description: parsed.description } : {}),
         author: agentAuthorOf(parsed),
         toolCount: countOf(tools.builtin) + countOf(tools.mcpServers),
+        mcpPluginNames: Array.isArray(tools.mcpServers)
+          ? tools.mcpServers.flatMap((value: unknown) => {
+              const entry = asRecord(value);
+              return typeof entry.name === "string" &&
+                typeof entry.plugin === "string" &&
+                entry.config !== null &&
+                typeof entry.config === "object" &&
+                !Array.isArray(entry.config)
+                ? [entry.plugin]
+                : [];
+            })
+          : [],
         version: agentStateVersion({ version: parsed.version as number | undefined }),
         kernelOutdated: isKernelOutdated(
           typeof parsed.kernel_version === "string" ? parsed.kernel_version : null,
