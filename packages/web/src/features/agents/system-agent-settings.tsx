@@ -85,7 +85,7 @@ export function SystemAgentApps() {
             <ListRow
               key={app.key}
               as="li"
-              leading={<GlyphAppIcon d={glyphOf(app.icon)} size={MARK_PX} />}
+              leading={<GlyphAppIcon appKey={app.key} d={glyphOf(app.icon)} size={MARK_PX} />}
               title={title}
               titleTrail={<Pill>{S.agent.systemAppTag}</Pill>}
               trailing={

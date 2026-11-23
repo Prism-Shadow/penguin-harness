@@ -1,34 +1,42 @@
-/**
- * A system app's icon: its page's line glyph on the App Center's icon shape (`AppIconShape`), on
- * the neutral fill, the glyph at half the edge. `GlyphIcon` draws it, so a theme's icon set
- * redraws it as it redraws every registry glyph. It is the app's picture, so it carries
- * information and is never a decorative icon a theme may drop; it stands beside the app's name,
- * which says what it is, so it is hidden from assistive technology.
- */
+/** A system application's mark. The shared shape and the active theme's glyph also fit folder
+ * previews and window titles. Built-in applications have their own colour fields. */
 import { AppIconShape, APP_ICON_PX } from "../app-icon-shape/app-icon-shape";
 import { GlyphIcon } from "../glyph-icon/glyph-icon";
 
-/** The smallest glyph the icon draws, in px: below it a line glyph stops reading. */
-const MIN_GLYPH_PX = 10;
+const colors = new Map<string, readonly [string, string]>([
+  ["models", ["violet", "blue"]],
+  ["plugins", ["pink", "red"]],
+  ["machines", ["teal", "blue"]],
+  ["usage", ["green", "teal"]],
+  ["benchmark", ["amber", "orange"]],
+]);
 
 export function GlyphAppIcon({
+  appKey,
   d,
   size = APP_ICON_PX,
   className = "",
 }: {
-  /** The 24×24 line path: a glyph from the registry (`ICONS`). */
+  appKey?: string;
+  /** The registry glyph; each icon theme supplies its own drawing. */
   d: string;
-  /** Edge of the square, in px. */
   size?: number;
   className?: string;
 }) {
+  const palette = appKey ? colors.get(appKey) : undefined;
+  const style = palette && {
+    background: `linear-gradient(155deg, color-mix(in oklab, var(--ui-icon-tint-${palette[0]}) 85%, var(--ui-accent)), color-mix(in oklab, var(--ui-icon-tint-${palette[1]}) 64%, var(--ui-accent)))`,
+    boxShadow: "inset 0 1px 0 rgb(255 255 255 / 22%), inset 0 -1px 0 rgb(0 0 0 / 12%)",
+  };
   return (
     <AppIconShape
       aria-hidden
+      data-system-app-icon={palette ? appKey : undefined}
       size={size}
-      className={`flex items-center justify-center bg-fill-neutral text-fg ${className}`}
+      style={style}
+      className={`flex items-center justify-center ${palette ? "text-accent-fg" : "bg-fill-neutral text-fg"} ${className}`}
     >
-      <GlyphIcon d={d} size={Math.max(MIN_GLYPH_PX, Math.round(size / 2))} />
+      <GlyphIcon d={d} size={Math.max(10, Math.round(size * (palette ? 0.69 : 0.5)))} />
     </AppIconShape>
   );
 }
