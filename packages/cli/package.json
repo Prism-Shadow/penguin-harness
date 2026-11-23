@@ -57,6 +57,7 @@
     "@penguinharness/skill-porting": "workspace:*",
     "@penguinharness/skilladam-rsi-toolkit": "workspace:*",
     "@penguinharness/skillopt-rsi-toolkit": "workspace:*",
+    "@penguinharness/skillweaver-rsi-toolkit": "workspace:*",
     "@penguinharness/software-development": "workspace:*",
     "@penguinharness/storage": "workspace:*",
     "@penguinharness/tabletop-desk": "workspace:*",

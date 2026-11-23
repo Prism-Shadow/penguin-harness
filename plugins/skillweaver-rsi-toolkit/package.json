@@ -1,0 +1,38 @@
+{
+  "name": "@penguinharness/skillweaver-rsi-toolkit",
+  "version": "0.2.18",
+  "description": "The SkillWeaver RSI Toolkit: SkillWeaver (Zheng et al., 2025, https://arxiv.org/abs/2504.07079), run the way the paper does — the agent explores a website on its own, proposes skills worth having, practises them, and hones the successful ones into reusable, tested API scripts kept in a skill library that later web tasks call. Self-contained: it creates the Target's skill library, runs the practice loop, evaluates its own cells and writes the Evaluation Center's scoreboard.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Prism-Shadow",
+    "url": "https://github.com/Prism-Shadow"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/skillweaver-rsi-toolkit"
+  },
+  "files": [
+    "icon.svg",
+    "skills",
+    "ifaces.json",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/skills": "workspace:*",
+    "vitest": "^4.1.12"
+  }
+}
