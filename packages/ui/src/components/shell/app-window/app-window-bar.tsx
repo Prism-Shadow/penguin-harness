@@ -5,6 +5,9 @@
  * them. Each of those is a flat icon button whose name is also its hint. A window that cannot do
  * one of the first two leaves it out by passing no handler, and the others keep their places.
  *
+ * In a narrow window the app’s controls take a row below its title and actions. A long page
+ * switcher scrolls within its row, so every page is reachable at larger text sizes.
+ *
  * What minimize and close leave behind is the caller's to keep: a minimized window stays mounted
  * and only stops being shown, so the app inside keeps running; a closed one is unmounted. The bar
  * names nothing of the app: the caller passes the words.
@@ -41,23 +44,29 @@ export function AppWindowBar({
   onClose,
 }: AppWindowBarProps) {
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-1.5">
-      {icon}
-      <h1 className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{title}</h1>
-      {controls}
-      {onMinimize !== undefined && (
-        <IconButton variant="ghost" size="sm" label={labels.minimize} onClick={onMinimize}>
-          <GlyphIcon d={ICONS.minus} size={ICON_SIZE.iconButton} />
+    <div className="@container shrink-0 border-b border-line">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-1.5">
+        {icon}
+        <h1 className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{title}</h1>
+        {controls && (
+          <div className="order-last flex min-w-0 basis-full overflow-x-auto @xl:order-none @xl:max-w-1/2 @xl:basis-auto">
+            {controls}
+          </div>
+        )}
+        {onMinimize !== undefined && (
+          <IconButton variant="ghost" size="sm" label={labels.minimize} onClick={onMinimize}>
+            <GlyphIcon d={ICONS.minus} size={ICON_SIZE.iconButton} />
+          </IconButton>
+        )}
+        {onFullScreen !== undefined && (
+          <IconButton variant="ghost" size="sm" label={labels.fullScreen} onClick={onFullScreen}>
+            <GlyphIcon d={ICONS.cornersOut} size={ICON_SIZE.iconButton} />
+          </IconButton>
+        )}
+        <IconButton variant="ghost" size="sm" label={labels.close} onClick={onClose}>
+          <GlyphIcon d={ICONS.cross} size={ICON_SIZE.iconButton} />
         </IconButton>
-      )}
-      {onFullScreen !== undefined && (
-        <IconButton variant="ghost" size="sm" label={labels.fullScreen} onClick={onFullScreen}>
-          <GlyphIcon d={ICONS.cornersOut} size={ICON_SIZE.iconButton} />
-        </IconButton>
-      )}
-      <IconButton variant="ghost" size="sm" label={labels.close} onClick={onClose}>
-        <GlyphIcon d={ICONS.cross} size={ICON_SIZE.iconButton} />
-      </IconButton>
+      </div>
     </div>
   );
 }
