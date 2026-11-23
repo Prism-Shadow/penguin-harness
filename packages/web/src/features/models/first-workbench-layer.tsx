@@ -221,7 +221,7 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
       style={position}
       role="region"
       aria-label={w.title}
-      className="fixed end-3 top-[calc(var(--window-band-height,0px)+3rem)] z-dock w-[min(21rem,calc(100vw-1.5rem))] max-h-[48dvh] overflow-y-auto rounded-panel border border-line bg-surface p-3 text-sm text-fg shadow-panel"
+      className="fixed end-3 top-[calc(var(--window-band-height,0px)+3rem)] z-dock w-[min(21rem,calc(100vw-1.5rem))] max-h-[48dvh] overflow-y-auto rounded-panel border border-line bg-surface p-3 text-sm text-fg"
     >
       <header className="mb-2 flex items-start justify-between gap-2">
         <strong>{w.title}</strong>
@@ -321,7 +321,8 @@ function Tour({ user, scope, close }: { user: string; scope: PageAgent; close: (
           <ul className="my-2 list-disc ps-5">
             {design.items.map((i, n) => (
               <li key={n}>
-                <strong>{i.group}</strong> · {i.task}
+                <strong>{i.group}</strong>
+                <div>{i.task}</div>
                 <div className="text-fg-muted">{i.doneWhen}</div>
               </li>
             ))}

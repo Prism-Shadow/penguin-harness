@@ -138,6 +138,7 @@ export function GeneralSection({ onOpenGuide }: { onOpenGuide?: () => void }) {
       {available && scope && (
         <PrefRow label={S.firstWorkbench.title} info={S.firstWorkbench.help}>
           <Button
+            size="sm"
             onClick={() => {
               onOpenGuide?.();
               startFirstWorkbench(scope);
