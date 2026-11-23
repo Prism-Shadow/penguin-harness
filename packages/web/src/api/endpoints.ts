@@ -1000,6 +1000,7 @@ export const deleteAgentApiKey = (
 
 /** Paging and filters of {@link listSessions}. */
 export interface ListSessionsOptions {
+  search?: string;
   /** Rows to skip, in creation order. Exclusive with `before`. */
   offset?: number;
   limit: number;
@@ -1039,6 +1040,7 @@ export const listSessions = (
 ) => {
   const qs = opts
     ? `?limit=${opts.limit}` +
+      (opts.search ? `&search=${encodeURIComponent(opts.search)}` : "") +
       (opts.offset !== undefined ? `&offset=${opts.offset}` : "") +
       (opts.order ? `&order=${opts.order}` : "") +
       (opts.before ? `&before=${encodeURIComponent(activityCursorParam(opts.before))}` : "") +

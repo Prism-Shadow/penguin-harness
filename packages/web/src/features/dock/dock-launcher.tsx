@@ -53,6 +53,7 @@ import {
   type SpringDriver,
 } from "@prismshadow/penguin-ui";
 
+import { useSessionPanelOpener } from "./session-panel-opener";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { useDockPanels } from "./panel-registry";
@@ -95,6 +96,7 @@ export interface DockLauncherProps {
 
 /** Renders the ball while no dock surface holds its room and the user has not put it away. */
 export function DockLauncher({ agentsPending }: DockLauncherProps) {
+  useSessionPanelOpener();
   useSyncExternalStore(subscribeDock, dockVersion);
   useSyncExternalStore(subscribeLauncherHidden, launcherHiddenVersion);
   const narrow = isNarrow();
@@ -400,7 +402,9 @@ function FloatingLauncher({
     badge: definition.id === "agents" && agentsPending,
     testId: `dock-launcher-open-${definition.id}`,
     // The dock becomes visible with the tab, and the launcher unmounts with it.
-    choose: () => openPanel(definition.id, target, definition.defaultPosition),
+    choose: () => {
+      openPanel(definition.id, target, definition.defaultPosition);
+    },
   }));
   entries.push({
     key: "hide",

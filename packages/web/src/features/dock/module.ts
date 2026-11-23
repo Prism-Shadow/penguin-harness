@@ -24,10 +24,15 @@ import type {
   DockScopeListener,
   Ordered,
 } from "@prismshadow/penguin-web-plugin";
+import { sessionWorkbenchPage, parseSessionWorkbenchPage } from "../../lib/session-workbenches";
+import { registerSessionAppDockAdapter } from "../../lib/session-app-dock";
+import { SessionWorkbenchBody } from "./session-workbench-body";
+import { installSessionPanelOpener } from "./session-panel-opener";
+import { SessionWorkbenchPage } from "./session-workbench-page";
 import { DockScope } from "./dock-scope";
 import { browseFilesAction } from "./browse-files";
 import { setDockListeners } from "./dock-listeners";
-import { registerDockPanel, type DockPanelDefinition } from "./panel-registry";
+import { dockPanelDefinition, registerDockPanel, type DockPanelDefinition } from "./panel-registry";
 
 import type { Dock, DockPanel, DockPanelData, PanelOffering } from "./iface";
 
@@ -78,6 +83,18 @@ function inOrder<F>(contributions: readonly Contributed[] | undefined): F[] {
 
 @Module({
   contributes: {
+    "WebAppModule.pages": [
+      {
+        id: "dock.session-tools",
+        key: "session-tools",
+        path: "/session-tools/:kind",
+        frame: "shell",
+        nav: "none",
+        admin: false,
+        released: true,
+        order: 48,
+      },
+    ],
     // Last of the layers: the layout's own effect it replaces ran after every layer's.
     "WebAppModule.layers": [{ id: "dock.scope", order: 50 }],
     "SessionListModule.rowActions": [{ id: "dock.browse-files", order: 10 }],
@@ -85,10 +102,22 @@ function inOrder<F>(contributions: readonly Contributed[] | undefined): F[] {
 })
 export class DockModule {
   @Provide() dock!: Dock;
+  @Bind("dock.session-tools") sessionTools = SessionWorkbenchPage;
   @Bind("dock.scope") scope = DockScope;
   @Bind("dock.browse-files") browseFiles = browseFilesAction;
   setup({ contributions }: ClassCtx) {
     registerPanels(contributions.panels ?? []);
+    installSessionPanelOpener();
+    registerSessionAppDockAdapter({
+      resolve(path) {
+        const ref = parseSessionWorkbenchPage({ path });
+        if (!ref) return null;
+        const definition = dockPanelDefinition(ref.kind);
+        if (!definition) return null;
+        return sessionWorkbenchPage(ref.kind, ref.address, definition.label());
+      },
+      Body: SessionWorkbenchBody,
+    });
     setDockListeners({
       scope: inOrder<DockScopeListener>(contributions.scopeListeners),
       layout: inOrder<DockLayoutListener>(contributions.layoutListeners),
