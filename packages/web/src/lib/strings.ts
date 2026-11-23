@@ -1280,7 +1280,7 @@ export const zh = {
     importLoadFailedToast: (error: string): string => `工作台已导入，但加载失败：${error}`,
     importOverwriteAction: "覆盖导入",
     /** The row's More menu: downloads the workbench's source as a zip. */
-    exportWorkbench: "打包导出",
+    exportWorkbench: "下载到本地（ZIP）",
     /** The row's text button: opens the workbench beside a new chat. */
     openAction: "打开",
     /** The row's "⋯" button, which holds its other actions. */
