@@ -1,13 +1,30 @@
-name: Verify Windows data location on a native runner
+name: Verify installed Windows data on a removable test volume
 on: workflow_dispatch
 permissions:
   contents: read
+  actions: read
 jobs:
-  migrate:
+  installed:
     runs-on: windows-latest
-    timeout-minutes: 7
+    timeout-minutes: 30
+    env:
+      PH_DISPOSABLE_WINDOWS: "yes"
     steps:
-      - uses: actions/checkout@v4
-      - name: Exercise the inbox Windows PowerShell migration helper
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Get the previously built Windows installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 45234861839 -n disposable-installer -D "$env:RUNNER_TEMP/installer"
+          if ($LASTEXITCODE) { throw 'Installer artifact was unavailable.' }
+      - name: Verify a first install, unplug and reattach
         shell: powershell
-        run: ./packages/desktop/test/windows-data-location.ps1
+        run: |
+          & packages/desktop/test/native-fresh-data-qa/check.ps1
