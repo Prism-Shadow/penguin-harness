@@ -38,6 +38,8 @@ export interface AppShellProps {
   nav: ReactNode;
   /** Fold the navigation column to the rail's width. */
   navCollapsed?: boolean;
+  /** Let a full-screen page use the column while keeping its navigation mounted. */
+  navHidden?: boolean;
   /** Let the reader size the open navigation column by dragging its end edge. */
   navResize?: NavResize;
   /** The main column: the mobile top bar, any window-wide notice, the page. */
@@ -57,6 +59,7 @@ export function AppShell({
   background,
   nav,
   navCollapsed = false,
+  navHidden = false,
   navResize,
   children,
   dock,
@@ -68,7 +71,7 @@ export function AppShell({
       <div
         data-wallpaper={background === undefined ? undefined : ""}
         data-window-band={band === undefined ? undefined : ""}
-        className={`ui-shell flex h-full pt-[var(--window-band-height,0px)]${band === undefined ? "" : " relative"}`}
+        className={`ui-shell flex h-full ${navHidden ? "[&>[data-slot=nav]]:hidden" : ""} pt-[var(--window-band-height,0px)]${band === undefined ? "" : " relative"}`}
       >
         <WallpaperLayer />
         {band !== undefined && (

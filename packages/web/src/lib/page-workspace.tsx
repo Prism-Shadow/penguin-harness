@@ -42,6 +42,8 @@ export interface Workspace {
   minimize(id: string): void;
   whole(page: OpenPage): void;
   fullScreen(page: OpenPage): void;
+  /** A native system page occupying the shell, with its original component still mounted. */
+  exitFullScreen?: () => void;
   swap(): void;
   reorder(id: string, before: string): void;
   browse(sessionId: string, agentId: string, machineId: string | null): void;
@@ -231,7 +233,13 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
       publish(next);
     }
   };
+  const nativeFullScreen =
+    current?.kind === "system" && location.state?.nativeAppFullScreen === current.id;
   function fullScreen(page: OpenPage) {
+    if (page.kind === "system") {
+      void navigate(page.path, { state: { nativeAppFullScreen: page.id } });
+      return;
+    }
     const record = apps.find((entry) => "app:" + entry.key === page.id);
     if (!record) return;
     const { shortcut, projectId, selectedPath } = record;
@@ -301,6 +309,13 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
         close,
         minimize,
         fullScreen,
+        ...(nativeFullScreen
+          ? {
+              exitFullScreen: () => {
+                void navigate(path, { replace: true });
+              },
+            }
+          : {}),
         swap,
         reorder,
         browse,
