@@ -43,6 +43,7 @@ async function frame(
         h(AppWindow, {
           shown,
           children: h(WorkbenchFrame, {
+            agentId: "default_agent",
             projectId: "project",
             tab: {
               tabId: "support/main",

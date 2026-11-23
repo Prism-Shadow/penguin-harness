@@ -86,3 +86,13 @@
 .rail .ask-actions {
   padding-inline-end: 2.75rem;
 }
+
+.ask-actions {
+  flex-wrap: wrap;
+}
+.chat-effort {
+  flex: 0 1 auto;
+}
+#choice-status {
+  overflow-wrap: anywhere;
+}

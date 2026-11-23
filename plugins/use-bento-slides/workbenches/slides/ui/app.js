@@ -829,16 +829,8 @@ async function refreshTalk() {
     return;
   }
   if (open !== deck || talkRevision !== revision) return;
-  const previousId = talk.sessionId;
-  const previousStatus = talk.status;
   talk = next;
-  if (
-    talk.sessionId &&
-    (!deck.model ||
-      previousId !== talk.sessionId ||
-      deck.pendingModel ||
-      previousStatus !== talk.status)
-  ) {
+  if (talk.sessionId) {
     try {
       await models.readSessionModel(deck, talk.sessionId);
     } catch (error) {
@@ -847,6 +839,8 @@ async function refreshTalk() {
     if (open !== deck || revision !== talkRevision) return;
   } else if (!talk.sessionId) {
     deck.model = null;
+    deck.pendingModel = null;
+    deck.effort = null;
   }
   const running = talk.status !== null && talk.status !== "idle";
   if (talk.sessionId !== null && (followedId !== talk.sessionId || reader === null))
@@ -864,7 +858,7 @@ async function refreshTalk() {
 }
 
 async function ask(text, firstModel = null) {
-  if (open === null || open.pendingModel || open.choosingModel || text.trim() === "") return;
+  if (open === null || open.savingChoice || text.trim() === "") return;
   const o = open;
   // What the person just did reaches the file before the Agent reads it.
   clearTimeout(o.timer);
@@ -1039,7 +1033,18 @@ $("start-ask").onsubmit = async (event) => {
     return;
   }
   await createDeck(title, blankDeck(title));
-  await ask(text, chosen);
+  const deck = open;
+  if (!deck) return;
+  try {
+    await models.prepareStart(deck);
+  } catch (error) {
+    if (open === deck) {
+      $("prompt").value = text;
+      notice(S.choiceFailed(String(error.message || error)));
+    }
+    return;
+  }
+  if (open === deck) await ask(text, chosen);
   models.clearStartChoice();
 };
 
