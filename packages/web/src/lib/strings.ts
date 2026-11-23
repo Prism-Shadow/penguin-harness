@@ -1059,7 +1059,7 @@ export const zh = {
     toolAliases: "工具短名",
     activityDisplayMode: "思考显示方式",
     activityDisplayModeInfo:
-      "标准列出每一步，点开可看详情。展开直接显示思考和工具调用的内容。紧凑跟随当前步骤，可前后翻页。",
+      "标准列出每一步，点开可看详情。展开直接显示思考和工具调用的内容。紧凑显示当前活动、步数和耗时，点开可查看全部步骤。",
     activityDisplayStandard: "标准",
     activityDisplayExpanded: "展开",
     activityDisplayCompact: "紧凑",
@@ -5168,14 +5168,7 @@ Benchmark：
     workFailed: "运行失败",
     workStopped: "已停止",
     workRetryStep: (n: number) => `第 ${n} 次重试`,
-    previousWorkStep: "上一步",
-    nextWorkStep: "下一步",
-    latestWorkStep: "最新步骤",
-    waitingWorkStep: "查看待处理步骤",
     workElapsed: "总耗时",
-    /** The words around the step number in Compact's pager; the number between them is a field. */
-    workStepWords: ["第 ", " 步"] as readonly [before: string, after: string],
-    workStepJump: "跳转到步骤",
     workGroupSteps: (n: number) => `${n} 步`,
     approvalWaiting: "待审批",
     copyCode: "复制代码",

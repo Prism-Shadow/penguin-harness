@@ -212,7 +212,7 @@ test("a match inside a collapsed work group is found, and the group folds back w
   await expect(step).toHaveCount(0);
 });
 
-test("transcript find searches off-page compact details and restores the reviewed page", async ({
+test("transcript find searches folded compact details and restores the closed group", async ({
   page,
 }) => {
   const newSession = await setup(page, "findcompact");
@@ -226,10 +226,8 @@ test("transcript find searches off-page compact details and restores the reviewe
   await input.press("Enter");
   await expect(page.getByText("Both tools finished.", { exact: true })).toBeVisible();
   const group = page.locator(".ui-frame[data-step-view]"),
-    nav = group.locator("[data-step-navigation]");
-  await expect(nav).toContainText("第 5 步");
-  await group.getByRole("button", { name: "上一步" }).click();
-  await expect(nav).toContainText("第 4 步");
+    count = group.locator("[data-step-count]");
+  await expect(count).toHaveText("4 步");
   await input.focus();
   await page.keyboard.press("ControlOrMeta+f");
   const bar = page.getByRole("search");
@@ -238,7 +236,7 @@ test("transcript find searches off-page compact details and restores the reviewe
   await expect(group.getByText("I will check the first entry.", { exact: true })).toBeVisible();
   await expect(bar.getByText("1/1", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(nav).toContainText("第 4 步");
+  await expect(count).toHaveText("4 步");
   await expect(group.locator(".ui-tree > [data-depth]")).toHaveCount(0);
 });
 
