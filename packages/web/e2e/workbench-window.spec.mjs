@@ -168,16 +168,23 @@ const frameSurface = (page) =>
     };
   });
 
-test("the workbench opened beside a conversation returns to its directory on minimize and close", async ({
+test("the workbench opened beside a conversation returns to its docked App Center on minimize and close", async ({
   page,
 }) => {
   await openChat(page);
   // The conversation has no tab strip of its own.
   await expect(page.getByRole("tablist", { name: "聊天与工作台" })).toHaveCount(0);
   await openDock(page, "right", "trace");
+  await page.getByTestId("dock-toggle-right").click();
+  await expect(dockAt(page, "right")).toHaveCount(0);
 
   await launchFromChat(page);
-  await expect(page).toHaveURL(`${BASE}/apps?app=${encodeURIComponent(KEY)}`);
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === "/apps" &&
+      url.searchParams.get("app") === KEY &&
+      url.searchParams.get("beside") === sessionId,
+  );
   await expect(appWindow(page).locator("iframe[title='Clear']")).toBeVisible();
   await page.waitForTimeout(300);
   expect(await coveredPoints(page)).toEqual([]);
@@ -188,7 +195,13 @@ test("the workbench opened beside a conversation returns to its directory on min
     .evaluate((f) => (f.contentWindow.__tag = "kept"));
 
   await action(page, "最小化");
-  await expect(page).toHaveURL(`${BASE}/apps?workbenches=default_agent`);
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === "/apps" &&
+      !url.searchParams.has("app") &&
+      url.searchParams.get("beside") === sessionId,
+  );
+  await expect(page.getByRole("list", { name: "应用中心", exact: true })).toBeVisible();
   // Exact: the Trace dock's row for the reply previews the same text.
   await expect(
     page
@@ -206,12 +219,21 @@ test("the workbench opened beside a conversation returns to its directory on min
   ).resolves.toBe("kept");
 
   await action(page, "关闭");
-  await expect(page).toHaveURL(`${BASE}/apps?workbenches=default_agent`);
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === "/apps" &&
+      !url.searchParams.has("app") &&
+      url.searchParams.get("beside") === sessionId,
+  );
+  await expect(page.getByRole("list", { name: "应用中心", exact: true })).toBeVisible();
   await expect(page.locator("iframe[title='Clear']")).toHaveCount(0);
-  await page.locator(`[data-session-id="${sessionId}"]`).click({ button: "right" });
-  await page.getByRole("button", { name: "整页显示", exact: true }).click();
+  await dockAt(page, "right")
+    .locator('[data-tab-id=":catalog"]')
+    .getByTestId("dock-tab-close")
+    .click();
   await expect(page).toHaveURL(`${BASE}/chat/${sessionId}`);
-  await expect(dockAt(page, "right")).toBeVisible();
+  await page.getByTestId("dock-toggle-right").click();
+  await expect(dockAt(page, "right").locator('[data-tab-id="trace"]')).toBeVisible();
 });
 
 test("the page is see-through unless it paints its own background, and the bar switches pages", async ({
