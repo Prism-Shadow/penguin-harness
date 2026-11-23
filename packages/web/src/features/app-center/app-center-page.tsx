@@ -16,7 +16,7 @@
  * - A click (or Enter) opens the app windowed, over the grid (`?app=<agentId>/<workbenchId>`,
  *   `<machineId>:` first for a machine's); the tile's menu also opens it full screen, the full
  *   page whose exit comes back here. The window's minimize (and Back) returns to the grid with
- *   the app still running, and its tile marked so; a click on that tile brings back the same
+ *   the app still running in the sidebar; a click on its tile brings back the same
  *   live window. Several apps can run at once, and they keep running while the viewer is on
  *   another page, because their windows live in a layer over the page area rather than here
  *   (app-center-windows.tsx, over the running set in lib/running-apps.ts, which other surfaces

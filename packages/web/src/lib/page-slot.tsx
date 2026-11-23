@@ -40,8 +40,9 @@ export function PageSlot({
   const { layout, current } = workspace;
   const page = layout.pages.find((item) => item.id === id);
   const side = layout.visible.indexOf(id);
-  const split = !narrow && layout.visible.length === 2;
-  const shown = !!current && side >= 0 && (!narrow || id === layout.focus);
+  const split = !workspace.exitFullScreen && !narrow && layout.visible.length === 2;
+  const shown =
+    !!current && side >= 0 && ((!narrow && !workspace.exitFullScreen) || id === layout.focus);
   const focused = shown && layout.focus === id;
   const style: CSSProperties = split
     ? {

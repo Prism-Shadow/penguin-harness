@@ -16,6 +16,7 @@ import { PAGE_DRAG_TYPE } from "../../lib/page-layout";
 import { PageSlot, useNarrow } from "../../lib/page-slot";
 import { useRunningAppRecords } from "../../lib/running-apps";
 import { usePageWorkspace } from "../../lib/page-workspace";
+import { WorkbenchExitBall } from "../workbenches";
 import { WorkbenchDirectory } from "./workbench-directory";
 
 function PaneHeader({ side }: { side: 0 | 1 }) {
@@ -216,7 +217,13 @@ export function PageArea({
         </PageSlot>
       ))}
       {layers}
-      {split && (
+      {workspace.exitFullScreen && (
+        <WorkbenchExitBall
+          label={S.workbenches.exitFullPageButton}
+          onExit={workspace.exitFullScreen}
+        />
+      )}
+      {split && !workspace.exitFullScreen && (
         <>
           <PaneHeader side={0} />
           <PaneHeader side={1} />
