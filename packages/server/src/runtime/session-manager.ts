@@ -52,6 +52,7 @@ import type {
   SwitchModelOpts,
 } from "@prismshadow/penguin-library-session";
 import type {
+  Access,
   ServerEvent,
   ProjectConfigStore,
   ProjectEvents,
@@ -83,6 +84,7 @@ import type {
   ApproveFn,
   BackgroundCommandInfo,
   BackgroundSubagentInfo,
+  HostedSubagentAccess,
   CompactAvailability,
   ControlEnvContext,
   AgentAssembly,
@@ -115,6 +117,7 @@ import { AgentStateStore } from "./agent-state.js";
 import type { LiveRun, LiveTail } from "./live-tail.js";
 import { unrunSource } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
+import { decodeCursor } from "../services/message-window.js";
 import type { TitleNotifier } from "./title-generator.js";
 import { Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
@@ -131,7 +134,13 @@ import { loopbackHostRoles } from "../services/preview-token.js";
 import { agentNoProxy } from "../net/proxy.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
-import type { TraceIndex, TraceIndexStore, Traces } from "@prismshadow/penguin-library-trace";
+import type {
+  MessageCursor,
+  MessagesPageResult,
+  TraceIndex,
+  TraceIndexStore,
+  Traces,
+} from "@prismshadow/penguin-library-trace";
 import type { Settings } from "@prismshadow/penguin-library-setting";
 import type { MessagingBindings } from "@prismshadow/penguin-library-messaging";
 import type { OrgCache } from "@prismshadow/penguin-library-organization";
@@ -302,6 +311,13 @@ export function createCoreSessionLoader(
           throw toUnrecoverableError(err);
         }
       }
+      if (sources?.get(row.sessionId) === "subagent") {
+        throw new HttpError(
+          409,
+          "session_unrecoverable",
+          "The subagent's original Trace is missing.",
+        );
+      }
       // No Trace (created but never run, and the runtime object is gone since): self-heal
       // rebuild under the row's own id — a new one would leave behind everything keyed by the
       // old (a messaging binding whose replies would never go out, a terminal, the client's
@@ -375,7 +391,10 @@ export interface UsageRecorderLike {
 }
 
 export interface SessionManagerDeps {
-  traces?: Pick<Traces, "ownedSubagents">;
+  traces?: Pick<Traces, "ownedSubagents"> & Partial<Pick<Traces, "readMessagesPage">>;
+  access?: Pick<Access, "canAccess">;
+  /** Read a child origin from its actual registered Trace when this process has not seen it. */
+  recordedChild?: (row: SessionRow) => Promise<boolean>;
   /** The in-memory state this manager works on (see agent-state.ts). Optional: a manager built without one — unit tests — gets an empty state of its own. */
   state?: AgentStateStore;
   sessions: SessionIndex;
@@ -728,6 +747,13 @@ export class SessionManager {
     entry.lastActivityMs = Date.now();
     const parent = this.deps.sessions.findById(sessionId);
     let resume: { agentId: string; subagentId?: string } | undefined;
+    if (parent && this.entries.has(childSessionId)) {
+      const owned = await this.deps.traces?.ownedSubagents(parent);
+      if (owned?.some((child) => child.sessionId === childSessionId)) {
+        const delivered = await this.startTask(childSessionId, messages, { steerIfBusy: true });
+        return delivered.steered ? "steered" : "started";
+      }
+    }
     if (
       parent &&
       !entry.session.listBackgroundSubagents?.().some((child) => child.sessionId === childSessionId)
@@ -764,12 +790,20 @@ export class SessionManager {
     }
   }
 
-  /** Host abort of one child session's current run (core `Session.abortBackgroundSubagentRun`); false when the parent runtime is not loaded, the child is unknown, or it is idle. */
-  abortSubagentRun(sessionId: string, childSessionId: string): boolean {
+  /** Only a verified direct child can be stopped from its parent's panel. */
+  async abortSubagentRun(sessionId: string, childSessionId: string): Promise<boolean> {
     const entry = this.entries.get(sessionId);
-    if (!entry) return false;
-    entry.lastActivityMs = Date.now();
-    return entry.session.abortBackgroundSubagentRun?.(childSessionId) ?? false;
+    if (entry?.session.abortBackgroundSubagentRun?.(childSessionId)) return true;
+    if (this.statusOf(childSessionId) === "idle") return false;
+    const parent = this.deps.sessions.findById(sessionId);
+    if (
+      !parent ||
+      !(await this.deps.traces?.ownedSubagents(parent))?.some(
+        (child) => child.sessionId === childSessionId,
+      )
+    )
+      return false;
+    return this.abortTask(childSessionId);
   }
 
   /** Queued follow-up tasks awaiting auto-start, as their display/recall info (id + content summary). */
@@ -905,17 +939,7 @@ export class SessionManager {
    *   channel so every Session list shows which rows still own background work.
    */
   private registerNoticeListener(sessionId: string, session: RuntimeSession): void {
-    session.setSubagentResolver?.(async (handle) => {
-      const parent = this.deps.sessions.findById(sessionId);
-      if (!parent) return null;
-      const children = await this.deps.traces?.ownedSubagents(parent);
-      const owned = children?.find(
-        (child) => child.alias === handle || (child.sessionId === handle && child.alias !== null),
-      );
-      return owned?.alias
-        ? { sessionId: owned.sessionId, agentId: owned.agentId, alias: owned.alias }
-        : null;
-    });
+    session.setSubagentResolver?.((address) => this.resolveSubagent(sessionId, address));
     session.onBackgroundNotice?.(
       () => void this.state.current?.startBackgroundNoticeTask(sessionId),
     );
@@ -932,6 +956,164 @@ export class SessionManager {
     // hit routed there arrives with its policy reason and still reaches a person.
     const entry = this.entries.get(sessionId);
     if (entry) session.setSubagentApprovalFallback?.(this.entryApprove(entry));
+  }
+
+  private async resolveSubagent(callerId: string, address: string) {
+    const caller = this.deps.sessions.findById(callerId);
+    if (!caller) throw new Error("The calling Session is no longer available.");
+    const driver = this.entries.get(callerId)?.runDriver;
+    const allowed = () => Boolean(driver && this.deps.access?.canAccess(driver, caller.projectId));
+    if (driver && this.deps.access && !allowed()) throw new Error("Session access is unavailable.");
+    const suffix = address.replace(/^subagent-/, "");
+    // A non-user drive has no Project-wide authority. It can continue its own verified children.
+    if (!allowed() || address.startsWith("subagent-")) {
+      const own = (await this.deps.traces?.ownedSubagents(caller)) ?? [];
+      const matching = own.filter((child) =>
+        address.startsWith("subagent-")
+          ? child.alias === address
+          : child.sessionId === suffix || (suffix.length >= 8 && child.sessionId.endsWith(suffix)),
+      );
+      if (matching.length > 1)
+        throw new Error("Ambiguous Session suffix. Supply more characters or the full Session ID.");
+      const child = matching[0];
+      return child
+        ? {
+            sessionId: child.sessionId,
+            agentId: child.agentId,
+            alias: child.alias ?? child.sessionId,
+          }
+        : null;
+    }
+    const direct = this.deps.sessions.findById(suffix);
+    const rows = direct
+      ? direct.projectId === caller.projectId
+        ? [direct]
+        : []
+      : suffix.length >= 8
+        ? this.deps.sessions.findBySuffix(caller.projectId, suffix)
+        : [];
+    const targets: SessionRow[] = [];
+    for (const row of rows) {
+      const known = this.deps.sources.get(row.sessionId);
+      if (known === "subagent" || (known === undefined && (await this.deps.recordedChild?.(row)))) {
+        this.deps.sources.set(row.sessionId, "subagent");
+        targets.push(row);
+      }
+    }
+    if (targets.length > 1)
+      throw new Error("Ambiguous Session suffix. Supply more characters or the full Session ID.");
+    const target = targets[0];
+    const local =
+      target && this.subagentsOf(callerId).some((child) => child.sessionId === target.sessionId);
+    if (!target) return null;
+    const own =
+      !local &&
+      (await this.deps.traces?.ownedSubagents(caller))?.some(
+        (child) => child.sessionId === target.sessionId,
+      );
+    const result = {
+      sessionId: target.sessionId,
+      agentId: target.agentId,
+      alias: target.sessionId.slice(-8),
+    };
+    if ((local || own) && !this.entries.has(target.sessionId)) return result;
+    if (!allowed() || target.sessionId === callerId)
+      throw new Error("No accessible subagent Session matches this address.");
+    const hosted: HostedSubagentAccess = {
+      access: async (options) => {
+        if (!allowed() || !this.deps.sessions.findById(target.sessionId))
+          throw new Error("The subagent Session is unavailable.");
+        return this.accessHostedSubagent(target, options, driver!);
+      },
+    };
+    return { ...result, hosted };
+  }
+
+  /** Operate through the current owner. A cold child runs under its own indexed Agent and Trace. */
+  private async accessHostedSubagent(
+    target: SessionRow,
+    options: Parameters<HostedSubagentAccess["access"]>[0],
+    driver: string,
+  ) {
+    const id = target.sessionId;
+    this.assertSessionNotDeleting(id);
+    const owner = [...this.entries.values()].find(
+      (entry) =>
+        entry.projectId === target.projectId &&
+        entry.session.listBackgroundSubagents?.().some((child) => child.sessionId === id),
+    );
+    const managed = owner?.session;
+    const running = () =>
+      this.statusOf(id) !== "idle" ||
+      managed
+        ?.listBackgroundSubagents?.()
+        .some((child) => child.sessionId === id && child.running) === true;
+    const channel = this.deps.channels.get(
+      this.statusOf(id) !== "idle" ? id : (owner?.sessionId ?? id),
+    );
+    const wait = (timeout: number) =>
+      new Promise<void>((resolve) => {
+        const done = () => {
+          if (!running() || options.signal?.aborted) finish();
+        };
+        const unsubscribe = channel.subscribe(done);
+        const timer = setTimeout(finish, timeout);
+        function finish() {
+          clearTimeout(timer);
+          unsubscribe();
+          options.signal?.removeEventListener("abort", finish);
+          resolve();
+        }
+        options.signal?.addEventListener("abort", finish, { once: true });
+        done();
+      });
+    let action: string | undefined;
+    if (options.abort) {
+      const stopped = this.abortTask(id) || managed?.abortBackgroundSubagentRun?.(id);
+      action = stopped
+        ? "[subagent current run aborted]"
+        : "[subagent was already idle; nothing to abort]";
+      if (stopped && options.prompt.trim()) await wait(options.yieldMs);
+    }
+    if (options.prompt.trim() && !options.signal?.aborted) {
+      if (options.abort && running())
+        throw new Error("The original run is still stopping. Send the follow-up after it settles.");
+      const input = [userText(options.prompt, "parent_agent")];
+      if (managed && this.statusOf(id) === "idle") {
+        const sent = await managed.sendToBackgroundSubagent?.(id, input);
+        if (sent !== "started" && sent !== "steered")
+          throw new Error("The subagent cannot accept input right now.");
+      } else await this.startTask(id, input, { steerIfBusy: true, driver });
+    }
+    if (running() && !options.signal?.aborted) await wait(options.yieldMs);
+    let cursor: MessageCursor | null = null;
+    let text: string | undefined;
+    do {
+      if (options.signal?.aborted) break;
+      if (
+        !this.deps.access?.canAccess(driver, target.projectId) ||
+        !this.deps.sessions.findById(id)
+      )
+        throw new Error("The subagent Session is unavailable.");
+      const page: MessagesPageResult | undefined = await this.deps.traces?.readMessagesPage?.(
+        target.projectId,
+        target.agentId,
+        id,
+        cursor ? { kind: "before", cursor, limit: 4 } : { kind: "tail", limit: 1 },
+      );
+      const answer = page?.messages.findLast(
+        (record) =>
+          record.type === "model_msg" &&
+          !record.origin?.length &&
+          "type" in record.payload &&
+          record.payload.type === "text" &&
+          record.payload.role === "assistant",
+      );
+      if (answer && "type" in answer.payload && answer.payload.type === "text")
+        text = answer.payload.text;
+      cursor = page?.before ? decodeCursor(page.before) : null;
+    } while (text === undefined && cursor);
+    return { running: running(), ...(action ? { action } : {}), ...(text ? { text } : {}) };
   }
 
   /**
@@ -3087,6 +3269,7 @@ export class SessionsModule {
   @Use() private readonly traceIndex!: TraceIndex;
   @Use() private readonly traces!: Traces;
   @Use() private readonly traceStore!: TraceIndexStore;
+  @Use() private readonly access!: Access;
   @Use(SandboxModule) private readonly sandbox!: Sandbox;
   /** The Sandbox card's presets live in the sandbox's settings group. */
   @Use() private readonly pluginConfig!: PluginConfig;
@@ -3201,6 +3384,17 @@ export class SessionsModule {
       state: this.state as AgentStateStore,
       sessions: sessionsRepo,
       traces: this.traces,
+      access: this.access,
+      recordedChild: async (row) => {
+        await this.traceIndex.reconcileAgent(row.projectId, row.agentId);
+        const trace = this.traceStore.getSession(row.sessionId);
+        return (
+          trace?.projectId === row.projectId &&
+          trace.agentId === row.agentId &&
+          trace.metaRead &&
+          trace.source === "subagent"
+        );
+      },
       channels,
       root: config.root,
       loader: this.sessionLoaders.create(config.root, sources, {

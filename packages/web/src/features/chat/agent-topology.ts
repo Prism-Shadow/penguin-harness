@@ -262,8 +262,7 @@ export function extractTopologyForChild(
 }
 
 /** Launch note of a run_in_background subagent: binds the card to its registry handle. */
-const BG_SUBAGENT_LAUNCH_RE =
-  /\[subagent running in background with subagent_id (subagent-[0-9a-f]+)/;
+const BG_SUBAGENT_LAUNCH_RE = /\[subagent running in background with subagent_id ([\w-]+)/;
 
 /**
  * Terminal knowledge about background subagents in one scope slice, from the notes the
@@ -271,7 +270,7 @@ const BG_SUBAGENT_LAUNCH_RE =
  * input_subagent poll reporting the session idle, and legacy kill_subagent removal notes
  * (historical traces) all mean
  * "no longer running"; a later `still running` poll (or a follow-up round) flips it back.
- * Ids are the registry handles (`subagent-<hex8>`); last mention wins, in item order.
+ * Ids are the Session addresses recorded in the notes; last mention wins, in item order.
  */
 function backgroundSubagentStates(slice: readonly ChatItem[]): Map<string, "running" | "done"> {
   const states = new Map<string, "running" | "done">();
@@ -285,12 +284,12 @@ function backgroundSubagentStates(slice: readonly ChatItem[]): Map<string, "runn
     }
     if (item.kind !== "tool_call" || item.output.length === 0) continue;
     for (const m of item.output.matchAll(
-      /\[subagent (?:running in background|still running) with subagent_id (subagent-[0-9a-f]+)/g,
+      /\[subagent (?:running in background|still running) with subagent_id ([\w-]+)/g,
     )) {
       states.set(m[1]!, "running");
     }
     for (const m of item.output.matchAll(
-      /\[subagent idle with subagent_id (subagent-[0-9a-f]+)|\[subagent (subagent-[0-9a-f]+) (?:aborted and removed|was idle; session removed)/g,
+      /\[subagent idle with subagent_id ([\w-]+)|\[subagent ([\w-]+) (?:aborted and removed|was idle; session removed)/g,
     )) {
       states.set(m[1] ?? m[2]!, "done");
     }

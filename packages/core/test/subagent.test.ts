@@ -143,7 +143,7 @@ const ownDeltas = (out: AmspRecord[]): string =>
 
 /** Extracts the subagent_id from run_subagent's finishing note. */
 function extractSubagentId(result: ToolResult | void): string {
-  const m = (result?.note ?? "").match(/subagent_id (subagent-[0-9a-f]+)/);
+  const m = (result?.note ?? "").match(/subagent_id ([0-9a-f]{8})/);
   expect(m, `expected a subagent_id in: ${JSON.stringify(result?.note)}`).toBeTruthy();
   return m![1]!;
 }
@@ -449,7 +449,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     const id = extractSubagentId(result);
     // subagent_id is derived from the tail of the child Session id: it can be correlated with
     // the message origin / frontend nesting tag.
-    expect(id).toBe(`subagent-${HOP.slice(-8)}`);
+    expect(id).toBe(HOP.slice(-8));
     expect(manager.get(id)).toBeDefined();
     child.release();
   });
@@ -879,7 +879,7 @@ describe("subagent steering and per-run abort", () => {
       }
 
       expect(env.listBackgroundSubagents()).toEqual([
-        { sessionId: HOP, subagentId: `subagent-${HOP.slice(-8)}`, running: true },
+        { sessionId: HOP, subagentId: HOP.slice(-8), running: true },
       ]);
 
       // Host steering while running: human sender (field absent), same handle channel.
@@ -1017,11 +1017,30 @@ describe("subagent steering and per-run abort", () => {
       ).toBe("resumed");
       expect(resumes).toEqual([{ agentId: "owner_agent", sessionId: HOP }]);
       await until(() => env.listBackgroundSubagents()[0]?.running === false);
-      expect(env.listBackgroundSubagents()[0]!.subagentId).toBe(`subagent-${HOP.slice(-8)}`);
+      expect(env.listBackgroundSubagents()[0]!.subagentId).toBe(HOP.slice(-8));
       expect(prompts).toEqual(["task", "wake up"]);
     } finally {
       env.dispose();
     }
+  });
+
+  it("requires a longer real address when two child Session IDs have the same final eight characters", () => {
+    const { manager } = makeServices();
+    const child = (sessionId: string) =>
+      new ManagedSubagentSession({
+        sessionId,
+        async *run() {
+          yield assistantText("ready");
+        },
+        dispose() {},
+      });
+    const first = child("session-a-12ab34cd");
+    const second = child("session-b-12ab34cd");
+    expect(manager.remember(first)).toBe("12ab34cd");
+    expect(manager.remember(second)).toBe(second.sessionId);
+    expect(() => manager.localTarget("12ab34cd")).toThrow(/ambiguous/i);
+    expect(manager.localTarget("a-12ab34cd")?.sessionId).toBe(first.sessionId);
+    expect(manager.localTarget(second.sessionId)?.sessionId).toBe(second.sessionId);
   });
 
   it("a panel and a restored model handle share one revival and keep the originally issued alias", async () => {

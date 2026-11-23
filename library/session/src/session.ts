@@ -174,6 +174,7 @@ export abstract class SessionIndex {
   abstract findById(sessionId: string): SessionRow | null;
   abstract listByAgent(projectId: string, agentId: string): SessionRow[];
   abstract listByProject(projectId: string): SessionRow[];
+  abstract findBySuffix(projectId: string, suffix: string): SessionRow[];
   abstract updateApprovalMode(sessionId: string, mode: ApprovalMode): void;
   abstract updateSandbox(sessionId: string, sandbox: SandboxSettings): void;
   abstract updateThinkingLevel(sessionId: string, level: ThinkingLevelName): void;

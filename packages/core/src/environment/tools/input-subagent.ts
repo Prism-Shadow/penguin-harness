@@ -27,6 +27,7 @@ import type { AmspRecord } from "@prismshadow/amsp/records";
 import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import {
+  type ManagedSubagentSession,
   DEFAULT_SUBAGENT_POLL_YIELD_MS,
   DEFAULT_SUBAGENT_YIELD_MS,
   resultForSubagentExit,
@@ -67,16 +68,37 @@ export function createInputSubagentTool(
         );
         return { status: "fatal" };
       }
-      let session = manager.get(subagentId);
-      if (!session) {
-        // A subagent session is never destroyed the way a process is: an id whose session
-        // left the registry (idle release) resumes through the runner — the same revival the
-        // panel gets. Only an id this parent never allocated, or a missing/failed resume,
-        // still errors.
-        const runner = services?.subagentRunner;
-        try {
-          const clue =
-            manager.releasedInfo(subagentId) ?? (await manager.resolveHistorical?.(subagentId));
+      const prompt = typeof args["prompt"] === "string" ? (args["prompt"] as string) : "";
+      const empty = prompt.trim().length === 0;
+      const yieldMs = clampYield(
+        args["yield_time_ms"],
+        empty ? DEFAULT_SUBAGENT_POLL_YIELD_MS : DEFAULT_SUBAGENT_YIELD_MS,
+        definition.timeoutMs,
+      );
+
+      if (signal?.aborted) return { status: "aborted" };
+      let session: ManagedSubagentSession | undefined;
+      try {
+        const resolved = await manager.resolveHistorical?.(subagentId);
+        if (resolved?.hosted) {
+          const result = await resolved.hosted.access({
+            prompt,
+            abort: args["abort"] === true,
+            yieldMs,
+            ...(signal ? { signal } : {}),
+          });
+          if (signal?.aborted) return { status: "aborted" };
+          if (result.action) yield delta(result.action + "\n");
+          if (result.text) yield delta(result.text);
+          return {
+            status: "completed",
+            note: `[subagent ${result.running ? "still running" : "idle"} with subagent_id ${subagentId}]`,
+          };
+        }
+        const clue = resolved ?? manager.localTarget(subagentId);
+        session = clue ? manager.bySessionId(clue.sessionId) : undefined;
+        if (!session) {
+          const runner = services?.subagentRunner;
           if (clue?.agentId === null) {
             yield delta(
               `[input_subagent error: the original child for ${subagentId} is missing and cannot be resumed]`,
@@ -101,28 +123,18 @@ export function createInputSubagentTool(
               )) ?? undefined;
             if (session) yield delta(`[subagent ${subagentId} resumed]\n`);
           }
-        } catch (err) {
-          yield delta(
-            `[input_subagent error: cannot resume ${subagentId}: ${err instanceof Error ? err.message : String(err)}]`,
-          );
-          return { status: "fatal" };
         }
+      } catch (err) {
+        yield delta(`[input_subagent error: ${err instanceof Error ? err.message : String(err)}]`);
+        return { status: "fatal" };
       }
       if (!session) {
         yield delta(
           `[input_subagent error: unknown subagent_id ${subagentId} ` +
-            `(no unique surviving child could be verified for this handle in this conversation)]`,
+            `(no accessible subagent Session has this ID or suffix)]`,
         );
         return { status: "fatal" };
       }
-
-      const prompt = typeof args["prompt"] === "string" ? (args["prompt"] as string) : "";
-      const empty = prompt.trim().length === 0;
-      const yieldMs = clampYield(
-        args["yield_time_ms"],
-        empty ? DEFAULT_SUBAGENT_POLL_YIELD_MS : DEFAULT_SUBAGENT_YIELD_MS,
-        definition.timeoutMs,
-      );
 
       if (signal?.aborted) return { status: "aborted" };
 

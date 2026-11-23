@@ -233,6 +233,9 @@ test("subagent renders as a chip; the panel shows the call graph and child conve
     .poll(async () => (await childOf())?.title ?? null, { timeout: 10000 })
     .toBe("Subagent TODO summary");
   const child = await childOf();
+  await graph.getByRole("button", { name: /General Agent/ }).nth(1).click();
+  await page.getByTestId("dock").getByRole("button", { name: "复制 Session ID", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(child.sessionId);
 
   // --- The child's OWN Trace session_meta records source=subagent: written by core's spawn
   // site, the single source of truth (the server's registration fallback cannot mask this —
