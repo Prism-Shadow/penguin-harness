@@ -1,0 +1,181 @@
+{
+  "id": "example-benchmark",
+  "title": "Example Benchmark",
+  "description": "A built-in example benchmark so the evaluation charts have data out of the box. Replace it with your own.",
+  "descriptionZh": "内置的示例 Benchmark，让评估图表开箱就有数据。换成你自己的吧。",
+  "runs": 2,
+  "status": "published",
+  "version": "2026.10.12.1",
+  "origin": {
+    "kind": "builtin"
+  },
+  "caseCount": 2,
+  "evaluations": [
+    {
+      "time": "2026-07-14T09:30:00Z",
+      "agentId": "default_agent",
+      "summaryTitle": "Baseline before any optimization",
+      "summary": "Example data (not a real evaluation): baseline scores of the built-in sample benchmark before any optimization. Hypothesis for the next round: the agent skips a final self-check, losing points on completeness.",
+      "modelId": "deepseek-v4-pro",
+      "provider": "deepseek",
+      "thinkingLevel": "medium",
+      "score": 60,
+      "version": 1,
+      "cost": 0.013,
+      "durationMs": 57500,
+      "cases": [
+        {
+          "case": "CASE-001-file-summary",
+          "score": 60,
+          "cost": 0.013,
+          "durationMs": 45000,
+          "runs": [
+            {
+              "score": 50,
+              "cost": 0.012,
+              "durationMs": 42000,
+              "sessionId": "session-2026-07-14-09-05-11-1a2b3c01"
+            },
+            {
+              "score": 70,
+              "cost": 0.014,
+              "durationMs": 48000,
+              "sessionId": "session-2026-07-14-09-13-27-1a2b3c02"
+            }
+          ]
+        },
+        {
+          "case": "CASE-002-data-cleanup",
+          "score": 60,
+          "cost": null,
+          "durationMs": 70000,
+          "runs": [
+            {
+              "score": 60,
+              "cost": null,
+              "durationMs": 66000,
+              "sessionId": "session-2026-07-14-09-21-45-1a2b3c03"
+            },
+            {
+              "score": 60,
+              "cost": null,
+              "durationMs": 74000,
+              "sessionId": "session-2026-07-14-09-28-52-1a2b3c04"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "time": "2026-07-15T09:30:00Z",
+      "agentId": "default_agent",
+      "summaryTitle": "Added an explicit planning step",
+      "summary": "Example data (not a real evaluation): after adding an explicit planning step to the system prompt (hypothesis: written plans reduce missed requirements), both cases improved. Next: tighten output formatting.",
+      "modelId": "deepseek-v4-pro",
+      "provider": "deepseek",
+      "thinkingLevel": "medium",
+      "score": 75,
+      "version": 2,
+      "cost": 0.015,
+      "durationMs": 53000,
+      "cases": [
+        {
+          "case": "CASE-001-file-summary",
+          "score": 75,
+          "cost": 0.012,
+          "durationMs": 42000,
+          "runs": [
+            {
+              "score": 70,
+              "cost": 0.011,
+              "durationMs": 39000,
+              "sessionId": "session-2026-07-15-09-04-33-2b3c4d01"
+            },
+            {
+              "score": 80,
+              "cost": 0.013,
+              "durationMs": 45000,
+              "sessionId": "session-2026-07-15-09-12-08-2b3c4d02"
+            }
+          ]
+        },
+        {
+          "case": "CASE-002-data-cleanup",
+          "score": 75,
+          "cost": 0.018,
+          "durationMs": 64000,
+          "runs": [
+            {
+              "score": 70,
+              "cost": 0.016,
+              "durationMs": 60000,
+              "sessionId": "session-2026-07-15-09-19-40-2b3c4d03"
+            },
+            {
+              "score": 80,
+              "cost": 0.02,
+              "durationMs": 68000,
+              "sessionId": "session-2026-07-15-09-26-59-2b3c4d04"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "time": "2026-07-16T09:30:00Z",
+      "agentId": "default_agent",
+      "summaryTitle": "Verify deliverables before finishing",
+      "summary": "Example data (not a real evaluation): after instructing the agent to verify its deliverables against the statement before finishing (hypothesis: a final check catches formatting slips), scores improved again. Replace this benchmark with your own to track real progress.",
+      "modelId": "deepseek-v4-pro",
+      "provider": "deepseek",
+      "thinkingLevel": "medium",
+      "score": 85,
+      "version": 3,
+      "cost": 0.0135,
+      "durationMs": 48000,
+      "cases": [
+        {
+          "case": "CASE-001-file-summary",
+          "score": 85,
+          "cost": 0.011,
+          "durationMs": 38000,
+          "runs": [
+            {
+              "score": 80,
+              "cost": 0.01,
+              "durationMs": 36000,
+              "sessionId": "session-2026-07-16-09-03-21-3c4d5e01"
+            },
+            {
+              "score": 90,
+              "cost": 0.012,
+              "durationMs": 40000,
+              "sessionId": "session-2026-07-16-09-10-46-3c4d5e02"
+            }
+          ]
+        },
+        {
+          "case": "CASE-002-data-cleanup",
+          "score": 85,
+          "cost": 0.016,
+          "durationMs": 58000,
+          "runs": [
+            {
+              "score": 90,
+              "cost": 0.015,
+              "durationMs": 55000,
+              "sessionId": "session-2026-07-16-09-18-02-3c4d5e03"
+            },
+            {
+              "score": 80,
+              "cost": 0.017,
+              "durationMs": 61000,
+              "sessionId": "session-2026-07-16-09-25-30-3c4d5e04"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "agentIds": ["default_agent"]
+}

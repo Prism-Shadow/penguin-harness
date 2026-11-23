@@ -29,7 +29,7 @@ export type UserShortcut = DraftShortcut;
 
 /** Most shortcuts one user may keep. Past this a click-to-pick list is a search problem. */
 export const SHORTCUT_MAX_COUNT = 3;
-/** Longest title, in characters: what one folder row shows without truncating. */
+/** Longest title, in characters: the limit for a shortcut button label. */
 export const SHORTCUT_TITLE_MAX = 40;
 /** Longest prompt body, in characters: about three times the longest built-in example. */
 export const SHORTCUT_PROMPT_MAX = 4000;

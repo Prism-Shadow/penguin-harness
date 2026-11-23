@@ -55,6 +55,7 @@ import { AGENT_EVENTS, SESSION_EVENTS, SESSION_READ } from "./history-paths.js";
 import { GenerationClosed, HistorySync } from "./history-sync.js";
 import type { HistoryReader, HistorySyncDeps } from "./history-sync.js";
 import type { MachineSockets } from "./machine-sockets.js";
+import { committedWindow, offlineHistory } from "./offline-history.js";
 import { proxyThroughSession } from "./proxy.js";
 import type { ProxyPath, ProxyTarget } from "./proxy.js";
 import type { TraceCache } from "./trace-cache.js";
@@ -109,6 +110,8 @@ export interface MachineHistoryDeps {
   sync: HistorySync;
   cache: TraceCache;
   windows?: HeldWindows;
+  known?: (machineId: string) => boolean;
+  accessible?: (userId: string, projectId: string, machineId: string) => boolean;
   /** The Trace analysis of one file's records, priced with a Project's rates; absent: forwarded. */
   analyze?: (projectId: string, records: readonly AmspRecord[]) => Promise<TraceAnalysisResponse>;
   /** Whether this server has a Project (and so its config) by that id; absent: always. */
@@ -126,6 +129,7 @@ export function machineHistory(deps: {
   target: (machineId: string) => Promise<ProxyTarget | null>;
   /** Whether this server still lists the machine (a removed machine's reads end with an error). */
   known?: (machineId: string) => boolean;
+  accessible?: (userId: string, projectId: string, machineId: string) => boolean;
   /** The Trace analysis over the copy's records (MachineHistoryDeps.analyze). */
   analyze?: MachineHistoryDeps["analyze"];
   /** Whether this server has the Project an analysis would be priced with (MachineHistoryDeps.hasProject). */
@@ -175,6 +179,8 @@ export function machineHistory(deps: {
     history: new MachineHistory({
       sync,
       cache: deps.cache,
+      ...(deps.known !== undefined ? { known: deps.known } : {}),
+      ...(deps.accessible !== undefined ? { accessible: deps.accessible } : {}),
       ...(deps.analyze !== undefined ? { analyze: deps.analyze } : {}),
       ...(deps.hasProject !== undefined ? { hasProject: deps.hasProject } : {}),
     }),
@@ -186,6 +192,8 @@ export function machineHistory(deps: {
 export class MachineHistory {
   readonly #sync: HistorySync;
   readonly #cache: TraceCache;
+  readonly #known: MachineHistoryDeps["known"];
+  readonly #accessible: MachineHistoryDeps["accessible"];
   readonly #windows: HeldWindows;
   readonly #analyze: MachineHistoryDeps["analyze"];
   readonly #hasProject: MachineHistoryDeps["hasProject"];
@@ -195,6 +203,8 @@ export class MachineHistory {
   constructor(deps: MachineHistoryDeps) {
     this.#sync = deps.sync;
     this.#cache = deps.cache;
+    this.#known = deps.known;
+    this.#accessible = deps.accessible;
     this.#windows = deps.windows ?? new HeldWindows();
     this.#analyze = deps.analyze;
     this.#hasProject = deps.hasProject;
@@ -340,6 +350,26 @@ export class MachineHistory {
     sessionId: string,
     caller: HistoryCaller,
   ): Response {
+    if (url.searchParams.get("cached") === "1") {
+      return offlineHistory(
+        request,
+        async () => {
+          const query = parseHistoryQuery((name) => url.searchParams.get(name) ?? undefined);
+          if (query.kind !== "window" || query.read.kind === "before" || query.fill) {
+            throw new HttpError(400, "bad_request", "An offline read only opens the saved tail.");
+          }
+          if (!caller.userId || this.#known?.(machineId) === false) return null;
+          if (this.#sync.known(machineId, sessionId)?.kind === "refused") return null;
+          return this.#cache.readWindow(
+            machineId,
+            sessionId,
+            caller,
+            (projectId) => this.#accessible?.(caller.userId, projectId, machineId) ?? true,
+          );
+        },
+        caller.revocation?.(),
+      );
+    }
     const lastEventId = request.headers.get("last-event-id");
     return this.#stream(request, machineId, sessionId, caller, async (out, reader, progress) => {
       const report = (p: Parameters<ProgressOut["report"]>[0]) => progress.report(p);
@@ -359,7 +389,11 @@ export class MachineHistory {
         await out.send("filled", null, "{}");
         return;
       }
-      const owner = { sessionId, userId: caller.userId, query: JSON.stringify(query) };
+      const owner = {
+        sessionId,
+        userId: caller.userId,
+        query: JSON.stringify([machineId, caller.projectId, query]),
+      };
       const resume = resumePoint(lastEventId);
       const held = resume !== null ? this.#windows.find(resume.windowId, owner) : null;
       let window = held;
@@ -370,6 +404,22 @@ export class MachineHistory {
           (_m, i) => assembled.sources[i] ?? null,
           assembled.serverNowMs,
         );
+        const projectId =
+          assembled.projectId ??
+          caller.projectId ??
+          this.#projects.get(`${machineId}\0${sessionId}`);
+        if (
+          caller.userId &&
+          projectId &&
+          query.read.kind !== "before" &&
+          assembled.committedRecords !== undefined
+        ) {
+          // Only the machine's history-lines leg distinguishes Trace records from pending input.
+          const saved = committedWindow(window, assembled.committedRecords);
+          await this.#cache
+            .saveWindow(machineId, sessionId, { userId: caller.userId, projectId }, saved)
+            .catch(() => undefined);
+        }
         this.#windows.hold(window, owner);
         await progress.flush();
       }

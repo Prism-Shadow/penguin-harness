@@ -1168,6 +1168,8 @@ export const zh = {
     hint: (mod: string): string => `←→ 切换分组与列表 · ${mod}1–9 跳到分组`,
   },
   workbenches: {
+    configureOnMachine: "请在运行这个工作台的机器上配置模型。",
+    openBeforeConfiguring: "请先打开工作台，再配置模型。",
     title: "工作台",
     count: (n: number) => `${n} 个工作台`,
     open: "打开工作台",
@@ -1253,11 +1255,10 @@ export const zh = {
     importOverwriteAction: "覆盖导入",
     /** The row's More menu: downloads the workbench's source as a zip. */
     exportWorkbench: "打包导出",
-    /** Whether the workbench has a shortcut in the App Center: the words beside the row's switch (which flip it too), its accessible name with the title, and the More menu's checkable row. */
-    showInAppCenter: "展示到应用中心",
-    /** The switch's words' tooltip: what showing in the App Center means, and what the switch writes. */
-    showInAppCenterHint:
-      "打开后，这个工作台会作为一个应用出现在「应用中心」页面：Project 的每个成员都能在那里看到它的图标，点一下即可打开使用，不必先进入对话。关闭只是把入口从应用中心撤下，工作台本身、它的数据与历史版本都不受影响。拨动开关会改写工作台 package.json 中的 penguin.appCenter.show，并记为一个版本。",
+    appCenterVisibility: (shown: boolean): string =>
+      shown ? "从应用中心隐藏" : "在应用中心取消隐藏",
+    appCenterVisibilityHint:
+      "更改所有 Project 成员看到的应用中心入口。工作台的数据和历史版本会保留。",
     /** The More menu's checkable row: whether the workbench is listed in its Agent's sidebar (a marker the installation keeps, shared by every member). */
     showInSidebar: "展示到侧边栏",
     /** The row's text button: opens the workbench beside a new chat. */
@@ -3513,6 +3514,8 @@ export const zh = {
     /** Listed, but the process could not load it: the reason, not a success. */
     deploymentFailedToast: (name: string, reason: string) => `${name} 加载失败：${reason}`,
     /** A server module's install / removal confirm: what it does, then what it costs, in small type below. */
+    packageUpdateFailed: (name: string, reason: string) => `${name} 更新失败。${reason}`,
+    packageUpdated: (name: string, version: string) => `已将插件库中的 ${name} 更新到 v${version}`,
     updatePackageTo: (version: string) => `更新到 v${version}`,
     applyConfirmInstall: (name: string) => `安装 ${name}`,
     applyConfirmRemove: (name: string) => `移除 ${name}`,
@@ -4303,7 +4306,6 @@ export const zh = {
     /** The same mark on its own, for a row that is attributed to a machine rather than named after one. */
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "在此工作区新建对话",
-    draftSubtitle: "最全面的 Agent 自进化平台",
     /** The start page's dashboard (features/chat/start-dashboard.tsx): three counts beside the brand, and the examples block under the composer. */
     start: {
       /** What each count counts; the label and the number open the page that lists it. Short: the three share the brand's line. */
@@ -4312,27 +4314,13 @@ export const zh = {
         toolkits: "自进化算法",
         benchmarks: "评估集",
       },
+      shuffle: "换一组示例",
       examplesTitle: "示例与快捷指令",
     },
-    /** Collapsed group names for the start page's examples (bookmark style; only one open at a time). */
-    exampleFolders: {
-      apps: "一句话生成 AI 应用",
-      webapps: "网页与小游戏",
-      evolve: "评测与优化智能体",
-      schedules: "定时任务",
-    },
-    /** Second tooltip line on an example row: the click fills the composer, it does not send. */
-    exampleFillHint: "点击填入输入框，可修改后自行发送",
-    /** The examples block's last folder: prompts the user wrote and saved, stored per user on the server. */
     shortcuts: {
-      folder: "我的快捷指令",
+      retry: "重新加载我的快捷指令",
+      manage: "管理快捷指令",
       new: "新建快捷指令",
-      /**
-       * Tooltip on the new-shortcut row. Unconditional, and worded to hold either way: the
-       * editor opens on whatever the composer holds, which is a blank draft when it holds
-       * nothing — saving what was just typed is the path this folder exists to shorten.
-       */
-      newFromComposer: "以输入框中的内容作为起点",
       createTitle: "新建快捷指令",
       editTitle: "编辑快捷指令",
       titleLabel: "名称",
@@ -4633,6 +4621,7 @@ Benchmark：
     /** Answer-preview placeholder while the latest turn is still running with no reply text yet. */
     outlineAnswering: "回答生成中…",
     inputPlaceholder: "输入消息，Enter 发送，Shift+Enter 换行，可粘贴图片",
+    resizeDraft: "调整草稿输入框高度",
     inputPlaceholderShort: "输入消息…",
     /** Placeholder while a Task is running (mid-run steering): the message is delivered between turns with the next request. */
     steerPlaceholder: "给运行中的 Agent 留言，随下一轮对话送达",
@@ -4850,6 +4839,14 @@ Benchmark：
     statParenClose: "）",
     noSessions: "还没有 Session",
     /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
+    offlineHistory: {
+      disconnected: (alias: string) => `${alias} 未连接。`,
+      cached: "正在显示上次同步的对话记录。",
+      miss: "本地没有这段对话的缓存。连接恢复后会自动打开。",
+      empty: "上次同步时还没有消息。",
+      refreshing: (alias: string) => `${alias} 已连接，正在更新对话记录。`,
+      failed: "暂时无法读取本地对话记录。",
+    },
     sessionOnOfflineMachine: (machine: string) => `这个对话在 ${machine} 上，当前没有连接。`,
     /** The routed conversation's machine is connected and did not answer in time. */
     sessionOnQuietMachine: (machine: string) =>

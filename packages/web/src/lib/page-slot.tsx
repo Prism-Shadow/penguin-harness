@@ -57,7 +57,7 @@ export function PageSlot({
     <div
       data-workspace-page={id}
       data-pane={shown ? (split ? (side === 1 ? "right" : "left") : "full") : undefined}
-      className={`absolute inset-0 min-w-0 bg-canvas ${shown ? "" : "invisible"}`}
+      className={`absolute inset-0 min-w-0 ${shown ? "" : "invisible"}`}
       inert={!shown}
       style={style}
       onPointerDownCapture={activate}

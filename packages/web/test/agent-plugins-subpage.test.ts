@@ -31,10 +31,11 @@
  *   asking the Agent again.
  */
 import { createElement as h } from "react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import { toastStore } from "@prismshadow/penguin-ui";
 import { PluginsPage } from "../src/features/plugins/plugins-page";
+import * as api from "../src/api/endpoints";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { AGENT_ID, buttonIn, topDialog, whereIs } from "./helpers/agent-app";
@@ -106,6 +107,7 @@ describe("the Plugins sub-page of an Agent's settings", () => {
     toastStore.setState({ items: [] });
   });
   afterEach(async () => {
+    vi.restoreAllMocks();
     await unmountAll();
     localStorage.clear();
     setActiveStrings(zh);
@@ -116,6 +118,67 @@ describe("the Plugins sub-page of an Agent's settings", () => {
     expect(sectionOf("Charts")).toBe(INSTALLED);
     expect(sectionOf("Notes kit")).toBe(AVAILABLE);
     expect(findPluginRow("notes")).toBeNull();
+  });
+
+  it("updates the server library from an installed Agent plugin, reports progress and retries a failed download", async () => {
+    let upgraded = false;
+    const release = "1.2.0";
+    vi.spyOn(api, "getPluginIndex").mockImplementation(async () => ({
+      plugins: [
+        {
+          name: CHARTS.package,
+          description: "",
+          authors: [],
+          license: "MIT",
+          version: release,
+          localInstall: {
+            version: upgraded ? release : "1.0.0",
+            libraryOnly: true,
+            updateAvailable: !upgraded,
+          },
+        },
+      ],
+      failures: [],
+      pending: [],
+    }));
+    const gate = Promise.withResolvers<void>();
+    const write = vi
+      .spyOn(api, "installPluginStream")
+      .mockImplementationOnce(async (_project, _pkg, _server, progress) => {
+        progress(4, 8);
+        await gate.promise;
+        throw new Error("Download interrupted");
+      })
+      .mockImplementationOnce(async (project) => {
+        upgraded = true;
+        return api.getInstalledPlugins(project, null);
+      });
+    await openAgentPlugins();
+    const label = `${en.plugins.updatePackageTo(release)} Charts`;
+    await waitFor(() => hasButton(label));
+    await click(button(label));
+    expect(topDialog().textContent).toContain(
+      en.plugins.packageUpdateBody("Charts", "1.0.0", release),
+    );
+    await click(buttonIn(topDialog(), en.skills.updateAction));
+    await waitFor(() => topDialog().textContent!.includes("50%"));
+    gate.resolve();
+    await waitFor(() => !buttonIn(topDialog(), en.skills.updateAction).disabled);
+    expect(toasts("error").join(" ")).toContain("Couldn’t update Charts");
+    await click(buttonIn(topDialog(), en.skills.updateAction));
+    await waitFor(() => !hasButton(label) && dialogs().length === 0);
+    expect(toasts("success")).toContain(en.plugins.packageUpdated("Charts", release));
+    expect(write.mock.calls.map((call) => call.slice(1, 3))).toEqual([
+      [`${CHARTS.package}@${release}`, "local-machine"],
+      [`${CHARTS.package}@${release}`, "local-machine"],
+    ]);
+  });
+
+  it("keeps a Project member's Agent install separate from an administrator's library update", async () => {
+    const read = vi.spyOn(api, "getPluginIndex");
+    await openAgentPlugins({ role: "member", admin: false });
+    expect(read).not.toHaveBeenCalled();
+    expect(hasButton(`${en.plugins.updatePackageTo("1.2.0")} Charts`)).toBe(false);
   });
 
   it("shows an installed plugin's description under its name and the Plugins page's tags beside it", async () => {

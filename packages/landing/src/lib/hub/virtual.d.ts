@@ -12,6 +12,12 @@ declare module "virtual:penguin-hub" {
   export const leaderboardDetails: unknown;
 }
 
+declare module "virtual:penguin-plugin-featured" {
+  export const directoryUrl: string;
+  export const featured: unknown;
+  export const leads: number[];
+}
+
 declare module "virtual:penguin-rfc-prs" {
   export const updatedAt: string;
   export const prs: unknown;

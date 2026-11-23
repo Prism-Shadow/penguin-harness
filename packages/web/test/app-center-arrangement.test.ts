@@ -2,9 +2,9 @@
  * The App Center's arrangement (features/app-center/arrangement.ts): the viewer's stored layout
  * over the shortcuts the server lists, and the moves the grid makes.
  *
- * - With no layout, the grid is the server's order.
+ * - The default order puts standard system apps first, then keeps the incoming order.
  * - A stored layout keeps its order and folders; an app it names that is no longer listed drops
- *   out, a listed app it does not name is appended in the server's order, and a folder keeps
+ *   out, a listed app it does not name is appended in default grid order, and a folder keeps
  *   its place while it holds an app — one app is enough — and goes once it is empty.
  * - Dropping an app beside another moves it there, inside a folder when the target is in one; a
  *   folder never goes into a folder. Dropping onto an app makes a folder of the two in that
@@ -72,8 +72,32 @@ const outline = (grid: readonly GridItem[]) =>
 const stored = (items: AppCenterLayout["items"]): AppCenterLayout => ({ v: 1, items });
 
 describe("arrange", () => {
-  it("with no layout, is the server's order", () => {
+  it("keeps the incoming order when there are no standard system apps", () => {
     expect(outline(arrange(shortcuts(), null))).toEqual(LISTED);
+  });
+
+  it("places available standard system apps first unless the viewer saved another position", () => {
+    const standard = ["benchmark", "usage", "machines", "plugins", "models"].map((id) => ({
+      ...shortcut(id, "system_agent"),
+      system: { glyph: id },
+    }));
+    const extra = shortcut("first");
+    const apps = [extra, ...standard];
+    const expected = ["models", "plugins", "machines", "usage", "benchmark"].map(
+      (id) => `system_agent/${id}`,
+    );
+    expect(outline(arrange(apps, null))).toEqual([...expected, "a1/first"]);
+    const layout = stored([
+      { type: "folder", id: "f", name: "Work", apps: ["a1/first", "system_agent/usage"] },
+    ]);
+    expect(outline(arrange(apps, layout))).toEqual([
+      "Work[a1/first, system_agent/usage]",
+      ...expected.filter((id) => id !== "system_agent/usage"),
+    ]);
+    expect(outline(arrange([extra, shortcut("models", "system_agent")], null))).toEqual([
+      "a1/first",
+      "system_agent/models",
+    ]);
   });
 
   it("keeps a stored order and folder, drops what is gone, appends what is new", () => {

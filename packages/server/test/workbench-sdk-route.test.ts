@@ -10,6 +10,7 @@
  *   answer is taken only from the page's parent and only on that id, an acknowledged question
  *   waits for the person, and one no app acknowledges, or a page with no app above it, is told
  *   the app is unavailable.
+ * - Opening native model settings resolves when the parent opens them and rejects its refusal.
  * - Both are answered only under an existing workbench of a Project the caller can read, and
  *   only to a signed-in caller.
  * - The page runtime TSX pages import (`…/sdk/ui/*`) is served the same way, and never the
@@ -63,6 +64,7 @@ type PageSdk = typeof Amsp & {
   abortSession(sessionId: string): Promise<boolean>;
   chooseChatModel(current?: unknown): Promise<unknown>;
   getChatModel(current?: unknown): Promise<unknown>;
+  openModelSettings(): Promise<void>;
 };
 
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -216,6 +218,15 @@ describe("the workbench page SDK", () => {
       hear(app, { type: "penguin:chat-model-reply", id: "another", model: null });
       reply({ model: review });
       await expect(chosen).resolves.toEqual(review);
+
+      const settings = sdk.openModelSettings();
+      expect(posted.at(-1)).toMatchObject({ type: "penguin:open-model-settings" });
+      reply({ opened: true });
+      await expect(settings).resolves.toBeUndefined();
+
+      const remoteSettings = sdk.openModelSettings();
+      reply({ error: "Configure this machine directly." });
+      await expect(remoteSettings).rejects.toThrow("Configure this machine directly.");
 
       // An app that does not know the question never acknowledges it.
       const unheard = expect(sdk.getChatModel()).rejects.toMatchObject({

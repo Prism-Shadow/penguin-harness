@@ -35,6 +35,7 @@ export function liveFrameSrc(
   locale: Locale,
   dark: boolean,
   autoplay?: "evolution",
+  freshProject = false,
 ): string {
   const route = surfaceById(surface)?.route;
   if (route === undefined) throw new Error(`No gallery surface named ${surface}`);
@@ -43,6 +44,7 @@ export function liveFrameSrc(
     { theme: INITIAL_THEME_ID, mode: modeOf(dark), lang: locale },
     route,
     autoplay,
+    freshProject,
   );
 }
 

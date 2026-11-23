@@ -54,6 +54,7 @@ export function ComposerCard({
   attachments,
   chips,
   textarea,
+  resizeHandle,
   tools,
   hint,
   strip,
@@ -67,6 +68,8 @@ export function ComposerCard({
   chips?: ReactNode;
   /** The text body: a controlled textarea, two lines high to begin with. */
   textarea: ComposerTextareaProps;
+  /** A handle for a caller-sized text body. The toolbar stays below it. */
+  resizeHandle?: ReactNode;
   /** The icon triggers leading the toolbar, set as one tight cluster. */
   tools?: ReactNode;
   /** A muted line after them (how to reach the slash commands), shown once the card is wide. */
@@ -99,8 +102,9 @@ export function ComposerCard({
         ref={ref}
         rows={2}
         {...text}
-        className="block max-h-44 min-h-[60px] w-full resize-none bg-transparent px-1 py-0.5 font-sans text-base leading-6 placeholder:text-fg-subtle focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+        className={`${resizeHandle ? "" : "max-h-44"} block min-h-[60px] w-full resize-none bg-transparent px-1 py-0.5 font-sans text-base leading-6 placeholder:text-fg-subtle focus:outline-none disabled:cursor-not-allowed disabled:opacity-60`}
       />
+      {resizeHandle}
       <div className="mt-1 flex items-center justify-between gap-2 text-xs">
         <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
           {strip !== undefined && strip !== null ? (

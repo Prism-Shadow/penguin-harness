@@ -412,13 +412,6 @@ describePty("terminal stream handshake", () => {
  * is behind on is real.
  */
 const FLOOD_COMMAND = "head -c 4000000 /dev/urandom | base64";
-/**
- * A screenful of that flood: base64 runs on two consecutive rows. The restore stream writes
- * the grid row by row, so this holds whichever instant the resync snapshot is taken at —
- * unlike a marker printed once per round, which megabytes of scrolling carry off the screen.
- */
-const FLOOD_ROWS = /[A-Za-z0-9+/]{40}\r\n[A-Za-z0-9+/]{40}/;
-
 /** Every Restore opens with this self-contained repaint (see snapshot.ts). */
 const RESTORE_PREAMBLE = "\x1b[0m\x1b[?1049l\x1b[H\x1b[2J\x1b[3J";
 
@@ -589,8 +582,13 @@ describePty("terminal stream backpressure", () => {
       // Restore — so a repaint carrying the flooded pane must have arrived. It is not
       // necessarily the marker-bearing one (the mid-flood timing above legitimately
       // skips that); the flooded pane is the promise, and it identifies the repaint.
+      // base64 may print hard newlines or leave wrapping to the terminal. A continuous
+      // run must span more than a full row to prove the repaint held adjacent flooded rows.
+      const floodRows = new RegExp(
+        `[A-Za-z0-9+/]{40}\\r\\n[A-Za-z0-9+/]{40}|[A-Za-z0-9+/]{${terminal.cols + 40}}`,
+      );
       const resync = client.frames.find(
-        (f) => f.opcode === TerminalStreamOpcode.Restore && FLOOD_ROWS.test(f.text),
+        (f) => f.opcode === TerminalStreamOpcode.Restore && floodRows.test(f.text),
       );
       expect(resync, "a resync repaint of the flooded pane").toBeDefined();
       // What a resync promises is the repaint, not a particular line of screen residue —

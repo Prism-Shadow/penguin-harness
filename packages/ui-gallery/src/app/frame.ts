@@ -100,6 +100,7 @@ export interface FrameTarget {
   embedded?: boolean;
   /** Play the self-evolution example in an embedded new conversation. */
   autoplay?: "evolution";
+  freshProject?: boolean;
   /**
    * Raise the notices a conversation can carry, which the demo account otherwise keeps down: the
    * initial-password banner across the main column and the context-window notice over the
@@ -141,6 +142,7 @@ export function embeddedFrameSrc(
   prefs: EmbeddedPrefs,
   route: string,
   autoplay?: FrameTarget["autoplay"],
+  freshProject = false,
 ): string {
   const params = new URLSearchParams();
   params.set("route", route);
@@ -148,6 +150,7 @@ export function embeddedFrameSrc(
   params.set("mode", prefs.mode);
   params.set("lang", prefs.lang);
   params.set("embed", "1");
+  if (freshProject) params.set("fresh", "1");
   if (autoplay) params.set("autoplay", autoplay);
   return `${base}${APP_FRAME_PATH}?${params.toString()}`;
 }
@@ -172,6 +175,9 @@ export function parseFrameParams(search: string): FrameParams {
     route === "/chat/new" &&
     params.get("autoplay") === "evolution"
       ? { autoplay: "evolution" as const }
+      : {}),
+    ...(params.get("fresh") === "1" && params.get("embed") === "1" && route === "/chat/new"
+      ? { freshProject: true }
       : {}),
     ...(params.get("notices") === "1" ? { notices: true } : {}),
     ...(platform !== undefined ? { window: platform } : {}),
