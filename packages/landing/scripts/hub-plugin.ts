@@ -2,6 +2,7 @@
  * The Vite plugin behind the Plugins, Benchmarks and Leaderboards pages. It reads the source files
  * at build time (scripts/hub/) and serves them as modules:
  *
+ * - `virtual:penguin-plugin-featured` — the curated carousel, independent of the directory;
  * - `virtual:penguin-hub` — the lists' summaries and the market's curation, plus one loader per
  *   detail page;
  * - `virtual:penguin-hub/<kind>/<id>` — one detail record, a chunk of its own, fetched when its
@@ -16,6 +17,7 @@ import { loadHub, PLUGINS_DIR } from "./hub/hub.mjs";
 import { fetchPublished } from "./hub/published.mjs";
 
 const INDEX = "virtual:penguin-hub";
+const FEATURED = "virtual:penguin-plugin-featured";
 const KINDS = ["plugin", "benchmark", "leaderboard"] as const;
 
 type Hub = ReturnType<typeof loadHub>;
@@ -51,9 +53,19 @@ export function hubData(): Plugin {
       await fetchPublished({ refresh });
     },
     resolveId(id) {
-      return id === INDEX || id.startsWith(`${INDEX}/`) ? `\0${id}` : null;
+      return id === FEATURED || id === INDEX || id.startsWith(`${INDEX}/`) ? `\0${id}` : null;
     },
     load(id) {
+      if (id === `\0${FEATURED}`) {
+        const { market, plugins } = read().index;
+        const featured = market.selected.flatMap((id: string) =>
+          plugins.filter((plugin) => plugin.id === id),
+        );
+        const leads = market.hero
+          .map((id: string) => featured.findIndex((plugin) => plugin.id === id))
+          .filter((index: number) => index >= 0);
+        return `export const featured = ${json(featured)}; export const leads = ${json(leads)};`;
+      }
       if (!id.startsWith(`\0${INDEX}`)) return null;
       const data = read();
       const name = id.slice(1);
@@ -71,7 +83,8 @@ export function hubData(): Plugin {
         if (!file.startsWith(PLUGINS_DIR)) return;
         hub = undefined;
         for (const module of server.moduleGraph.idToModuleMap.values()) {
-          if (module.id?.startsWith(`\0${INDEX}`)) server.moduleGraph.invalidateModule(module);
+          if (module.id === `\0${FEATURED}` || module.id?.startsWith(`\0${INDEX}`))
+            server.moduleGraph.invalidateModule(module);
         }
         server.ws.send({ type: "full-reload" });
       });
