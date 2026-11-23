@@ -169,3 +169,32 @@ export const putExtensionsSwitch = (enabled: boolean) =>
     method: "PUT",
     body: { browserExtensionsEnabled: enabled },
   });
+
+export interface ManagedBrowserGroup {
+  machineId: string | null;
+  projectId: string;
+  sessionId: string;
+}
+
+function managedTabsPath(group: ManagedBrowserGroup): string {
+  return builtinBrowserPath(
+    `/projects/${encodeURIComponent(group.projectId)}/session-resources/${encodeURIComponent(group.sessionId)}/tabs`,
+  );
+}
+
+export const listManagedPages = (group: ManagedBrowserGroup) =>
+  apiFetch<{ tabs: BuiltinBrowserTab[] }>(managedTabsPath(group), { server: group.machineId });
+export const openManagedPage = (group: ManagedBrowserGroup, url?: string) =>
+  apiFetch<{ tab: BuiltinBrowserTab }>(managedTabsPath(group), {
+    server: group.machineId,
+    method: "POST",
+    body: url ? { url } : {},
+  });
+export const closeManagedPage = (group: ManagedBrowserGroup, id: number) =>
+  apiFetch<void>(`${managedTabsPath(group)}/${id}`, { server: group.machineId, method: "DELETE" });
+export const activateManagedPage = (group: ManagedBrowserGroup, id: number) =>
+  apiFetch<void>(`${managedTabsPath(group)}/${id}/activate`, {
+    server: group.machineId,
+    method: "POST",
+    body: {},
+  });

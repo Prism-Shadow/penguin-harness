@@ -74,6 +74,7 @@ export interface BrowserToolbarProps {
   /** Whether this window hosts the tab's page (DevTools opens on the element). */
   hostsPage: boolean;
   addressRef: Ref<HTMLInputElement>;
+  addressPending?: boolean;
   onBack: () => void;
   onForward: () => void;
   onReload: () => void;
@@ -158,6 +159,7 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
         url={props.address}
         onNavigate={props.onNavigate}
         inputRef={props.addressRef}
+        disabled={props.addressPending ?? false}
       />
       <AgentBusyMark activity={activity} />
       {props.loadWarning !== null && (
