@@ -41,20 +41,22 @@ async function fixture(page) {
       },
     ],
   };
+  const detail = path + "?id=rescue-board";
   socket.onCall((call) => {
-    if (call.path === path) {
+    if (call.path === path || call.path === detail) {
       state.requests++;
       workbench.tabs[0].renderer.iframe.src = state.broken
         ? { routeRenderFailure: true }
         : "/rescue-board.html";
     }
   });
-  socket.answer("GET", path, { status: 200, body: { workbenches: [workbench] } });
+  for (const address of [path, detail])
+    socket.answer("GET", address, { status: 200, body: { workbenches: [workbench] } });
   socket.answer("GET", `/api/projects/${project}/app-center`, {
     status: 200,
     body: {
       layout: null,
-      apps: [
+      shortcuts: [
         {
           agentId: "default_agent",
           agentName: "General Agent",

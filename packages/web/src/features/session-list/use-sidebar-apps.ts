@@ -3,7 +3,7 @@ import type { AppCenterShortcut, IconRef } from "@prismshadow/penguin-server/api
 import type { OpenPage } from "../../lib/page-layout";
 import { SYSTEM_AGENT_ID } from "../../lib/builtin-agents";
 import { systemAppKey, useSystemApps, type SystemShortcut } from "../../lib/system-apps";
-import { systemShortcutsOf } from "../app-center/system-tiles";
+import { systemShortcutsOf } from "../app-center";
 import { usePageAgent } from "../../lib/page-agent";
 import { useRunningAppRecords } from "../../lib/running-apps";
 import { localizedText } from "../../lib/skill-use";

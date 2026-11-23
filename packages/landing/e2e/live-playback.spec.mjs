@@ -105,7 +105,7 @@ for (const [lang, name, instruction, download] of [
       .click();
     await expect(frame.getByRole("dialog")).toHaveCount(0);
     await frame
-      .getByRole("link", { name: lang === "en" ? "App Center" : "应用中心", exact: true })
+      .getByRole("link", { name: lang === "en" ? /^App Center(?: ·|$)/ : /^应用中心(?: ·|$)/ })
       .click();
     const tile = frame
       .locator('li[data-app="default_agent/first-workbench-guide"] > button')

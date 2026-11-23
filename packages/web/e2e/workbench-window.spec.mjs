@@ -109,7 +109,7 @@ async function launchFromChat(page) {
   await page.getByRole("button", { name: "浏览工作台", exact: true }).click();
   await page
     .getByRole("region", { name: "工作台", exact: true })
-    .getByRole("menuitem", { name: "Window demo", exact: true })
+    .getByRole("button", { name: "Window demo", exact: true })
     .click();
 }
 async function action(page, name) {
@@ -248,7 +248,7 @@ test("opening a workbench in a second window leaves the first window's Apps list
   await settings.getByRole("button", { name: "更多 Clear" }).click();
   await expect(settings.getByRole("menuitemcheckbox", { name: "展示到侧边栏" })).toHaveCount(0);
   await settings.keyboard.press("Escape");
-  await settings.getByRole("button", { name: "打开 Clear", exact: true }).click();
+  await settings.getByRole("button", { name: "打开工作台 Clear", exact: true }).click();
   await expect(row(settings)).toHaveCount(1);
   await expect(row(page)).toHaveCount(0);
   await page.goto(`${BASE}/apps`);

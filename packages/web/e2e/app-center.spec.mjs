@@ -438,9 +438,11 @@ test("a system app's tile opens its page, where the App Center stays lit", async
 test("searching, sorting and folding sidebar directories keeps the open page and its draft", async ({
   page,
 }) => {
-  await provisionAndLogin(page.request, U, P);
+  await provisionAndLogin(page.request, "sidebarsearch", P);
   await setAccountPrefs(page.request, { lang: "en" });
   const { projects } = await (await page.request.get("/api/projects")).json();
+  const base = `/api/projects/${projects[0].projectId}/agents/default_agent/workbenches`;
+  for (const title of ["Gamma", "Alpha"]) await importApp(page.request, base, title);
   const model = { provider: "custom", modelId: "sidebar-test" };
   const configured = await page.request.put(`/api/projects/${projects[0].projectId}/models`, {
     data: {
@@ -458,7 +460,7 @@ test("searching, sorting and folding sidebar directories keeps the open page and
   await expect(rows).toHaveCount(0);
   const editor = page.getByRole("main").locator("textarea").first();
   await editor.fill("Keep this draft while looking for an app");
-  const catalog = side.getByRole("link", { name: "App Center", exact: true });
+  const catalog = side.getByRole("link", { name: /^App Center(?: ·|$)/ });
   for (const title of ["Gamma", "Alpha"]) {
     await catalog.click();
     const tile = page
@@ -524,7 +526,7 @@ test("many open apps scroll inside Apps while the workspace and directory search
   for (const title of titles) {
     await page
       .getByRole("complementary")
-      .getByRole("link", { name: "App Center", exact: true })
+      .getByRole("link", { name: /^App Center(?: ·|$)/ })
       .click();
     await page
       .getByRole("list", { name: "App Center", exact: true })

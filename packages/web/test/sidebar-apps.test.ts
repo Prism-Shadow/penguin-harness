@@ -258,6 +258,31 @@ it("minimizes a restored workspace window back to its remaining conversation", a
   expect(frame?.isConnected).toBe(false);
 });
 
+it("sorts the same open tabs by page order, name, and the most recent selection", async () => {
+  await open([workbench("notes"), workbench("board")]);
+  await launch(key("notes"));
+  await until(() => row(key("notes")) !== null);
+  await launch(key("board"));
+  await until(() => row(key("board")) !== null);
+  const order = () =>
+    [...group()!.querySelectorAll("[data-app-row]")].map((el) => el.getAttribute("data-app-row"));
+  const sort = async (label: string) => {
+    await click(button(en.sidebarApps.sort));
+    await click(menuItem(label));
+  };
+  expect(order()).toEqual([key("notes"), key("board")]);
+  await sort(en.sidebarApps.order.name);
+  expect(order()).toEqual([key("board"), key("notes")]);
+  await sort(en.sidebarApps.order.recent);
+  expect(order()).toEqual([key("board"), key("notes")]);
+  await click(row(key("notes"))!);
+  expect(order()).toEqual([key("notes"), key("board")]);
+  await click(row(key("board"))!);
+  expect(order()).toEqual([key("board"), key("notes")]);
+  await sort(en.sidebarApps.order.default);
+  expect(order()).toEqual([key("notes"), key("board")]);
+});
+
 it("keeps the open app when changing Agents and leaves the next Agent's unopened apps out", async () => {
   const { router } = await open([workbench("board")], { second: [workbench("notes")] });
   await launch(key("board"));

@@ -5,10 +5,7 @@
  * to…" opens the new-folder dialog with the app picked, puts it into a folder or makes a new
  * folder with another app, and forward / backward step an item through the grid or its folder.
  * The empty space's menu opens the new-folder dialog too. A workbench's menu also carries the
- * checkable "Show in the sidebar", the installation's sidebar setting (the Workbenches row's
- * same-named one), when its server reports it. A system app's menu has only the rows that open
- * and arrange it: it opens as its page, has no build to fail, belongs to no Agent's settings and
- * is never removed from the grid. An iframe system app can also open full screen.
+ * App Center visibility action. System tiles can be opened and arranged. An iframe system app also offers full screen.
  *
  * "Move to…" opens a second page in the same menu rather than a submenu, which a phone has no
  * room for: Back returns to the first page, and focus moves to the first row of whichever page

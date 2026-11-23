@@ -62,8 +62,6 @@ export interface RunningApp {
   title: string;
   /** The app's icon image (the UI package's `ImageIcon` draws it); null for the letter tile. */
   icon: IconRef | null;
-  /** A system page supplied by the host rather than an installed Agent workbench. */
-  system?: SystemShortcut;
   /** Its window is the one in front; false while it is minimized. */
   shown: boolean;
 }
@@ -111,7 +109,6 @@ export function useRunningApps(): readonly RunningApp[] {
           machineId: shortcut.machineId ?? null,
           title: localizedText(locale, shortcut.title, shortcut.titleZh),
           icon: shortcut.icon ?? null,
-          ...(shortcut.system && { system: shortcut.system }),
           shown: key === front,
         })),
     [all, projectId, locale, front],

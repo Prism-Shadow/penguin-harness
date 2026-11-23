@@ -262,7 +262,9 @@ import type {
   WorkbenchEnabledRequest,
   WorkbenchInfo,
   WorkbenchesResponse,
+  WorkbenchSidebarRequest,
   WorkbenchSidebarResponse,
+  WorkbenchSidebarSetResponse,
   WorkbenchVersion,
   VersionRollbackResponse,
   VersionResponse,
@@ -3185,6 +3187,21 @@ export const removeWorkbench = (
     method: "DELETE",
     server: machineId,
   });
+/**
+ * The legacy installation setting (any member): `false` writes its `.hidden-from-sidebar`
+ * marker, `true` removes it. Nothing reloads and no version is recorded.
+ */
+export const setWorkbenchSidebar = (
+  projectId: string,
+  agentId: string,
+  workbenchId: string,
+  show: boolean,
+  machineId: string | null,
+) =>
+  apiFetch<WorkbenchSidebarSetResponse>(
+    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/sidebar`,
+    { method: "PATCH", body: { show } satisfies WorkbenchSidebarRequest, server: machineId },
+  );
 /** The App Center switch: sets `penguin.appCenter.show` in the workbench's package.json and reloads it. */
 export const setWorkbenchAppCenter = (
   projectId: string,
