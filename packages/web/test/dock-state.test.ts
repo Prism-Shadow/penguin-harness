@@ -723,3 +723,15 @@ it.each(["right", "bottom"] as const)(
     expect(saved()).toEqual(original);
   },
 );
+
+it("reuses an attached Session tool when a panel request arrives before its foreground opener", () => {
+  const key = ":app:session-tool/agents/restored";
+  dock.openDockPage(key, "agents");
+  expect(dock.borrowedDockPanel(key)).toBeUndefined();
+  dock.openPanel("agents");
+  dock.openNativePanel("agents", "right");
+  expect(dock.dockViews()[0]?.tabs.map(dock.tabKey)).toEqual([key]);
+  dock.detachDockPage(key);
+  dock.openPanel("agents");
+  expect(dock.dockViews()[0]?.tabs.map(dock.tabKey)).toEqual(["agents"]);
+});

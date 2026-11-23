@@ -27,7 +27,6 @@
  */
 import {
   useCallback,
-  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -50,21 +49,17 @@ import {
   SPRING_MOMENTUM,
   createSpringDriver,
   scrollMovesAnchor,
-  toastInfo,
   usePointerDrag,
   usePrefersReducedMotion,
   type SpringDriver,
 } from "@prismshadow/penguin-ui";
 
 import { useSessionPanelOpener } from "./session-panel-opener";
-import { ChatSessionContext } from "../../lib/chat-session";
-import { PageIdentity } from "../../lib/page-focus";
-import { usePageWorkspace } from "../../lib/page-workspace";
-import { machineForSession } from "../../lib/session-machines";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
+import { useSessionShortcuts } from "./session-shortcuts";
 import { useDockPanels } from "./panel-registry";
-import { dockVersion, isDockVisible, isNarrow, openPanel, subscribeDock } from "./dock-state";
+import { dockVersion, isDockVisible, isNarrow, subscribeDock } from "./dock-state";
 import {
   FAN_ENTRY_SIZE,
   LAUNCHER_CAPTION_HEIGHT,
@@ -79,7 +74,6 @@ import {
   readLauncherRatio,
   shouldShowLauncher,
   subscribeLauncherHidden,
-  writeLauncherHidden,
   writeLauncherRatio,
 } from "./dock-launcher-state";
 
@@ -147,10 +141,7 @@ function FloatingLauncher({
   // The panels offered here, in registry order (the built-in browser only in the desktop app's
   // own window): one fan entry each.
   const panels = useDockPanels();
-  const chat = useContext(ChatSessionContext);
-  const selected = chat?.selected;
-  const host = useContext(PageIdentity)?.sessionHost;
-  const workspace = usePageWorkspace();
+  const shortcuts = useSessionShortcuts(panels, narrow ? undefined : "right");
   const reducedMotion = usePrefersReducedMotion();
   const reducedMotionRef = useRef(reducedMotion);
   reducedMotionRef.current = reducedMotion;
@@ -404,61 +395,23 @@ function FloatingLauncher({
 
   // ------------------------------------------------------------------------------ render
 
-  // Wide: the launcher stands in for the right dock, so it names that dock. Narrow: the two
-  // render as one merged surface, so it names none and the store lands the tab where the
-  // toolbar's own panel buttons land it.
-  const target = narrow ? undefined : "right";
-  const entries: FanEntry[] = panels.map((definition) => ({
-    key: definition.id,
-    label: definition.label(),
-    glyphAt: (size) => <GlyphIcon d={definition.glyph} size={size} />,
-    badge: definition.id === "agents" && agentsPending,
-    testId: `dock-launcher-open-${definition.id}`,
-    // The dock becomes visible with the tab, and the launcher unmounts with it.
-    choose: () => {
-      openPanel(definition.id, target, definition.defaultPosition);
-    },
-  }));
-  if (
-    workspace &&
-    selected &&
-    selected.projectId === chat?.projectId &&
-    (!host ||
-      (host.session.sessionId === selected.sessionId &&
-        host.session.projectId === selected.projectId))
-  ) {
-    entries.unshift({
-      key: "app-center",
-      label: S.dock.openAppCenter,
-      glyphAt: (size) => <GlyphIcon d={ICONS.tiles} size={size} />,
-      badge: false,
-      testId: "dock-launcher-open-app-center",
-      choose: () => {
-        closeFan(false);
-        workspace.openAppCenterBesideSession(selected.sessionId, {
-          projectId: selected.projectId,
-          machineId: host ? host.machineId : machineForSession(selected.sessionId),
-          session: selected,
-        });
-      },
-    });
-  }
-  entries.push({
-    key: "hide",
-    label: S.dock.launcherHide,
-    // The struck-through eye, in the muted ink so it reads as a lesser thing than the panels
-    // above it — and keeps reading that way when the ball mirrors it.
-    glyphAt: (size) => <GlyphIcon d={ICONS.eyeOff} size={size} className={toneInk.muted} />,
-    badge: false,
-    testId: "dock-launcher-hide",
-    // Writing the preference unmounts the launcher under its own click, so the toast is
-    // what is left on screen: it says where the ball comes back from.
+  const entries: FanEntry[] = shortcuts.map((entry) => ({
+    key: entry.key,
+    label: entry.label,
+    glyphAt: (size) => (
+      <GlyphIcon
+        d={entry.glyph}
+        size={size}
+        className={entry.key === "hide" ? toneInk.muted : undefined}
+      />
+    ),
+    badge: entry.key === "agents" && agentsPending,
+    testId: entry.key === "hide" ? "dock-launcher-hide" : `dock-launcher-open-${entry.key}`,
     choose: () => {
       closeFan(false);
-      writeLauncherHidden(true);
-      toastInfo(S.dock.launcherHiddenToast);
+      entry.choose();
     },
-  });
+  }));
 
   // What the ball shows, in the one place the states cannot contradict each other: an entry being
   // pointed at wins, then the ball's own hover — which names what the NEXT CLICK does, not what

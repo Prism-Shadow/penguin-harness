@@ -416,6 +416,8 @@ export interface RuntimeSession {
   detachToolCall?(toolCallId: string): ToolDetachResult;
   /** Whether a background subagent is mid-round (core `Session.hasRunningBackgroundSubagents`); pins the entry against idle eviction. Optional, like listBackgroundCommands. */
   hasRunningBackgroundSubagents?(): boolean;
+  /** Immediately stop accepting children and wait for any outstanding host revival or run. */
+  disposeSubagents?(): Promise<void>;
   /** All live subagent child sessions of the Session's environment (core `Session.listBackgroundSubagents`). Optional, like listBackgroundCommands. */
   setSubagentResolver?(resolve: SubagentResolver): void;
   listBackgroundSubagents?(): BackgroundSubagentInfo[];
@@ -508,6 +510,8 @@ export interface RuntimeEntry {
   provider: string;
   modelId: string;
   session: RuntimeSession;
+  /** Credential reloads may replace a runtime whose tools are still running. */
+  retired?: Map<RuntimeSession, Promise<void> | null>;
   /** A confirmed choice waiting behind the inputs already queued when it was made. */
   queuedModel?: { target: { provider: string; modelId: string }; after: Set<string> };
   /** The target of the handoff already in progress. */
