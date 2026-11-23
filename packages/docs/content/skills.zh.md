@@ -169,7 +169,7 @@ zip 文件最大 14 MB，最多 200 个文件；解压后单个文件不超过 5
 
 服务端插件扩展的是服务器本身，而不是 Agent：它是一个由服务端模块组成的 npm 包，例如 Agent 运行沙箱后端。它的包有代码入口，`ifaces.json` 列出这些模块；同一个包也可以在模块之外携带插件库内容（见[插件文件格式](#插件文件格式)）。它安装到整个服务端、由所有 Project 共用：每个 Project 声明自己需要的服务端插件，服务器运行任一 Project 要求的全部插件，因此插件提供的能力对所有 Project 都可用。
 
-在**插件市场**页面上，服务端插件和其他插件一样有一张卡片。四个 Agent 运行沙箱后端在 **Agent 运行沙箱**分类下：用于 Linux 的 `sandbox-bwrap`、用于 macOS 的 `sandbox-seatbelt`、用于 Windows 的 `sandbox-wsl`，以及三者通用、只限制文件写入的 `sandbox-dsh`。没有分类的 `agent-state-git` 让原生 Git（GitHub Desktop 的构建，由 dugite 固定版本）记录工作台版本；它在一台主机上首次运行时下载这份 Git（24–65 MiB，校验后使用），无法下载或运行时由服务端内置的引擎照常记录。服务端插件的详情显示它的包名（旁边有复制按钮）和包自带的 README。
+在**插件市场**页面上，服务端插件和其他插件一样有一张卡片。四个 Agent 运行沙箱后端在 **Agent 运行沙箱**分类下：用于 Linux 的 `sandbox-bwrap`、用于 macOS 的 `sandbox-seatbelt`、用于 Windows 的 `sandbox-wsl`，以及三者通用、只限制文件写入的 `sandbox-dsh`。没有分类的 `agent-state-git` 让原生 Git（GitHub Desktop 的构建，由 dugite 固定版本）记录工作台版本；插件已携带支持平台的 Git，无法运行时由服务端内置的引擎照常记录。服务端插件的详情显示它的包名（旁边有复制按钮）和包自带的 README。
 
 安装服务端插件：
 

@@ -1,0 +1,59 @@
+name: Packaged Agent State Git
+on:
+  pull_request:
+    paths:
+      - "plugins/agent-state-git/**"
+      - ".github/workflows/agent-state-git.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @penguinharness/agent-state-git... build
+      - run: pnpm --dir plugins/agent-state-git pack --pack-destination "${{ runner.temp }}/git-plugin"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-state-git-tarball
+          path: ${{ runner.temp }}/git-plugin/*.tgz
+          if-no-files-found: error
+  offline:
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          [
+            ubuntu-latest,
+            ubuntu-24.04-arm,
+            macos-15-intel,
+            macos-15,
+            windows-latest,
+            windows-11-arm,
+          ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: plugins/agent-state-git/test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent-state-git-tarball
+          path: package-input
+      - shell: bash
+        run: |
+          mkdir offline
+          npm install --prefix offline --offline --ignore-scripts --no-audit --no-fund "$PWD"/package-input/*.tgz
+          node plugins/agent-state-git/test/packed.mjs offline/node_modules/@penguinharness/agent-state-git
