@@ -2062,19 +2062,28 @@ export class SessionManager {
    */
   private disposeRemoved(entry: RuntimeEntry): Promise<void> {
     const runtimes = [entry.session, ...(entry.retired?.keys() ?? [])];
+    const pending: Promise<void>[] = [];
     for (const runtime of runtimes) {
-      for (const child of runtime.listBackgroundSubagents?.() ?? []) {
-        runtime.abortBackgroundSubagentRun?.(child.sessionId);
+      const cleanup = entry.retired?.get(runtime);
+      if (cleanup) {
+        pending.push(cleanup);
+        continue;
       }
+      if (runtime.disposeSubagents) {
+        pending.push(runtime.disposeSubagents());
+      } else {
+        for (const child of runtime.listBackgroundSubagents?.() ?? []) {
+          runtime.abortBackgroundSubagentRun?.(child.sessionId);
+        }
+      }
+      const dispose = () => runtime.dispose?.();
+      pending.push(
+        runtime === entry.session && entry.running
+          ? entry.running.then(dispose, dispose)
+          : Promise.resolve(dispose()),
+      );
     }
-    return Promise.allSettled(
-      runtimes.map(async (runtime) => {
-        const cleanup = entry.retired?.get(runtime);
-        if (cleanup) return cleanup;
-        if (runtime === entry.session) await entry.running?.catch(() => {});
-        await runtime.dispose?.();
-      }),
-    ).then((results) => {
+    return Promise.allSettled(pending).then((results) => {
       const failure = results.find((result) => result.status === "rejected");
       if (failure) throw failure.reason;
     });

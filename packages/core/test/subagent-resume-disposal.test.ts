@@ -75,7 +75,14 @@ it.each([false, true])(
     let disposal: Promise<void> | undefined;
     try {
       await entered.promise;
-      if (removed) await env.dispose();
+      let teardownComplete = false;
+      if (removed) {
+        disposal = env.dispose().then(() => {
+          teardownComplete = true;
+        });
+        await Promise.resolve();
+        expect(teardownComplete).toBe(false);
+      }
       release.resolve();
       if (!removed) {
         expect(await result).toBe("resumed");
@@ -83,7 +90,10 @@ it.each([false, true])(
         disposal = env.dispose();
       }
       await disposing.promise;
-      if (removed) expect(returned).toBe(false);
+      if (removed) {
+        expect(returned).toBe(false);
+        expect(teardownComplete).toBe(false);
+      }
       expect(disposals).toBe(0);
       expect(runs).toBe(removed ? 0 : 1);
     } finally {
@@ -174,7 +184,7 @@ it.each(["live", "cancelled", "disposed"] as const)(
     try {
       await entered.promise;
       if (removal === "cancelled") control.abort();
-      if (removal === "disposed") await manager.dispose();
+      if (removal === "disposed") void manager.dispose();
       release.resolve();
       if (removal === "live") {
         await result;

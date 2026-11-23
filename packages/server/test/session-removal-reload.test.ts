@@ -3,7 +3,7 @@
  * runtime and the Session is then removed, deletion must still cancel the original child.
  */
 import { expect, it } from "vitest";
-import { Environment, toolCall } from "@prismshadow/penguin-core";
+import { Environment, toolCall, userText } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import { openDatabase } from "@prismshadow/penguin-library-db";
 import { SessionsRepo } from "@prismshadow/penguin-library-session/repos/sessions";
@@ -170,3 +170,120 @@ it("waits for a retired runtime that finished its child and is already being cle
     db.close();
   }
 });
+
+it.each([false, true])(
+  "drains a host child resume before deletion (credentials reloaded: %s)",
+  async (reload) => {
+    const db = openDatabase(":memory:");
+    const sessions = wire(SessionsRepo, { db });
+    const channels = new ChannelHub();
+    const row = sessionRow("session-parent-with-pending-revival");
+    sessions.insert(row);
+    const childId = "session-child-87654321";
+    const entered = gate(),
+      releaseHandle = gate(),
+      disposing = gate(),
+      releaseCleanup = gate();
+    const parentEntered = gate(),
+      releaseParent = gate();
+    let runs = 0,
+      removals = 0;
+    const env = new Environment({
+      workspaceDir: process.cwd(),
+      toolConfig: { customTools: [], mcpServers: [] },
+      services: {
+        subagentRunner: {
+          async spawn() {
+            throw new Error("unexpected child creation");
+          },
+          async resume() {
+            entered.resolve();
+            await releaseHandle.promise;
+            return {
+              sessionId: childId,
+              async *run() {
+                runs++;
+                return null;
+              },
+              async dispose() {
+                disposing.resolve();
+                await releaseCleanup.promise;
+                removals++;
+              },
+            };
+          },
+        },
+      },
+    });
+    const active = {
+      async *run() {
+        parentEntered.resolve();
+        await releaseParent.promise;
+        return null;
+      },
+    };
+    const manager = new SessionManager({
+      sessions,
+      channels,
+      sources: new SessionSources(),
+      traces: {
+        ownedSubagents: async () => [
+          {
+            sessionId: childId,
+            agentId: row.agentId,
+            alias: null,
+            spawnedAt: row.createdAt,
+            title: null,
+            position: "0.1",
+            turnKey: "0.0",
+          },
+        ],
+      },
+      loader: { load: async () => fakeSession(row.sessionId, active) },
+      recorder: { record: async () => {} },
+      log: () => {},
+    });
+    manager.adopt(
+      row,
+      fakeSession(row.sessionId, {
+        ...active,
+        hasRunningBackgroundSubagents: () => env.hasRunningBackgroundSubagents(),
+        sendToBackgroundSubagent: (...args) => env.sendToBackgroundSubagent(...args),
+        disposeSubagents: () => env.disposeSubagents(),
+        dispose: () => env.dispose(),
+      }),
+    );
+    try {
+      const message = manager.sendToSubagent(row.sessionId, childId, [userText("resume original")]);
+      await entered.promise;
+      if (reload) {
+        manager.invalidateProjectRuntimes(row.projectId);
+        await manager.preload(row.sessionId);
+      }
+      await manager.startTask(row.sessionId, [userText("another parent task")]);
+      await parentEntered.promise;
+      let removed = false;
+      const removal = Promise.all(manager.beginSessionDeletion(row.sessionId)).then(() => {
+        removed = true;
+      });
+      releaseHandle.resolve();
+      await disposing.promise;
+      releaseParent.resolve();
+      await Promise.resolve();
+      expect(removed).toBe(false);
+      expect(runs).toBe(0);
+      releaseCleanup.resolve();
+      expect(await message).toBe("gone");
+      await removal;
+      expect(removals).toBe(1);
+    } finally {
+      releaseHandle.resolve();
+      releaseParent.resolve();
+      releaseCleanup.resolve();
+      await manager.shutdown();
+      await env.dispose();
+      channels.dispose();
+      db.close();
+    }
+  },
+);

@@ -132,7 +132,7 @@ export class SubagentSessionManager {
    * object nobody holds any more.
    */
   hasRunning(): boolean {
-    return this.registry.list().some(({ task }) => task.running);
+    return this.resuming.size > 0 || this.registry.list().some(({ task }) => task.running);
   }
 
   /**
@@ -243,6 +243,9 @@ export class SubagentSessionManager {
     const children = new Set([...this.live, ...this.registry.list().map(({ task }) => task)]);
     this.registry.dispose();
     for (const child of children) child.kill();
-    return Promise.allSettled([...children].map((child) => child.whenSettled())).then(() => {});
+    return Promise.allSettled([
+      ...[...children].map((child) => child.whenSettled()),
+      ...[...this.resuming.values()].map(({ job }) => job),
+    ]).then(() => {});
   }
 }
