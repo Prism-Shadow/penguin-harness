@@ -279,8 +279,8 @@ accepted:
   !macro customRemoveFiles
     SetOutPath "$TEMP"
     InitPluginsDir
-    File /oname=$PLUGINSDIR\program-files.txt "${PROJECT_DIR}/node_modules/.cache/penguin-windows-install/program-files.txt"
-    File /oname=$PLUGINSDIR\remove-program.ps1 "${BUILD_RESOURCES_DIR}/windows-remove-program.ps1"
+    File /oname=$PLUGINSDIR\program-files.txt "${BUILD_RESOURCES_DIR}\generated\program-files.txt"
+    File /oname=$PLUGINSDIR\remove-program.ps1 "${BUILD_RESOURCES_DIR}\windows-remove-program.ps1"
     StrCpy $0 ""
     ${If} ${isUpdated}
       StrCpy $0 '-BackupDirectory "$PLUGINSDIR\old-program"'
