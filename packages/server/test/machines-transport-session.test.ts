@@ -152,12 +152,15 @@ exit 1
 
     const gate = shQuote(path.join(stubBin, "release"));
     const finished = shQuote(path.join(stubBin, "finished"));
-    const started = Promise.withResolvers<void>();
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
     const first = conn.stream(
       `echo waiting; while test -d ${shQuote(stubBin)} && ! test -f ${gate}; do sleep 0.05; done; touch ${finished}`,
-      { input: Buffer.alloc(0), onLine: (line) => line === "waiting" && started.resolve() },
+      { input: Buffer.alloc(0), onLine: (line) => line === "waiting" && markStarted() },
     );
-    await started.promise;
+    await started;
     // The second command on this machine must see the first one finish. Only the other
     // machine can release it while the first machine's queue is occupied.
     const queued = conn.exec(`test -f ${finished}`);
