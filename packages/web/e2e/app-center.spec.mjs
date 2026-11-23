@@ -455,9 +455,26 @@ test("searching, sorting and folding sidebar directories keeps the open page and
   const side = page.getByRole("complementary");
   const apps = side.getByRole("list", { name: "Apps", exact: true });
   const rows = apps.getByRole("listitem");
-  await expect.poll(() => rows.count()).toBeGreaterThan(1);
+  await expect(rows).toHaveCount(0);
   const editor = page.getByRole("main").locator("textarea").first();
   await editor.fill("Keep this draft while looking for an app");
+  const catalog = side.getByRole("link", { name: "App Center", exact: true });
+  for (const title of ["Gamma", "Alpha"]) {
+    await catalog.click();
+    const tile = page
+      .getByRole("list", { name: "App Center", exact: true })
+      .locator(`li[data-app="default_agent/${title.toLowerCase()}"] > button`)
+      .first();
+    await tile.click();
+    await expect(
+      apps.locator(`[data-app-row="default_agent/${title.toLowerCase()}"]`),
+    ).toBeVisible();
+  }
+  await side
+    .getByRole("navigation", { name: "Open pages" })
+    .locator('[data-app-row="chat:new"]')
+    .click();
+  await expect(rows).toHaveCount(2);
   const open = side.getByRole("navigation", { name: "Open pages" });
   const count = await open.getByRole("listitem").count();
   await side.getByRole("button", { name: "Search apps", exact: true }).click();
@@ -503,10 +520,19 @@ test("many open apps scroll inside Apps while the workspace and directory search
   await page.goto("/apps");
   const group = page.getByRole("navigation", { name: "Apps", exact: true });
   const list = group.getByRole("list", { name: "Apps", exact: true });
+  await expect(list).toHaveCount(0);
   for (const title of titles) {
+    await page
+      .getByRole("complementary")
+      .getByRole("link", { name: "App Center", exact: true })
+      .click();
+    await page
+      .getByRole("list", { name: "App Center", exact: true })
+      .locator(`li[data-app="default_agent/${title.toLowerCase()}"] > button`)
+      .first()
+      .click();
     const row = list.locator(`[data-app-row="default_agent/${title.toLowerCase()}"]`);
     await expect(row).toBeEnabled();
-    await row.click();
     await expect(row).toHaveAttribute("aria-current", "page");
   }
   const count = await list.getByRole("listitem").count();

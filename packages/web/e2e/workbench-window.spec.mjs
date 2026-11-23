@@ -1,26 +1,6 @@
-/**
- * An Agent's app opened from the sidebar's app list, in the App Center's window over the main
- * area (features/session-list/main-sidebar-apps.tsx, features/app-center/app-center-windows.tsx,
- * the UI package's AppWindow and layers.css). Layering is what a real engine computes, so these
- * run in one.
- *
- * - The conversation has no tab strip; the sidebar lists the Agent's app. Its row opens the
- *   window over the main area, where nothing of the page is on top anywhere over the app's page;
- *   minimize returns to the conversation with the row marked running and the same frame alive,
- *   the row brings that frame back, and close returns to the conversation.
- * - The page is see-through: a page that paints no background leaves its root and body clear,
- *   in the app's color scheme, so the app's surface shows through it; a page that paints its own
- *   background keeps it. The window's title bar switches between the app's two pages.
- * - The toolbar's details card, opened over a dock lifted to fullscreen, is on top of it.
- * - Hiding a workbench from its Agent's sidebar, from the More menu of its settings row (by
- *   keyboard alone at desktop width; the menu inside the screen at phone width), takes its row
- *   off the sidebar at once and leaves its App Center setting alone. A reloaded conversation
- *   downloads none of its pages; the row's Open, its App Center tile and a reloaded window link
- *   still open it; shown in the sidebar again, it is a row again.
- */
+/** The real window host, Apps rows, and workbench subpages in the conversation workspace. */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
-import { watchSocket } from "./api-socket.mjs";
 import { zip } from "./workbench-zip.mjs";
 
 const BASE = process.env.BASE_URL;
@@ -123,7 +103,21 @@ test.beforeAll(async ({ browser }) => {
 const dockAt = (page, position) =>
   page.locator(`[data-testid="dock"][data-position="${position}"][data-open="true"]`);
 const KEY = "default_agent/window-demo";
-const row = (page) => page.locator(`[data-app-row="${KEY}"]`);
+const row = (page) =>
+  page.getByRole("navigation", { name: "应用", exact: true }).locator(`[data-app-row="${KEY}"]`);
+async function launchFromChat(page) {
+  await page.getByRole("button", { name: "浏览工作台", exact: true }).click();
+  await page
+    .getByRole("region", { name: "工作台", exact: true })
+    .getByRole("menuitem", { name: "Window demo", exact: true })
+    .click();
+}
+async function action(page, name) {
+  const item = row(page);
+  await item.hover();
+  await item.locator("xpath=ancestor::li").getByRole("button", { name: "更多操作" }).click();
+  await page.getByRole("menuitem", { name, exact: true }).click();
+}
 /** The app's window: named by its App Center title, which the manifest declares. */
 const appWindow = (page) => page.getByRole("region", { name: "Window demo" });
 
@@ -131,7 +125,7 @@ async function openChat(page) {
   await provisionAndLogin(page.request, U, P);
   await page.goto(`${BASE}/chat/${sessionId}`);
   await expect(page.getByText(REPLY)).toBeVisible({ timeout: 30_000 });
-  await expect(row(page)).toBeVisible({ timeout: 30_000 });
+  await expect(row(page)).toHaveCount(0);
 }
 
 async function openDock(page, position, kind) {
@@ -180,7 +174,7 @@ test("the sidebar's row opens the app's window over the conversation, minimize k
   await expect(page.getByRole("tablist", { name: "聊天与工作台" })).toHaveCount(0);
   await openDock(page, "right", "trace");
 
-  await row(page).click();
+  await launchFromChat(page);
   await expect(page).toHaveURL(`${BASE}/apps?app=${encodeURIComponent(KEY)}`);
   await expect(appWindow(page).locator("iframe[title='Clear']")).toBeVisible();
   await page.waitForTimeout(300);
@@ -191,7 +185,7 @@ test("the sidebar's row opens the app's window over the conversation, minimize k
     .locator("iframe[title='Clear']")
     .evaluate((f) => (f.contentWindow.__tag = "kept"));
 
-  await appWindow(page).getByRole("button", { name: "最小化", exact: true }).click();
+  await action(page, "最小化");
   await expect(page).toHaveURL(`${BASE}/chat/${sessionId}`);
   // Exact: the Trace dock's row for the reply previews the same text.
   await expect(page.getByText(REPLY, { exact: true })).toBeVisible();
@@ -204,7 +198,7 @@ test("the sidebar's row opens the app's window over the conversation, minimize k
       .evaluate((f) => f.contentWindow.__tag),
   ).resolves.toBe("kept");
 
-  await appWindow(page).getByRole("button", { name: "关闭", exact: true }).click();
+  await action(page, "关闭");
   await expect(page).toHaveURL(`${BASE}/chat/${sessionId}`);
   await expect(page.locator("iframe[title='Clear']")).toHaveCount(0);
   await expect(dockAt(page, "right")).toBeVisible();
@@ -214,7 +208,7 @@ test("the page is see-through unless it paints its own background, and the bar s
   page,
 }) => {
   await openChat(page);
-  await row(page).click();
+  await launchFromChat(page);
   await expect(appWindow(page).locator("iframe[title='Clear']")).toBeVisible();
   await expect.poll(() => frameSurface(page).then((s) => s.body)).toBe("rgba(0, 0, 0, 0)");
   const clear = await frameSurface(page);
@@ -224,7 +218,7 @@ test("the page is see-through unless it paints its own background, and the bar s
   await appWindow(page).getByRole("button", { name: "Solid", exact: true }).click();
   await expect(appWindow(page).locator("iframe[title='Solid']")).toBeVisible();
   await expect.poll(() => frameSurface(page).then((s) => s.body)).toBe("rgb(1, 2, 3)");
-  await appWindow(page).getByRole("button", { name: "关闭", exact: true }).click();
+  await action(page, "关闭");
 });
 
 test("the toolbar's details card opens on top of a dock lifted to fullscreen", async ({ page }) => {
@@ -244,91 +238,30 @@ test("the toolbar's details card opens on top of a dock lifted to fullscreen", a
   expect(onTop).toBe("复制 Session ID");
 });
 
-test("a workbench hidden from the sidebar leaves the list, and its row's Open, App Center tile and window link still open it", async ({
+test("opening a workbench in a second window leaves the first window's Apps list alone", async ({
   page,
   context,
 }) => {
   await openChat(page);
   const settings = await context.newPage();
-  await settings.setViewportSize({ width: 1280, height: 900 });
   await settings.goto(`${BASE}/agents/default_agent?tab=workbenches`);
-  const more = settings.getByRole("button", { name: "更多 Clear" });
-  const menu = settings.getByRole("menu", { name: "更多 Clear" });
-  const sidebar = menu.getByRole("menuitemcheckbox", { name: "展示到侧边栏" });
-  const hide = settings.getByRole("button", { name: "从应用中心隐藏 Clear" });
-  try {
-    await more.focus();
-    await settings.keyboard.press("Enter");
-    await expect(sidebar).toBeFocused();
-    await expect(sidebar).toBeChecked();
-    // A pick writes and closes the menu.
-    await settings.keyboard.press("Space");
-    await expect(menu).toHaveCount(0);
-    await expect(row(page)).toHaveCount(0);
-    await expect(page.getByText(REPLY)).toBeVisible();
-
-    await settings.setViewportSize({ width: 320, height: 760 });
-    await more.click();
-    await expect(menu).toBeInViewport({ ratio: 1 });
-    await expect(sidebar).not.toBeChecked();
-    await expect(hide).toBeVisible();
-    await settings.keyboard.press("Escape");
-    await settings.setViewportSize({ width: 1280, height: 900 });
-
-    const socket = await watchSocket(page);
-    const resources = [];
-    socket.onCall((call) => {
-      if (call.path.includes("/workbenches/window-demo/")) resources.push(call.path);
-    });
-    page.on("request", (r) => {
-      if (new URL(r.url()).pathname.includes("/workbenches/window-demo/")) resources.push(r.url());
-    });
-    await Promise.all([
-      socket.nextAnswer((call) => call.path.endsWith("/workbenches?view=sidebar")),
-      page.reload(),
-    ]);
-    await expect(page.getByText(REPLY)).toBeVisible();
-    await expect(row(page)).toHaveCount(0);
-    expect(resources).toEqual([]);
-
-    // Hidden from the sidebar, the row's Open still opens its window.
-    await settings.reload();
-    await settings.getByRole("button", { name: "打开工作台 Clear" }).click();
-    await expect(settings).toHaveURL(`${BASE}/apps?app=${encodeURIComponent(KEY)}`);
-    await expect(
-      settings.frameLocator("iframe[title='Clear']").getByRole("heading", { name: "Board" }),
-    ).toBeVisible();
-    await appWindow(settings).getByRole("button", { name: "关闭", exact: true }).click();
-    await expect(settings).toHaveURL(`${BASE}/agents/default_agent?tab=workbenches`);
-
-    await page.goto(`${BASE}/apps`);
-    const tile = page.getByRole("button", { name: /^Window demo/ });
-    await tile.click();
-    await expect(
-      page.frameLocator("iframe[title='Clear']").getByRole("heading", { name: "Board" }),
-    ).toBeVisible();
-    expect(resources.some((url) => url.includes("/ui/clear.html"))).toBe(true);
-    const appLink = page.url();
-    await page.goto("about:blank");
-    await page.goto(appLink);
-    await expect(
-      page.frameLocator("iframe[title='Clear']").getByRole("heading", { name: "Board" }),
-    ).toBeVisible();
-
-    await more.click();
-    await sidebar.click();
-    await more.click();
-    await expect(sidebar).toBeChecked();
-    // Settled: the write is no longer in flight.
-    await expect(sidebar).toBeEnabled();
-    await settings.keyboard.press("Escape");
-    await page.goto(`${BASE}/chat/${sessionId}`);
-    await expect(row(page)).toBeVisible();
-  } finally {
-    await page.request.patch(
-      `${BASE}/api/projects/${projectId}/agents/default_agent/workbenches/window-demo/sidebar`,
-      { data: { show: true } },
-    );
-    await settings.close();
-  }
+  await settings.getByRole("button", { name: "更多 Clear" }).click();
+  await expect(settings.getByRole("menuitemcheckbox", { name: "展示到侧边栏" })).toHaveCount(0);
+  await settings.keyboard.press("Escape");
+  await settings.getByRole("button", { name: "打开 Clear", exact: true }).click();
+  await expect(row(settings)).toHaveCount(1);
+  await expect(row(page)).toHaveCount(0);
+  await page.goto(`${BASE}/apps`);
+  await page.locator(`li[data-app="${KEY}"] > button`).first().click();
+  await expect(row(page)).toHaveCount(1);
+  const appLink = page.url();
+  await page.goto("about:blank");
+  await page.goto(appLink);
+  await expect(
+    page.frameLocator("iframe[title='Clear']").getByRole("heading", { name: "Board" }),
+  ).toBeVisible();
+  await action(page, "关闭");
+  await expect(row(page)).toHaveCount(0);
+  await expect(row(settings)).toHaveCount(1);
+  await settings.close();
 });

@@ -171,7 +171,7 @@ it("offers one contextual App Center action, restoring it after a refused write"
   ]);
   await click(button(`${en.workbenches.more} Support`));
   expect(document.querySelector('[role="menu"]')?.textContent).not.toMatch(/App Center/);
-  expect(menuItem(en.workbenches.showInSidebar)).toBeTruthy();
+  expect(() => menuItem("Show in the sidebar")).toThrow();
 });
 it("writes the visibility of a machine's Agent on that machine", async () => {
   setActiveStrings(en);
@@ -200,34 +200,6 @@ it("leads the row with the workbench's own App Center icon", async () => {
 it("leads the row with the anvil tile when the workbench names no icon", async () => {
   await open();
   expect(row().querySelector("img")).toBeNull();
-});
-/** The More menu's sidebar row, the menu opened for it. */
-async function sidebarRow() {
-  await click(button(`${en.workbenches.more} Support`));
-  return menuItem(en.workbenches.showInSidebar);
-}
-it("takes the workbench off the sidebar from the More menu, writing nothing of the App Center; a refused write puts it back", async () => {
-  const { server } = await open();
-  const sidebarWrites = () =>
-    server.writes().filter((request) => request.path.endsWith("/sidebar"));
-  expect((await sidebarRow()).getAttribute("aria-checked")).toBe("true");
-  server.refuseNext(500, "internal_error", "Disk full");
-  await click(menuItem(en.workbenches.showInSidebar));
-  await waitFor(() => sidebarWrites().length === 1);
-  const refused = await sidebarRow();
-  await waitFor(() => refused.getAttribute("aria-disabled") !== "true");
-  expect(refused.getAttribute("aria-checked")).toBe("true");
-
-  await click(refused);
-  await waitFor(() => sidebarWrites().length === 2);
-  const written = await sidebarRow();
-  await waitFor(() => written.getAttribute("aria-checked") === "false");
-  expect(sidebarWrites().map((request) => [request.method, request.body])).toEqual([
-    ["PATCH", { show: false }],
-    ["PATCH", { show: false }],
-  ]);
-  expect(server.writes().filter((request) => request.path.endsWith("/app-center"))).toEqual([]);
-  expect(hasButton(visibilityName(false))).toBe(true);
 });
 it("opens a workbench hidden from the sidebar and the App Center in its window all the same", async () => {
   const router = await openWithWindows({ showInSidebar: false, appCenter: { show: false } });

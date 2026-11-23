@@ -1,30 +1,5 @@
 /** @vitest-environment jsdom */
-/**
- * The sidebar's app list (features/session-list/main-sidebar-apps.tsx): the apps of the Agent the
- * page works under, then any other app still running, each opened in the App Center's window over
- * the main area. One fake server behind the app, the real list, App Center page and windows.
- *
- * - Given the current Agent's workbenches, the list has a row for each one its sidebar shows, and
- *   none for one hidden from the sidebar or without a page; with nothing to list and nothing
- *   running, the group is not there.
- * - Given a move to another Agent's conversation while the first one's list is still being read,
- *   the list shows the other Agent's apps, and the first one's late answer never lands.
- * - A row opens the app's window over the conversation the reader is on, and is lit while the
- *   window is in front; Close ends the app and returns to that conversation.
- * - Minimize returns to the conversation with the app still running: the row says so, and brings
- *   back the very same frame.
- * - A running app of another Agent is listed after the Agent's own, says whose it is, and has no
- *   "Remove from sidebar" (only the Agent's setting lists a row).
- * - "Remove from sidebar" writes the installation's setting, and the row leaves.
- * - A workbench the Agent adds shows up on the server's news, without a reload.
- * - A conversation on a machine lists that machine's apps, read from the machine, and its row
- *   opens the window at the machine's key; with the window over the conversation, the list keeps
- *   the machine's apps, the open one lit. Left for a page that names no Agent, the list keeps
- *   them while the current Agent is that Agent, and follows the current Agent once it is another.
- * - An app hidden from the App Center keeps running through a visit to the App Center, whose
- *   list lacks it; an app whose workbench is removed ends.
- * - A workbench with two pages switches between them in the window's title bar.
- */
+/** The real window host and Apps group share one page workspace. */
 import { createElement as h, useEffect } from "react";
 import { afterEach, expect, it } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
@@ -32,6 +7,9 @@ import * as api from "../src/api/endpoints";
 import { AppCenterPage } from "../src/features/app-center/app-center-page";
 import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
 import { MainSidebarApps } from "../src/features/session-list/main-sidebar-apps";
+import { useRestoreApp } from "../src/lib/running-apps";
+import { shortcutOfWorkbench } from "../src/lib/workbench-shortcut";
+import { locatedAppKey } from "../src/lib/app-center-path";
 import { publishPageAgent } from "../src/lib/page-agent";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -75,6 +53,34 @@ const workbench = (id: string, over: Partial<WorkbenchInfo> = {}): WorkbenchInfo
 });
 
 const key = (id: string, agentId = AGENT_ID) => `${agentId}/${id}`;
+
+/** Open a fixture workbench through the same action used by Agent settings and Browse workbenches. */
+function Launchers({ items }: { items: WorkbenchInfo[] }) {
+  const restore = useRestoreApp();
+  return items.flatMap((item) =>
+    [null, "m1"].map((machine) => {
+      const id = locatedAppKey(AGENT_ID, item.id, machine);
+      return h(
+        "button",
+        {
+          key: id,
+          onClick: () =>
+            restore(
+              id,
+              shortcutOfWorkbench(
+                PROJECT_ID,
+                { agentId: AGENT_ID, agentName: "Helper" },
+                item,
+                machine,
+              ),
+            ),
+        },
+        "Launch " + id,
+      );
+    }),
+  );
+}
+const launch = (id: string) => click(button("Launch " + id));
 
 /** Makes another Agent the current one, as the new-chat picker does. */
 function SwitchAgent() {
@@ -122,7 +128,11 @@ async function open(
       },
     ],
     // Beside every page, as the shell mounts them: the windows' layer and the sidebar.
-    layers: [h(ThemeProvider, null, h(WorkspaceWindows, null, h(MainSidebarApps))), h(SwitchAgent)],
+    layers: [
+      h(ThemeProvider, null, h(WorkspaceWindows, null, h(MainSidebarApps))),
+      h(SwitchAgent),
+      h(Launchers, { items: workbenches }),
+    ],
   });
   current = router;
   return { server, router };
@@ -149,7 +159,7 @@ function spoken(node: Node): string {
 
 const group = () => document.querySelector<HTMLElement>(`ul[aria-label="${en.sidebarApps.title}"]`);
 const row = (appKey: string) =>
-  document.querySelector<HTMLButtonElement>(`[data-app-row="${appKey}"]`);
+  group()?.querySelector<HTMLButtonElement>(`[data-app-row="${appKey}"]`) ?? null;
 /** The rows in order, each as its name, with "(lit)" on the one whose window is in front. */
 const rows = () =>
   [...(group()?.querySelectorAll<HTMLButtonElement>("[data-app-row]") ?? [])].map(
@@ -184,40 +194,26 @@ afterEach(async () => {
   localStorage.clear();
 });
 
-it("lists the apps the current Agent's sidebar shows, and is not there with none", async () => {
-  await open([
-    workbench("board"),
-    workbench("quiet", { showInSidebar: false }),
-    workbench("headless", { tabs: [] }),
-  ]);
-  await until(() => group() !== null);
-  expect(rows()).toEqual(["Board"]);
-  await unmountAll();
-
-  await open([workbench("quiet", { showInSidebar: false })]);
-  await news();
+it("leaves installed workbenches out of Apps until this window opens them", async () => {
+  const { server, router } = await open(
+    [
+      workbench("board"),
+      workbench("quiet", { showInSidebar: false }),
+      workbench("headless", { tabs: [] }),
+    ],
+    { second: [workbench("notes")] },
+  );
   expect(group()).toBeNull();
-  expect(document.body.textContent).not.toContain(en.sidebarApps.title);
-});
-
-it("follows a move to another Agent's conversation, and drops the late answer for the one left", async () => {
-  const { server, router } = await open([workbench("board")], { second: [workbench("notes")] });
-  await until(() => rows().length === 1);
-  const slow = server.holdNext(null, new RegExp(`/agents/${AGENT_ID}/workbenches$`));
+  server.putWorkbench(workbench("newly-installed"));
   await news();
-
   await run(() => router.navigate("/chat/second"));
-  await until(() => rows().includes("Notes"));
-  slow.release();
-  await run(() => new Promise((resolve) => setTimeout(resolve, 30)));
-  expect(rows()).toEqual(["Notes"]);
+  expect(group()).toBeNull();
+  expect(server.writes().filter((request) => request.path.endsWith("/sidebar"))).toEqual([]);
 });
 
 it("opens an app's window over the conversation, lit while in front, and Close returns there", async () => {
   const { router } = await open([workbench("board")]);
-  await until(() => row(key("board")) !== null);
-
-  await click(row(key("board"))!);
+  await launch(key("board"));
   expect(whereIs(router)).toBe(`/apps?app=${encodeURIComponent(key("board"))}`);
   await until(() => frameOf("Board") !== null);
   expect(reachable(frameOf("Board")!)).toBe(true);
@@ -226,13 +222,12 @@ it("opens an app's window over the conversation, lit while in front, and Close r
   await pageAction("Board", en.appCenter.windowClose);
   expect(whereIs(router)).toBe(HERE);
   expect(windowOf("Board")).toBeNull();
-  expect(rows()).toEqual(["Board"]);
+  expect(group()).toBeNull();
 });
 
 it("minimizes to the conversation with the app running, and its row brings back the same frame", async () => {
   const { router } = await open([workbench("board")]);
-  await until(() => row(key("board")) !== null);
-  await click(row(key("board"))!);
+  await launch(key("board"));
   await until(() => frameOf("Board") !== null);
   const frame = frameOf("Board")!;
 
@@ -249,8 +244,7 @@ it("minimizes to the conversation with the app running, and its row brings back 
 
 it("minimizes a restored workspace window back to its remaining conversation", async () => {
   const { router } = await open([workbench("board")]);
-  await until(() => row(key("board")) !== null);
-  await click(row(key("board"))!);
+  await launch(key("board"));
   await until(() => frameOf("Board") !== null);
   const frame = frameOf("Board");
   await pageAction("Board", en.appCenter.windowMinimize);
@@ -264,16 +258,15 @@ it("minimizes a restored workspace window back to its remaining conversation", a
   expect(frame?.isConnected).toBe(false);
 });
 
-it("lists another Agent's running app after the Agent's own, says whose it is, with nothing to remove", async () => {
+it("keeps the open app when changing Agents and leaves the next Agent's unopened apps out", async () => {
   const { router } = await open([workbench("board")], { second: [workbench("notes")] });
-  await until(() => row(key("board")) !== null);
-  await click(row(key("board"))!);
+  await launch(key("board"));
   await until(() => frameOf("Board") !== null);
   await pageAction("Board", en.appCenter.windowMinimize);
 
   await run(() => router.navigate("/chat/second"));
-  await until(() => rows().includes("Notes"));
-  expect(rows()).toEqual(["Notes", running("Board", "Helper")]);
+  await until(() => rows().includes(running("Board", "Helper")));
+  expect(rows()).toEqual([running("Board", "Helper")]);
   await openMenu(key("board"));
   expect(menuLabels()).toEqual([
     en.pageWorkspace.restore,
@@ -283,64 +276,27 @@ it("lists another Agent's running app after the Agent's own, says whose it is, w
   ]);
 });
 
-it("removes a row from the sidebar through the installation's setting", async () => {
-  const { server } = await open([workbench("board"), workbench("notes")]);
-  await until(() => rows().length === 2);
-  await openMenu(key("notes"));
-  expect(menuLabels()).toEqual([
-    en.sidebarApps.open,
-    en.sidebarApps.removeFromSidebar,
-    en.sidebarApps.viewInSettings,
-  ]);
-
-  await click(menuItem(en.sidebarApps.removeFromSidebar));
-  await until(() => rows().length === 1);
-  expect(rows()).toEqual(["Board"]);
-  expect(
-    server.writes(`/api/projects/${PROJECT_ID}/agents/${AGENT_ID}/workbenches/notes/sidebar`),
-  ).toHaveLength(1);
-});
-
-it("shows a workbench the Agent adds on the server's news, without a reload", async () => {
-  const { server } = await open([workbench("board")]);
-  await until(() => rows().length === 1);
-  server.putWorkbench(workbench("notes"));
-  await news();
-  await until(() => rows().length === 2);
-  expect(rows()).toEqual(["Board", "Notes"]);
-});
-
-it("lists a machine conversation's apps from the machine, and opens them at its key", async () => {
-  const { server, router } = await open([workbench("board")], { at: "/chat/on-machine" });
-  await until(() => row(`m1:${key("board")}`) !== null);
-  expect(
-    server
-      .requests()
-      .some((r) => r.machine === "m1" && r.path.endsWith(`/agents/${AGENT_ID}/workbenches`)),
-  ).toBe(true);
-
-  await click(row(`m1:${key("board")}`)!);
-  expect(whereIs(router)).toBe(`/apps?app=${encodeURIComponent(`m1:${key("board")}`)}`);
-  await until(() => frameOf("Board") !== null);
-  expect(rows()).toEqual([`${running("Board")} (lit)`]);
-  expect(frameOf("Board")!.getAttribute("src")).toMatch(
-    new RegExp(`^/server/m1/api/projects/${PROJECT_ID}/agents/${AGENT_ID}/workbenches/board/ui/`),
-  );
-});
-
-it("keeps a machine conversation's apps on a page that names no Agent, until the current Agent is another", async () => {
-  const { router } = await open([workbench("board")], {
+it("keeps remote and local pages with the same Agent and workbench ID distinct", async () => {
+  const { router, server } = await open([workbench("board", { showInSidebar: false })], {
     at: "/chat/on-machine",
     second: [workbench("notes")],
   });
-  await until(() => row(`m1:${key("board")}`) !== null);
-
-  await run(() => router.navigate("/agents"));
-  expect(row(`m1:${key("board")}`)).not.toBeNull();
-
+  const remote = "m1:" + key("board");
+  expect(group()).toBeNull();
+  await launch(remote);
+  await until(() => row(remote) !== null && frameOf("Board") !== null);
+  expect(whereIs(router)).toBe("/apps?app=" + encodeURIComponent(remote));
+  expect(frameOf("Board")!.getAttribute("src")).toContain("/server/m1/");
+  await pageAction("Board", en.appCenter.windowMinimize);
+  await launch(key("board"));
+  await until(() => row(key("board")) !== null);
   await click(button("Switch"));
-  await until(() => rows().includes("Notes"));
-  expect(rows()).toEqual(["Notes"]);
+  expect(rows()).toHaveLength(2);
+  await openMenu(remote);
+  await click(menuItem(en.common.close));
+  expect(row(remote)).toBeNull();
+  expect(row(key("board"))).not.toBeNull();
+  expect(server.writes().filter((request) => request.path.endsWith("/sidebar"))).toEqual([]);
 });
 
 it("keeps an app hidden from the App Center running through a visit there, and ends one whose workbench is removed", async () => {
@@ -348,12 +304,12 @@ it("keeps an app hidden from the App Center running through a visit there, and e
     workbench("desk", { appCenter: { show: false } }),
     workbench("board"),
   ]);
-  await until(() => rows().length === 2);
+  expect(group()).toBeNull();
   for (const [id, title] of [
     ["desk", "Desk"],
     ["board", "Board"],
   ] as const) {
-    await click(row(key(id))!);
+    await launch(key(id));
     await until(() => frameOf(title) !== null);
     await pageAction(title, en.appCenter.windowMinimize);
   }
@@ -378,8 +334,7 @@ it("switches subpages in a multi-page workbench", async () => {
       tabs: [page("board", "clear", "Clear"), page("board", "solid", "Solid")],
     }),
   ]);
-  await until(() => row(key("board")) !== null);
-  await click(row(key("board"))!);
+  await launch(key("board"));
   await until(() => frameOf("Clear") !== null);
   const bar = windowOf("Clear")!;
   expect(buttonIn(bar, "Clear").getAttribute("aria-pressed")).toBe("true");

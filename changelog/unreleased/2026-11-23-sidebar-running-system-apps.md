@@ -1,4 +1,4 @@
-# Find open system apps in the Apps sidebar
+# Find open apps in the sidebar
 
 - **Date:** 2026-11-23
 - **Type:** feature
@@ -7,4 +7,4 @@
 
 [中文版](2026-11-23-sidebar-running-system-apps.zh.md)
 
-Open the Model Library, Plugin Market or another system app and it appears under **Apps** in the sidebar. Select its row to return to the same page, or use the row menu to minimize, restore or close it. Closing the app leaves its tile in the App Center. Long lists scroll inside the Apps group so the Workspaces group stays within reach.
+The sidebar lists the apps open in this window and Project, including system apps and workbenches on connected machines. Open an app from App Center or browse workbenches beside a conversation. Minimized apps stay in the list. Closing an app removes its tab. Search, sort by page order, name or recent use, and scroll within the group to reach an open app. App Center visibility is controlled in Agent settings.

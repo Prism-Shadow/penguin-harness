@@ -17,10 +17,6 @@
  *   restores the previous action. A machine's Agent has it as well, written
  *   on that machine: the App Center lists a machine's apps for an administrator, and its "Remove
  *   from App Center" is this same setting, so this row is where such an app comes back.
- * - The sidebar setting is the menu's checkable "Show in the sidebar", on every row whose server
- *   reports it (`showInSidebar`). It commits at once and writes the installation's
- *   `.hidden-from-sidebar` marker, never the package.json: no reload and no version, and a plugin
- *   update keeps it, where it resets the App Center's. Every member sees the same sidebar list.
  *   A refused write puts it back.
  * - "Open" opens the app's window over the main area, the one the App Center and the sidebar's
  *   list open (lib/running-apps.ts): the same live window when the app runs, and closing or
@@ -178,43 +174,6 @@ function WorkbenchAppCenter({
 }
 
 /**
- * One workbench's sidebar setting: its `.hidden-from-sidebar` marker, written at once on the
- * server the Agent lives on and adopted from the answer, rolled back with a toast when refused.
- * Absent (`children(undefined)`) when that server does not report the setting.
- */
-function WorkbenchSidebar({
-  workbench,
-  options,
-  children,
-}: {
-  workbench: WorkbenchInfo;
-  options: WorkbenchRowsOptions;
-  children: (sidebar: SettingControl | undefined) => ReactNode;
-}) {
-  const { currentProject } = useProject();
-  const projectId = currentProject?.projectId ?? null;
-  /** The machine the Agent lives on, whose copy of the workbench carries the marker. */
-  const machineId = useAgentLocation();
-  const setting = useInstantSetting(workbench.showInSidebar !== false, async (show: boolean) => {
-    if (!projectId) return;
-    const res = await api.setWorkbenchSidebar(
-      projectId,
-      options.agentId,
-      workbench.id,
-      show,
-      machineId,
-    );
-    options.onSwitched(res.workbench);
-  });
-  if (workbench.showInSidebar === undefined) return children(undefined);
-  return children({
-    checked: setting.value,
-    disabled: setting.busy,
-    onChange: (show) => void setting.set(show),
-  });
-}
-
-/**
  * What a row says under its title: the load error when its files do not load; for a workbench
  * without a page, which has no window to say it in, the first thing its load noticed (every one
  * in the hint); else its id.
@@ -294,8 +253,7 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
     const source = sourceOf(workbench.id);
     // The body opens the workbench's files; "Open" stays the way into the app.
     const open = () => onOpenFiles({ kind: "workbench", name: workbench.id, title });
-    /** The row's controls, the App Center setting among them, and the sidebar's when it has one. */
-    const controls = (appCenter: SettingControl, sidebar: SettingControl | undefined) => (
+    const controls = (appCenter: SettingControl) => (
       <>
         {enabled !== undefined && (
           <WorkbenchSwitch workbench={{ ...workbench, enabled }} title={title} options={options} />
@@ -327,7 +285,6 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
         <WorkbenchRowMenu
           title={title}
           disabled={busy}
-          sidebar={sidebar}
           onReload={
             running
               ? () =>
@@ -369,13 +326,9 @@ export function useWorkbenchRows(options: WorkbenchRowsOptions): {
         description={loadNotice(workbench)}
         meta={workbench.version ? `v${workbench.version}` : undefined}
         trailing={
-          <WorkbenchSidebar workbench={workbench} options={options}>
-            {(sidebar) => (
-              <WorkbenchAppCenter workbench={workbench} options={options}>
-                {(appCenter) => controls(appCenter, sidebar)}
-              </WorkbenchAppCenter>
-            )}
-          </WorkbenchSidebar>
+          <WorkbenchAppCenter workbench={workbench} options={options}>
+            {controls}
+          </WorkbenchAppCenter>
         }
       />
     );

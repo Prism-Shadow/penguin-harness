@@ -1,5 +1,5 @@
 /**
- * The sidebar Apps group lists the Agent's workbenches and the current Project's open apps.
+ * The sidebar Apps group lists the current Project’s open app pages in this window.
  * Opening a running row selects its workspace page. The same page owns minimize, restore and
  * close, whether it renders a native route, a contributed iframe or an Agent workbench.
  */
@@ -19,12 +19,9 @@ import {
   ICON_SIZE,
   type RowActionItem,
 } from "@prismshadow/penguin-ui";
-import * as api from "../../api/endpoints";
 import { agentSettingsPath } from "../../lib/agent-location";
 import { usePageWorkspace } from "../../lib/page-workspace";
-import { useRestoreApp } from "../../lib/running-apps";
 import { S } from "../../lib/strings";
-import { toastApiError } from "../../lib/toast-api-error";
 import { TileIcon } from "../app-center";
 import { useSidebarApps, type SidebarAppRow } from "./use-sidebar-apps";
 
@@ -48,27 +45,15 @@ function writeFolded(folded: boolean): void {
   }
 }
 
-/** The words a row's state is said in: the same as the App Center tile's. */
-function stateOf(row: SidebarAppRow): string | null {
-  if (row.running) return S.appCenter.running;
-  if (row.build === "building") return S.appCenter.building;
-  if (row.build === "failed") return S.appCenter.broken;
-  return null;
-}
-
 export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
   const workspace = usePageWorkspace();
-  const { agent, pagesByKey, rows, reload } = useSidebarApps(
-    workspace?.layout.pages,
-    workspace?.current?.id,
-  );
-  const restore = useRestoreApp();
+  const { agent, rows } = useSidebarApps(workspace?.layout.pages);
   const navigate = useNavigate();
   const [folded, setFolded] = useState(readFolded);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   const [sorting, setSorting] = useState(false);
-  const [sort, setSort] = useState<"default" | "name" | "running">("default");
+  const [sort, setSort] = useState<"default" | "name" | "recent">("default");
   const list = useRef<HTMLUListElement>(null);
   useLayoutEffect(() => {
     const box = list.current;
@@ -80,12 +65,17 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
     if (item.top < bounds.top) box.scrollTop += item.top - bounds.top;
     else if (item.bottom > bounds.bottom) box.scrollTop += item.bottom - bounds.bottom;
   }, [workspace?.current?.id, rows.length, folded, searching, sort]);
-  if (rows.length === 0) return null;
+  if (!workspace || rows.length === 0) return null;
   const visible = rows.filter((row) =>
     row.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
   );
   if (sort === "name") visible.sort((a, b) => a.title.localeCompare(b.title));
-  if (sort === "running") visible.sort((a, b) => Number(b.running) - Number(a.running));
+  if (sort === "recent") {
+    const recent = new Map(workspace.layout.recent.map((id, index) => [id, index]));
+    visible.sort(
+      (a, b) => (recent.get(a.page.id) ?? Infinity) - (recent.get(b.page.id) ?? Infinity),
+    );
+  }
   const endSearch = () => {
     setQuery("");
     setSearching(false);
@@ -96,69 +86,44 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
     onNavigate?.();
   };
   const open = (row: SidebarAppRow) => {
-    const page = pagesByKey.get(row.key);
-    if (page && workspace) workspace.focus(page);
-    else restore(row.key, row.shortcut ?? undefined);
+    workspace.focus(row.page);
     onNavigate?.();
   };
-  const removeFromSidebar = (row: SidebarAppRow) => {
-    if (!agent) return;
-    void api
-      .setWorkbenchSidebar(agent.projectId, row.agentId, row.workbenchId, false, row.machineId)
-      .then(reload, toastApiError);
-  };
   const menuOf = (row: SidebarAppRow): RowActionItem[] => {
-    const page = pagesByKey.get(row.key);
-    const actions: RowActionItem[] = [];
-    if (page && workspace) {
-      const act = (fn: () => void) => () => {
-        fn();
-        onNavigate?.();
-      };
-      actions.push(
-        workspace.layout.visible.includes(page.id)
-          ? {
-              id: "minimize",
-              label: S.appCenter.windowMinimize,
-              glyph: ICONS.minus,
-              onSelect: act(() => workspace.minimize(page.id)),
-            }
-          : {
-              id: "restore",
-              label: S.pageWorkspace.restore,
-              glyph: ICONS.appWindow,
-              onSelect: () => open(row),
-            },
-        {
-          id: "fullscreen",
-          label: page.kind === "system" ? S.pageWorkspace.whole : S.appCenter.windowFullScreen,
-          glyph: ICONS.square,
-          onSelect: act(() =>
-            page.kind === "system" ? workspace.whole(page) : workspace.fullScreen(page),
-          ),
-        },
-        {
-          id: "close",
-          label: S.common.close,
-          glyph: ICONS.cross,
-          onSelect: act(() => workspace.close(page.id)),
-        },
-      );
-    } else {
-      actions.push({
-        id: "open",
-        label: S.sidebarApps.open,
-        glyph: ICONS.appWindow,
-        onSelect: () => open(row),
-      });
-    }
-    if (row.shortcut)
-      actions.push({
-        id: "remove",
-        label: S.sidebarApps.removeFromSidebar,
-        glyph: ICONS.eyeOff,
-        onSelect: () => removeFromSidebar(row),
-      });
+    const page = row.page;
+    const act = (fn: () => void) => () => {
+      fn();
+      onNavigate?.();
+    };
+    const actions: RowActionItem[] = [
+      workspace.layout.visible.includes(page.id)
+        ? {
+            id: "minimize",
+            label: S.appCenter.windowMinimize,
+            glyph: ICONS.minus,
+            onSelect: act(() => workspace.minimize(page.id)),
+          }
+        : {
+            id: "restore",
+            label: S.pageWorkspace.restore,
+            glyph: ICONS.appWindow,
+            onSelect: () => open(row),
+          },
+      {
+        id: "fullscreen",
+        label: page.kind === "system" ? S.pageWorkspace.whole : S.appCenter.windowFullScreen,
+        glyph: ICONS.square,
+        onSelect: act(() =>
+          page.kind === "system" ? workspace.whole(page) : workspace.fullScreen(page),
+        ),
+      },
+      {
+        id: "close",
+        label: S.common.close,
+        glyph: ICONS.cross,
+        onSelect: act(() => workspace.close(page.id)),
+      },
+    ];
     if (!row.system)
       actions.push({
         id: "settings",
@@ -217,7 +182,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
           }
         >
           <Menu label={S.sidebarApps.sort}>
-            {(["default", "name", "running"] as const).map((value) => (
+            {(["default", "name", "recent"] as const).map((value) => (
               <MenuRadioItem
                 key={value}
                 label={S.sidebarApps.order[value]}
@@ -248,7 +213,7 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
           className="max-h-[min(8rem,18dvh)] space-y-px overflow-y-auto md:max-h-[min(12rem,25dvh)]"
         >
           {visible.map((row) => {
-            const state = stateOf(row);
+            const state = S.appCenter.running;
             const name = S.sidebarApps.rowName(row.title, row.agentName, state);
             return (
               <AppRow
@@ -267,8 +232,8 @@ export function MainSidebarApps({ onNavigate }: { onNavigate?: () => void }) {
                 }
                 name={row.title}
                 {...(name !== row.title ? { label: name, hint: name } : {})}
-                active={row.shown}
-                running={row.running}
+                active={workspace.current?.id === row.page.id}
+                running
                 build={row.build}
                 menuActions={menuOf(row)}
                 moreLabel={S.chat.moreActions}

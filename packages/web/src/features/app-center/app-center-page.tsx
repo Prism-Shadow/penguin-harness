@@ -339,16 +339,6 @@ export function AppCenterPage() {
                 app.shortcut.machineId ?? null,
               )
               .then(() => refreshMachine(app.shortcut.machineId), toastApiError),
-          setShowInSidebar: (app, show) =>
-            void api
-              .setWorkbenchSidebar(
-                projectId,
-                app.shortcut.agentId,
-                app.shortcut.workbenchId,
-                show,
-                app.shortcut.machineId ?? null,
-              )
-              .then(() => refreshMachine(app.shortcut.machineId), toastApiError),
           openFolder: (folder) => setOpenFolderId(folder.id),
           newFolder: (app) => setNewFolderPicked(app === null ? [] : [app.id]),
           renameFolder: setRenaming,

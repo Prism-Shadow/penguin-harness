@@ -55,8 +55,6 @@ export interface GridActions {
   showError: (app: GridApp) => void;
   viewInSettings: (app: GridApp) => void;
   removeFromAppCenter: (app: GridApp) => void;
-  /** The installation's sidebar setting, the row's "Show in the sidebar" (PRFC-0033). */
-  setShowInSidebar: (app: GridApp, show: boolean) => void;
   openFolder: (folder: GridFolder) => void;
   /** Opens the new-folder dialog, with this app picked (null: none). */
   newFolder: (picked: GridApp | null) => void;
@@ -234,18 +232,6 @@ export function AppMenu({
             disabled={app.shortcut.unavailable}
             onSelect={act(close, () => actions.viewInSettings(app))}
           />
-          {/* A server older than the setting does not say it, and gets no row. */}
-          {app.shortcut.showInSidebar !== undefined && (
-            <MenuItem
-              glyph={ICONS.panelLeft}
-              label={S.appCenter.menu.showInSidebar}
-              checked={app.shortcut.showInSidebar}
-              disabled={app.shortcut.unavailable}
-              onSelect={act(close, () =>
-                actions.setShowInSidebar(app, !app.shortcut.showInSidebar),
-              )}
-            />
-          )}
           <MenuItem
             glyph={ICONS.eyeOff}
             label={S.appCenter.menu.removeFromAppCenter}
