@@ -15,8 +15,8 @@ import { Component, type Plugin } from "@prismshadow/penguin-core/plugin";
         preinstall: true,
         quickStart: {
           prompt:
-            "Help me open Your first workbench in the App Center and turn a task into a checklist.",
-          promptZh: "带我从应用中心打开「我的第一个工作台」，把手头的任务做成清单。",
+            "Help me start Your first workbench in Settings and turn a task into a checklist.",
+          promptZh: "带我在设置中开始「我的第一个工作台」引导，把手头的任务做成清单。",
         },
       },
     ],

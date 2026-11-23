@@ -22,6 +22,31 @@ import { setWebLocale } from "@prismshadow/penguin-web-plugin/host";
 
 export const zh = {
   appName: "PenguinHarness",
+  firstWorkbench: {
+    title: "我的第一个工作台",
+    help: "用自己的对话生成清单，安装后测试。",
+    resume: "开始或继续引导",
+    later: "收起",
+    refresh: "重新读取",
+    loading: "正在读取…",
+    generating: "正在生成清单…",
+    waitReply: "请等待此智能体的对话完成一条回复。",
+    models: "打开模型库配置服务商，然后在对话输入框旁选择模型。",
+    chat: "在输入框旁选择模型，发送你想做成清单的任务，读完回复后继续。",
+    reply: "用于生成的回复",
+    feedback: "清单修改意见",
+    modelSettings: "打开模型库",
+    toChat: "前往对话",
+    useReply: "使用这段对话",
+    retryChat: "重试已保存的请求",
+    generate: "生成清单",
+    verified: "测试通过。清单已保存、完成并删除测试条目。",
+    install: "安装清单",
+    open: "打开清单",
+    test: "测试清单",
+    testItem: "引导测试条目",
+    download: "下载插件",
+  },
 
   voice: {
     /** The Project settings page of the multimodal models. */

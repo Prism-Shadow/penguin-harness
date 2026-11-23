@@ -1,82 +1,88 @@
 import { expect, test } from "@playwright/test";
 import { setAccountPrefs } from "./account-prefs.mjs";
 import { provisionAndLogin } from "./auth.mjs";
-import { zip } from "./workbench-zip.mjs";
 
-const id = "first-workbench-guide";
+const BASE = process.env.BASE_URL;
+const guideId = "first-workbench-guide";
+const title = "Your first workbench";
 
-// The host also ships independently of the guide. Install a minimal app under the same id
-// when this checkout predates the package, using the real archive, sidebar and window routes.
-async function installedGuide(request, base) {
-  const list = await (await request.get(base + "?view=sidebar")).json();
-  const installed = list.apps.find((app) => app.workbenchId === id);
-  if (installed) return installed.title;
-  const title = "First workbench walkthrough";
-  const manifest = {
-    name: id,
-    version: "1.0.0",
-    type: "module",
-    penguin: {
-      appCenter: { show: true, title },
-      modules: [
+test("builds and installs a checklist beside the actual conversation", async ({ page }) => {
+  await provisionAndLogin(page.request, "newguidetour", "password123");
+  await setAccountPrefs(page.request, { lang: "en", initialPasswordBannerDismissed: true });
+  const { projects } = await (await page.request.get(BASE + "/api/projects")).json();
+  const project = projects[0].projectId,
+    agent = "default_agent";
+  const base = BASE + "/api/projects/" + project;
+  const installed = await (await page.request.get(base + "/agents/" + agent + "/plugins")).json();
+  expect(installed.workbenches).toContainEqual(
+    expect.objectContaining({ name: guideId, plugin: guideId }),
+  );
+  const center = await (await page.request.get(base + "/app-center")).json();
+  expect(center.shortcuts.some((s) => s.workbenchId === guideId)).toBe(false);
+  await page.goto(BASE + "/");
+  const intro = page.getByRole("dialog", { name: "Connect a model provider first" });
+  await intro.getByRole("button", { name: title }).click();
+  const tour = page.getByRole("region", { name: title });
+  await expect(tour).toBeVisible();
+  await tour.getByRole("button", { name: "Open Models" }).click();
+  await expect(page).toHaveURL(/\/models$/);
+  const modelId = "claude-guide-checklist";
+  // A local provider supplies a repeatable response to both real Session requests.
+  const res = await page.request.put(base + "/models", {
+    data: {
+      models: [
         {
-          name: "Workbench",
-          requires: { host: { iface: "@prismshadow/penguin-server#WorkbenchHost", from: "Host" } },
-          provides: { main: "@prismshadow/penguin-server#WorkbenchMain" },
-          contributes: {
-            "WebModule.sessionTabs": [
-              {
-                id: "guide.main",
-                key: "main",
-                title,
-                renderer: { iframe: { src: "ui/index.html" } },
-              },
-            ],
-          },
+          provider: "custom",
+          modelId,
+          modelType: "anthropic",
+          baseUrl: process.env.MOCK_URL,
+          apiKey: "fixture-credential",
+          contextWindow: 120000,
         },
       ],
-    },
-  };
-  const result = await request.post(base + "/archive", {
-    data: {
-      dataBase64: zip({
-        [id + "/package.json"]: JSON.stringify(manifest),
-        [id + "/index.ts"]:
-          'import type { WorkbenchPackage } from "@prismshadow/penguin-server/plugin"; export default { modules: { Workbench: { create() { return { api: { main: { async handle() { return {body:null}; } } } }; } } } } satisfies WorkbenchPackage;',
-        [id + "/ui/index.html"]: "<!doctype html><title>Walkthrough</title>",
-      }).toString("base64"),
+      defaultModel: { provider: "custom", modelId },
     },
   });
-  expect(result.ok(), await result.text()).toBe(true);
-  expect((await result.json()).workbench.error).toBeFalsy();
-  return title;
-}
-
-test("the initial provider dialog opens the installed guide and respects its sidebar setting", async ({
-  page,
-}) => {
-  await provisionAndLogin(page.request, "newguideentry", "password123");
-  await setAccountPrefs(page.request, { lang: "en" });
-  const baseUrl = process.env.BASE_URL;
-  const { projects } = await (await page.request.get(baseUrl + "/api/projects")).json();
-  const base =
-    baseUrl + "/api/projects/" + projects[0].projectId + "/agents/default_agent/workbenches";
-  const title = await installedGuide(page.request, base);
-  const show = async (value) =>
-    expect(
-      (await page.request.patch(base + "/" + id + "/sidebar", { data: { show: value } })).ok(),
-    ).toBe(true);
-  await show(false);
-  await page.goto(baseUrl + "/");
-  const dialog = page.getByRole("dialog", { name: "Connect a model provider first" });
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("button", { name: title })).toHaveCount(0);
-  await show(true);
-  await page.reload();
-  await dialog.getByRole("button", { name: title }).click();
-  await expect(page).toHaveURL(/\/apps\?app=default_agent%2Ffirst-workbench-guide$/);
-  await expect(page.getByRole("region", { name: title })).toBeVisible();
-  await page.goBack();
-  await expect(page.locator('[data-slot="composer"] textarea').first()).toBeVisible();
-  await expect(dialog).toHaveCount(0);
+  expect(res.ok(), await res.text()).toBe(true);
+  await tour.getByRole("button", { name: "Go to chat" }).click();
+  const composer = page.locator('[data-slot="composer"]:visible').first();
+  await expect(composer.getByText(modelId, { exact: true })).toBeVisible();
+  await composer.getByText(modelId, { exact: true }).click();
+  const picker = page.getByRole("dialog");
+  await expect(picker).toBeVisible();
+  await picker.getByText(modelId, { exact: true }).last().click();
+  const text = "Plan a volunteer seed exchange";
+  await composer.locator("textarea").fill(text);
+  await composer.locator("textarea").press("Enter");
+  await expect(page).toHaveURL(/\/chat\/(?!new)[^/?]+/);
+  await expect(
+    page.getByText("Count the seed packets and label each tray.", { exact: true }),
+  ).toBeVisible();
+  await tour.getByRole("button", { name: "Use this conversation" }).click();
+  await expect(tour.getByText(text, { exact: true })).toBeVisible();
+  await tour.getByLabel("Changes for the checklist").fill("Include a tray count");
+  await tour.getByRole("button", { name: "Generate checklist" }).click();
+  await expect(tour.getByText("Seed exchange", { exact: true })).toBeVisible({ timeout: 45000 });
+  await tour.getByRole("button", { name: "Install checklist" }).click();
+  await expect(tour.getByRole("button", { name: "Open checklist" })).toBeVisible();
+  await tour.getByRole("button", { name: "Open checklist" }).click();
+  await expect(page).toHaveURL(/checklist-/);
+  await expect(
+    page
+      .frameLocator('iframe[src*="checklist-"]')
+      .first()
+      .getByText("Seed exchange", { exact: true })
+      .first(),
+  ).toBeVisible();
+  await tour.getByRole("button", { name: "Test checklist" }).click();
+  await expect(tour.getByRole("status")).toContainText("Test passed");
+  const zip = await page.request.get(
+    await tour.getByRole("link", { name: "Download plugin" }).getAttribute("href"),
+  );
+  expect(zip.ok()).toBe(true);
+  expect((await zip.body()).subarray(0, 2).toString()).toBe("PK");
+  await tour.getByRole("button", { name: "Dismiss" }).click();
+  await expect(tour).toHaveCount(0);
+  await page.goto(BASE + "/apps?" + new URLSearchParams({ app: agent + "/" + guideId }));
+  await expect(tour.getByRole("status")).toContainText("Test passed");
 });

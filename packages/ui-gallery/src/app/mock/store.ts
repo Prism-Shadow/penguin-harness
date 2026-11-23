@@ -166,6 +166,7 @@ export class DemoStore {
       this.f.chatDefaults.workspace = RSI_WORKSPACE;
     }
     if (notices) raiseNotices(this.f);
+    if (init.freshProject && embedded) this.f.prefs.initialPasswordBannerDismissed = true;
     const ref = DEFAULT_MODEL;
     const seeded: Record<string, Transcript> = {
       [IDS.sessions.done]: doneTranscript(lang, now, ref),
