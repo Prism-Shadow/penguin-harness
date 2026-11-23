@@ -55,6 +55,45 @@ function positionAt(
   throw new RangeError("URL offset outside terminal row");
 }
 
+// In a tmux split the neighbouring pane is on the same xterm row. A vertical rule
+// aligned with another row delimits the panes; the same glyph can occur in a URL.
+function paneText(buffer: IBuffer, row: BufferRow, cols: number): string {
+  if (buffer.type !== "alternate" || !/[│┃║|]/.test(row.text)) return row.text;
+  const above = row.y > 1 ? buffer.getLine(row.y - 2) : undefined;
+  const below = row.y < buffer.length ? buffer.getLine(row.y) : undefined;
+  const cell = buffer.getNullCell();
+  let text = "";
+  let start = 0;
+  let left = 0;
+
+  function pane(end: number, atEdge: boolean): string {
+    const part = row.text.slice(start, end);
+    if (!atEdge || !below?.getCell(left)?.getChars().trim()) return part;
+    // A pane's own newline and its own autowrap render identically at this edge.
+    // Keep an ambiguous trailing token out of the matches at its original offsets.
+    return part.replace(/[^\s"'!*(){}|\\^<>\x60]+$/, (tail) => " ".repeat(tail.length));
+  }
+
+  let offset = 0;
+  for (let x = 0; x < cols && offset < row.text.length; x++) {
+    row.line.getCell(x, cell);
+    if (cell.getWidth() === 0) continue;
+    const chars = cell.getChars() || " ";
+    if (
+      "│┃║|".includes(chars) &&
+      (above?.getCell(x)?.getChars() === chars || below?.getCell(x)?.getChars() === chars)
+    ) {
+      text += pane(offset, true) + " ";
+      start = offset + 1;
+      left = x + 1;
+    }
+    offset += chars.length;
+  }
+  if (!start) return row.text;
+  const last = row.line.getCell(cols - 1);
+  return text + pane(row.text.length, !!last?.getChars() || last?.getWidth() === 0);
+}
+
 // URL parsing can repair a missing host or rewrite an abbreviated numeric address.
 // Keep the web-links addon's requirement that the parsed authority appears in the output.
 function hasPrintedAuthority(uri: string): boolean {
@@ -96,7 +135,7 @@ export function terminalUrlProvider(terminal: Terminal, tracker: LinkClickTracke
         }
       }
 
-      const text = rows.map((part) => part.text).join("");
+      const text = rows.map((part) => paneText(active, part, terminal.cols)).join("");
       const links: ILink[] = [];
       const cell = active.getNullCell();
       for (const match of text.matchAll(webUrl)) {

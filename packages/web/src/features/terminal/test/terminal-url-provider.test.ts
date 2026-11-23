@@ -1,3 +1,8 @@
+/**
+ * Given a plain URL in a terminal, clicking its printed cells resolves its complete
+ * address across soft wraps and scrollback. Hard breaks and separate pane output
+ * delimit independent text. A pane edge with an ambiguous continuation offers no URL.
+ */
 import type { ILink, Terminal } from "@xterm/xterm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LinkClickTracker } from "../terminal-links";
@@ -61,6 +66,39 @@ describe("plain terminal URLs", () => {
     expect(linksAt(2)).toEqual([]);
     expect(linksAt(3)[0]?.text).toBe("https://a.b/");
     expect(linksAt(4)[0]?.text).toBe("https://a.b/");
+  });
+
+  it("keeps a tmux neighbour out of a URL and withholds an ambiguous pane-edge fragment", async () => {
+    terminal.resize(50, 8);
+    const left = "https://left.co/path";
+    const right = "https://right.co/issue";
+    const divider = "│";
+    await write(
+      "\x1b[?1049h" + left + divider + right + "\r\n" + "/continued".padEnd(left.length) + divider,
+    );
+    expect(linksAt(1).map((link) => link.text)).toEqual([right]);
+    expect(linksAt(2)).toEqual([]);
+    // An empty cell below the left edge rules out another piece of the URL.
+    await write("\x1b[2;1H" + " ".repeat(left.length));
+    expect(linksAt(1).map((link) => link.text)).toEqual([left, right]);
+  });
+
+  it("withholds a right pane's ambiguous fragment at the screen edge", async () => {
+    const text = "界 │https://right.co/path";
+    terminal.resize(text.length + 1, 8);
+    await write("\x1b[?1049h" + text + "\r\n   │/more");
+    expect(linksAt(1)).toEqual([]);
+    await write("\x1b[2;5H\x1b[K");
+    expect(linksAt(1)[0]).toMatchObject({
+      text: "https://right.co/path",
+      range: { start: { x: 5, y: 1 }, end: { x: terminal.cols, y: 1 } },
+    });
+  });
+
+  it("preserves a vertical bar inside a printed Unicode path without an aligned divider", async () => {
+    const url = "https://a.co/ab│c";
+    await write("\x1b[?1049h" + url + "\r\nnext");
+    expect(linksAt(1)[0]?.text).toBe(url);
   });
 
   it("maps wide and combined glyphs to cells and skips wide-character wrap padding", async () => {
