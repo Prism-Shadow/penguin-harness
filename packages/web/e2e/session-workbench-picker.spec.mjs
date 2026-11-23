@@ -147,5 +147,20 @@ test("an App Center workbench lists archived Sessions and closes only their sele
   ).toBe(true);
   expect(hasWrites.filter((u) => u.endsWith("/close"))).toHaveLength(1);
   expect(hasWrites.filter((u) => u.endsWith("/api/terminals"))).toEqual([]);
+  const chat = page.locator('[data-pane="full"][data-workspace-page*="' + second.sessionId + '"]');
+  const composer = chat.locator('[data-slot="composer"] textarea').first();
+  await composer.fill("Keep my draft while browsing");
+  for (const kind of ["workspace", "memory", "agents", "trace"]) {
+    await page.getByRole("button", { name: "Shortcuts", exact: true }).click();
+    await page.getByTestId("dock-launcher-open-" + kind).click();
+    const tab = page.locator(
+      '[data-testid="dock-tab"][data-tab-id^=":app:session-tool/' + kind + '"]',
+    );
+    await expect(tab).toBeVisible();
+    await expect(page).toHaveURL(new RegExp("/session-tools/" + kind + "\\?"));
+    expect(new URL(page.url()).searchParams.get("session")).toBe(second.sessionId);
+    await tab.getByTestId("dock-tab-close").click();
+    await expect(composer).toHaveValue("Keep my draft while browsing");
+  }
   expect(none.sessionId).not.toBe(second.sessionId);
 });
