@@ -208,6 +208,23 @@ function sanitizeScope(key: string, stored: unknown): ScopeLayout {
 // original panel IDs belong in a saved conversation arrangement.
 const beforePage = new WeakMap<DockAreaState, { active: string | null; open: boolean }>();
 const beforePageFocus = new WeakMap<ScopeLayout, DockPosition>();
+// A contextual workbench can temporarily present a native panel already in this layout.
+// Its stored tab and the user's chosen edge stay intact while the app occupies the right dock.
+const panelLoans = new WeakMap<ScopeLayout, Map<string, string>>();
+export function borrowedDockPanel(key: string): string | undefined {
+  return panelLoans.get(layout)?.get(key);
+}
+
+export function openDockPage(key: string, nativeId: string | null): void {
+  if (nativeId && isPanelId(nativeId) && panelDock(nativeId)) {
+    const loans = panelLoans.get(layout) ?? new Map<string, string>();
+    loans.set(key, nativeId);
+    panelLoans.set(layout, loans);
+    instant += 1;
+  }
+  openPanel(key, "right");
+}
+
 function storedArea(area: DockAreaState) {
   const tabs = area.tabs.map(tabKey).filter(isPanelId);
   const transient = area.active !== null && !isPanelId(area.active);
@@ -516,21 +533,32 @@ export interface DockView {
  * bottom view listing every open dock's tabs (bottom's first — it is the surface the
  * merged view inherits). An open dock with no tabs renders its picker.
  */
+function projectedView(position: DockPosition): DockView {
+  const { tabs, active } = area(position);
+  const loans = panelLoans.get(layout);
+  if (!loans?.size) return { position, merged: false, tabs, activeKey: active };
+  const borrowed = new Set(loans.values());
+  const shown = tabs.filter((tab) => !borrowed.has(tabKey(tab)));
+  const activeKey = active && borrowed.has(active) ? (shown.at(-1)?.panel ?? null) : active;
+  return { position, merged: false, tabs: shown, activeKey };
+}
+
 export function dockViews(): DockView[] {
-  if (!narrow) {
-    return (["right", "bottom"] as const).filter(isDockVisible).map((position) => ({
-      position,
-      merged: false,
-      tabs: area(position).tabs,
-      activeKey: area(position).active,
-    }));
-  }
-  if (!isDockVisible("right") && !isDockVisible("bottom")) return [];
-  const tabs = [
-    ...(isDockVisible("bottom") ? layout.bottom.tabs : []),
-    ...(isDockVisible("right") ? layout.right.tabs : []),
+  const views = (["right", "bottom"] as const)
+    .filter(isDockVisible)
+    .map(projectedView)
+    .filter((view) => view.tabs.length || !hasTabs(view.position));
+  if (!narrow || !views.length) return views;
+  const selected =
+    views.find((view) => view.position === layout.focus && view.activeKey) ?? views[0]!;
+  return [
+    {
+      position: "bottom",
+      merged: true,
+      tabs: views.reverse().flatMap((view) => view.tabs),
+      activeKey: selected.activeKey,
+    },
   ];
-  return [{ position: "bottom", merged: true, tabs, activeKey: mergedActiveKey(isDockVisible) }];
 }
 
 /**
@@ -543,12 +571,13 @@ export function dockViews(): DockView[] {
 export function closedDockView(position: DockPosition): DockView | null {
   if (narrow) {
     if (position === "right" || isDockVisible("right") || isDockVisible("bottom")) return null;
-    const tabs = [...layout.bottom.tabs, ...layout.right.tabs];
+    const tabs = [...projectedView("bottom").tabs, ...projectedView("right").tabs];
     if (tabs.length === 0) return null;
     return { position: "bottom", merged: true, tabs, activeKey: mergedActiveKey(hasTabs) };
   }
   if (isDockVisible(position) || !hasTabs(position)) return null;
-  return { position, merged: false, tabs: area(position).tabs, activeKey: area(position).active };
+  const view = projectedView(position);
+  return view.tabs.length ? view : null;
 }
 
 /** Whether a tab is the one actually on screen (narrow-aware — what a toggle closes). */
@@ -611,6 +640,14 @@ function detachPages(matches: (key: string) => boolean, except?: string): void {
   let changed = false;
   for (const [owner, entry] of Object.entries({ ...scopes, [scope]: layout })) {
     if (owner === except) continue;
+    const loans = panelLoans.get(entry);
+    for (const key of loans?.keys() ?? []) {
+      if (matches(key)) {
+        loans!.delete(key);
+        instant += 1;
+      }
+    }
+    const focused = entry[entry.focus].active;
     for (const area of [entry.right, entry.bottom]) {
       const tabs = area.tabs.filter((tab) => !matches(tabKey(tab)));
       if (tabs.length === area.tabs.length) continue;
@@ -626,6 +663,8 @@ function detachPages(matches: (key: string) => boolean, except?: string): void {
       if (!tabs.length) area.open = false;
       changed = true;
     }
+    if (focused && matches(focused) && !entry[entry.focus].active?.startsWith(":"))
+      entry.focus = beforePageFocus.get(entry) ?? entry.focus;
   }
   if (changed) commit();
 }

@@ -85,6 +85,13 @@ import { DockPanelProvider, type DockPanelHandle } from "./panel-context";
 
 import { usePageWorkspace } from "../../lib/page-workspace";
 import { dockPageId, sessionAppPair, SessionAppDockBody } from "../../lib/session-app-dock";
+import {
+  DockPanelArea,
+  NativePanelSlot,
+  useNativePanelSlots,
+  type PanelBodyProps,
+} from "./dock-panel-bodies";
+import type { ComponentProps } from "react";
 import { panelGlyph, panelLabel } from "./panel-meta";
 import {
   dockPanelDefinition,
@@ -97,6 +104,7 @@ import { composerHeight, useComposerHeight } from "./composer-height";
 
 import {
   activateTab,
+  borrowedDockPanel,
   bottomRatio,
   currentDockScope,
   dockVersion,
@@ -166,22 +174,11 @@ function measureColumn(): { host: number; area: number } {
  * closable from the strip; the body appears the moment the definition is registered, since the
  * dock re-renders on registration.
  */
-function PanelBody({
-  id,
-  position,
-  merged,
-  active,
-  fullscreen,
-}: {
-  id: PanelId;
-  position: DockPosition;
-  merged: boolean;
-  active: boolean;
-  fullscreen: boolean;
-}) {
+function PanelBody({ id, position, merged, active, fullscreen, loanKey }: PanelBodyProps) {
   const workspace = usePageWorkspace();
   const appId = dockPageId(id);
   const page = appId && workspace?.layout.pages.find((p) => p.id === appId);
+  const ownerId = loanKey ? dockPageId(loanKey) : page ? page.id : null;
   const handle = useMemo<DockPanelHandle>(
     () => ({
       id,
@@ -197,11 +194,11 @@ function PanelBody({
       },
       // The tab's × path: a close guard the body registered (unsaved text) asks first.
       close: () => {
-        if (page && workspace) workspace.close(page.id);
+        if (ownerId && workspace) workspace.close(ownerId);
         else closeWhenAllowed(id);
       },
     }),
-    [id, position, merged, active, fullscreen, page, workspace],
+    [id, position, merged, active, fullscreen, ownerId, workspace],
   );
   const session = workspace && sessionAppPair(workspace.layout)?.session;
   const Body = dockPanelDefinition(id)?.Body;
@@ -229,6 +226,10 @@ function PanelBody({
   );
 }
 
+export function ChatDockArea(props: Omit<ComponentProps<typeof DockPanelArea>, "Body">) {
+  return <DockPanelArea {...props} Body={PanelBody} />;
+}
+
 export interface DockPanelProps {
   view: DockView;
   /** Attention dots per panel id (the agents tab's pending-approval amber dot). */
@@ -252,6 +253,7 @@ export function DockPanel({
   // what re-renders the strip when a definition arrives for a tab it already shows.
   const offered = useDockPanels();
   const { position, merged, tabs, activeKey } = view;
+  const nativeSlots = useNativePanelSlots();
   const horizontal = position === "bottom";
   const other: DockPosition = position === "right" ? "bottom" : "right";
   const [addOpen, setAddOpen] = useState(false);
@@ -671,19 +673,24 @@ export function DockPanel({
       <div className="relative min-h-0 flex-1">
         {tabs.map((tab) => {
           const key = tabKey(tab);
+          const native = borrowedDockPanel(key) ?? key;
           const active = key === activeKey;
           return (
             <div key={key} className={active ? "flex h-full min-h-0 flex-col" : "hidden"}>
               {/* A hidden dock's shown tab is no more on screen than a covered one: the
                   bodies gate their polling and their reload-on-return on this, and a
                   collapsed dock should cost nothing while it is away. */}
-              <PanelBody
-                id={tab.panel}
-                position={position}
-                merged={merged}
-                active={active && open}
-                fullscreen={fullscreen}
-              />
+              {nativeSlots && !native.startsWith(":") ? (
+                <NativePanelSlot id={native} />
+              ) : (
+                <PanelBody
+                  id={tab.panel}
+                  position={position}
+                  merged={merged}
+                  active={active && open}
+                  fullscreen={fullscreen}
+                />
+              )}
             </div>
           );
         })}

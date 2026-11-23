@@ -14,8 +14,8 @@ import { useMatch } from "react-router";
 import { useProject } from "../../state/project";
 import { announceDockScope } from "./dock-listeners";
 import { usePageWorkspace } from "../../lib/page-workspace";
-import { sessionAppPair, dockPageKey } from "../../lib/session-app-dock";
-import { setDockScope, openPanel, panelDock, detachDockPage } from "./dock-state";
+import { sessionAppPair, dockPageKey, existingDockPanel } from "../../lib/session-app-dock";
+import { setDockScope, openDockPage, panelDock, detachDockPage } from "./dock-state";
 
 export function DockScope() {
   const sessionRoute = useMatch("/chat/:sessionId")?.params.sessionId;
@@ -25,6 +25,7 @@ export function DockScope() {
   const visibleSession = pair ? pair.session : workspace?.current;
   const windowKey = visibleSession?.id.startsWith("scoped-chat:") ? visibleSession.id : undefined;
   const appId = pair ? pair.app.id : null;
+  const existingPanel = pair ? existingDockPanel(pair.app) : null;
   const previousScope = useRef<string | null>(null);
   const { currentProject } = useProject();
   useLayoutEffect(() => {
@@ -41,7 +42,7 @@ export function DockScope() {
     if (!appId || !scope) return;
     const key = dockPageKey(appId);
     detachDockPage(key, owner!);
-    if (!panelDock(key) || sameScope) openPanel(key, "right");
-  }, [appId, scope, windowKey]);
+    if (!panelDock(key) || sameScope) openDockPage(key, existingPanel);
+  }, [appId, existingPanel, scope, windowKey]);
   return null;
 }

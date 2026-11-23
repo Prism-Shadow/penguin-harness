@@ -12,7 +12,7 @@ import { HistoryLoadFailed } from "../history-load-failed";
 import { HistoryLoading } from "../history-loading";
 import { RequestFailureDialog } from "../request-failure-dialog";
 import { MachineRestartNotice } from "../machine-restart-notice";
-import { DockPanel, DockLauncher, measureComposer } from "../../dock";
+import { ChatDockArea, DockPanel, DockLauncher, measureComposer } from "../../dock";
 import { ChatDockProvider } from "../session/main-dock-context";
 import { ReplyFilesProvider } from "../reply-files-provider";
 import { PathCapsulesProvider } from "../../company";
@@ -63,6 +63,7 @@ export function renderMainChatBody(scope: MainChatView) {
     emptyChat,
     input,
   } = scope;
+  const showDocks = scope.hostsAppPanel || (scope.paneFocused && archivedRow === null);
   return (
     <>
       <ChatDockProvider value={chatDock}>
@@ -74,7 +75,7 @@ export function renderMainChatBody(scope: MainChatView) {
             (or the narrow merged view) grows to cover, up to the toolbar; a fullscreen right
             dock covers the row alone. Layout-neutral: it takes the column's remaining height
             exactly as the row and the dock did when they sat in the column themselves. */}
-          <div data-dock-area className="flex min-h-0 flex-1 flex-col">
+          <ChatDockArea mounts={showDocks ? [rightMount, bottomMount] : []}>
             {/* Body: chat column + the right dock on this row (below the toolbar — a dock
               beside the whole page would squeeze the header), with the bottom dock after the
               row spanning the full page width. data-dock-row is what the drag preview
@@ -283,27 +284,25 @@ export function renderMainChatBody(scope: MainChatView) {
                 )}
               </ChatDropRegion>
 
-              {(scope.hostsAppPanel || (scope.paneFocused && archivedRow === null)) &&
-                rightMount.view && (
-                  <DockPanel
-                    view={rightMount.view}
-                    open={rightMount.open}
-                    animateEntrance={rightMount.animateEntrance}
-                    panelBadges={{ agents: anySubagentPending }}
-                  />
-                )}
-            </div>
-
-            {(scope.hostsAppPanel || (scope.paneFocused && archivedRow === null)) &&
-              bottomMount.view && (
+              {showDocks && rightMount.view && (
                 <DockPanel
-                  view={bottomMount.view}
-                  open={bottomMount.open}
-                  animateEntrance={bottomMount.animateEntrance}
+                  view={rightMount.view}
+                  open={rightMount.open}
+                  animateEntrance={rightMount.animateEntrance}
                   panelBadges={{ agents: anySubagentPending }}
                 />
               )}
-          </div>
+            </div>
+
+            {showDocks && bottomMount.view && (
+              <DockPanel
+                view={bottomMount.view}
+                open={bottomMount.open}
+                animateEntrance={bottomMount.animateEntrance}
+                panelBadges={{ agents: anySubagentPending }}
+              />
+            )}
+          </ChatDockArea>
         </ReplyFilesProvider>
       </ChatDockProvider>
     </>

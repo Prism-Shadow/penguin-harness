@@ -28,6 +28,7 @@ export const dockPageId = (key: string) => (key.startsWith(":") ? key.slice(1) :
 
 interface ContextualPage {
   resolve(path: string): OpenPage | null;
+  existingPanelId?(page: OpenPage): string | null;
   Body: ComponentType<{ page: OpenPage; sessionId: string; active: boolean }>;
 }
 let contextual: ContextualPage | undefined;
@@ -37,6 +38,9 @@ export function registerSessionAppDockAdapter(adapter: ContextualPage) {
   return () => {
     if (contextual === adapter) contextual = undefined;
   };
+}
+export function existingDockPanel(page: OpenPage) {
+  return contextual?.existingPanelId?.(page) ?? null;
 }
 export function contextualDockPage(path: string) {
   return contextual?.resolve(path) ?? null;

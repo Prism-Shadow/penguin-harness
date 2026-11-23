@@ -26,7 +26,7 @@ export type { DockPanelDefinition } from "./panel-registry";
 
 export type { PanelId } from "./panel-registry";
 
-export { DockPanel } from "./dock-panel";
+export { ChatDockArea, DockPanel } from "./dock-panel";
 
 export { DockLauncher } from "./dock-launcher";
 

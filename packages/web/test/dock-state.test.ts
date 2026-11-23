@@ -699,3 +699,25 @@ it("separates same-ID machine workbench docks without writing new saved layouts"
   expect(saved["office-window"]).toBeUndefined();
   expect(saved["studio-window"]).toBeUndefined();
 });
+
+it.each(["right", "bottom"] as const)(
+  "temporarily presents a saved %s panel in the right dock and restores its arrangement",
+  (edge) => {
+    dock.openPanel("memory", edge);
+    dock.toggleDock(edge);
+    const scope = dock.currentDockScope()!;
+    const saved = () => JSON.parse(localStorage.getItem("penguin.dock.layout")!).scopes[scope];
+    const original = saved();
+    const key = ":app:session-tool/memory";
+    dock.openDockPage(key, "memory");
+    expect(dock.dockViews().map(({ position, tabs }) => [position, tabs.map(dock.tabKey)])).toEqual(
+      [["right", [key]]],
+    );
+    expect(dock.borrowedDockPanel(key)).toBe("memory");
+    expect(saved()).toEqual(original);
+    dock.detachDockPage(key);
+    expect(dock.dockViews()).toEqual([]);
+    expect(dock.closedDockView(edge)?.tabs.map(dock.tabKey)).toEqual(["memory"]);
+    expect(saved()).toEqual(original);
+  },
+);
