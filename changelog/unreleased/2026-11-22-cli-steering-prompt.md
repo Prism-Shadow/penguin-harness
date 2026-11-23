@@ -3,6 +3,7 @@
 - **Date:** 2026-11-22
 - **Type:** fix
 - **Scope:** `cli`
+- **PR:** [#1699](https://github.com/Prism-Shadow/penguin-harness/pull/1699)
 
 [中文版](2026-11-22-cli-steering-prompt.zh.md)
 
