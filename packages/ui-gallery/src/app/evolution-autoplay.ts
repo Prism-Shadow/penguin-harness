@@ -13,6 +13,11 @@ export function installEvolutionAutoplay(
   if (!playOnce && win.matchMedia("(prefers-reduced-motion: reduce)").matches)
     return () => undefined;
   const doc = win.document;
+  // A suspended workspace tab retains its DOM while another page is on screen.
+  const shown = <T extends Element>(selector: string, matches?: (element: T) => boolean) =>
+    [...doc.querySelectorAll<T>(selector)].find(
+      (element) => element.getClientRects().length > 0 && (!matches || matches(element)),
+    );
   const letters = Array.from(prompt);
   const setValue = Object.getOwnPropertyDescriptor(
     win.HTMLTextAreaElement.prototype,
@@ -47,7 +52,7 @@ export function installEvolutionAutoplay(
   const tick = () => {
     timer = undefined;
     if (stopped || !visible || doc.hidden) return;
-    const input = doc.querySelector<HTMLTextAreaElement>('[data-slot="composer"] textarea');
+    const input = shown<HTMLTextAreaElement>('[data-slot="composer"] textarea');
     if (!input || input.disabled) return;
     if (input.value !== letters.slice(0, index).join("")) {
       stop();
@@ -93,21 +98,18 @@ export function installEvolutionAutoplay(
     timer = undefined;
     if (stopped || !visible || doc.hidden) return;
     if (destination === "result") {
-      const running = [...doc.querySelectorAll('[data-slot="composer"] button')].some(
+      const running = shown(
+        '[data-slot="composer"] button',
         (button) => button.getAttribute("aria-label") === S.chat.stop,
       );
-      if (!running && doc.querySelector("main table")) {
+      if (!running && shown("main table")) {
         // The app opens its Agents panel during parallel evaluation; return the space to the result.
-        doc.querySelector<HTMLButtonElement>('[data-testid="dock-tab-close"]')?.click();
+        shown<HTMLButtonElement>('[data-testid="dock-tab-close"]')?.click();
         destination = "center";
         timer = playback.schedule(advance, 1300);
       }
     } else if (destination === "center") {
       // The Evaluation Center is a system app: its tile in the App Center opens it.
-      const shown = <T extends Element>(selector: string) =>
-        [...doc.querySelectorAll<T>(selector)].find(
-          (candidate) => candidate.getClientRects().length > 0,
-        );
       const tile = shown<HTMLButtonElement>('li[data-app="system_agent/benchmark"] > button');
       const appCenter = shown<HTMLAnchorElement>('a[href="/apps"]');
       if (tile) {
@@ -125,19 +127,49 @@ export function installEvolutionAutoplay(
         timer = playback.schedule(advance, 400);
       }
     } else if (destination === "detail") {
-      const card = [...doc.querySelectorAll<HTMLButtonElement>("main button")].find((candidate) =>
-        candidate.textContent?.includes(IDS.benchmarks.docs),
+      const card = shown<HTMLButtonElement>("main button", (candidate) =>
+        Boolean(candidate.textContent?.includes(IDS.benchmarks.docs)),
       );
       if (card) {
         destination = "chart";
         card.click();
       }
     } else if (destination === "chart") {
-      const chart = doc.querySelector("main svg.ui-chart");
+      const chart = shown("main svg.ui-chart");
       if (chart) {
         revealChart(chart);
         if (playOnce) {
-          stop();
+          // In the desktop workspace, drag the conversation from Open pages beside its chart.
+          const session = doc
+            .querySelector<HTMLElement>(
+              'nav [data-app-row^="chat:"]:not([data-app-row="chat:new"])',
+            )
+            ?.closest<HTMLElement>('[draggable="true"]');
+          const pane = chart.closest<HTMLElement>('[data-workspace-page][data-pane="full"]');
+          if (
+            pane &&
+            session?.getBoundingClientRect().width &&
+            typeof win.DataTransfer === "function"
+          ) {
+            const dataTransfer = new win.DataTransfer();
+            const drag = (type: string) =>
+              new win.DragEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                dataTransfer,
+                clientX: pane.getBoundingClientRect().left + 1,
+              });
+            session.dispatchEvent(drag("dragstart"));
+            pane.dispatchEvent(drag("dragover"));
+            timer = playback.schedule(() => {
+              pane.dispatchEvent(drag("drop"));
+              session.dispatchEvent(drag("dragend"));
+              revealChart(chart);
+              stop();
+            }, 100);
+          } else {
+            stop();
+          }
           return;
         }
         destination = "replay";
@@ -161,7 +193,7 @@ export function installEvolutionAutoplay(
         timer = playback.schedule(advance, 400);
       }
     } else {
-      const input = doc.querySelector<HTMLTextAreaElement>('[data-slot="composer"] textarea');
+      const input = shown<HTMLTextAreaElement>('[data-slot="composer"] textarea');
       if (!input || input.disabled) return;
       if (input.value !== "") {
         stop();

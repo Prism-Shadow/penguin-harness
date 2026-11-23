@@ -52,12 +52,21 @@ for (const [lang, play, stop] of [
     await expect(frame.locator(composer)).not.toHaveValue("");
     await expect(guide).toHaveCount(0);
     await expect(passwordNotice).toHaveCount(0);
-    const chart = frame.locator("main svg.ui-chart").first();
-    for (let step = 0; step < 40 && !(await chart.isVisible()); step++) {
+    const chart = frame.locator("main svg.ui-chart:visible").first();
+    const evaluation = frame.getByRole("heading", {
+      name: lang === "en" ? "Docs QA v1" : "文档问答 v1",
+      exact: true,
+    });
+    for (let step = 0; step < 65 && !(await evaluation.isVisible()); step++) {
       await page.clock.runFor(1500);
     }
-    await expect(chart).toBeVisible();
+    await expect(evaluation).toBeVisible();
+    await page.clock.runFor(600);
     await page.clock.fastForward(15_000);
+    if (lang === "en" && (await frame.locator("[data-workspace-page]").count())) {
+      await expect(frame.locator('[data-pane="left"] [data-slot="composer"]')).toBeVisible();
+      await expect(frame.locator('[data-pane="right"] svg.ui-chart').first()).toBeVisible();
+    }
     await expect(chart).toBeVisible();
     await page.getByRole("button", { name: stop, exact: true }).click();
     await expect(frame.locator(composer)).toHaveValue("");

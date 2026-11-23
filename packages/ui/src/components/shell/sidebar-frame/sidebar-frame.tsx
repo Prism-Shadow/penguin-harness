@@ -170,12 +170,15 @@ export function SidebarNavEntry({ badge, ...row }: SidebarNavEntryProps) {
 export function SidebarListHeader({
   label,
   searching = false,
+  fold,
   children,
 }: {
   /** The group label naming the list below. */
   label: string;
   /** The search field is open in the controls' column. */
   searching?: boolean;
+  /** A list that folds as a whole gives its label the toggle. */
+  fold?: { open: boolean; toggle: () => void };
   /** The controls, or the open search field and the controls after it. */
   children: ReactNode;
 }) {
@@ -186,15 +189,33 @@ export function SidebarListHeader({
         searching ? "grid-cols-[0fr_1fr]" : "grid-cols-[1fr_1fr]"
       }`}
     >
-      <Text
-        as="span"
-        variant="eyebrow"
-        className={`min-w-0 overflow-hidden whitespace-nowrap px-1 transition-opacity duration-200 ${
-          searching ? "opacity-0" : "opacity-100"
-        }`}
-      >
-        {label}
-      </Text>
+      {fold ? (
+        <button
+          type="button"
+          aria-expanded={fold.open}
+          aria-label={label}
+          onClick={fold.toggle}
+          disabled={searching}
+          className={`flex min-w-0 items-center gap-1 overflow-hidden px-1 text-left ${searching ? "invisible" : ""}`}
+        >
+          <span className={`shrink-0 ${fold.open ? "" : "-rotate-90"}`}>
+            <ChevronDown />
+          </span>
+          <Text as="span" variant="eyebrow" className="truncate">
+            {label}
+          </Text>
+        </button>
+      ) : (
+        <Text
+          as="span"
+          variant="eyebrow"
+          className={`min-w-0 overflow-hidden whitespace-nowrap px-1 transition-opacity duration-200 ${
+            searching ? "opacity-0" : "opacity-100"
+          }`}
+        >
+          {label}
+        </Text>
+      )}
       <div className="flex min-w-0 items-center justify-end gap-px">{children}</div>
     </div>
   );

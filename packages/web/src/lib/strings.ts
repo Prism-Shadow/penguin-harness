@@ -1271,7 +1271,27 @@ export const zh = {
     exitToAppCenter: "退出全页模式（回到应用中心）",
   },
   /** The sidebar's app list, under the nav and above the conversations (main-sidebar-apps.tsx). */
+  pageWorkspace: {
+    open: "打开的页面",
+    browse: "浏览工作台",
+    workbenches: "工作台",
+    left: "在左侧打开",
+    right: "在右侧打开",
+    whole: "整页显示",
+    swap: "交换两侧",
+    separate: "在新窗口打开",
+    actions: "页面操作",
+    up: "向上移动",
+    down: "向下移动",
+    resize: "调整页面宽度",
+    empty: "此 Agent 没有可打开的工作台。",
+    panePages: "此侧的页面",
+  },
   sidebarApps: {
+    search: "搜索应用",
+    sort: "应用排序",
+    noMatches: "没有匹配的应用",
+    order: { default: "目录顺序", name: "按名称", running: "运行中的优先" },
     title: "应用",
     /** The group header's action: the Agent's Workbenches sub-page. */
     manage: "管理应用",
