@@ -19,6 +19,7 @@ export interface ChatText {
   chatThinkingConfigured(): string;
 
   chatHints(): string;
+  composerModeState(command: string, enabled: boolean): string;
 
   confirmExit(): string;
   steerPrompt(): string;
@@ -159,6 +160,7 @@ export const chatEn: ChatText = {
 
   switchModelHeld: (model) => `[model switch] the new conversation will use ${model}`,
 
+  composerModeState: (command, enabled) => `/${command} ${enabled ? "on" : "off"}`,
   verboseOn: () => "[verbose] on — tool output from here on shows in full",
 
   verboseOff: () =>
@@ -237,6 +239,7 @@ export const chatZh: ChatText = {
 
   switchModelHeld: (model) => `[切换模型] 新对话将使用 ${model}`,
 
+  composerModeState: (command, enabled) => `/${command} ${enabled ? "已开启" : "已关闭"}`,
   verboseOn: () => "[详细输出] 已开启——后续工具输出完整显示（/verbose 切换）",
 
   verboseOff: () => "[详细输出] 已关闭——后续过长的工具输出将折叠（/verbose 切换）",

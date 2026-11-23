@@ -71,6 +71,8 @@ export interface PluginCard {
    * command and its `context` follows the message. Needs such a command; ignored without one.
    */
   composerMode?: boolean;
+  /** Optional slash name for this composer mode, without the leading slash. */
+  composerCommand?: string;
   quickStart?: QuickStart;
   /** Links to the paper or the upstream implementation, which the landing site lists. */
   references?: string[];

@@ -139,6 +139,7 @@ export interface LibraryPlugin {
   hooks?: LibraryHooks;
   /** The card's `composerMode`, kept only when the hook package has a `trigger: "host"` `user_prompt` command. */
   composerMode?: true;
+  composerCommand?: string;
   /** The MCP servers the plugin contributes, each with its full list of setup keys; [] when none. */
   mcpServers: PluginMcpServer[];
   /** The demo the Plugins page's quick start pre-fills (the card's `quickStart`, optional). */
@@ -465,6 +466,7 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
     ),
     ...(hooks !== undefined ? { hooks } : {}),
     ...(composerMode ? { composerMode: true as const } : {}),
+    ...(composerMode && card.composerCommand ? { composerCommand: card.composerCommand } : {}),
     ...(workbenches.length > 0 ? { workbenches } : {}),
     mcpServers,
     ...(quickStart !== undefined ? { quickStart } : {}),

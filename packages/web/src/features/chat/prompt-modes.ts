@@ -36,6 +36,7 @@ export interface PromptMode {
   name: string;
   title: string;
   description: string;
+  composerCommand?: string;
   icon?: IconRef;
 }
 
@@ -76,6 +77,7 @@ type ModeSource = Pick<
   | "descriptionZh"
   | "shortDescription"
   | "shortDescriptionZh"
+  | "composerCommand"
   | "icon"
 >;
 
@@ -206,6 +208,7 @@ export function usePromptModes(
             plugin.description
           : plugin.shortDescription || plugin.description,
       ...(plugin.icon !== undefined ? { icon: plugin.icon } : {}),
+      ...(plugin.composerCommand ? { composerCommand: plugin.composerCommand } : {}),
     });
     return {
       modes: modes.map(view),
