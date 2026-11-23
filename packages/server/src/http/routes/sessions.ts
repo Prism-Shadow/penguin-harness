@@ -838,8 +838,13 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     // call — too costly for list rows). The web's /model switch hands it to the new session's
     // [model_switch_from] block so the model can read the source history itself.
     const tracePath = hasTrace ? await deps.sessionService.latestTracePath(row) : undefined;
+    const modelSwitchFailure = deps.manager.modelSwitchFailure(row.sessionId);
     return c.json({
-      session: { ...info, ...(tracePath !== undefined ? { tracePath } : {}) },
+      session: {
+        ...info,
+        ...(tracePath !== undefined ? { tracePath } : {}),
+        ...(modelSwitchFailure ? { modelSwitchFailure } : {}),
+      },
     } satisfies SessionResponse);
   });
 
