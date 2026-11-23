@@ -16,6 +16,8 @@ import { useRunningAppRecords } from "../../lib/running-apps";
 import { useSystemApps } from "../../lib/system-apps";
 import { glyphOf } from "../../lib/nav-icons";
 import { S } from "../../lib/strings";
+import { chordOf } from "../../lib/shortcuts/chord";
+import { currentPlatform } from "../../lib/shortcuts/platform";
 import { TileIcon } from "../app-center";
 import { usePageWorkspace } from "../../lib/page-workspace";
 
@@ -49,7 +51,8 @@ export function OpenPages({ onNavigate }: { onNavigate?: () => void }) {
     ? layout.pages.filter((p) => p.title.toLocaleLowerCase().includes(search))
     : [];
   function keyboard(event: KeyboardEvent, fromInput: boolean) {
-    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const chord = chordOf(event.nativeEvent, currentPlatform());
+    if (!chord || chord.mod || chord.ctrl || chord.alt || chord.shift) return;
     const buttons = Array.from(
       list.current?.querySelectorAll<HTMLButtonElement>("button[data-app-row]") ?? [],
     );

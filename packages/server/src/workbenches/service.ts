@@ -603,7 +603,7 @@ export class WorkbenchService implements Workbenches {
     const current = this.loading.has(k)
       ? this.loadingRevision.get(k)
       : (this.loaded.get(k)?.folder.revision ?? (await readLoadStatus(folder.dir))?.revision);
-    if (current === folder.revision) return;
+    if (current === folder.revision || this.disposed) return;
     await this.load(projectId, agentId, folder);
   }
 
@@ -1569,7 +1569,7 @@ export class WorkbenchService implements Workbenches {
 
   private schedule(projectId: string, agentId: string, workbenchId: string): void {
     const k = key(projectId, agentId, workbenchId);
-    if (this.removing.has(k)) return;
+    if (this.disposed || this.removing.has(k)) return;
     const t = this.pending.get(k);
     if (t) clearTimeout(t);
     this.pending.set(
@@ -1577,6 +1577,8 @@ export class WorkbenchService implements Workbenches {
       setTimeout(() => {
         this.pending.delete(k);
         void this.reloadIfChanged(projectId, agentId, workbenchId).catch((err) => {
+          // A folder read already in flight can settle after shutdown closed the Project database.
+          if (this.disposed) return;
           if (err instanceof WorkbenchNotFound) {
             this.forget(projectId, agentId, workbenchId);
             return;

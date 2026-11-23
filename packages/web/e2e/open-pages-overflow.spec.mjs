@@ -95,6 +95,10 @@ test("many open sessions and apps stay reachable while the sidebar keeps both vi
   let manager = await openManager(page);
   for (const session of sessions) await expect(pageButton(manager, session.key)).toHaveCount(1);
   const filter = manager.getByPlaceholder("Search open pages");
+  await filter.press("Control+ArrowDown");
+  await expect(filter).toBeFocused();
+  await filter.dispatchEvent("keydown", { key: "Enter", code: "Enter", isComposing: true });
+  await expect(manager).toBeVisible();
   await filter.fill(first.title);
   await expect(pageButton(manager, first.key)).toBeVisible();
   await expect(pageButton(manager, last.key)).toHaveCount(0);
