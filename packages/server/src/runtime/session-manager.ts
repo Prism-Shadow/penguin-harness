@@ -473,9 +473,13 @@ function backgroundTaskCounts(session: RuntimeSession): SessionBackgroundTasks {
 
 /** A loaded Session doing something: a Task, a compaction, queued input, or background work. */
 function entryInUse(entry: RuntimeEntry): boolean {
-  if (entry.status !== "idle" || entry.followUps.length > 0) return true;
+  if (entry.status !== "idle" || entry.queuedModel || entry.followUps.length > 0) return true;
   const background = backgroundTaskCounts(entry.session);
   return background.processes > 0 || background.subagents > 0;
+}
+
+function matchesModel(a: ModelRefDto, b: ModelRefDto): boolean {
+  return a.provider === b.provider && a.modelId === b.modelId;
 }
 
 /** The `task_state` display info of one queued follow-up (see PendingFollowUpInfo). */
@@ -659,6 +663,11 @@ export class SessionManager {
 
   pendingApprovals(sessionId: string): PendingApproval[] {
     return this.entries.get(sessionId)?.approvals.list() ?? [];
+  }
+
+  pendingModel(sessionId: string): ModelRefDto | undefined {
+    const entry = this.entries.get(sessionId);
+    return entry?.queuedModel?.target ?? entry?.switchingModel;
   }
 
   /** Number of queued follow-up tasks (`queueIfBusy`) awaiting auto-start. */
@@ -1433,9 +1442,34 @@ export class SessionManager {
         const row = this.deps.sessions.findById(sessionId);
         if (row && this.deletingAgents.has(agentKey(row.projectId, row.agentId))) return;
         const entry = this.entries.get(sessionId);
-        if (!entry || entry.status !== "idle" || entry.followUps.length === 0) return;
-        const next = entry.followUps.shift()!;
-        this.launchTask(entry, next.input, next.driver ?? null);
+        if (!entry || entry.status !== "idle") return;
+        const waiting = entry.queuedModel;
+        const first = entry.followUps[0];
+        if (waiting && !first?.interrupt && (!first || !waiting.after.has(first.id))) {
+          delete entry.queuedModel;
+          try {
+            const result = await this.switchUnderLock(entry, waiting.target);
+            if (!result.switched) return; // The handoff will resume this same drain.
+          } catch (err) {
+            this.deps.errors?.record({
+              source: "session",
+              code: "session_switch_failed",
+              err,
+              ctx: {
+                projectId: entry.projectId,
+                agentId: entry.agentId,
+                sessionId,
+              },
+            });
+            this.log(
+              `[session] Deferred model switch failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+          this.publishState(entry, "idle");
+        }
+        const next = entry.followUps.shift();
+        if (next) this.launchTask(entry, next.input, next.driver ?? null);
+        else void this.state.current?.startBackgroundNoticeTask(sessionId);
       });
     } catch (err) {
       this.log(`[followup] auto-start failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -1511,13 +1545,46 @@ export class SessionManager {
   async startSwitch(
     sessionId: string,
     ref: ModelRefDto,
+    whenIdle = false,
   ): Promise<{ sessionId: string; switched: boolean }> {
     return this.withLock(sessionId, async () => {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
-      const held = this.entries.get(sessionId) ?? this.deps.sessions.findById(sessionId);
-      if (held && held.provider === ref.provider && held.modelId === ref.modelId) {
+      const active = this.entries.get(sessionId);
+      if (whenIdle && active && (active.status !== "idle" || active.queuedModel)) {
+        const nextModel = active.switchingModel ?? active;
+        if (matchesModel(nextModel, ref)) {
+          // An issued handoff runs to completion. Cancel only the choice waiting behind it.
+          delete active.queuedModel;
+        } else {
+          if (!active.session.switchModel) {
+            throw new HttpError(
+              409,
+              "model_unavailable",
+              "Switching the model is not available for this Session.",
+            );
+          }
+          try {
+            await active.session.validateSwitchTarget?.(ref);
+          } catch (err) {
+            throw switchRefusal(err, ref);
+          }
+          active.queuedModel = {
+            target: ref,
+            after: active.queuedModel?.after ?? new Set(active.followUps.map((item) => item.id)),
+          };
+        }
+        this.publishState(active, active.status);
+        // The active run can finish while the target's credentials are being checked.
+        if (active.status === "idle" && active.queuedModel) {
+          void this.state.current?.startQueuedFollowUp(sessionId);
+        }
+        return { sessionId, switched: !this.pendingModel(sessionId) };
+      }
+      const held = active ?? this.deps.sessions.findById(sessionId);
+      if (held && matchesModel(held, ref)) {
+        if (whenIdle) return { sessionId, switched: true };
         throw new HttpError(
           409,
           "same_model",
@@ -1526,58 +1593,67 @@ export class SessionManager {
       }
       const entry = await this.ensureEntry(sessionId, { switchTo: ref });
       this.assertIdle(entry);
-      const from = { provider: entry.provider, modelId: entry.modelId };
-      if (from.provider === ref.provider && from.modelId === ref.modelId) {
-        // The load rebuilt a Session that left no Trace on the target: switched already.
-        return { sessionId: entry.sessionId, switched: true };
-      }
-      if (!entry.session.switchModel) {
-        throw new HttpError(
-          409,
-          "model_unavailable",
-          "Switching the model is not available for this Session.",
-        );
-      }
-      // A runtime loaded for this switch alone that the switch did not move is dropped once
-      // nothing holds it: the next access loads it the ordinary way.
-      const dropUnmoved = (): void => {
-        if (!entry.stranded || this.entries.get(entry.sessionId) !== entry) return;
-        if (entry.status !== "idle" || entry.running !== null || entry.followUps.length > 0) return;
-        this.entries.delete(entry.sessionId);
-      };
-      const ac = new AbortController();
-      const gen = entry.session.switchModel({
-        ...ref,
-        approve: this.entryApprove(entry),
-        signal: ac.signal,
-      });
-      const head = gen.next();
-      const settled = (): void => {
-        entry.abort = null;
-        entry.running = null;
-      };
-      // One promise for the whole switch — the pull, then the drive behind it — so whoever
-      // waits for this entry's run to end waits for both.
-      entry.abort = ac;
-      entry.running = head.then((first) => {
-        if (first.done) return settled();
-        entry.status = "compacting";
-        this.publishState(entry, "compacting");
-        return this.drive(entry, resumeFrom(first.value, gen)).then(dropUnmoved);
-      }, settled);
-      let first: IteratorResult<AmspRecord, StopReason>;
-      try {
-        first = await head;
-      } catch (err) {
-        settled();
-        dropUnmoved();
-        throw switchRefusal(err, ref);
-      }
-      entry.lastActivityMs = Date.now();
-      if (!first.done) return { sessionId: entry.sessionId, switched: false };
-      this.syncEntryModel(entry);
-      return { sessionId: entry.sessionId, switched: true };
+      return this.switchUnderLock(entry, ref);
     });
+  }
+
+  private async switchUnderLock(
+    entry: RuntimeEntry,
+    ref: ModelRefDto,
+  ): Promise<{ sessionId: string; switched: boolean }> {
+    const from = { provider: entry.provider, modelId: entry.modelId };
+    if (from.provider === ref.provider && from.modelId === ref.modelId) {
+      // The load rebuilt a Session that left no Trace on the target: switched already.
+      return { sessionId: entry.sessionId, switched: true };
+    }
+    if (!entry.session.switchModel) {
+      throw new HttpError(
+        409,
+        "model_unavailable",
+        "Switching the model is not available for this Session.",
+      );
+    }
+    // A runtime loaded for this switch alone that the switch did not move is dropped once
+    // nothing holds it: the next access loads it the ordinary way.
+    const dropUnmoved = (): void => {
+      if (!entry.stranded || this.entries.get(entry.sessionId) !== entry) return;
+      if (entry.status !== "idle" || entry.running !== null || entry.followUps.length > 0) return;
+      this.entries.delete(entry.sessionId);
+    };
+    const ac = new AbortController();
+    const gen = entry.session.switchModel({
+      ...ref,
+      approve: this.entryApprove(entry),
+      signal: ac.signal,
+    });
+    const head = gen.next();
+    const settled = (): void => {
+      delete entry.switchingModel;
+      entry.abort = null;
+      entry.running = null;
+    };
+    // One promise for the whole switch — the pull, then the drive behind it — so whoever
+    // waits for this entry's run to end waits for both.
+    entry.abort = ac;
+    entry.switchingModel = ref;
+    entry.running = head.then((first) => {
+      if (first.done) return settled();
+      entry.status = "compacting";
+      this.publishState(entry, "compacting");
+      return this.drive(entry, resumeFrom(first.value, gen)).then(dropUnmoved);
+    }, settled);
+    let first: IteratorResult<AmspRecord, StopReason>;
+    try {
+      first = await head;
+    } catch (err) {
+      settled();
+      dropUnmoved();
+      throw switchRefusal(err, ref);
+    }
+    entry.lastActivityMs = Date.now();
+    if (!first.done) return { sessionId: entry.sessionId, switched: false };
+    this.syncEntryModel(entry);
+    return { sessionId: entry.sessionId, switched: true };
   }
 
   /** Who is told when a Session's model moves (see `onModelChanged`). */
@@ -2084,7 +2160,7 @@ export class SessionManager {
   sweepIdle(now: number = Date.now(), idleMs: number = ENTRY_IDLE_MS): void {
     for (const [key, entry] of this.entries) {
       if (entry.status !== "idle" || entry.approvals.size !== 0 || entry.running !== null) continue;
-      if (entry.followUps.length > 0) continue; // queued follow-ups must not be evicted with the entry
+      if (entry.queuedModel || entry.followUps.length > 0) continue; // queued follow-ups must not be evicted with the entry
       // A live background process (e.g. a dev server the conversation started) pins the
       // entry: eviction would strand the process — a resumed entry starts with a fresh
       // environment, so the process list and its stop control would go blind while the
@@ -2252,7 +2328,8 @@ export class SessionManager {
       if (
         existing.status !== "idle" ||
         existing.running !== null ||
-        existing.approvals.size !== 0
+        existing.approvals.size !== 0 ||
+        existing.queuedModel
       ) {
         return existing;
       }
@@ -2362,7 +2439,7 @@ export class SessionManager {
         }
         // Busy or queued-behind: not a loss — the running/next run's engine drains the
         // same notice queue at its own input-assembly boundaries.
-        if (entry.status !== "idle" || entry.followUps.length > 0) return;
+        if (entry.status !== "idle" || entry.queuedModel || entry.followUps.length > 0) return;
         const input = entry.session.takeBackgroundNotices?.() ?? [];
         if (input.length === 0) return;
         this.launchTask(entry, input);
@@ -2620,6 +2697,7 @@ export class SessionManager {
       entry.abort = null;
       entry.running = null;
       entry.runDriver = null;
+      delete entry.switchingModel;
       // The run is over, so core has discarded any undelivered steering (see ContextEngine's
       // steeringQueue). What is still in the mirror was therefore never delivered — entries
       // are shifted out as their `[user_steering]` message appears on the stream, and this
@@ -2642,7 +2720,8 @@ export class SessionManager {
       // Queued follow-ups: whenever a run finishes (Task or compaction, abort included),
       // the next queued input auto-starts as an ordinary task. Fire-and-forget — it
       // revalidates under the session lock.
-      if (entry.followUps.length > 0) void this.state.current?.startQueuedFollowUp(entry.sessionId);
+      if (entry.queuedModel || entry.followUps.length > 0)
+        void this.state.current?.startQueuedFollowUp(entry.sessionId);
       // Background completion notices that raced this run's exit (arrived after its last
       // input-assembly boundary): start their delivery task now. No-op when a follow-up
       // just launched — that run's engine drains the same queue.

@@ -321,6 +321,7 @@ describe("POST /switch-model", () => {
       { modelId: "m-beta" },
       { provider: 1, modelId: "m-beta" },
       { provider: "", modelId: "m-beta" },
+      { ...B, whenIdle: "yes" },
     ]) {
       const res = await api.post(url, body);
       expect(res.status).toBe(400);
@@ -449,6 +450,107 @@ describe("POST /switch-model", () => {
     releaseSwitch();
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
     expect(row().modelId).toBe(B.modelId);
+  });
+
+  const optIn = (ref: ModelRefDto) => api.post(url, { ...ref, whenIdle: true });
+  const getInfo = async () =>
+    ((await (await api.get(`/api/sessions/${SID}`)).json()) as SessionResponse).session;
+  const submit = (text: string) =>
+    api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text }], queueIfBusy: true });
+
+  it("hands off at the choice's position among queued tasks and exposes the latest confirmed target", async () => {
+    const gate = Promise.withResolvers<void>();
+    const handoff = Promise.withResolvers<void>();
+    const fake = switchFake(A, { kind: "stream", status: "completed", gate: handoff.promise });
+    const models: string[] = [];
+    fake.run = async function* (_input, opts) {
+      models.push(fake.modelId);
+      if (models.length === 1) await gate.promise;
+      expect(opts.signal.aborted).toBe(false);
+      yield assistantText("finished");
+    };
+    adopt(fake);
+    await submit("current");
+    await submit("before the selection");
+    expect((await optIn(UNKNOWN)).status).toBe(202);
+    await submit("after the selection");
+    expect((await optIn(B)).status).toBe(202);
+    expect(await getInfo()).toMatchObject({ sessionId: SID, modelId: A.modelId, pendingModel: B });
+    expect(fake.signals).toHaveLength(0);
+    gate.resolve();
+    await waitFor(() => t.deps.manager.statusOf(SID) === "compacting");
+    expect(models).toEqual([A.modelId, A.modelId]);
+    expect((await getInfo()).pendingModel).toEqual(B);
+    handoff.resolve();
+    await waitFor(() => models.length === 3 && t.deps.manager.statusOf(SID) === "idle");
+    expect(models).toEqual([A.modelId, A.modelId, B.modelId]);
+    expect(fake.signals).toHaveLength(1);
+    expect((await getInfo()).pendingModel).toBeUndefined();
+    expect(row().modelId).toBe(B.modelId);
+  });
+
+  it("rejects an unavailable target without overwriting a valid choice, and lets a user cancel before the handoff", async () => {
+    const gate = Promise.withResolvers<void>();
+    const fake = switchFake(A, { kind: "inline" });
+    fake.run = async function* () {
+      await gate.promise;
+      yield assistantText("done");
+    };
+    fake.validateSwitchTarget = async (ref) => {
+      if (ref.modelId === UNKNOWN.modelId)
+        throw new ModelSwitchRefusedError("model_not_configured", "absent");
+    };
+    adopt(fake);
+    await submit("current");
+    await optIn(B);
+    const refusal = await optIn(UNKNOWN);
+    expect(refusal.status).toBe(409);
+    expect((await getInfo()).pendingModel).toEqual(B);
+    expect((await optIn(A)).status).toBe(200);
+    expect((await getInfo()).pendingModel).toBeUndefined();
+    gate.resolve();
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+    expect(fake.signals).toHaveLength(0);
+  });
+
+  it("applies a selection even if the task finishes during target validation", async () => {
+    const gate = Promise.withResolvers<void>();
+    const validating = Promise.withResolvers<void>();
+    const valid = Promise.withResolvers<void>();
+    const fake = switchFake(A, { kind: "inline" });
+    fake.run = async function* () {
+      await gate.promise;
+      yield assistantText("done");
+    };
+    fake.validateSwitchTarget = async () => {
+      validating.resolve();
+      await valid.promise;
+    };
+    adopt(fake);
+    await submit("current");
+    const answer = optIn(B);
+    await validating.promise;
+    gate.resolve();
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+    valid.resolve();
+    expect((await answer).status).toBe(202);
+    await waitFor(() => row().modelId === B.modelId);
+    expect((await getInfo()).pendingModel).toBeUndefined();
+  });
+
+  it("does not interrupt an issued handoff when a new choice is made in the meantime", async () => {
+    const gate = Promise.withResolvers<void>();
+    const fake = switchFake(A, { kind: "stream", status: "completed", gate: gate.promise });
+    adopt(fake);
+    await optIn(B);
+    expect((await optIn(A)).status).toBe(202);
+    expect((await getInfo()).pendingModel).toEqual(A);
+    expect(fake.signals).toHaveLength(1);
+    expect(fake.signals[0]?.aborted).toBe(false);
+    gate.resolve();
+    await waitFor(() => fake.signals.length === 2 && t.deps.manager.statusOf(SID) === "idle");
+    expect(row().modelId).toBe(A.modelId);
+    expect((await getInfo()).pendingModel).toBeUndefined();
   });
 
   it("202: streams a plain manual compaction and then the switch's session_update; the row and the entry move to the target as that record is published, and GET / plus the compaction threshold follow", async () => {

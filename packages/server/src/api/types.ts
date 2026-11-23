@@ -1507,6 +1507,8 @@ export interface SessionInfo {
    * reference). It moves with each in-session switch (`POST /api/sessions/:id/switch-model`).
    */
   provider: string;
+  /** Last confirmed target while it waits for, or is carrying out, a model handoff. */
+  pendingModel?: ModelRefDto;
   /** Upstream model_id of the session's current model (the request id sent to MMSP). */
   modelId: string;
   workspace: string;
@@ -2491,6 +2493,8 @@ export interface SessionSwitchModelRequest {
   provider: string;
   /** Upstream model_id of the target model. */
   modelId: string;
+  /** Wait for an idle boundary if busy. A later confirmed pick replaces the waiting target. */
+  whenIdle?: boolean;
 }
 
 export interface TaskCreateResponse {

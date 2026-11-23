@@ -324,6 +324,8 @@ export interface RuntimeSession {
    */
   readonly provider?: string;
   readonly modelId?: string;
+  /** Checks current Project configuration and credentials without starting a switch. */
+  validateSwitchTarget?(ref: { provider: string; modelId: string }): Promise<void>;
   /**
    * Switches the Session's model in place (core `Session.switchModel`): closes the running
    * context on the model it ran on, then opens the next one on the target. A completed switch
@@ -502,6 +504,10 @@ export interface RuntimeEntry {
   provider: string;
   modelId: string;
   session: RuntimeSession;
+  /** A confirmed choice waiting behind the inputs already queued when it was made. */
+  queuedModel?: { target: { provider: string; modelId: string }; after: Set<string> };
+  /** The target of the handoff already in progress. */
+  switchingModel?: { provider: string; modelId: string };
   /**
    * The ordinary load's refusal, while this runtime — loaded for a model switch alone, because
    * the ordinary load refused it (see `SessionLoader.load`'s `switchTo`) — is still on the model
