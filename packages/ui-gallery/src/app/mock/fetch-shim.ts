@@ -65,7 +65,9 @@ export function installFetchShim(): void {
     ).toUpperCase() as Method;
     const body = bodyOf(init);
     const preview = workbenchAnswer(getStore(), url, method, body);
-    return preview ? Promise.resolve(preview) : answerAsResponse(method, splitUrl(url).path + urlQuery(url), body);
+    return preview
+      ? Promise.resolve(preview)
+      : answerAsResponse(method, splitUrl(url).path + urlQuery(url), body);
   };
 }
 
