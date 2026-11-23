@@ -55,12 +55,22 @@ test("the App Center opens Support windowed and full screen, and Hide and Unhide
   await appWindow.locator("iframe").evaluate((frame) => {
     frame.dataset.e2eKept = "yes";
   });
-  await appWindow.getByRole("button", { name: "Minimize" }).click();
+  await page
+    .getByRole("navigation", { name: "Open pages" })
+    .getByRole("button", { name: "Support", exact: true })
+    .hover();
+  await page.getByRole("button", { name: "Page actions · Support", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Minimize", exact: true }).click();
   await expect(page).toHaveURL(`${BASE}/apps`);
   await expect(grid.getByRole("button", { name: /^Support, .+, Running$/ })).toBeVisible();
   await tile.click();
   await expect(appWindow.locator('iframe[data-e2e-kept="yes"]')).toBeVisible();
-  await appWindow.getByRole("button", { name: "Close", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Open pages" })
+    .getByRole("button", { name: "Support", exact: true })
+    .hover();
+  await page.getByRole("button", { name: "Page actions · Support", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Close", exact: true }).click();
   await expect(page).toHaveURL(`${BASE}/apps`);
   await expect(grid.getByRole("button", { name: /^Support, .+, Running$/ })).toHaveCount(0);
 
@@ -332,7 +342,12 @@ test("tiles drag into a folder, step through the menu, keep their order, and res
   // Browser Back navigates the app's pages. The host's close leaves the whole app in one step.
   await page.evaluate(() => history.back());
   await expect.poll(() => inside.locator("body").evaluate(() => location.hash)).toBe("#review");
-  await window.getByRole("button", { name: "Close", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Open pages" })
+    .getByRole("button", { name: "Gamma", exact: true })
+    .hover();
+  await page.getByRole("button", { name: "Page actions · Gamma", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Close", exact: true }).click();
   await expect(panel.getByRole("button", { name: /^Gamma,/ })).toBeFocused();
 
   await page.keyboard.press("Escape");
@@ -468,4 +483,50 @@ test("searching, sorting and folding sidebar directories keeps the open page and
   await expect(open.getByRole("listitem")).toHaveCount(count);
   await expect(editor).toHaveValue("Keep this draft while looking for an app");
   await expect(page).toHaveURL(/\/chat\/new$/);
+});
+
+test("a multi-page workbench keeps its own selector above the active document", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, "atlasreader", P);
+  await setAccountPrefs(page.request, { lang: "en" });
+  const { projects } = await (await page.request.get("/api/projects")).json();
+  const definition = manifest("Atlas");
+  definition.penguin.modules[0].contributes["WebModule.sessionTabs"].push({
+    id: "atlas.map",
+    key: "map",
+    title: "Map",
+    renderer: { iframe: { src: "ui/map.html" } },
+  });
+  const archive = zip({
+    "atlas/package.json": JSON.stringify(definition),
+    "atlas/index.ts": INDEX,
+    "atlas/ui/index.html": "<h1>Field notes</h1>",
+    "atlas/ui/map.html": "<h1>Relief map</h1>",
+  });
+  await expect(
+    await page.request.post(
+      `/api/projects/${projects[0].projectId}/agents/default_agent/workbenches/archive`,
+      {
+        data: { dataBase64: archive.toString("base64") },
+      },
+    ),
+  ).toBeOK();
+  await page.goto("/apps");
+  await page
+    .getByRole("list", { name: "App Center" })
+    .getByRole("button", { name: /^Atlas/ })
+    .click();
+  const app = page.getByRole("region", { name: "Atlas" });
+  const frame = app.frameLocator("iframe");
+  await expect(frame.getByRole("heading", { name: "Field notes" })).toBeVisible();
+  const map = app.getByRole("button", { name: "Map", exact: true });
+  await map.focus();
+  await page.keyboard.press("Enter");
+  await expect(map).toHaveAttribute("aria-pressed", "true");
+  await expect(frame.getByRole("heading", { name: "Relief map" })).toBeVisible();
+  const control = await map.boundingBox();
+  const document = await app.locator("iframe").boundingBox();
+  expect(control.y + control.height).toBeLessThanOrEqual(document.y + 1);
+  await expect(app.getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
 });

@@ -153,7 +153,12 @@ test("the tile opens the window, the page's place is in the address, and minimiz
   await app.getByRole("button", { name: "Count" }).click();
   await app.getByRole("button", { name: "Count" }).click();
 
-  await windowOf(page).getByRole("button", { name: "Minimize" }).click();
+  await page
+    .getByRole("navigation", { name: "Open pages" })
+    .getByRole("button", { name: "Reports", exact: true })
+    .hover();
+  await page.getByRole("button", { name: "Page actions · Reports", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Minimize", exact: true }).click();
   await expect(page).toHaveURL(/\/apps$/);
   await expect(tileOf(page)).toHaveAccessibleName("Reports, system app, Running");
 
@@ -204,7 +209,12 @@ test("full screen draws the same page at its place, and its exit returns to the 
   await frameOf(page).getByText("Report r2").click();
   await expect(page).toHaveURL(atUrl("/r2"));
 
-  await windowOf(page).getByRole("button", { name: "Open full screen" }).click();
+  await page
+    .getByRole("navigation", { name: "Open pages" })
+    .getByRole("button", { name: "Reports", exact: true })
+    .hover();
+  await page.getByRole("button", { name: "Page actions · Reports", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Open full screen", exact: true }).click();
   await expect(page).toHaveURL(/\/app\/[^/]+\/system_agent\/reports\?at=%2Fr2$/);
   const full = page.frameLocator('iframe[title="Reports"]');
   await expect(full.locator("#where")).toHaveText("At /r2");

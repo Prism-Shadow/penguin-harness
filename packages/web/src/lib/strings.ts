@@ -1272,6 +1272,13 @@ export const zh = {
   },
   /** The sidebar's app list, under the nav and above the conversations (main-sidebar-apps.tsx). */
   pageWorkspace: {
+    all: "全部打开的页面",
+    count: (n: number) => `全部打开的页面（${n}）`,
+    search: "搜索打开的页面",
+    noMatches: "没有匹配的页面",
+    leftPane: "左侧页面",
+    rightPane: "右侧页面",
+    restore: "恢复",
     open: "打开的页面",
     browse: "浏览工作台",
     workbenches: "工作台",

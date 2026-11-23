@@ -30,7 +30,7 @@ import { afterEach, expect, it } from "vitest";
 import type { WorkbenchInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../src/api/endpoints";
 import { AppCenterPage } from "../src/features/app-center/app-center-page";
-import { AppCenterWindows } from "../src/features/app-center/app-center-windows";
+import { WorkspaceWindows, pageAction } from "./helpers/workspace-windows";
 import { MainSidebarApps } from "../src/features/session-list/main-sidebar-apps";
 import { publishPageAgent } from "../src/lib/page-agent";
 import { setActiveStrings, zh } from "../src/lib/strings";
@@ -115,7 +115,7 @@ async function open(
       },
     ],
     // Beside every page, as the shell mounts them: the windows' layer and the sidebar.
-    layers: [h(ThemeProvider, null, h(AppCenterWindows)), h(MainSidebarApps), h(SwitchAgent)],
+    layers: [h(ThemeProvider, null, h(WorkspaceWindows)), h(MainSidebarApps), h(SwitchAgent)],
   });
   current = router;
   return { server, router };
@@ -216,7 +216,7 @@ it("opens an app's window over the conversation, lit while in front, and Close r
   expect(reachable(frameOf("Board")!)).toBe(true);
   expect(rows()).toEqual([`${running("Board")} (lit)`]);
 
-  await click(buttonIn(windowOf("Board")!, en.appCenter.windowClose));
+  await pageAction("Board", en.appCenter.windowClose);
   expect(whereIs(router)).toBe(HERE);
   expect(windowOf("Board")).toBeNull();
   expect(rows()).toEqual(["Board"]);
@@ -229,7 +229,7 @@ it("minimizes to the conversation with the app running, and its row brings back 
   await until(() => frameOf("Board") !== null);
   const frame = frameOf("Board")!;
 
-  await click(buttonIn(windowOf("Board")!, en.appCenter.windowMinimize));
+  await pageAction("Board", en.appCenter.windowMinimize);
   expect(whereIs(router)).toBe(HERE);
   expect(frame.isConnected).toBe(true);
   expect(reachable(frame)).toBe(false);
@@ -240,12 +240,29 @@ it("minimizes to the conversation with the app running, and its row brings back 
   expect(reachable(frame)).toBe(true);
 });
 
+it("minimizes a restored workspace window back to its remaining conversation", async () => {
+  const { router } = await open([workbench("board")]);
+  await until(() => row(key("board")) !== null);
+  await click(row(key("board"))!);
+  await until(() => frameOf("Board") !== null);
+  const frame = frameOf("Board");
+  await pageAction("Board", en.appCenter.windowMinimize);
+  await pageAction("Board", en.pageWorkspace.restore);
+  await pageAction("Board", en.appCenter.windowMinimize);
+  expect(whereIs(router)).toBe(HERE);
+  expect(frame?.isConnected).toBe(true);
+  await pageAction("Board", en.pageWorkspace.restore);
+  await pageAction("Board", en.common.close);
+  expect(whereIs(router)).toBe(HERE);
+  expect(frame?.isConnected).toBe(false);
+});
+
 it("lists another Agent's running app after the Agent's own, says whose it is, with nothing to remove", async () => {
   const { router } = await open([workbench("board")], { second: [workbench("notes")] });
   await until(() => row(key("board")) !== null);
   await click(row(key("board"))!);
   await until(() => frameOf("Board") !== null);
-  await click(buttonIn(windowOf("Board")!, en.appCenter.windowMinimize));
+  await pageAction("Board", en.appCenter.windowMinimize);
 
   await run(() => router.navigate("/chat/second"));
   await until(() => rows().includes("Notes"));
@@ -326,7 +343,7 @@ it("keeps an app hidden from the App Center running through a visit there, and e
   ] as const) {
     await click(row(key(id))!);
     await until(() => frameOf(title) !== null);
-    await click(buttonIn(windowOf(title)!, en.appCenter.windowMinimize));
+    await pageAction(title, en.appCenter.windowMinimize);
   }
   const desk = frameOf("Desk")!;
 
@@ -343,7 +360,7 @@ it("keeps an app hidden from the App Center running through a visit there, and e
   expect(rows()).toEqual([running("Desk")]);
 });
 
-it("switches a two-page app's pages in the window's title bar", async () => {
+it("switches subpages in a multi-page workbench", async () => {
   await open([
     workbench("board", {
       tabs: [page("board", "clear", "Clear"), page("board", "solid", "Solid")],

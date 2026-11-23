@@ -152,3 +152,20 @@ test("resuming an unsent new conversation keeps its staged file", async ({ page 
   await expect(draft.locator(composer)).toHaveValue("Review the attached agenda");
   await expect(draft.getByText("agenda.txt", { exact: true })).toBeVisible();
 });
+
+test("minimizing the only new draft leaves the App Center visible and restores the unsent draft", async ({
+  page,
+}) => {
+  await start(page, "onlypagedraft");
+  await page.goto("/chat/new");
+  await slot(page, "chat:new").locator(composer).fill("A draft to resume");
+  await action(page, "chat:new", "Minimize");
+  await expect(page).toHaveURL(/\/apps$/);
+  await expect(slot(page, "catalog")).toBeVisible();
+  await action(page, "chat:new", "Restore");
+  await expect(slot(page, "chat:new").locator(composer)).toHaveValue("A draft to resume");
+  await action(page, "catalog", "Close");
+  await action(page, "chat:new", "Close");
+  await expect(slot(page, "chat:new")).toHaveCount(0);
+  await expect(slot(page, "catalog")).toBeVisible();
+});

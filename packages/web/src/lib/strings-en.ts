@@ -1170,6 +1170,13 @@ export const en: Strings = {
     exitToAppCenter: "Exit full page (back to the App Center)",
   },
   pageWorkspace: {
+    all: "All open pages",
+    count: (n: number) => `All open pages (${n})`,
+    search: "Search open pages",
+    noMatches: "No matching pages",
+    leftPane: "Left pane",
+    rightPane: "Right pane",
+    restore: "Restore",
     open: "Open pages",
     browse: "Browse workbenches",
     workbenches: "Workbenches",

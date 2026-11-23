@@ -8,9 +8,9 @@ import {
   type ReactNode,
 } from "react";
 import { matchPath, useLocation, useNavigate } from "react-router";
-import { leaveWindow, windowInFront } from "./app-window-address";
+import { leaveWindow, windowAt, windowInFront } from "./app-window-address";
 import { closeApp, useRunningAppRecords } from "./running-apps";
-import { useSystemApps } from "./system-apps";
+import { useSystemApps, systemAppFullPage } from "./system-apps";
 import { localizedText } from "./skill-use";
 import { S } from "./strings";
 import { useLocale } from "../state/locale";
@@ -27,6 +27,8 @@ import {
   type PageLayout,
 } from "./page-layout";
 
+import { openFullPage } from "./host-history";
+
 interface Workspace {
   scope: number;
   accountScope: number;
@@ -37,6 +39,7 @@ interface Workspace {
   close(id: string): void;
   minimize(id: string): void;
   whole(page: OpenPage): void;
+  fullScreen(page: OpenPage): void;
   swap(): void;
   reorder(id: string, before: string): void;
   browse(sessionId: string, agentId: string, machineId: string | null): void;
@@ -151,7 +154,10 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
     }
   }, [path, location.key, currentId, title, publish]);
   function go(next: PageLayout, replace = false, closed?: string) {
-    const to = next.pages.find((entry) => entry.id === next.focus)?.path ?? "/chat/new";
+    // The last open draft already occupies /chat/new. Dismissing it must reveal another surface.
+    const fallback =
+      currentId === "chat:new" || next.minimized.includes("chat:new") ? "/apps" : "/chat/new";
+    const to = next.pages.find((entry) => entry.id === next.focus)?.path ?? fallback;
     if (path === to) {
       if (closed) closeApp(closed);
       publish(next);
@@ -173,11 +179,20 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
     const closed = !keepOpen && page.kind === "window" ? id.slice(4) : undefined;
     const removed = closePage(before, id);
     const next = keepOpen
-      ? { ...removed, pages: before.pages, right: removed.visible.length === 2 ? before.right : [] }
+      ? {
+          ...removed,
+          pages: before.pages,
+          recent: before.recent,
+          minimized: [...before.minimized, id],
+          right: removed.visible.length === 2 ? before.right : [],
+        }
       : removed;
+    // A workspace restore owns its return layout. Only an App Center launch or direct
+    // window address should traverse the launcher's host history when dismissed.
     if (
       currentId === id &&
       page.kind === "window" &&
+      location.state?.workspaceRequest == null &&
       before.visible.length === 1 &&
       (keepOpen ||
         !next.focus ||
@@ -196,6 +211,20 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
       publish(next);
     }
   };
+  function fullScreen(page: OpenPage) {
+    const record = apps.find((entry) => "app:" + entry.key === page.id);
+    if (!record) return;
+    const { shortcut, projectId, selectedPath } = record;
+    const target =
+      shortcut.system?.frame !== undefined
+        ? systemAppFullPage(
+            projectId,
+            shortcut.workbenchId,
+            windowAt(new URL(page.path, window.location.origin)),
+          )
+        : (selectedPath ?? shortcut.path);
+    openFullPage(navigate, target, page.path, { fromWindow: currentId === page.id });
+  }
   const close = (id: string) => dismiss(id, false);
   const minimize = (id: string) => dismiss(id, true);
   const whole = (page: OpenPage) =>
@@ -243,6 +272,7 @@ export function PageWorkspace({ children }: { children: ReactNode }) {
         whole,
         close,
         minimize,
+        fullScreen,
         swap,
         reorder,
         browse,

@@ -13,9 +13,41 @@ export interface PageLayout {
   visible: string[];
   focus: string | null;
   right: string[];
+  recent: string[];
+  minimized: string[];
 }
 
-export const emptyLayout: PageLayout = { pages: [], visible: [], focus: null, right: [] };
+export const emptyLayout: PageLayout = {
+  pages: [],
+  visible: [],
+  focus: null,
+  right: [],
+  recent: [],
+  minimized: [],
+};
+
+/** The sidebar fits a fixed number of rows. Selection preserves the user's page order. */
+export const INLINE_PAGE_LIMIT = 6;
+
+export function inlinePages(layout: PageLayout): OpenPage[] {
+  if (layout.pages.length <= INLINE_PAGE_LIMIT) return layout.pages;
+  const ids = new Set<string>();
+  for (const id of [...layout.visible, ...layout.recent]) {
+    if (ids.size === INLINE_PAGE_LIMIT) break;
+    ids.add(id);
+  }
+  return layout.pages.filter((page) => ids.has(page.id));
+}
+
+function raised(layout: PageLayout, id: string) {
+  return {
+    recent:
+      layout.recent[0] === id ? layout.recent : [id, ...layout.recent.filter((key) => key !== id)],
+    minimized: layout.minimized.includes(id)
+      ? layout.minimized.filter((key) => key !== id)
+      : layout.minimized,
+  };
+}
 
 function withPage(layout: PageLayout, page: OpenPage): OpenPage[] {
   const before = layout.pages.find((item) => item.id === page.id);
@@ -35,7 +67,7 @@ export function visitPage(layout: PageLayout, page: OpenPage): PageLayout {
   if (layout.visible.includes(page.id)) {
     return pages === layout.pages && layout.focus === page.id
       ? layout
-      : { ...layout, pages, focus: page.id };
+      : { ...layout, ...raised(layout, page.id), pages, focus: page.id };
   }
   const split = layout.visible.length > 1;
   const known = layout.pages.some((item) => item.id === page.id);
@@ -43,7 +75,13 @@ export function visitPage(layout: PageLayout, page: OpenPage): PageLayout {
     split && (known ? layout.right.includes(page.id) : layout.visible[1] === layout.focus) ? 1 : 0;
   const visible = [...layout.visible];
   visible[side] = page.id;
-  return { pages, visible, focus: page.id, right: assigned(layout.right, page.id, side) };
+  return {
+    ...raised(layout, page.id),
+    pages,
+    visible,
+    focus: page.id,
+    right: assigned(layout.right, page.id, side),
+  };
 }
 
 /** Placing the visible page on the other side exchanges the two. */
@@ -53,11 +91,18 @@ export function placePage(layout: PageLayout, page: OpenPage, side: 0 | 1): Page
     other && other !== page.id
       ? other
       : (layout.visible.find((id) => id !== page.id) ??
-        layout.pages.findLast((item) => item.id !== page.id)?.id);
+        layout.pages.findLast((item) => item.id !== page.id && !layout.minimized.includes(item.id))
+          ?.id);
   if (!beside) return visitPage(layout, page);
   const visible = side === 0 ? [page.id, beside] : [beside, page.id];
   const right = assigned(assigned(layout.right, page.id, side), beside, 1 - side);
-  return { pages: withPage(layout, page), visible, focus: page.id, right };
+  return {
+    ...raised(layout, page.id),
+    pages: withPage(layout, page),
+    visible,
+    focus: page.id,
+    right,
+  };
 }
 
 export function closePage(layout: PageLayout, id: string): PageLayout {
@@ -70,6 +115,7 @@ export function closePage(layout: PageLayout, id: string): PageLayout {
     const candidates = pages.filter(
       (page) =>
         !visible.includes(page.id) &&
+        !layout.minimized.includes(page.id) &&
         (visible.length === 1 || layout.right.includes(page.id) === (side === 1)),
     );
     const neighbor =
@@ -79,6 +125,8 @@ export function closePage(layout: PageLayout, id: string): PageLayout {
   }
   const right = visible.length < 2 ? [] : layout.right.filter((key) => key !== id);
   return {
+    recent: layout.recent.filter((key) => key !== id),
+    minimized: layout.minimized.filter((key) => key !== id),
     pages,
     visible,
     right,
