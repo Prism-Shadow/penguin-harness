@@ -3,6 +3,7 @@
 - **Date:** 2026-11-23
 - **Type:** feature
 - **Scope:** desktop, core, cli, server
+- **PR:** https://github.com/Prism-Shadow/penguin-harness/pull/1759
 
 [中文版](2026-11-23-windows-data-location.zh.md)
 

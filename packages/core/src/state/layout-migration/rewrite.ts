@@ -35,6 +35,14 @@ function startsValue(prev: string | undefined): boolean {
 /** `value` moved by the first move whose `from` it lies under, or null when none applies. */
 export function movedPath(value: string, moves: readonly PathMove[]): string | null {
   for (const { from, to } of moves) {
+    if (process.platform === "win32" && path.win32.isAbsolute(value)) {
+      const relative = path.win32.relative(from, value);
+      if (relative === "") return to;
+      if (relative !== ".." && !relative.startsWith("..\\") && !path.win32.isAbsolute(relative)) {
+        return path.win32.join(to, relative);
+      }
+      continue;
+    }
     if (value === from) return to;
     if (value.startsWith(from) && (value[from.length] === "/" || value[from.length] === "\\")) {
       return to + value.slice(from.length);

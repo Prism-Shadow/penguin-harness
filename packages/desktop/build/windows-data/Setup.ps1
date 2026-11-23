@@ -69,6 +69,8 @@ function Recover-Transfer([string]$Old) {
   $record = [IO.File]::ReadAllText($journal) | ConvertFrom-Json
   $id = [Guid]::ParseExact($record.id,'N').ToString('N')
   $target = Full-Directory $record.to
+  # An interrupted copy on a disconnected drive is still recoverable at its old name.
+  if (![IO.Directory]::Exists([IO.Path]::GetPathRoot($target))) { throw "Reconnect the incomplete transfer drive: $target" }
   $stage = "$target.penguin-setup-$id"
   if ($Old -and $Old -eq $target) {
     # A previous run completed the pointer replacement before setup exited.
@@ -91,7 +93,12 @@ function Reserve-Source {
   if (![IO.Directory]::Exists($sourceData)) { return $null }
   $path = Join-Path $sourceData 'server.lock'
   $existed = [IO.File]::Exists($path)
-  $handle = [IO.File]::Open($path,'OpenOrCreate','ReadWrite','Read')
+  if ($existed) {
+    $handle = [IO.File]::Open($path,'Open','ReadWrite','Read')
+  } else {
+    # The OS removes this reservation even if setup is killed mid-transfer.
+    $handle = New-Object IO.FileStream($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::ReadWrite,[IO.FileShare]::Read,4096,[IO.FileOptions]::DeleteOnClose)
+  }
   try {
     if ($handle.Length) {
       $reader = New-Object IO.StreamReader($handle,[Text.Encoding]::UTF8,$true,1024,$true)
@@ -101,7 +108,7 @@ function Reserve-Source {
         throw "Stop the PenguinHarness server using $sourceData and retry."
       }
     }
-    return @{Handle=$handle; Path=$path; Existed=$existed}
+    return $handle
   } catch {
     $handle.Dispose()
     throw
@@ -147,6 +154,20 @@ function Install-Location {
     [IO.Directory]::Move($stage,$target)
     Complete-Tree $sourceData (Join-Path $target 'data') $data
     Complete-Tree $sourceDesktop (Join-Path $target 'desktop') $desktop
+    # Keep the chain next to this verified copy, separate from the immutable originals.
+    # An old Trace may name the original drive even after a second relocation.
+    $previous = @()
+    if ($old) {
+      $prior = Join-Path $old 'windows-data-roots.json'
+      if ([IO.File]::Exists($prior)) {
+        $history = [IO.File]::ReadAllText($prior) | ConvertFrom-Json
+        if ($history.to -ne $sourceData) { throw "Invalid previous location record: $prior" }
+        $previous = @($history.from)
+      }
+    }
+    if ($previous -notcontains $sourceData) { $previous += $sourceData }
+    $dataRoot = Join-Path $target 'data'
+    Write-AtomicText (Join-Path $target 'windows-data-roots.json') (@{from=$previous;to=$dataRoot} | ConvertTo-Json -Compress) $utf8
     Write-AtomicText $pointer $target ([Text.Encoding]::Unicode)
     # The pointer is the commit. No failure during later cleanup can revert it.
     try { Recover-Transfer $target } catch { Write-Warning $_.Exception.Message }
@@ -155,10 +176,7 @@ function Install-Location {
     try { Recover-Transfer (Current-Location) } catch { Write-Warning $_.Exception.Message }
     throw $problem
   } finally {
-    if ($reservation) {
-      $reservation.Handle.Dispose()
-      if (!$reservation.Existed) { [IO.File]::Delete($reservation.Path) }
-    }
+    if ($reservation) { $reservation.Dispose() }
     $lease.Dispose()
   }
 }

@@ -13,7 +13,7 @@ function Read-Tree([string]$Root,[string]$Relative = '') {
       if ([IO.Path]::IsPathRooted($link)) {
         $target = Full-Directory $link
       } else {
-        $target = Full-Directory (Join-Path $dir $link)
+        $target = Full-Directory ([IO.Path]::GetFullPath((Join-Path $dir $link)))
       }
       if (!(Contains-Directory $Root $target)) { throw "The link leaves the data directory: $($item.FullName)" }
       [pscustomobject]@{ Name=$name; Kind=$item.LinkType; Target=$target.Substring($Root.Length).TrimStart('\'); Directory=$item.PSIsContainer }
